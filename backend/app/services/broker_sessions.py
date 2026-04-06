@@ -40,8 +40,17 @@ def _today_ist() -> date:
     return datetime.now(tz=IST).date()
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _is_active(expires_at: datetime | None) -> bool:
-    return expires_at is None or expires_at > _now_utc()
+    normalized = _as_utc(expires_at)
+    return normalized is None or normalized > _now_utc()
 
 
 def _totp(secret: str) -> str:
@@ -243,23 +252,38 @@ def get_broker_session_status(acc: BrokerAccount) -> BrokerSessionStatusOut:
         if not row:
             raise ValueError("missing groww credentials")
         access_token = decrypt_value(row.access_token_cipher)
+        api_key = decrypt_value(row.api_key_cipher).strip()
+        api_secret = decrypt_value(row.api_secret_cipher).strip()
+        has_approval_flow = bool(api_key and api_secret)
         has_totp_flow = bool(row.totp_token_cipher and row.totp_secret_cipher)
-        guidance = (
-            "Groww supports two official flows: API key + secret with daily approval, and a "
-            "TOTP token + TOTP secret flow with generated OTPs. Use POST /sessions/groww "
-            "to refresh manually, or store the TOTP secret for automated refresh."
-        )
+        if has_totp_flow:
+            guidance = (
+                "Groww TOTP mode is configured. The backend can refresh using totp_token + "
+                "totp_secret (manual or automated)."
+            )
+        elif has_approval_flow:
+            guidance = (
+                "Groww approval mode is configured. The backend can refresh access tokens "
+                "using api_key + api_secret."
+            )
+        else:
+            guidance = (
+                "Groww session is manual right now. Configure either api_key + api_secret "
+                "(approval mode) or totp_token + totp_secret (TOTP mode) for automated refresh."
+            )
         return BrokerSessionStatusOut(
             broker=code,
             account_id=acc.id,
             session_active=bool(access_token) and _is_active(row.access_token_expires_at),
             automation_supported=True,
-            automation_enabled=acc.automation_enabled,
+            automation_enabled=has_totp_flow or has_approval_flow,
             automation_mode=acc.automation_mode,
             has_access_token=bool(access_token),
             token_generated_at=row.access_token_generated_at,
             token_expires_at=row.access_token_expires_at,
-            fields_required=[] if has_totp_flow else ["access_token or API approval/TOTP refresh"],
+            fields_required=[]
+            if (has_totp_flow or has_approval_flow)
+            else ["access_token or api_key+api_secret or totp_token+totp_secret"],
             guidance=guidance,
         )
 

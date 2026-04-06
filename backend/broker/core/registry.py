@@ -10,8 +10,17 @@ from db.models import BrokerAccount
 BROKER_CODES = frozenset(b.value for b in BrokerCode)
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def _ensure_not_expired(account: BrokerAccount, message: str) -> None:
-    if account.session_expires_at and account.session_expires_at <= datetime.now(tz=UTC):
+    expires_at = _as_utc(account.session_expires_at)
+    if expires_at and expires_at <= datetime.now(tz=UTC):
         raise ValueError(message)
 
 

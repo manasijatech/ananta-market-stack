@@ -149,6 +149,8 @@ def create_broker_account(db: Session, user_id: str, payload: BrokerAccountCreat
     elif isinstance(payload, GrowwCreate):
         token = (payload.access_token or "").strip()
         token_generated_at = datetime.now(tz=UTC) if token else None
+        has_totp_flow = bool(payload.totp_token and payload.totp_secret)
+        has_approval_flow = bool(payload.api_key and payload.api_secret)
         db.add(
             GrowwCredentials(
                 account_id=bid,
@@ -167,8 +169,13 @@ def create_broker_account(db: Session, user_id: str, payload: BrokerAccountCreat
                 else None,
             )
         )
-        acc.automation_enabled = bool(payload.totp_token and payload.totp_secret)
-        acc.automation_mode = "groww_totp" if acc.automation_enabled else None
+        acc.automation_enabled = has_totp_flow or has_approval_flow
+        if has_totp_flow:
+            acc.automation_mode = "groww_totp"
+        elif has_approval_flow:
+            acc.automation_mode = "groww_approval"
+        else:
+            acc.automation_mode = None
     elif isinstance(payload, IndmoneyCreate):
         token = (payload.access_token or "").strip()
         token_generated_at = datetime.now(tz=UTC) if token else None

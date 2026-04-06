@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -42,7 +42,48 @@ def _get_owned_account(db: Session, user_id: str, account_id: str) -> BrokerAcco
 
 @router.post("", response_model=BrokerAccountOut)
 def create_broker_account(
-    payload: BrokerAccountCreate,
+    payload: BrokerAccountCreate = Body(
+        ...,
+        openapi_examples={
+            "zerodha_default": {
+                "summary": "Zerodha (official redirect flow)",
+                "value": {
+                    "broker": "zerodha",
+                    "label": "zerodha-main",
+                    "api_key": "kite_api_key",
+                    "api_secret": "kite_api_secret",
+                },
+            },
+            "groww_totp": {
+                "summary": "Groww TOTP mode",
+                "value": {
+                    "broker": "groww",
+                    "label": "groww-main",
+                    "totp_token": "LONG_JWT_LIKE_TOTP_TOKEN",
+                    "totp_secret": "BASE32_SECRET_FROM_QR",
+                },
+            },
+            "groww_approval": {
+                "summary": "Groww approval mode",
+                "value": {
+                    "broker": "groww",
+                    "label": "groww-approval",
+                    "api_key": "groww_api_key",
+                    "api_secret": "groww_api_secret",
+                },
+            },
+            "upstox_oauth": {
+                "summary": "Upstox OAuth",
+                "value": {
+                    "broker": "upstox",
+                    "label": "upstox-main",
+                    "api_key": "upstox_api_key",
+                    "api_secret": "upstox_api_secret",
+                    "redirect_uri": "https://your-app.example.com/upstox/callback",
+                },
+            },
+        },
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> BrokerAccount:
