@@ -1,0 +1,37 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_name: str = "Market Stack"
+    debug: bool = Field(default=False, validation_alias="APP_DEBUG")
+    database_url: str = Field(
+        default="sqlite:///./data/app.db",
+        validation_alias="DATABASE_URL",
+    )
+    app_public_base_url: str | None = Field(default=None, validation_alias="APP_PUBLIC_BASE_URL")
+
+    redis_host: str = "127.0.0.1"
+    redis_port: int = 6379
+    redis_password: str | None = None
+    redis_db: int = 0
+    redis_quote_ttl_seconds: int = 30
+
+    # Fernet key (urlsafe base64 32-byte). Required for production; see AGENTS.md.
+    credential_encryption_key: str | None = None
+
+    # Development-only fallback if no key set (not for production).
+    allow_insecure_dev_credentials: bool = False
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
