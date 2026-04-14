@@ -147,18 +147,14 @@ def get_broker_session_status(acc: BrokerAccount) -> BrokerSessionStatusOut:
             broker=code,
             account_id=acc.id,
             session_active=active,
-            automation_supported=bool(
-                row.login_user_id_cipher and row.login_password_cipher and row.totp_secret_cipher
-            ),
+            automation_supported=True,
             automation_enabled=acc.automation_enabled,
             automation_mode=acc.automation_mode,
             login_url=zerodha_auth.build_login_url(api_key, state=acc.id),
             has_access_token=bool(access_token),
             token_generated_at=generated_at,
             token_expires_at=expires_at,
-            fields_required=["request_token"]
-            if not acc.automation_enabled
-            else [],
+            fields_required=[] if acc.automation_enabled else ["request_token"],
             guidance=(
                 "Official flow: use the Zerodha login URL, capture the request_token from the "
                 "redirect, then call POST /sessions/zerodha. Optional experimental automation "
@@ -378,11 +374,15 @@ def refresh_zerodha_session_experimental(db: Session, acc: BrokerAccount) -> tup
     row = acc.zerodha
     if not row or not row.login_user_id_cipher or not row.login_password_cipher or not row.totp_secret_cipher:
         return None, "experimental Zerodha automation needs login_user_id, login_password, and totp_secret"
+    try:
+        totp_value = zerodha_auth.generate_totp(decrypt_value(row.totp_secret_cipher))
+    except Exception as exc:
+        return None, f"invalid zerodha totp_secret: {exc}"
     request_token, err = zerodha_auth.fetch_request_token_with_web_login(
         api_key=decrypt_value(row.api_key_cipher),
         user_id=decrypt_value(row.login_user_id_cipher),
         password=decrypt_value(row.login_password_cipher),
-        totp_value=_totp(decrypt_value(row.totp_secret_cipher)),
+        totp_value=totp_value,
     )
     if err or not request_token:
         return None, err or "failed to get request_token"

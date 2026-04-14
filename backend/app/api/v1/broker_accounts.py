@@ -54,6 +54,18 @@ def create_broker_account(
                     "api_secret": "kite_api_secret",
                 },
             },
+            "zerodha_with_optional_automation": {
+                "summary": "Zerodha (official flow + optional automation creds)",
+                "value": {
+                    "broker": "zerodha",
+                    "label": "zerodha-auto",
+                    "api_key": "kite_api_key",
+                    "api_secret": "kite_api_secret",
+                    "login_user_id": "AB1234",
+                    "login_password": "your_password",
+                    "totp_secret": "BASE32_TOTP_SECRET",
+                },
+            },
             "groww_totp": {
                 "summary": "Groww TOTP mode",
                 "value": {

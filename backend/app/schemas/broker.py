@@ -55,6 +55,17 @@ class ZerodhaCreate(BaseModel):
         description="Optional TOTP secret for experimental automated login.",
     )
 
+    @model_validator(mode="after")
+    def _validate_zerodha_login_bundle(self) -> "ZerodhaCreate":
+        login_fields = [self.login_user_id, self.login_password, self.totp_secret]
+        provided = [bool((value or "").strip()) for value in login_fields]
+        if any(provided) and not all(provided):
+            raise ValueError(
+                "For Zerodha experimental automation, provide all of login_user_id, "
+                "login_password, and totp_secret, or leave all of them empty."
+            )
+        return self
+
 
 class UpstoxCreate(BaseModel):
     """Information required to add an Upstox account."""
