@@ -48,7 +48,7 @@ class GrowwClient:
         return True, ""
 
     def user_profile(self) -> dict[str, Any]:
-        return gfunds.margins_user(self._http)
+        return self._http.get("/v1/user/detail", {})
 
     def order_book(self) -> dict[str, Any]:
         return gorders.order_book(self._http)

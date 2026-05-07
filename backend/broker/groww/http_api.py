@@ -17,6 +17,7 @@ class GrowwHTTP:
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
             "Content-Type": "application/json",
+            "X-API-VERSION": "1.0",
         }
 
     def get(self, path: str, params: dict | None = None) -> dict[str, Any]:

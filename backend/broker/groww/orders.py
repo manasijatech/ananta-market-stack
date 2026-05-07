@@ -42,7 +42,29 @@ def order_book(http: GrowwHTTP) -> dict[str, Any]:
 
 
 def trade_book(http: GrowwHTTP) -> dict[str, Any]:
-    return http.get("/v1/order/trades", {})
+    trade_list: list[dict[str, Any]] = []
+    for order in order_book(http).get("orders", []):
+        groww_order_id = str(order.get("groww_order_id") or "").strip()
+        segment = str(order.get("segment") or "CASH").strip() or "CASH"
+        if not groww_order_id:
+            continue
+        page = 0
+        while True:
+            response = http.get(
+                f"/v1/order/trades/{groww_order_id}",
+                {"segment": segment, "page": page, "page_size": 50},
+            )
+            if response.get("status") != "SUCCESS":
+                break
+            payload = response.get("payload") or {}
+            rows = payload.get("trade_list") or []
+            if not isinstance(rows, list):
+                break
+            trade_list.extend(rows)
+            if len(rows) < 50:
+                break
+            page += 1
+    return {"status": "SUCCESS", "trades": trade_list}
 
 
 def positions(http: GrowwHTTP) -> dict[str, Any]:
@@ -50,7 +72,7 @@ def positions(http: GrowwHTTP) -> dict[str, Any]:
 
 
 def holdings(http: GrowwHTTP) -> dict[str, Any]:
-    return http.get("/v1/portfolio/holdings", {})
+    return http.get("/v1/holdings/user", {})
 
 
 def _ref_id() -> str:
@@ -99,10 +121,8 @@ def cancel_order(
     http: GrowwHTTP, order_id: str, **kwargs: Any
 ) -> dict[str, Any]:
     body = {
-        "order_id": order_id,
+        "groww_order_id": order_id,
         "segment": kwargs.get("segment", "CASH"),
-        "trading_symbol": kwargs.get("trading_symbol", ""),
-        "exchange": kwargs.get("exchange", "NSE"),
     }
     return http.post("/v1/order/cancel", body)
 
@@ -111,17 +131,16 @@ def cancel_all_open_orders(http: GrowwHTTP) -> dict[str, Any]:
     ob = order_book(http)
     canceled, failed = [], []
     for o in ob.get("orders", []):
-        st = str(o.get("status", "")).lower()
+        st = str(o.get("order_status") or o.get("status") or "").lower()
+        groww_order_id = str(o.get("groww_order_id") or o.get("order_id") or "").strip()
         if "open" in st or "pending" in st:
             r = cancel_order(
                 http,
-                str(o.get("order_id", "")),
+                groww_order_id,
                 segment=o.get("segment"),
-                trading_symbol=o.get("trading_symbol"),
-                exchange=o.get("exchange"),
             )
             (canceled if r.get("status") == "SUCCESS" else failed).append(
-                o.get("order_id")
+                groww_order_id
             )
     return {"ok": True, "canceled": canceled, "failed": failed}
 

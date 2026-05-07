@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
+  getQuotes,
   getHoldings,
   getOrders,
   getPortfolioFunds,
@@ -129,7 +130,40 @@ export function PortfolioTabs({ accountId, sessionActive }: { accountId: string;
           setState((current) => ({ ...current, positions: normalizePositions(raw) }));
         } else if (tab === "holdings") {
           const raw = await getHoldings(accountId);
-          setState((current) => ({ ...current, holdings: normalizeHoldings(raw) }));
+          const holdings = normalizeHoldings(raw);
+          const quoteResponse = holdings.length
+            ? await getQuotes(accountId, {
+                instruments: holdings.map((holding) => ({
+                  symbol: holding.symbol,
+                  exchange: "NSE",
+                  groww_trading_symbol: holding.symbol
+                }))
+              })
+            : [];
+          const ltpBySymbol = new Map(
+            quoteResponse.map((row) => [String(row.symbol ?? "").toUpperCase(), row.ltp])
+          );
+          const enrichedHoldings = holdings.map((holding) => {
+            const lastPrice = ltpBySymbol.get(holding.symbol.toUpperCase());
+            const averagePrice = holding.average_price;
+            if (lastPrice === undefined || averagePrice === null || averagePrice === undefined) {
+              return {
+                ...holding,
+                last_price: lastPrice ?? holding.last_price
+              };
+            }
+            const pnl = (lastPrice - averagePrice) * holding.quantity;
+            const pnlPercent = averagePrice
+              ? ((lastPrice - averagePrice) / averagePrice) * 100
+              : holding.pnl_percent;
+            return {
+              ...holding,
+              last_price: lastPrice,
+              pnl,
+              pnl_percent: pnlPercent
+            };
+          });
+          setState((current) => ({ ...current, holdings: enrichedHoldings }));
         }
       } catch (caught) {
         setError(parseActionError(caught).message);

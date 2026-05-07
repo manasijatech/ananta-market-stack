@@ -144,11 +144,20 @@ export function normalizeFunds(payload: JsonObject): FundsResponse {
 
 export function normalizeProfile(payload: JsonObject): Profile {
   const data = asObject(payload.data);
-  const source = Object.keys(data).length ? data : payload;
+  const payloadObject = asObject(payload.payload);
+  const source = Object.keys(data).length
+    ? data
+    : Object.keys(payloadObject).length
+      ? payloadObject
+      : payload;
   return {
     name: stringFrom(source, ["user_name", "userName", "name", "clientName"], "") || null,
     email: stringFrom(source, ["email", "email_id", "emailId"], "") || null,
-    broker_user_id: stringFrom(source, ["user_id", "userId", "client_id", "clientId"], "") || null,
+    broker_user_id: stringFrom(
+      source,
+      ["user_id", "userId", "client_id", "clientId", "vendor_user_id", "ucc"],
+      ""
+    ) || null,
     raw: payload
   };
 }
