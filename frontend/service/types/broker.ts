@@ -1,0 +1,343 @@
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+export type JsonObject = { [key: string]: JsonValue };
+
+export type BrokerCode =
+  | "angel"
+  | "dhan"
+  | "groww"
+  | "indmoney"
+  | "kotak"
+  | "upstox"
+  | "zerodha";
+
+export type SessionStatusValue =
+  | "pending"
+  | "active"
+  | "automation_ready"
+  | "action_required"
+  | string;
+
+export interface BrokerAccount {
+  id: string;
+  user_id: string;
+  broker_code: BrokerCode;
+  label: string;
+  is_active: boolean;
+  last_verified_at?: string | null;
+  last_error?: string | null;
+  session_status?: SessionStatusValue | null;
+  session_expires_at?: string | null;
+  automation_enabled: boolean;
+  automation_mode?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type BrokerAccountDetail = BrokerAccount;
+
+interface CreatePayloadBase {
+  broker: BrokerCode;
+  label: string;
+}
+
+export interface ZerodhaCreatePayload extends CreatePayloadBase {
+  broker: "zerodha";
+  api_key: string;
+  api_secret: string;
+  access_token?: string | null;
+  login_user_id?: string | null;
+  login_password?: string | null;
+  totp_secret?: string | null;
+}
+
+export interface UpstoxCreatePayload extends CreatePayloadBase {
+  broker: "upstox";
+  api_key: string;
+  api_secret: string;
+  redirect_uri: string;
+  access_token?: string | null;
+  extended_token?: string | null;
+}
+
+export interface AngelCreatePayload extends CreatePayloadBase {
+  broker: "angel";
+  api_key: string;
+  client_code: string;
+  pin?: string;
+  jwt_token?: string | null;
+  feed_token?: string | null;
+  totp_secret?: string | null;
+}
+
+export interface DhanCreatePayload extends CreatePayloadBase {
+  broker: "dhan";
+  app_id: string;
+  app_secret: string;
+  client_id: string;
+  access_token?: string | null;
+  pin?: string | null;
+  totp_secret?: string | null;
+}
+
+export interface GrowwCreatePayload extends CreatePayloadBase {
+  broker: "groww";
+  api_key?: string | null;
+  api_secret?: string | null;
+  access_token?: string | null;
+  totp_token?: string | null;
+  totp_secret?: string | null;
+}
+
+export interface IndmoneyCreatePayload extends CreatePayloadBase {
+  broker: "indmoney";
+  access_token?: string | null;
+}
+
+export interface KotakCreatePayload extends CreatePayloadBase {
+  broker: "kotak";
+  ucc: string;
+  portal_access_token: string;
+  mobile_number?: string | null;
+  session_bundle?: string | null;
+  mpin?: string | null;
+  totp_secret?: string | null;
+}
+
+export type CreateBrokerAccountPayload =
+  | ZerodhaCreatePayload
+  | UpstoxCreatePayload
+  | AngelCreatePayload
+  | DhanCreatePayload
+  | GrowwCreatePayload
+  | IndmoneyCreatePayload
+  | KotakCreatePayload;
+
+export interface ZerodhaSessionStatus {
+  broker: "zerodha";
+  account_id: string;
+  login_url: string;
+  has_access_token: boolean;
+  session_active: boolean;
+  access_token_generated_at?: string | null;
+  access_token_expires_at?: string | null;
+  session_user_id?: string | null;
+  guidance: string;
+}
+
+export interface BrokerSessionStatus {
+  broker: BrokerCode;
+  account_id: string;
+  session_active: boolean;
+  automation_supported: boolean;
+  automation_enabled: boolean;
+  automation_mode?: string | null;
+  login_url?: string | null;
+  has_access_token: boolean;
+  token_generated_at?: string | null;
+  token_expires_at?: string | null;
+  fields_required: string[];
+  guidance: string;
+}
+
+export type SessionStatus = ZerodhaSessionStatus | BrokerSessionStatus;
+
+export interface ZerodhaSessionPayload {
+  broker: "zerodha";
+  request_token: string;
+}
+
+export interface UpstoxSessionPayload {
+  broker: "upstox";
+  authorization_code: string;
+}
+
+export interface AngelSessionPayload {
+  broker: "angel";
+  client_code: string;
+  pin: string;
+  totp: string;
+}
+
+export interface DhanSessionPayload {
+  broker: "dhan";
+  token_id: string;
+}
+
+export interface GrowwSessionPayload {
+  broker: "groww";
+  access_token?: string | null;
+  totp?: string | null;
+}
+
+export interface KotakSessionPayload {
+  broker: "kotak";
+  mobile_number: string;
+  totp: string;
+  mpin: string;
+}
+
+export interface IndmoneySessionPayload {
+  broker: "indmoney";
+  access_token: string;
+}
+
+export type SessionLoginPayload =
+  | ZerodhaSessionPayload
+  | UpstoxSessionPayload
+  | AngelSessionPayload
+  | DhanSessionPayload
+  | GrowwSessionPayload
+  | KotakSessionPayload
+  | IndmoneySessionPayload;
+
+export interface InstrumentRef {
+  symbol?: string | null;
+  exchange?: string | null;
+  zerodha_instrument_token?: number | null;
+  upstox_instrument_key?: string | null;
+  angel_exchange?: string | null;
+  angel_token?: number | null;
+  dhan_exchange_segment?: string | null;
+  dhan_security_id?: string | null;
+  groww_exchange?: string | null;
+  groww_segment?: string | null;
+  groww_trading_symbol?: string | null;
+  indmoney_scrip_code?: string | null;
+  kotak_query?: string | null;
+  kotak_segment?: string | null;
+  kotak_psymbol?: string | null;
+}
+
+export interface QuoteRequest {
+  instruments: InstrumentRef[];
+}
+
+export interface QuoteResponse {
+  symbol?: string | null;
+  ltp: number;
+  broker_code: BrokerCode;
+  account_id: string;
+  detail: JsonObject;
+}
+
+export interface Notification {
+  id: string;
+  account_id?: string | null;
+  broker_code?: BrokerCode | string | null;
+  level: string;
+  kind: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface VerifyResponse {
+  ok: boolean;
+  message: string;
+}
+
+export interface SessionStartResponse {
+  account_id: string;
+  broker: BrokerCode | string;
+  login_url: string;
+  state: string;
+  guidance: string;
+}
+
+export interface ZerodhaRefreshResponse {
+  request_token: string;
+  access_token_generated_at: string;
+  access_token_expires_at: string;
+  guidance: string;
+}
+
+export interface UpstoxTokenRequestResponse {
+  account_id: string;
+  broker: "upstox";
+  token_request_expires_at?: string | null;
+  notifier_url?: string | null;
+  guidance: string;
+}
+
+export type SessionMutationResponse =
+  | VerifyResponse
+  | ZerodhaRefreshResponse
+  | UpstoxTokenRequestResponse
+  | SessionStartResponse;
+
+export interface OrderBody {
+  symbol?: string | null;
+  exchange?: string | null;
+  action?: string | null;
+  pricetype?: string;
+  quantity?: string;
+  product?: string;
+  price?: string;
+  trigger_price?: string;
+  disclosed_quantity?: string;
+  orderid?: string | null;
+  position_size?: number | null;
+  extra?: JsonObject;
+}
+
+export interface Order {
+  id: string;
+  symbol: string;
+  action: string;
+  quantity: number;
+  price?: number | null;
+  status: string;
+  time?: string | null;
+  raw: JsonObject;
+}
+
+export interface Trade {
+  id: string;
+  symbol: string;
+  action: string;
+  quantity: number;
+  avg_price?: number | null;
+  time?: string | null;
+  raw: JsonObject;
+}
+
+export interface Position {
+  id: string;
+  symbol: string;
+  product?: string | null;
+  quantity: number;
+  pnl?: number | null;
+  raw: JsonObject;
+}
+
+export interface Holding {
+  id: string;
+  symbol: string;
+  quantity: number;
+  average_price?: number | null;
+  last_price?: number | null;
+  pnl?: number | null;
+  pnl_percent?: number | null;
+  raw: JsonObject;
+}
+
+export interface FundsResponse {
+  available?: number | null;
+  used?: number | null;
+  opening_balance?: number | null;
+  total?: number | null;
+  raw: JsonObject;
+}
+
+export interface Profile {
+  name?: string | null;
+  email?: string | null;
+  broker_user_id?: string | null;
+  raw: JsonObject;
+}
+
+export interface FieldErrors {
+  [field: string]: string;
+}

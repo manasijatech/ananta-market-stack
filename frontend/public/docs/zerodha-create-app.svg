@@ -1,0 +1,58 @@
+<svg width="1120" height="900" viewBox="0 0 1120 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1120" height="900" fill="#ffffff"/>
+  <text x="560" y="68" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" fill="#777777">Creating an app gives you an API_KEY and API_SECRET</text>
+  <text x="560" y="115" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="300" fill="#2f2f2f">Create a new app</text>
+
+  <text x="112" y="205" font-family="Inter, Arial, sans-serif" font-size="16" fill="#7a7a7a">Type *</text>
+
+  <rect x="112" y="220" width="285" height="174" rx="2" fill="#ffffff" stroke="#c9c9c9"/>
+  <circle cx="138" cy="250" r="7" fill="#ffffff" stroke="#9a9a9a"/>
+  <text x="154" y="256" font-family="Inter, Arial, sans-serif" font-size="18" fill="#777777">Connect</text>
+  <text x="132" y="284" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" fill="#43bf5b">500 credits for 30 days</text>
+  <text x="132" y="316" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">• Investing, trading, and reports APIs</text>
+  <text x="132" y="337" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">• Historical chart data APIs</text>
+  <text x="132" y="358" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">• Live market quotes and ticks via API and</text>
+  <text x="142" y="377" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">WebSockets</text>
+
+  <rect x="420" y="220" width="285" height="174" rx="2" fill="#ffffff" stroke="#c9c9c9"/>
+  <circle cx="446" cy="250" r="7" fill="#ffffff" stroke="#1f7ae0" stroke-width="2"/>
+  <circle cx="446" cy="250" r="4" fill="#1f7ae0"/>
+  <text x="462" y="256" font-family="Inter, Arial, sans-serif" font-size="18" fill="#777777">Personal</text>
+  <text x="438" y="284" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" fill="#43bf5b">Free</text>
+  <text x="438" y="316" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">• Investing, trading, and reports APIs</text>
+  <text x="438" y="337" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">• No historical chart data APIs</text>
+  <text x="438" y="358" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">• No live market quotes and WebSockets</text>
+
+  <rect x="728" y="220" width="285" height="174" rx="2" fill="#ffffff" stroke="#c9c9c9"/>
+  <circle cx="754" cy="250" r="7" fill="#ffffff" stroke="#9a9a9a"/>
+  <text x="770" y="256" font-family="Inter, Arial, sans-serif" font-size="18" fill="#777777">Publisher</text>
+  <text x="746" y="284" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" fill="#43bf5b">Free</text>
+  <text x="746" y="316" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">• No API access</text>
+  <text x="746" y="337" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">• HTML/JS buttons for order and basket</text>
+  <text x="756" y="356" font-family="Inter, Arial, sans-serif" font-size="13" fill="#777777">placement</text>
+
+  <text x="112" y="465" font-family="Inter, Arial, sans-serif" font-size="16" fill="#7a7a7a">App name *</text>
+  <rect x="112" y="480" width="432" height="50" fill="#ffffff" stroke="#c9c9c9"/>
+  <text x="580" y="465" font-family="Inter, Arial, sans-serif" font-size="16" fill="#7a7a7a">Zerodha Client ID *</text>
+  <rect x="580" y="480" width="198" height="50" fill="#ffffff" stroke="#c9c9c9"/>
+  <text x="596" y="512" font-family="Inter, Arial, sans-serif" font-size="16" fill="#777777">eg: AB1234</text>
+  <text x="815" y="465" font-family="Inter, Arial, sans-serif" font-size="16" fill="#7a7a7a">App icon</text>
+  <rect x="815" y="497" width="104" height="28" rx="2" fill="#f7f7f7" stroke="#777777"/>
+  <text x="867" y="516" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" fill="#000000">Choose File</text>
+  <text x="928" y="516" font-family="Inter, Arial, sans-serif" font-size="15" fill="#555555">No file chosen</text>
+
+  <text x="112" y="578" font-family="Inter, Arial, sans-serif" font-size="16" fill="#7a7a7a">Redirect URL *</text>
+  <rect x="112" y="593" width="432" height="50" fill="#ffffff" stroke="#c9c9c9"/>
+  <text x="128" y="625" font-family="Inter, Arial, sans-serif" font-size="16" fill="#777777">https://</text>
+  <text x="580" y="578" font-family="Inter, Arial, sans-serif" font-size="16" fill="#7a7a7a">Postback URL</text>
+  <rect x="580" y="593" width="433" height="50" fill="#ffffff" stroke="#c9c9c9"/>
+  <text x="596" y="625" font-family="Inter, Arial, sans-serif" font-size="16" fill="#777777">https://</text>
+
+  <text x="112" y="690" font-family="Inter, Arial, sans-serif" font-size="16" fill="#7a7a7a">Description *</text>
+  <rect x="112" y="705" width="901" height="112" fill="#ffffff" stroke="#c9c9c9"/>
+
+  <text x="112" y="850" font-family="Inter, Arial, sans-serif" font-size="12" fill="#777777">* Fields are mandatory</text>
+  <text x="112" y="879" font-family="Inter, Arial, sans-serif" font-size="12" fill="#777777">** Learn more about Redirect url &amp; Postback url</text>
+  <rect x="451" y="846" width="225" height="46" rx="2" fill="#3a82d7"/>
+  <text x="564" y="875" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="#ffffff">Create</text>
+</svg>
