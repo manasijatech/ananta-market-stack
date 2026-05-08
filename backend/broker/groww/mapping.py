@@ -2,6 +2,7 @@ from __future__ import annotations
 
 SEGMENT_CASH = "CASH"
 SEGMENT_FNO = "FNO"
+SEGMENT_COMMODITY = "COMMODITY"
 
 
 def map_exchange(exchange: str) -> str:
@@ -11,7 +12,9 @@ def map_exchange(exchange: str) -> str:
 
 
 def map_segment(exchange: str) -> str:
-    return SEGMENT_FNO if exchange in ("NFO", "BFO", "MCX", "CDS") else SEGMENT_CASH
+    if exchange == "MCX":
+        return SEGMENT_COMMODITY
+    return SEGMENT_FNO if exchange in ("NFO", "BFO", "CDS") else SEGMENT_CASH
 
 
 def map_product(product: str) -> str:

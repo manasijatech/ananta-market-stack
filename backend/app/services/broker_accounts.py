@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -38,6 +38,16 @@ from db.models import (
     User,
     ZerodhaCredentials,
 )
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _next_groww_expiry_utc(now: datetime) -> datetime:
+    now_ist = now.astimezone(IST)
+    expiry_ist = now_ist.replace(hour=6, minute=0, second=0, microsecond=0)
+    if now_ist >= expiry_ist:
+        expiry_ist = expiry_ist + timedelta(days=1)
+    return expiry_ist.astimezone(UTC)
 
 
 def create_broker_account(db: Session, user_id: str, payload: BrokerAccountCreate) -> BrokerAccount:
@@ -164,7 +174,7 @@ def create_broker_account(db: Session, user_id: str, payload: BrokerAccountCreat
                 if payload.totp_secret
                 else None,
                 access_token_generated_at=token_generated_at,
-                access_token_expires_at=token_generated_at.replace(microsecond=0) + timedelta(hours=24)
+                access_token_expires_at=_next_groww_expiry_utc(token_generated_at)
                 if token_generated_at
                 else None,
             )
@@ -414,9 +424,10 @@ def apply_dhan_session(db: Session, acc: BrokerAccount, token_id: str) -> tuple[
     )
     if err or not tok:
         return False, err or "failed"
+    now = datetime.now(tz=UTC)
     row.access_token_cipher = encrypt_value(tok)
-    row.access_token_generated_at = datetime.now(tz=UTC)
-    row.access_token_expires_at = datetime.now(tz=UTC) + timedelta(hours=24)
+    row.access_token_generated_at = now
+    row.access_token_expires_at = _next_groww_expiry_utc(now)
     acc.last_error = None
     acc.session_status = "active"
     acc.session_expires_at = row.access_token_expires_at
@@ -465,9 +476,10 @@ def apply_groww_refresh(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
     )
     if err or not tok:
         return False, err or "failed"
+    now = datetime.now(tz=UTC)
     row.access_token_cipher = encrypt_value(tok)
-    row.access_token_generated_at = datetime.now(tz=UTC)
-    row.access_token_expires_at = datetime.now(tz=UTC) + timedelta(hours=24)
+    row.access_token_generated_at = now
+    row.access_token_expires_at = _next_groww_expiry_utc(now)
     acc.last_error = None
     acc.session_status = "active"
     acc.session_expires_at = row.access_token_expires_at

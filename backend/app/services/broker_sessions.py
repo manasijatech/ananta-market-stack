@@ -57,6 +57,15 @@ def _totp(secret: str) -> str:
     return pyotp.TOTP(secret).now()
 
 
+def _next_groww_expiry_utc(now: datetime | None = None) -> datetime:
+    base = now or _now_utc()
+    now_ist = base.astimezone(IST)
+    expiry_ist = now_ist.replace(hour=6, minute=0, second=0, microsecond=0)
+    if now_ist >= expiry_ist:
+        expiry_ist = expiry_ist + timedelta(days=1)
+    return expiry_ist.astimezone(UTC)
+
+
 def _public_url(path: str) -> str | None:
     base = (_settings.app_public_base_url or "").rstrip("/")
     if not base:
@@ -563,7 +572,7 @@ def refresh_groww_session(
         return False, err or "failed"
 
     now = _now_utc()
-    expires_at = now + timedelta(hours=24)
+    expires_at = _next_groww_expiry_utc(now)
     row.access_token_cipher = encrypt_value(token)
     row.access_token_generated_at = now
     row.access_token_expires_at = expires_at

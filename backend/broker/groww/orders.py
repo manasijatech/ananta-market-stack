@@ -16,26 +16,27 @@ from broker.groww.mapping import (
 )
 
 ORDER_LIST = f"{GROWW_BASE}/v1/order/list"
+ORDER_SEGMENTS = ("CASH", "FNO", "COMMODITY")
 
 
 def order_book(http: GrowwHTTP) -> dict[str, Any]:
     from broker.core.http import get_httpx_client
 
     all_o: list[dict[str, Any]] = []
-    for segment in ("CASH", "FNO"):
+    for segment in ORDER_SEGMENTS:
         page = 0
         while True:
             r = get_httpx_client().get(
                 ORDER_LIST,
                 headers=http.headers(),
-                params={"segment": segment, "page": page, "page_size": 25},
+                params={"segment": segment, "page": page, "page_size": 100},
             )
             j = r.json()
             if j.get("status") != "SUCCESS":
                 break
             lst = (j.get("payload") or {}).get("order_list") or []
             all_o.extend(lst)
-            if len(lst) < 25:
+            if len(lst) < 100:
                 break
             page += 1
     return {"status": "SUCCESS", "orders": all_o}
@@ -114,15 +115,37 @@ def place_order(
 
 def modify_order(http: GrowwHTTP, data: dict[str, Any]) -> dict[str, Any]:
     body = data.get("groww_modify") or {}
+    if not body:
+        exchange = str(data.get("exchange") or "NSE")
+        body = {
+            "groww_order_id": data.get("groww_order_id") or data.get("orderid"),
+            "segment": data.get("groww_segment") or map_segment(exchange),
+        }
+        if data.get("quantity") is not None:
+            body["quantity"] = int(data["quantity"])
+        order_type = data.get("pricetype")
+        if order_type:
+            body["order_type"] = map_order_type(str(order_type))
+        if data.get("price") is not None:
+            body["price"] = float(data["price"])
+        if data.get("trigger_price") is not None:
+            body["trigger_price"] = float(data["trigger_price"])
     return http.post("/v1/order/modify", body)
 
 
 def cancel_order(
     http: GrowwHTTP, order_id: str, **kwargs: Any
 ) -> dict[str, Any]:
+    segment = kwargs.get("segment")
+    if not segment:
+        for order in order_book(http).get("orders", []):
+            groww_order_id = str(order.get("groww_order_id") or order.get("order_id") or "").strip()
+            if groww_order_id == order_id:
+                segment = order.get("segment")
+                break
     body = {
         "groww_order_id": order_id,
-        "segment": kwargs.get("segment", "CASH"),
+        "segment": segment or "CASH",
     }
     return http.post("/v1/order/cancel", body)
 
@@ -148,7 +171,9 @@ def cancel_all_open_orders(http: GrowwHTTP) -> dict[str, Any]:
 def smart_order(
     http: GrowwHTTP, data: dict[str, Any], resolver: InstrumentResolver
 ) -> dict[str, Any]:
-    return place_order(http, data, resolver)
+    _ = resolver
+    payload = data.get("groww_smart_order") or data
+    return http.post("/v1/order-advance/create", payload)
 
 
 def close_all_positions(http: GrowwHTTP, resolver: InstrumentResolver) -> dict[str, Any]:

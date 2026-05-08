@@ -76,7 +76,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
     formMapping: [
       { label: "API key", field: "api_key", note: "Used with API secret in approval mode." },
       { label: "API secret", field: "api_secret", note: "Used with API key in approval mode." },
-      { label: "TOTP token", field: "totp_token", note: "Groww token from the API keys page." },
+      { label: "TOTP API key", field: "totp_token", note: "Groww user API key for the TOTP flow." },
       { label: "TOTP secret", field: "totp_secret", note: "Authenticator or QR secret for TOTP mode." },
       { label: "Access token", field: "access_token", note: "Current token for manual mode." }
     ],

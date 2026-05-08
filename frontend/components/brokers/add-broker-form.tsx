@@ -318,7 +318,7 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
               ) : null}
               {growwMode === "totp" ? (
                 <>
-                  <Field error={fieldErrors.totp_token} label="TOTP token" name="totp_token" type="password" />
+                  <Field error={fieldErrors.totp_token} label="TOTP API key" name="totp_token" type="password" />
                   <Field error={fieldErrors.totp_secret} label="TOTP secret" name="totp_secret" type="password" />
                 </>
               ) : null}

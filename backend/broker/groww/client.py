@@ -84,8 +84,7 @@ class GrowwClient:
         return gorders.close_all_positions(self._http, self.resolver)
 
     def calculate_margin(self, positions: list[dict[str, Any]]) -> dict[str, Any]:
-        _ = positions
-        return {"status": "error", "message": "use Groww margins API with native payload"}
+        return gfunds.order_margin_details(self._http, positions, self.resolver)
 
     def fetch_quotes(self, instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return gmd.fetch_quotes(self._http, instruments, self.resolver)

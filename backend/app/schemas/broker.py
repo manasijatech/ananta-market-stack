@@ -121,7 +121,7 @@ class GrowwCreate(BaseModel):
     access_token: str | None = Field(None, description="Previous valid access token.")
     totp_token: str | None = Field(
         default=None,
-        description="Groww TOTP token from the Groww Cloud API Keys page.",
+        description="Groww user API key used for the TOTP auth flow.",
     )
     totp_secret: str | None = Field(
         default=None,

@@ -132,6 +132,7 @@ Note: Angel auth requirements have evolved over time; keep SmartAPI policy chang
   - use `POST /api/v1/broker-accounts/{account_id}/sessions/groww`
 - TOTP flow:
   - store `totp_token` and `totp_secret`
+  - `totp_token` here is the Groww user API key used in the TOTP token-generation call
   - use `POST /api/v1/broker-accounts/{account_id}/sessions/groww`
   - for automation, the backend generates the OTP from the stored secret
 

@@ -71,7 +71,7 @@ def create_broker_account(
                 "value": {
                     "broker": "groww",
                     "label": "groww-main",
-                    "totp_token": "LONG_JWT_LIKE_TOTP_TOKEN",
+                    "totp_token": "groww_user_api_key",
                     "totp_secret": "BASE32_SECRET_FROM_QR",
                 },
             },
