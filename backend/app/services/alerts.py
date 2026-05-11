@@ -886,7 +886,6 @@ def create_workflow_test_notification(
         payload=tick,
         dedupe_key=None,
     )
-    deliver_pending_notifications(db, limit=20)
     return notification
 
 

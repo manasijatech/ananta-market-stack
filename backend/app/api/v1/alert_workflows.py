@@ -134,7 +134,7 @@ def test_workflow_notification(
     if workflow is None:
         raise HTTPException(status_code=404, detail="workflow not found")
     notification = alert_svc.create_workflow_test_notification(db, workflow, body.tick)
-    return {"notification_id": notification.id, "message": "Test alert created and delivery attempted."}
+    return {"notification_id": notification.id, "message": "Test alert created and queued for channel delivery."}
 
 
 @router.get("/{workflow_id}/runs", response_model=list[AlertWorkflowRunOut])
