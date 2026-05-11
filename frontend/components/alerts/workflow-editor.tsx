@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type RefObject } from "react";
 import {
   getDataOhlc,
   getDataQuotes,
@@ -74,6 +74,24 @@ const compareOptions = [
   { value: "close", label: "Compare to close", help: "Use previous close as the reference." },
   { value: "high", label: "Compare to high", help: "Use day high as the reference." },
   { value: "low", label: "Compare to low", help: "Use day low as the reference." }
+];
+
+const messageTemplateFields = [
+  "symbol",
+  "exchange",
+  "ltp",
+  "open",
+  "high",
+  "low",
+  "close",
+  "volume",
+  "open_interest",
+  "day_change",
+  "day_change_perc",
+  "last_trade_time",
+  "received_at",
+  "broker_code",
+  "account_id"
 ];
 
 type PreviewState = {
@@ -153,6 +171,12 @@ export function WorkflowEditor({
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedSearchLabel, setSelectedSearchLabel] = useState("");
   const [preview, setPreview] = useState<PreviewState>({ quote: null, ohlc: null, loading: false, error: "" });
+  const [previewMode, setPreviewMode] = useState<"summary" | "raw">("summary");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [messageFieldQuery, setMessageFieldQuery] = useState("");
+  const [showMessageFieldSuggestions, setShowMessageFieldSuggestions] = useState(false);
+  const symbolWrapRef = useRef<HTMLDivElement | null>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const selectedAccount = accounts.find((item) => item.id === accountId);
   const activeInstrument = useMemo<InstrumentRef>(
@@ -171,6 +195,16 @@ export function WorkflowEditor({
   }, [selectedAccount?.broker_code]);
 
   useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (symbolWrapRef.current && !symbolWrapRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
+
+  useEffect(() => {
     const account = selectedAccount;
     if (!account || symbol.trim().length < 1) {
       setSuggestions([]);
@@ -186,6 +220,7 @@ export function WorkflowEditor({
             limit: 8
           });
           setSuggestions(result);
+          setShowSuggestions(true);
         } catch {
           setSuggestions([]);
         } finally {
@@ -242,6 +277,7 @@ export function WorkflowEditor({
     setInstrumentRef(instrumentFromSearch(row));
     setSelectedSearchLabel([row.symbol, row.exchange, row.instrument_type].filter(Boolean).join(" · "));
     setSuggestions([]);
+    setShowSuggestions(false);
   }
 
   function updateCondition(index: number, patch: Partial<AlertCondition>) {
@@ -296,6 +332,49 @@ export function WorkflowEditor({
       status
     };
   }
+
+  function updateMessageTemplate(nextValue: string, caretPosition?: number) {
+    setMessageTemplate(nextValue);
+    const scanUntil = typeof caretPosition === "number" ? caretPosition : nextValue.length;
+    const beforeCursor = nextValue.slice(0, scanUntil);
+    const openIndex = beforeCursor.lastIndexOf("{");
+    const closeIndex = beforeCursor.lastIndexOf("}");
+    if (openIndex >= 0 && openIndex > closeIndex) {
+      const query = beforeCursor.slice(openIndex + 1).trim().toLowerCase();
+      setMessageFieldQuery(query);
+      setShowMessageFieldSuggestions(true);
+      return;
+    }
+    setShowMessageFieldSuggestions(false);
+    setMessageFieldQuery("");
+  }
+
+  function applyMessageField(field: string) {
+    const input = messageInputRef.current;
+    const current = messageTemplate;
+    const caret = input?.selectionStart ?? current.length;
+    const beforeCursor = current.slice(0, caret);
+    const afterCursor = current.slice(caret);
+    const openIndex = beforeCursor.lastIndexOf("{");
+    const closeIndex = beforeCursor.lastIndexOf("}");
+    if (openIndex >= 0 && openIndex > closeIndex) {
+      const nextValue = `${beforeCursor.slice(0, openIndex)}{${field}}${afterCursor}`;
+      setMessageTemplate(nextValue);
+      setShowMessageFieldSuggestions(false);
+      setMessageFieldQuery("");
+      requestAnimationFrame(() => {
+        input?.focus();
+        const nextCaret = openIndex + field.length + 2;
+        input?.setSelectionRange(nextCaret, nextCaret);
+      });
+      return;
+    }
+    setMessageTemplate(`${current}{${field}}`);
+    setShowMessageFieldSuggestions(false);
+    setMessageFieldQuery("");
+  }
+
+  const filteredMessageFields = messageTemplateFields.filter((item) => item.includes(messageFieldQuery));
 
   function save() {
     setError("");
@@ -403,19 +482,25 @@ export function WorkflowEditor({
             </select>
             <HelpText>The broker account decides which instrument universe and quote API will be used.</HelpText>
           </div>
-          <div className="relative grid gap-2">
+          <div className="relative grid gap-2" ref={symbolWrapRef}>
             <Input
               onChange={(event) => {
                 setSymbol(event.target.value.toUpperCase());
                 setInstrumentRef({ symbol: event.target.value.toUpperCase(), exchange });
                 setSelectedSearchLabel("");
+                setShowSuggestions(true);
+              }}
+              onFocus={() => {
+                if (suggestions.length) {
+                  setShowSuggestions(true);
+                }
               }}
               placeholder="Search symbol"
               title="Start typing to search the synced broker instrument master for live suggestions."
               value={symbol}
             />
             <HelpText>{searchLoading ? "Searching instruments..." : selectedSearchLabel || "Type a symbol name or trading symbol and choose a suggestion."}</HelpText>
-            {suggestions.length ? (
+            {showSuggestions && suggestions.length ? (
               <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto rounded-md border border-border bg-background shadow-auth">
                 {suggestions.map((row) => (
                   <button
@@ -454,29 +539,35 @@ export function WorkflowEditor({
             <div className="text-sm font-bold">Live symbol preview</div>
             <HelpText>While this page stays open, the editor refreshes quote and OHLC data for the selected symbol every few seconds.</HelpText>
           </div>
-          <div className="text-xs text-muted-foreground">{preview.loading ? "Refreshing..." : preview.quote ? "Live preview active" : "No symbol selected"}</div>
-        </div>
-        {preview.error ? <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{preview.error}</div> : null}
-        <div className="grid gap-4 min-[1080px]:grid-cols-[280px_280px_1fr]">
-          <div className="rounded-md border border-border p-3">
-            <div className="text-xs font-bold uppercase text-muted-foreground">Quote</div>
-            <div className="mt-2 text-2xl font-bold">{preview.quote?.ltp ?? "-"}</div>
-            <div className="mt-2 text-xs text-muted-foreground">{symbol || "-"} · {exchange || "-"}</div>
-          </div>
-          <div className="rounded-md border border-border p-3">
-            <div className="text-xs font-bold uppercase text-muted-foreground">OHLC</div>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-              <span>Open: {String(preview.ohlc?.open ?? "-")}</span>
-              <span>High: {String(preview.ohlc?.high ?? "-")}</span>
-              <span>Low: {String(preview.ohlc?.low ?? "-")}</span>
-              <span>Close: {String(preview.ohlc?.close ?? "-")}</span>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-muted-foreground">{preview.loading ? "Refreshing..." : preview.quote ? "Live preview active" : "No symbol selected"}</div>
+            <div className="inline-flex rounded-md border border-border p-1">
+              <button
+                className={previewMode === "summary" ? "rounded px-2 py-1 text-xs font-semibold bg-secondary" : "rounded px-2 py-1 text-xs text-muted-foreground"}
+                onClick={() => setPreviewMode("summary")}
+                type="button"
+              >
+                Summary
+              </button>
+              <button
+                className={previewMode === "raw" ? "rounded px-2 py-1 text-xs font-semibold bg-secondary" : "rounded px-2 py-1 text-xs text-muted-foreground"}
+                onClick={() => setPreviewMode("raw")}
+                type="button"
+              >
+                Raw
+              </button>
             </div>
           </div>
+        </div>
+        {preview.error ? <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{preview.error}</div> : null}
+        {previewMode === "summary" ? (
+          <LivePreviewSummary exchange={exchange} preview={preview} symbol={symbol} />
+        ) : (
           <div className="rounded-md border border-border p-3">
             <div className="text-xs font-bold uppercase text-muted-foreground">Raw payload</div>
-            <pre className="mt-2 max-h-[240px] overflow-auto text-xs text-muted-foreground">{compactPreview({ quote: preview.quote, ohlc: preview.ohlc })}</pre>
+            <pre className="mt-2 max-h-[320px] overflow-auto text-xs text-muted-foreground">{compactPreview({ quote: preview.quote, ohlc: preview.ohlc })}</pre>
           </div>
-        </div>
+        )}
       </div>
 
       <Tabs onValueChange={(value) => setEditorMode(value as EditorMode)} value={editorMode}>
@@ -487,18 +578,22 @@ export function WorkflowEditor({
         <TabsContent className="mt-6" value="rule">
           <RuleEditor
             addCondition={addCondition}
+            applyMessageField={applyMessageField}
             combine={combine}
             conditions={conditions}
             cooldownSeconds={cooldownSeconds}
+            filteredMessageFields={filteredMessageFields}
             level={level}
             messageTemplate={messageTemplate}
+            messageInputRef={messageInputRef}
             removeCondition={removeCondition}
             setCombine={setCombine}
             setCooldownSeconds={setCooldownSeconds}
             setLevel={setLevel}
-            setMessageTemplate={setMessageTemplate}
             setTitleTemplate={setTitleTemplate}
+            showMessageFieldSuggestions={showMessageFieldSuggestions}
             titleTemplate={titleTemplate}
+            updateMessageTemplate={updateMessageTemplate}
             updateCondition={updateCondition}
           />
         </TabsContent>
@@ -567,35 +662,133 @@ export function WorkflowEditor({
   );
 }
 
+function LivePreviewSummary({
+  symbol,
+  exchange,
+  preview
+}: {
+  symbol: string;
+  exchange: string;
+  preview: PreviewState;
+}) {
+  const quoteRaw = ((preview.quote?.detail as JsonObject | undefined)?.raw as JsonObject | undefined) ?? {};
+  const depth = (quoteRaw.depth as JsonObject | undefined) ?? {};
+  const buyDepth = Array.isArray(depth.buy) ? depth.buy.slice(0, 3) : [];
+  const sellDepth = Array.isArray(depth.sell) ? depth.sell.slice(0, 3) : [];
+  return (
+    <div className="grid gap-4 min-[1180px]:grid-cols-[240px_220px_220px_1fr]">
+      <div className="rounded-md border border-border p-3">
+        <div className="text-xs font-bold uppercase text-muted-foreground">Quote</div>
+        <div className="mt-2 text-2xl font-bold">{preview.quote?.ltp ?? "-"}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{symbol || "-"} - {exchange || "-"}</div>
+        <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+          <div>Change: {String(quoteRaw.day_change ?? "-")}</div>
+          <div>Change %: {String(quoteRaw.day_change_perc ?? "-")}</div>
+          <div>Volume: {String(quoteRaw.volume ?? "-")}</div>
+          <div>Open interest: {String(quoteRaw.open_interest ?? "-")}</div>
+        </div>
+      </div>
+      <div className="rounded-md border border-border p-3">
+        <div className="text-xs font-bold uppercase text-muted-foreground">OHLC</div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <span>Open: {String(preview.ohlc?.open ?? "-")}</span>
+          <span>High: {String(preview.ohlc?.high ?? "-")}</span>
+          <span>Low: {String(preview.ohlc?.low ?? "-")}</span>
+          <span>Close: {String(preview.ohlc?.close ?? "-")}</span>
+        </div>
+        <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+          <div>52w high: {String(quoteRaw.week_52_high ?? "-")}</div>
+          <div>52w low: {String(quoteRaw.week_52_low ?? "-")}</div>
+        </div>
+      </div>
+      <div className="rounded-md border border-border p-3">
+        <div className="text-xs font-bold uppercase text-muted-foreground">Market internals</div>
+        <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+          <div>Total buy qty: {String(quoteRaw.total_buy_quantity ?? "-")}</div>
+          <div>Total sell qty: {String(quoteRaw.total_sell_quantity ?? "-")}</div>
+          <div>Last trade qty: {String(quoteRaw.last_trade_quantity ?? "-")}</div>
+          <div>Last trade time: {String(quoteRaw.last_trade_time ?? "-")}</div>
+          <div>Upper circuit: {String(quoteRaw.upper_circuit_limit ?? "-")}</div>
+          <div>Lower circuit: {String(quoteRaw.lower_circuit_limit ?? "-")}</div>
+        </div>
+      </div>
+      <div className="rounded-md border border-border p-3">
+        <div className="grid gap-3 min-[980px]:grid-cols-2">
+          <div>
+            <div className="text-xs font-bold uppercase text-muted-foreground">Top bids</div>
+            <div className="mt-2 grid gap-2">
+              {buyDepth.map((row, index) => {
+                const item = row as JsonObject;
+                return (
+                  <div className="rounded border border-border px-2 py-2 text-xs text-muted-foreground" key={`buy-${index}`}>
+                    <div>Price: {String(item.price ?? "-")}</div>
+                    <div>Qty: {String(item.quantity ?? "-")}</div>
+                    <div>Orders: {String(item.orderCount ?? "-")}</div>
+                  </div>
+                );
+              })}
+              {!buyDepth.length ? <div className="text-xs text-muted-foreground">No bid depth available.</div> : null}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-bold uppercase text-muted-foreground">Top asks</div>
+            <div className="mt-2 grid gap-2">
+              {sellDepth.map((row, index) => {
+                const item = row as JsonObject;
+                return (
+                  <div className="rounded border border-border px-2 py-2 text-xs text-muted-foreground" key={`sell-${index}`}>
+                    <div>Price: {String(item.price ?? "-")}</div>
+                    <div>Qty: {String(item.quantity ?? "-")}</div>
+                    <div>Orders: {String(item.orderCount ?? "-")}</div>
+                  </div>
+                );
+              })}
+              {!sellDepth.length ? <div className="text-xs text-muted-foreground">No ask depth available.</div> : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RuleEditor({
   addCondition,
+  applyMessageField,
   combine,
   conditions,
   cooldownSeconds,
+  filteredMessageFields,
   level,
   messageTemplate,
+  messageInputRef,
   removeCondition,
   setCombine,
   setCooldownSeconds,
   setLevel,
-  setMessageTemplate,
   setTitleTemplate,
+  showMessageFieldSuggestions,
   titleTemplate,
+  updateMessageTemplate,
   updateCondition
 }: {
   addCondition: () => void;
+  applyMessageField: (field: string) => void;
   combine: "all" | "any";
   conditions: AlertCondition[];
   cooldownSeconds: string;
+  filteredMessageFields: string[];
   level: string;
   messageTemplate: string;
+  messageInputRef: RefObject<HTMLTextAreaElement | null>;
   removeCondition: (index: number) => void;
   setCombine: (value: "all" | "any") => void;
   setCooldownSeconds: (value: string) => void;
   setLevel: (value: string) => void;
-  setMessageTemplate: (value: string) => void;
   setTitleTemplate: (value: string) => void;
+  showMessageFieldSuggestions: boolean;
   titleTemplate: string;
+  updateMessageTemplate: (nextValue: string, caretPosition?: number) => void;
   updateCondition: (index: number, patch: Partial<AlertCondition>) => void;
 }) {
   return (
@@ -631,8 +824,32 @@ function RuleEditor({
           <HelpText>Supports placeholders like {"{symbol}"} and {"{ltp}"}.</HelpText>
         </div>
         <div className="grid gap-2">
-          <Input onChange={(event) => setMessageTemplate(event.target.value)} placeholder="Message template" value={messageTemplate} />
-          <HelpText>Write the trader-facing alert message body.</HelpText>
+          <div className="relative">
+            <textarea
+              className="min-h-[92px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
+              onChange={(event) => updateMessageTemplate(event.target.value, event.target.selectionStart ?? undefined)}
+              onClick={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined)}
+              onKeyUp={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined)}
+              placeholder="Message template"
+              ref={messageInputRef}
+              value={messageTemplate}
+            />
+            {showMessageFieldSuggestions && filteredMessageFields.length ? (
+              <div className="absolute left-0 top-[calc(100%+4px)] z-20 max-h-[220px] w-full overflow-y-auto rounded-md border border-border bg-background shadow-auth">
+                {filteredMessageFields.map((field) => (
+                  <button
+                    className="block w-full border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-accent"
+                    key={field}
+                    onClick={() => applyMessageField(field)}
+                    type="button"
+                  >
+                    {`{${field}}`}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <HelpText>Type {"{"} to insert dynamic live-data fields like {"{ltp}"}, {"{volume}"}, {"{day_change_perc}"}, and {"{open_interest}"}.</HelpText>
         </div>
       </div>
     </div>

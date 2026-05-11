@@ -159,8 +159,8 @@ export async function sendWorkflowTestNotification(id: string, tick: Record<stri
   });
 }
 
-export async function getAlertWorkflowRuns(id: string): Promise<AlertWorkflowRun[]> {
-  return request<AlertWorkflowRun[]>(`/alert-workflows/${id}/runs`);
+export async function getAlertWorkflowRuns(id: string, limit = 50): Promise<AlertWorkflowRun[]> {
+  return request<AlertWorkflowRun[]>(`/alert-workflows/${id}/runs?limit=${encodeURIComponent(String(limit))}`);
 }
 
 export async function getAlertHistory(): Promise<AlertWorkflowRun[]> {

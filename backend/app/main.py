@@ -6,20 +6,13 @@ from fastapi import FastAPI
 from app.api.v1 import api_router
 from app.config import get_settings
 from app.services.alert_runtime import run_all_alert_workers
-from app.services.alerts import ensure_system_templates
 from app.services.broker_sessions import maintenance_loop
-from db.session import SessionLocal
 from db.session import init_db
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    db = SessionLocal()
-    try:
-        ensure_system_templates(db)
-    finally:
-        db.close()
     stop_event = asyncio.Event()
     tasks = [asyncio.create_task(maintenance_loop(stop_event))]
     if settings.enable_in_process_alert_workers:

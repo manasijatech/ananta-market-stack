@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     credential_encryption_key: str | None = None
     enable_order_mutations: bool = Field(default=False, validation_alias="ENABLE_ORDER_MUTATIONS")
     enable_in_process_alert_workers: bool = Field(
-        default=True,
+        default=False,
         validation_alias="ENABLE_IN_PROCESS_ALERT_WORKERS",
     )
 

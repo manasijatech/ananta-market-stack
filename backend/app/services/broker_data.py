@@ -79,6 +79,10 @@ def _hydrate_exact_match(
         stmt = stmt.where(BrokerInstrument.exchange == exchange)
     row = db.scalars(stmt.limit(1)).first()
     if not row:
+        csv_match = _csv_exact_match(broker_code, symbol=symbol, exchange=exchange)
+        if csv_match:
+            return {**csv_match, **instrument}
+    if not row:
         return instrument
     merged = dict(instrument)
     merged.setdefault("exchange", row.exchange)
@@ -100,6 +104,45 @@ def _hydrate_exact_match(
     merged.setdefault("kotak_segment", row.kotak_segment)
     merged.setdefault("kotak_psymbol", row.kotak_psymbol)
     return merged
+
+
+def _csv_exact_match(broker_code: str, *, symbol: str, exchange: str) -> dict[str, Any] | None:
+    csv_path = _csv_path_for_broker(broker_code)
+    if not csv_path.exists():
+        return None
+    normalized_symbol = symbol.strip().upper()
+    normalized_exchange = exchange.strip().upper()
+    with csv_path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            row_symbol = (_csv_value(row, "symbol") or "").upper()
+            row_trading_symbol = (_csv_value(row, "trading_symbol") or "").upper()
+            row_exchange = (_csv_value(row, "exchange") or "").upper()
+            if normalized_exchange and row_exchange != normalized_exchange:
+                continue
+            if normalized_symbol not in {row_symbol, row_trading_symbol}:
+                continue
+            return {
+                "symbol": _csv_value(row, "symbol"),
+                "exchange": _csv_value(row, "exchange"),
+                "segment": _csv_value(row, "segment"),
+                "trading_symbol": _csv_value(row, "trading_symbol"),
+                "instrument_type": _csv_value(row, "instrument_type"),
+                "zerodha_instrument_token": _csv_value(row, "zerodha_instrument_token"),
+                "upstox_instrument_key": _csv_value(row, "upstox_instrument_key"),
+                "angel_token": _csv_value(row, "angel_token"),
+                "angel_exchange": _csv_value(row, "exchange"),
+                "dhan_security_id": _csv_value(row, "dhan_security_id"),
+                "dhan_exchange_segment": _csv_value(row, "dhan_exchange_segment"),
+                "groww_exchange": _csv_value(row, "groww_exchange") or _csv_value(row, "exchange"),
+                "groww_segment": _csv_value(row, "groww_segment") or _csv_value(row, "segment"),
+                "groww_trading_symbol": _csv_value(row, "groww_trading_symbol") or _csv_value(row, "trading_symbol"),
+                "indmoney_scrip_code": _csv_value(row, "indmoney_scrip_code"),
+                "kotak_query": _csv_value(row, "kotak_query"),
+                "kotak_segment": _csv_value(row, "kotak_segment"),
+                "kotak_psymbol": _csv_value(row, "kotak_psymbol"),
+            }
+    return None
 
 
 def _native_payload_value(row: BrokerInstrument, key: str) -> str | None:
@@ -313,7 +356,7 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
     capabilities: dict[str, DataCapabilityItem] = {
         "instruments_sync": DataCapabilityItem(
             supported=True,
-            guidance="Instrument sync stores broker instrument metadata in SQLite. Some brokers may fall back to portfolio-derived symbols if a master download is unavailable.",
+            guidance="Default instrument sync stores broker instrument metadata in a local CSV export. SQLite sync remains available when you explicitly need indexed local search state.",
         ),
         "instrument_search": DataCapabilityItem(
             supported=cached_count > 0 or csv_available,
@@ -339,6 +382,10 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
 
 
 def sync_instruments_for_account(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
+    return sync_instruments_to_csv(db, acc)
+
+
+def sync_instruments_to_db(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
     run = create_sync_run(db, acc.broker_code)
     try:
         rows = _fetch_instrument_rows(db, acc)

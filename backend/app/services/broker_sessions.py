@@ -759,7 +759,7 @@ def run_daily_instrument_sync_once() -> None:
             if acc.broker_code in processed_brokers:
                 continue
             processed_brokers.add(acc.broker_code)
-            result = broker_data.sync_instruments_for_account(db, acc)
+            result = broker_data.sync_instruments_to_csv(db, acc)
             if result.sync_status != "completed":
                 _create_notification_once_per_day(
                     db,

@@ -179,7 +179,7 @@ export async function getDataCapabilities(id: string): Promise<DataCapabilities>
 }
 
 export async function syncInstrumentData(id: string): Promise<InstrumentSyncResult> {
-  return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync`, {
+  return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync-db`, {
     method: "POST"
   });
 }

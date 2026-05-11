@@ -85,29 +85,61 @@ async def stream_alert_notifications(
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ) -> StreamingResponse:
     async def event_stream():
-        last_seen = datetime.fromisoformat(last_event_id) if last_event_id else None
-        while True:
-            db = SessionLocal()
+        stream_id = last_event_id if last_event_id and "-" in last_event_id else "$"
+        last_seen = None
+        if last_event_id and "-" not in last_event_id:
             try:
-                rows = alert_svc.list_alert_notifications(
-                    db,
-                    user.id,
-                    since=last_seen,
-                    limit=50,
+                last_seen = datetime.fromisoformat(last_event_id)
+            except ValueError:
+                last_seen = None
+        client = alert_svc._redis_client()  # type: ignore[attr-defined]
+        if client is None:
+            while True:
+                db = SessionLocal()
+                try:
+                    rows = alert_svc.list_alert_notifications(
+                        db,
+                        user.id,
+                        since=last_seen,
+                        limit=50,
+                    )
+                finally:
+                    db.close()
+                fresh = list(reversed(rows))
+                for row in fresh:
+                    if last_seen and row.created_at <= last_seen:
+                        continue
+                    last_seen = row.created_at
+                    yield (
+                        f"id: {row.created_at.isoformat()}\n"
+                        "event: alert\n"
+                        f"data: {json.dumps(row.model_dump(mode='json'))}\n\n"
+                    )
+                yield "event: ping\ndata: {}\n\n"
+                await asyncio.sleep(2)
+        while True:
+            try:
+                events = await asyncio.to_thread(
+                    client.xread,
+                    {alert_svc._alert_notification_stream(user.id): stream_id},  # type: ignore[attr-defined]
+                    count=50,
+                    block=5000,
                 )
-            finally:
-                db.close()
-            fresh = list(reversed(rows))
-            for row in fresh:
-                if last_seen and row.created_at <= last_seen:
-                    continue
-                last_seen = row.created_at
-                yield (
-                    f"id: {row.created_at.isoformat()}\n"
-                    "event: alert\n"
-                    f"data: {json.dumps(row.model_dump(mode='json'))}\n\n"
-                )
-            yield "event: ping\ndata: {}\n\n"
-            await asyncio.sleep(2)
+            except Exception:
+                yield "event: ping\ndata: {}\n\n"
+                await asyncio.sleep(2)
+                continue
+            if not events:
+                yield "event: ping\ndata: {}\n\n"
+                continue
+            for _stream_name, messages in events:
+                for message_id, fields in messages:
+                    payload = fields.get(b"payload") if b"payload" in fields else fields.get("payload")
+                    if payload is None:
+                        continue
+                    event_id = message_id.decode() if isinstance(message_id, bytes) else str(message_id)
+                    stream_id = event_id
+                    body = payload.decode() if isinstance(payload, bytes) else str(payload)
+                    yield f"id: {event_id}\n" "event: alert\n" f"data: {body}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

@@ -42,6 +42,7 @@ from db.models import (
     UserAlertChannelDelivery,
     UserAlertNotification,
 )
+ALERT_NOTIFICATION_STREAM_MAXLEN = 2000
 
 
 def _json_dumps(value: Any) -> str:
@@ -59,6 +60,10 @@ def _json_loads(value: str | None, default: Any) -> Any:
 
 def _now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def _alert_notification_stream(user_id: str) -> str:
+    return f"alert:notifications:{user_id}"
 
 
 def _instrument_ref(ref: dict[str, Any] | None) -> InstrumentRef:
@@ -169,6 +174,7 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         },
     },
 ]
+_templates_seeded = False
 
 
 def _default_graph_from_dsl(dsl: AlertWorkflowDsl) -> AlertGraphDsl:
@@ -211,6 +217,9 @@ def _default_graph_from_dsl(dsl: AlertWorkflowDsl) -> AlertGraphDsl:
 
 
 def ensure_system_templates(db: Session) -> None:
+    global _templates_seeded
+    if _templates_seeded:
+        return
     existing = {row.slug: row for row in db.scalars(select(AlertWorkflowTemplate)).all()}
     changed = False
     for payload in SYSTEM_TEMPLATES:
@@ -243,6 +252,7 @@ def ensure_system_templates(db: Session) -> None:
             changed = True
     if changed:
         db.commit()
+    _templates_seeded = True
 
 
 def _template_to_out(row: AlertWorkflowTemplate) -> AlertTemplateOut:
@@ -258,6 +268,44 @@ def _template_to_out(row: AlertWorkflowTemplate) -> AlertTemplateOut:
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+def _notification_to_out(row: UserAlertNotification) -> AlertNotificationOut:
+    return AlertNotificationOut(
+        id=row.id,
+        user_id=row.user_id,
+        workflow_id=row.workflow_id,
+        template_id=row.template_id,
+        account_id=row.account_id,
+        broker_code=row.broker_code,
+        symbol=row.symbol,
+        exchange=row.exchange,
+        level=row.level,
+        title=row.title,
+        message=row.message,
+        status=row.status,
+        channels=_json_loads(row.channels_json, []),
+        payload=_json_loads(row.payload_json, {}),
+        dedupe_key=row.dedupe_key,
+        is_read=row.is_read,
+        created_at=row.created_at,
+        read_at=row.read_at,
+    )
+
+
+def _publish_notification_event(notification: AlertNotificationOut) -> None:
+    client = _redis_client()
+    if not client:
+        return
+    try:
+        client.xadd(
+            _alert_notification_stream(notification.user_id),
+            {"payload": _json_dumps(notification.model_dump(mode="json"))},
+            maxlen=ALERT_NOTIFICATION_STREAM_MAXLEN,
+            approximate=True,
+        )
+    except Exception:
+        return
 
 
 def list_templates(db: Session) -> list[AlertTemplateOut]:
@@ -292,6 +340,35 @@ def _workflow_to_out(row: AlertWorkflow) -> AlertWorkflowOut:
         last_triggered_at=row.last_triggered_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def _clear_workflow_subscriptions(db: Session, workflow_id: str) -> None:
+    rows = db.scalars(
+        select(LiveSymbolSubscription).where(LiveSymbolSubscription.workflow_id == workflow_id)
+    ).all()
+    for row in rows:
+        db.delete(row)
+    if rows:
+        db.commit()
+
+
+def _sync_workflow_subscription(db: Session, workflow: AlertWorkflow) -> None:
+    _clear_workflow_subscriptions(db, workflow.id)
+    if workflow.status != "active" or not workflow.symbol:
+        return
+    ensure_symbol_subscription(
+        db,
+        workflow.user_id,
+        LiveSubscriptionCreateIn(
+            account_id=workflow.account_id,
+            broker_code=workflow.broker_code,
+            workflow_id=workflow.id,
+            symbol=workflow.symbol,
+            exchange=workflow.exchange,
+            instrument_ref=_instrument_ref(_json_loads(workflow.instrument_ref_json, {})),
+            source_kind="workflow",
+        ),
     )
 
 
@@ -370,20 +447,7 @@ def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> 
     db.add(row)
     db.commit()
     db.refresh(row)
-    if row.symbol:
-        ensure_symbol_subscription(
-            db,
-            user_id,
-            LiveSubscriptionCreateIn(
-                account_id=row.account_id,
-                broker_code=row.broker_code,
-                workflow_id=row.id,
-                symbol=row.symbol,
-                exchange=row.exchange,
-                instrument_ref=payload.instrument_ref,
-                source_kind="workflow",
-            ),
-        )
+    _sync_workflow_subscription(db, row)
     return _workflow_to_out(row)
 
 
@@ -397,6 +461,7 @@ def update_workflow(db: Session, user_id: str, workflow_id: str, payload: AlertW
     db.add(row)
     db.commit()
     db.refresh(row)
+    _sync_workflow_subscription(db, row)
     return _workflow_to_out(row)
 
 
@@ -404,6 +469,7 @@ def delete_workflow(db: Session, user_id: str, workflow_id: str) -> bool:
     row = db.get(AlertWorkflow, workflow_id)
     if not row or row.user_id != user_id:
         return False
+    _clear_workflow_subscriptions(db, workflow_id)
     db.delete(row)
     db.commit()
     return True
@@ -417,6 +483,7 @@ def set_workflow_status(db: Session, user_id: str, workflow_id: str, status: str
     db.add(row)
     db.commit()
     db.refresh(row)
+    _sync_workflow_subscription(db, row)
     return _workflow_to_out(row)
 
 
@@ -718,26 +785,9 @@ def create_alert_notification(
         )
     db.commit()
     db.refresh(row)
-    return AlertNotificationOut(
-        id=row.id,
-        user_id=row.user_id,
-        workflow_id=row.workflow_id,
-        template_id=row.template_id,
-        account_id=row.account_id,
-        broker_code=row.broker_code,
-        symbol=row.symbol,
-        exchange=row.exchange,
-        level=row.level,
-        title=row.title,
-        message=row.message,
-        status=row.status,
-        channels=_json_loads(row.channels_json, []),
-        payload=_json_loads(row.payload_json, {}),
-        dedupe_key=row.dedupe_key,
-        is_read=row.is_read,
-        created_at=row.created_at,
-        read_at=row.read_at,
-    )
+    notification = _notification_to_out(row)
+    _publish_notification_event(notification)
+    return notification
 
 
 def list_alert_notifications(
@@ -757,29 +807,7 @@ def list_alert_notifications(
     if unread_only:
         stmt = stmt.where(UserAlertNotification.is_read.is_(False))
     rows = db.scalars(stmt.order_by(UserAlertNotification.created_at.desc()).limit(limit)).all()
-    return [
-        AlertNotificationOut(
-            id=row.id,
-            user_id=row.user_id,
-            workflow_id=row.workflow_id,
-            template_id=row.template_id,
-            account_id=row.account_id,
-            broker_code=row.broker_code,
-            symbol=row.symbol,
-            exchange=row.exchange,
-            level=row.level,
-            title=row.title,
-            message=row.message,
-            status=row.status,
-            channels=_json_loads(row.channels_json, []),
-            payload=_json_loads(row.payload_json, {}),
-            dedupe_key=row.dedupe_key,
-            is_read=row.is_read,
-            created_at=row.created_at,
-            read_at=row.read_at,
-        )
-        for row in rows
-    ]
+    return [_notification_to_out(row) for row in rows]
 
 
 def unread_alert_count(db: Session, user_id: str) -> int:
@@ -1108,7 +1136,7 @@ def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
     return LiveStreamsStatusOut(
         redis_ok=ok,
         redis_error=error,
-        worker_mode="redis-polling-live-data",
+        worker_mode="redis-event-driven-alerts",
         active_sessions=sessions,
         desired_subscriptions=desired,
     )
