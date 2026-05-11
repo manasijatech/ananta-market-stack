@@ -244,6 +244,24 @@ def sync_instruments(
     return broker_data.sync_instruments_for_account(db, _owned(db, user.id, account_id))
 
 
+@router.post("/{account_id}/data/instruments/sync-csv", response_model=InstrumentSyncOut)
+def sync_instruments_csv(
+    account_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InstrumentSyncOut:
+    return broker_data.sync_instruments_to_csv(db, _owned(db, user.id, account_id))
+
+
+@router.delete("/{account_id}/data/instruments", response_model=InstrumentSyncOut)
+def delete_instruments_storage(
+    account_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InstrumentSyncOut:
+    return broker_data.delete_instruments_storage(db, _owned(db, user.id, account_id))
+
+
 @router.get("/{account_id}/data/instruments/search", response_model=list[InstrumentSearchRow])
 def search_instruments(
     account_id: str,

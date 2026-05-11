@@ -184,6 +184,18 @@ export async function syncInstrumentData(id: string): Promise<InstrumentSyncResu
   });
 }
 
+export async function syncInstrumentCsv(id: string): Promise<InstrumentSyncResult> {
+  return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync-csv`, {
+    method: "POST"
+  });
+}
+
+export async function deleteInstrumentStorage(id: string): Promise<InstrumentSyncResult> {
+  return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments`, {
+    method: "DELETE"
+  });
+}
+
 export async function searchBrokerInstruments(
   id: string,
   params: { q?: string; exchange?: string; segment?: string; limit?: number } = {}

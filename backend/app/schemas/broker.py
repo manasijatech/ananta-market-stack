@@ -318,6 +318,10 @@ class InstrumentSyncOut(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error: str | None = None
+    storage_target: str = "db"
+    csv_path: str | None = None
+    deleted_db_rows: int | None = None
+    deleted_csv: bool | None = None
 
 
 class InstrumentSearchRow(BaseModel):

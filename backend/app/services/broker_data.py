@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import json
+from pathlib import Path
 from datetime import datetime
 from typing import Any
 
@@ -9,15 +11,18 @@ from sqlalchemy.orm import Session
 
 from app.schemas.broker import DataCapabilityItem, InstrumentSearchRow, InstrumentSyncOut, QuoteRow
 from broker.core.instrument_store import (
+    clear_instruments,
+    count_instruments,
     SQLiteInstrumentResolver,
     create_sync_run,
     finish_sync_run,
-    latest_sync_run,
     replace_instruments,
     search_instruments as search_cached_instruments,
 )
 from broker.core.registry import get_client_for_account
 from db.models import BrokerAccount, BrokerInstrument
+
+_INSTRUMENT_EXPORT_DIR = Path(__file__).resolve().parents[2] / "data" / "instruments"
 
 
 def _resolver(db: Session, broker_code: str) -> SQLiteInstrumentResolver:
@@ -156,15 +161,79 @@ def _snapshot_instruments_from_portfolio(acc: BrokerAccount, client: Any) -> lis
     return rows
 
 
+def _csv_path_for_broker(broker_code: str) -> Path:
+    return _INSTRUMENT_EXPORT_DIR / f"{broker_code}_instruments.csv"
+
+
+def _csv_relpath(path: Path) -> str:
+    return str(path.relative_to(Path(__file__).resolve().parents[3]))
+
+
+def _instrument_sync_out(
+    *,
+    broker_code: str,
+    sync_status: str,
+    row_count: int,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
+    error: str | None = None,
+    storage_target: str,
+    csv_path: str | None = None,
+    deleted_db_rows: int | None = None,
+    deleted_csv: bool | None = None,
+) -> InstrumentSyncOut:
+    return InstrumentSyncOut(
+        broker=broker_code,
+        sync_status=sync_status,
+        row_count=row_count,
+        started_at=started_at,
+        finished_at=finished_at,
+        error=error,
+        storage_target=storage_target,
+        csv_path=csv_path,
+        deleted_db_rows=deleted_db_rows,
+        deleted_csv=deleted_csv,
+    )
+
+
+def _fetch_instrument_rows(db: Session, acc: BrokerAccount) -> list[dict[str, Any]]:
+    client = _client(db, acc)
+    rows = client.sync_instruments()
+    if not rows:
+        rows = _snapshot_instruments_from_portfolio(acc, client)
+    return rows
+
+
+def _write_csv(rows: list[dict[str, Any]], csv_path: Path) -> None:
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames: list[str] = []
+    for row in rows:
+        for key in row.keys():
+            if key not in fieldnames:
+                fieldnames.append(key)
+    if not fieldnames:
+        fieldnames = ["symbol", "exchange"]
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    key: json.dumps(value, default=str) if isinstance(value, (dict, list)) else value
+                    for key, value in row.items()
+                }
+            )
+
+
 def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilityItem]:
-    last_sync = latest_sync_run(db, acc.broker_code)
+    cached_count = count_instruments(db, acc.broker_code)
     capabilities: dict[str, DataCapabilityItem] = {
         "instruments_sync": DataCapabilityItem(
             supported=True,
             guidance="Instrument sync stores broker instrument metadata in SQLite. Some brokers may fall back to portfolio-derived symbols if a master download is unavailable.",
         ),
         "instrument_search": DataCapabilityItem(
-            supported=bool(last_sync and last_sync.row_count > 0),
+            supported=cached_count > 0,
             guidance="Search becomes useful after at least one instrument sync completes.",
         ),
         "quotes": DataCapabilityItem(supported=True, guidance="Real-time quote fetch is wired for all supported brokers."),
@@ -187,23 +256,70 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
 
 
 def sync_instruments_for_account(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
-    client = _client(db, acc)
     run = create_sync_run(db, acc.broker_code)
     try:
-        rows = client.sync_instruments()
-        if not rows:
-            rows = _snapshot_instruments_from_portfolio(acc, client)
+        rows = _fetch_instrument_rows(db, acc)
         count = replace_instruments(db, acc.broker_code, rows)
         run = finish_sync_run(db, run, status="completed", row_count=count)
     except Exception as exc:
         run = finish_sync_run(db, run, status="failed", row_count=0, error=str(exc)[:2000])
-    return InstrumentSyncOut(
-        broker=acc.broker_code,
+    return _instrument_sync_out(
+        broker_code=acc.broker_code,
         sync_status=run.status,
         row_count=run.row_count,
         started_at=run.started_at,
         finished_at=run.finished_at,
         error=run.error,
+        storage_target="db",
+    )
+
+
+def sync_instruments_to_csv(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
+    started_at = datetime.utcnow()
+    csv_path = _csv_path_for_broker(acc.broker_code)
+    try:
+        rows = _fetch_instrument_rows(db, acc)
+        _write_csv(rows, csv_path)
+        return _instrument_sync_out(
+            broker_code=acc.broker_code,
+            sync_status="completed",
+            row_count=len(rows),
+            started_at=started_at,
+            finished_at=datetime.utcnow(),
+            storage_target="csv",
+            csv_path=_csv_relpath(csv_path),
+        )
+    except Exception as exc:
+        return _instrument_sync_out(
+            broker_code=acc.broker_code,
+            sync_status="failed",
+            row_count=0,
+            started_at=started_at,
+            finished_at=datetime.utcnow(),
+            error=str(exc)[:2000],
+            storage_target="csv",
+            csv_path=_csv_relpath(csv_path),
+        )
+
+
+def delete_instruments_storage(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
+    started_at = datetime.utcnow()
+    csv_path = _csv_path_for_broker(acc.broker_code)
+    deleted_db_rows = clear_instruments(db, acc.broker_code)
+    deleted_csv = False
+    if csv_path.exists():
+        csv_path.unlink()
+        deleted_csv = True
+    return _instrument_sync_out(
+        broker_code=acc.broker_code,
+        sync_status="deleted",
+        row_count=0,
+        started_at=started_at,
+        finished_at=datetime.utcnow(),
+        storage_target="db+csv",
+        csv_path=_csv_relpath(csv_path),
+        deleted_db_rows=deleted_db_rows,
+        deleted_csv=deleted_csv,
     )
 
 

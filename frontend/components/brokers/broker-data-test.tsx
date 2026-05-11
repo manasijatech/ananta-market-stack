@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
+  deleteInstrumentStorage,
   getDataCapabilities,
   getDataOhlc,
   getDataQuotes,
@@ -16,7 +17,8 @@ import {
   getStreamStatus,
   getTrades,
   searchBrokerInstruments,
-  syncInstrumentData
+  syncInstrumentData,
+  syncInstrumentCsv
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { brokerNames, formatDate, StatusBadge, statusTone } from "@/components/brokers/ui";
@@ -124,13 +126,28 @@ export function BrokerDataTest({
     });
   }
 
-  function syncInstruments() {
+  function syncInstruments(storage: "db" | "csv" | "delete") {
     setError("");
     startTransition(async () => {
       try {
-        const result = await syncInstrumentData(account.id);
+        const result =
+          storage === "db"
+            ? await syncInstrumentData(account.id)
+            : storage === "csv"
+              ? await syncInstrumentCsv(account.id)
+              : await deleteInstrumentStorage(account.id);
         setSyncResult(result);
-        setPayload("Instrument sync", result);
+        setPayload(
+          storage === "db"
+            ? "Instrument sync to DB"
+            : storage === "csv"
+              ? "Instrument sync to CSV"
+              : "Instrument storage delete",
+          result
+        );
+        if (storage === "delete") {
+          setSearchRows([]);
+        }
         refreshMeta();
       } catch (caught) {
         setError(parseActionError(caught).message);
@@ -257,15 +274,26 @@ export function BrokerDataTest({
 
       <Section
         title="Instrument sync"
-        description="Populate the SQLite instrument cache for symbol-first requests and search."
+        description="Manage broker-scoped instrument storage in SQLite and as a local CSV under backend/data/instruments."
       >
         <div className="flex flex-wrap items-center gap-3">
-          <Button disabled={isPending || !sessionActive} onClick={syncInstruments} type="button">
-            {isPending ? "Syncing..." : "Sync instruments"}
+          <Button disabled={isPending || !sessionActive} onClick={() => syncInstruments("db")} type="button">
+            {isPending ? "Working..." : "Sync to DB"}
+          </Button>
+          <Button disabled={isPending || !sessionActive} onClick={() => syncInstruments("csv")} type="button" variant="outline">
+            {isPending ? "Working..." : "Sync to CSV"}
+          </Button>
+          <Button disabled={isPending} onClick={() => syncInstruments("delete")} type="button" variant="destructive">
+            {isPending ? "Working..." : "Delete DB + CSV"}
           </Button>
           {syncResult ? (
-            <div className="text-sm text-muted-foreground">
-              {syncResult.sync_status} · {syncResult.row_count} rows · {formatDate(syncResult.finished_at ?? syncResult.started_at)}
+            <div className="grid gap-1 text-sm text-muted-foreground">
+              <div>
+                {syncResult.storage_target ?? "db"} · {syncResult.sync_status} · {syncResult.row_count} rows · {formatDate(syncResult.finished_at ?? syncResult.started_at)}
+              </div>
+              {syncResult.csv_path ? <div>CSV path: {syncResult.csv_path}</div> : null}
+              {typeof syncResult.deleted_db_rows === "number" ? <div>Deleted DB rows: {syncResult.deleted_db_rows}</div> : null}
+              {typeof syncResult.deleted_csv === "boolean" ? <div>Deleted CSV: {syncResult.deleted_csv ? "yes" : "no file found"}</div> : null}
             </div>
           ) : null}
         </div>

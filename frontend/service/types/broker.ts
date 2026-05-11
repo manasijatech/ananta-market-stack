@@ -259,6 +259,10 @@ export interface InstrumentSyncResult {
   started_at?: string | null;
   finished_at?: string | null;
   error?: string | null;
+  storage_target?: string;
+  csv_path?: string | null;
+  deleted_db_rows?: number | null;
+  deleted_csv?: boolean | null;
 }
 
 export interface HistoricalRequest {

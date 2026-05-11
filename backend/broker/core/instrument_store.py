@@ -107,6 +107,20 @@ def latest_sync_run(db: Session, broker_code: str) -> BrokerInstrumentSyncRun | 
     return db.scalars(stmt).first()
 
 
+def count_instruments(db: Session, broker_code: str) -> int:
+    stmt = select(BrokerInstrument).where(BrokerInstrument.broker_code == broker_code)
+    return len(list(db.scalars(stmt).all()))
+
+
+def clear_instruments(db: Session, broker_code: str) -> int:
+    rows = list(
+        db.scalars(select(BrokerInstrument.id).where(BrokerInstrument.broker_code == broker_code)).all()
+    )
+    db.execute(delete(BrokerInstrument).where(BrokerInstrument.broker_code == broker_code))
+    db.commit()
+    return len(rows)
+
+
 def replace_instruments(db: Session, broker_code: str, rows: list[dict[str, Any]]) -> int:
     db.execute(delete(BrokerInstrument).where(BrokerInstrument.broker_code == broker_code))
     now = datetime.utcnow()
