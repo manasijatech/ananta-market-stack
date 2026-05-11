@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -21,7 +22,7 @@ from db.models import (
 from db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
-STREAM_BLOCK_MS = 5000
+STREAM_BLOCK_MS = 1000
 STREAM_MAX_BATCH = 200
 WORKFLOW_TICK_TTL_SECONDS = 24 * 60 * 60
 
@@ -138,9 +139,25 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                 acc = db.get(BrokerAccount, account_id)
                 if not acc:
                     continue
-                ordered_subscriptions = sorted(subscriptions, key=lambda item: (item.exchange or "", item.symbol))
-                for chunk_index, start in enumerate(range(0, len(ordered_subscriptions), 1000), start=1):
-                    chunk_rows = ordered_subscriptions[start : start + 1000]
+                unique_subscriptions: dict[tuple[str, str | None], list[LiveSymbolSubscription]] = {}
+                for subscription in subscriptions:
+                    unique_key = (
+                        subscription.symbol,
+                        subscription.exchange,
+                    )
+                    unique_subscriptions.setdefault(unique_key, []).append(subscription)
+                for duplicate_rows in unique_subscriptions.values():
+                    duplicate_rows.sort(
+                        key=lambda item: len(item.instrument_ref_json or "{}"),
+                        reverse=True,
+                    )
+                ordered_subscription_groups = sorted(
+                    unique_subscriptions.values(),
+                    key=lambda items: (items[0].exchange or "", items[0].symbol),
+                )
+                for chunk_index, start in enumerate(range(0, len(ordered_subscription_groups), 1000), start=1):
+                    chunk_groups = ordered_subscription_groups[start : start + 1000]
+                    chunk_rows = [items[0] for items in chunk_groups]
                     instruments = [
                         {
                             "symbol": row.symbol,
@@ -150,19 +167,21 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                         for row in chunk_rows
                     ]
                     try:
-                        quotes = broker_data.fetch_quotes(db, acc, instruments)
+                        quotes = await asyncio.to_thread(broker_data.fetch_quotes, db, acc, instruments)
                     except Exception as exc:
                         logger.warning("quote poll failed for %s: %s", account_id, exc)
                         continue
                     quote_index = {str(item.symbol or ""): item for item in quotes}
-                    for row in chunk_rows:
+                    for row, duplicate_rows in zip(chunk_rows, chunk_groups, strict=False):
                         quote = quote_index.get(row.symbol)
                         if not quote:
                             continue
                         payload = quote.model_dump(mode="json")
-                        row.last_quote_json = json.dumps(payload, default=str)
-                        row.last_received_at = _utc_now()
-                        db.add(row)
+                        received_at = _utc_now()
+                        for subscription_row in duplicate_rows:
+                            subscription_row.last_quote_json = json.dumps(payload, default=str)
+                            subscription_row.last_received_at = received_at
+                            db.add(subscription_row)
                         _publish_tick(redis_client, _normalize_tick_payload(
                             user_id=user_id,
                             account_id=account_id,
@@ -180,6 +199,18 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
             await asyncio.wait_for(stop_event.wait(), timeout=poll_interval_seconds)
         except TimeoutError:
             continue
+
+
+def _initial_stream_offset(redis_client: redis.Redis, stream_name: str) -> str:
+    try:
+        latest = redis_client.xrevrange(stream_name, count=1)
+    except redis.RedisError:
+        return "0-0"
+    if not latest:
+        return "0-0"
+    message_id = latest[0][0]
+    return message_id.decode() if isinstance(message_id, bytes) else str(message_id)
+
 
 def _active_streams(db) -> list[str]:
     rows = db.execute(
@@ -250,7 +281,8 @@ def _enrich_tick_for_match(db, workflow: AlertWorkflow, tick: dict[str, Any]) ->
         return tick
     if not ohlc_rows:
         return tick
-    ohlc = ohlc_rows[0].model_dump(mode="json")
+    first_row = ohlc_rows[0]
+    ohlc = first_row.model_dump(mode="json") if hasattr(first_row, "model_dump") else dict(first_row)
     return {
         **tick,
         "open": ohlc.get("open", tick.get("open")),
@@ -276,19 +308,47 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
         stmt = stmt.where((AlertWorkflow.exchange == exchange) | (AlertWorkflow.exchange.is_(None)))
     workflows = db.scalars(stmt).all()
     for row in workflows:
-        workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
-        previous_tick = _previous_tick_for_workflow(db, redis_client, workflow.id)
-        matched, reason = alert_svc.evaluate_workflow_payload(workflow, tick, previous_tick)
-        evaluation_tick = tick
-        notification_id = None
-        should_record_run = False
-        if matched:
-            cooldown = workflow.workflow_dsl.cooldown_seconds
-            can_trigger = True
-            if row.last_triggered_at:
-                can_trigger = (_utc_now() - row.last_triggered_at).total_seconds() >= cooldown
-            if can_trigger:
-                evaluation_tick = _enrich_tick_for_match(db, row, tick)
+        try:
+            workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
+            previous_tick = _previous_tick_for_workflow(db, redis_client, workflow.id)
+            matched, reason = alert_svc.evaluate_workflow_payload(workflow, tick, previous_tick)
+            evaluation_tick = tick
+            notification_id = None
+            should_record_run = False
+            if matched:
+                cooldown = workflow.workflow_dsl.cooldown_seconds
+                can_trigger = True
+                if row.last_triggered_at:
+                    can_trigger = (_utc_now() - row.last_triggered_at).total_seconds() >= cooldown
+                if can_trigger:
+                    evaluation_tick = _enrich_tick_for_match(db, row, tick)
+                    title = alert_svc._render_message(  # type: ignore[attr-defined]
+                        workflow.workflow_dsl.notification.title_template,
+                        {**evaluation_tick, "symbol": workflow.symbol},
+                    )
+                    message = alert_svc._render_message(  # type: ignore[attr-defined]
+                        workflow.workflow_dsl.notification.message_template,
+                        {**evaluation_tick, "symbol": workflow.symbol},
+                    )
+                    notification = alert_svc.create_alert_notification(
+                        db,
+                        user_id=workflow.user_id,
+                        workflow=workflow,
+                        title=title,
+                        message=message,
+                        level=workflow.workflow_dsl.notification.level,
+                        channels=_workflow_channels(db, workflow.user_id, workflow),
+                        payload=evaluation_tick,
+                        dedupe_key=f"{workflow.id}:{workflow.symbol}:{reason}",
+                    )
+                    notification_id = notification.id
+                    row.last_triggered_at = _utc_now()
+                    db.add(row)
+                    should_record_run = True
+                else:
+                    reason = f"{reason}; cooldown active"
+                    should_record_run = False
+            if should_record_run:
                 title = alert_svc._render_message(  # type: ignore[attr-defined]
                     workflow.workflow_dsl.notification.title_template,
                     {**evaluation_tick, "symbol": workflow.symbol},
@@ -297,48 +357,23 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     workflow.workflow_dsl.notification.message_template,
                     {**evaluation_tick, "symbol": workflow.symbol},
                 )
-                notification = alert_svc.create_alert_notification(
-                    db,
-                    user_id=workflow.user_id,
-                    workflow=workflow,
-                    title=title,
-                    message=message,
-                    level=workflow.workflow_dsl.notification.level,
-                    channels=_workflow_channels(db, workflow.user_id, workflow),
-                    payload=evaluation_tick,
-                    dedupe_key=f"{workflow.id}:{workflow.symbol}:{reason}",
+                db.add(
+                    AlertWorkflowRun(
+                        id=str(uuid4()),
+                        workflow_id=workflow.id,
+                        notification_id=notification_id,
+                        matched=matched,
+                        reason=reason,
+                        rendered_title=title,
+                        rendered_message=message,
+                        channels_json=json.dumps(_workflow_channels(db, workflow.user_id, workflow)),
+                        tick_json=json.dumps(evaluation_tick, default=str),
+                        evaluation_payload_json=json.dumps({"previous_tick": previous_tick, "event_driven": True}, default=str),
+                    )
                 )
-                notification_id = notification.id
-                row.last_triggered_at = _utc_now()
-                db.add(row)
-                should_record_run = True
-            else:
-                reason = f"{reason}; cooldown active"
-                should_record_run = True
-        if should_record_run:
-            title = alert_svc._render_message(  # type: ignore[attr-defined]
-                workflow.workflow_dsl.notification.title_template,
-                {**evaluation_tick, "symbol": workflow.symbol},
-            )
-            message = alert_svc._render_message(  # type: ignore[attr-defined]
-                workflow.workflow_dsl.notification.message_template,
-                {**evaluation_tick, "symbol": workflow.symbol},
-            )
-            db.add(
-                AlertWorkflowRun(
-                    id=str(uuid4()),
-                    workflow_id=workflow.id,
-                    notification_id=notification_id,
-                    matched=matched,
-                    reason=reason,
-                    rendered_title=title,
-                    rendered_message=message,
-                    channels_json=json.dumps(_workflow_channels(db, workflow.user_id, workflow)),
-                    tick_json=json.dumps(evaluation_tick, default=str),
-                    evaluation_payload_json=json.dumps({"previous_tick": previous_tick, "event_driven": True}, default=str),
-                )
-            )
-        _store_previous_tick_for_workflow(redis_client, workflow.id, tick)
+            _store_previous_tick_for_workflow(redis_client, workflow.id, tick)
+        except Exception as exc:
+            logger.warning("workflow evaluation failed for %s: %s", row.id, exc)
     db.commit()
 
 
@@ -363,9 +398,16 @@ async def run_alert_evaluator_worker(stop_event: asyncio.Event, poll_interval_se
             except TimeoutError:
                 continue
             continue
+        for name in streams:
+            stream_offsets.setdefault(name, _initial_stream_offset(redis_client, name))
         stream_query = {name: stream_offsets.get(name, "$") for name in streams}
         try:
-            events = redis_client.xread(stream_query, count=STREAM_MAX_BATCH, block=STREAM_BLOCK_MS)
+            events = await asyncio.to_thread(
+                redis_client.xread,
+                stream_query,
+                count=STREAM_MAX_BATCH,
+                block=STREAM_BLOCK_MS,
+            )
         except redis.RedisError as exc:
             logger.warning("alert evaluator stream read failed: %s", exc)
             try:
@@ -400,7 +442,7 @@ async def run_alert_delivery_worker(stop_event: asyncio.Event, poll_interval_sec
     while not stop_event.is_set():
         db = SessionLocal()
         try:
-            alert_svc.deliver_pending_notifications(db)
+            await asyncio.to_thread(alert_svc.deliver_pending_notifications, db)
         except Exception as exc:
             logger.warning("alert delivery loop failed: %s", exc)
         finally:
@@ -416,14 +458,74 @@ def _workflow_channels(db, user_id: str, workflow) -> list[str]:
     return alert_svc.resolve_workflow_channels(db, workflow)
 
 
-async def run_all_alert_workers(stop_event: asyncio.Event) -> None:
-    tasks = [
-        asyncio.create_task(run_live_market_data_worker(stop_event)),
-        asyncio.create_task(run_alert_evaluator_worker(stop_event)),
-        asyncio.create_task(run_alert_delivery_worker(stop_event)),
-    ]
-    try:
-        await asyncio.gather(*tasks)
-    finally:
-        for task in tasks:
-            task.cancel()
+class BackgroundAsyncService:
+    def __init__(self, name: str, target) -> None:
+        self.name = name
+        self._target = target
+        self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._stop_event: asyncio.Event | None = None
+        self._ready = threading.Event()
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+
+        def runner() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            stop_event = asyncio.Event()
+            self._loop = loop
+            self._stop_event = stop_event
+            self._ready.set()
+            try:
+                loop.run_until_complete(self._target(stop_event))
+            except Exception:
+                logger.exception("%s crashed", self.name)
+            finally:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.close()
+
+        self._ready.clear()
+        self._thread = threading.Thread(target=runner, name=self.name, daemon=True)
+        self._thread.start()
+        self._ready.wait(timeout=2)
+
+    def stop(self, timeout: float = 0.5) -> None:
+        if self._loop and self._stop_event:
+            try:
+                self._loop.call_soon_threadsafe(self._stop_event.set)
+            except RuntimeError:
+                pass
+        if self._thread:
+            self._thread.join(timeout=timeout)
+        self._thread = None
+        self._loop = None
+        self._stop_event = None
+
+
+class CompositeBackgroundService:
+    def __init__(self, services: list[BackgroundAsyncService]) -> None:
+        self.services = services
+
+    def start(self) -> None:
+        for service in self.services:
+            service.start()
+
+    def stop(self) -> None:
+        for service in reversed(self.services):
+            service.stop()
+
+
+def create_alert_worker_service() -> CompositeBackgroundService:
+    return CompositeBackgroundService(
+        [
+            BackgroundAsyncService("alert-live-worker", run_live_market_data_worker),
+            BackgroundAsyncService("alert-evaluator-worker", run_alert_evaluator_worker),
+            BackgroundAsyncService("alert-delivery-worker", run_alert_delivery_worker),
+        ]
+    )

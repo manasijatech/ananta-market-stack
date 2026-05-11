@@ -1,25 +1,78 @@
 from contextlib import asynccontextmanager
 import asyncio
+import threading
+from threading import Thread
 
 from fastapi import FastAPI
 
 from app.api.v1 import api_router
 from app.config import get_settings
-from app.services.alert_runtime import run_all_alert_workers
+from app.services.alert_runtime import create_alert_worker_service
 from app.services.broker_sessions import maintenance_loop
 from db.session import init_db
+
+
+class BackgroundAsyncLoopThread:
+    def __init__(self, name: str, target) -> None:
+        self.name = name
+        self.target = target
+        self.thread: Thread | None = None
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.stop_event: asyncio.Event | None = None
+        self.ready = threading.Event()
+
+    def start(self) -> None:
+        if self.thread and self.thread.is_alive():
+            return
+
+        def runner() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            stop_event = asyncio.Event()
+            self.loop = loop
+            self.stop_event = stop_event
+            self.ready.set()
+            try:
+                loop.run_until_complete(self.target(stop_event))
+            finally:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.close()
+
+        self.ready.clear()
+        self.thread = Thread(target=runner, name=self.name, daemon=True)
+        self.thread.start()
+        self.ready.wait(timeout=2)
+
+    def stop(self, timeout: float = 0.5) -> None:
+        if self.loop and self.stop_event:
+            try:
+                self.loop.call_soon_threadsafe(self.stop_event.set)
+            except RuntimeError:
+                pass
+        if self.thread:
+            self.thread.join(timeout=timeout)
+        self.thread = None
+        self.loop = None
+        self.stop_event = None
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    stop_event = asyncio.Event()
-    tasks = [asyncio.create_task(maintenance_loop(stop_event))]
+    maintenance_service = BackgroundAsyncLoopThread("maintenance-loop", maintenance_loop)
+    maintenance_service.start()
+    alert_worker_service = None
     if settings.enable_in_process_alert_workers:
-        tasks.append(asyncio.create_task(run_all_alert_workers(stop_event)))
+        alert_worker_service = create_alert_worker_service()
+        alert_worker_service.start()
     yield
-    stop_event.set()
-    await asyncio.gather(*tasks, return_exceptions=True)
+    maintenance_service.stop()
+    if alert_worker_service:
+        alert_worker_service.stop()
 
 
 settings = get_settings()

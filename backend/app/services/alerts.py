@@ -575,13 +575,15 @@ def evaluate_workflow_payload(
         elif operator == "crosses_above" and current is not None:
             previous_value = previous.get(condition.field)
             try:
-                matched = float(previous_value or 0) < float(value or 0) <= current
+                threshold = float(value or 0)
+                matched = current >= threshold if previous_value is None else float(previous_value) < threshold <= current
             except Exception:
                 matched = False
         elif operator == "crosses_below" and current is not None:
             previous_value = previous.get(condition.field)
             try:
-                matched = float(previous_value or 0) > float(value or 0) >= current
+                threshold = float(value or 0)
+                matched = current <= threshold if previous_value is None else float(previous_value) > threshold >= current
             except Exception:
                 matched = False
         elif operator == "pct_change_gte" and current is not None and reference not in (None, 0):

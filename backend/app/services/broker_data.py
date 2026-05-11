@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 from pathlib import Path
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -26,6 +27,11 @@ from db.models import BrokerAccount, BrokerInstrument
 _INSTRUMENT_EXPORT_DIR = Path(__file__).resolve().parents[2] / "data" / "instruments"
 _CSV_CACHE_TTL = timedelta(minutes=1)
 _CSV_SEARCH_CACHE: dict[str, dict[str, Any]] = {}
+
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    csv.field_size_limit(2**31 - 1)
 
 
 def _resolver(db: Session, broker_code: str) -> SQLiteInstrumentResolver:
@@ -111,16 +117,13 @@ def _hydrate_exact_match(
 def _csv_exact_match(broker_code: str, *, symbol: str, exchange: str) -> dict[str, Any] | None:
     normalized_symbol = symbol.strip().upper()
     normalized_exchange = exchange.strip().upper()
-    for row in _csv_rows_cached(broker_code):
-        row_symbol = str(row.get("symbol") or "").upper()
-        row_trading_symbol = str(row.get("trading_symbol") or "").upper()
-        row_exchange = str(row.get("exchange") or "").upper()
-        if normalized_exchange and row_exchange != normalized_exchange:
-            continue
-        if normalized_symbol not in {row_symbol, row_trading_symbol}:
-            continue
-        return _csv_exact_payload(row)
-    return None
+    _csv_rows_cached(broker_code)
+    cached = _CSV_SEARCH_CACHE.get(broker_code)
+    exact_index = cached.get("exact_index", {}) if cached else {}
+    row = exact_index.get((normalized_exchange, normalized_symbol))
+    if row is None and not normalized_exchange:
+        row = exact_index.get(("", normalized_symbol))
+    return _csv_exact_payload(row) if row else None
 
 
 def _native_payload_value(row: BrokerInstrument, key: str) -> str | None:
@@ -341,6 +344,7 @@ def _csv_rows_cached(broker_code: str) -> list[dict[str, Any]]:
         cached["last_accessed_at"] = now
         return cached["rows"]
     rows: list[dict[str, Any]] = []
+    exact_index: dict[tuple[str, str], dict[str, Any]] = {}
     with csv_path.open("r", newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for raw_row in reader:
@@ -361,9 +365,16 @@ def _csv_rows_cached(broker_code: str) -> list[dict[str, Any]]:
                 )
             ).lower()
             rows.append(row)
+            row_exchange = str(row.get("exchange") or "").upper()
+            for candidate in {str(row.get("symbol") or "").upper(), str(row.get("trading_symbol") or "").upper()}:
+                if not candidate:
+                    continue
+                exact_index.setdefault((row_exchange, candidate), row)
+                exact_index.setdefault(("", candidate), row)
     _CSV_SEARCH_CACHE[broker_code] = {
         "mtime_ns": stat.st_mtime_ns,
         "rows": rows,
+        "exact_index": exact_index,
         "last_accessed_at": now,
     }
     return rows
