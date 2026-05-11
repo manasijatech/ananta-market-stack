@@ -222,6 +222,10 @@ class LiveSubscriptionReplaceIn(BaseModel):
     subscriptions: list[LiveSubscriptionCreateIn] = Field(default_factory=list)
 
 
+class LiveSubscriptionBulkIn(BaseModel):
+    subscriptions: list[LiveSubscriptionCreateIn] = Field(default_factory=list)
+
+
 class LiveSubscriptionOut(BaseModel):
     id: str
     user_id: str
@@ -245,6 +249,10 @@ class LiveWorkerSessionOut(BaseModel):
     user_id: str
     adapter: str
     connected: bool
+    connection_id: str | None = None
+    connection_index: int = 1
+    symbol_count: int = 0
+    capacity: int = 1000
     symbols: list[str] = Field(default_factory=list)
     last_seen_at: datetime | None = None
 
@@ -255,4 +263,3 @@ class LiveStreamsStatusOut(BaseModel):
     worker_mode: str
     active_sessions: list[LiveWorkerSessionOut] = Field(default_factory=list)
     desired_subscriptions: list[LiveSubscriptionOut] = Field(default_factory=list)
-

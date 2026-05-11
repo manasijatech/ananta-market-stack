@@ -32,12 +32,12 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
       <section className="grid gap-3">
         <div className="text-sm font-bold">Worker sessions</div>
         {status.active_sessions.map((session) => (
-          <div className="rounded-lg border border-border p-4" key={`${session.user_id}-${session.account_id}-${session.broker_code}`}>
+          <div className="rounded-lg border border-border p-4" key={`${session.user_id}-${session.account_id}-${session.broker_code}-${session.connection_index}`}>
             <div className="text-sm font-bold">
-              {session.broker_code} · {session.account_id}
+              {session.broker_code} · {session.account_id} · Connection {session.connection_index}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {session.connected ? "Connected" : "Disconnected"} · {session.adapter}
+              {session.connected ? "Connected" : "Disconnected"} · {session.adapter} · {session.symbol_count}/{session.capacity} symbols
             </div>
             <div className="mt-2 text-xs text-muted-foreground">
               Symbols: {session.symbols.join(", ") || "None"}

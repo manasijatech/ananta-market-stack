@@ -25,6 +25,7 @@ from app.schemas.alert import (
     AlertWorkflowUpdate,
     InstrumentRef,
     LiveStreamsStatusOut,
+    LiveSubscriptionBulkIn,
     LiveSubscriptionCreateIn,
     LiveSubscriptionOut,
     LiveWorkerSessionOut,
@@ -885,6 +886,10 @@ def _subscription_to_out(row: LiveSymbolSubscription) -> LiveSubscriptionOut:
     )
 
 
+def _normalize_symbol(value: str | None) -> str:
+    return (value or "").strip().upper()
+
+
 def list_subscriptions(db: Session, user_id: str) -> list[LiveSubscriptionOut]:
     rows = db.scalars(
         select(LiveSymbolSubscription)
@@ -895,6 +900,12 @@ def list_subscriptions(db: Session, user_id: str) -> list[LiveSubscriptionOut]:
 
 
 def ensure_symbol_subscription(db: Session, user_id: str, payload: LiveSubscriptionCreateIn) -> LiveSubscriptionOut:
+    payload.symbol = _normalize_symbol(payload.symbol)
+    payload.exchange = (payload.exchange or "").strip().upper() or None
+    if payload.instrument_ref.symbol is None and payload.symbol:
+        payload.instrument_ref.symbol = payload.symbol
+    if payload.instrument_ref.exchange is None and payload.exchange:
+        payload.instrument_ref.exchange = payload.exchange
     stmt = select(LiveSymbolSubscription).where(
         LiveSymbolSubscription.user_id == user_id,
         LiveSymbolSubscription.account_id == payload.account_id,
@@ -923,6 +934,22 @@ def ensure_symbol_subscription(db: Session, user_id: str, payload: LiveSubscript
     return _subscription_to_out(row)
 
 
+def ensure_symbol_subscriptions(
+    db: Session, user_id: str, payloads: list[LiveSubscriptionCreateIn]
+) -> list[LiveSubscriptionOut]:
+    seen: set[tuple[str | None, str | None, str | None, str, str | None]] = set()
+    results: list[LiveSubscriptionOut] = []
+    for item in payloads:
+        item.symbol = _normalize_symbol(item.symbol)
+        item.exchange = (item.exchange or "").strip().upper() or None
+        key = (item.account_id, item.workflow_id, item.broker_code, item.symbol, item.exchange)
+        if not item.symbol or key in seen:
+            continue
+        seen.add(key)
+        results.append(ensure_symbol_subscription(db, user_id, item))
+    return results
+
+
 def remove_subscription(db: Session, user_id: str, subscription_id: str) -> bool:
     row = db.get(LiveSymbolSubscription, subscription_id)
     if not row or row.user_id != user_id:
@@ -932,15 +959,66 @@ def remove_subscription(db: Session, user_id: str, subscription_id: str) -> bool
     return True
 
 
+def remove_subscriptions(db: Session, user_id: str, subscription_ids: list[str]) -> int:
+    ids = [item for item in subscription_ids if item]
+    if not ids:
+        return 0
+    rows = db.scalars(
+        select(LiveSymbolSubscription).where(
+            LiveSymbolSubscription.user_id == user_id,
+            LiveSymbolSubscription.id.in_(ids),
+        )
+    ).all()
+    for row in rows:
+        db.delete(row)
+    db.commit()
+    return len(rows)
+
+
 def replace_subscriptions(db: Session, user_id: str, subscriptions: list[LiveSubscriptionCreateIn]) -> list[LiveSubscriptionOut]:
     db.execute(delete(LiveSymbolSubscription).where(LiveSymbolSubscription.user_id == user_id, LiveSymbolSubscription.source_kind == "manual"))
     db.commit()
-    return [ensure_symbol_subscription(db, user_id, item) for item in subscriptions]
+    return ensure_symbol_subscriptions(db, user_id, subscriptions)
+
+
+def _chunk_sessions(
+    rows: list[LiveSubscriptionOut],
+    user_id: str,
+    activity_index: dict[tuple[str, str, int], LiveWorkerSessionOut],
+) -> list[LiveWorkerSessionOut]:
+    grouped: dict[tuple[str, str], list[LiveSubscriptionOut]] = {}
+    for row in rows:
+        if not row.account_id or not row.broker_code or row.status != "active":
+            continue
+        grouped.setdefault((row.account_id, row.broker_code), []).append(row)
+
+    sessions: list[LiveWorkerSessionOut] = []
+    for (account_id, broker_code), subscriptions in grouped.items():
+        ordered = sorted(subscriptions, key=lambda item: (item.exchange or "", item.symbol))
+        for index, start in enumerate(range(0, len(ordered), 1000), start=1):
+            chunk = ordered[start : start + 1000]
+            activity = activity_index.get((account_id, broker_code, index))
+            sessions.append(
+                LiveWorkerSessionOut(
+                    broker_code=broker_code,
+                    account_id=account_id,
+                    user_id=user_id,
+                    adapter=activity.adapter if activity else "polling",
+                    connected=activity.connected if activity else False,
+                    connection_id=f"{broker_code}:{account_id}:{index}",
+                    connection_index=index,
+                    symbol_count=len(chunk),
+                    capacity=1000,
+                    symbols=[item.symbol for item in chunk],
+                    last_seen_at=activity.last_seen_at if activity else None,
+                )
+            )
+    return sessions
 
 
 def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
     ok, error = ping_redis()
-    sessions: list[LiveWorkerSessionOut] = []
+    activity_sessions: list[LiveWorkerSessionOut] = []
     client = _redis_client()
     if client:
         try:
@@ -948,25 +1026,37 @@ def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
                 payload = _json_loads(client.get(key), {})
                 if not payload:
                     continue
-                sessions.append(
+                connection_index = int(payload.get("connection_index") or 1)
+                activity_sessions.append(
                     LiveWorkerSessionOut(
                         broker_code=str(payload.get("broker_code") or ""),
                         account_id=str(payload.get("account_id") or ""),
                         user_id=str(payload.get("user_id") or user_id),
                         adapter=str(payload.get("adapter") or "polling"),
                         connected=bool(payload.get("connected")),
+                        connection_id=str(payload.get("connection_id") or "") or None,
+                        connection_index=connection_index,
+                        symbol_count=int(payload.get("symbol_count") or len(list(payload.get("symbols") or []))),
+                        capacity=int(payload.get("capacity") or 1000),
                         symbols=list(payload.get("symbols") or []),
                         last_seen_at=datetime.fromisoformat(payload["last_seen_at"]) if payload.get("last_seen_at") else None,
                     )
                 )
         except Exception:
-            sessions = []
+            activity_sessions = []
+    desired = list_subscriptions(db, user_id)
+    activity_index = {
+        (session.account_id, session.broker_code, session.connection_index): session
+        for session in activity_sessions
+        if session.account_id and session.broker_code
+    }
+    sessions = _chunk_sessions(desired, user_id, activity_index)
     return LiveStreamsStatusOut(
         redis_ok=ok,
         redis_error=error,
         worker_mode="redis-polling-live-data",
         active_sessions=sessions,
-        desired_subscriptions=list_subscriptions(db, user_id),
+        desired_subscriptions=desired,
     )
 
 
@@ -1003,4 +1093,3 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> int:
         sent += 1 if ok else 0
     db.commit()
     return sent
-

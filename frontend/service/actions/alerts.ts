@@ -242,6 +242,26 @@ export async function addLiveSubscription(payload: {
   return result;
 }
 
+export async function addLiveSubscriptionsBulk(payload: {
+  subscriptions: Array<{
+    account_id?: string | null;
+    broker_code?: string | null;
+    workflow_id?: string | null;
+    symbol: string;
+    exchange?: string | null;
+    instrument_ref?: Record<string, unknown>;
+    source_kind?: string;
+  }>;
+}): Promise<LiveSubscription[]> {
+  const result = await request<LiveSubscription[]>("/live-streams/subscriptions/bulk", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
+  return result;
+}
+
 export async function replaceLiveSubscriptions(payload: { subscriptions: Array<Record<string, unknown>> }): Promise<LiveSubscription[]> {
   const result = await request<LiveSubscription[]>("/live-streams/subscriptions/replace", {
     method: "PUT",
@@ -256,4 +276,12 @@ export async function deleteLiveSubscription(id: string): Promise<void> {
   await request<{ ok: boolean }>(`/live-streams/subscriptions/${id}`, { method: "DELETE" });
   revalidatePath("/alerts/subscriptions");
   revalidatePath("/alerts/stream-manager");
+}
+
+export async function deleteLiveSubscriptions(ids: string[]): Promise<{ deleted: number }> {
+  const query = new URLSearchParams({ subscription_ids: ids.join(",") });
+  const result = await request<{ deleted: number }>(`/live-streams/subscriptions?${query.toString()}`, { method: "DELETE" });
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
+  return result;
 }

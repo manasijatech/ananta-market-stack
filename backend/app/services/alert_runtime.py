@@ -46,7 +46,7 @@ def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> Non
             approximate=True,
         )
         redis_client.setex(
-            f"alert-live:session:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}",
+            f"alert-live:session:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}:{tick.get('connection_index', 1)}",
             120,
             json.dumps(
                 {
@@ -56,6 +56,10 @@ def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> Non
                     "adapter": tick.get("adapter", "polling"),
                     "connected": True,
                     "symbols": tick.get("symbols", []),
+                    "connection_id": tick.get("connection_id"),
+                    "connection_index": tick.get("connection_index", 1),
+                    "symbol_count": tick.get("symbol_count", len(tick.get("symbols", []))),
+                    "capacity": tick.get("capacity", 1000),
                     "last_seen_at": _utc_now().isoformat(),
                 }
             ),
@@ -81,44 +85,51 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                 acc = db.get(BrokerAccount, account_id)
                 if not acc:
                     continue
-                instruments = [
-                    {
-                        "symbol": row.symbol,
-                        "exchange": row.exchange,
-                        **json.loads(row.instrument_ref_json or "{}"),
-                    }
-                    for row in subscriptions
-                ]
-                try:
-                    quotes = broker_data.fetch_quotes(db, acc, instruments)
-                except Exception as exc:
-                    logger.warning("quote poll failed for %s: %s", account_id, exc)
-                    continue
-                quote_index = {str(item.symbol or ""): item for item in quotes}
-                for row in subscriptions:
-                    quote = quote_index.get(row.symbol)
-                    if not quote:
-                        continue
-                    payload = quote.model_dump(mode="json")
-                    row.last_quote_json = json.dumps(payload, default=str)
-                    row.last_received_at = _utc_now()
-                    db.add(row)
-                    _publish_tick(
-                        redis_client,
+                ordered_subscriptions = sorted(subscriptions, key=lambda item: (item.exchange or "", item.symbol))
+                for chunk_index, start in enumerate(range(0, len(ordered_subscriptions), 1000), start=1):
+                    chunk_rows = ordered_subscriptions[start : start + 1000]
+                    instruments = [
                         {
-                            "user_id": user_id,
-                            "account_id": account_id,
-                            "broker_code": acc.broker_code,
                             "symbol": row.symbol,
                             "exchange": row.exchange,
-                            "instrument_key": row.symbol,
-                            "ltp": payload.get("ltp"),
-                            "received_at": row.last_received_at.isoformat(),
-                            "raw": payload.get("detail", {}),
-                            "adapter": "polling",
-                            "symbols": [sub.symbol for sub in subscriptions],
-                        },
-                    )
+                            **json.loads(row.instrument_ref_json or "{}"),
+                        }
+                        for row in chunk_rows
+                    ]
+                    try:
+                        quotes = broker_data.fetch_quotes(db, acc, instruments)
+                    except Exception as exc:
+                        logger.warning("quote poll failed for %s: %s", account_id, exc)
+                        continue
+                    quote_index = {str(item.symbol or ""): item for item in quotes}
+                    for row in chunk_rows:
+                        quote = quote_index.get(row.symbol)
+                        if not quote:
+                            continue
+                        payload = quote.model_dump(mode="json")
+                        row.last_quote_json = json.dumps(payload, default=str)
+                        row.last_received_at = _utc_now()
+                        db.add(row)
+                        _publish_tick(
+                            redis_client,
+                            {
+                                "user_id": user_id,
+                                "account_id": account_id,
+                                "broker_code": acc.broker_code,
+                                "symbol": row.symbol,
+                                "exchange": row.exchange,
+                                "instrument_key": row.symbol,
+                                "ltp": payload.get("ltp"),
+                                "received_at": row.last_received_at.isoformat(),
+                                "raw": payload.get("detail", {}),
+                                "adapter": "polling",
+                                "symbols": [sub.symbol for sub in chunk_rows],
+                                "connection_id": f"{acc.broker_code}:{account_id}:{chunk_index}",
+                                "connection_index": chunk_index,
+                                "symbol_count": len(chunk_rows),
+                                "capacity": 1000,
+                            },
+                        )
             db.commit()
         finally:
             db.close()

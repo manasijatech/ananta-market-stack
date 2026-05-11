@@ -173,6 +173,10 @@ export interface LiveWorkerSession {
   user_id: string;
   adapter: string;
   connected: boolean;
+  connection_id?: string | null;
+  connection_index: number;
+  symbol_count: number;
+  capacity: number;
   symbols: string[];
   last_seen_at?: string | null;
 }

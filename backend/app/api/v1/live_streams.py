@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
-from app.schemas.alert import LiveStreamsStatusOut, LiveSubscriptionCreateIn, LiveSubscriptionOut, LiveSubscriptionReplaceIn
+from app.schemas.alert import (
+    LiveStreamsStatusOut,
+    LiveSubscriptionBulkIn,
+    LiveSubscriptionCreateIn,
+    LiveSubscriptionOut,
+    LiveSubscriptionReplaceIn,
+)
 from app.services import alerts as alert_svc
 from db.models import User
 from db.session import get_db
@@ -37,6 +43,15 @@ def add_subscription(
     return alert_svc.ensure_symbol_subscription(db, user.id, body)
 
 
+@router.post("/subscriptions/bulk", response_model=list[LiveSubscriptionOut])
+def add_subscriptions_bulk(
+    body: LiveSubscriptionBulkIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[LiveSubscriptionOut]:
+    return alert_svc.ensure_symbol_subscriptions(db, user.id, body.subscriptions)
+
+
 @router.put("/subscriptions/replace", response_model=list[LiveSubscriptionOut])
 def replace_subscriptions(
     body: LiveSubscriptionReplaceIn,
@@ -56,6 +71,16 @@ def remove_subscription(
     if not ok:
         raise HTTPException(status_code=404, detail="subscription not found")
     return {"ok": True}
+
+
+@router.delete("/subscriptions")
+def remove_subscriptions_bulk(
+    subscription_ids: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, int]:
+    ids = [item.strip() for item in subscription_ids.split(",") if item.strip()]
+    return {"deleted": alert_svc.remove_subscriptions(db, user.id, ids)}
 
 
 @router.post("/subscriptions/reconcile")
