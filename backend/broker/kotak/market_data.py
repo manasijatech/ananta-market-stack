@@ -3,6 +3,7 @@ from __future__ import annotations
 import urllib.parse
 from typing import Any
 
+from broker.core.data_features import ohlc_from_quotes
 from broker.kotak.http_api import KotakHTTP
 
 
@@ -27,3 +28,18 @@ def fetch_quotes(http: KotakHTTP, instruments: list[dict[str, Any]]) -> list[dic
                 ltp = float(raw.get("ltp") or raw.get("Ltp") or raw.get("lastPrice") or 0)
         out.append({"symbol": q, "ltp": ltp, "raw": raw})
     return out
+
+
+def sync_instruments(_http: KotakHTTP) -> list[dict[str, Any]]:
+    return []
+
+
+def fetch_ohlc(http: KotakHTTP, instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return ohlc_from_quotes(fetch_quotes(http, instruments))
+
+
+def stream_capabilities() -> dict[str, Any]:
+    return {
+        "websocket_enabled": True,
+        "guidance": "Kotak Neo has websocket support. Historical data remains unsupported until the repo adopts a confirmed endpoint.",
+    }

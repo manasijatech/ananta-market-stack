@@ -213,12 +213,82 @@ export interface QuoteRequest {
   instruments: InstrumentRef[];
 }
 
+export interface OhlcRequest {
+  instruments: InstrumentRef[];
+}
+
 export interface QuoteResponse {
   symbol?: string | null;
   ltp: number;
   broker_code: BrokerCode;
   account_id: string;
   detail: JsonObject;
+}
+
+export interface DataCapabilityItem {
+  supported: boolean;
+  guidance: string;
+}
+
+export interface DataCapabilities {
+  broker: BrokerCode | string;
+  account_id: string;
+  capabilities: Record<string, DataCapabilityItem>;
+}
+
+export interface InstrumentSearchRow {
+  symbol: string;
+  exchange?: string | null;
+  segment?: string | null;
+  trading_symbol?: string | null;
+  name?: string | null;
+  isin?: string | null;
+  instrument_type?: string | null;
+  expiry?: string | null;
+  strike?: string | null;
+  option_type?: string | null;
+  lot_size?: string | null;
+  tick_size?: string | null;
+  identifiers: Record<string, string | null | undefined>;
+}
+
+export interface InstrumentSyncResult {
+  broker: BrokerCode | string;
+  sync_status: string;
+  row_count: number;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+}
+
+export interface HistoricalRequest {
+  instrument: InstrumentRef;
+  interval: string;
+  from_date: string;
+  to_date: string;
+}
+
+export interface OptionChainRequest {
+  symbol: string;
+  exchange?: string;
+  expiry?: string | null;
+}
+
+export interface GreeksRequest {
+  symbol: string;
+  exchange?: string;
+  expiry?: string | null;
+  strike?: string | null;
+  option_type?: string | null;
+}
+
+export interface StreamStatus {
+  broker: BrokerCode | string;
+  account_id: string;
+  websocket_enabled: boolean;
+  subscription_count: number;
+  subscriptions: JsonObject[];
+  guidance: string;
 }
 
 export interface Notification {

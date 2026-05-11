@@ -7,16 +7,24 @@ import type {
   BrokerAccountDetail,
   BrokerCode,
   CreateBrokerAccountPayload,
+  DataCapabilities,
   FieldErrors,
+  GreeksRequest,
+  HistoricalRequest,
+  InstrumentSearchRow,
+  InstrumentSyncResult,
   JsonObject,
   Notification,
+  OhlcRequest,
   OrderBody,
+  OptionChainRequest,
   QuoteRequest,
   QuoteResponse,
   SessionLoginPayload,
   SessionMutationResponse,
   SessionStartResponse,
   SessionStatus,
+  StreamStatus,
   VerifyResponse
 } from "@/service/types/broker";
 
@@ -164,6 +172,68 @@ export async function getQuotes(id: string, payload: QuoteRequest): Promise<Quot
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export async function getDataCapabilities(id: string): Promise<DataCapabilities> {
+  return request<DataCapabilities>(`/broker-accounts/${id}/data/capabilities`);
+}
+
+export async function syncInstrumentData(id: string): Promise<InstrumentSyncResult> {
+  return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync`, {
+    method: "POST"
+  });
+}
+
+export async function searchBrokerInstruments(
+  id: string,
+  params: { q?: string; exchange?: string; segment?: string; limit?: number } = {}
+): Promise<InstrumentSearchRow[]> {
+  const query = new URLSearchParams();
+  if (params.q) query.set("q", params.q);
+  if (params.exchange) query.set("exchange", params.exchange);
+  if (params.segment) query.set("segment", params.segment);
+  if (params.limit) query.set("limit", String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<InstrumentSearchRow[]>(`/broker-accounts/${id}/data/instruments/search${suffix}`);
+}
+
+export async function getDataQuotes(id: string, payload: QuoteRequest): Promise<QuoteResponse[]> {
+  return request<QuoteResponse[]>(`/broker-accounts/${id}/data/quotes`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getDataOhlc(id: string, payload: OhlcRequest): Promise<JsonObject[]> {
+  return request<JsonObject[]>(`/broker-accounts/${id}/data/ohlc`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getHistoricalData(id: string, payload: HistoricalRequest): Promise<JsonObject> {
+  return request<JsonObject>(`/broker-accounts/${id}/data/historical`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getOptionChainData(id: string, payload: OptionChainRequest): Promise<JsonObject> {
+  return request<JsonObject>(`/broker-accounts/${id}/data/option-chain`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getGreeksData(id: string, payload: GreeksRequest): Promise<JsonObject> {
+  return request<JsonObject>(`/broker-accounts/${id}/data/greeks`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getStreamStatus(id: string): Promise<StreamStatus> {
+  return request<StreamStatus>(`/broker-accounts/${id}/data/stream/status`);
 }
 
 export async function createBrokerAccount(

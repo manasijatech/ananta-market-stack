@@ -140,6 +140,57 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
                 "session_bundle_generated_at": "DATETIME",
             },
         )
+        _ensure_table_columns(
+            conn,
+            "broker_instruments",
+            {
+                "id": "VARCHAR(36)",
+                "broker_code": "VARCHAR(32)",
+                "exchange": "VARCHAR(32)",
+                "segment": "VARCHAR(64)",
+                "symbol": "VARCHAR(128)",
+                "trading_symbol": "VARCHAR(128)",
+                "name": "VARCHAR(256)",
+                "isin": "VARCHAR(64)",
+                "instrument_type": "VARCHAR(64)",
+                "expiry": "DATETIME",
+                "strike": "VARCHAR(64)",
+                "option_type": "VARCHAR(16)",
+                "lot_size": "VARCHAR(32)",
+                "tick_size": "VARCHAR(32)",
+                "zerodha_instrument_token": "VARCHAR(64)",
+                "upstox_instrument_key": "VARCHAR(128)",
+                "angel_token": "VARCHAR(64)",
+                "dhan_security_id": "VARCHAR(64)",
+                "dhan_exchange_segment": "VARCHAR(64)",
+                "groww_exchange": "VARCHAR(32)",
+                "groww_segment": "VARCHAR(32)",
+                "groww_trading_symbol": "VARCHAR(128)",
+                "indmoney_scrip_code": "VARCHAR(64)",
+                "kotak_query": "VARCHAR(256)",
+                "kotak_segment": "VARCHAR(64)",
+                "kotak_psymbol": "VARCHAR(128)",
+                "searchable_text": "TEXT",
+                "native_payload_json": "TEXT DEFAULT '{}'",
+                "raw_payload_json": "TEXT DEFAULT '{}'",
+                "fetched_at": "DATETIME",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "broker_instrument_sync_runs",
+            {
+                "id": "VARCHAR(36)",
+                "broker_code": "VARCHAR(32)",
+                "status": "VARCHAR(32)",
+                "started_at": "DATETIME",
+                "finished_at": "DATETIME",
+                "row_count": "INTEGER DEFAULT 0",
+                "error": "TEXT",
+            },
+        )
         conn.commit()
     finally:
         conn.close()
@@ -157,6 +208,15 @@ def _ensure_table_columns(
     table_name: str,
     columns: dict[str, str],
 ) -> None:
+    table_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    if table_exists is None:
+        definitions = ", ".join(f"{name} {column_type}" for name, column_type in columns.items())
+        primary_key = ", PRIMARY KEY (id)" if "id" in columns else ""
+        conn.execute(f"CREATE TABLE {table_name} ({definitions}{primary_key})")
+        return
     existing = {
         row[1]
         for row in conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()

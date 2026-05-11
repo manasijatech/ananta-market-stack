@@ -2,6 +2,8 @@
 
 This document explains how each broker account should be created, how daily session tokens are obtained or refreshed, and which flows in this repo are official broker-supported flows versus optional or experimental shortcuts.
 
+The broker data APIs under `/api/v1/broker-accounts/{account_id}/data/...` are read-only. They depend on these session flows being active because instrument sync, quotes, OHLC, historical data, option-chain, and websocket inspection all call the broker using the stored account session.
+
 ## Terms
 
 - `app credentials`: broker-issued API/app keys that identify the application.
@@ -183,9 +185,19 @@ The daily maintenance loop runs after `06:30 IST` and writes reminders or refres
 
 - `GET /api/v1/notifications`
 
+The daily instrument-sync loop runs after `08:30 IST` and refreshes the SQLite `broker_instruments` cache for each broker. Sync failures also show up through the notification system and `broker_instrument_sync_runs`.
+
 You can also trigger it on demand with:
 
 - `POST /api/v1/broker-accounts/maintenance/run`
+- `POST /api/v1/broker-accounts/{account_id}/data/instruments/sync`
+
+## Order Mutations
+
+Order placement, modification, cancellation, smart-order, and close-all routes remain implemented for later phases, but they are intentionally disabled by default in this early-stage project.
+
+- They are hidden from Swagger / OpenAPI.
+- Direct calls return `403` unless `ENABLE_ORDER_MUTATIONS=true`.
 
 ## Source Notes
 

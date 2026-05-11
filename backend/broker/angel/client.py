@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from broker.core.data_features import unsupported_operation
 from broker.core.instruments import DefaultInstrumentResolver, InstrumentResolver
 from broker.angel import auth as aauth
 from broker.angel import funds as afunds
@@ -79,6 +80,30 @@ class AngelClient:
 
     def fetch_quotes(self, instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return amd.fetch_quotes(self._http, instruments)
+
+    def search_instruments(self, query: str, limit: int = 50) -> list[dict[str, Any]]:
+        _ = (query, limit)
+        return []
+
+    def sync_instruments(self) -> list[dict[str, Any]]:
+        return amd.sync_instruments(self._http)
+
+    def fetch_ohlc(self, instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return amd.fetch_ohlc(self._http, instruments)
+
+    def fetch_historical(self, request: dict[str, Any]) -> dict[str, Any]:
+        return amd.fetch_historical(self._http, request, self.resolver)
+
+    def option_chain(self, request: dict[str, Any]) -> dict[str, Any]:
+        _ = request
+        return unsupported_operation(self.broker_code, "option_chain")
+
+    def greeks(self, request: dict[str, Any]) -> dict[str, Any]:
+        _ = request
+        return unsupported_operation(self.broker_code, "greeks")
+
+    def stream_capabilities(self) -> dict[str, Any]:
+        return amd.stream_capabilities()
 
     def login_refresh(self, client_code: str, pin: str, totp: str) -> tuple[str | None, str | None, str | None]:
         return aauth.login(api_key=self.api_key, client_code=client_code, pin=pin, totp=totp)

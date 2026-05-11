@@ -242,3 +242,54 @@ class BrokerNotification(Base):
     message: Mapped[str] = mapped_column(Text)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BrokerInstrument(Base):
+    __tablename__ = "broker_instruments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    broker_code: Mapped[str] = mapped_column(String(32), index=True)
+    exchange: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    segment: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(128), index=True)
+    trading_symbol: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    isin: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    instrument_type: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    expiry: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    strike: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    option_type: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    lot_size: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    tick_size: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    zerodha_instrument_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    upstox_instrument_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    angel_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    dhan_security_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    dhan_exchange_segment: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    groww_exchange: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    groww_segment: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    groww_trading_symbol: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    indmoney_scrip_code: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    kotak_query: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    kotak_segment: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kotak_psymbol: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    searchable_text: Mapped[str] = mapped_column(Text, index=True)
+    native_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    raw_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class BrokerInstrumentSyncRun(Base):
+    __tablename__ = "broker_instrument_sync_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    broker_code: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    row_count: Mapped[int] = mapped_column(default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)

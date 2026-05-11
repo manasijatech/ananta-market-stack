@@ -18,6 +18,7 @@ from app.schemas.broker import (
     ZerodhaCreate,
     ZerodhaSessionStatusOut,
 )
+from broker.core.instrument_store import SQLiteInstrumentResolver
 from broker.angel import auth as angel_auth
 from broker.core.redis_cache import cache_quotes
 from broker.core.registry import get_client_for_account
@@ -260,7 +261,7 @@ def fetch_quotes_for_account(
     *,
     push_redis: bool = True,
 ) -> list[QuoteRow]:
-    client = get_client_for_account(acc)
+    client = get_client_for_account(acc, resolver=SQLiteInstrumentResolver(db, acc.broker_code))
     raw_list = [m.model_dump(exclude_none=True) for m in instruments]
     rows = client.fetch_quotes(raw_list)
     out: list[QuoteRow] = []

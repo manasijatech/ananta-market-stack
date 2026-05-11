@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from broker.core.data_features import unsupported_operation
 from broker.core.instruments import DefaultInstrumentResolver, InstrumentResolver
 from broker.groww import auth as gauth
 from broker.groww import funds as gfunds
@@ -88,6 +89,28 @@ class GrowwClient:
 
     def fetch_quotes(self, instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return gmd.fetch_quotes(self._http, instruments, self.resolver)
+
+    def search_instruments(self, query: str, limit: int = 50) -> list[dict[str, Any]]:
+        _ = (query, limit)
+        return []
+
+    def sync_instruments(self) -> list[dict[str, Any]]:
+        return gmd.sync_instruments(self._http)
+
+    def fetch_ohlc(self, instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return gmd.fetch_ohlc(self._http, instruments, self.resolver)
+
+    def fetch_historical(self, request: dict[str, Any]) -> dict[str, Any]:
+        return gmd.fetch_historical(self._http, request, self.resolver)
+
+    def option_chain(self, request: dict[str, Any]) -> dict[str, Any]:
+        return gmd.fetch_option_chain(self._http, request)
+
+    def greeks(self, request: dict[str, Any]) -> dict[str, Any]:
+        return gmd.fetch_greeks(self._http, request)
+
+    def stream_capabilities(self) -> dict[str, Any]:
+        return gmd.stream_capabilities()
 
     def refresh_access_token(self) -> tuple[str | None, str | None]:
         return gauth.refresh_access_token(api_key=self.api_key, api_secret=self.api_secret)

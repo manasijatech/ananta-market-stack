@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { deleteBrokerAccount, verifyBrokerAccount } from "@/service/actions/broker";
@@ -7,7 +8,13 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
-export function BrokerDetailActions({ accountId }: { accountId: string }) {
+export function BrokerDetailActions({
+  accountId,
+  verified
+}: {
+  accountId: string;
+  verified: boolean;
+}) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -46,6 +53,11 @@ export function BrokerDetailActions({ accountId }: { accountId: string }) {
         <Button disabled={isPending} onClick={verify} type="button">
           Verify
         </Button>
+        {verified ? (
+          <Button asChild disabled={isPending} type="button" variant="outline">
+            <Link href={`/brokers/${accountId}/data-test`}>Test data APIs</Link>
+          </Button>
+        ) : null}
         <Button disabled={isPending} onClick={remove} type="button" variant="destructive">
           Delete
         </Button>

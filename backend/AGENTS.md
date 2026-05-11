@@ -15,6 +15,7 @@ See `docs/broker_auth_flows.md` for broker session/auth behavior and `docs/migra
 
 - Persist multiple broker accounts per user with **per-broker credential tables** (normalized, FK to a shared `broker_accounts` row).
 - Unified HTTP API for CRUD, verification, session refresh, quotes, portfolio, orders, margin (where supported).
+- Unified **read-only broker data** layer for instrument sync/search, quotes, OHLC, historical data, option-chain, greeks, and websocket inspection.
 - Optional Redis write-through for last quote payloads (TTL configurable).
 
 **Convention:** every broker and every major feature area should live in a **dedicated package** (subdirectory) with a small public surface. Do not add monolithic `*_adapter.py` files at the root of `broker/`.
@@ -79,6 +80,7 @@ When you touch broker behavior:
 | `CREDENTIAL_ENCRYPTION_KEY` | Fernet key (44-char urlsafe base64) for all encrypted columns |
 | `ALLOW_INSECURE_DEV_CREDENTIALS` | If `true`, uses a **fixed dev-only** Fernet key (never in production) |
 | `APP_DEBUG` | App debug flag (avoids clashing with generic `DEBUG`) |
+| `ENABLE_ORDER_MUTATIONS` | Defaults to `false`. When `false`, order placement/modification/cancel endpoints return `403` and stay hidden from OpenAPI. |
 
 See `.env.example`.
 
@@ -92,11 +94,11 @@ There is **no** auth middleware yet. The API uses an optional header:
 
 ## Unified broker client (`broker/core/interface.py`)
 
-Every broker’s `client.py` should implement **`UnifiedBrokerClient`**: `verify_connection`, `user_profile`, `order_book`, `trade_book`, `positions`, `holdings`, `funds`, `place_order`, `modify_order`, `cancel_order`, `cancel_all_open_orders`, `smart_order`, `close_all_positions`, `calculate_margin`, `fetch_quotes`.
+Every broker’s `client.py` should implement **`UnifiedBrokerClient`**: `verify_connection`, `user_profile`, `order_book`, `trade_book`, `positions`, `holdings`, `funds`, `place_order`, `modify_order`, `cancel_order`, `cancel_all_open_orders`, `smart_order`, `close_all_positions`, `calculate_margin`, `fetch_quotes`, `sync_instruments`, `fetch_ohlc`, `fetch_historical`, `option_chain`, `greeks`, and `stream_capabilities`.
 
 Return values are **broker-native JSON** shapes (dict/list) unless documented otherwise. The API layer does not normalize responses across brokers.
 
-**Instrument resolution:** clients accept `resolver: InstrumentResolver` (default `DefaultInstrumentResolver`). Use it to map canonical symbols to broker tokens where the quote/order path needs it.
+**Instrument resolution:** clients accept `resolver: InstrumentResolver`. The default identity resolver still exists, but broker-account operations should now prefer the SQLite-backed resolver so symbol-first requests can be hydrated from the `broker_instruments` cache.
 
 ## HTTP API (v1)
 
@@ -167,13 +169,19 @@ Same URL prefix as above; `broker_ops` router adds nested paths on `account_id`.
 | GET | `.../portfolio/positions` | Positions |
 | GET | `.../portfolio/holdings` | Holdings |
 | GET | `.../portfolio/funds` | Funds / margins (broker shape) |
-| POST | `.../orders` | Place order (body + `extra` for broker fields) |
-| PUT | `.../orders` | Modify order (`orderid` required) |
-| DELETE | `.../orders/{order_id}` | Cancel order |
-| POST | `.../orders/cancel-all` | Cancel all open |
-| POST | `.../orders/smart` | Smart order (broker-defined) |
-| POST | `.../positions/close-all` | Close all positions |
 | POST | `.../margin/calculate` | Margin estimate from leg list |
+| GET | `.../data/capabilities` | Feature matrix for the broker data layer |
+| POST | `.../data/instruments/sync` | Refresh instrument cache into SQLite |
+| GET | `.../data/instruments/search` | Query cached broker instruments |
+| POST | `.../data/quotes` | Read-only quote batch |
+| POST | `.../data/ohlc` | Read-only OHLC batch |
+| POST | `.../data/historical` | Historical candle request |
+| POST | `.../data/option-chain` | Option chain where supported |
+| POST | `.../data/greeks` | Greeks where supported |
+| GET | `.../data/stream/status` | Websocket inspection status |
+| WS | `.../data/stream/ws` | On-demand quote inspection stream |
+
+Order mutation routes still exist in code for future phases, but they are intentionally hidden from OpenAPI and gated by `ENABLE_ORDER_MUTATIONS=false` by default.
 
 `OrderBody` in `broker_ops.py`: canonical fields plus **`extra`** (merged into the dict passed to `place_order` / `modify_order`). Use `extra` for instrument tokens, native flags, etc.
 
@@ -197,12 +205,17 @@ Each has a dedicated table `broker_<name>_credentials` with a 1:1 FK to `broker_
 
 Redis keys (quotes, best-effort): `quote:{user_id}:{account_id}:{broker_code}:{symbol}` with JSON payload and TTL `REDIS_QUOTE_TTL_SECONDS`.
 
+SQLite instrument cache tables:
+
+- `broker_instruments`
+- `broker_instrument_sync_runs`
+
 ## Operational notes
 
 - **SQLite file**: ensure the process can create `data/` (see `db/session.py`).
-- **Migrations**: not introduced yet; `init_db()` uses `create_all` on startup. Plan Alembic before production schema churn.
 - **Migrations**: Alembic is now scaffolded in `alembic/`. Existing databases should be stamped to the baseline revision first, then future schema changes should use generated revisions instead of only runtime patching.
 - **Token maintenance**: a lightweight in-process maintenance loop checks broker sessions daily after **06:30 IST**, attempts broker-supported refresh paths, and emits notifications for manual re-auth flows. Use `/broker-accounts/maintenance/run` to trigger the same logic on demand.
+- **Instrument maintenance**: a separate daily sync pass runs after **08:30 IST** and refreshes instrument metadata into SQLite once per broker per day.
 - **Tests**: use `TestClient` as a context manager so lifespan runs and tables exist: `with TestClient(app) as c:`.
 - **Compliance**: secrets are encrypted at rest with Fernet; protect `CREDENTIAL_ENCRYPTION_KEY` like any master key. SQLite file permissions and disk encryption are deployment concerns.
 

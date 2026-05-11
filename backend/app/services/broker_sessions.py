@@ -28,7 +28,9 @@ from db.session import SessionLocal
 
 IST = timezone(timedelta(hours=5, minutes=30))
 MAINTENANCE_TIME_IST = time(hour=6, minute=30)
+INSTRUMENT_SYNC_TIME_IST = time(hour=8, minute=30)
 _last_maintenance_date: date | None = None
+_last_instrument_sync_date: date | None = None
 _settings = get_settings()
 
 
@@ -740,6 +742,40 @@ def run_daily_maintenance_once() -> None:
         db.close()
 
 
+def run_daily_instrument_sync_once() -> None:
+    global _last_instrument_sync_date
+    now_ist = datetime.now(tz=IST)
+    if now_ist.time() < INSTRUMENT_SYNC_TIME_IST:
+        return
+    if _last_instrument_sync_date == now_ist.date():
+        return
+    from app.services import broker_data
+
+    db = SessionLocal()
+    try:
+        accounts = list(db.scalars(select(BrokerAccount).where(BrokerAccount.is_active.is_(True))).all())
+        processed_brokers: set[str] = set()
+        for acc in accounts:
+            if acc.broker_code in processed_brokers:
+                continue
+            processed_brokers.add(acc.broker_code)
+            result = broker_data.sync_instruments_for_account(db, acc)
+            if result.sync_status != "completed":
+                _create_notification_once_per_day(
+                    db,
+                    user_id=acc.user_id,
+                    account_id=acc.id,
+                    broker_code=acc.broker_code,
+                    kind="instrument_sync_failed",
+                    title=f"{acc.label}: instrument sync failed",
+                    message=result.error or "instrument sync failed",
+                    level="warning",
+                )
+        _last_instrument_sync_date = now_ist.date()
+    finally:
+        db.close()
+
+
 def run_user_maintenance(db: Session, user_id: str) -> int:
     accounts = list(
         db.scalars(
@@ -758,6 +794,10 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         try:
             run_daily_maintenance_once()
+        except Exception:
+            pass
+        try:
+            run_daily_instrument_sync_once()
         except Exception:
             pass
         try:

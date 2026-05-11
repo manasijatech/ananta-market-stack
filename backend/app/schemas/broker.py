@@ -300,5 +300,80 @@ class SessionKotakIn(BaseModel):
     mpin: str
 
 
+class DataCapabilityItem(BaseModel):
+    supported: bool
+    guidance: str = ""
+
+
+class DataCapabilitiesOut(BaseModel):
+    broker: str
+    account_id: str
+    capabilities: dict[str, DataCapabilityItem]
+
+
+class InstrumentSyncOut(BaseModel):
+    broker: str
+    sync_status: str
+    row_count: int
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = None
+
+
+class InstrumentSearchRow(BaseModel):
+    symbol: str
+    exchange: str | None = None
+    segment: str | None = None
+    trading_symbol: str | None = None
+    name: str | None = None
+    isin: str | None = None
+    instrument_type: str | None = None
+    expiry: datetime | None = None
+    strike: str | None = None
+    option_type: str | None = None
+    lot_size: str | None = None
+    tick_size: str | None = None
+    identifiers: dict[str, str | None] = Field(default_factory=dict)
+
+
+class OhlcRequest(BaseModel):
+    instruments: list[InstrumentRef] = Field(default_factory=list)
+
+
+class HistoricalRequest(BaseModel):
+    instrument: InstrumentRef
+    interval: str = Field(..., description="Broker-native interval such as minute, day, 5minute.")
+    from_date: datetime
+    to_date: datetime
+
+
+class OptionChainRequest(BaseModel):
+    symbol: str
+    exchange: str = "NSE"
+    expiry: str | None = None
+
+
+class GreeksRequest(BaseModel):
+    symbol: str
+    exchange: str = "NSE"
+    expiry: str | None = None
+    strike: str | None = None
+    option_type: str | None = None
+    price: float | None = None
+    underlying_price: float | None = None
+    volatility: float | None = None
+    interest_rate: float | None = None
+    days_to_expiry: int | None = None
+
+
+class StreamStatusOut(BaseModel):
+    broker: str
+    account_id: str
+    websocket_enabled: bool
+    subscription_count: int
+    subscriptions: list[dict[str, Any]] = Field(default_factory=list)
+    guidance: str = ""
+
+
 def supported_brokers() -> list[str]:
     return [b.value for b in BrokerCode]

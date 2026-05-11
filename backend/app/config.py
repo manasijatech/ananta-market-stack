@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     # Fernet key (urlsafe base64 32-byte). Required for production; see AGENTS.md.
     credential_encryption_key: str | None = None
+    enable_order_mutations: bool = Field(default=False, validation_alias="ENABLE_ORDER_MUTATIONS")
 
     # Development-only fallback if no key set (not for production).
     allow_insecure_dev_credentials: bool = False

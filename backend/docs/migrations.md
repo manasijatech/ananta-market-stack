@@ -45,8 +45,9 @@ Or with autogenerate:
 ## Project-specific notes
 
 - The Alembic environment reads `DATABASE_URL` through `app.config.get_settings()`.
-- The current baseline revision is:
-  - `f5ed572aacd8`
+- The current baseline revision is `f5ed572aacd8`.
+- The next schema revision adds the broker instrument cache tables:
+  - `3b1f6d7c9a2e` for `broker_instruments` and `broker_instrument_sync_runs`
 - Existing local SQLite development databases can be stamped to that revision if they already contain the current schema.
 
 ## Recommended workflow
