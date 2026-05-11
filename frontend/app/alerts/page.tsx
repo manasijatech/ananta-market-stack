@@ -15,8 +15,8 @@ export default async function AlertsOverviewPage() {
     getAlertWorkflows("active"),
     getAlertWorkflows("inactive"),
     getAlertUnreadCount(),
-    getAlertNotifications({ limit: 10 }),
-    getAlertHistory(),
+    getAlertNotifications({ limit: 100 }),
+    getAlertHistory(100),
     getLiveStreamsStatus()
   ]);
 

@@ -163,8 +163,8 @@ export async function getAlertWorkflowRuns(id: string, limit = 50): Promise<Aler
   return request<AlertWorkflowRun[]>(`/alert-workflows/${id}/runs?limit=${encodeURIComponent(String(limit))}`);
 }
 
-export async function getAlertHistory(): Promise<AlertWorkflowRun[]> {
-  return request<AlertWorkflowRun[]>("/alert-workflows/history/all");
+export async function getAlertHistory(limit = 50): Promise<AlertWorkflowRun[]> {
+  return request<AlertWorkflowRun[]>(`/alert-workflows/history/all?limit=${encodeURIComponent(String(limit))}`);
 }
 
 export async function getAlertNotifications(params: { unread_only?: boolean; workflow_id?: string; limit?: number } = {}): Promise<AlertNotification[]> {

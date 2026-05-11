@@ -217,7 +217,7 @@ export function WorkflowEditor({
           const result = await searchBrokerInstruments(account.id, {
             q: symbol.trim(),
             exchange: exchange.trim() || undefined,
-            limit: 8
+            limit: 20
           });
           setSuggestions(result);
           setShowSuggestions(true);

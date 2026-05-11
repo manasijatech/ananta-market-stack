@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -24,6 +24,8 @@ from broker.core.registry import get_client_for_account
 from db.models import BrokerAccount, BrokerInstrument
 
 _INSTRUMENT_EXPORT_DIR = Path(__file__).resolve().parents[2] / "data" / "instruments"
+_CSV_CACHE_TTL = timedelta(minutes=1)
+_CSV_SEARCH_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def _resolver(db: Session, broker_code: str) -> SQLiteInstrumentResolver:
@@ -107,41 +109,17 @@ def _hydrate_exact_match(
 
 
 def _csv_exact_match(broker_code: str, *, symbol: str, exchange: str) -> dict[str, Any] | None:
-    csv_path = _csv_path_for_broker(broker_code)
-    if not csv_path.exists():
-        return None
     normalized_symbol = symbol.strip().upper()
     normalized_exchange = exchange.strip().upper()
-    with csv_path.open("r", newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            row_symbol = (_csv_value(row, "symbol") or "").upper()
-            row_trading_symbol = (_csv_value(row, "trading_symbol") or "").upper()
-            row_exchange = (_csv_value(row, "exchange") or "").upper()
-            if normalized_exchange and row_exchange != normalized_exchange:
-                continue
-            if normalized_symbol not in {row_symbol, row_trading_symbol}:
-                continue
-            return {
-                "symbol": _csv_value(row, "symbol"),
-                "exchange": _csv_value(row, "exchange"),
-                "segment": _csv_value(row, "segment"),
-                "trading_symbol": _csv_value(row, "trading_symbol"),
-                "instrument_type": _csv_value(row, "instrument_type"),
-                "zerodha_instrument_token": _csv_value(row, "zerodha_instrument_token"),
-                "upstox_instrument_key": _csv_value(row, "upstox_instrument_key"),
-                "angel_token": _csv_value(row, "angel_token"),
-                "angel_exchange": _csv_value(row, "exchange"),
-                "dhan_security_id": _csv_value(row, "dhan_security_id"),
-                "dhan_exchange_segment": _csv_value(row, "dhan_exchange_segment"),
-                "groww_exchange": _csv_value(row, "groww_exchange") or _csv_value(row, "exchange"),
-                "groww_segment": _csv_value(row, "groww_segment") or _csv_value(row, "segment"),
-                "groww_trading_symbol": _csv_value(row, "groww_trading_symbol") or _csv_value(row, "trading_symbol"),
-                "indmoney_scrip_code": _csv_value(row, "indmoney_scrip_code"),
-                "kotak_query": _csv_value(row, "kotak_query"),
-                "kotak_segment": _csv_value(row, "kotak_segment"),
-                "kotak_psymbol": _csv_value(row, "kotak_psymbol"),
-            }
+    for row in _csv_rows_cached(broker_code):
+        row_symbol = str(row.get("symbol") or "").upper()
+        row_trading_symbol = str(row.get("trading_symbol") or "").upper()
+        row_exchange = str(row.get("exchange") or "").upper()
+        if normalized_exchange and row_exchange != normalized_exchange:
+            continue
+        if normalized_symbol not in {row_symbol, row_trading_symbol}:
+            continue
+        return _csv_exact_payload(row)
     return None
 
 
@@ -262,71 +240,158 @@ def _csv_search_rows(
     segment: str | None = None,
     limit: int = 50,
 ) -> list[InstrumentSearchRow]:
-    csv_path = _csv_path_for_broker(broker_code)
-    if not csv_path.exists():
+    rows = _csv_rows_cached(broker_code)
+    if not rows:
         return []
     normalized_query = query.strip().lower()
     normalized_exchange = (exchange or "").strip().lower()
     normalized_segment = (segment or "").strip().lower()
+    matches: list[tuple[int, dict[str, Any]]] = []
+    for row in rows:
+        row_exchange = str(row.get("exchange") or "")
+        row_segment = str(row.get("segment") or "")
+        if normalized_exchange and row_exchange.lower() != normalized_exchange:
+            continue
+        if normalized_segment and row_segment.lower() != normalized_segment:
+            continue
+        haystack = str(row.get("_search_blob") or "")
+        if normalized_query and normalized_query not in haystack:
+            continue
+        matches.append((_csv_match_rank(row, normalized_query), row))
+    matches.sort(key=lambda item: (item[0], str(item[1].get("symbol") or ""), str(item[1].get("trading_symbol") or "")))
     results: list[InstrumentSearchRow] = []
+    for _, row in matches[: max(1, min(limit, 200))]:
+        results.append(_csv_row_to_schema(row))
+    return results
+
+
+def _csv_exact_payload(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "symbol": row.get("symbol"),
+        "exchange": row.get("exchange"),
+        "segment": row.get("segment"),
+        "trading_symbol": row.get("trading_symbol"),
+        "instrument_type": row.get("instrument_type"),
+        "zerodha_instrument_token": row.get("zerodha_instrument_token"),
+        "upstox_instrument_key": row.get("upstox_instrument_key"),
+        "angel_token": row.get("angel_token"),
+        "angel_exchange": row.get("exchange"),
+        "dhan_security_id": row.get("dhan_security_id"),
+        "dhan_exchange_segment": row.get("dhan_exchange_segment"),
+        "groww_exchange": row.get("groww_exchange") or row.get("exchange"),
+        "groww_segment": row.get("groww_segment") or row.get("segment"),
+        "groww_trading_symbol": row.get("groww_trading_symbol") or row.get("trading_symbol"),
+        "indmoney_scrip_code": row.get("indmoney_scrip_code"),
+        "kotak_query": row.get("kotak_query"),
+        "kotak_segment": row.get("kotak_segment"),
+        "kotak_psymbol": row.get("kotak_psymbol"),
+    }
+
+
+def _csv_row_to_schema(row: dict[str, Any]) -> InstrumentSearchRow:
+    return InstrumentSearchRow(
+        symbol=str(row.get("symbol") or "unknown"),
+        source="csv",
+        exchange=row.get("exchange"),
+        segment=row.get("segment"),
+        trading_symbol=row.get("trading_symbol"),
+        name=row.get("name"),
+        isin=row.get("isin"),
+        instrument_type=row.get("instrument_type"),
+        expiry=parse_expiry(row.get("expiry")),
+        strike=row.get("strike"),
+        option_type=row.get("option_type"),
+        lot_size=row.get("lot_size"),
+        tick_size=row.get("tick_size"),
+        identifiers={
+            "zerodha_instrument_token": row.get("zerodha_instrument_token"),
+            "upstox_instrument_key": row.get("upstox_instrument_key"),
+            "angel_token": row.get("angel_token"),
+            "dhan_security_id": row.get("dhan_security_id"),
+            "dhan_exchange_segment": row.get("dhan_exchange_segment"),
+            "groww_trading_symbol": row.get("groww_trading_symbol"),
+            "indmoney_scrip_code": row.get("indmoney_scrip_code"),
+            "kotak_query": row.get("kotak_query"),
+            "kotak_segment": row.get("kotak_segment"),
+            "kotak_psymbol": row.get("kotak_psymbol"),
+        },
+    )
+
+
+def _csv_cache_cleanup(now: datetime) -> None:
+    expired = [
+        broker_code
+        for broker_code, cached in _CSV_SEARCH_CACHE.items()
+        if now - cached["last_accessed_at"] > _CSV_CACHE_TTL
+    ]
+    for broker_code in expired:
+        _CSV_SEARCH_CACHE.pop(broker_code, None)
+
+
+def _csv_rows_cached(broker_code: str) -> list[dict[str, Any]]:
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    _csv_cache_cleanup(now)
+    csv_path = _csv_path_for_broker(broker_code)
+    if not csv_path.exists():
+        _CSV_SEARCH_CACHE.pop(broker_code, None)
+        return []
+    stat = csv_path.stat()
+    cached = _CSV_SEARCH_CACHE.get(broker_code)
+    if cached and cached["mtime_ns"] == stat.st_mtime_ns:
+        cached["last_accessed_at"] = now
+        return cached["rows"]
+    rows: list[dict[str, Any]] = []
     with csv_path.open("r", newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        for row in reader:
-            row_exchange = _csv_value(row, "exchange")
-            row_segment = _csv_value(row, "segment")
-            if normalized_exchange and (row_exchange or "").lower() != normalized_exchange:
-                continue
-            if normalized_segment and (row_segment or "").lower() != normalized_segment:
-                continue
-            haystack = " ".join(
+        for raw_row in reader:
+            row = {key: _csv_value(raw_row, key) for key in raw_row.keys()}
+            row["_search_blob"] = " ".join(
                 filter(
                     None,
                     [
-                        _csv_value(row, "symbol"),
-                        _csv_value(row, "trading_symbol"),
-                        _csv_value(row, "name"),
-                        row_exchange,
-                        row_segment,
-                        _csv_value(row, "isin"),
-                        _csv_value(row, "instrument_type"),
-                        _csv_value(row, "option_type"),
+                        row.get("symbol"),
+                        row.get("trading_symbol"),
+                        row.get("name"),
+                        row.get("exchange"),
+                        row.get("segment"),
+                        row.get("isin"),
+                        row.get("instrument_type"),
+                        row.get("option_type"),
                     ],
                 )
             ).lower()
-            if normalized_query and normalized_query not in haystack:
-                continue
-            results.append(
-                InstrumentSearchRow(
-                    symbol=_csv_value(row, "symbol") or "unknown",
-                    source="csv",
-                    exchange=row_exchange,
-                    segment=row_segment,
-                    trading_symbol=_csv_value(row, "trading_symbol"),
-                    name=_csv_value(row, "name"),
-                    isin=_csv_value(row, "isin"),
-                    instrument_type=_csv_value(row, "instrument_type"),
-                    expiry=parse_expiry(_csv_value(row, "expiry")),
-                    strike=_csv_value(row, "strike"),
-                    option_type=_csv_value(row, "option_type"),
-                    lot_size=_csv_value(row, "lot_size"),
-                    tick_size=_csv_value(row, "tick_size"),
-                    identifiers={
-                        "zerodha_instrument_token": _csv_value(row, "zerodha_instrument_token"),
-                        "upstox_instrument_key": _csv_value(row, "upstox_instrument_key"),
-                        "angel_token": _csv_value(row, "angel_token"),
-                        "dhan_security_id": _csv_value(row, "dhan_security_id"),
-                        "dhan_exchange_segment": _csv_value(row, "dhan_exchange_segment"),
-                        "groww_trading_symbol": _csv_value(row, "groww_trading_symbol"),
-                        "indmoney_scrip_code": _csv_value(row, "indmoney_scrip_code"),
-                        "kotak_query": _csv_value(row, "kotak_query"),
-                        "kotak_segment": _csv_value(row, "kotak_segment"),
-                        "kotak_psymbol": _csv_value(row, "kotak_psymbol"),
-                    },
-                )
-            )
-            if len(results) >= max(1, min(limit, 200)):
-                break
-    return results
+            rows.append(row)
+    _CSV_SEARCH_CACHE[broker_code] = {
+        "mtime_ns": stat.st_mtime_ns,
+        "rows": rows,
+        "last_accessed_at": now,
+    }
+    return rows
+
+
+def _csv_match_rank(row: dict[str, Any], normalized_query: str) -> int:
+    symbol = str(row.get("symbol") or "").lower()
+    trading_symbol = str(row.get("trading_symbol") or "").lower()
+    name = str(row.get("name") or "").lower()
+    segment = str(row.get("segment") or "").upper()
+    score = 100
+    if normalized_query:
+        if symbol == normalized_query or trading_symbol == normalized_query:
+            score -= 60
+        elif symbol.startswith(normalized_query) or trading_symbol.startswith(normalized_query):
+            score -= 40
+        elif name.startswith(normalized_query):
+            score -= 20
+        elif normalized_query in symbol or normalized_query in trading_symbol:
+            score -= 10
+    if segment == "EQ":
+        score -= 30
+    elif segment == "NSE_EQ":
+        score -= 25
+    instrument_type = str(row.get("instrument_type") or "").upper()
+    if instrument_type == "EQ":
+        score -= 15
+    return score
 
 
 def _write_csv(rows: list[dict[str, Any]], csv_path: Path) -> None:

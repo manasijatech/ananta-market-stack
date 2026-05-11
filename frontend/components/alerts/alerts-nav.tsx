@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 const items = [
   { href: "/alerts", label: "Overview" },
@@ -15,11 +15,21 @@ const items = [
 
 export function AlertsNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   return (
     <nav className="mb-8 flex flex-wrap gap-2" aria-label="Alerts workspace">
       {items.map((item) => {
-        const active = pathname === item.href || (item.href.includes("?") ? pathname === item.href.split("?")[0] : pathname.startsWith(`${item.href}/`));
+        const [itemPath, itemQuery] = item.href.split("?");
+        const active = (() => {
+          if (itemQuery) {
+            const status = new URLSearchParams(itemQuery).get("status");
+            return pathname === itemPath && (searchParams.get("status") ?? "active") === (status ?? "active");
+          }
+          if (itemPath === "/alerts") return pathname === "/alerts";
+          if (itemPath === "/alerts/workflows") return pathname === "/alerts/workflows" && !searchParams.get("status");
+          return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
+        })();
         return (
           <Link
             className={active ? "rounded-full border border-primary bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground" : "rounded-full border border-border px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground"}

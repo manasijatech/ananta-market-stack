@@ -281,6 +281,7 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
         matched, reason = alert_svc.evaluate_workflow_payload(workflow, tick, previous_tick)
         evaluation_tick = tick
         notification_id = None
+        should_record_run = False
         if matched:
             cooldown = workflow.workflow_dsl.cooldown_seconds
             can_trigger = True
@@ -310,31 +311,33 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                 notification_id = notification.id
                 row.last_triggered_at = _utc_now()
                 db.add(row)
+                should_record_run = True
             else:
-                matched = False
                 reason = f"{reason}; cooldown active"
-        title = alert_svc._render_message(  # type: ignore[attr-defined]
-            workflow.workflow_dsl.notification.title_template,
-            {**evaluation_tick, "symbol": workflow.symbol},
-        )
-        message = alert_svc._render_message(  # type: ignore[attr-defined]
-            workflow.workflow_dsl.notification.message_template,
-            {**evaluation_tick, "symbol": workflow.symbol},
-        )
-        db.add(
-            AlertWorkflowRun(
-                id=str(uuid4()),
-                workflow_id=workflow.id,
-                notification_id=notification_id,
-                matched=matched,
-                reason=reason,
-                rendered_title=title,
-                rendered_message=message,
-                channels_json=json.dumps(_workflow_channels(db, workflow.user_id, workflow)),
-                tick_json=json.dumps(evaluation_tick, default=str),
-                evaluation_payload_json=json.dumps({"previous_tick": previous_tick, "event_driven": True}, default=str),
+                should_record_run = True
+        if should_record_run:
+            title = alert_svc._render_message(  # type: ignore[attr-defined]
+                workflow.workflow_dsl.notification.title_template,
+                {**evaluation_tick, "symbol": workflow.symbol},
             )
-        )
+            message = alert_svc._render_message(  # type: ignore[attr-defined]
+                workflow.workflow_dsl.notification.message_template,
+                {**evaluation_tick, "symbol": workflow.symbol},
+            )
+            db.add(
+                AlertWorkflowRun(
+                    id=str(uuid4()),
+                    workflow_id=workflow.id,
+                    notification_id=notification_id,
+                    matched=matched,
+                    reason=reason,
+                    rendered_title=title,
+                    rendered_message=message,
+                    channels_json=json.dumps(_workflow_channels(db, workflow.user_id, workflow)),
+                    tick_json=json.dumps(evaluation_tick, default=str),
+                    evaluation_payload_json=json.dumps({"previous_tick": previous_tick, "event_driven": True}, default=str),
+                )
+            )
         _store_previous_tick_for_workflow(redis_client, workflow.id, tick)
     db.commit()
 
