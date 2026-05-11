@@ -238,6 +238,7 @@ export interface DataCapabilities {
 
 export interface InstrumentSearchRow {
   symbol: string;
+  source?: string;
   exchange?: string | null;
   segment?: string | null;
   trading_symbol?: string | null;
@@ -284,6 +285,11 @@ export interface GreeksRequest {
   expiry?: string | null;
   strike?: string | null;
   option_type?: string | null;
+  price?: number;
+  underlying_price?: number;
+  volatility?: number;
+  interest_rate?: number;
+  days_to_expiry?: number;
 }
 
 export interface StreamStatus {

@@ -326,6 +326,7 @@ class InstrumentSyncOut(BaseModel):
 
 class InstrumentSearchRow(BaseModel):
     symbol: str
+    source: str = "db"
     exchange: str | None = None
     segment: str | None = None
     trading_symbol: str | None = None

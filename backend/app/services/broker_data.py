@@ -13,6 +13,7 @@ from app.schemas.broker import DataCapabilityItem, InstrumentSearchRow, Instrume
 from broker.core.instrument_store import (
     clear_instruments,
     count_instruments,
+    parse_expiry,
     SQLiteInstrumentResolver,
     create_sync_run,
     finish_sync_run,
@@ -36,6 +37,7 @@ def _client(db: Session, acc: BrokerAccount):
 def _instrument_row_to_schema(row: BrokerInstrument) -> InstrumentSearchRow:
     return InstrumentSearchRow(
         symbol=row.symbol,
+        source="db",
         exchange=row.exchange,
         segment=row.segment,
         trading_symbol=row.trading_symbol,
@@ -204,6 +206,86 @@ def _fetch_instrument_rows(db: Session, acc: BrokerAccount) -> list[dict[str, An
     return rows
 
 
+def _csv_value(row: dict[str, str], key: str) -> str | None:
+    value = (row.get(key) or "").strip()
+    return value or None
+
+
+def _csv_search_rows(
+    broker_code: str,
+    *,
+    query: str = "",
+    exchange: str | None = None,
+    segment: str | None = None,
+    limit: int = 50,
+) -> list[InstrumentSearchRow]:
+    csv_path = _csv_path_for_broker(broker_code)
+    if not csv_path.exists():
+        return []
+    normalized_query = query.strip().lower()
+    normalized_exchange = (exchange or "").strip().lower()
+    normalized_segment = (segment or "").strip().lower()
+    results: list[InstrumentSearchRow] = []
+    with csv_path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            row_exchange = _csv_value(row, "exchange")
+            row_segment = _csv_value(row, "segment")
+            if normalized_exchange and (row_exchange or "").lower() != normalized_exchange:
+                continue
+            if normalized_segment and (row_segment or "").lower() != normalized_segment:
+                continue
+            haystack = " ".join(
+                filter(
+                    None,
+                    [
+                        _csv_value(row, "symbol"),
+                        _csv_value(row, "trading_symbol"),
+                        _csv_value(row, "name"),
+                        row_exchange,
+                        row_segment,
+                        _csv_value(row, "isin"),
+                        _csv_value(row, "instrument_type"),
+                        _csv_value(row, "option_type"),
+                    ],
+                )
+            ).lower()
+            if normalized_query and normalized_query not in haystack:
+                continue
+            results.append(
+                InstrumentSearchRow(
+                    symbol=_csv_value(row, "symbol") or "unknown",
+                    source="csv",
+                    exchange=row_exchange,
+                    segment=row_segment,
+                    trading_symbol=_csv_value(row, "trading_symbol"),
+                    name=_csv_value(row, "name"),
+                    isin=_csv_value(row, "isin"),
+                    instrument_type=_csv_value(row, "instrument_type"),
+                    expiry=parse_expiry(_csv_value(row, "expiry")),
+                    strike=_csv_value(row, "strike"),
+                    option_type=_csv_value(row, "option_type"),
+                    lot_size=_csv_value(row, "lot_size"),
+                    tick_size=_csv_value(row, "tick_size"),
+                    identifiers={
+                        "zerodha_instrument_token": _csv_value(row, "zerodha_instrument_token"),
+                        "upstox_instrument_key": _csv_value(row, "upstox_instrument_key"),
+                        "angel_token": _csv_value(row, "angel_token"),
+                        "dhan_security_id": _csv_value(row, "dhan_security_id"),
+                        "dhan_exchange_segment": _csv_value(row, "dhan_exchange_segment"),
+                        "groww_trading_symbol": _csv_value(row, "groww_trading_symbol"),
+                        "indmoney_scrip_code": _csv_value(row, "indmoney_scrip_code"),
+                        "kotak_query": _csv_value(row, "kotak_query"),
+                        "kotak_segment": _csv_value(row, "kotak_segment"),
+                        "kotak_psymbol": _csv_value(row, "kotak_psymbol"),
+                    },
+                )
+            )
+            if len(results) >= max(1, min(limit, 200)):
+                break
+    return results
+
+
 def _write_csv(rows: list[dict[str, Any]], csv_path: Path) -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames: list[str] = []
@@ -227,14 +309,15 @@ def _write_csv(rows: list[dict[str, Any]], csv_path: Path) -> None:
 
 def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilityItem]:
     cached_count = count_instruments(db, acc.broker_code)
+    csv_available = _csv_path_for_broker(acc.broker_code).exists()
     capabilities: dict[str, DataCapabilityItem] = {
         "instruments_sync": DataCapabilityItem(
             supported=True,
             guidance="Instrument sync stores broker instrument metadata in SQLite. Some brokers may fall back to portfolio-derived symbols if a master download is unavailable.",
         ),
         "instrument_search": DataCapabilityItem(
-            supported=cached_count > 0,
-            guidance="Search becomes useful after at least one instrument sync completes.",
+            supported=cached_count > 0 or csv_available,
+            guidance="Search uses the SQLite cache first and falls back to the local broker CSV export when needed.",
         ),
         "quotes": DataCapabilityItem(supported=True, guidance="Real-time quote fetch is wired for all supported brokers."),
         "ohlc": DataCapabilityItem(supported=True, guidance="OHLC uses broker OHLC endpoints where available and quote-derived snapshots otherwise."),
@@ -340,7 +423,15 @@ def search_instruments(
         segment=segment,
         limit=limit,
     )
-    return [_instrument_row_to_schema(row) for row in rows]
+    if rows:
+        return [_instrument_row_to_schema(row) for row in rows]
+    return _csv_search_rows(
+        acc.broker_code,
+        query=query,
+        exchange=exchange,
+        segment=segment,
+        limit=limit,
+    )
 
 
 def fetch_quotes(

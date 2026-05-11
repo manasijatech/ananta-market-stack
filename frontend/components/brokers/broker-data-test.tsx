@@ -24,6 +24,7 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { brokerNames, formatDate, StatusBadge, statusTone } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type {
   BrokerAccountDetail,
@@ -37,6 +38,33 @@ import type {
 function pretty(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
+
+function isoLocal(date: Date): string {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function numberOrUndefined(value: string): number | undefined {
+  if (!value.trim()) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function integerOrUndefined(value: string): number | undefined {
+  if (!value.trim()) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const SAMPLE_SYMBOL = "RELIANCE26APR1000CE";
+const SAMPLE_EXCHANGE = "NSE";
+const SAMPLE_STRIKE = "1000";
+const SAMPLE_OPTION_TYPE = "CE";
+const SAMPLE_OPTION_PRICE = "395.95";
 
 function Section({
   title,
@@ -74,18 +102,33 @@ export function BrokerDataTest({
   const [capabilities, setCapabilities] = useState(initialCapabilities);
   const [streamStatus, setStreamStatus] = useState(initialStreamStatus);
   const [syncResult, setSyncResult] = useState<InstrumentSyncResult | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchExchange, setSearchExchange] = useState("");
+  const [searchQuery, setSearchQuery] = useState(SAMPLE_SYMBOL);
+  const [searchExchange, setSearchExchange] = useState(SAMPLE_EXCHANGE);
   const [searchRows, setSearchRows] = useState<InstrumentSearchRow[]>([]);
   const [responseTitle, setResponseTitle] = useState("");
   const [responseBody, setResponseBody] = useState("");
   const [error, setError] = useState("");
-  const [wsSymbol, setWsSymbol] = useState("");
-  const [wsExchange, setWsExchange] = useState("NSE");
+  const [marketSymbol, setMarketSymbol] = useState(SAMPLE_SYMBOL);
+  const [marketExchange, setMarketExchange] = useState(SAMPLE_EXCHANGE);
+  const [marketInterval, setMarketInterval] = useState("day");
+  const [marketExpiry, setMarketExpiry] = useState(new Date().toISOString().slice(0, 10));
+  const [marketFromDate, setMarketFromDate] = useState(isoLocal(new Date(new Date().setHours(9, 15, 0, 0))));
+  const [marketToDate, setMarketToDate] = useState(isoLocal(new Date(new Date().setHours(15, 30, 0, 0))));
+  const [marketStrike, setMarketStrike] = useState(SAMPLE_STRIKE);
+  const [marketOptionType, setMarketOptionType] = useState(SAMPLE_OPTION_TYPE);
+  const [marketPrice, setMarketPrice] = useState(SAMPLE_OPTION_PRICE);
+  const [marketUnderlyingPrice, setMarketUnderlyingPrice] = useState("");
+  const [marketVolatility, setMarketVolatility] = useState("");
+  const [marketInterestRate, setMarketInterestRate] = useState("");
+  const [marketDaysToExpiry, setMarketDaysToExpiry] = useState("");
+  const [wsSymbol, setWsSymbol] = useState(SAMPLE_SYMBOL);
+  const [wsExchange, setWsExchange] = useState(SAMPLE_EXCHANGE);
   const [wsMessages, setWsMessages] = useState<JsonObject[]>([]);
+  const [wsKeepHistory, setWsKeepHistory] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [isPending, startTransition] = useTransition();
   const wsRef = useRef<WebSocket | null>(null);
+  const wsKeepHistoryRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -93,6 +136,16 @@ export function BrokerDataTest({
       wsRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    wsKeepHistoryRef.current = wsKeepHistory;
+  }, [wsKeepHistory]);
+
+  useEffect(() => {
+    if (!wsKeepHistory && wsMessages.length > 1) {
+      setWsMessages((current) => current.slice(0, 1));
+    }
+  }, [wsKeepHistory, wsMessages.length]);
 
   function setPayload(title: string, body: unknown) {
     setResponseTitle(title);
@@ -184,12 +237,13 @@ export function BrokerDataTest({
       wsRef.current = null;
     };
     socket.onmessage = (event) => {
+      let nextPayload: JsonObject;
       try {
-        const payload = JSON.parse(event.data) as JsonObject;
-        setWsMessages((current) => [payload, ...current].slice(0, 12));
+        nextPayload = JSON.parse(event.data) as JsonObject;
       } catch {
-        setWsMessages((current) => [{ raw: String(event.data) }, ...current].slice(0, 12));
+        nextPayload = { raw: String(event.data) };
       }
+      setWsMessages((current) => (wsKeepHistoryRef.current ? [nextPayload, ...current].slice(0, 100) : [nextPayload]));
       startTransition(async () => {
         try {
           setStreamStatus(await getStreamStatus(account.id));
@@ -216,6 +270,13 @@ export function BrokerDataTest({
         instruments: [{ symbol: wsSymbol.trim(), exchange: wsExchange.trim() || "NSE" }]
       })
     );
+  }
+
+  function marketInstrument() {
+    return {
+      symbol: marketSymbol.trim(),
+      exchange: marketExchange.trim() || "NSE"
+    };
   }
 
   return (
@@ -301,7 +362,7 @@ export function BrokerDataTest({
 
       <Section
         title="Instrument search"
-        description="Search the broker instrument cache after a sync completes."
+        description="Search the broker instrument cache after a sync completes, with CSV fallback when the local export is available."
       >
         <div className="grid gap-3 min-[900px]:grid-cols-[1fr_140px_140px]">
           <Input onChange={(event) => setSearchQuery(event.target.value)} placeholder="Symbol, trading symbol, name" value={searchQuery} />
@@ -315,6 +376,7 @@ export function BrokerDataTest({
             <thead className="text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="py-2">Symbol</th>
+                <th>Source</th>
                 <th>Exchange</th>
                 <th>Type</th>
                 <th>Expiry</th>
@@ -328,6 +390,7 @@ export function BrokerDataTest({
                     <div className="font-bold">{row.symbol}</div>
                     <div className="text-xs text-muted-foreground">{row.name ?? row.trading_symbol ?? "-"}</div>
                   </td>
+                  <td>{row.source ?? "db"}</td>
                   <td>{row.exchange ?? "-"}</td>
                   <td>{row.instrument_type ?? "-"}</td>
                   <td>{row.expiry ? formatDate(row.expiry) : "-"}</td>
@@ -366,30 +429,37 @@ export function BrokerDataTest({
         description="Quote, OHLC, historical, option-chain, and greeks requests through the uniform backend interface."
       >
         <div className="grid gap-3 min-[960px]:grid-cols-4">
-          <Input defaultValue="RELIANCE" id="data-symbol" placeholder="Symbol" />
-          <Input defaultValue="NSE" id="data-exchange" placeholder="Exchange" />
-          <Input defaultValue="day" id="data-interval" placeholder="Interval" />
-          <Input defaultValue={new Date().toISOString().slice(0, 10)} id="data-expiry" placeholder="Expiry YYYY-MM-DD" />
+          <Input onChange={(event) => setMarketSymbol(event.target.value)} placeholder="Symbol" value={marketSymbol} />
+          <Input onChange={(event) => setMarketExchange(event.target.value)} placeholder="Exchange" value={marketExchange} />
+          <Input onChange={(event) => setMarketInterval(event.target.value)} placeholder="Interval" value={marketInterval} />
+          <Input onChange={(event) => setMarketExpiry(event.target.value)} placeholder="Expiry YYYY-MM-DD" value={marketExpiry} />
+        </div>
+        <div className="mt-3 grid gap-3 min-[960px]:grid-cols-2">
+          <Input onChange={(event) => setMarketFromDate(event.target.value)} placeholder="From" type="datetime-local" value={marketFromDate} />
+          <Input onChange={(event) => setMarketToDate(event.target.value)} placeholder="To" type="datetime-local" value={marketToDate} />
+        </div>
+        <div className="mt-3 grid gap-3 min-[960px]:grid-cols-4">
+          <Input onChange={(event) => setMarketStrike(event.target.value)} placeholder="Strike" value={marketStrike} />
+          <Input onChange={(event) => setMarketOptionType(event.target.value)} placeholder="Option type CE/PE" value={marketOptionType} />
+          <Input onChange={(event) => setMarketPrice(event.target.value)} placeholder="Option price" value={marketPrice} />
+          <Input onChange={(event) => setMarketUnderlyingPrice(event.target.value)} placeholder="Underlying price" value={marketUnderlyingPrice} />
+        </div>
+        <div className="mt-3 grid gap-3 min-[960px]:grid-cols-3">
+          <Input onChange={(event) => setMarketVolatility(event.target.value)} placeholder="Volatility" value={marketVolatility} />
+          <Input onChange={(event) => setMarketInterestRate(event.target.value)} placeholder="Interest rate" value={marketInterestRate} />
+          <Input onChange={(event) => setMarketDaysToExpiry(event.target.value)} placeholder="Days to expiry" value={marketDaysToExpiry} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             disabled={isPending || !sessionActive}
-            onClick={() => {
-              const symbol = (document.getElementById("data-symbol") as HTMLInputElement | null)?.value ?? "";
-              const exchange = (document.getElementById("data-exchange") as HTMLInputElement | null)?.value ?? "NSE";
-              run(() => getDataQuotes(account.id, { instruments: [{ symbol, exchange }] }), "Data quotes");
-            }}
+            onClick={() => run(() => getDataQuotes(account.id, { instruments: [marketInstrument()] }), "Data quotes")}
             type="button"
           >
             Quote
           </Button>
           <Button
             disabled={isPending || !sessionActive}
-            onClick={() => {
-              const symbol = (document.getElementById("data-symbol") as HTMLInputElement | null)?.value ?? "";
-              const exchange = (document.getElementById("data-exchange") as HTMLInputElement | null)?.value ?? "NSE";
-              run(() => getDataOhlc(account.id, { instruments: [{ symbol, exchange }] }), "Data OHLC");
-            }}
+            onClick={() => run(() => getDataOhlc(account.id, { instruments: [marketInstrument()] }), "Data OHLC")}
             type="button"
             variant="outline"
           >
@@ -398,17 +468,13 @@ export function BrokerDataTest({
           <Button
             disabled={isPending || !sessionActive}
             onClick={() => {
-              const symbol = (document.getElementById("data-symbol") as HTMLInputElement | null)?.value ?? "";
-              const exchange = (document.getElementById("data-exchange") as HTMLInputElement | null)?.value ?? "NSE";
-              const interval = (document.getElementById("data-interval") as HTMLInputElement | null)?.value ?? "day";
-              const today = new Date().toISOString().slice(0, 10);
               run(
                 () =>
                   getHistoricalData(account.id, {
-                    instrument: { symbol, exchange },
-                    interval,
-                    from_date: `${today}T09:15:00`,
-                    to_date: `${today}T15:30:00`
+                    instrument: marketInstrument(),
+                    interval: marketInterval,
+                    from_date: new Date(marketFromDate).toISOString(),
+                    to_date: new Date(marketToDate).toISOString()
                   }),
                 "Historical data"
               );
@@ -420,12 +486,7 @@ export function BrokerDataTest({
           </Button>
           <Button
             disabled={isPending || !sessionActive || !capabilities.capabilities.option_chain?.supported}
-            onClick={() => {
-              const symbol = (document.getElementById("data-symbol") as HTMLInputElement | null)?.value ?? "";
-              const exchange = (document.getElementById("data-exchange") as HTMLInputElement | null)?.value ?? "NSE";
-              const expiry = (document.getElementById("data-expiry") as HTMLInputElement | null)?.value ?? "";
-              run(() => getOptionChainData(account.id, { symbol, exchange, expiry }), "Option chain");
-            }}
+            onClick={() => run(() => getOptionChainData(account.id, { symbol: marketSymbol.trim(), exchange: marketExchange.trim() || "NSE", expiry: marketExpiry.trim() || undefined }), "Option chain")}
             type="button"
             variant="outline"
           >
@@ -434,10 +495,22 @@ export function BrokerDataTest({
           <Button
             disabled={isPending || !sessionActive || !capabilities.capabilities.greeks?.supported}
             onClick={() => {
-              const symbol = (document.getElementById("data-symbol") as HTMLInputElement | null)?.value ?? "";
-              const exchange = (document.getElementById("data-exchange") as HTMLInputElement | null)?.value ?? "NSE";
-              const expiry = (document.getElementById("data-expiry") as HTMLInputElement | null)?.value ?? "";
-              run(() => getGreeksData(account.id, { symbol, exchange, expiry }), "Greeks");
+              run(
+                () =>
+                  getGreeksData(account.id, {
+                    symbol: marketSymbol.trim(),
+                    exchange: marketExchange.trim() || "NSE",
+                    expiry: marketExpiry.trim() || undefined,
+                    strike: marketStrike.trim() || undefined,
+                    option_type: marketOptionType.trim() || undefined,
+                    price: numberOrUndefined(marketPrice),
+                    underlying_price: numberOrUndefined(marketUnderlyingPrice),
+                    volatility: numberOrUndefined(marketVolatility),
+                    interest_rate: numberOrUndefined(marketInterestRate),
+                    days_to_expiry: integerOrUndefined(marketDaysToExpiry)
+                  }),
+                "Greeks"
+              );
             }}
             type="button"
             variant="outline"
@@ -463,11 +536,18 @@ export function BrokerDataTest({
           <Button disabled={!wsConnected || !wsSymbol.trim()} onClick={subscribeSocket} type="button" variant="outline">
             Subscribe
           </Button>
+          <Button disabled={!wsMessages.length} onClick={() => setWsMessages([])} type="button" variant="outline">
+            Clear
+          </Button>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox checked={wsKeepHistory} onCheckedChange={(checked) => setWsKeepHistory(Boolean(checked))} />
+            See all received messages
+          </label>
         </div>
         <div className="mt-4 text-sm text-muted-foreground">
           {wsConnected ? "Connected" : "Disconnected"} · {streamStatus.subscription_count} active subscriptions
         </div>
-        <div className="mt-4 grid gap-3">
+        <div className="mt-4 grid max-h-[28rem] gap-3 overflow-y-auto pr-1">
           {wsMessages.map((message, index) => (
             <pre className="overflow-x-auto rounded-sm border border-border bg-muted/30 p-3 text-xs" key={`${index}-${JSON.stringify(message).slice(0, 24)}`}>
               {pretty(message)}
