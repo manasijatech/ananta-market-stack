@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.session import Base
@@ -293,3 +293,171 @@ class BrokerInstrumentSyncRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     row_count: Mapped[int] = mapped_column(default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AlertWorkflowTemplate(Base):
+    __tablename__ = "alert_workflow_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(64), default="general")
+    workflow_dsl_json: Mapped[str] = mapped_column(Text, default="{}")
+    graph_dsl_json: Mapped[str] = mapped_column(Text, default="{}")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class AlertWorkflow(Base):
+    __tablename__ = "alert_workflows"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    template_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("alert_workflow_templates.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    account_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str] = mapped_column(Text, default="")
+    symbol: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    exchange: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    instrument_ref_json: Mapped[str] = mapped_column(Text, default="{}")
+    workflow_dsl_json: Mapped[str] = mapped_column(Text, default="{}")
+    graph_dsl_json: Mapped[str] = mapped_column(Text, default="{}")
+    editor_mode: Mapped[str] = mapped_column(String(32), default="rule")
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    channel_override_json: Mapped[str] = mapped_column(Text, default="{}")
+    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class AlertWorkflowRun(Base):
+    __tablename__ = "alert_workflow_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("alert_workflows.id", ondelete="CASCADE"), index=True
+    )
+    notification_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user_alert_notifications.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    matched: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    rendered_title: Mapped[str] = mapped_column(String(256), default="")
+    rendered_message: Mapped[str] = mapped_column(Text, default="")
+    channels_json: Mapped[str] = mapped_column(Text, default="[]")
+    tick_json: Mapped[str] = mapped_column(Text, default="{}")
+    evaluation_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class LiveSymbolSubscription(Base):
+    __tablename__ = "live_symbol_subscriptions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("alert_workflows.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    account_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(128), index=True)
+    exchange: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    instrument_ref_json: Mapped[str] = mapped_column(Text, default="{}")
+    source_kind: Mapped[str] = mapped_column(String(32), default="manual")
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    last_quote_json: Mapped[str] = mapped_column(Text, default="{}")
+    last_received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class UserAlertNotification(Base):
+    __tablename__ = "user_alert_notifications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("alert_workflows.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    template_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("alert_workflow_templates.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    account_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    symbol: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    exchange: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    level: Mapped[str] = mapped_column(String(16), default="info")
+    title: Mapped[str] = mapped_column(String(256))
+    message: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="new", index=True)
+    channels_json: Mapped[str] = mapped_column(Text, default="[]")
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    dedupe_key: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UserAlertChannel(Base):
+    __tablename__ = "user_alert_channels"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    channel_type: Mapped[str] = mapped_column(String(32), index=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    config_cipher: Mapped[str] = mapped_column(Text, default="")
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class UserAlertChannelDelivery(Base):
+    __tablename__ = "user_alert_channel_deliveries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    notification_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user_alert_notifications.id", ondelete="CASCADE"), index=True
+    )
+    channel_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user_alert_channels.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    channel_type: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

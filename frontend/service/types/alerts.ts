@@ -1,0 +1,186 @@
+export type AlertChannelType = "in_app" | "discord" | "telegram";
+export type WorkflowStatus = "active" | "inactive";
+export type EditorMode = "rule" | "graph";
+
+export interface AlertCondition {
+  field: string;
+  operator: string;
+  value?: string | number | boolean | null;
+  window_seconds?: number | null;
+  compare_to?: string | null;
+}
+
+export interface AlertNotificationConfig {
+  level: string;
+  title_template: string;
+  message_template: string;
+}
+
+export interface AlertChannelSelection {
+  inherit_defaults: boolean;
+  enabled: AlertChannelType[];
+}
+
+export interface AlertWorkflowDsl {
+  combine: "all" | "any";
+  cooldown_seconds: number;
+  conditions: AlertCondition[];
+  notification: AlertNotificationConfig;
+  channels: AlertChannelSelection;
+}
+
+export interface AlertGraphNode {
+  id: string;
+  kind: "trigger" | "condition" | "notification" | "channel";
+  label: string;
+  config: unknown;
+}
+
+export interface AlertGraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface AlertGraphDsl {
+  nodes: AlertGraphNode[];
+  edges: AlertGraphEdge[];
+}
+
+export interface InstrumentRef {
+  symbol?: string | null;
+  exchange?: string | null;
+  zerodha_instrument_token?: number | null;
+  upstox_instrument_key?: string | null;
+  angel_exchange?: string | null;
+  angel_token?: number | null;
+  dhan_exchange_segment?: string | null;
+  dhan_security_id?: string | null;
+  groww_exchange?: string | null;
+  groww_segment?: string | null;
+  groww_trading_symbol?: string | null;
+  indmoney_scrip_code?: string | null;
+  kotak_query?: string | null;
+  kotak_segment?: string | null;
+  kotak_psymbol?: string | null;
+}
+
+export interface AlertTemplate {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  workflow_dsl: AlertWorkflowDsl;
+  graph_dsl: AlertGraphDsl;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AlertWorkflow {
+  id: string;
+  user_id: string;
+  template_id?: string | null;
+  account_id?: string | null;
+  broker_code?: string | null;
+  name: string;
+  description: string;
+  symbol?: string | null;
+  exchange?: string | null;
+  instrument_ref: InstrumentRef;
+  workflow_dsl: AlertWorkflowDsl;
+  graph_dsl: AlertGraphDsl;
+  editor_mode: EditorMode;
+  status: WorkflowStatus;
+  channel_override?: AlertChannelSelection | null;
+  last_triggered_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AlertWorkflowRun {
+  id: string;
+  workflow_id: string;
+  notification_id?: string | null;
+  matched: boolean;
+  reason: string;
+  rendered_title: string;
+  rendered_message: string;
+  channels: string[];
+  tick: Record<string, unknown>;
+  evaluation_payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AlertNotification {
+  id: string;
+  user_id: string;
+  workflow_id?: string | null;
+  template_id?: string | null;
+  account_id?: string | null;
+  broker_code?: string | null;
+  symbol?: string | null;
+  exchange?: string | null;
+  level: string;
+  title: string;
+  message: string;
+  status: string;
+  channels: string[];
+  payload: Record<string, unknown>;
+  dedupe_key?: string | null;
+  is_read: boolean;
+  created_at: string;
+  read_at?: string | null;
+}
+
+export interface AlertUnreadCount {
+  unread_count: number;
+}
+
+export interface AlertChannel {
+  id: string;
+  channel_type: AlertChannelType;
+  label: string;
+  is_enabled: boolean;
+  is_default: boolean;
+  config: Record<string, unknown>;
+  last_tested_at?: string | null;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LiveSubscription {
+  id: string;
+  user_id: string;
+  workflow_id?: string | null;
+  account_id?: string | null;
+  broker_code?: string | null;
+  symbol: string;
+  exchange?: string | null;
+  instrument_ref: InstrumentRef;
+  source_kind: string;
+  status: string;
+  last_quote: Record<string, unknown>;
+  last_received_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LiveWorkerSession {
+  broker_code: string;
+  account_id: string;
+  user_id: string;
+  adapter: string;
+  connected: boolean;
+  symbols: string[];
+  last_seen_at?: string | null;
+}
+
+export interface LiveStreamsStatus {
+  redis_ok: boolean;
+  redis_error: string;
+  worker_mode: string;
+  active_sessions: LiveWorkerSession[];
+  desired_subscriptions: LiveSubscription[];
+}

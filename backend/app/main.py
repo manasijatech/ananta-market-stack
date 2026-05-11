@@ -5,13 +5,20 @@ from fastapi import FastAPI
 
 from app.api.v1 import api_router
 from app.config import get_settings
+from app.services.alerts import ensure_system_templates
 from app.services.broker_sessions import maintenance_loop
+from db.session import SessionLocal
 from db.session import init_db
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    db = SessionLocal()
+    try:
+        ensure_system_templates(db)
+    finally:
+        db.close()
     stop_event = asyncio.Event()
     task = asyncio.create_task(maintenance_loop(stop_event))
     yield

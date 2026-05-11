@@ -20,7 +20,13 @@ See `docs/broker_auth_flows.md` for broker session/auth behavior and `docs/migra
 
 **Convention:** every broker and every major feature area should live in a **dedicated package** (subdirectory) with a small public surface. Do not add monolithic `*_adapter.py` files at the root of `broker/`.
 
-Next roadmap items (not implemented here): strategies UI, Alpha alerts, billing, live streaming workers, MCP tools, RBAC.
+Also implemented now:
+
+- Separate **alerts workspace** domain for user-owned trading alerts and workflows.
+- Redis-backed **live data workers** for symbol subscription polling/fanout, workflow evaluation, and outbound alert delivery.
+- Dedicated **alert notifications** domain and channel settings for in-app, Discord webhook, and Telegram bot delivery.
+
+Next roadmap items (not implemented here): production-grade native broker websocket adapters for every broker, richer workflow graph primitives, billing, MCP tools, RBAC.
 
 ## Tech stack
 
@@ -41,6 +47,8 @@ app/                    # FastAPI app, settings, deps, routers, Pydantic schemas
   api/v1/
     broker_accounts.py  # CRUD, verify, quotes, broker-specific session routes
     broker_ops.py       # Unified portfolio + orders + margin (one router per account)
+    alert_*.py         # Separate alert templates, workflows, notifications, channels, live stream control
+  workers/             # Long-running worker entrypoints for live data, evaluation, delivery
 broker/
   core/                 # Shared broker infrastructure (no single-broker logic here)
     types.py            # BrokerCode enum
@@ -81,6 +89,7 @@ When you touch broker behavior:
 | `ALLOW_INSECURE_DEV_CREDENTIALS` | If `true`, uses a **fixed dev-only** Fernet key (never in production) |
 | `APP_DEBUG` | App debug flag (avoids clashing with generic `DEBUG`) |
 | `ENABLE_ORDER_MUTATIONS` | Defaults to `false`. When `false`, order placement/modification/cancel endpoints return `403` and stay hidden from OpenAPI. |
+| `REDIS_*` | Required for production alert fanout, live tick cache, and workflow evaluation coordination. |
 
 See `.env.example`.
 
@@ -157,6 +166,40 @@ Root `GET /health` duplicates a minimal liveness check (for load balancers).
 | GET | `/notifications` | List current user broker/session alerts |
 | POST | `/notifications/{id}/read` | Mark a notification as read |
 
+### Alert notifications and workflows
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/alert-templates` | List immutable built-in workflow templates |
+| GET | `/alert-templates/{id}` | Fetch one template |
+| POST | `/alert-templates/{id}/instantiate` | Create a user-owned workflow from a template |
+| GET | `/alert-workflows` | List user workflows |
+| POST | `/alert-workflows` | Create workflow |
+| GET | `/alert-workflows/{id}` | Fetch workflow |
+| PUT | `/alert-workflows/{id}` | Update workflow |
+| DELETE | `/alert-workflows/{id}` | Delete workflow |
+| POST | `/alert-workflows/{id}/enable` | Enable workflow |
+| POST | `/alert-workflows/{id}/disable` | Disable workflow |
+| POST | `/alert-workflows/{id}/duplicate` | Duplicate workflow |
+| POST | `/alert-workflows/{id}/test` | Evaluate a workflow against a sample tick |
+| GET | `/alert-workflows/{id}/runs` | Workflow run history |
+| GET | `/alert-workflows/history/all` | Recent alert workflow run history |
+| GET | `/alert-notifications` | List user trading alerts |
+| GET | `/alert-notifications/unread-count` | Unread user alert count |
+| POST | `/alert-notifications/{id}/read` | Mark one user alert as read |
+| POST | `/alert-notifications/read-all` | Mark all user alerts as read |
+| GET | `/alert-notifications/stream` | SSE stream for live user alert delivery |
+| POST | `/alert-notifications/test` | Generate a test user alert |
+| GET | `/alert-channels` | List user alert channel settings |
+| PUT | `/alert-channels/{channel_type}` | Create/update channel credentials or defaults |
+| POST | `/alert-channels/{channel_type}/test` | Send a test alert to one channel |
+| GET | `/live-streams/status` | Worker health and active sessions |
+| GET | `/live-streams/subscriptions` | Desired symbol subscriptions |
+| POST | `/live-streams/subscriptions` | Add symbol subscription |
+| PUT | `/live-streams/subscriptions/replace` | Replace desired subscriptions |
+| DELETE | `/live-streams/subscriptions/{id}` | Remove one subscription |
+| POST | `/live-streams/subscriptions/reconcile` | Trigger a reconciliation check |
+
 ### Unified operations (`/broker-accounts/{account_id}/…` from `broker_ops`)
 
 Same URL prefix as above; `broker_ops` router adds nested paths on `account_id`.
@@ -216,6 +259,11 @@ SQLite instrument cache tables:
 - **Migrations**: Alembic is now scaffolded in `alembic/`. Existing databases should be stamped to the baseline revision first, then future schema changes should use generated revisions instead of only runtime patching.
 - **Token maintenance**: a lightweight in-process maintenance loop checks broker sessions daily after **06:30 IST**, attempts broker-supported refresh paths, and emits notifications for manual re-auth flows. Use `/broker-accounts/maintenance/run` to trigger the same logic on demand.
 - **Instrument maintenance**: a separate daily sync pass runs after **08:30 IST** and refreshes instrument metadata into SQLite once per broker per day.
+- **Alert workers**: start these separately when you need live alerting:
+  - `PYTHONPATH=. ./venv/bin/python -m app.workers.live_market_data`
+  - `PYTHONPATH=. ./venv/bin/python -m app.workers.alert_evaluator`
+  - `PYTHONPATH=. ./venv/bin/python -m app.workers.alert_delivery`
+- **Live data mode**: the current worker implementation uses Redis-backed polling through the unified quote layer. Native broker websocket adapters remain a per-broker next step rather than an implied guarantee.
 - **Tests**: use `TestClient` as a context manager so lifespan runs and tables exist: `with TestClient(app) as c:`.
 - **Compliance**: secrets are encrypted at rest with Fernet; protect `CREDENTIAL_ENCRYPTION_KEY` like any master key. SQLite file permissions and disk encryption are deployment concerns.
 

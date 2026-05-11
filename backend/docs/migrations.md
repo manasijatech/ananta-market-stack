@@ -48,7 +48,10 @@ Or with autogenerate:
 - The current baseline revision is `f5ed572aacd8`.
 - The next schema revision adds the broker instrument cache tables:
   - `3b1f6d7c9a2e` for `broker_instruments` and `broker_instrument_sync_runs`
+- The next schema revision after that adds the alerting workspace domain:
+  - `8c4f2aa91d72` for alert templates, workflows, runs, live subscriptions, user alert notifications, user alert channels, and delivery records
 - Existing local SQLite development databases can be stamped to that revision if they already contain the current schema.
+- If a local SQLite database already contains runtime-patched tables but has not been Alembic-managed yet, do not run `upgrade head` against it blindly. Stamp it to the latest compatible revision first, then continue from there.
 
 ## Recommended workflow
 

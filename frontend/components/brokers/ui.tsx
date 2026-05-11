@@ -1,9 +1,9 @@
 import Link from "next/link";
 import type { BrokerAccount, BrokerCode } from "@/service/types/broker";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { WorkspaceShell } from "@/components/workspace-shell";
 import { cn } from "@/lib/utils";
 
 export const brokerNames: Record<BrokerCode, string> = {
@@ -149,12 +149,5 @@ export function PrimaryLink({ href, children }: { href: string; children: React.
 }
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="mx-auto min-h-screen max-w-[1180px] px-5 py-8 min-[720px]:px-7 min-[720px]:py-10">
-      <div className="mb-5 flex justify-end">
-        <ThemeToggle />
-      </div>
-      {children}
-    </main>
-  );
+  return <WorkspaceShell>{children}</WorkspaceShell>;
 }
