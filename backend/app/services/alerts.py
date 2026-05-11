@@ -642,6 +642,29 @@ def _channel_targets(
     return [row for row in rows if row.is_default]
 
 
+def resolve_workflow_channels(
+    db: Session,
+    workflow: AlertWorkflowOut,
+) -> list[str]:
+    if workflow.channel_override and not workflow.channel_override.inherit_defaults:
+        return list(workflow.channel_override.enabled) or ["in_app"]
+    defaults = [
+        row.channel_type
+        for row in db.scalars(
+            select(UserAlertChannel).where(
+                UserAlertChannel.user_id == workflow.user_id,
+                UserAlertChannel.is_enabled.is_(True),
+                UserAlertChannel.is_default.is_(True),
+            )
+        ).all()
+    ]
+    if workflow.channel_override and workflow.channel_override.enabled:
+        defaults = sorted(set(defaults + list(workflow.channel_override.enabled)))
+    if defaults:
+        return defaults
+    return workflow.workflow_dsl.channels.enabled or ["in_app"]
+
+
 def create_alert_notification(
     db: Session,
     *,
@@ -654,6 +677,13 @@ def create_alert_notification(
     payload: dict[str, Any],
     dedupe_key: str | None = None,
 ) -> AlertNotificationOut:
+    enabled_channel_rows = db.scalars(
+        select(UserAlertChannel).where(
+            UserAlertChannel.user_id == user_id,
+            UserAlertChannel.channel_type.in_(channels),
+        )
+    ).all() if channels else []
+    channel_row_by_type = {row.channel_type: row for row in enabled_channel_rows}
     row = UserAlertNotification(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -674,10 +704,12 @@ def create_alert_notification(
     db.add(row)
     db.flush()
     for channel_type in channels:
+        channel_row = channel_row_by_type.get(channel_type)
         db.add(
             UserAlertChannelDelivery(
                 id=str(uuid.uuid4()),
                 notification_id=row.id,
+                channel_id=channel_row.id if channel_row else None,
                 channel_type=channel_type,
                 status="delivered" if channel_type == "in_app" else "pending",
                 delivered_at=_now() if channel_type == "in_app" else None,
@@ -803,6 +835,28 @@ def create_test_alert_notification(db: Session, user_id: str, payload: AlertNoti
         channels=payload.channels,
         payload={"test": True},
     )
+
+
+def create_workflow_test_notification(
+    db: Session,
+    workflow: AlertWorkflowOut,
+    tick: dict[str, Any],
+) -> AlertNotificationOut:
+    title = _render_message(workflow.workflow_dsl.notification.title_template, {**tick, "symbol": workflow.symbol})
+    message = _render_message(workflow.workflow_dsl.notification.message_template, {**tick, "symbol": workflow.symbol})
+    notification = create_alert_notification(
+        db,
+        user_id=workflow.user_id,
+        workflow=workflow,
+        title=title,
+        message=message,
+        level=workflow.workflow_dsl.notification.level,
+        channels=resolve_workflow_channels(db, workflow),
+        payload=tick,
+        dedupe_key=None,
+    )
+    deliver_pending_notifications(db, limit=20)
+    return notification
 
 
 def _discord_test_message(webhook_url: str, message: str) -> tuple[bool, str]:

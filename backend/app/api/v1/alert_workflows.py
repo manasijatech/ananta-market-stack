@@ -123,6 +123,20 @@ def test_workflow(
     return {"matched": matched, "reason": reason}
 
 
+@router.post("/{workflow_id}/test-notification")
+def test_workflow_notification(
+    workflow_id: str,
+    body: AlertWorkflowTestIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    workflow = alert_svc.get_workflow(db, user.id, workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    notification = alert_svc.create_workflow_test_notification(db, workflow, body.tick)
+    return {"notification_id": notification.id, "message": "Test alert created and delivery attempted."}
+
+
 @router.get("/{workflow_id}/runs", response_model=list[AlertWorkflowRunOut])
 def list_workflow_runs(
     workflow_id: str,

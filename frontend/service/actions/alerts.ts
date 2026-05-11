@@ -152,6 +152,13 @@ export async function testAlertWorkflow(id: string, tick: Record<string, unknown
   });
 }
 
+export async function sendWorkflowTestNotification(id: string, tick: Record<string, unknown>): Promise<{ notification_id: string; message: string }> {
+  return request<{ notification_id: string; message: string }>(`/alert-workflows/${id}/test-notification`, {
+    method: "POST",
+    body: JSON.stringify({ tick })
+  });
+}
+
 export async function getAlertWorkflowRuns(id: string): Promise<AlertWorkflowRun[]> {
   return request<AlertWorkflowRun[]>(`/alert-workflows/${id}/runs`);
 }

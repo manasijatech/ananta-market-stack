@@ -16,7 +16,6 @@ from db.models import (
     AlertWorkflowRun,
     BrokerAccount,
     LiveSymbolSubscription,
-    UserAlertChannel,
 )
 from db.session import SessionLocal
 
@@ -236,23 +235,8 @@ async def run_alert_delivery_worker(stop_event: asyncio.Event, poll_interval_sec
 
 
 def _workflow_channels(db, user_id: str, workflow) -> list[str]:
-    if workflow.channel_override and not workflow.channel_override.inherit_defaults:
-        return list(workflow.channel_override.enabled) or ["in_app"]
-    defaults = [
-        row.channel_type
-        for row in db.scalars(
-            select(UserAlertChannel).where(
-                UserAlertChannel.user_id == user_id,
-                UserAlertChannel.is_enabled.is_(True),
-                UserAlertChannel.is_default.is_(True),
-            )
-        ).all()
-    ]
-    if workflow.channel_override and workflow.channel_override.enabled:
-        defaults = sorted(set(defaults + list(workflow.channel_override.enabled)))
-    if defaults:
-        return defaults
-    return workflow.workflow_dsl.channels.enabled or ["in_app"]
+    _ = user_id
+    return alert_svc.resolve_workflow_channels(db, workflow)
 
 
 async def run_all_alert_workers(stop_event: asyncio.Event) -> None:

@@ -9,6 +9,7 @@ import {
 } from "@/service/actions/broker";
 import {
   createAlertWorkflow,
+  sendWorkflowTestNotification,
   testAlertWorkflow,
   updateAlertWorkflow
 } from "@/service/actions/alerts";
@@ -339,6 +340,33 @@ export function WorkflowEditor({
     });
   }
 
+  function sendTestAlert() {
+    if (!initialWorkflow) return;
+    setError("");
+    setMatchPreview("");
+    startTransition(async () => {
+      try {
+        const ohlcRaw = (preview.ohlc?.raw as JsonObject | undefined) ?? {};
+        const quoteDetail = (preview.quote?.detail as JsonObject | undefined) ?? {};
+        const quoteRaw = (quoteDetail.raw as JsonObject | undefined) ?? {};
+        const result = await sendWorkflowTestNotification(initialWorkflow.id, {
+          symbol,
+          exchange,
+          ltp: Number(preview.quote?.ltp ?? conditions[0]?.value ?? 0),
+          open: Number((preview.ohlc?.open as number | undefined) ?? 0),
+          high: Number((preview.ohlc?.high as number | undefined) ?? 0),
+          low: Number((preview.ohlc?.low as number | undefined) ?? 0),
+          close: Number((preview.ohlc?.close as number | undefined) ?? 0),
+          volume: Number((ohlcRaw.volume as number | undefined) ?? 120000),
+          open_interest: Number((quoteRaw.open_interest as number | undefined) ?? 15000)
+        });
+        setMatchPreview(result.message);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not send test alert.");
+      }
+    });
+  }
+
   return (
     <div className="grid gap-6">
       {error ? <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">{error}</div> : null}
@@ -526,7 +554,12 @@ export function WorkflowEditor({
         </Button>
         {initialWorkflow?.id ? (
           <Button disabled={isPending} onClick={previewTest} type="button" variant="outline">
-            Test workflow
+            Evaluate sample
+          </Button>
+        ) : null}
+        {initialWorkflow?.id ? (
+          <Button disabled={isPending} onClick={sendTestAlert} type="button" variant="outline">
+            Send test alert
           </Button>
         ) : null}
       </div>
