@@ -9,6 +9,7 @@ import {
 } from "@/service/actions/broker";
 import {
   createAlertWorkflow,
+  deleteAlertWorkflow,
   sendWorkflowTestNotification,
   testAlertWorkflow,
   updateAlertWorkflow
@@ -412,7 +413,7 @@ export function WorkflowEditor({
           volume: Number((ohlcRaw.volume as number | undefined) ?? 120000),
           open_interest: Number((quoteRaw.open_interest as number | undefined) ?? 15000)
         });
-        setMatchPreview(result.matched ? `Matched: ${result.reason}` : `No match: ${result.reason}`);
+        setMatchPreview(result.matched ? `Current preview tick matched the workflow: ${result.reason}` : `Current preview tick did not match: ${result.reason}`);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Could not test workflow.");
       }
@@ -439,9 +440,26 @@ export function WorkflowEditor({
           volume: Number((ohlcRaw.volume as number | undefined) ?? 120000),
           open_interest: Number((quoteRaw.open_interest as number | undefined) ?? 15000)
         });
-        setMatchPreview(result.message);
+        setMatchPreview(`${result.message} Notification id: ${result.notification_id}`);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Could not send test alert.");
+      }
+    });
+  }
+
+  function removeWorkflow() {
+    if (!initialWorkflow?.id || typeof window === "undefined") return;
+    if (!window.confirm(`Delete workflow "${initialWorkflow.name}"? This removes its live subscription and history remains only in past notifications.`)) {
+      return;
+    }
+    setError("");
+    startTransition(async () => {
+      try {
+        await deleteAlertWorkflow(initialWorkflow.id);
+        router.push("/alerts/workflows");
+        router.refresh();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not delete workflow.");
       }
     });
   }
@@ -649,7 +667,7 @@ export function WorkflowEditor({
         </Button>
         {initialWorkflow?.id ? (
           <Button disabled={isPending} onClick={previewTest} type="button" variant="outline">
-            Evaluate sample
+            Evaluate current preview
           </Button>
         ) : null}
         {initialWorkflow?.id ? (
@@ -657,7 +675,18 @@ export function WorkflowEditor({
             Send test alert
           </Button>
         ) : null}
+        {initialWorkflow?.id ? (
+          <Button disabled={isPending} onClick={removeWorkflow} type="button" variant="destructive">
+            Delete workflow
+          </Button>
+        ) : null}
       </div>
+      {initialWorkflow?.id ? (
+        <div className="grid gap-1 text-xs text-muted-foreground">
+          <div>`Evaluate current preview` checks the workflow conditions against the live preview tick shown above. It does not create an alert or notify any channel.</div>
+          <div>`Send test alert` renders the current title and message templates with the preview payload and attempts delivery through the selected channels.</div>
+        </div>
+      ) : null}
     </div>
   );
 }

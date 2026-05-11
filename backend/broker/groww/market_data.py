@@ -1,14 +1,54 @@
 from __future__ import annotations
 
 import csv
+from datetime import UTC, datetime
 from io import StringIO
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from broker.core.data_features import ohlc_from_quotes, unsupported_operation
 from broker.core.http import get_httpx_client
 from broker.core.instruments import InstrumentResolver
 from broker.groww.http_api import GrowwHTTP
 from broker.groww.mapping import map_exchange, map_segment
+
+IST = ZoneInfo("Asia/Kolkata")
+
+_HISTORICAL_INTERVALS = {
+    "minute": "1minute",
+    "1minute": "1minute",
+    "2minute": "2minute",
+    "3minute": "3minute",
+    "5minute": "5minute",
+    "10minute": "10minute",
+    "15minute": "15minute",
+    "30minute": "30minute",
+    "hour": "1hour",
+    "1hour": "1hour",
+    "4hour": "4hour",
+    "day": "1day",
+    "1day": "1day",
+    "week": "1week",
+    "1week": "1week",
+    "month": "1month",
+    "1month": "1month",
+}
+
+
+def _groww_historical_interval(value: Any) -> str:
+    normalized = str(value or "1day").strip().lower().replace(" ", "")
+    return _HISTORICAL_INTERVALS.get(normalized, normalized or "1day")
+
+
+def _groww_time(value: Any) -> str:
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        raw = str(value or "").strip()
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else datetime.now(tz=UTC)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def fetch_quotes(
@@ -93,17 +133,28 @@ def fetch_historical(
             instrument.get("symbol", ""), instrument.get("exchange", "NSE")
         )
         symbol = f"{exchange}-{trading_symbol}" if segment == "CASH" else trading_symbol
-    return http.get(
+    response = http.get(
         "/v1/historical/candles",
         {
             "exchange": exchange,
             "segment": segment,
             "groww_symbol": symbol,
-            "start_time": request["from_date"],
-            "end_time": request["to_date"],
-            "candle_interval": request["interval"],
+            "start_time": _groww_time(request["from_date"]),
+            "end_time": _groww_time(request["to_date"]),
+            "candle_interval": _groww_historical_interval(request.get("interval")),
         },
     )
+    error = response.get("error")
+    if isinstance(error, dict) and str(error.get("code") or "") == "403":
+        metadata = error.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata.setdefault(
+            "hint",
+            "Groww historical/backtesting access is forbidden for this token. The request shape matches the current Groww backtesting API, so check whether historical data access is enabled on the Groww API subscription for this account.",
+        )
+        error["metadata"] = metadata
+    return response
 
 
 def fetch_option_chain(http: GrowwHTTP, request: dict[str, Any]) -> dict[str, Any]:

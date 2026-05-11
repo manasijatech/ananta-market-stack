@@ -26,6 +26,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import type {
   BrokerAccountDetail,
   DataCapabilities,
@@ -60,11 +61,44 @@ function integerOrUndefined(value: string): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-const SAMPLE_SYMBOL = "RELIANCE26APR1000CE";
+const SAMPLE_SYMBOL = "RELIANCE";
 const SAMPLE_EXCHANGE = "NSE";
-const SAMPLE_STRIKE = "1000";
+const SAMPLE_STRIKE = "1400";
 const SAMPLE_OPTION_TYPE = "CE";
-const SAMPLE_OPTION_PRICE = "395.95";
+const SAMPLE_OPTION_PRICE = "25";
+
+type MarketMode = "quote" | "ohlc" | "historical" | "option_chain" | "greeks";
+
+const MARKET_MODE_FIELDS: Record<MarketMode, string[]> = {
+  quote: ["symbol", "exchange"],
+  ohlc: ["symbol", "exchange"],
+  historical: ["symbol", "exchange", "interval", "from_date", "to_date"],
+  option_chain: ["symbol", "exchange", "expiry"],
+  greeks: ["symbol", "exchange", "expiry", "strike", "option_type", "price", "underlying_price", "volatility", "interest_rate", "days_to_expiry"]
+};
+
+const MARKET_MODE_COPY: Record<MarketMode, { title: string; description: string }> = {
+  quote: {
+    title: "Quote request",
+    description: "Uses symbol and exchange to fetch the latest quote payload for one instrument."
+  },
+  ohlc: {
+    title: "OHLC request",
+    description: "Uses symbol and exchange to fetch the latest OHLC snapshot for one instrument."
+  },
+  historical: {
+    title: "Historical request",
+    description: "Uses symbol, exchange, interval, and time range to request candle history."
+  },
+  option_chain: {
+    title: "Option chain request",
+    description: "Uses symbol, exchange, and expiry to fetch the chain for one underlying."
+  },
+  greeks: {
+    title: "Greeks request",
+    description: "Uses symbol, exchange, expiry, strike, and option type. The pricing fields are currently kept for future enrichment and may be ignored by the broker adapter."
+  }
+};
 
 function Section({
   title,
@@ -83,6 +117,26 @@ function Section({
       </div>
       {children}
     </section>
+  );
+}
+
+function MarketField({
+  active,
+  children,
+  help,
+  label
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  help?: string;
+  label: string;
+}) {
+  return (
+    <div className={cn("grid gap-2 rounded-md border p-3", active ? "border-primary/50 bg-primary/5" : "border-border")}>
+      <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
+      {children}
+      {help ? <div className="text-xs text-muted-foreground">{help}</div> : null}
+    </div>
   );
 }
 
@@ -108,6 +162,7 @@ export function BrokerDataTest({
   const [responseTitle, setResponseTitle] = useState("");
   const [responseBody, setResponseBody] = useState("");
   const [error, setError] = useState("");
+  const [marketMode, setMarketMode] = useState<MarketMode>("quote");
   const [marketSymbol, setMarketSymbol] = useState(SAMPLE_SYMBOL);
   const [marketExchange, setMarketExchange] = useState(SAMPLE_EXCHANGE);
   const [marketInterval, setMarketInterval] = useState("day");
@@ -279,6 +334,10 @@ export function BrokerDataTest({
     };
   }
 
+  function marketFieldIsActive(field: string) {
+    return MARKET_MODE_FIELDS[marketMode].includes(field);
+  }
+
   return (
     <div className="grid gap-8">
       {!sessionActive ? (
@@ -428,46 +487,99 @@ export function BrokerDataTest({
         title="Market data"
         description="Quote, OHLC, historical, option-chain, and greeks requests through the uniform backend interface."
       >
-        <div className="grid gap-3 min-[960px]:grid-cols-4">
-          <Input onChange={(event) => setMarketSymbol(event.target.value)} placeholder="Symbol" value={marketSymbol} />
-          <Input onChange={(event) => setMarketExchange(event.target.value)} placeholder="Exchange" value={marketExchange} />
-          <Input onChange={(event) => setMarketInterval(event.target.value)} placeholder="Interval" value={marketInterval} />
-          <Input onChange={(event) => setMarketExpiry(event.target.value)} placeholder="Expiry YYYY-MM-DD" value={marketExpiry} />
+        <div className="flex flex-wrap gap-2">
+          {(Object.entries(MARKET_MODE_COPY) as Array<[MarketMode, { title: string; description: string }]>).map(([mode, meta]) => (
+            <Button key={mode} onClick={() => setMarketMode(mode)} type="button" variant={marketMode === mode ? "default" : "outline"}>
+              {meta.title}
+            </Button>
+          ))}
         </div>
-        <div className="mt-3 grid gap-3 min-[960px]:grid-cols-2">
-          <Input onChange={(event) => setMarketFromDate(event.target.value)} placeholder="From" type="datetime-local" value={marketFromDate} />
-          <Input onChange={(event) => setMarketToDate(event.target.value)} placeholder="To" type="datetime-local" value={marketToDate} />
+        <div className="mt-3 rounded-md border border-border p-3">
+          <div className="text-sm font-bold">{MARKET_MODE_COPY[marketMode].title}</div>
+          <div className="mt-1 text-sm text-muted-foreground">{MARKET_MODE_COPY[marketMode].description}</div>
+          <div className="mt-2 text-xs text-muted-foreground">Highlighted fields below are used for the currently selected request mode.</div>
         </div>
         <div className="mt-3 grid gap-3 min-[960px]:grid-cols-4">
-          <Input onChange={(event) => setMarketStrike(event.target.value)} placeholder="Strike" value={marketStrike} />
-          <Input onChange={(event) => setMarketOptionType(event.target.value)} placeholder="Option type CE/PE" value={marketOptionType} />
-          <Input onChange={(event) => setMarketPrice(event.target.value)} placeholder="Option price" value={marketPrice} />
-          <Input onChange={(event) => setMarketUnderlyingPrice(event.target.value)} placeholder="Underlying price" value={marketUnderlyingPrice} />
+          <MarketField active={marketFieldIsActive("symbol")} help="Underlying symbol or trading symbol used by all market-data requests." label="Symbol">
+            <Input onChange={(event) => setMarketSymbol(event.target.value)} placeholder="RELIANCE" value={marketSymbol} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("exchange")} help="Usually NSE, BSE, NFO, BFO, or MCX depending on the broker instrument." label="Exchange">
+            <Input onChange={(event) => setMarketExchange(event.target.value)} placeholder="NSE" value={marketExchange} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("interval")} help="Examples: day, 5minute, 15minute, 1hour. Broker adapters map these to native intervals where needed." label="Interval">
+            <Input onChange={(event) => setMarketInterval(event.target.value)} placeholder="day" value={marketInterval} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("expiry")} help="Used by option-chain and greeks requests. Enter a valid contract expiry date for the underlying." label="Expiry date">
+            <Input onChange={(event) => setMarketExpiry(event.target.value)} placeholder="YYYY-MM-DD" value={marketExpiry} />
+          </MarketField>
+        </div>
+        <div className="mt-3 grid gap-3 min-[960px]:grid-cols-2">
+          <MarketField active={marketFieldIsActive("from_date")} help="Historical candle start time." label="From date and time">
+            <Input onChange={(event) => setMarketFromDate(event.target.value)} placeholder="From" type="datetime-local" value={marketFromDate} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("to_date")} help="Historical candle end time." label="To date and time">
+            <Input onChange={(event) => setMarketToDate(event.target.value)} placeholder="To" type="datetime-local" value={marketToDate} />
+          </MarketField>
+        </div>
+        <div className="mt-3 grid gap-3 min-[960px]:grid-cols-4">
+          <MarketField active={marketFieldIsActive("strike")} help="Option strike used when selecting one contract for greeks." label="Strike">
+            <Input onChange={(event) => setMarketStrike(event.target.value)} placeholder="1400" value={marketStrike} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("option_type")} help="Option side for greeks, usually CE or PE." label="Option type">
+            <Input onChange={(event) => setMarketOptionType(event.target.value)} placeholder="CE or PE" value={marketOptionType} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("price")} help="Reserved for future local-model greeks and advanced testing." label="Option price">
+            <Input onChange={(event) => setMarketPrice(event.target.value)} placeholder="25" value={marketPrice} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("underlying_price")} help="Reserved for future local-model greeks and advanced testing." label="Underlying price">
+            <Input onChange={(event) => setMarketUnderlyingPrice(event.target.value)} placeholder="Underlying price" value={marketUnderlyingPrice} />
+          </MarketField>
         </div>
         <div className="mt-3 grid gap-3 min-[960px]:grid-cols-3">
-          <Input onChange={(event) => setMarketVolatility(event.target.value)} placeholder="Volatility" value={marketVolatility} />
-          <Input onChange={(event) => setMarketInterestRate(event.target.value)} placeholder="Interest rate" value={marketInterestRate} />
-          <Input onChange={(event) => setMarketDaysToExpiry(event.target.value)} placeholder="Days to expiry" value={marketDaysToExpiry} />
+          <MarketField active={marketFieldIsActive("volatility")} help="Reserved for future local-model greeks and advanced testing." label="Volatility">
+            <Input onChange={(event) => setMarketVolatility(event.target.value)} placeholder="Volatility" value={marketVolatility} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("interest_rate")} help="Reserved for future local-model greeks and advanced testing." label="Interest rate">
+            <Input onChange={(event) => setMarketInterestRate(event.target.value)} placeholder="Interest rate" value={marketInterestRate} />
+          </MarketField>
+          <MarketField active={marketFieldIsActive("days_to_expiry")} help="Reserved for future local-model greeks and advanced testing." label="Days to expiry">
+            <Input onChange={(event) => setMarketDaysToExpiry(event.target.value)} placeholder="Days to expiry" value={marketDaysToExpiry} />
+          </MarketField>
         </div>
+        {account.broker_code === "groww" ? (
+          <div className="mt-3 grid gap-2 text-sm text-muted-foreground">
+            <div>Historical sample: symbol `RELIANCE`, exchange `NSE`, interval `day` or `5minute`, and the current market-day `from`/`to` range.</div>
+            <div>Option chain sample: symbol `RELIANCE`, exchange `NSE`, expiry as a valid RELIANCE F&O expiry from instrument search or the broker option chain.</div>
+            <div>Greeks sample: symbol `RELIANCE`, exchange `NSE`, expiry as a valid RELIANCE F&O expiry, strike like `1400`, option type `CE` or `PE`.</div>
+          </div>
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             disabled={isPending || !sessionActive}
-            onClick={() => run(() => getDataQuotes(account.id, { instruments: [marketInstrument()] }), "Data quotes")}
+            onClick={() => {
+              setMarketMode("quote");
+              run(() => getDataQuotes(account.id, { instruments: [marketInstrument()] }), "Data quotes");
+            }}
             type="button"
+            variant={marketMode === "quote" ? "default" : "outline"}
           >
             Quote
           </Button>
           <Button
             disabled={isPending || !sessionActive}
-            onClick={() => run(() => getDataOhlc(account.id, { instruments: [marketInstrument()] }), "Data OHLC")}
+            onClick={() => {
+              setMarketMode("ohlc");
+              run(() => getDataOhlc(account.id, { instruments: [marketInstrument()] }), "Data OHLC");
+            }}
             type="button"
-            variant="outline"
+            variant={marketMode === "ohlc" ? "default" : "outline"}
           >
             OHLC
           </Button>
           <Button
             disabled={isPending || !sessionActive}
             onClick={() => {
+              setMarketMode("historical");
               run(
                 () =>
                   getHistoricalData(account.id, {
@@ -480,21 +592,25 @@ export function BrokerDataTest({
               );
             }}
             type="button"
-            variant="outline"
+            variant={marketMode === "historical" ? "default" : "outline"}
           >
             Historical
           </Button>
           <Button
             disabled={isPending || !sessionActive || !capabilities.capabilities.option_chain?.supported}
-            onClick={() => run(() => getOptionChainData(account.id, { symbol: marketSymbol.trim(), exchange: marketExchange.trim() || "NSE", expiry: marketExpiry.trim() || undefined }), "Option chain")}
+            onClick={() => {
+              setMarketMode("option_chain");
+              run(() => getOptionChainData(account.id, { symbol: marketSymbol.trim(), exchange: marketExchange.trim() || "NSE", expiry: marketExpiry.trim() || undefined }), "Option chain");
+            }}
             type="button"
-            variant="outline"
+            variant={marketMode === "option_chain" ? "default" : "outline"}
           >
             Option chain
           </Button>
           <Button
             disabled={isPending || !sessionActive || !capabilities.capabilities.greeks?.supported}
             onClick={() => {
+              setMarketMode("greeks");
               run(
                 () =>
                   getGreeksData(account.id, {
@@ -513,7 +629,7 @@ export function BrokerDataTest({
               );
             }}
             type="button"
-            variant="outline"
+            variant={marketMode === "greeks" ? "default" : "outline"}
           >
             Greeks
           </Button>

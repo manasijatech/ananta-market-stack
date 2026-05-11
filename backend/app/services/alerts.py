@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import uuid
 from datetime import UTC, datetime
@@ -889,9 +890,111 @@ def create_workflow_test_notification(
     return notification
 
 
-def _discord_test_message(webhook_url: str, message: str) -> tuple[bool, str]:
+def _notification_level_color(level: str) -> int:
+    return {
+        "info": 0x2563EB,
+        "warning": 0xD97706,
+        "critical": 0xDC2626,
+        "success": 0x059669,
+    }.get(level.lower(), 0x475569)
+
+
+def _stringify_metric(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    if isinstance(value, float):
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def _notification_facts(notification: UserAlertNotification, payload: dict[str, Any]) -> list[tuple[str, str]]:
+    facts: list[tuple[str, str]] = []
+    if notification.symbol:
+        facts.append(("Symbol", notification.symbol))
+    if notification.exchange:
+        facts.append(("Exchange", notification.exchange))
+    if notification.broker_code:
+        facts.append(("Broker", notification.broker_code.upper()))
+    for field, label in (
+        ("ltp", "LTP"),
+        ("day_change", "Day change"),
+        ("day_change_perc", "Day change %"),
+        ("volume", "Volume"),
+        ("open_interest", "Open interest"),
+        ("last_trade_time", "Last trade time"),
+        ("received_at", "Received at"),
+    ):
+        if payload.get(field) not in (None, ""):
+            facts.append((label, _stringify_metric(payload.get(field))))
+    return facts[:10]
+
+
+def _discord_notification_payload(notification: UserAlertNotification, payload: dict[str, Any]) -> dict[str, Any]:
+    fields = [
+        {
+            "name": name,
+            "value": value,
+            "inline": True,
+        }
+        for name, value in _notification_facts(notification, payload)
+    ]
+    return {
+        "username": "Market Stack Alerts",
+        "embeds": [
+            {
+                "title": notification.title,
+                "description": notification.message,
+                "color": _notification_level_color(notification.level),
+                "fields": fields,
+                "footer": {"text": f"Workflow {notification.workflow_id or 'manual'}"},
+                "timestamp": notification.created_at.replace(tzinfo=UTC).isoformat().replace("+00:00", "Z"),
+            }
+        ],
+        "allowed_mentions": {"parse": []},
+    }
+
+
+def _telegram_notification_payload(notification: UserAlertNotification, payload: dict[str, Any], chat_id: str) -> dict[str, Any]:
+    lines = [f"<b>{html.escape(notification.title)}</b>", html.escape(notification.message)]
+    facts = _notification_facts(notification, payload)
+    if facts:
+        lines.append("")
+        for name, value in facts:
+            lines.append(f"<b>{html.escape(name)}:</b> <code>{html.escape(value)}</code>")
+    return {
+        "chat_id": chat_id,
+        "text": "\n".join(lines),
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+
+def _discord_test_payload(message: str) -> dict[str, Any]:
+    return {
+        "username": "Market Stack Alerts",
+        "embeds": [
+            {
+                "title": "Channel test",
+                "description": message,
+                "color": _notification_level_color("info"),
+            }
+        ],
+        "allowed_mentions": {"parse": []},
+    }
+
+
+def _telegram_test_payload(message: str, chat_id: str) -> dict[str, Any]:
+    return {
+        "chat_id": chat_id,
+        "text": f"<b>Channel test</b>\n{html.escape(message)}",
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+
+def _discord_test_message(webhook_url: str, body: dict[str, Any]) -> tuple[bool, str]:
     try:
-        response = httpx.post(webhook_url, json={"content": message}, timeout=10)
+        response = httpx.post(webhook_url, json=body, timeout=10)
         if response.status_code >= 400:
             return False, response.text[:1000]
         return True, ""
@@ -899,11 +1002,11 @@ def _discord_test_message(webhook_url: str, message: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def _telegram_test_message(bot_token: str, chat_id: str, message: str) -> tuple[bool, str]:
+def _telegram_test_message(bot_token: str, body: dict[str, Any]) -> tuple[bool, str]:
     try:
         response = httpx.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={"chat_id": chat_id, "text": message},
+            json=body,
             timeout=10,
         )
         if response.status_code >= 400:
@@ -925,12 +1028,11 @@ def test_channel(db: Session, user_id: str, channel_type: str, message: str) -> 
     ok = True
     error = ""
     if channel_type == "discord":
-        ok, error = _discord_test_message(str(config.get("webhook_url") or ""), message)
+        ok, error = _discord_test_message(str(config.get("webhook_url") or ""), _discord_test_payload(message))
     elif channel_type == "telegram":
         ok, error = _telegram_test_message(
             str(config.get("bot_token") or ""),
-            str(config.get("chat_id") or ""),
-            message,
+            _telegram_test_payload(message, str(config.get("chat_id") or "")),
         )
     row.last_tested_at = _now()
     row.last_error = None if ok else error
@@ -1159,16 +1261,27 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> int:
     sent = 0
     for delivery in deliveries:
         notification = db.get(UserAlertNotification, delivery.notification_id)
+        if notification is None:
+            delivery.attempt_count += 1
+            delivery.status = "failed"
+            delivery.last_error = "notification not found"
+            db.add(delivery)
+            continue
         channel = db.get(UserAlertChannel, delivery.channel_id) if delivery.channel_id else None
         config = _channel_config_payload(channel) if channel else {}
         payload = _json_loads(delivery.payload_json, {})
-        message = str(payload.get("message") or notification.message if notification else "")
         ok = True
         error = ""
         if delivery.channel_type == "discord":
-            ok, error = _discord_test_message(str(config.get("webhook_url") or ""), message)
+            ok, error = _discord_test_message(
+                str(config.get("webhook_url") or ""),
+                _discord_notification_payload(notification, payload),
+            )
         elif delivery.channel_type == "telegram":
-            ok, error = _telegram_test_message(str(config.get("bot_token") or ""), str(config.get("chat_id") or ""), message)
+            ok, error = _telegram_test_message(
+                str(config.get("bot_token") or ""),
+                _telegram_notification_payload(notification, payload, str(config.get("chat_id") or "")),
+            )
         delivery.attempt_count += 1
         delivery.status = "delivered" if ok else "failed"
         delivery.last_error = None if ok else error
