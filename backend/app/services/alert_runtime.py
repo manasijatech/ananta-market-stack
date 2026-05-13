@@ -339,14 +339,18 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     can_trigger = (_utc_now() - row.last_triggered_at).total_seconds() >= cooldown
                 if can_trigger:
                     evaluation_tick = _enrich_tick_for_match(db, row, tick)
-                    target_symbol = str(evaluation_tick.get("symbol") or workflow.symbol or "")
+                    render_context = alert_svc._notification_context(  # type: ignore[attr-defined]
+                        workflow,
+                        evaluation_tick,
+                        previous_tick,
+                    )
                     title = alert_svc._render_message(  # type: ignore[attr-defined]
                         workflow.workflow_dsl.notification.title_template,
-                        {**evaluation_tick, "symbol": target_symbol},
+                        render_context,
                     )
                     message = alert_svc._render_message(  # type: ignore[attr-defined]
                         workflow.workflow_dsl.notification.message_template,
-                        {**evaluation_tick, "symbol": target_symbol},
+                        render_context,
                     )
                     notification = alert_svc.create_alert_notification(
                         db,
@@ -357,7 +361,7 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                         level=workflow.workflow_dsl.notification.level,
                         channels=_workflow_channels(db, workflow.user_id, workflow),
                         payload=evaluation_tick,
-                        dedupe_key=f"{workflow.id}:{target_symbol}:{reason}",
+                        dedupe_key=f"{workflow.id}:{str(render_context.get('symbol') or '')}:{reason}",
                     )
                     notification_id = notification.id
                     row.last_triggered_at = _utc_now()
@@ -367,14 +371,18 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     reason = f"{reason}; cooldown active"
                     should_record_run = False
             if should_record_run:
-                target_symbol = str(evaluation_tick.get("symbol") or workflow.symbol or "")
+                render_context = alert_svc._notification_context(  # type: ignore[attr-defined]
+                    workflow,
+                    evaluation_tick,
+                    previous_tick,
+                )
                 title = alert_svc._render_message(  # type: ignore[attr-defined]
                     workflow.workflow_dsl.notification.title_template,
-                    {**evaluation_tick, "symbol": target_symbol},
+                    render_context,
                 )
                 message = alert_svc._render_message(  # type: ignore[attr-defined]
                     workflow.workflow_dsl.notification.message_template,
-                    {**evaluation_tick, "symbol": target_symbol},
+                    render_context,
                 )
                 db.add(
                     AlertWorkflowRun(

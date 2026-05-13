@@ -684,6 +684,59 @@ def _render_message(template: str, context: dict[str, Any]) -> str:
         return template
 
 
+def _notification_context(
+    workflow: AlertWorkflowOut,
+    tick: dict[str, Any],
+    previous_tick: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a template context with computed fields used by notification placeholders."""
+
+    context: dict[str, Any] = dict(tick)
+    context["symbol"] = str(context.get("symbol") or workflow.symbol or "")
+    context["exchange"] = str(context.get("exchange") or workflow.exchange or "")
+
+    if context.get("change_pct") is None:
+        computed_change_pct: float | None = None
+        prior = previous_tick or {}
+        for condition in workflow.workflow_dsl.conditions:
+            if condition.operator not in {"pct_change_gte", "pct_change_lte"}:
+                continue
+            current, reference = _condition_value(condition, tick, prior)
+            if current is None or reference in (None, 0):
+                continue
+            computed_change_pct = ((current - reference) / reference) * 100
+            break
+        if computed_change_pct is None:
+            fallback = context.get("day_change_perc")
+            if fallback not in (None, ""):
+                try:
+                    computed_change_pct = float(fallback)
+                except Exception:
+                    computed_change_pct = None
+        if computed_change_pct is None:
+            try:
+                ltp = float(context.get("ltp")) if context.get("ltp") not in (None, "") else None
+            except Exception:
+                ltp = None
+            reference_candidates = ("close", "open")
+            if ltp is not None:
+                for key in reference_candidates:
+                    ref = context.get(key)
+                    if ref in (None, "", 0, "0"):
+                        continue
+                    try:
+                        ref_value = float(ref)
+                    except Exception:
+                        continue
+                    if ref_value != 0:
+                        computed_change_pct = ((ltp - ref_value) / ref_value) * 100
+                        break
+        if computed_change_pct is not None:
+            context["change_pct"] = round(computed_change_pct, 2)
+
+    return context
+
+
 def _condition_value(condition: AlertCondition, tick: dict[str, Any], previous_tick: dict[str, Any]) -> tuple[float | None, float | None]:
     current = tick.get(condition.field)
     if condition.compare_to:
@@ -1019,9 +1072,9 @@ def create_workflow_test_notification(
     workflow: AlertWorkflowOut,
     tick: dict[str, Any],
 ) -> AlertNotificationOut:
-    target_symbol = str(tick.get("symbol") or workflow.symbol or "")
-    title = _render_message(workflow.workflow_dsl.notification.title_template, {**tick, "symbol": target_symbol})
-    message = _render_message(workflow.workflow_dsl.notification.message_template, {**tick, "symbol": target_symbol})
+    context = _notification_context(workflow, tick, None)
+    title = _render_message(workflow.workflow_dsl.notification.title_template, context)
+    message = _render_message(workflow.workflow_dsl.notification.message_template, context)
     notification = create_alert_notification(
         db,
         user_id=workflow.user_id,
