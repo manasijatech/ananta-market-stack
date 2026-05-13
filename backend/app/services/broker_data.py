@@ -567,30 +567,51 @@ def sync_instruments_to_db(db: Session, acc: BrokerAccount) -> InstrumentSyncOut
 
 
 def sync_instruments_to_csv(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
-    started_at = datetime.utcnow()
+    run = create_sync_run(db, acc.broker_code)
     csv_path = _csv_path_for_broker(acc.broker_code)
     try:
         rows = _fetch_instrument_rows(db, acc)
         if not rows:
-            return _preserve_existing_instrument_cache(db, acc, storage_target="csv", started_at=started_at)
+            preserved = _preserve_existing_instrument_cache(
+                db, acc, storage_target="csv", started_at=run.started_at
+            )
+            run = finish_sync_run(
+                db,
+                run,
+                status=preserved.sync_status,
+                row_count=preserved.row_count,
+                error=preserved.error,
+            )
+            return _instrument_sync_out(
+                broker_code=acc.broker_code,
+                sync_status=run.status,
+                row_count=run.row_count,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                error=run.error,
+                storage_target="csv",
+                csv_path=preserved.csv_path,
+            )
         _write_csv(rows, csv_path)
+        run = finish_sync_run(db, run, status="completed", row_count=len(rows))
         return _instrument_sync_out(
             broker_code=acc.broker_code,
-            sync_status="completed",
-            row_count=len(rows),
-            started_at=started_at,
-            finished_at=datetime.utcnow(),
+            sync_status=run.status,
+            row_count=run.row_count,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
             storage_target="csv",
             csv_path=_csv_relpath(csv_path),
         )
     except Exception as exc:
+        run = finish_sync_run(db, run, status="failed", row_count=0, error=str(exc)[:2000])
         return _instrument_sync_out(
             broker_code=acc.broker_code,
-            sync_status="failed",
-            row_count=0,
-            started_at=started_at,
-            finished_at=datetime.utcnow(),
-            error=str(exc)[:2000],
+            sync_status=run.status,
+            row_count=run.row_count,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            error=run.error,
             storage_target="csv",
             csv_path=_csv_relpath(csv_path),
         )

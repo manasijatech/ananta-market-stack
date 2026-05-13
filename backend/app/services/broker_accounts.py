@@ -241,6 +241,8 @@ def create_broker_account(db: Session, user_id: str, payload: BrokerAccountCreat
 
 
 def verify_account(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
+    prior_verified_at = acc.last_verified_at
+    prior_error = acc.last_error
     try:
         client = get_client_for_account(acc)
         ok, msg = client.verify_connection()
@@ -251,6 +253,15 @@ def verify_account(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
     db.add(acc)
     db.commit()
     db.refresh(acc)
+    should_auto_sync = ok and (prior_verified_at is None or bool(prior_error))
+    if should_auto_sync:
+        try:
+            from app.services import broker_data
+
+            broker_data.sync_instruments_for_account(db, acc)
+        except Exception:
+            # Verify should remain successful even if the one-time sync fails.
+            pass
     return ok, msg
 
 
