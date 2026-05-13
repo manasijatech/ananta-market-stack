@@ -2,7 +2,7 @@ import { SystemConfigPanel } from "@/components/system/system-config-panel";
 import { PageHeader, Shell } from "@/components/brokers/ui";
 import { getSystemConfig } from "@/service/actions/broker";
 
-export default async function BrokerDataConfigPage() {
+export default async function SystemConfigPage() {
   const config = await getSystemConfig();
 
   return (

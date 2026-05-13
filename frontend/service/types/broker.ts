@@ -332,6 +332,35 @@ export interface BrokerDataSearchConfig {
   accounts: BrokerDataSearchAccount[];
 }
 
+export type LlmProvider = "openai" | "openrouter" | "gemini";
+
+export interface LlmModelConfig {
+  id: string;
+  provider: LlmProvider;
+  model_id: string;
+  label?: string | null;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LlmProviderConfig {
+  provider: LlmProvider;
+  label: string;
+  base_url: string;
+  has_api_key: boolean;
+  api_key_hint?: string | null;
+  is_enabled: boolean;
+  api_key_updated_at?: string | null;
+  models: LlmModelConfig[];
+  documentation_url?: string | null;
+}
+
+export interface SystemConfig {
+  broker_data_search: BrokerDataSearchConfig;
+  llm_providers: LlmProviderConfig[];
+}
+
 export interface Notification {
   id: string;
   account_id?: string | null;

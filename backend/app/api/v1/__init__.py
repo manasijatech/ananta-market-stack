@@ -12,6 +12,7 @@ from app.api.v1 import (
     live_streams,
     meta,
     notifications,
+    system_config,
     users,
     watchlists,
 )
@@ -46,6 +47,9 @@ api_router.include_router(
 )
 api_router.include_router(
     broker_data_config.router, prefix="/broker-data", tags=["broker-data"]
+)
+api_router.include_router(
+    system_config.router, prefix="/system-config", tags=["system-config"]
 )
 api_router.include_router(
     broker_ops.router, prefix="/broker-accounts", tags=["broker-operations"]

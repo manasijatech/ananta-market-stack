@@ -219,6 +219,33 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "user_llm_provider_credentials",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "provider": "VARCHAR(32)",
+                "api_key_cipher": "TEXT DEFAULT ''",
+                "is_enabled": "BOOLEAN DEFAULT 1",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "user_llm_models",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "provider": "VARCHAR(32)",
+                "model_id": "VARCHAR(256)",
+                "label": "VARCHAR(128)",
+                "is_enabled": "BOOLEAN DEFAULT 1",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "alert_workflow_templates",
             {
                 "id": "VARCHAR(36)",

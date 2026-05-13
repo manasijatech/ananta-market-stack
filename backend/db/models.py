@@ -30,6 +30,18 @@ class User(Base):
     watchlists: Mapped[list[UserWatchlist]] = relationship(
         "UserWatchlist", back_populates="user", cascade="all, delete-orphan"
     )
+    llm_provider_credentials: Mapped[list[UserLlmProviderCredential]] = relationship(
+        "UserLlmProviderCredential",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    llm_models: Mapped[list[UserLlmModel]] = relationship(
+        "UserLlmModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class BrokerAccount(Base):
@@ -160,6 +172,43 @@ class BrokerHoldingsSnapshot(Base):
     )
 
     account: Mapped[BrokerAccount] = relationship("BrokerAccount", back_populates="holdings_snapshot")
+
+
+class UserLlmProviderCredential(Base):
+    __tablename__ = "user_llm_provider_credentials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    api_key_cipher: Mapped[str] = mapped_column(Text, default="")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="llm_provider_credentials")
+
+
+class UserLlmModel(Base):
+    __tablename__ = "user_llm_models"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    model_id: Mapped[str] = mapped_column(String(256), index=True)
+    label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="llm_models")
 
 
 class ZerodhaCredentials(Base):

@@ -15,6 +15,8 @@ import type {
   InstrumentSearchRow,
   InstrumentSyncResult,
   JsonObject,
+  LlmProvider,
+  LlmProviderConfig,
   Notification,
   OhlcRequest,
   OrderBody,
@@ -26,6 +28,7 @@ import type {
   SessionStartResponse,
   SessionStatus,
   StreamStatus,
+  SystemConfig,
   VerifyResponse
 } from "@/service/types/broker";
 
@@ -219,20 +222,81 @@ export async function searchDefaultBrokerInstruments(
   if (params.segment) query.set("segment", params.segment);
   if (params.limit) query.set("limit", String(params.limit));
   const suffix = query.toString() ? `?${query.toString()}` : "";
-  return request<InstrumentSearchRow[]>(`/broker-data/instruments/search${suffix}`);
+  return request<InstrumentSearchRow[]>(`/system-config/instruments/search${suffix}`);
 }
 
 export async function getBrokerDataSearchConfig(): Promise<BrokerDataSearchConfig> {
-  return request<BrokerDataSearchConfig>("/broker-data/search-config");
+  return request<BrokerDataSearchConfig>("/system-config/broker-search");
 }
 
 export async function updateBrokerDataSearchConfig(preferredSearchAccountId: string | null): Promise<BrokerDataSearchConfig> {
-  const result = await request<BrokerDataSearchConfig>("/broker-data/search-config", {
+  const result = await request<BrokerDataSearchConfig>("/system-config/broker-search", {
     method: "PUT",
     body: JSON.stringify({ preferred_search_account_id: preferredSearchAccountId })
   });
   revalidatePath("/brokers");
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/system-config");
+  revalidatePath("/dashboard/broker-data");
+  return result;
+}
+
+export async function getSystemConfig(): Promise<SystemConfig> {
+  return request<SystemConfig>("/system-config");
+}
+
+export async function upsertLlmProviderCredential(
+  provider: LlmProvider,
+  payload: { api_key: string; is_enabled?: boolean }
+): Promise<LlmProviderConfig> {
+  const result = await request<LlmProviderConfig>(`/system-config/llm/providers/${provider}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      api_key: payload.api_key,
+      is_enabled: payload.is_enabled ?? true
+    })
+  });
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/system-config");
+  revalidatePath("/dashboard/broker-data");
+  return result;
+}
+
+export async function deleteLlmProviderCredential(provider: LlmProvider): Promise<LlmProviderConfig[]> {
+  const result = await request<LlmProviderConfig[]>(`/system-config/llm/providers/${provider}`, {
+    method: "DELETE"
+  });
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/system-config");
+  revalidatePath("/dashboard/broker-data");
+  return result;
+}
+
+export async function addLlmProviderModel(payload: {
+  provider: LlmProvider;
+  model_id: string;
+  label?: string | null;
+  is_enabled?: boolean;
+}): Promise<LlmProviderConfig[]> {
+  const result = await request<LlmProviderConfig[]>("/system-config/llm/models", {
+    method: "POST",
+    body: JSON.stringify({
+      provider: payload.provider,
+      model_id: payload.model_id,
+      label: payload.label ?? null,
+      is_enabled: payload.is_enabled ?? true
+    })
+  });
+  revalidatePath("/dashboard/system-config");
+  revalidatePath("/dashboard/broker-data");
+  return result;
+}
+
+export async function deleteLlmProviderModel(modelRowId: string): Promise<LlmProviderConfig[]> {
+  const result = await request<LlmProviderConfig[]>(`/system-config/llm/models/${modelRowId}`, {
+    method: "DELETE"
+  });
+  revalidatePath("/dashboard/system-config");
   revalidatePath("/dashboard/broker-data");
   return result;
 }
@@ -285,6 +349,7 @@ export async function createBrokerAccount(
   });
   revalidatePath("/brokers");
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/system-config");
   revalidatePath("/dashboard/broker-data");
   return result;
 }
@@ -293,6 +358,7 @@ export async function deleteBrokerAccount(id: string): Promise<void> {
   await request<null>(`/broker-accounts/${id}`, { method: "DELETE" });
   revalidatePath("/brokers");
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/system-config");
   revalidatePath("/dashboard/broker-data");
 }
 
@@ -302,6 +368,7 @@ export async function verifyBrokerAccount(id: string): Promise<VerifyResponse> {
   });
   revalidatePath(`/brokers/${id}`);
   revalidatePath("/brokers");
+  revalidatePath("/dashboard/system-config");
   revalidatePath("/dashboard/broker-data");
   return result;
 }
@@ -322,6 +389,7 @@ export async function createSession(
     body
   });
   revalidatePath(`/brokers/${id}`);
+  revalidatePath("/dashboard/system-config");
   revalidatePath("/dashboard/broker-data");
   return result;
 }
@@ -346,6 +414,7 @@ export async function refreshSession(
   }
   const result = await request<SessionMutationResponse>(path, { method: "POST" });
   revalidatePath(`/brokers/${id}`);
+  revalidatePath("/dashboard/system-config");
   revalidatePath("/dashboard/broker-data");
   return result;
 }
