@@ -46,6 +46,24 @@ class LlmModelCreateIn(BaseModel):
     is_enabled: bool = True
 
 
+class AlphaApiConfigOut(BaseModel):
+    label: str = "Manasija Alpha API"
+    has_api_key: bool = False
+    api_key_hint: str | None = None
+    is_enabled: bool = False
+    api_key_updated_at: datetime | None = None
+
+
+class AlphaApiCredentialUpsertIn(BaseModel):
+    api_key: str = Field(..., min_length=1)
+    is_enabled: bool = True
+
+
+class AlphaApiKeyOut(BaseModel):
+    api_key: str
+
+
 class SystemConfigOut(BaseModel):
     broker_data_search: BrokerDataSearchConfigOut
     llm_providers: list[LlmProviderConfigOut] = Field(default_factory=list)
+    alpha_api: AlphaApiConfigOut

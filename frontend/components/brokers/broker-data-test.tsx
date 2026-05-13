@@ -26,6 +26,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type {
  BrokerAccountDetail,
@@ -443,6 +444,16 @@ export function BrokerDataTest({
  </tr>
  </thead>
  <tbody>
+ {isPending && !searchRows.length ? Array.from({ length: 4 }).map((_, index) => (
+ <tr className="border-t border-border" key={`search-loading-${index}`}>
+ <td className="py-3"><Skeleton className="h-5 w-28" /><Skeleton className="mt-2 h-3 w-40" /></td>
+ <td><Skeleton className="h-4 w-12" /></td>
+ <td><Skeleton className="h-4 w-14" /></td>
+ <td><Skeleton className="h-4 w-20" /></td>
+ <td><Skeleton className="h-4 w-24" /></td>
+ <td><Skeleton className="h-4 w-56" /></td>
+ </tr>
+ )) : null}
  {searchRows.map((row) => (
  <tr className="border-t border-border" key={`${row.exchange}-${row.symbol}-${row.expiry ?? "na"}`}>
  <td className="py-3">
@@ -463,7 +474,7 @@ export function BrokerDataTest({
  ))}
  </tbody>
  </table>
- {!searchRows.length ? (
+ {!searchRows.length && !isPending ? (
  <div className="border-t border-border py-4 text-sm text-muted-foreground">No instrument rows loaded yet.</div>
  ) : null}
  </div>
@@ -679,9 +690,19 @@ export function BrokerDataTest({
  title={responseTitle || "Latest response"}
  description="Raw payloads returned by the backend or broker."
  >
+ {isPending ? (
+ <div className="border border-border bg-muted/30 p-4">
+ <Skeleton className="h-4 w-48" />
+ <Skeleton className="mt-3 h-4 w-full" />
+ <Skeleton className="mt-2 h-4 w-5/6" />
+ <Skeleton className="mt-2 h-4 w-2/3" />
+ <Skeleton className="mt-2 h-4 w-4/5" />
+ </div>
+ ) : (
  <pre className="overflow-x-auto border border-border bg-muted/30 p-4 text-xs">
  {responseBody || "{}"}
  </pre>
+ )}
  </Section>
  </div>
  );

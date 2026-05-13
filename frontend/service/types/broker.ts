@@ -356,9 +356,18 @@ export interface LlmProviderConfig {
   documentation_url?: string | null;
 }
 
+export interface AlphaApiConfig {
+  label: string;
+  has_api_key: boolean;
+  api_key_hint?: string | null;
+  is_enabled: boolean;
+  api_key_updated_at?: string | null;
+}
+
 export interface SystemConfig {
   broker_data_search: BrokerDataSearchConfig;
   llm_providers: LlmProviderConfig[];
+  alpha_api: AlphaApiConfig;
 }
 
 export interface Notification {

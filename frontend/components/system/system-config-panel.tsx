@@ -3,9 +3,11 @@
 import { useState, useTransition } from "react";
 import {
   addLlmProviderModel,
+  deleteAlphaApiCredential,
   deleteLlmProviderCredential,
   deleteLlmProviderModel,
   updateBrokerDataSearchConfig,
+  upsertAlphaApiCredential,
   upsertLlmProviderCredential
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
@@ -32,6 +34,9 @@ export function SystemConfigPanel({
   const [config, setConfig] = useState(initialConfig);
   const [selectedAccountId, setSelectedAccountId] = useState(initialConfig.broker_data_search.preferred_search_account_id ?? "");
   const [brokerError, setBrokerError] = useState("");
+  const [alphaApiKey, setAlphaApiKey] = useState("");
+  const [alphaReplacingApiKey, setAlphaReplacingApiKey] = useState(false);
+  const [alphaError, setAlphaError] = useState("");
   const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<string, ProviderDraftState>>(
     Object.fromEntries(
@@ -83,6 +88,41 @@ export function SystemConfigPanel({
         setConfig((current) => ({ ...current, broker_data_search: next }));
       } catch (caught) {
         setBrokerError(parseActionError(caught).message);
+      }
+    });
+  }
+
+  function displayedAlphaApiKeyValue() {
+    if (alphaReplacingApiKey || alphaApiKey.trim()) {
+      return alphaApiKey;
+    }
+    return config.alpha_api.api_key_hint ?? "";
+  }
+
+  function saveAlphaApiKey() {
+    setAlphaError("");
+    startTransition(async () => {
+      try {
+        const next = await upsertAlphaApiCredential({ api_key: alphaApiKey });
+        setConfig((current) => ({ ...current, alpha_api: next }));
+        setAlphaApiKey("");
+        setAlphaReplacingApiKey(false);
+      } catch (caught) {
+        setAlphaError(parseActionError(caught).message);
+      }
+    });
+  }
+
+  function clearAlphaApiKey() {
+    setAlphaError("");
+    startTransition(async () => {
+      try {
+        const next = await deleteAlphaApiCredential();
+        setConfig((current) => ({ ...current, alpha_api: next }));
+        setAlphaApiKey("");
+        setAlphaReplacingApiKey(false);
+      } catch (caught) {
+        setAlphaError(parseActionError(caught).message);
       }
     });
   }
@@ -206,6 +246,65 @@ export function SystemConfigPanel({
           </div>
         ))}
         {!config.broker_data_search.accounts.length ? <div className="text-sm text-muted-foreground">No broker accounts available yet.</div> : null}
+      </section>
+
+      <section className="grid gap-4">
+        <div>
+          <div className="text-sm font-bold">Manasija Alpha API</div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Store the Alpha API key used for market intelligence, company metadata, announcements, concalls, and daily summaries.
+          </p>
+        </div>
+        <div className="rounded-lg border border-border p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold">{config.alpha_api.label}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                API key {config.alpha_api.has_api_key ? "configured" : "not configured"}{config.alpha_api.api_key_updated_at ? ` · updated ${new Date(config.alpha_api.api_key_updated_at).toLocaleString("en-IN")}` : ""}
+              </div>
+              {config.alpha_api.api_key_hint ? (
+                <div className="mt-1 text-xs text-muted-foreground">Saved key: {config.alpha_api.api_key_hint}</div>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-5 flex flex-col gap-3 min-[760px]:flex-row">
+            <Input
+              className="min-[760px]:max-w-xl"
+              onChange={(event) => setAlphaApiKey(event.target.value)}
+              placeholder={config.alpha_api.has_api_key ? "Replace saved Manasija Alpha API key" : "Add Manasija Alpha API key"}
+              type={alphaReplacingApiKey || !config.alpha_api.has_api_key ? "password" : "text"}
+              value={displayedAlphaApiKeyValue()}
+              readOnly={config.alpha_api.has_api_key && !alphaReplacingApiKey}
+            />
+            <Button
+              disabled={isPending || !alphaApiKey.trim()}
+              onClick={saveAlphaApiKey}
+              type="button"
+            >
+              Save key
+            </Button>
+            <Button
+              disabled={isPending}
+              onClick={() => {
+                setAlphaApiKey("");
+                setAlphaReplacingApiKey(true);
+              }}
+              type="button"
+              variant="outline"
+            >
+              {config.alpha_api.has_api_key ? "Replace key" : "Enter key"}
+            </Button>
+            <Button
+              disabled={isPending || !config.alpha_api.has_api_key}
+              onClick={clearAlphaApiKey}
+              type="button"
+              variant="ghost"
+            >
+              Clear key
+            </Button>
+          </div>
+          {alphaError ? <div className="mt-3 text-sm text-destructive">{alphaError}</div> : null}
+        </div>
       </section>
 
       <section className="grid gap-4">

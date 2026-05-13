@@ -31,6 +31,8 @@ export interface WatchlistUpdateInput {
 export interface WatchlistSymbolInput {
   symbol: string;
   exchange?: string | null;
+  account_id?: string | null;
+  broker_code?: string | null;
   instrument_ref?: InstrumentRef;
 }
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { BookOpen, LayoutDashboard, ListChecks, Siren, WalletCards, Waypoints } from "lucide-react";
+import { BookOpen, LayoutDashboard, ListChecks, Newspaper, Settings2, Siren, WalletCards, Waypoints } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertNotificationsTray } from "@/components/alerts/alert-notifications-tray";
 import { useSession } from "@/components/session-provider";
@@ -10,14 +10,22 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 const navItems = [
  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
- { href: "/brokers", label: "Brokers", icon: WalletCards },
+ { href: "/brokers", label: "Broker Connections", icon: WalletCards },
  { href: "/watchlists", label: "Watchlists", icon: ListChecks },
- { href: "/alerts", label: "Alerts", icon: Siren },
+ { href: "/market-intelligence/news", label: "Market Intelligence", icon: Newspaper },
+ { href: "/alerts", label: "Alerts Workspace", icon: Siren },
  { href: "/alert-channels", label: "Alert Channels", icon: Waypoints },
+ { href: "/dashboard/system-config", label: "System Config", icon: Settings2 },
  { href: "/brokers/docs", label: "Docs", icon: BookOpen }
 ];
 
 function isNavItemActive(pathname: string, href: string) {
+ if (href === "/dashboard") {
+ return pathname === "/dashboard";
+ }
+ if (href === "/market-intelligence/news") {
+ return pathname.startsWith("/market-intelligence");
+ }
  if (href === "/brokers") {
  return pathname === "/brokers" || (pathname.startsWith("/brokers/") && !pathname.startsWith("/brokers/docs"));
  }
@@ -91,9 +99,9 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  </aside>
 
  <div className="min-[980px]:pl-[252px]">
- <header className="border-b border-border px-5 py-4 min-[760px]:px-8 min-[980px]:px-10">
- <div className="flex flex-col gap-4 min-[860px]:flex-row min-[860px]:items-center min-[860px]:justify-between">
- <nav className="hidden items-center gap-6 min-[860px]:flex">
+ <header className="flex border-b border-border px-5 py-4 min-[760px]:px-8 min-[980px]:h-20 min-[980px]:items-center min-[980px]:px-10 min-[980px]:py-0">
+ <div className="flex w-full flex-col gap-4 min-[860px]:flex-row min-[860px]:items-center min-[860px]:justify-between">
+ <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 min-[860px]:flex">
  {navItems.map((item) => {
  const active = isNavItemActive(pathname, item.href);
  return (
@@ -107,7 +115,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  );
  })}
  </nav>
- <div className="flex flex-wrap items-center gap-3 self-start min-[860px]:self-auto">
+ <div className="flex flex-wrap items-center gap-3 self-start min-[860px]:ml-auto min-[860px]:self-auto">
  <AlertNotificationsTray />
  <ThemeToggle />
  <span className="flex size-8 items-center justify-center border border-border bg-secondary font-mono text-[11px] font-bold text-secondary-foreground">

@@ -60,6 +60,8 @@ export async function createWatchlist(payload: WatchlistCreateInput): Promise<Wa
     body: JSON.stringify(payload)
   });
   revalidatePath("/watchlists");
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
   return result;
 }
 
@@ -86,6 +88,8 @@ export async function addSymbolsToWatchlist(
     body: JSON.stringify(payload)
   });
   revalidatePath("/watchlists");
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
   return result;
 }
 
@@ -98,6 +102,8 @@ export async function replaceWatchlistSymbols(
     body: JSON.stringify(payload)
   });
   revalidatePath("/watchlists");
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
   return result;
 }
 

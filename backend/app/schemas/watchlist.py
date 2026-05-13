@@ -19,6 +19,8 @@ class WatchlistUpdateIn(BaseModel):
 class WatchlistSymbolCreateIn(BaseModel):
     symbol: str
     exchange: str | None = None
+    account_id: str | None = None
+    broker_code: str | None = None
     instrument_ref: InstrumentRef = Field(default_factory=InstrumentRef)
 
 

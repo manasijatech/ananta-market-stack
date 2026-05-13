@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Check, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
 import {
  addSymbolsToWatchlist,
@@ -10,8 +11,10 @@ import {
  removeSymbolFromWatchlist,
  updateWatchlist
 } from "@/service/actions/watchlist";
+import { parseActionError } from "@/components/brokers/action-error";
 import type { InstrumentRef } from "@/service/types/alerts";
 import type { InstrumentSearchRow } from "@/service/types/broker";
+import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist } from "@/service/types/watchlist";
 import { Input } from "@/components/ui/input";
 
@@ -28,10 +31,17 @@ function parseSymbols(input: string): string[] {
 
 function formatDate(value?: string | null): string {
  if (!value) return "-";
+ const date = new Date(value);
+ if (Number.isNaN(date.getTime())) return value;
  return new Intl.DateTimeFormat("en-IN", {
  dateStyle: "medium",
  timeStyle: "short"
- }).format(new Date(value));
+}).format(date);
+}
+
+function formatMarketCap(value?: number | null): string {
+ if (typeof value !== "number" || Number.isNaN(value)) return "-";
+ return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
 }
 
 function sortWatchlists(items: Watchlist[]): Watchlist[] {
@@ -75,6 +85,8 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  const [showCreateForm, setShowCreateForm] = useState(false);
  const [symbolSearch, setSymbolSearch] = useState("");
  const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
+ const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
+ const [watchlistMetadata, setWatchlistMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
  const [searchLoading, setSearchLoading] = useState(false);
  const [showSuggestions, setShowSuggestions] = useState(false);
@@ -91,6 +103,12 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  () => watchlists.find((item) => item.id === selectedId) ?? watchlists[0] ?? null,
  [selectedId, watchlists]
  );
+ const selectedSymbols = useMemo(
+ () => selected?.items.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean) ?? [],
+ [selected]
+ );
+ const alphaSymbols = useMemo(() => selectedSymbols.slice(0, 20), [selectedSymbols]);
+ const alphaSymbolKey = alphaSymbols.join(",");
  const createParsedSymbols = useMemo(() => parseSymbols(createSymbols), [createSymbols]);
 
  useEffect(() => {
@@ -107,6 +125,30 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  }, [editingName, selected]);
 
  useEffect(() => {
+ if (!alphaSymbols.length) {
+ setWatchlistMetadata({});
+ return;
+ }
+ let cancelled = false;
+ getAlphaSymbolMetadata(alphaSymbols)
+ .then((metadata) => {
+ if (cancelled) return;
+ setWatchlistMetadata(
+ metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
+ acc[item.symbol.trim().toUpperCase()] = item;
+ return acc;
+ }, {})
+ );
+ })
+ .catch(() => {
+ if (!cancelled) setWatchlistMetadata({});
+ });
+ return () => {
+ cancelled = true;
+ };
+ }, [alphaSymbolKey, alphaSymbols]);
+
+ useEffect(() => {
  function handlePointerDown(event: MouseEvent) {
  if (searchWrapRef.current && !searchWrapRef.current.contains(event.target as Node)) {
  setShowSuggestions(false);
@@ -120,10 +162,12 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  const query = symbolSearch.trim();
  if (!query) {
  setSuggestions([]);
+ setSuggestionMetadata({});
  setActiveSuggestionIndex(-1);
  setSearchLoading(false);
  return;
  }
+ let cancelled = false;
  const handle = window.setTimeout(() => {
  setSearchLoading(true);
  startTransition(async () => {
@@ -133,18 +177,43 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  exchange: exchange.trim() || undefined,
  limit: 20
  });
+ if (cancelled) return;
  setSuggestions(result);
  setActiveSuggestionIndex(result.length ? 0 : -1);
  setShowSuggestions(true);
+ const symbols = Array.from(new Set(result.map((row) => row.symbol.trim().toUpperCase()).filter(Boolean))).slice(0, 20);
+ if (!symbols.length) {
+ setSuggestionMetadata({});
+ return;
+ }
+ try {
+ const metadata = await getAlphaSymbolMetadata(symbols);
+ if (cancelled) return;
+ setSuggestionMetadata(
+ metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
+ acc[item.symbol.trim().toUpperCase()] = item;
+ return acc;
+ }, {})
+ );
  } catch {
+ if (!cancelled) setSuggestionMetadata({});
+ }
+ } catch {
+ if (cancelled) return;
  setSuggestions([]);
+ setSuggestionMetadata({});
  setActiveSuggestionIndex(-1);
  } finally {
+ if (!cancelled) {
  setSearchLoading(false);
+ }
  }
  });
  }, 250);
- return () => window.clearTimeout(handle);
+ return () => {
+ cancelled = true;
+ window.clearTimeout(handle);
+ };
  }, [exchange, startTransition, symbolSearch]);
 
  function fail(caught: unknown, fallback: string) {
@@ -218,6 +287,8 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  {
  symbol: row.symbol,
  exchange: selectedExchange,
+ account_id: row.account_id ?? null,
+ broker_code: row.broker_code ?? null,
  instrument_ref: instrumentFromSearch(row)
  }
  ]
@@ -413,7 +484,7 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  <main className="min-w-0 flex-1">
  {selected ? (
  <>
- <div className="mb-7 flex flex-col gap-4 border-b border-border pb-5 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
+ <div className="mb-7 flex flex-col gap-4 pb-5 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
  <div className="min-w-0 flex-1">
  {editingName ? (
  <div className="flex max-w-2xl items-end gap-3">
@@ -497,7 +568,9 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  {searchLoading ? <Loader2 className="absolute right-0 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" /> : null}
  {showSuggestions && symbolSearch.trim() ? (
  <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto border border-border bg-popover" id="watchlist-symbol-suggestions" role="listbox">
- {suggestions.map((row, index) => (
+ {suggestions.map((row, index) => {
+ const metadata = suggestionMetadata[row.symbol.trim().toUpperCase()];
+ return (
  <button
  aria-selected={index === activeSuggestionIndex}
  className={[
@@ -512,13 +585,23 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  role="option"
  type="button"
  >
+ <span className="flex min-w-0 items-center gap-3">
+ {metadata?.logo ? (
+ <img alt="" className="size-8 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
+ ) : (
+ <span className="flex size-8 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ {row.symbol.slice(0, 2)}
+ </span>
+ )}
  <span className="min-w-0">
  <span className="block font-mono text-sm font-semibold">{row.symbol}</span>
- <span className="block truncate text-xs text-muted-foreground">{[row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" / ")}</span>
+ <span className="block truncate text-xs text-muted-foreground">{[metadata?.company_name ?? row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" / ")}</span>
+ </span>
  </span>
  <span className="shrink-0 font-mono text-xs uppercase text-primary">{[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}</span>
  </button>
- ))}
+ );
+ })}
  {!suggestions.length && !searchLoading ? <div className="px-3 py-3 text-sm text-muted-foreground">No matching instruments found.</div> : null}
  </div>
  ) : null}
@@ -532,21 +615,49 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  </div>
 
  <div className="overflow-x-auto">
- <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+ <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
  <thead>
  <tr className="border-y border-border text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
  <th className="py-2 pr-4 font-semibold">Ticker</th>
+ <th className="px-4 py-2 font-semibold">Company</th>
  <th className="px-4 py-2 font-semibold">Exchange</th>
+ <th className="px-4 py-2 font-semibold">Sector</th>
+ <th className="px-4 py-2 text-right font-semibold">Market cap</th>
  <th className="px-4 py-2 text-right font-semibold">Order</th>
  <th className="px-4 py-2 font-semibold">Added</th>
  <th className="w-20 py-2 pl-4 text-right font-semibold">Actions</th>
  </tr>
  </thead>
  <tbody>
- {selected.items.map((item, index) => (
+ {selected.items.map((item, index) => {
+ const metadata = watchlistMetadata[item.symbol.trim().toUpperCase()];
+ return (
  <tr className="watchlist-data-row group border-b border-border text-foreground odd:bg-muted/40 hover:bg-[var(--bg-hover)]" key={item.id} style={{ animationDelay: `${Math.min(index * 18, 120)}ms` }}>
- <td className="py-3 pr-4 font-mono text-[15px] font-semibold text-foreground">{item.symbol}</td>
+ <td className="py-3 pr-4">
+ <div className="flex items-center gap-3">
+ {metadata?.logo ? (
+ <img alt="" className="size-8 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
+ ) : (
+ <span className="flex size-8 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ {item.symbol.slice(0, 2)}
+ </span>
+ )}
+ <div className="min-w-0">
+ <div className="font-mono text-[15px] font-semibold text-foreground">{item.symbol}</div>
+ {metadata?.scrip_code ? <div className="font-mono text-[10px] uppercase text-muted-foreground">BSE {metadata.scrip_code}</div> : null}
+ </div>
+ </div>
+ </td>
+ <td className="max-w-[260px] px-4 py-3">
+ <div className="truncate text-sm font-medium text-foreground">{metadata?.company_name ?? "-"}</div>
+ <div className="truncate text-xs text-muted-foreground">{metadata?.basic_industry ?? metadata?.theme ?? ""}</div>
+ </td>
  <td className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">{item.exchange ?? "-"}</td>
+ <td className="max-w-[220px] px-4 py-3">
+ <div className="truncate text-xs font-medium text-foreground">{metadata?.sector ?? "-"}</div>
+ <div className="truncate text-xs text-muted-foreground">{metadata?.industry ?? metadata?.macro_economic_indicator ?? ""}</div>
+ </td>
+ <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{formatMarketCap(metadata?.market_cap ?? null)}</td>
  <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{item.sort_order + 1}</td>
  <td className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">{formatDate(item.created_at)}</td>
  <td className="w-20 py-3 pl-4 text-right">
@@ -555,7 +666,8 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  </button>
  </td>
  </tr>
- ))}
+ );
+ })}
  </tbody>
  </table>
  {!selected.items.length ? <div className="border-b border-border py-10 text-center text-sm text-muted-foreground">Search above to add the first symbol.</div> : null}

@@ -42,6 +42,13 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    alpha_api_credential: Mapped[UserAlphaApiCredential | None] = relationship(
+        "UserAlphaApiCredential",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class BrokerAccount(Base):
@@ -209,6 +216,22 @@ class UserLlmModel(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="llm_models")
+
+
+class UserAlphaApiCredential(Base):
+    __tablename__ = "user_alpha_api_credentials"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    api_key_cipher: Mapped[str] = mapped_column(Text, default="")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="alpha_api_credential")
 
 
 class ZerodhaCredentials(Base):

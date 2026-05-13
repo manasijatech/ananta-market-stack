@@ -6,6 +6,7 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { BrokerAccount, InstrumentRef, JsonObject, JsonValue, QuoteResponse } from "@/service/types/broker";
 
 const quoteIdentifierLabels: Record<string, string> = {
@@ -122,6 +123,24 @@ export function QuotesWidget({ account }: { account: BrokerAccount }) {
  </Alert>
  ) : null}
  <div className="mt-4 grid gap-3 min-[720px]:grid-cols-2">
+ {isPending ? (
+ <>
+ <div className="border-t border-border py-4">
+ <Skeleton className="h-4 w-28" />
+ <Skeleton className="mt-2 h-9 w-32" />
+ <div className="mt-4 grid grid-cols-2 gap-2">
+ {Array.from({ length: 6 }).map((_, index) => <Skeleton className="h-4 w-24" key={index} />)}
+ </div>
+ </div>
+ <div className="border-t border-border py-4">
+ <Skeleton className="h-4 w-28" />
+ <Skeleton className="mt-2 h-9 w-32" />
+ <div className="mt-4 grid grid-cols-2 gap-2">
+ {Array.from({ length: 6 }).map((_, index) => <Skeleton className="h-4 w-24" key={index} />)}
+ </div>
+ </div>
+ </>
+ ) : null}
  {rows.map((row) => {
  const raw = typeof row.detail.raw === "object" && row.detail.raw !== null && !Array.isArray(row.detail.raw)
  ? row.detail.raw as JsonObject

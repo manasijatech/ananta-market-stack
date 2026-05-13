@@ -246,6 +246,17 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "user_alpha_api_credentials",
+            {
+                "user_id": "VARCHAR(36)",
+                "api_key_cipher": "TEXT DEFAULT ''",
+                "is_enabled": "BOOLEAN DEFAULT 1",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "alert_workflow_templates",
             {
                 "id": "VARCHAR(36)",
@@ -405,7 +416,7 @@ def _ensure_table_columns(
         primary_key = ""
         if "id" in columns:
             primary_key = ", PRIMARY KEY (id)"
-        elif table_name in {"user_broker_data_preferences"}:
+        elif table_name in {"user_broker_data_preferences", "user_alpha_api_credentials"}:
             primary_key = ", PRIMARY KEY (user_id)"
         elif table_name in {"broker_holdings_snapshots"}:
             primary_key = ", PRIMARY KEY (account_id)"

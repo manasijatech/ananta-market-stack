@@ -20,7 +20,13 @@ from app.schemas.watchlist import (
     WatchlistSymbolsReplaceIn,
     WatchlistUpdateIn,
 )
-from db.models import UserWatchlist, UserWatchlistSymbol
+from db.models import (
+    BrokerAccount,
+    LiveSymbolSubscription,
+    UserBrokerDataPreference,
+    UserWatchlist,
+    UserWatchlistSymbol,
+)
 
 
 def _now() -> datetime:
@@ -135,6 +141,105 @@ def _dedupe_symbol_items(items: list[WatchlistSymbolCreateIn]) -> list[tuple[str
     return normalized
 
 
+def _dedupe_subscription_items(
+    items: list[tuple[str, str, InstrumentRef, str | None, str | None]],
+) -> list[tuple[str, str, InstrumentRef, str | None, str | None]]:
+    seen: set[tuple[str, str, str | None, str | None]] = set()
+    normalized: list[tuple[str, str, InstrumentRef, str | None, str | None]] = []
+    for symbol, exchange, ref, account_id, broker_code in items:
+        key = (symbol, exchange, account_id, broker_code)
+        if not symbol or key in seen:
+            continue
+        seen.add(key)
+        normalized.append((symbol, exchange, ref, account_id, broker_code))
+    return normalized
+
+
+def _default_broker_account(db: Session, user_id: str, broker_code: str | None = None) -> BrokerAccount | None:
+    stmt = (
+        select(BrokerAccount)
+        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+    )
+    if broker_code:
+        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
+    accounts = list(db.scalars(stmt).all())
+    if not accounts:
+        return None
+
+    pref = db.get(UserBrokerDataPreference, user_id)
+    preferred_account_id = pref.preferred_search_account_id if pref else None
+    if preferred_account_id:
+        for account in accounts:
+            if account.id == preferred_account_id:
+                return account
+
+    verified = [account for account in accounts if account.last_verified_at]
+    return (verified or accounts)[0]
+
+
+def _resolve_subscription_account(
+    db: Session,
+    user_id: str,
+    account_id: str | None,
+    broker_code: str | None,
+) -> tuple[str | None, str | None]:
+    normalized_account_id = (account_id or "").strip() or None
+    normalized_broker_code = (broker_code or "").strip().lower() or None
+    account: BrokerAccount | None = None
+    if normalized_account_id:
+        account = db.get(BrokerAccount, normalized_account_id)
+        if not account or account.user_id != user_id or not account.is_active:
+            account = None
+    if account is None:
+        account = _default_broker_account(db, user_id, normalized_broker_code)
+    if account is None:
+        return normalized_account_id, normalized_broker_code
+    return account.id, account.broker_code
+
+
+def _ensure_watchlist_subscriptions(
+    db: Session,
+    user_id: str,
+    items: list[tuple[str, str, InstrumentRef, str | None, str | None]],
+) -> None:
+    now = _now()
+    for symbol, exchange, ref, account_id, broker_code in _dedupe_subscription_items(items):
+        resolved_account_id, resolved_broker_code = _resolve_subscription_account(
+            db,
+            user_id,
+            account_id,
+            broker_code,
+        )
+        subscription_exchange = exchange or None
+        row = db.scalar(
+            select(LiveSymbolSubscription).where(
+                LiveSymbolSubscription.user_id == user_id,
+                LiveSymbolSubscription.account_id == resolved_account_id,
+                LiveSymbolSubscription.workflow_id.is_(None),
+                LiveSymbolSubscription.symbol == symbol,
+                LiveSymbolSubscription.exchange == subscription_exchange,
+            )
+        )
+        if row is None:
+            row = LiveSymbolSubscription(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                workflow_id=None,
+                account_id=resolved_account_id,
+                broker_code=resolved_broker_code,
+                symbol=symbol,
+                exchange=subscription_exchange,
+                source_kind="watchlist",
+                created_at=now,
+            )
+        row.instrument_ref_json = _json_dumps(ref.model_dump(exclude_none=True))
+        row.broker_code = resolved_broker_code
+        row.status = "active"
+        row.updated_at = now
+        db.add(row)
+
+
 def list_watchlists(db: Session, user_id: str) -> list[WatchlistOut]:
     rows = db.scalars(
         select(UserWatchlist)
@@ -160,6 +265,7 @@ def create_watchlist(db: Session, user_id: str, payload: WatchlistCreateIn) -> W
     db.add(watchlist)
     db.flush()
 
+    subscription_items: list[tuple[str, str, InstrumentRef, str | None, str | None]] = []
     for sort_order, (symbol, exchange) in enumerate(_dedupe_symbol_strings(payload.symbols)):
         ref = _instrument_ref(None, symbol, exchange)
         db.add(
@@ -173,6 +279,9 @@ def create_watchlist(db: Session, user_id: str, payload: WatchlistCreateIn) -> W
                 created_at=now,
             )
         )
+        subscription_items.append((symbol, exchange, ref, None, None))
+
+    _ensure_watchlist_subscriptions(db, user_id, subscription_items)
 
     db.commit()
     created = _get_owned_watchlist(db, user_id, watchlist.id)
@@ -181,7 +290,9 @@ def create_watchlist(db: Session, user_id: str, payload: WatchlistCreateIn) -> W
 
 def get_watchlist(db: Session, user_id: str, watchlist_id: str) -> WatchlistOut | None:
     watchlist = _get_owned_watchlist(db, user_id, watchlist_id)
-    return _watchlist_to_out(watchlist) if watchlist else None
+    if watchlist is None:
+        return None
+    return _watchlist_to_out(watchlist)
 
 
 def update_watchlist(db: Session, user_id: str, watchlist_id: str, payload: WatchlistUpdateIn) -> WatchlistOut | None:
@@ -221,17 +332,29 @@ def add_symbols_to_watchlist(
 
     exchange = _normalize_exchange(payload.exchange)
     existing = {(item.symbol, item.exchange) for item in watchlist.symbols}
-    requested_items = [
-        (symbol, normalized_exchange, _instrument_ref(None, symbol, normalized_exchange))
+    requested_items: list[tuple[str, str, InstrumentRef, str | None, str | None]] = [
+        (symbol, normalized_exchange, _instrument_ref(None, symbol, normalized_exchange), None, None)
         for symbol, normalized_exchange in _dedupe_symbol_strings(payload.symbols, exchange)
     ]
-    requested_items.extend(_dedupe_symbol_items(payload.items))
+    requested_items.extend(
+        (
+            symbol,
+            normalized_exchange,
+            _instrument_ref(item.instrument_ref, symbol, normalized_exchange),
+            item.account_id,
+            item.broker_code,
+        )
+        for item in payload.items
+        for symbol, normalized_exchange in [(_normalize_symbol(item.symbol), _normalize_exchange(item.exchange))]
+        if symbol
+    )
     added: list[str] = []
     skipped: list[str] = []
     next_sort_order = max((item.sort_order for item in watchlist.symbols), default=-1) + 1
     now = _now()
 
-    for symbol, normalized_exchange, ref in requested_items:
+    subscription_items: list[tuple[str, str, InstrumentRef, str | None, str | None]] = []
+    for symbol, normalized_exchange, ref, account_id, broker_code in _dedupe_subscription_items(requested_items):
         key = (symbol, normalized_exchange)
         if key in existing:
             skipped.append(symbol)
@@ -249,13 +372,16 @@ def add_symbols_to_watchlist(
         )
         existing.add(key)
         added.append(symbol)
+        subscription_items.append((symbol, normalized_exchange, ref, account_id, broker_code))
         next_sort_order += 1
 
     watchlist.updated_at = now
+    _ensure_watchlist_subscriptions(db, user_id, subscription_items)
     db.commit()
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
+    out = _watchlist_to_out(updated or watchlist)
     return WatchlistSymbolsBulkOut(
-        watchlist=_watchlist_to_out(updated or watchlist),
+        watchlist=out,
         added_symbols=added,
         skipped_symbols=skipped,
     )
@@ -276,7 +402,22 @@ def replace_watchlist_symbols(
         db.delete(item)
     db.flush()
 
-    for sort_order, (symbol, exchange, ref) in enumerate(_dedupe_symbol_items(payload.symbols)):
+    requested_items = [
+        (
+            symbol,
+            exchange,
+            _instrument_ref(item.instrument_ref, symbol, exchange),
+            item.account_id,
+            item.broker_code,
+        )
+        for item in payload.symbols
+        for symbol, exchange in [(_normalize_symbol(item.symbol), _normalize_exchange(item.exchange))]
+        if symbol
+    ]
+    subscription_items: list[tuple[str, str, InstrumentRef, str | None, str | None]] = []
+    for sort_order, (symbol, exchange, ref, account_id, broker_code) in enumerate(
+        _dedupe_subscription_items(requested_items)
+    ):
         db.add(
             UserWatchlistSymbol(
                 id=str(uuid.uuid4()),
@@ -288,8 +429,10 @@ def replace_watchlist_symbols(
                 created_at=now,
             )
         )
+        subscription_items.append((symbol, exchange, ref, account_id, broker_code))
 
     watchlist.updated_at = now
+    _ensure_watchlist_subscriptions(db, user_id, subscription_items)
     db.commit()
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(updated or watchlist)

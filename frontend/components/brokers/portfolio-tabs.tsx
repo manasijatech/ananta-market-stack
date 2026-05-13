@@ -185,7 +185,7 @@ export function PortfolioTabs({ accountId, sessionActive }: { accountId: string;
  <div className="sticky top-0 z-10 border-b border-border bg-background/95 py-4 backdrop-blur">
  <div className="flex flex-col gap-3 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
  <Tabs value={active} onValueChange={(value) => load(value as Tab)}>
- <TabsList className="overflow-x-auto">
+ <TabsList className="max-w-full overflow-x-auto overflow-y-hidden">
  {tabs.map((tab) => (
  <TabsTrigger className="whitespace-nowrap font-extrabold" key={tab.id} value={tab.id}>
  {tab.label}

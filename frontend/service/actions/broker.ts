@@ -5,6 +5,7 @@ import { fetchFastApi } from "@/lib/fastapi";
 import type {
   BrokerAccount,
   BrokerAccountDetail,
+  AlphaApiConfig,
   BrokerDataSearchConfig,
   BrokerCode,
   CreateBrokerAccountPayload,
@@ -243,6 +244,45 @@ export async function updateBrokerDataSearchConfig(preferredSearchAccountId: str
 
 export async function getSystemConfig(): Promise<SystemConfig> {
   return request<SystemConfig>("/system-config");
+}
+
+export async function upsertAlphaApiCredential(payload: {
+  api_key: string;
+  is_enabled?: boolean;
+}): Promise<AlphaApiConfig> {
+  const result = await request<AlphaApiConfig>("/system-config/alpha", {
+    method: "PUT",
+    body: JSON.stringify({
+      api_key: payload.api_key,
+      is_enabled: payload.is_enabled ?? true
+    })
+  });
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/system-config");
+  revalidatePath("/market-intelligence");
+  revalidatePath("/market-intelligence/news");
+  revalidatePath("/market-intelligence/alerts");
+  revalidatePath("/market-intelligence/announcements");
+  revalidatePath("/market-intelligence/earnings");
+  revalidatePath("/market-intelligence/concalls");
+  revalidatePath("/market-intelligence/summary");
+  return result;
+}
+
+export async function deleteAlphaApiCredential(): Promise<AlphaApiConfig> {
+  const result = await request<AlphaApiConfig>("/system-config/alpha", {
+    method: "DELETE"
+  });
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/system-config");
+  revalidatePath("/market-intelligence");
+  revalidatePath("/market-intelligence/news");
+  revalidatePath("/market-intelligence/alerts");
+  revalidatePath("/market-intelligence/announcements");
+  revalidatePath("/market-intelligence/earnings");
+  revalidatePath("/market-intelligence/concalls");
+  revalidatePath("/market-intelligence/summary");
+  return result;
 }
 
 export async function upsertLlmProviderCredential(
