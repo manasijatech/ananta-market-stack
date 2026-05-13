@@ -40,14 +40,14 @@ High-value Market Stack surfaces for Alpha API data:
 
 | Frontend area | Recommended Alpha endpoints | Use |
 |---|---|---|
-| System config | frontend env only | `MANASIJA_API_KEY` is configured in frontend server env, not saved through the Market Stack backend config UI. |
+| System config | backend config API | `MANASIJA_API_KEY` is saved through System Config and read server-side by frontend actions. |
 | Watchlists | `/v1/symbols/metadata`, `/v1/news`, `/v1/alerts`, WebSocket streams | Enrich tickers with company/logo/sector, show latest news/alerts per symbol, stream watchlist updates. |
 | Alert workflow editor | `/v1/symbols/metadata`, `/v1/alerts`, WebSocket `/v1/ws` | Better symbol identification, sector context, live alert previews, realtime subscription setup. |
 | Alert subscriptions/stream manager | `/v1/ws`, `/v1/account/limits`, `/v1/account/usage` | Show stream tier/caps, connection status, subscribed products, usage/credits. |
 | Dashboard overview | `/v1/news`, `/v1/announcements`, `/v1/earnings`, `/v1/alerts`, `/v1/account/usage` | Market activity feed, portfolio/watchlist highlights, account balance widgets. |
 | Company/security detail page | `/v1/symbols/metadata`, `/v1/news`, `/v1/announcements`, `/v1/earnings`, `/v1/concalls` | One-symbol research page with filings, earnings, news, concalls, and artifacts. |
 | Filing/document viewer | `/v1/announcements/items`, `/v1/announcements/attachments`, `/v1/earnings/{id}`, `/v1/earnings/attachments` | Detail drawers, source PDF buttons, attachment download/open flows. |
-| Portfolio intelligence | `/v1/daily-summary/`, `/v1/batch/jobs` | AI daily digest and bulk portfolio-summary jobs. |
+| Portfolio intelligence | `/v1/batch/jobs` | Bulk portfolio-summary jobs. |
 | Internal admin console | `/v1/admin/accounts/*`, `/v1/api-keys/*`, `/v1/internal/ops/runtime-audit` | Account provisioning, key management, credit ledger, runtime support. |
 
 ## Mounted Endpoints
@@ -101,12 +101,6 @@ High-value Market Stack surfaces for Alpha API data:
 | Method | Endpoint | Auth | Query/body | Response schema | Frontend use case |
 |---|---|---|---|---|---|
 | GET | `/v1/alerts` | customer | `symbols`, `type`, `from`, `to`, `page`, `limit<=200` | `PaginatedResponse[Alert]` | Alert feed, watchlist alerts, dashboard notification stream. |
-
-### Daily Summary
-
-| Method | Endpoint | Auth | Query/body | Response schema | Frontend use case |
-|---|---|---|---|---|---|
-| POST | `/v1/daily-summary/` | customer | JSON `SummaryRequest` | `SummaryResponse` | Generate AI portfolio/watchlist digest. |
 
 ### Batch Summary
 
@@ -392,11 +386,10 @@ Current first-class Alpha frontend actions:
 | `getAlphaEarnings` | `/v1/earnings` | Company detail, earnings calendar |
 | `getAlphaConcalls` | `/v1/concalls` | Company detail, research workspace |
 | `getAlphaAlerts` | `/v1/alerts` | Alert center, dashboard |
-| `generateAlphaDailySummary` | `/v1/daily-summary/` | Portfolio/summary screen |
 
 ## Implementation Notes For Market Stack
 
-- `MANASIJA_API_KEY` is a paid customer key and should stay server-only in frontend env.
+- `MANASIJA_API_KEY` is a paid customer key and should stay server-side through the backend System Config store.
 - Frontend client components should never receive the raw key.
 - Read-time metadata enrichment is safer than storing Alpha symbol metadata in local watchlist tables because company/sector/logo can change.
 - Cache symbol metadata server-side later if calls become expensive. A 24 hour TTL is reasonable for company/sector/logo fields.

@@ -1,11 +1,8 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { ExternalLink } from "lucide-react";
 import { parseActionError } from "@/components/brokers/action-error";
 import { getAlphaAlerts } from "@/service/actions/alpha/alerts";
 import { getAlphaAnnouncements } from "@/service/actions/alpha/announcements";
 import { getAlphaConcalls } from "@/service/actions/alpha/concalls";
-import { generateAlphaDailySummary } from "@/service/actions/alpha/daily-summary";
 import { getAlphaEarnings } from "@/service/actions/alpha/earnings";
 import { getAlphaNews } from "@/service/actions/alpha/news";
 import { getWatchlists } from "@/service/actions/watchlist";
@@ -20,8 +17,7 @@ export const marketIntelligenceSections = [
  { id: "alerts", label: "Alerts", description: "Signal-style alerts produced by the Alpha API." },
  { id: "announcements", label: "Announcements", description: "Exchange announcements and corporate disclosures." },
  { id: "earnings", label: "Earnings", description: "Earnings-related announcements and management guidance." },
- { id: "concalls", label: "Concalls", description: "Conference call summaries, transcripts, and analysis." },
- { id: "summary", label: "Summary", description: "A generated daily brief for your watchlist symbols." }
+ { id: "concalls", label: "Concalls", description: "Conference call summaries, transcripts, and analysis." }
 ] as const;
 
 export type AlphaSection = typeof marketIntelligenceSections[number]["id"];
@@ -36,8 +32,7 @@ type AlphaResult =
  | { kind: "alerts"; data: AlphaAlert[] }
  | { kind: "announcements"; data: AlphaAnnouncementDetail[] }
  | { kind: "earnings"; data: AlphaAnnouncementDetail[] }
- | { kind: "concalls"; data: AlphaConcall[] }
- | { kind: "summary"; data: string };
+ | { kind: "concalls"; data: AlphaConcall[] };
 
 export const ALPHA_SYMBOL_LIMIT = 20;
 
@@ -146,10 +141,7 @@ async function loadAlphaResult(section: AlphaSection, symbols: string[]): Promis
  return { kind: "concalls", data: result.data ?? [] };
  }
 
- const result = await generateAlphaDailySummary({
- portfolio: symbols.map((symbol) => ({ symbol, exposure: 0 }))
- });
- return { kind: "summary", data: result.summary ?? result.error ?? "No summary returned." };
+ throw new Error("Unsupported market intelligence section.");
 }
 
 export async function MarketIntelligenceResult({ section }: { section: AlphaSection }) {
@@ -197,14 +189,6 @@ export function StateMessage({
 }
 
 function renderResult(result: AlphaResult) {
- if (result.kind === "summary") {
- return result.data ? (
- <article className="max-w-none border-l-2 border-primary pl-4 text-sm leading-7 text-foreground">
- <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.data}</ReactMarkdown>
- </article>
- ) : <StateMessage message="No summary returned for these symbols." />;
- }
-
  if (!result.data.length) {
  return <StateMessage message="No Alpha records found for these watchlist symbols in the last 30 days." />;
  }
