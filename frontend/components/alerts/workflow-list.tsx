@@ -6,6 +6,21 @@ import { deleteAlertWorkflow, setAlertWorkflowStatus } from "@/service/actions/a
 import type { AlertWorkflow } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 
+function workflowScope(workflow: AlertWorkflow) {
+  const targeting = workflow.workflow_dsl.targeting;
+  const entries = targeting.entries ?? [];
+  if (targeting.mode === "preset_universe") {
+    return targeting.preset_label || targeting.preset_id || "Preset universe";
+  }
+  if (entries.length === 1) {
+    return [entries[0].symbol, entries[0].exchange ?? workflow.exchange].filter(Boolean).join(" · ");
+  }
+  if (entries.length > 1) {
+    return `${entries.length} symbols · ${entries[0].symbol}${entries.length > 1 ? ` +${entries.length - 1} more` : ""}`;
+  }
+  return [workflow.symbol ?? "No target", workflow.exchange ?? "-"].join(" · ");
+}
+
 export function WorkflowList({
   emptyMessage,
   workflows
@@ -72,7 +87,7 @@ export function WorkflowList({
             <div>
               <div className="text-lg font-bold">{workflow.name}</div>
               <div className="mt-1 text-sm text-muted-foreground">
-                {workflow.symbol ?? "No symbol"} · {workflow.exchange ?? "-"} · {workflow.broker_code ?? "No broker"}
+                {workflowScope(workflow)} · {workflow.broker_code ?? "No broker"} · {workflow.workflow_dsl.targeting.mode.replaceAll("_", " ")}
               </div>
             </div>
             <div className="rounded-full border border-border px-3 py-1 text-xs font-bold uppercase text-muted-foreground">

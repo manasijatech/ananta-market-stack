@@ -17,11 +17,13 @@ from app.schemas.alert import (
     AlertCondition,
     AlertGraphDsl,
     AlertNotificationOut,
+    AlertTargetEntry,
     AlertNotificationTestIn,
     AlertTemplateOut,
     AlertWorkflowCreate,
     AlertWorkflowDsl,
     AlertWorkflowOut,
+    AlertWorkflowTargeting,
     AlertWorkflowRunOut,
     AlertWorkflowUpdate,
     InstrumentRef,
@@ -83,6 +85,109 @@ def _channel_selection(payload: dict[str, Any] | None) -> AlertChannelSelection 
     if payload is None:
         return None
     return AlertChannelSelection(**payload)
+
+
+def _normalize_target_entry(
+    symbol: str | None,
+    exchange: str | None,
+    instrument_ref: InstrumentRef | dict[str, Any] | None = None,
+    *,
+    label: str | None = None,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> AlertTargetEntry | None:
+    normalized_symbol = (symbol or "").strip().upper()
+    if not normalized_symbol:
+        return None
+    normalized_exchange = (exchange or "").strip().upper() or None
+    ref = instrument_ref if isinstance(instrument_ref, InstrumentRef) else InstrumentRef(**(instrument_ref or {}))
+    if ref.symbol is None:
+        ref.symbol = normalized_symbol
+    if ref.exchange is None and normalized_exchange:
+        ref.exchange = normalized_exchange
+    return AlertTargetEntry(
+        symbol=normalized_symbol,
+        exchange=normalized_exchange,
+        instrument_ref=ref,
+        label=label,
+        tags=tags or [],
+        metadata=metadata or {},
+    )
+
+
+def _default_targeting(
+    symbol: str | None,
+    exchange: str | None,
+    instrument_ref: InstrumentRef | dict[str, Any] | None = None,
+) -> AlertWorkflowTargeting:
+    entry = _normalize_target_entry(symbol, exchange, instrument_ref)
+    return AlertWorkflowTargeting(mode="single_symbol", entries=[entry] if entry else [])
+
+
+def _normalize_targeting(targeting: AlertWorkflowTargeting | dict[str, Any] | None) -> AlertWorkflowTargeting:
+    raw = targeting if isinstance(targeting, AlertWorkflowTargeting) else AlertWorkflowTargeting(**(targeting or {}))
+    entries: list[AlertTargetEntry] = []
+    seen: set[tuple[str, str | None]] = set()
+    for item in raw.entries:
+        entry = _normalize_target_entry(
+            item.symbol,
+            item.exchange,
+            item.instrument_ref,
+            label=item.label,
+            tags=item.tags,
+            metadata=item.metadata,
+        )
+        if not entry:
+            continue
+        key = (entry.symbol, entry.exchange)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(entry)
+    mode = raw.mode
+    if mode == "single_symbol" and len(entries) > 1:
+        entries = entries[:1]
+    return AlertWorkflowTargeting(
+        mode=mode,
+        entries=entries,
+        preset_id=raw.preset_id,
+        preset_label=raw.preset_label,
+        filters=raw.filters,
+    )
+
+
+def _workflow_targeting_for_row(row: AlertWorkflow) -> AlertWorkflowTargeting:
+    dsl_payload = _json_loads(row.workflow_dsl_json, {})
+    targeting_payload = dsl_payload.get("targeting") if isinstance(dsl_payload, dict) else None
+    fallback_ref = _json_loads(row.instrument_ref_json, {})
+    targeting = _normalize_targeting(targeting_payload)
+    if targeting.entries:
+        return targeting
+    return _default_targeting(row.symbol, row.exchange, fallback_ref)
+
+
+def _targeting_entries(targeting: AlertWorkflowTargeting) -> list[AlertTargetEntry]:
+    targeting = _normalize_targeting(targeting)
+    if targeting.entries:
+        return targeting.entries
+    return []
+
+
+def _primary_target_entry(targeting: AlertWorkflowTargeting) -> AlertTargetEntry | None:
+    entries = _targeting_entries(targeting)
+    return entries[0] if entries else None
+
+
+def workflow_target_entry_for_tick(workflow: AlertWorkflowOut, tick: dict[str, Any]) -> AlertTargetEntry | None:
+    tick_symbol = (str(tick.get("symbol") or "")).strip().upper()
+    tick_exchange = (str(tick.get("exchange") or "")).strip().upper() or None
+    for entry in _targeting_entries(workflow.workflow_dsl.targeting):
+        if entry.symbol != tick_symbol:
+            continue
+        if tick_exchange and entry.exchange and entry.exchange != tick_exchange:
+            continue
+        return entry
+    return _primary_target_entry(workflow.workflow_dsl.targeting)
 
 
 SYSTEM_TEMPLATES: list[dict[str, Any]] = [
@@ -322,6 +427,14 @@ def get_template(db: Session, template_id: str) -> AlertTemplateOut | None:
 
 
 def _workflow_to_out(row: AlertWorkflow) -> AlertWorkflowOut:
+    instrument_ref_payload = _json_loads(row.instrument_ref_json, {})
+    workflow_dsl_payload = _json_loads(row.workflow_dsl_json, {})
+    workflow_dsl = _workflow_dsl(workflow_dsl_payload)
+    workflow_dsl.targeting = _normalize_targeting(
+        workflow_dsl_payload.get("targeting") if isinstance(workflow_dsl_payload, dict) else None
+    )
+    if not workflow_dsl.targeting.entries:
+        workflow_dsl.targeting = _default_targeting(row.symbol, row.exchange, instrument_ref_payload)
     return AlertWorkflowOut(
         id=row.id,
         user_id=row.user_id,
@@ -332,8 +445,8 @@ def _workflow_to_out(row: AlertWorkflow) -> AlertWorkflowOut:
         description=row.description,
         symbol=row.symbol,
         exchange=row.exchange,
-        instrument_ref=_instrument_ref(_json_loads(row.instrument_ref_json, {})),
-        workflow_dsl=_workflow_dsl(_json_loads(row.workflow_dsl_json, {})),
+        instrument_ref=_instrument_ref(instrument_ref_payload),
+        workflow_dsl=workflow_dsl,
         graph_dsl=_graph_dsl(_json_loads(row.graph_dsl_json, {})),
         editor_mode=row.editor_mode,  # type: ignore[arg-type]
         status=row.status,  # type: ignore[arg-type]
@@ -356,20 +469,27 @@ def _clear_workflow_subscriptions(db: Session, workflow_id: str) -> None:
 
 def _sync_workflow_subscription(db: Session, workflow: AlertWorkflow) -> None:
     _clear_workflow_subscriptions(db, workflow.id)
-    if workflow.status != "active" or not workflow.symbol:
+    if workflow.status != "active":
         return
-    ensure_symbol_subscription(
+    targeting = _workflow_targeting_for_row(workflow)
+    entries = _targeting_entries(targeting)
+    if not entries:
+        return
+    ensure_symbol_subscriptions(
         db,
         workflow.user_id,
-        LiveSubscriptionCreateIn(
-            account_id=workflow.account_id,
-            broker_code=workflow.broker_code,
-            workflow_id=workflow.id,
-            symbol=workflow.symbol,
-            exchange=workflow.exchange,
-            instrument_ref=_instrument_ref(_json_loads(workflow.instrument_ref_json, {})),
-            source_kind="workflow",
-        ),
+        [
+            LiveSubscriptionCreateIn(
+                account_id=workflow.account_id,
+                broker_code=workflow.broker_code,
+                workflow_id=workflow.id,
+                symbol=entry.symbol,
+                exchange=entry.exchange,
+                instrument_ref=entry.instrument_ref,
+                source_kind="workflow",
+            )
+            for entry in entries
+        ],
     )
 
 
@@ -401,16 +521,32 @@ def _persist_workflow(
         row.account_id = getattr(payload, "account_id")
     if getattr(payload, "broker_code", None) is not None:
         row.broker_code = getattr(payload, "broker_code")
-    if getattr(payload, "symbol", None) is not None:
-        row.symbol = getattr(payload, "symbol")
-    if getattr(payload, "exchange", None) is not None:
-        row.exchange = getattr(payload, "exchange")
+    incoming_symbol = getattr(payload, "symbol", None)
+    incoming_exchange = getattr(payload, "exchange", None)
     instrument_ref = getattr(payload, "instrument_ref", None)
+    next_instrument_ref = _instrument_ref(_json_loads(row.instrument_ref_json, {}))
     if instrument_ref is not None:
-        row.instrument_ref_json = _json_dumps(instrument_ref.model_dump(exclude_none=True))
+        next_instrument_ref = instrument_ref
     workflow_dsl = getattr(payload, "workflow_dsl", None)
     if workflow_dsl is not None:
+        normalized_targeting = _normalize_targeting(workflow_dsl.targeting)
+        if not normalized_targeting.entries:
+            normalized_targeting = _default_targeting(incoming_symbol, incoming_exchange, next_instrument_ref)
+        workflow_dsl.targeting = normalized_targeting
         row.workflow_dsl_json = _json_dumps(workflow_dsl.model_dump())
+        primary_target = _primary_target_entry(normalized_targeting)
+        row.symbol = primary_target.symbol if primary_target else incoming_symbol
+        row.exchange = primary_target.exchange if primary_target else incoming_exchange
+        row.instrument_ref_json = _json_dumps(
+            (primary_target.instrument_ref if primary_target else next_instrument_ref).model_dump(exclude_none=True)
+        )
+    else:
+        if incoming_symbol is not None:
+            row.symbol = incoming_symbol
+        if incoming_exchange is not None:
+            row.exchange = incoming_exchange
+        if instrument_ref is not None:
+            row.instrument_ref_json = _json_dumps(instrument_ref.model_dump(exclude_none=True))
     graph_dsl = getattr(payload, "graph_dsl", None)
     if graph_dsl is not None:
         row.graph_dsl_json = _json_dumps(graph_dsl.model_dump())
@@ -427,6 +563,10 @@ def _persist_workflow(
 
 
 def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> AlertWorkflowOut:
+    payload.workflow_dsl.targeting = _normalize_targeting(payload.workflow_dsl.targeting)
+    if not payload.workflow_dsl.targeting.entries:
+        payload.workflow_dsl.targeting = _default_targeting(payload.symbol, payload.exchange, payload.instrument_ref)
+    primary_target = _primary_target_entry(payload.workflow_dsl.targeting)
     graph = payload.graph_dsl if payload.graph_dsl.nodes else _default_graph_from_dsl(payload.workflow_dsl)
     row = AlertWorkflow(
         id=str(uuid.uuid4()),
@@ -436,9 +576,11 @@ def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> 
         description=payload.description,
         account_id=payload.account_id,
         broker_code=payload.broker_code,
-        symbol=payload.symbol,
-        exchange=payload.exchange,
-        instrument_ref_json=_json_dumps(payload.instrument_ref.model_dump(exclude_none=True)),
+        symbol=primary_target.symbol if primary_target else payload.symbol,
+        exchange=primary_target.exchange if primary_target else payload.exchange,
+        instrument_ref_json=_json_dumps(
+            (primary_target.instrument_ref if primary_target else payload.instrument_ref).model_dump(exclude_none=True)
+        ),
         workflow_dsl_json=_json_dumps(payload.workflow_dsl.model_dump()),
         graph_dsl_json=_json_dumps(graph.model_dump()),
         editor_mode=payload.editor_mode,
@@ -754,6 +896,8 @@ def create_alert_notification(
         )
     ).all() if channels else []
     channel_row_by_type = {row.channel_type: row for row in enabled_channel_rows}
+    symbol_value = str(payload.get("symbol") or workflow.symbol or "").strip() if workflow else str(payload.get("symbol") or "").strip()
+    exchange_value = str(payload.get("exchange") or workflow.exchange or "").strip() if workflow else str(payload.get("exchange") or "").strip()
     row = UserAlertNotification(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -761,8 +905,8 @@ def create_alert_notification(
         template_id=workflow.template_id if workflow else None,
         account_id=workflow.account_id if workflow else None,
         broker_code=workflow.broker_code if workflow else None,
-        symbol=workflow.symbol if workflow else None,
-        exchange=workflow.exchange if workflow else None,
+        symbol=symbol_value or None,
+        exchange=exchange_value or None,
         level=level,
         title=title,
         message=message,
@@ -873,8 +1017,9 @@ def create_workflow_test_notification(
     workflow: AlertWorkflowOut,
     tick: dict[str, Any],
 ) -> AlertNotificationOut:
-    title = _render_message(workflow.workflow_dsl.notification.title_template, {**tick, "symbol": workflow.symbol})
-    message = _render_message(workflow.workflow_dsl.notification.message_template, {**tick, "symbol": workflow.symbol})
+    target_symbol = str(tick.get("symbol") or workflow.symbol or "")
+    title = _render_message(workflow.workflow_dsl.notification.title_template, {**tick, "symbol": target_symbol})
+    message = _render_message(workflow.workflow_dsl.notification.message_template, {**tick, "symbol": target_symbol})
     notification = create_alert_notification(
         db,
         user_id=workflow.user_id,

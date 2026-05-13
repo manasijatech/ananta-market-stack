@@ -269,10 +269,16 @@ def _enrich_tick_for_match(db, workflow: AlertWorkflow, tick: dict[str, Any]) ->
     account = db.get(BrokerAccount, workflow.account_id)
     if not account:
         return tick
+    workflow_out = alert_svc._workflow_to_out(workflow)  # type: ignore[attr-defined]
+    matched_target = alert_svc.workflow_target_entry_for_tick(workflow_out, tick)
     instrument = {
-        "symbol": workflow.symbol or tick.get("symbol"),
-        "exchange": workflow.exchange or tick.get("exchange"),
-        **json.loads(workflow.instrument_ref_json or "{}"),
+        "symbol": (matched_target.symbol if matched_target else None) or workflow.symbol or tick.get("symbol"),
+        "exchange": (matched_target.exchange if matched_target else None) or workflow.exchange or tick.get("exchange"),
+        **(
+            matched_target.instrument_ref.model_dump(exclude_none=True)
+            if matched_target
+            else json.loads(workflow.instrument_ref_json or "{}")
+        ),
     }
     try:
         ohlc_rows = broker_data.fetch_ohlc(db, account, [instrument])
@@ -296,16 +302,27 @@ def _enrich_tick_for_match(db, workflow: AlertWorkflow, tick: dict[str, Any]) ->
 def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, Any]) -> None:
     if not tick.get("user_id") or not tick.get("account_id") or not tick.get("broker_code") or not tick.get("symbol"):
         return
+    sub_stmt = select(LiveSymbolSubscription.workflow_id).where(
+        LiveSymbolSubscription.user_id == tick["user_id"],
+        LiveSymbolSubscription.account_id == tick["account_id"],
+        LiveSymbolSubscription.broker_code == tick["broker_code"],
+        LiveSymbolSubscription.symbol == tick["symbol"],
+        LiveSymbolSubscription.status == "active",
+        LiveSymbolSubscription.workflow_id.is_not(None),
+    )
+    exchange = tick.get("exchange")
+    if exchange:
+        sub_stmt = sub_stmt.where((LiveSymbolSubscription.exchange == exchange) | (LiveSymbolSubscription.exchange.is_(None)))
+    workflow_ids = [item for item in db.scalars(sub_stmt).all() if item]
+    if not workflow_ids:
+        return
     stmt = select(AlertWorkflow).where(
         AlertWorkflow.user_id == tick["user_id"],
         AlertWorkflow.account_id == tick["account_id"],
         AlertWorkflow.broker_code == tick["broker_code"],
-        AlertWorkflow.symbol == tick["symbol"],
         AlertWorkflow.status == "active",
+        AlertWorkflow.id.in_(workflow_ids),
     )
-    exchange = tick.get("exchange")
-    if exchange:
-        stmt = stmt.where((AlertWorkflow.exchange == exchange) | (AlertWorkflow.exchange.is_(None)))
     workflows = db.scalars(stmt).all()
     for row in workflows:
         try:
@@ -322,13 +339,14 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     can_trigger = (_utc_now() - row.last_triggered_at).total_seconds() >= cooldown
                 if can_trigger:
                     evaluation_tick = _enrich_tick_for_match(db, row, tick)
+                    target_symbol = str(evaluation_tick.get("symbol") or workflow.symbol or "")
                     title = alert_svc._render_message(  # type: ignore[attr-defined]
                         workflow.workflow_dsl.notification.title_template,
-                        {**evaluation_tick, "symbol": workflow.symbol},
+                        {**evaluation_tick, "symbol": target_symbol},
                     )
                     message = alert_svc._render_message(  # type: ignore[attr-defined]
                         workflow.workflow_dsl.notification.message_template,
-                        {**evaluation_tick, "symbol": workflow.symbol},
+                        {**evaluation_tick, "symbol": target_symbol},
                     )
                     notification = alert_svc.create_alert_notification(
                         db,
@@ -339,7 +357,7 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                         level=workflow.workflow_dsl.notification.level,
                         channels=_workflow_channels(db, workflow.user_id, workflow),
                         payload=evaluation_tick,
-                        dedupe_key=f"{workflow.id}:{workflow.symbol}:{reason}",
+                        dedupe_key=f"{workflow.id}:{target_symbol}:{reason}",
                     )
                     notification_id = notification.id
                     row.last_triggered_at = _utc_now()
@@ -349,13 +367,14 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     reason = f"{reason}; cooldown active"
                     should_record_run = False
             if should_record_run:
+                target_symbol = str(evaluation_tick.get("symbol") or workflow.symbol or "")
                 title = alert_svc._render_message(  # type: ignore[attr-defined]
                     workflow.workflow_dsl.notification.title_template,
-                    {**evaluation_tick, "symbol": workflow.symbol},
+                    {**evaluation_tick, "symbol": target_symbol},
                 )
                 message = alert_svc._render_message(  # type: ignore[attr-defined]
                     workflow.workflow_dsl.notification.message_template,
-                    {**evaluation_tick, "symbol": workflow.symbol},
+                    {**evaluation_tick, "symbol": target_symbol},
                 )
                 db.add(
                     AlertWorkflowRun(

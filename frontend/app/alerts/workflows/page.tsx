@@ -17,7 +17,7 @@ export default async function WorkflowsPage({ searchParams }: WorkflowsPageProps
       <PageHeader
         eyebrow="Alerts workspace"
         title={status === "active" ? "Active workflows" : "Inactive workflows"}
-        description="Review configured workflows, jump into editing, and switch between active and inactive tracking."
+        description="Review configured workflows, including shared multi-symbol rule sets, then jump into editing or switch between active and inactive tracking."
         action={<PrimaryLink href="/alerts/workflows/new">+ New workflow</PrimaryLink>}
       />
       <AlertsNav />

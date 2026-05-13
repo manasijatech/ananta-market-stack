@@ -32,10 +32,28 @@ class AlertChannelSelection(BaseModel):
     enabled: list[AlertChannelType] = Field(default_factory=lambda: ["in_app"])
 
 
+class AlertTargetEntry(BaseModel):
+    symbol: str
+    exchange: str | None = None
+    instrument_ref: InstrumentRef = Field(default_factory=InstrumentRef)
+    label: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlertWorkflowTargeting(BaseModel):
+    mode: Literal["single_symbol", "symbol_list", "preset_universe"] = "single_symbol"
+    entries: list[AlertTargetEntry] = Field(default_factory=list)
+    preset_id: str | None = None
+    preset_label: str | None = None
+    filters: dict[str, Any] = Field(default_factory=dict)
+
+
 class AlertWorkflowDsl(BaseModel):
     combine: Literal["all", "any"] = "all"
     cooldown_seconds: int = 300
     conditions: list[AlertCondition] = Field(default_factory=list)
+    targeting: AlertWorkflowTargeting = Field(default_factory=AlertWorkflowTargeting)
     notification: AlertNotificationConfig = Field(default_factory=AlertNotificationConfig)
     channels: AlertChannelSelection = Field(default_factory=AlertChannelSelection)
 

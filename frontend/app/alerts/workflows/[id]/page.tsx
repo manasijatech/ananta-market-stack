@@ -22,7 +22,7 @@ export default async function WorkflowDetailPage({ params }: WorkflowDetailPageP
       <PageHeader
         eyebrow="Alerts workspace"
         title={workflow.name}
-        description="Edit workflow targeting, conditions, notification channels, and inspect the latest live evaluation history."
+        description="Edit workflow target sets, conditions, notification channels, and inspect the latest live evaluation history."
       />
       <AlertsNav />
       <div className="grid gap-8">

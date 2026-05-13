@@ -19,10 +19,12 @@ import type {
   AlertChannelType,
   AlertCondition,
   AlertGraphDsl,
+  AlertTargetEntry,
   AlertWorkflow,
   AlertWorkflowDsl,
   EditorMode,
-  InstrumentRef
+  InstrumentRef,
+  AlertWorkflowTargeting
 } from "@/service/types/alerts";
 import type { BrokerAccount, InstrumentSearchRow, JsonObject, QuoteResponse } from "@/service/types/broker";
 import { Button } from "@/components/ui/button";
@@ -95,6 +97,8 @@ const messageTemplateFields = [
   "account_id"
 ];
 
+const targetListExample = "RELIANCE,NSE\nTCS,NSE\nINFY,NSE";
+
 type PreviewState = {
   quote: QuoteResponse | null;
   ohlc: JsonObject | null;
@@ -130,6 +134,78 @@ function serializeInstrumentRef(value: InstrumentRef): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null && item !== undefined));
 }
 
+function buildTargetEntry(symbol: string, exchange: string, instrumentRef: InstrumentRef): AlertTargetEntry | null {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  if (!normalizedSymbol) return null;
+  const normalizedExchange = exchange.trim().toUpperCase() || null;
+  return {
+    symbol: normalizedSymbol,
+    exchange: normalizedExchange,
+    instrument_ref: {
+      ...instrumentRef,
+      symbol: normalizedSymbol,
+      exchange: normalizedExchange
+    },
+    label: null,
+    tags: [],
+    metadata: {}
+  };
+}
+
+function normalizeTargets(entries: AlertTargetEntry[]): AlertTargetEntry[] {
+  const seen = new Set<string>();
+  const next: AlertTargetEntry[] = [];
+  for (const entry of entries) {
+    const normalized = buildTargetEntry(entry.symbol, entry.exchange ?? "", entry.instrument_ref);
+    if (!normalized) continue;
+    const key = `${normalized.symbol}:${normalized.exchange ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(normalized);
+  }
+  return next;
+}
+
+function targetDisplay(entry: AlertTargetEntry) {
+  return [entry.symbol, entry.exchange].filter(Boolean).join(" · ");
+}
+
+function parseBulkTargets(text: string, fallbackExchange: string): AlertTargetEntry[] {
+  return normalizeTargets(
+    text
+      .split(/\r?\n/)
+      .map((raw) => raw.trim())
+      .filter(Boolean)
+      .map((raw) => {
+        const [symbolPart, exchangePart] = raw.split(/[,:|\s]+/).filter(Boolean);
+        return buildTargetEntry(symbolPart ?? "", exchangePart ?? fallbackExchange, {
+          symbol: (symbolPart ?? "").toUpperCase(),
+          exchange: (exchangePart ?? fallbackExchange).toUpperCase()
+        });
+      })
+      .filter(Boolean) as AlertTargetEntry[]
+  );
+}
+
+function targetScopeSummary(targeting: AlertWorkflowTargeting): string {
+  if (targeting.mode === "preset_universe") {
+    return targeting.preset_label || targeting.preset_id || "Preset universe";
+  }
+  const entries = normalizeTargets(targeting.entries);
+  if (!entries.length) {
+    return "No targets";
+  }
+  if (entries.length === 1) {
+    return targetDisplay(entries[0]);
+  }
+  const preview = entries
+    .slice(0, 3)
+    .map((entry) => entry.symbol)
+    .join(", ");
+  const remainder = entries.length - 3;
+  return remainder > 0 ? `${entries.length} targets · ${preview} +${remainder} more` : `${entries.length} targets · ${preview}`;
+}
+
 function HelpText({ children }: { children: React.ReactNode }) {
   return <div className="text-xs text-muted-foreground">{children}</div>;
 }
@@ -153,6 +229,16 @@ export function WorkflowEditor({
   const [symbol, setSymbol] = useState(initialWorkflow?.symbol ?? "");
   const [exchange, setExchange] = useState(initialWorkflow?.exchange ?? "NSE");
   const [instrumentRef, setInstrumentRef] = useState<InstrumentRef>(initialWorkflow?.instrument_ref ?? {});
+  const initialTargeting = initialWorkflow?.workflow_dsl.targeting ?? {
+    mode: "single_symbol",
+    entries: initialWorkflow?.symbol ? [buildTargetEntry(initialWorkflow.symbol, initialWorkflow.exchange ?? "NSE", initialWorkflow.instrument_ref)!].filter(Boolean) : [],
+    preset_id: null,
+    preset_label: null,
+    filters: {}
+  };
+  const [targetMode, setTargetMode] = useState<AlertWorkflowTargeting["mode"]>(initialTargeting.mode);
+  const [targetEntries, setTargetEntries] = useState<AlertTargetEntry[]>(normalizeTargets(initialTargeting.entries));
+  const [bulkTargets, setBulkTargets] = useState("");
   const [status, setStatus] = useState<"active" | "inactive">(initialWorkflow?.status ?? "active");
   const [combine, setCombine] = useState<"all" | "any">(initialWorkflow?.workflow_dsl.combine ?? "all");
   const [cooldownSeconds, setCooldownSeconds] = useState(String(initialWorkflow?.workflow_dsl.cooldown_seconds ?? 300));
@@ -305,11 +391,43 @@ export function WorkflowEditor({
     };
   }
 
+  function workflowTargetingPayload(): AlertWorkflowTargeting {
+    const currentTarget = buildTargetEntry(symbol, exchange, activeInstrument);
+    if (targetMode === "single_symbol") {
+      return {
+        mode: "single_symbol",
+        entries: currentTarget ? [currentTarget] : [],
+        preset_id: null,
+        preset_label: null,
+        filters: {}
+      };
+    }
+    if (targetMode === "symbol_list") {
+      return {
+        mode: "symbol_list",
+        entries: normalizeTargets(targetEntries),
+        preset_id: null,
+        preset_label: null,
+        filters: {}
+      };
+    }
+    return {
+      mode: "preset_universe",
+      entries: normalizeTargets(targetEntries),
+      preset_id: null,
+      preset_label: null,
+      filters: {}
+    };
+  }
+
   function workflowPayload() {
+    const targeting = workflowTargetingPayload();
+    const primaryTarget = targeting.entries[0];
     const workflowDsl: AlertWorkflowDsl = {
       combine,
       cooldown_seconds: Number(cooldownSeconds || 0),
       conditions,
+      targeting,
       notification: {
         level,
         title_template: titleTemplate,
@@ -318,14 +436,14 @@ export function WorkflowEditor({
       channels: channelSelection()
     };
 
-    return {
+      return {
       name,
       description,
       account_id: accountId || null,
       broker_code: selectedAccount?.broker_code ?? (brokerCode || null),
-      symbol: symbol || null,
-      exchange: exchange || null,
-      instrument_ref: serializeInstrumentRef(activeInstrument),
+      symbol: primaryTarget?.symbol ?? symbol || null,
+      exchange: primaryTarget?.exchange ?? exchange || null,
+      instrument_ref: serializeInstrumentRef(primaryTarget?.instrument_ref ?? activeInstrument),
       workflow_dsl: workflowDsl,
       graph_dsl: buildGraph(workflowDsl),
       editor_mode: editorMode,
@@ -464,6 +582,38 @@ export function WorkflowEditor({
     });
   }
 
+  function addCurrentTarget() {
+    const entry = buildTargetEntry(symbol, exchange, activeInstrument);
+    if (!entry) return;
+    setTargetEntries((current) => normalizeTargets([...current, entry]));
+  }
+
+  function removeTarget(index: number) {
+    setTargetEntries((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
+  function loadTarget(entry: AlertTargetEntry) {
+    setSymbol(entry.symbol);
+    setExchange(entry.exchange ?? "NSE");
+    setInstrumentRef(entry.instrument_ref);
+    setSelectedSearchLabel(targetDisplay(entry));
+  }
+
+  function importBulkTargets() {
+    const imported = parseBulkTargets(bulkTargets, exchange);
+    if (!imported.length) {
+      return;
+    }
+    setTargetEntries((current) => normalizeTargets([...current, ...imported]));
+    setBulkTargets("");
+  }
+
+  function clearTargets() {
+    setTargetEntries([]);
+  }
+
+  const canSave = targetMode === "single_symbol" ? Boolean(symbol.trim()) : targetEntries.length > 0;
+
   return (
     <div className="grid gap-6">
       {error ? <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">{error}</div> : null}
@@ -484,7 +634,30 @@ export function WorkflowEditor({
       </div>
 
       <div className="rounded-lg border border-border p-4">
-        <div className="mb-3 text-sm font-bold">Symbol selection</div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-bold">Target selection</div>
+            <HelpText>The workflow can target one symbol today or a shared symbol list under the same rules. Preset universes are reserved for the next layer.</HelpText>
+          </div>
+          <select
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            onChange={(event) => {
+              const nextMode = event.target.value as AlertWorkflowTargeting["mode"];
+              setTargetMode(nextMode);
+              if (nextMode === "symbol_list" && !targetEntries.length) {
+                const currentTarget = buildTargetEntry(symbol, exchange, activeInstrument);
+                if (currentTarget) {
+                  setTargetEntries([currentTarget]);
+                }
+              }
+            }}
+            value={targetMode}
+          >
+            <option value="single_symbol">Single symbol</option>
+            <option value="symbol_list">Symbol list</option>
+            <option value="preset_universe">Preset universe</option>
+          </select>
+        </div>
         <div className="grid gap-3 min-[900px]:grid-cols-[1.3fr_1fr_160px]">
           <div className="grid gap-2">
             <select
@@ -549,13 +722,58 @@ export function WorkflowEditor({
             <HelpText>Used together with the selected instrument identifiers for market data requests.</HelpText>
           </div>
         </div>
+        {targetMode === "symbol_list" ? (
+          <div className="mt-4 grid gap-3 rounded-md border border-border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-bold">Target list</div>
+                <HelpText>Add one symbol at a time from the search box above or bulk import many symbols. These all share the same workflow conditions and notification rules.</HelpText>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={addCurrentTarget} type="button" variant="outline">Add current symbol</Button>
+                <Button onClick={clearTargets} type="button" variant="ghost">Clear list</Button>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <div className="text-xs font-bold uppercase text-muted-foreground">Bulk import</div>
+              <textarea
+                className="min-h-[108px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none"
+                onChange={(event) => setBulkTargets(event.target.value.toUpperCase())}
+                placeholder={targetListExample}
+                value={bulkTargets}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <HelpText>Use one per line. Accepted forms: `RELIANCE`, `RELIANCE NSE`, `RELIANCE:NSE`.</HelpText>
+                <Button onClick={importBulkTargets} type="button" variant="outline">Import symbols</Button>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <div className="text-xs font-bold uppercase text-muted-foreground">Current targets · {targetEntries.length}</div>
+              {targetEntries.map((entry, index) => (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-2" key={`${entry.symbol}:${entry.exchange ?? ""}:${index}`}>
+                  <button className="text-left" onClick={() => loadTarget(entry)} type="button">
+                    <div className="font-semibold">{entry.symbol}</div>
+                    <div className="text-xs text-muted-foreground">{entry.exchange ?? "-"} · shared rule target</div>
+                  </button>
+                  <Button onClick={() => removeTarget(index)} size="sm" type="button" variant="ghost">Remove</Button>
+                </div>
+              ))}
+              {!targetEntries.length ? <div className="text-sm text-muted-foreground">No targets added yet.</div> : null}
+            </div>
+          </div>
+        ) : null}
+        {targetMode === "preset_universe" ? (
+          <div className="mt-4 rounded-md border border-border p-4 text-sm text-muted-foreground">
+            Preset universes are not wired yet. The backend model now supports this mode so NIFTY 500, top market-cap lists, and other reusable baskets can be added without changing the workflow runtime shape again.
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-lg border border-border p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-bold">Live symbol preview</div>
-            <HelpText>While this page stays open, the editor refreshes quote and OHLC data for the selected symbol every few seconds.</HelpText>
+            <HelpText>While this page stays open, the editor refreshes quote and OHLC data for the currently selected symbol every few seconds. In multi-target mode this preview is only for the symbol currently loaded in the search box.</HelpText>
           </div>
           <div className="flex items-center gap-2">
             <div className="text-xs text-muted-foreground">{preview.loading ? "Refreshing..." : preview.quote ? "Live preview active" : "No symbol selected"}</div>
@@ -642,6 +860,10 @@ export function WorkflowEditor({
 
       <div className="grid gap-4 rounded-lg border border-border p-4 min-[960px]:grid-cols-2">
         <div>
+          <div className="mb-2 text-sm font-bold">Workflow scope</div>
+          <HelpText>{targetScopeSummary(workflowTargetingPayload())}</HelpText>
+        </div>
+        <div>
           <div className="mb-2 text-sm font-bold">Channels</div>
           <HelpText>Choose where the alert should be delivered. Inherit defaults uses your channel settings page as the base.</HelpText>
           <div className="mt-3 flex flex-wrap gap-3 text-sm">
@@ -662,7 +884,7 @@ export function WorkflowEditor({
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <Button disabled={isPending || !name.trim() || !symbol.trim()} onClick={save} type="button">
+        <Button disabled={isPending || !name.trim() || !canSave} onClick={save} type="button">
           {isPending ? "Saving..." : initialWorkflow?.id ? "Save workflow" : "Create workflow"}
         </Button>
         {initialWorkflow?.id ? (

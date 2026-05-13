@@ -21,10 +21,28 @@ export interface AlertChannelSelection {
   enabled: AlertChannelType[];
 }
 
+export interface AlertTargetEntry {
+  symbol: string;
+  exchange?: string | null;
+  instrument_ref: InstrumentRef;
+  label?: string | null;
+  tags: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface AlertWorkflowTargeting {
+  mode: "single_symbol" | "symbol_list" | "preset_universe";
+  entries: AlertTargetEntry[];
+  preset_id?: string | null;
+  preset_label?: string | null;
+  filters: Record<string, unknown>;
+}
+
 export interface AlertWorkflowDsl {
   combine: "all" | "any";
   cooldown_seconds: number;
   conditions: AlertCondition[];
+  targeting: AlertWorkflowTargeting;
   notification: AlertNotificationConfig;
   channels: AlertChannelSelection;
 }
