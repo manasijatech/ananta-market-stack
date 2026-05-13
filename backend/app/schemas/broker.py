@@ -22,6 +22,10 @@ class BrokerAccountOut(BaseModel):
     session_expires_at: datetime | None = Field(None, description="When the current session/access token is expected to expire.")
     automation_enabled: bool = Field(False, description="Whether the account is configured for automated token refresh.")
     automation_mode: str | None = Field(None, description="The mode used for automation (e.g. 'TOTP', 'EXPERIMENTAL').")
+    is_preferred_instrument_search: bool = Field(
+        False,
+        description="Whether this account is pinned as the user's preferred symbol-search broker.",
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -327,6 +331,9 @@ class InstrumentSyncOut(BaseModel):
 class InstrumentSearchRow(BaseModel):
     symbol: str
     source: str = "db"
+    broker_code: str | None = None
+    account_id: str | None = None
+    account_label: str | None = None
     exchange: str | None = None
     segment: str | None = None
     trading_symbol: str | None = None
@@ -378,6 +385,46 @@ class StreamStatusOut(BaseModel):
     subscription_count: int
     subscriptions: list[dict[str, Any]] = Field(default_factory=list)
     guidance: str = ""
+
+
+class HoldingsSnapshotOut(BaseModel):
+    account_id: str
+    broker_code: str
+    status: str
+    holdings_count: int = 0
+    fetched_at: datetime | None = None
+    error: str | None = None
+
+
+class BrokerDataSearchAccountOut(BaseModel):
+    account_id: str
+    broker_code: str
+    label: str
+    is_verified: bool
+    session_status: str | None = None
+    session_active: bool = False
+    is_preferred: bool = False
+    is_effective: bool = False
+    search_available: bool = False
+    holdings_status: str | None = None
+    holdings_count: int = 0
+    holdings_fetched_at: datetime | None = None
+    latest_instrument_sync_status: str | None = None
+    latest_instrument_sync_started_at: datetime | None = None
+    latest_instrument_sync_finished_at: datetime | None = None
+    latest_instrument_sync_error: str | None = None
+    last_error: str | None = None
+
+
+class BrokerDataSearchConfigOut(BaseModel):
+    preferred_search_account_id: str | None = None
+    effective_search_account_id: str | None = None
+    fallback_used: bool = False
+    accounts: list[BrokerDataSearchAccountOut] = Field(default_factory=list)
+
+
+class BrokerDataSearchConfigUpdateIn(BaseModel):
+    preferred_search_account_id: str | None = None
 
 
 def supported_brokers() -> list[str]:

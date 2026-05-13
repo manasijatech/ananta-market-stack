@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
@@ -25,6 +24,7 @@ from app.schemas.broker import (
     ZerodhaSessionStatusOut,
 )
 from app.services import broker_accounts as ba_svc
+from app.services import broker_data_preferences as bdp_svc
 from app.services import broker_sessions as bs_svc
 from broker.core.registry import BROKER_CODES
 from db.models import BrokerAccount, User
@@ -98,7 +98,7 @@ def create_broker_account(
     ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> BrokerAccount:
+) -> BrokerAccountOut:
     """
     **Add a new broker account.**
 
@@ -115,7 +115,8 @@ def create_broker_account(
     if payload.broker not in BROKER_CODES:
         raise HTTPException(status_code=400, detail="unknown broker")
     try:
-        return ba_svc.create_broker_account(db, user.id, payload)
+        created = ba_svc.create_broker_account(db, user.id, payload)
+        return bdp_svc.broker_account_with_preference(db, created)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -124,14 +125,13 @@ def create_broker_account(
 def list_broker_accounts(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[BrokerAccount]:
+) -> list[BrokerAccountOut]:
     """
     **List all broker accounts for the current user.**
 
     Returns basic metadata and session status. Does NOT return sensitive credentials.
     """
-    q = select(BrokerAccount).where(BrokerAccount.user_id == user.id).order_by(BrokerAccount.created_at)
-    return list(db.scalars(q).all())
+    return bdp_svc.list_broker_accounts_with_preferences(db, user.id)
 
 
 @router.post("/maintenance/run", response_model=VerifyOut)
@@ -156,9 +156,9 @@ def get_broker_account(
     account_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> BrokerAccount:
+) -> BrokerAccountOut:
     """**Fetch metadata for a specific broker account ID.**"""
-    return _get_owned_account(db, user.id, account_id)
+    return bdp_svc.broker_account_with_preference(db, _get_owned_account(db, user.id, account_id))
 
 
 @router.delete("/{account_id}", status_code=204)

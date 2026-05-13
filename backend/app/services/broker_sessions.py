@@ -760,7 +760,7 @@ def run_daily_instrument_sync_once() -> None:
                 continue
             processed_brokers.add(acc.broker_code)
             result = broker_data.sync_instruments_to_csv(db, acc)
-            if result.sync_status != "completed":
+            if result.sync_status not in {"completed", "preserved"}:
                 _create_notification_once_per_day(
                     db,
                     user_id=acc.user_id,
@@ -791,6 +791,7 @@ def run_user_maintenance(db: Session, user_id: str) -> int:
 
 
 async def maintenance_loop(stop_event: asyncio.Event) -> None:
+    initial_cycle = True
     while not stop_event.is_set():
         try:
             run_daily_maintenance_once()
@@ -800,6 +801,13 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
             run_daily_instrument_sync_once()
         except Exception:
             pass
+        try:
+            from app.services import broker_data_preferences
+
+            broker_data_preferences.run_holdings_refresh_cycle(force=initial_cycle)
+        except Exception:
+            pass
+        initial_cycle = False
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=300)
         except TimeoutError:

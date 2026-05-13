@@ -20,6 +20,13 @@ class User(Base):
     broker_accounts: Mapped[list[BrokerAccount]] = relationship(
         "BrokerAccount", back_populates="user", cascade="all, delete-orphan"
     )
+    broker_data_preference: Mapped[UserBrokerDataPreference | None] = relationship(
+        "UserBrokerDataPreference",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class BrokerAccount(Base):
@@ -103,6 +110,53 @@ class BrokerAccount(Base):
         single_parent=True,
         passive_deletes=True,
     )
+    holdings_snapshot: Mapped[BrokerHoldingsSnapshot | None] = relationship(
+        "BrokerHoldingsSnapshot",
+        back_populates="account",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class UserBrokerDataPreference(Base):
+    __tablename__ = "user_broker_data_preferences"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    preferred_search_account_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="broker_data_preference")
+
+
+class BrokerHoldingsSnapshot(Base):
+    __tablename__ = "broker_holdings_snapshots"
+
+    account_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    broker_code: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    holdings_count: Mapped[int] = mapped_column(Integer, default=0)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    account: Mapped[BrokerAccount] = relationship("BrokerAccount", back_populates="holdings_snapshot")
 
 
 class ZerodhaCredentials(Base):

@@ -5,6 +5,7 @@ import { fetchFastApi } from "@/lib/fastapi";
 import type {
   BrokerAccount,
   BrokerAccountDetail,
+  BrokerDataSearchConfig,
   BrokerCode,
   CreateBrokerAccountPayload,
   DataCapabilities,
@@ -209,6 +210,33 @@ export async function searchBrokerInstruments(
   return request<InstrumentSearchRow[]>(`/broker-accounts/${id}/data/instruments/search${suffix}`);
 }
 
+export async function searchDefaultBrokerInstruments(
+  params: { q?: string; exchange?: string; segment?: string; limit?: number } = {}
+): Promise<InstrumentSearchRow[]> {
+  const query = new URLSearchParams();
+  if (params.q) query.set("q", params.q);
+  if (params.exchange) query.set("exchange", params.exchange);
+  if (params.segment) query.set("segment", params.segment);
+  if (params.limit) query.set("limit", String(params.limit));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<InstrumentSearchRow[]>(`/broker-data/instruments/search${suffix}`);
+}
+
+export async function getBrokerDataSearchConfig(): Promise<BrokerDataSearchConfig> {
+  return request<BrokerDataSearchConfig>("/broker-data/search-config");
+}
+
+export async function updateBrokerDataSearchConfig(preferredSearchAccountId: string | null): Promise<BrokerDataSearchConfig> {
+  const result = await request<BrokerDataSearchConfig>("/broker-data/search-config", {
+    method: "PUT",
+    body: JSON.stringify({ preferred_search_account_id: preferredSearchAccountId })
+  });
+  revalidatePath("/brokers");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/broker-data");
+  return result;
+}
+
 export async function getDataQuotes(id: string, payload: QuoteRequest): Promise<QuoteResponse[]> {
   return request<QuoteResponse[]>(`/broker-accounts/${id}/data/quotes`, {
     method: "POST",
@@ -256,12 +284,16 @@ export async function createBrokerAccount(
     body: JSON.stringify(payload)
   });
   revalidatePath("/brokers");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/broker-data");
   return result;
 }
 
 export async function deleteBrokerAccount(id: string): Promise<void> {
   await request<null>(`/broker-accounts/${id}`, { method: "DELETE" });
   revalidatePath("/brokers");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/broker-data");
 }
 
 export async function verifyBrokerAccount(id: string): Promise<VerifyResponse> {
@@ -270,6 +302,7 @@ export async function verifyBrokerAccount(id: string): Promise<VerifyResponse> {
   });
   revalidatePath(`/brokers/${id}`);
   revalidatePath("/brokers");
+  revalidatePath("/dashboard/broker-data");
   return result;
 }
 
@@ -289,6 +322,7 @@ export async function createSession(
     body
   });
   revalidatePath(`/brokers/${id}`);
+  revalidatePath("/dashboard/broker-data");
   return result;
 }
 
@@ -312,6 +346,7 @@ export async function refreshSession(
   }
   const result = await request<SessionMutationResponse>(path, { method: "POST" });
   revalidatePath(`/brokers/${id}`);
+  revalidatePath("/dashboard/broker-data");
   return result;
 }
 

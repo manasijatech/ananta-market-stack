@@ -42,10 +42,18 @@ def _client(db: Session, acc: BrokerAccount):
     return get_client_for_account(acc, resolver=_resolver(db, acc.broker_code))
 
 
-def _instrument_row_to_schema(row: BrokerInstrument) -> InstrumentSearchRow:
+def _instrument_row_to_schema(
+    row: BrokerInstrument,
+    *,
+    account_id: str | None = None,
+    account_label: str | None = None,
+) -> InstrumentSearchRow:
     return InstrumentSearchRow(
         symbol=row.symbol,
         source="db",
+        broker_code=row.broker_code,
+        account_id=account_id,
+        account_label=account_label,
         exchange=row.exchange,
         segment=row.segment,
         trading_symbol=row.trading_symbol,
@@ -187,6 +195,23 @@ def _snapshot_instruments_from_portfolio(acc: BrokerAccount, client: Any) -> lis
     return rows
 
 
+def count_holdings_rows(payload: Any) -> int:
+    if isinstance(payload, list):
+        return len([item for item in payload if isinstance(item, dict)])
+    if not isinstance(payload, dict):
+        return 0
+    for key in ("data", "payload", "holdings", "positions", "orders", "trades", "net"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return len([item for item in value if isinstance(item, dict)])
+        if isinstance(value, dict):
+            for nested_key in ("positions", "holdings", "orders", "trades", "net"):
+                nested = value.get(nested_key)
+                if isinstance(nested, list):
+                    return len([item for item in nested if isinstance(item, dict)])
+    return 0
+
+
 def _csv_path_for_broker(broker_code: str) -> Path:
     return _INSTRUMENT_EXPORT_DIR / f"{broker_code}_instruments.csv"
 
@@ -238,6 +263,8 @@ def _csv_value(row: dict[str, str], key: str) -> str | None:
 def _csv_search_rows(
     broker_code: str,
     *,
+    account_id: str | None = None,
+    account_label: str | None = None,
     query: str = "",
     exchange: str | None = None,
     segment: str | None = None,
@@ -264,7 +291,14 @@ def _csv_search_rows(
     matches.sort(key=lambda item: (item[0], str(item[1].get("symbol") or ""), str(item[1].get("trading_symbol") or "")))
     results: list[InstrumentSearchRow] = []
     for _, row in matches[: max(1, min(limit, 200))]:
-        results.append(_csv_row_to_schema(row))
+        results.append(
+            _csv_row_to_schema(
+                row,
+                broker_code=broker_code,
+                account_id=account_id,
+                account_label=account_label,
+            )
+        )
     return results
 
 
@@ -291,10 +325,19 @@ def _csv_exact_payload(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _csv_row_to_schema(row: dict[str, Any]) -> InstrumentSearchRow:
+def _csv_row_to_schema(
+    row: dict[str, Any],
+    *,
+    broker_code: str,
+    account_id: str | None = None,
+    account_label: str | None = None,
+) -> InstrumentSearchRow:
     return InstrumentSearchRow(
         symbol=str(row.get("symbol") or "unknown"),
         source="csv",
+        broker_code=broker_code,
+        account_id=account_id,
+        account_label=account_label,
         exchange=row.get("exchange"),
         segment=row.get("segment"),
         trading_symbol=row.get("trading_symbol"),
@@ -457,6 +500,39 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
     return capabilities
 
 
+def cached_instrument_count(db: Session, broker_code: str) -> int:
+    return count_instruments(db, broker_code)
+
+
+def instrument_cache_available(db: Session, broker_code: str) -> bool:
+    return cached_instrument_count(db, broker_code) > 0 or _csv_path_for_broker(broker_code).exists()
+
+
+def _preserve_existing_instrument_cache(
+    db: Session,
+    acc: BrokerAccount,
+    *,
+    storage_target: str,
+    started_at: datetime | None = None,
+) -> InstrumentSyncOut:
+    row_count = cached_instrument_count(db, acc.broker_code)
+    csv_path = _csv_path_for_broker(acc.broker_code)
+    csv_available = csv_path.exists()
+    if row_count <= 0 and not csv_available:
+        raise ValueError("instrument refresh returned no rows and no existing cache is available")
+    message = "Instrument refresh returned no rows. Preserved the last successful instrument cache."
+    return _instrument_sync_out(
+        broker_code=acc.broker_code,
+        sync_status="preserved",
+        row_count=row_count,
+        started_at=started_at,
+        finished_at=datetime.utcnow(),
+        error=message,
+        storage_target=storage_target,
+        csv_path=_csv_relpath(csv_path) if csv_available else None,
+    )
+
+
 def sync_instruments_for_account(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
     return sync_instruments_to_csv(db, acc)
 
@@ -465,6 +541,16 @@ def sync_instruments_to_db(db: Session, acc: BrokerAccount) -> InstrumentSyncOut
     run = create_sync_run(db, acc.broker_code)
     try:
         rows = _fetch_instrument_rows(db, acc)
+        if not rows:
+            preserved = _preserve_existing_instrument_cache(db, acc, storage_target="db", started_at=run.started_at)
+            run = finish_sync_run(
+                db,
+                run,
+                status=preserved.sync_status,
+                row_count=preserved.row_count,
+                error=preserved.error,
+            )
+            return preserved
         count = replace_instruments(db, acc.broker_code, rows)
         run = finish_sync_run(db, run, status="completed", row_count=count)
     except Exception as exc:
@@ -485,6 +571,8 @@ def sync_instruments_to_csv(db: Session, acc: BrokerAccount) -> InstrumentSyncOu
     csv_path = _csv_path_for_broker(acc.broker_code)
     try:
         rows = _fetch_instrument_rows(db, acc)
+        if not rows:
+            return _preserve_existing_instrument_cache(db, acc, storage_target="csv", started_at=started_at)
         _write_csv(rows, csv_path)
         return _instrument_sync_out(
             broker_code=acc.broker_code,
@@ -547,9 +635,18 @@ def search_instruments(
         limit=limit,
     )
     if rows:
-        return [_instrument_row_to_schema(row) for row in rows]
+        return [
+            _instrument_row_to_schema(
+                row,
+                account_id=acc.id,
+                account_label=acc.label,
+            )
+            for row in rows
+        ]
     return _csv_search_rows(
         acc.broker_code,
+        account_id=acc.id,
+        account_label=acc.label,
         query=query,
         exchange=exchange,
         segment=segment,
@@ -575,6 +672,11 @@ def fetch_quotes(
         )
         for row in rows
     ]
+
+
+def fetch_holdings(db: Session, acc: BrokerAccount) -> dict[str, Any]:
+    client = _client(db, acc)
+    return client.holdings()
 
 
 def fetch_ohlc(

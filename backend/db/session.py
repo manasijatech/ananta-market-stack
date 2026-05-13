@@ -193,6 +193,32 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "user_broker_data_preferences",
+            {
+                "user_id": "VARCHAR(36)",
+                "preferred_search_account_id": "VARCHAR(36)",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "broker_holdings_snapshots",
+            {
+                "account_id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "broker_code": "VARCHAR(32)",
+                "status": "VARCHAR(32) DEFAULT 'pending'",
+                "holdings_count": "INTEGER DEFAULT 0",
+                "payload_json": "TEXT DEFAULT '{}'",
+                "error": "TEXT",
+                "fetched_at": "DATETIME",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "alert_workflow_templates",
             {
                 "id": "VARCHAR(36)",
@@ -349,7 +375,13 @@ def _ensure_table_columns(
     ).fetchone()
     if table_exists is None:
         definitions = ", ".join(f"{name} {column_type}" for name, column_type in columns.items())
-        primary_key = ", PRIMARY KEY (id)" if "id" in columns else ""
+        primary_key = ""
+        if "id" in columns:
+            primary_key = ", PRIMARY KEY (id)"
+        elif table_name in {"user_broker_data_preferences"}:
+            primary_key = ", PRIMARY KEY (user_id)"
+        elif table_name in {"broker_holdings_snapshots"}:
+            primary_key = ", PRIMARY KEY (account_id)"
         conn.execute(f"CREATE TABLE {table_name} ({definitions}{primary_key})")
         return
     existing = {

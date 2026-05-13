@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, useTransition, type RefObject } f
 import {
   getDataOhlc,
   getDataQuotes,
-  searchBrokerInstruments
+  searchDefaultBrokerInstruments
 } from "@/service/actions/broker";
 import {
   createAlertWorkflow,
@@ -292,8 +292,7 @@ export function WorkflowEditor({
   }, []);
 
   useEffect(() => {
-    const account = selectedAccount;
-    if (!account || symbol.trim().length < 1) {
+    if (symbol.trim().length < 1) {
       setSuggestions([]);
       return;
     }
@@ -301,7 +300,7 @@ export function WorkflowEditor({
       setSearchLoading(true);
       startTransition(async () => {
         try {
-          const result = await searchBrokerInstruments(account.id, {
+          const result = await searchDefaultBrokerInstruments({
             q: symbol.trim(),
             exchange: exchange.trim() || undefined,
             limit: 20
@@ -316,7 +315,7 @@ export function WorkflowEditor({
       });
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [exchange, selectedAccount, startTransition, symbol]);
+  }, [exchange, startTransition, symbol]);
 
   useEffect(() => {
     const account = selectedAccount;
@@ -690,7 +689,11 @@ export function WorkflowEditor({
               title="Start typing to search the synced broker instrument master for live suggestions."
               value={symbol}
             />
-            <HelpText>{searchLoading ? "Searching instruments..." : selectedSearchLabel || "Type a symbol name or trading symbol and choose a suggestion."}</HelpText>
+            <HelpText>
+              {searchLoading
+                ? "Searching instruments..."
+                : selectedSearchLabel || "Type a symbol name or trading symbol and choose a suggestion. Search uses your default synced broker cache and falls back automatically when needed."}
+            </HelpText>
             {showSuggestions && suggestions.length ? (
               <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto rounded-md border border-border bg-background shadow-auth">
                 {suggestions.map((row) => (
@@ -702,7 +705,7 @@ export function WorkflowEditor({
                   >
                     <span className="font-semibold">{row.symbol}</span>
                     <span className="text-xs text-muted-foreground">
-                      {[row.exchange, row.instrument_type, row.name, row.trading_symbol].filter(Boolean).join(" · ")}
+                      {[row.exchange, row.instrument_type, row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" · ")}
                     </span>
                   </button>
                 ))}

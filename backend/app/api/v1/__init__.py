@@ -6,6 +6,7 @@ from app.api.v1 import (
     alert_templates,
     alert_workflows,
     broker_accounts,
+    broker_data_config,
     broker_ops,
     health,
     live_streams,
@@ -38,6 +39,9 @@ api_router.include_router(
 )
 api_router.include_router(
     broker_accounts.router, prefix="/broker-accounts", tags=["broker-accounts"]
+)
+api_router.include_router(
+    broker_data_config.router, prefix="/broker-data", tags=["broker-data"]
 )
 api_router.include_router(
     broker_ops.router, prefix="/broker-accounts", tags=["broker-operations"]

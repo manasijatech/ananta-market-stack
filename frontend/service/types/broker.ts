@@ -30,6 +30,7 @@ export interface BrokerAccount {
   session_expires_at?: string | null;
   automation_enabled: boolean;
   automation_mode?: string | null;
+  is_preferred_instrument_search?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -239,6 +240,9 @@ export interface DataCapabilities {
 export interface InstrumentSearchRow {
   symbol: string;
   source?: string;
+  broker_code?: string | null;
+  account_id?: string | null;
+  account_label?: string | null;
   exchange?: string | null;
   segment?: string | null;
   trading_symbol?: string | null;
@@ -299,6 +303,33 @@ export interface StreamStatus {
   subscription_count: number;
   subscriptions: JsonObject[];
   guidance: string;
+}
+
+export interface BrokerDataSearchAccount {
+  account_id: string;
+  broker_code: BrokerCode | string;
+  label: string;
+  is_verified: boolean;
+  session_status?: string | null;
+  session_active: boolean;
+  is_preferred: boolean;
+  is_effective: boolean;
+  search_available: boolean;
+  holdings_status?: string | null;
+  holdings_count: number;
+  holdings_fetched_at?: string | null;
+  latest_instrument_sync_status?: string | null;
+  latest_instrument_sync_started_at?: string | null;
+  latest_instrument_sync_finished_at?: string | null;
+  latest_instrument_sync_error?: string | null;
+  last_error?: string | null;
+}
+
+export interface BrokerDataSearchConfig {
+  preferred_search_account_id?: string | null;
+  effective_search_account_id?: string | null;
+  fallback_used: boolean;
+  accounts: BrokerDataSearchAccount[];
 }
 
 export interface Notification {

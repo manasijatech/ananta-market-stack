@@ -16,6 +16,11 @@ const quickAccessItems = [
     href: "/alert-channels",
     label: "Alert Channels",
     description: "Save Discord and Telegram delivery credentials and test outbound channels."
+  },
+  {
+    href: "/dashboard/broker-data",
+    label: "Broker Data Config",
+    description: "Choose the default search broker, inspect sync health, and review holdings refresh status."
   }
 ];
 
