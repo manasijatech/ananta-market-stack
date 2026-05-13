@@ -52,3 +52,17 @@ export function MarketIntelligenceLoading() {
  </LoadingShell>
  );
 }
+
+export function MarketIntelligenceResultLoading() {
+ return (
+ <div className="grid gap-4">
+ {Array.from({ length: 4 }).map((_, index) => (
+ <div className="border-l-2 border-border pl-4" key={index}>
+ <Skeleton className="h-5 w-full max-w-xl" />
+ <Skeleton className="mt-2 h-3 w-72" />
+ <Skeleton className="mt-3 h-4 w-full max-w-3xl" />
+ </div>
+ ))}
+ </div>
+ );
+}

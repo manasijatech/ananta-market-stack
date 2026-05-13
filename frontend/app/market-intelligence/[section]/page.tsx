@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { MarketIntelligencePage, marketIntelligenceSections } from "@/components/market-intelligence/market-intelligence-page";
+import { MarketIntelligenceResult, marketIntelligenceSections } from "@/components/market-intelligence/market-intelligence-page";
 
 type MarketIntelligenceSectionPageProps = {
  params: Promise<{ section: string }>;
@@ -17,5 +17,5 @@ export default async function MarketIntelligenceSectionPage({ params }: MarketIn
  notFound();
  }
 
- return <MarketIntelligencePage section={activeSection.id} />;
+ return <MarketIntelligenceResult section={activeSection.id} />;
 }

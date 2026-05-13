@@ -1,5 +1,5 @@
-import { MarketIntelligenceLoading } from "@/components/market-intelligence/market-intelligence-loading";
+import { MarketIntelligenceResultLoading } from "@/components/market-intelligence/market-intelligence-loading";
 
 export default function Loading() {
- return <MarketIntelligenceLoading />;
+ return <MarketIntelligenceResultLoading />;
 }
