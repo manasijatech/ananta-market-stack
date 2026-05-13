@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.broker import BrokerDataSearchConfigOut
 
@@ -11,6 +11,8 @@ LlmProvider = Literal["openai", "openrouter", "gemini"]
 
 
 class LlmModelOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     provider: LlmProvider
     model_id: str
