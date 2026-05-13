@@ -27,12 +27,14 @@ from app.schemas.alert import (
     AlertWorkflowRunOut,
     AlertWorkflowUpdate,
     InstrumentRef,
+    LiveBrokerAccountStatusOut,
     LiveStreamsStatusOut,
     LiveSubscriptionBulkIn,
     LiveSubscriptionCreateIn,
     LiveSubscriptionOut,
     LiveWorkerSessionOut,
 )
+from app.services import broker_sessions as broker_session_svc
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import (
@@ -1346,6 +1348,100 @@ def _chunk_sessions(
     return sessions
 
 
+def _broker_statuses(
+    db: Session,
+    user_id: str,
+    desired: list[LiveSubscriptionOut],
+    sessions: list[LiveWorkerSessionOut],
+) -> list[LiveBrokerAccountStatusOut]:
+    desired_counts: dict[tuple[str, str], int] = {}
+    for row in desired:
+        if not row.account_id or not row.broker_code:
+            continue
+        key = (row.account_id, row.broker_code)
+        desired_counts[key] = desired_counts.get(key, 0) + 1
+
+    worker_counts: dict[tuple[str, str], int] = {}
+    for row in sessions:
+        key = (row.account_id, row.broker_code)
+        worker_counts[key] = worker_counts.get(key, 0) + 1
+
+    relevant_keys = set(desired_counts) | set(worker_counts)
+    if not relevant_keys:
+        return []
+
+    accounts = list(
+        db.scalars(
+            select(BrokerAccount).where(
+                BrokerAccount.user_id == user_id,
+                BrokerAccount.is_active.is_(True),
+            )
+        ).all()
+    )
+    account_index = {(row.id, row.broker_code): row for row in accounts}
+
+    statuses: list[LiveBrokerAccountStatusOut] = []
+    for account_id, broker_code in sorted(relevant_keys, key=lambda item: (item[1], item[0])):
+        acc = account_index.get((account_id, broker_code))
+        desired_symbol_count = desired_counts.get((account_id, broker_code), 0)
+        active_worker_sessions = worker_counts.get((account_id, broker_code), 0)
+        if acc is None:
+            statuses.append(
+                LiveBrokerAccountStatusOut(
+                    broker_code=broker_code,
+                    account_id=account_id,
+                    label=account_id,
+                    desired_symbol_count=desired_symbol_count,
+                    active_worker_sessions=active_worker_sessions,
+                    action_required=True,
+                    guidance="The broker account record is missing or inactive.",
+                    last_error="Broker account not found.",
+                )
+            )
+            continue
+
+        try:
+            session = broker_session_svc.get_broker_session_status(acc)
+            session_active = bool(session.session_active)
+            guidance = session.guidance
+            has_access_token = bool(session.has_access_token)
+            token_expires_at = session.token_expires_at
+            automation_enabled = bool(session.automation_enabled)
+            automation_mode = session.automation_mode
+        except Exception as exc:
+            session_active = False
+            guidance = str(exc)
+            has_access_token = False
+            token_expires_at = acc.session_expires_at
+            automation_enabled = bool(acc.automation_enabled)
+            automation_mode = acc.automation_mode
+
+        action_required = desired_symbol_count > 0 and not session_active
+        session_status = acc.session_status or ("active" if session_active else "pending")
+        last_error = acc.last_error or (guidance if action_required else None)
+        statuses.append(
+            LiveBrokerAccountStatusOut(
+                broker_code=broker_code,
+                account_id=account_id,
+                label=acc.label,
+                session_status=session_status,
+                session_active=session_active,
+                can_stream=session_active and desired_symbol_count > 0,
+                action_required=action_required,
+                automation_enabled=automation_enabled,
+                automation_mode=automation_mode,
+                has_access_token=has_access_token,
+                token_expires_at=token_expires_at,
+                desired_symbol_count=desired_symbol_count,
+                active_worker_sessions=active_worker_sessions,
+                last_verified_at=acc.last_verified_at,
+                last_error=last_error,
+                guidance=guidance if action_required else None,
+            )
+        )
+    return statuses
+
+
 def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
     ok, error = ping_redis()
     activity_sessions: list[LiveWorkerSessionOut] = []
@@ -1381,12 +1477,14 @@ def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
         if session.account_id and session.broker_code
     }
     sessions = _chunk_sessions(desired, user_id, activity_index)
+    broker_statuses = _broker_statuses(db, user_id, desired, sessions)
     return LiveStreamsStatusOut(
         redis_ok=ok,
         redis_error=error,
         worker_mode="redis-event-driven-alerts",
         active_sessions=sessions,
         desired_subscriptions=desired,
+        broker_statuses=broker_statuses,
     )
 
 

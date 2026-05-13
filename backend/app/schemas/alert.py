@@ -275,9 +275,29 @@ class LiveWorkerSessionOut(BaseModel):
     last_seen_at: datetime | None = None
 
 
+class LiveBrokerAccountStatusOut(BaseModel):
+    broker_code: str
+    account_id: str
+    label: str
+    session_status: str | None = None
+    session_active: bool = False
+    can_stream: bool = False
+    action_required: bool = False
+    automation_enabled: bool = False
+    automation_mode: str | None = None
+    has_access_token: bool = False
+    token_expires_at: datetime | None = None
+    desired_symbol_count: int = 0
+    active_worker_sessions: int = 0
+    last_verified_at: datetime | None = None
+    last_error: str | None = None
+    guidance: str | None = None
+
+
 class LiveStreamsStatusOut(BaseModel):
     redis_ok: bool
     redis_error: str = ""
     worker_mode: str
     active_sessions: list[LiveWorkerSessionOut] = Field(default_factory=list)
     desired_subscriptions: list[LiveSubscriptionOut] = Field(default_factory=list)
+    broker_statuses: list[LiveBrokerAccountStatusOut] = Field(default_factory=list)

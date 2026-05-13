@@ -199,10 +199,30 @@ export interface LiveWorkerSession {
   last_seen_at?: string | null;
 }
 
+export interface LiveBrokerAccountStatus {
+  broker_code: string;
+  account_id: string;
+  label: string;
+  session_status?: string | null;
+  session_active: boolean;
+  can_stream: boolean;
+  action_required: boolean;
+  automation_enabled: boolean;
+  automation_mode?: string | null;
+  has_access_token: boolean;
+  token_expires_at?: string | null;
+  desired_symbol_count: number;
+  active_worker_sessions: number;
+  last_verified_at?: string | null;
+  last_error?: string | null;
+  guidance?: string | null;
+}
+
 export interface LiveStreamsStatus {
   redis_ok: boolean;
   redis_error: string;
   worker_mode: string;
   active_sessions: LiveWorkerSession[];
   desired_subscriptions: LiveSubscription[];
+  broker_statuses: LiveBrokerAccountStatus[];
 }

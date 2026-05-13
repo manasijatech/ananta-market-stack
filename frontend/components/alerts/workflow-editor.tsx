@@ -436,13 +436,13 @@ export function WorkflowEditor({
       channels: channelSelection()
     };
 
-      return {
+    return {
       name,
       description,
       account_id: accountId || null,
       broker_code: selectedAccount?.broker_code ?? (brokerCode || null),
-      symbol: primaryTarget?.symbol ?? symbol || null,
-      exchange: primaryTarget?.exchange ?? exchange || null,
+      symbol: primaryTarget?.symbol ?? (symbol || null),
+      exchange: primaryTarget?.exchange ?? (exchange || null),
       instrument_ref: serializeInstrumentRef(primaryTarget?.instrument_ref ?? activeInstrument),
       workflow_dsl: workflowDsl,
       graph_dsl: buildGraph(workflowDsl),
