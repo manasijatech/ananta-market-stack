@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useRef, useState } from "react";
 import { useSession } from "@/components/session-provider";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,20 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
  const { signIn, signUp } = useSession();
  const [error, setError] = useState("");
  const [isSubmitting, setIsSubmitting] = useState(false);
+ const emailRef = useRef<HTMLInputElement | null>(null);
+ const passwordRef = useRef<HTMLInputElement | null>(null);
+
+ function focusOnEnter(event: KeyboardEvent<HTMLInputElement>, nextField: "email" | "password") {
+ if (event.key !== "Enter") {
+ return;
+ }
+ event.preventDefault();
+ if (nextField === "email") {
+ emailRef.current?.focus();
+ } else {
+ passwordRef.current?.focus();
+ }
+ }
 
  async function onSubmit(event: FormEvent<HTMLFormElement>) {
  event.preventDefault();
@@ -52,6 +66,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
  autoComplete="name"
  id="displayName"
  name="displayName"
+ onKeyDown={(event) => focusOnEnter(event, "email")}
  placeholder="Aarav Sharma"
  required
  className="h-12"
@@ -67,7 +82,9 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
  id="email"
  inputMode="email"
  name="email"
+ onKeyDown={(event) => focusOnEnter(event, "password")}
  placeholder="you@example.com"
+ ref={emailRef}
  required
  className="h-12"
  type="email"
@@ -82,6 +99,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
  minLength={8}
  name="password"
  placeholder="At least 8 characters"
+ ref={passwordRef}
  required
  className="h-12"
  type="password"

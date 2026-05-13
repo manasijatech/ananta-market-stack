@@ -26,10 +26,10 @@ export function AuthShell({
  <img
  alt=""
  aria-hidden="true"
- className="absolute inset-0 -z-20 h-full w-full object-cover object-center opacity-45 brightness-[0.9] contrast-[1.08] saturate-[0.5] sepia-[0.32] dark:opacity-55 dark:brightness-[0.52] dark:saturate-[0.55]"
+ className="absolute inset-0 -z-20 h-full w-full object-cover object-center brightness-[0.94] contrast-[1.08] saturate-[0.82] dark:brightness-[0.58] dark:saturate-[0.72]"
  src="/auth/trading-desk.jpg"
  />
- <div className="absolute inset-0 -z-10 bg-background/55 dark:bg-background/58" />
+ <div className="absolute inset-x-0 bottom-0 -z-10 h-[58%] bg-gradient-to-t from-background/88 via-background/44 to-transparent dark:from-background/92 dark:via-background/46" />
  <div className="absolute inset-x-0 top-0 z-10 h-[3px] bg-primary" />
  <div className="flex items-center gap-3 text-[15px] font-extrabold">
  <div className="flex aspect-square w-10 shrink-0 items-center justify-center border border-primary font-mono text-[13px] font-black text-primary" aria-hidden="true">

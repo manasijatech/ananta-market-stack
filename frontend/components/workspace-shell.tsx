@@ -17,6 +17,13 @@ const navItems = [
  { href: "/brokers/docs", label: "Docs", icon: BookOpen }
 ];
 
+function isNavItemActive(pathname: string, href: string) {
+ if (href === "/brokers") {
+ return pathname === "/brokers" || (pathname.startsWith("/brokers/") && !pathname.startsWith("/brokers/docs"));
+ }
+ return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 function initials(name?: string | null, email?: string | null) {
  const source = name?.trim() || email?.split("@")[0] || "MS";
  return source
@@ -62,7 +69,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  <nav className="flex gap-1 px-3 pb-4 min-[980px]:flex-col" aria-label="Primary navigation">
  {navItems.map((item) => {
  const Icon = item.icon;
- const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+ const active = isNavItemActive(pathname, item.href);
  return (
  <Link
  className={[
@@ -88,7 +95,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  <div className="flex flex-col gap-4 min-[860px]:flex-row min-[860px]:items-center min-[860px]:justify-between">
  <nav className="hidden items-center gap-6 min-[860px]:flex">
  {navItems.map((item) => {
- const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+ const active = isNavItemActive(pathname, item.href);
  return (
  <Link
  className={active ? "text-sm font-semibold uppercase tracking-[0.06em] text-primary" : "text-sm font-semibold uppercase tracking-[0.06em] text-muted-foreground hover:text-foreground"}
