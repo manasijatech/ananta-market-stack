@@ -11,7 +11,6 @@ import {
  removeSymbolFromWatchlist,
  updateWatchlist
 } from "@/service/actions/watchlist";
-import { parseActionError } from "@/components/brokers/action-error";
 import type { InstrumentRef } from "@/service/types/alerts";
 import type { InstrumentSearchRow } from "@/service/types/broker";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
