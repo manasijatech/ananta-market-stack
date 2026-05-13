@@ -1,12 +1,12 @@
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { betterAuth } from "better-auth";
 
-const dataDir = join(process.cwd(), "data");
-mkdirSync(dataDir, { recursive: true });
+const databasePath = process.env.AUTH_DATABASE_PATH ?? resolve(process.cwd(), "../backend/data/app.db");
+mkdirSync(dirname(databasePath), { recursive: true });
 
-const database = new DatabaseSync(join(dataDir, "auth.sqlite"));
+const database = new DatabaseSync(databasePath);
 
 database.exec("PRAGMA busy_timeout = 5000;");
 

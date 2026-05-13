@@ -13,6 +13,7 @@ from app.api.v1 import (
     meta,
     notifications,
     users,
+    watchlists,
 )
 
 api_router = APIRouter()
@@ -36,6 +37,9 @@ api_router.include_router(
 )
 api_router.include_router(
     live_streams.router, prefix="/live-streams", tags=["live-streams"]
+)
+api_router.include_router(
+    watchlists.router, prefix="/watchlists", tags=["watchlists"]
 )
 api_router.include_router(
     broker_accounts.router, prefix="/broker-accounts", tags=["broker-accounts"]

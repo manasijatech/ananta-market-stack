@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.session import Base
@@ -26,6 +26,9 @@ class User(Base):
         uselist=False,
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    watchlists: Mapped[list[UserWatchlist]] = relationship(
+        "UserWatchlist", back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -296,6 +299,56 @@ class BrokerNotification(Base):
     message: Mapped[str] = mapped_column(Text)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserWatchlist(Base):
+    __tablename__ = "user_watchlists"
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_user_watchlists_user_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="watchlists")
+    symbols: Mapped[list[UserWatchlistSymbol]] = relationship(
+        "UserWatchlistSymbol",
+        back_populates="watchlist",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="UserWatchlistSymbol.sort_order",
+    )
+
+
+class UserWatchlistSymbol(Base):
+    __tablename__ = "user_watchlist_symbols"
+    __table_args__ = (
+        UniqueConstraint(
+            "watchlist_id",
+            "symbol",
+            "exchange",
+            name="uq_user_watchlist_symbols_symbol_exchange",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    watchlist_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user_watchlists.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    exchange: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    instrument_ref_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    watchlist: Mapped[UserWatchlist] = relationship("UserWatchlist", back_populates="symbols")
 
 
 class BrokerInstrument(Base):
