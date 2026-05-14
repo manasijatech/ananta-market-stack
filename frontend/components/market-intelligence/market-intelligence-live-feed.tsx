@@ -112,6 +112,7 @@ function collectSymbols(value: unknown, symbols: Set<string>) {
 }
 
 function itemMatchesWatchlist(item: unknown, watchlistSymbols: Set<string>) {
+ if (!watchlistSymbols.size) return true;
  const itemSymbols = new Set<string>();
  collectSymbols(item, itemSymbols);
  if (!itemSymbols.size) return false;
@@ -146,7 +147,7 @@ export function MarketIntelligenceLiveFeed({
 
  async function connect() {
  try {
- const config = await getAlphaWebSocketConfig();
+ const config = await getAlphaWebSocketConfig([...marketIntelligenceProducts]);
  if (cancelled) return;
  socket = new WebSocket(config.url);
 

@@ -369,11 +369,11 @@ Call Alpha API from frontend server actions only. Client components should impor
 - `MANASIJA_API_BASE_URL`, defaulting to `https://developers.manasija.in`
 - `MANASIJA_API_KEY`, sent as the `X-API-Key` header
 
-Do not call `https://developers.manasija.in` directly from browser/client code. Do not route Alpha through the Market Stack backend unless the architecture changes again. The frontend has two separate server-side targets:
+Do not call `https://developers.manasija.in` directly from browser/client code. REST Alpha calls remain server-side frontend actions; Alpha websocket calls are routed through the Market Stack backend so the browser never receives the customer API key.
 
 | Target | Env | Used for |
 |---|---|---|
-| Market Stack backend | `NEXT_PUBLIC_API_BASE_URL` | Broker accounts, watchlists, alerts, system config, LLM config |
+| Market Stack backend | `NEXT_PUBLIC_API_BASE_URL` | Broker accounts, watchlists, alerts, system config, LLM config, Alpha websocket relay |
 | Manasija Alpha API | `MANASIJA_API_BASE_URL`, `MANASIJA_API_KEY` | Paid market intelligence data from `developers.manasija.in` |
 
 Current first-class Alpha frontend actions:
@@ -386,6 +386,7 @@ Current first-class Alpha frontend actions:
 | `getAlphaEarnings` | `/v1/earnings` | Company detail, earnings calendar |
 | `getAlphaConcalls` | `/v1/concalls` | Company detail, research workspace |
 | `getAlphaAlerts` | `/v1/alerts` | Alert center, dashboard |
+| `getAlphaWebSocketConfig` | Market Stack `/api/v1/alpha/ws` | Browser websocket relay for market intelligence |
 
 ## Implementation Notes For Market Stack
 

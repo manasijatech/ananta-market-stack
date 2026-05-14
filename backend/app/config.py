@@ -36,6 +36,10 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="ENABLE_IN_PROCESS_ALERT_WORKERS",
     )
+    enable_in_process_alpha_ws_worker: bool = Field(
+        default=True,
+        validation_alias="ENABLE_IN_PROCESS_ALPHA_WS_WORKER",
+    )
 
     # Development-only fallback if no key set (not for production).
     allow_insecure_dev_credentials: bool = False

@@ -9,6 +9,8 @@ from app.schemas.system_config import (
     AlphaApiConfigOut,
     AlphaApiCredentialUpsertIn,
     AlphaApiKeyOut,
+    AlphaWebSocketConfigOut,
+    AlphaWebSocketConfigUpdateIn,
     LlmModelCreateIn,
     LlmProvider,
     LlmProviderConfigOut,
@@ -16,6 +18,7 @@ from app.schemas.system_config import (
     SystemConfigOut,
 )
 from app.services import alpha_config
+from app.services import alpha_websocket
 from app.services import broker_data_preferences
 from app.services import llm_config
 from db.models import User
@@ -33,6 +36,7 @@ def get_system_config(
         broker_data_search=broker_data_preferences.get_broker_data_search_config(db, user.id),
         llm_providers=llm_config.list_provider_configs(db, user.id),
         alpha_api=alpha_config.get_alpha_api_config(db, user.id),
+        alpha_websocket=alpha_websocket.alpha_ws_config_out(db, user.id),
     )
 
 
@@ -70,7 +74,10 @@ def upsert_alpha_api_credential(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AlphaApiConfigOut:
-    return alpha_config.upsert_alpha_api_credential(db, user.id, body)
+    try:
+        return alpha_config.upsert_alpha_api_credential(db, user.id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/alpha", response_model=AlphaApiConfigOut)
@@ -79,6 +86,23 @@ def delete_alpha_api_credential(
     user: User = Depends(get_current_user),
 ) -> AlphaApiConfigOut:
     return alpha_config.delete_alpha_api_credential(db, user.id)
+
+
+@router.get("/alpha/websocket", response_model=AlphaWebSocketConfigOut)
+def get_alpha_websocket_config(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlphaWebSocketConfigOut:
+    return alpha_websocket.alpha_ws_config_out(db, user.id)
+
+
+@router.put("/alpha/websocket", response_model=AlphaWebSocketConfigOut)
+def update_alpha_websocket_config(
+    body: AlphaWebSocketConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlphaWebSocketConfigOut:
+    return alpha_websocket.update_alpha_ws_config(db, user.id, body)
 
 
 @router.get("/alpha/key", response_model=AlphaApiKeyOut)

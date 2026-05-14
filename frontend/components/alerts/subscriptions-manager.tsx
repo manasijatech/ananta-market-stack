@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Loader2, Search } from "lucide-react";
 import { addLiveSubscription, deleteLiveSubscriptions } from "@/service/actions/alerts";
-import { searchBrokerInstruments } from "@/service/actions/broker";
+import { searchBrokerInstruments, updateAlphaWebSocketConfig } from "@/service/actions/broker";
 import type { InstrumentRef, LiveSubscription } from "@/service/types/alerts";
-import type { BrokerAccount, InstrumentSearchRow } from "@/service/types/broker";
+import type { AlphaWebSocketConfig, BrokerAccount, InstrumentSearchRow } from "@/service/types/broker";
+import type { Watchlist } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -33,13 +34,18 @@ const inputBase =
  " border-0 border-b border-input bg-transparent px-0 text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-0";
 
 export function SubscriptionsManager({
+ alphaWebSocketConfig,
  accounts,
- initialSubscriptions
+ initialSubscriptions,
+ watchlists
 }: {
+ alphaWebSocketConfig: AlphaWebSocketConfig;
  accounts: BrokerAccount[];
  initialSubscriptions: LiveSubscription[];
+ watchlists: Watchlist[];
 }) {
  const [items, setItems] = useState(initialSubscriptions);
+ const [alphaWsConfig, setAlphaWsConfig] = useState(alphaWebSocketConfig);
  const [selectedIds, setSelectedIds] = useState<string[]>([]);
  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
  const [symbolSearch, setSymbolSearch] = useState("");
@@ -53,6 +59,8 @@ export function SubscriptionsManager({
  const searchWrapRef = useRef<HTMLDivElement | null>(null);
 
  const selectedAccount = accounts.find((item) => item.id === accountId);
+ const enabledAddons = alphaWsConfig.entitled_addons.filter((item) => item.enabled);
+ const fullMarketProducts = enabledAddons.filter((item) => item.tier === "full_market");
 
  useEffect(() => {
  function handlePointerDown(event: MouseEvent) {
@@ -172,9 +180,125 @@ export function SubscriptionsManager({
  });
  }
 
+ function toggleAlphaProduct(product: string, checked: boolean) {
+ setAlphaWsConfig((current) => ({
+ ...current,
+ products: checked
+ ? Array.from(new Set([...current.products, product]))
+ : current.products.filter((item) => item !== product)
+ }));
+ }
+
+ function toggleWatchlist(id: string, checked: boolean) {
+ setAlphaWsConfig((current) => ({
+ ...current,
+ watchlist_ids: checked
+ ? Array.from(new Set([...current.watchlist_ids, id]))
+ : current.watchlist_ids.filter((item) => item !== id)
+ }));
+ }
+
+ function saveAlphaWebSocketConfig() {
+ setError("");
+ startTransition(async () => {
+ try {
+ const next = await updateAlphaWebSocketConfig({
+ is_enabled: alphaWsConfig.is_enabled,
+ products: alphaWsConfig.products,
+ scope_mode: alphaWsConfig.scope_mode,
+ watchlist_ids: alphaWsConfig.watchlist_ids,
+ include_all_watchlists: alphaWsConfig.include_all_watchlists,
+ full_market: alphaWsConfig.full_market
+ });
+ setAlphaWsConfig(next);
+ } catch (caught) {
+ setError(caught instanceof Error ? caught.message : "Could not save Alpha websocket config.");
+ }
+ });
+ }
+
  return (
  <div className="grid gap-6">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
+ <div className="border border-border p-4">
+ <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <div className="text-sm font-bold">Manasija websocket subscriptions</div>
+ <div className="mt-1 text-xs text-muted-foreground">
+ Backend worker status: {alphaWsConfig.status}{alphaWsConfig.last_event_at ? ` · last event ${new Date(alphaWsConfig.last_event_at).toLocaleTimeString("en-IN")}` : ""}
+ </div>
+ </div>
+ <Button disabled={isPending} onClick={saveAlphaWebSocketConfig} type="button">
+ Save websocket config
+ </Button>
+ </div>
+ {alphaWsConfig.last_error ? <div className="mb-3 border-l-2 border-destructive px-3 py-2 text-sm text-destructive">{alphaWsConfig.last_error}</div> : null}
+ <div className="grid gap-5 min-[980px]:grid-cols-3">
+ <div>
+ <div className="text-xs font-bold uppercase text-muted-foreground">Products from account</div>
+ <div className="mt-3 grid gap-2">
+ {enabledAddons.map((addon) => (
+ <label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={addon.product}>
+ <span>{addon.product} · {addon.tier ?? "tier unknown"}</span>
+ <input
+ checked={alphaWsConfig.products.includes(addon.product)}
+ onChange={(event) => toggleAlphaProduct(addon.product, event.target.checked)}
+ type="checkbox"
+ />
+ </label>
+ ))}
+ {!enabledAddons.length ? <div className="text-sm text-muted-foreground">No websocket addons were found for the saved key.</div> : null}
+ </div>
+ </div>
+ <div>
+ <div className="text-xs font-bold uppercase text-muted-foreground">Symbol scope</div>
+ <div className="mt-3 grid gap-2 text-sm">
+ <label className="flex items-center gap-2">
+ <input checked={alphaWsConfig.scope_mode === "alert_subscriptions"} onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alert_subscriptions", full_market: false }))} type="radio" />
+ Alert subscriptions only
+ </label>
+ <label className="flex items-center gap-2">
+ <input checked={alphaWsConfig.scope_mode === "alerts_and_watchlists"} onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alerts_and_watchlists", full_market: false }))} type="radio" />
+ Alert subscriptions + watchlists
+ </label>
+ <label className="flex items-center gap-2 text-muted-foreground">
+ <input checked={alphaWsConfig.scope_mode === "full_market"} disabled={!alphaWsConfig.full_market_allowed} onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "full_market", full_market: true }))} type="radio" />
+ Full market
+ </label>
+ </div>
+ <div className="mt-3 text-xs text-muted-foreground">
+ Effective: {alphaWsConfig.effective_products.length} products / {alphaWsConfig.scope_mode === "full_market" ? "full-feed" : `${alphaWsConfig.effective_symbols.length} symbols`}
+ </div>
+ {fullMarketProducts.length ? <div className="mt-1 text-xs text-muted-foreground">Full-market tier: {fullMarketProducts.map((item) => item.product).join(", ")}</div> : null}
+ </div>
+ <div>
+ <div className="text-xs font-bold uppercase text-muted-foreground">Watchlists</div>
+ <label className="mt-3 flex items-center gap-2 text-sm">
+ <input
+ checked={alphaWsConfig.include_all_watchlists}
+ disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists"}
+ onChange={(event) => setAlphaWsConfig((current) => ({ ...current, include_all_watchlists: event.target.checked }))}
+ type="checkbox"
+ />
+ All watchlists
+ </label>
+ <div className="mt-2 max-h-40 overflow-auto border border-border">
+ {watchlists.map((watchlist) => (
+ <label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={watchlist.id}>
+ <span>{watchlist.name} · {watchlist.items.length || watchlist.symbols.length}</span>
+ <input
+ checked={alphaWsConfig.watchlist_ids.includes(watchlist.id)}
+ disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists" || alphaWsConfig.include_all_watchlists}
+ onChange={(event) => toggleWatchlist(watchlist.id, event.target.checked)}
+ type="checkbox"
+ />
+ </label>
+ ))}
+ {!watchlists.length ? <div className="px-3 py-3 text-sm text-muted-foreground">No watchlists available.</div> : null}
+ </div>
+ </div>
+ </div>
+ </div>
  <div className=" border border-border p-4">
  <div className="mb-3 flex items-center justify-between gap-3">
  <div>

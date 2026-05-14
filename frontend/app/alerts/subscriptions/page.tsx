@@ -2,10 +2,16 @@ import { AlertsNav } from "@/components/alerts/alerts-nav";
 import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager";
 import { PageHeader, Shell } from "@/components/brokers/ui";
 import { getLiveSubscriptions } from "@/service/actions/alerts";
-import { getBrokerAccounts } from "@/service/actions/broker";
+import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
+import { getWatchlists } from "@/service/actions/watchlist";
 
 export default async function AlertSubscriptionsPage() {
- const [accounts, subscriptions] = await Promise.all([getBrokerAccounts(), getLiveSubscriptions()]);
+ const [accounts, subscriptions, watchlists, systemConfig] = await Promise.all([
+  getBrokerAccounts(),
+  getLiveSubscriptions(),
+  getWatchlists(),
+  getSystemConfig()
+ ]);
 
  return (
  <Shell>
@@ -15,7 +21,12 @@ export default async function AlertSubscriptionsPage() {
  description="Manage reusable symbol subscriptions that feed workflows and live data consumers."
  />
  <AlertsNav />
- <SubscriptionsManager accounts={accounts} initialSubscriptions={subscriptions} />
+ <SubscriptionsManager
+  accounts={accounts}
+  alphaWebSocketConfig={systemConfig.alpha_websocket}
+  initialSubscriptions={subscriptions}
+  watchlists={watchlists}
+ />
  </Shell>
  );
 }

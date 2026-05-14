@@ -251,6 +251,28 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
                 "user_id": "VARCHAR(36)",
                 "api_key_cipher": "TEXT DEFAULT ''",
                 "is_enabled": "BOOLEAN DEFAULT 1",
+                "account_json": "TEXT DEFAULT '{}'",
+                "account_checked_at": "DATETIME",
+                "account_error": "TEXT",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "user_alpha_websocket_configs",
+            {
+                "user_id": "VARCHAR(36)",
+                "is_enabled": "BOOLEAN DEFAULT 1",
+                "products_json": "TEXT DEFAULT '[]'",
+                "scope_mode": "VARCHAR(32) DEFAULT 'alert_subscriptions'",
+                "watchlist_ids_json": "TEXT DEFAULT '[]'",
+                "include_all_watchlists": "BOOLEAN DEFAULT 0",
+                "full_market": "BOOLEAN DEFAULT 0",
+                "last_status": "VARCHAR(32) DEFAULT 'unknown'",
+                "last_error": "TEXT",
+                "last_connected_at": "DATETIME",
+                "last_event_at": "DATETIME",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
             },
@@ -430,7 +452,11 @@ def _ensure_table_columns(
         primary_key = ""
         if "id" in columns:
             primary_key = ", PRIMARY KEY (id)"
-        elif table_name in {"user_broker_data_preferences", "user_alpha_api_credentials"}:
+        elif table_name in {
+            "user_broker_data_preferences",
+            "user_alpha_api_credentials",
+            "user_alpha_websocket_configs",
+        }:
             primary_key = ", PRIMARY KEY (user_id)"
         elif table_name in {"broker_holdings_snapshots"}:
             primary_key = ", PRIMARY KEY (account_id)"

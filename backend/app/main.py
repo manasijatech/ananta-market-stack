@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from app.api.v1 import api_router
 from app.config import get_settings
 from app.services.alert_runtime import create_alert_worker_service
+from app.services.alpha_websocket import run_alpha_websocket_worker
 from app.services.broker_sessions import maintenance_loop
 from db.session import init_db
 
@@ -69,10 +70,16 @@ async def lifespan(_app: FastAPI):
     if settings.enable_in_process_alert_workers:
         alert_worker_service = create_alert_worker_service()
         alert_worker_service.start()
+    alpha_ws_worker_service = None
+    if settings.enable_in_process_alpha_ws_worker:
+        alpha_ws_worker_service = BackgroundAsyncLoopThread("alpha-ws-worker", run_alpha_websocket_worker)
+        alpha_ws_worker_service.start()
     yield
     maintenance_service.stop()
     if alert_worker_service:
         alert_worker_service.stop()
+    if alpha_ws_worker_service:
+        alpha_ws_worker_service.stop()
 
 
 settings = get_settings()

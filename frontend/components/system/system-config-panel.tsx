@@ -7,6 +7,7 @@ import {
   deleteLlmProviderCredential,
   deleteLlmProviderModel,
   updateBrokerDataSearchConfig,
+  updateAlphaWebSocketConfig,
   upsertAlphaApiCredential,
   upsertLlmProviderCredential
 } from "@/service/actions/broker";
@@ -35,6 +36,7 @@ export function SystemConfigPanel({
   const [selectedAccountId, setSelectedAccountId] = useState(initialConfig.broker_data_search.preferred_search_account_id ?? "");
   const [brokerError, setBrokerError] = useState("");
   const [alphaApiKey, setAlphaApiKey] = useState("");
+  const [alphaWsConfig, setAlphaWsConfig] = useState(initialConfig.alpha_websocket);
   const [alphaReplacingApiKey, setAlphaReplacingApiKey] = useState(false);
   const [alphaError, setAlphaError] = useState("");
   const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
@@ -121,6 +123,34 @@ export function SystemConfigPanel({
         setConfig((current) => ({ ...current, alpha_api: next }));
         setAlphaApiKey("");
         setAlphaReplacingApiKey(false);
+      } catch (caught) {
+        setAlphaError(parseActionError(caught).message);
+      }
+    });
+  }
+
+  function toggleAlphaWsProduct(product: string, checked: boolean) {
+    setAlphaWsConfig((current) => ({
+      ...current,
+      products: checked
+        ? Array.from(new Set([...current.products, product]))
+        : current.products.filter((item) => item !== product)
+    }));
+  }
+
+  function saveAlphaWsConfig() {
+    setAlphaError("");
+    startTransition(async () => {
+      try {
+        const next = await updateAlphaWebSocketConfig({
+          is_enabled: alphaWsConfig.is_enabled,
+          products: alphaWsConfig.products,
+          scope_mode: alphaWsConfig.scope_mode,
+          watchlist_ids: alphaWsConfig.watchlist_ids,
+          include_all_watchlists: alphaWsConfig.include_all_watchlists,
+          full_market: alphaWsConfig.full_market
+        });
+        setAlphaWsConfig(next);
       } catch (caught) {
         setAlphaError(parseActionError(caught).message);
       }
@@ -304,6 +334,29 @@ export function SystemConfigPanel({
             </Button>
           </div>
           {alphaError ? <div className="mt-3 text-sm text-destructive">{alphaError}</div> : null}
+        </div>
+        <div className="rounded-lg border border-border p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold">Backend websocket worker</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {alphaWsConfig.status} · {alphaWsConfig.effective_products.length} products · {alphaWsConfig.scope_mode === "full_market" ? "full market" : `${alphaWsConfig.effective_symbols.length} symbols`}
+              </div>
+            </div>
+            <Button disabled={isPending} onClick={saveAlphaWsConfig} type="button" variant="outline">
+              Save websocket products
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-2 min-[760px]:grid-cols-2">
+            {alphaWsConfig.entitled_addons.filter((addon) => addon.enabled).map((addon) => (
+              <label className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm" key={addon.product}>
+                <span>{addon.product} · {addon.tier ?? "tier unknown"}</span>
+                <input checked={alphaWsConfig.products.includes(addon.product)} onChange={(event) => toggleAlphaWsProduct(addon.product, event.target.checked)} type="checkbox" />
+              </label>
+            ))}
+          </div>
+          {config.alpha_api.account_error ? <div className="mt-3 text-sm text-destructive">{config.alpha_api.account_error}</div> : null}
+          {alphaWsConfig.last_error ? <div className="mt-3 text-sm text-destructive">{alphaWsConfig.last_error}</div> : null}
         </div>
       </section>
 

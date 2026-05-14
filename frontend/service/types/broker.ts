@@ -362,12 +362,42 @@ export interface AlphaApiConfig {
   api_key_hint?: string | null;
   is_enabled: boolean;
   api_key_updated_at?: string | null;
+  account?: JsonObject;
+  account_checked_at?: string | null;
+  account_error?: string | null;
+}
+
+export type AlphaWebSocketProduct = "news" | "announcements" | "earnings" | "concalls" | "alerts";
+export type AlphaWebSocketScopeMode = "alert_subscriptions" | "alerts_and_watchlists" | "full_market";
+
+export interface AlphaWebSocketAddon {
+  product: AlphaWebSocketProduct | string;
+  enabled: boolean;
+  tier?: string | null;
+}
+
+export interface AlphaWebSocketConfig {
+  is_enabled: boolean;
+  products: string[];
+  scope_mode: AlphaWebSocketScopeMode;
+  watchlist_ids: string[];
+  include_all_watchlists: boolean;
+  full_market: boolean;
+  entitled_addons: AlphaWebSocketAddon[];
+  effective_products: string[];
+  effective_symbols: string[];
+  full_market_allowed: boolean;
+  status: string;
+  last_error?: string | null;
+  last_connected_at?: string | null;
+  last_event_at?: string | null;
 }
 
 export interface SystemConfig {
   broker_data_search: BrokerDataSearchConfig;
   llm_providers: LlmProviderConfig[];
   alpha_api: AlphaApiConfig;
+  alpha_websocket: AlphaWebSocketConfig;
 }
 
 export interface Notification {

@@ -49,6 +49,13 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    alpha_websocket_config: Mapped[UserAlphaWebSocketConfig | None] = relationship(
+        "UserAlphaWebSocketConfig",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class BrokerAccount(Base):
@@ -226,12 +233,39 @@ class UserAlphaApiCredential(Base):
     )
     api_key_cipher: Mapped[str] = mapped_column(Text, default="")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    account_json: Mapped[str] = mapped_column(Text, default="{}")
+    account_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    account_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     user: Mapped[User] = relationship("User", back_populates="alpha_api_credential")
+
+
+class UserAlphaWebSocketConfig(Base):
+    __tablename__ = "user_alpha_websocket_configs"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    products_json: Mapped[str] = mapped_column(Text, default="[]")
+    scope_mode: Mapped[str] = mapped_column(String(32), default="alert_subscriptions")
+    watchlist_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    include_all_watchlists: Mapped[bool] = mapped_column(Boolean, default=False)
+    full_market: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_connected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="alpha_websocket_config")
 
 
 class ZerodhaCredentials(Base):

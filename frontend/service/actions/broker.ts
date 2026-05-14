@@ -6,6 +6,7 @@ import type {
   BrokerAccount,
   BrokerAccountDetail,
   AlphaApiConfig,
+  AlphaWebSocketConfig,
   BrokerDataSearchConfig,
   BrokerCode,
   CreateBrokerAccountPayload,
@@ -268,6 +269,31 @@ export async function deleteAlphaApiCredential(): Promise<AlphaApiConfig> {
     method: "DELETE"
   });
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/system-config");
+  revalidatePath("/market-intelligence");
+  return result;
+}
+
+export async function updateAlphaWebSocketConfig(payload: {
+  is_enabled: boolean;
+  products: string[];
+  scope_mode: "alert_subscriptions" | "alerts_and_watchlists" | "full_market";
+  watchlist_ids?: string[];
+  include_all_watchlists?: boolean;
+  full_market?: boolean;
+}): Promise<AlphaWebSocketConfig> {
+  const result = await request<AlphaWebSocketConfig>("/system-config/alpha/websocket", {
+    method: "PUT",
+    body: JSON.stringify({
+      is_enabled: payload.is_enabled,
+      products: payload.products,
+      scope_mode: payload.scope_mode,
+      watchlist_ids: payload.watchlist_ids ?? [],
+      include_all_watchlists: payload.include_all_watchlists ?? false,
+      full_market: payload.full_market ?? false
+    })
+  });
+  revalidatePath("/alerts/subscriptions");
   revalidatePath("/dashboard/system-config");
   revalidatePath("/market-intelligence");
   return result;
