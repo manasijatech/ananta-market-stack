@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
@@ -219,10 +220,11 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
             "combine": "all",
             "cooldown_seconds": 300,
             "conditions": [{"field": "ltp", "operator": "crosses_above", "value": 3000}],
+            "dsl_text": "crosses_above(ltp, value=3000)",
             "notification": {
                 "level": "warning",
                 "title_template": "{symbol} crossed price level",
-                "message_template": "{symbol} crossed the configured price threshold at {ltp}",
+                "message_template": "{symbol} crossed the configured price threshold at {ltp}. Day change {day_change_perc}%.",
             },
             "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
         },
@@ -236,10 +238,11 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
             "combine": "all",
             "cooldown_seconds": 300,
             "conditions": [{"field": "ltp", "operator": "pct_change_gte", "value": 2, "compare_to": "open"}],
+            "dsl_text": "pct_change_gte(ltp, value=2, compare_to=open)",
             "notification": {
                 "level": "warning",
                 "title_template": "{symbol} moved sharply",
-                "message_template": "{symbol} moved {change_pct}% from its reference price.",
+                "message_template": "{symbol} moved {change_pct}% from {reference_price}. LTP {ltp}, volume {volume}.",
             },
             "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
         },
@@ -253,13 +256,14 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
             "combine": "any",
             "cooldown_seconds": 300,
             "conditions": [
-                {"field": "ltp", "operator": "gt", "compare_to": "high"},
-                {"field": "ltp", "operator": "lt", "compare_to": "low"},
+                {"field": "ltp", "operator": "breaks_day_high", "compare_to": "high"},
+                {"field": "ltp", "operator": "breaks_day_low", "compare_to": "low"},
             ],
+            "dsl_text": "any(breaks_day_high(ltp, compare_to=high), breaks_day_low(ltp, compare_to=low))",
             "notification": {
                 "level": "warning",
                 "title_template": "{symbol} broke its day range",
-                "message_template": "{symbol} moved outside the current day range.",
+                "message_template": "{symbol} moved outside the current day range. LTP {ltp}, high {high}, low {low}.",
             },
             "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
         },
@@ -272,11 +276,12 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "workflow_dsl": {
             "combine": "all",
             "cooldown_seconds": 300,
-            "conditions": [{"field": "volume", "operator": "gte", "value": 100000}],
+            "conditions": [{"field": "volume", "operator": "volume_spike", "value": 2, "compare_to": "avg_volume"}],
+            "dsl_text": "volume_spike(volume, value=2, compare_to=avg_volume)",
             "notification": {
                 "level": "info",
                 "title_template": "{symbol} volume spike",
-                "message_template": "{symbol} volume reached {volume}.",
+                "message_template": "{symbol} volume reached {volume}, about {volume_ratio}x reference volume.",
             },
             "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
         },
@@ -289,13 +294,117 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "workflow_dsl": {
             "combine": "all",
             "cooldown_seconds": 300,
-            "conditions": [{"field": "open_interest", "operator": "gte", "value": 10000}],
+            "conditions": [{"field": "open_interest", "operator": "oi_change_gte", "value": 10000}],
+            "dsl_text": "oi_change_gte(open_interest, value=10000)",
             "notification": {
                 "level": "info",
-                "title_template": "{symbol} OI spike",
-                "message_template": "{symbol} open interest reached {open_interest}.",
+                "title_template": "{symbol} OI expansion",
+                "message_template": "{symbol} open interest changed sharply. Current OI {open_interest}, LTP {ltp}.",
             },
             "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
+        },
+    },
+    {
+        "slug": "gap-and-follow-through",
+        "name": "Gap And Follow-Through",
+        "description": "Alert when a symbol gaps up and price remains above the open, useful for morning momentum scans.",
+        "category": "gap",
+        "workflow_dsl": {
+            "combine": "all",
+            "cooldown_seconds": 600,
+            "conditions": [
+                {"field": "open", "operator": "gap_up_pct_gte", "value": 1.5, "compare_to": "close"},
+                {"field": "ltp", "operator": "field_gte", "compare_to": "open"},
+            ],
+            "dsl_text": "all(gap_up_pct_gte(open, value=1.5, compare_to=close), ltp >= open)",
+            "notification": {
+                "level": "warning",
+                "title_template": "{symbol} gap follow-through",
+                "message_template": "{symbol} gapped {gap_pct}% and is trading at {ltp} vs open {open}. Volume {volume}.",
+            },
+            "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
+        },
+    },
+    {
+        "slug": "price-volume-breakout",
+        "name": "Price + Volume Breakout",
+        "description": "Alert when price breaks the day high while volume is elevated versus average/reference volume.",
+        "category": "breakout",
+        "workflow_dsl": {
+            "combine": "all",
+            "cooldown_seconds": 600,
+            "conditions": [
+                {"field": "ltp", "operator": "breaks_day_high", "compare_to": "high"},
+                {"field": "volume", "operator": "relative_volume_gte", "value": 2, "compare_to": "avg_volume"},
+            ],
+            "dsl_text": "all(breaks_day_high(ltp, compare_to=high), relative_volume_gte(volume, value=2, compare_to=avg_volume))",
+            "notification": {
+                "level": "critical",
+                "title_template": "{symbol} price-volume breakout",
+                "message_template": "{symbol} broke day high at {ltp} with volume {volume} ({volume_ratio}x reference).",
+            },
+            "channels": {"inherit_defaults": True, "enabled": ["in_app", "discord"]},
+        },
+    },
+    {
+        "slug": "opening-reversal-down",
+        "name": "Opening Reversal Down",
+        "description": "Alert when a gap-up symbol loses the open and starts reversing lower.",
+        "category": "reversal",
+        "workflow_dsl": {
+            "combine": "all",
+            "cooldown_seconds": 600,
+            "conditions": [
+                {"field": "open", "operator": "gap_up_pct_gte", "value": 1, "compare_to": "close"},
+                {"field": "ltp", "operator": "field_lte", "compare_to": "open"},
+                {"field": "ltp", "operator": "pct_change_lte", "value": 0.5, "compare_to": "high"},
+            ],
+            "dsl_text": "all(gap_up_pct_gte(open, value=1, compare_to=close), ltp <= open, pct_change_lte(ltp, value=0.5, compare_to=high))",
+            "notification": {
+                "level": "warning",
+                "title_template": "{symbol} opening reversal",
+                "message_template": "{symbol} is losing the open after a gap. LTP {ltp}, open {open}, high {high}, change {change_pct}%.",
+            },
+            "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
+        },
+    },
+    {
+        "slug": "derivative-oi-price-confirmation",
+        "name": "Derivative OI + Price Confirmation",
+        "description": "Alert when price rises with open-interest expansion, useful for derivative activity scans.",
+        "category": "options",
+        "workflow_dsl": {
+            "combine": "all",
+            "cooldown_seconds": 600,
+            "conditions": [
+                {"field": "ltp", "operator": "pct_change_gte", "value": 1, "compare_to": "open"},
+                {"field": "open_interest", "operator": "oi_change_gte", "value": 10000},
+            ],
+            "dsl_text": "all(pct_change_gte(ltp, value=1, compare_to=open), oi_change_gte(open_interest, value=10000))",
+            "notification": {
+                "level": "warning",
+                "title_template": "{symbol} OI-price confirmation",
+                "message_template": "{symbol} is up {change_pct}% with OI {open_interest}. LTP {ltp}, volume {volume}.",
+            },
+            "channels": {"inherit_defaults": True, "enabled": ["in_app", "discord"]},
+        },
+    },
+    {
+        "slug": "rolling-rapid-move",
+        "name": "Rolling Rapid Move",
+        "description": "Alert when a symbol moves quickly against its previous rolling reference.",
+        "category": "momentum",
+        "workflow_dsl": {
+            "combine": "all",
+            "cooldown_seconds": 180,
+            "conditions": [{"field": "ltp", "operator": "rolling_pct_change_gte", "value": 1.5, "window_seconds": 300}],
+            "dsl_text": "rolling_pct_change_gte(ltp, value=1.5, window_seconds=300)",
+            "notification": {
+                "level": "critical",
+                "title_template": "{symbol} rapid move",
+                "message_template": "{symbol} moved {change_pct}% in the rolling window. LTP {ltp}, volume {volume}.",
+            },
+            "channels": {"inherit_defaults": True, "enabled": ["in_app", "discord"]},
         },
     },
 ]
@@ -350,7 +459,13 @@ def ensure_system_templates(db: Session) -> None:
     for payload in SYSTEM_TEMPLATES:
         row = existing.get(payload["slug"])
         workflow_dsl = AlertWorkflowDsl(**payload["workflow_dsl"])
+        compiled = compile_workflow_dsl(workflow_dsl)
+        workflow_dsl.workflow_ast = compiled.get("workflow_ast")
+        workflow_dsl.compiled_summary = compiled.get("compiled_summary") or {}
+        workflow_dsl.validation_status = "valid" if compiled.get("valid") else "invalid"
         graph_dsl = _default_graph_from_dsl(workflow_dsl)
+        workflow_dsl_json = _json_dumps(workflow_dsl.model_dump())
+        graph_dsl_json = _json_dumps(graph_dsl.model_dump())
         if row is None:
             db.add(
                 AlertWorkflowTemplate(
@@ -359,19 +474,26 @@ def ensure_system_templates(db: Session) -> None:
                     name=payload["name"],
                     description=payload["description"],
                     category=payload["category"],
-                    workflow_dsl_json=_json_dumps(workflow_dsl.model_dump()),
-                    graph_dsl_json=_json_dumps(graph_dsl.model_dump()),
+                    workflow_dsl_json=workflow_dsl_json,
+                    graph_dsl_json=graph_dsl_json,
                     is_active=True,
                 )
             )
             changed = True
             continue
-        if row.name != payload["name"] or row.description != payload["description"] or row.category != payload["category"]:
+        if (
+            row.name != payload["name"]
+            or row.description != payload["description"]
+            or row.category != payload["category"]
+            or row.workflow_dsl_json != workflow_dsl_json
+            or row.graph_dsl_json != graph_dsl_json
+            or not row.is_active
+        ):
             row.name = payload["name"]
             row.description = payload["description"]
             row.category = payload["category"]
-            row.workflow_dsl_json = _json_dumps(workflow_dsl.model_dump())
-            row.graph_dsl_json = _json_dumps(graph_dsl.model_dump())
+            row.workflow_dsl_json = workflow_dsl_json
+            row.graph_dsl_json = graph_dsl_json
             row.is_active = True
             db.add(row)
             changed = True
@@ -699,7 +821,7 @@ def instantiate_template(db: Session, user_id: str, template_id: str, payload: d
 def _render_message(template: str, context: dict[str, Any]) -> str:
     safe_context = {key: value for key, value in context.items() if value is not None}
     try:
-        return template.format(**safe_context)
+        return template.format_map(defaultdict(str, safe_context))
     except Exception:
         return template
 
@@ -753,6 +875,22 @@ def _notification_context(
                         break
         if computed_change_pct is not None:
             context["change_pct"] = round(computed_change_pct, 2)
+    if context.get("reference_price") is None:
+        for key in ("open", "close", "avg_volume"):
+            if context.get(key) not in (None, ""):
+                context["reference_price"] = context.get(key)
+                break
+    if context.get("abs_change") is None and context.get("ltp") not in (None, ""):
+        ref = context.get("reference_price")
+        try:
+            context["abs_change"] = round(float(context["ltp"]) - float(ref), 2) if ref not in (None, "") else None
+        except Exception:
+            pass
+    if context.get("volume_ratio") is None and context.get("volume") not in (None, "") and context.get("avg_volume") not in (None, "", 0, "0"):
+        try:
+            context["volume_ratio"] = round(float(context["volume"]) / float(context["avg_volume"]), 2)
+        except Exception:
+            pass
 
     return context
 

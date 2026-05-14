@@ -176,7 +176,7 @@ class AlertWorkflowValidationOut(BaseModel):
 
 class AlertUniversePreviewIn(BaseModel):
     target_universe: dict[str, Any] = Field(default_factory=dict)
-    limit: int = Field(default=50, ge=1, le=500)
+    limit: int = Field(default=50, ge=1, le=5000)
 
 
 class AlertUniversePreviewOut(BaseModel):

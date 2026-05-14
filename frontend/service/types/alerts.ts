@@ -253,6 +253,31 @@ export interface AlertWorkflowValidation {
   compiled_summary: Record<string, unknown>;
 }
 
+export interface AlertConditionRegistryField {
+  name: string;
+  type: string;
+  description: string;
+}
+
+export interface AlertConditionRegistryOperator {
+  operator: string;
+  label: string;
+  description: string;
+  family: string;
+  fields: string[];
+}
+
+export interface AlertConditionRegistryFunction {
+  name: string;
+  description: string;
+}
+
+export interface AlertConditionRegistry {
+  fields: AlertConditionRegistryField[];
+  operators: AlertConditionRegistryOperator[];
+  functions: AlertConditionRegistryFunction[];
+}
+
 export interface AlertUniversePreview {
   count: number;
   sample: Array<Record<string, unknown>>;

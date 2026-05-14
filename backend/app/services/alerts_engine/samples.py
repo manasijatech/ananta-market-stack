@@ -6,8 +6,13 @@ from app.services.alerts_engine.ast import AlertWorkflowAst
 from app.services.alerts_engine.explain import explain_ast
 
 
+class _SafeTemplateContext(dict[str, Any]):
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
 def sample_tick_for_ast(workflow_ast: AlertWorkflowAst) -> dict[str, Any]:
-    return {
+    tick = {
         "symbol": "SAMPLE",
         "exchange": "NSE",
         "ltp": 100.0,
@@ -21,6 +26,11 @@ def sample_tick_for_ast(workflow_ast: AlertWorkflowAst) -> dict[str, Any]:
         "day_change": 2.5,
         "day_change_perc": 2.56,
     }
+    tick["change_pct"] = round(((tick["ltp"] - tick["open"]) / tick["open"]) * 100, 2)
+    tick["reference_price"] = tick["open"]
+    tick["abs_change"] = round(tick["ltp"] - tick["open"], 2)
+    tick["volume_ratio"] = round(tick["volume"] / tick["avg_volume"], 2)
+    return tick
 
 
 def sample_alerts_for_ast(workflow_ast: AlertWorkflowAst) -> dict[str, Any]:
@@ -29,16 +39,16 @@ def sample_alerts_for_ast(workflow_ast: AlertWorkflowAst) -> dict[str, Any]:
     notification = workflow_ast.notification or {}
     title = notification.get("title_template") or "{symbol} alert"
     message = notification.get("message_template") or "{symbol} matched workflow"
+    context = _SafeTemplateContext({key: value for key, value in tick.items() if value is not None})
     try:
-        rendered_title = title.format(**tick)
+        rendered_title = title.format_map(context)
     except Exception:
         rendered_title = title
     try:
-        rendered_message = message.format(**tick)
+        rendered_message = message.format_map(context)
     except Exception:
         rendered_message = message
     return {
         "example_tick": tick,
         "samples": [{"title": rendered_title, "message": rendered_message, "why": explanation["summary"]}],
     }
-

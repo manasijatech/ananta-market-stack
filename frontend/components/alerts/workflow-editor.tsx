@@ -14,6 +14,8 @@ import {
  deployAlertWorkflow,
  explainAlertWorkflow,
  getWorkflowSampleAlerts,
+ getAlertConditionRegistry,
+ previewAlertUniverse,
  sendWorkflowTestNotification,
  testAlertWorkflow,
  updateAlertWorkflow,
@@ -23,8 +25,10 @@ import type {
  AlertChannelSelection,
  AlertChannelType,
  AlertCondition,
+ AlertConditionRegistry,
  AlertGraphDsl,
  AlertTargetEntry,
+ AlertUniversePreview,
  AlertWorkflow,
  AlertWorkflowDsl,
  EditorMode,
@@ -74,7 +78,24 @@ const operatorOptions = [
  { value: "crosses_above", label: "Crosses above", help: "Needs live updates. Triggers only when the field moves from below to above the value." },
  { value: "crosses_below", label: "Crosses below", help: "Needs live updates. Triggers only when the field moves from above to below the value." },
  { value: "pct_change_gte", label: "Percent change up", help: "Trigger when percent change versus a reference field reaches the value." },
- { value: "pct_change_lte", label: "Percent change down", help: "Trigger when percent change versus a reference field falls below the value." }
+ { value: "pct_change_lte", label: "Percent change down", help: "Trigger when percent change versus a reference field falls below the value." },
+ { value: "rolling_pct_change_gte", label: "Rolling percent move up", help: "Trigger when percent change over a rolling window reaches the value." },
+ { value: "rolling_pct_change_lte", label: "Rolling percent move down", help: "Trigger when percent change over a rolling window falls below the value." },
+ { value: "abs_change_gte", label: "Absolute move up", help: "Trigger when absolute change versus a reference reaches the value." },
+ { value: "abs_change_lte", label: "Absolute move down", help: "Trigger when absolute change versus a reference falls below the value." },
+ { value: "field_gt", label: "Field greater than field", help: "Compare the selected field to another same-tick field." },
+ { value: "field_gte", label: "Field greater/equal field", help: "Compare the selected field to another same-tick field." },
+ { value: "field_lt", label: "Field less than field", help: "Compare the selected field to another same-tick field." },
+ { value: "field_lte", label: "Field less/equal field", help: "Compare the selected field to another same-tick field." },
+ { value: "breaks_day_high", label: "Breaks day high", help: "Trigger when price reaches or breaks the current day high." },
+ { value: "breaks_day_low", label: "Breaks day low", help: "Trigger when price reaches or breaks the current day low." },
+ { value: "gap_up_pct_gte", label: "Gap up percent", help: "Trigger when the open gaps up versus previous close by the configured percent." },
+ { value: "gap_down_pct_gte", label: "Gap down percent", help: "Trigger when the open gaps down versus previous close by the configured percent." },
+ { value: "volume_spike", label: "Volume spike", help: "Trigger when volume is a multiple of the reference volume." },
+ { value: "relative_volume_gte", label: "Relative volume", help: "Trigger when current volume is high versus average/reference volume." },
+ { value: "oi_change_gte", label: "Open interest increase", help: "Trigger when open interest increases by at least the configured value." },
+ { value: "oi_change_lte", label: "Open interest decrease", help: "Trigger when open interest decreases by at least the configured value." },
+ { value: "always", label: "Always", help: "Always match. Useful for delivery testing or staged workflow construction." }
 ];
 
 const compareOptions = [
@@ -82,7 +103,9 @@ const compareOptions = [
  { value: "open", label: "Compare to open", help: "Use day open as the reference." },
  { value: "close", label: "Compare to close", help: "Use previous close as the reference." },
  { value: "high", label: "Compare to high", help: "Use day high as the reference." },
- { value: "low", label: "Compare to low", help: "Use day low as the reference." }
+ { value: "low", label: "Compare to low", help: "Use day low as the reference." },
+ { value: "avg_volume", label: "Compare to average volume", help: "Use average/reference volume from enrichment as the reference." },
+ { value: "open_interest", label: "Compare to open interest", help: "Use current open interest as a same-tick comparison reference." }
 ];
 
 const messageTemplateFields = [
@@ -93,14 +116,25 @@ const messageTemplateFields = [
  "high",
  "low",
  "close",
+ "reference_price",
+ "change_pct",
+ "abs_change",
+ "gap_pct",
  "volume",
+ "avg_volume",
+ "volume_ratio",
  "open_interest",
  "day_change",
  "day_change_perc",
  "last_trade_time",
  "received_at",
  "broker_code",
- "account_id"
+ "account_id",
+ "instrument_key",
+ "connection_id",
+ "connection_index",
+ "symbol_count",
+ "capacity"
 ];
 
 const targetListExample = "RELIANCE,NSE\nTCS,NSE\nINFY,NSE";
@@ -110,6 +144,21 @@ type PreviewState = {
  ohlc: JsonObject | null;
  loading: boolean;
  error: string;
+};
+
+type UniverseSymbolPreview = {
+ symbol: string;
+ exchange?: string | null;
+ instrument_ref?: InstrumentRef;
+ source_label?: string | null;
+ source_type?: string | null;
+};
+
+type DslSuggestion = {
+ value: string;
+ label: string;
+ description: string;
+ kind: "field" | "operator" | "function" | "placeholder";
 };
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
@@ -191,6 +240,106 @@ function parseBulkTargets(text: string, fallbackExchange: string): AlertTargetEn
  })
  .filter(Boolean) as AlertTargetEntry[]
  );
+}
+
+function dslValue(value: unknown): string {
+ if (typeof value === "number" || typeof value === "boolean") return String(value);
+ const asNumber = Number(value);
+ if (typeof value === "string" && value.trim() !== "" && Number.isFinite(asNumber)) return value.trim();
+ return JSON.stringify(String(value ?? ""));
+}
+
+function conditionToDsl(condition: AlertCondition): string {
+ const field = condition.field || "ltp";
+ const value = dslValue(condition.value ?? 0);
+ const compareTo = condition.compare_to || "";
+ const simple = { gt: ">", gte: ">=", lt: "<", lte: "<=" } as Record<string, string>;
+ if (simple[condition.operator]) {
+ return `${field} ${simple[condition.operator]} ${value}`;
+ }
+ if (condition.operator.startsWith("field_") && compareTo) {
+ const symbol = { field_gt: ">", field_gte: ">=", field_lt: "<", field_lte: "<=" }[condition.operator] ?? ">";
+ return `${field} ${symbol} ${compareTo}`;
+ }
+ const args = [field];
+ if (condition.value !== null && condition.value !== undefined && condition.value !== "") args.push(`value=${value}`);
+ if (compareTo) args.push(`compare_to=${compareTo}`);
+ if (condition.window_seconds) args.push(`window_seconds=${condition.window_seconds}`);
+ return `${condition.operator || "always"}(${args.join(", ")})`;
+}
+
+function conditionsToDsl(combine: "all" | "any", conditions: AlertCondition[]): string {
+ const parts = conditions.map(conditionToDsl);
+ if (!parts.length) return "always()";
+ if (parts.length === 1) return parts[0];
+ return `${combine}(${parts.join(", ")})`;
+}
+
+function conditionPhrase(condition: AlertCondition): string {
+ const field = fieldOptions.find((item) => item.value === condition.field)?.label.toLowerCase() ?? condition.field;
+ const operator = operatorOptions.find((item) => item.value === condition.operator)?.label.toLowerCase() ?? condition.operator;
+ const value = condition.value ?? "";
+ const compare = condition.compare_to ? ` vs ${condition.compare_to}` : "";
+ return `${field} ${operator}${value !== "" ? ` ${value}` : ""}${compare}`;
+}
+
+function suggestedTemplates(conditions: AlertCondition[], combine: "all" | "any") {
+ const joined = conditions.map(conditionPhrase).join(combine === "all" ? " and " : " or ");
+ const summary = joined || "the configured market condition";
+ return {
+ title: `{symbol} matched ${conditions.length > 1 ? "multi-condition" : "alert"} workflow`,
+ message: `{symbol} matched ${summary}. LTP {ltp}, change {change_pct}%, volume {volume}, OI {open_interest}.`
+ };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+ return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function logicNodeToConditions(node: unknown): { combine: "all" | "any"; conditions: AlertCondition[]; flattened: boolean } | null {
+ if (!isRecord(node)) return null;
+ const kind = String(node.kind ?? "condition");
+ if (kind === "all" || kind === "any") {
+ const children = Array.isArray(node.children) ? node.children : [];
+ const conditions: AlertCondition[] = [];
+ let flattened = false;
+ for (const child of children) {
+ const parsed = logicNodeToConditions(child);
+ if (!parsed) continue;
+ conditions.push(...parsed.conditions);
+ flattened = flattened || parsed.flattened || parsed.combine !== kind;
+ }
+ return { combine: kind, conditions, flattened };
+ }
+ if (kind === "not") {
+ return { combine: "all", conditions: [], flattened: true };
+ }
+ return {
+ combine: "all",
+ conditions: [
+ {
+ field: typeof node.field === "string" ? node.field : "ltp",
+ operator: typeof node.operator === "string" ? node.operator : "always",
+ value: typeof node.value === "string" || typeof node.value === "number" || typeof node.value === "boolean" ? node.value : null,
+ compare_to: typeof node.compare_to === "string" ? node.compare_to : null,
+ window_seconds: typeof node.window_seconds === "number" ? node.window_seconds : null
+ }
+ ],
+ flattened: false
+ };
+}
+
+function dslTokenAt(text: string, position: number): { token: string; start: number; end: number } {
+ const before = text.slice(0, position);
+ const match = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
+ const start = match ? position - match[0].length : position;
+ return { token: match?.[0] ?? "", start, end: position };
+}
+
+function numeric(value: unknown): number | null {
+ if (value === null || value === undefined || value === "") return null;
+ const next = Number(value);
+ return Number.isFinite(next) ? next : null;
 }
 
 function targetScopeSummary(targeting: AlertWorkflowTargeting): string {
@@ -281,6 +430,15 @@ export function WorkflowEditor({
  const [dslText, setDslText] = useState(initialWorkflow?.workflow_dsl.dsl_text ?? "");
  const [engineFeedback, setEngineFeedback] = useState("");
  const [engineDetails, setEngineDetails] = useState<Record<string, unknown> | null>(null);
+ const [universePreview, setUniversePreview] = useState<AlertUniversePreview | null>(null);
+ const [universePreviewLoading, setUniversePreviewLoading] = useState(false);
+ const [hoveredSymbolKey, setHoveredSymbolKey] = useState("");
+ const [hoverQuote, setHoverQuote] = useState<QuoteResponse | null>(null);
+ const [hoverQuoteLoading, setHoverQuoteLoading] = useState(false);
+ const [conditionRegistry, setConditionRegistry] = useState<AlertConditionRegistry | null>(null);
+ const [dslSuggestionQuery, setDslSuggestionQuery] = useState("");
+ const [dslSuggestionRange, setDslSuggestionRange] = useState<{ start: number; end: number } | null>(null);
+ const [showDslSuggestions, setShowDslSuggestions] = useState(false);
  const [inheritDefaults, setInheritDefaults] = useState(initialWorkflow?.channel_override?.inherit_defaults ?? true);
  const [channelInApp, setChannelInApp] = useState(initialWorkflow?.workflow_dsl.channels.enabled.includes("in_app") ?? true);
  const [channelDiscord, setChannelDiscord] = useState(initialWorkflow?.workflow_dsl.channels.enabled.includes("discord") ?? false);
@@ -297,6 +455,8 @@ export function WorkflowEditor({
  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
 
  const selectedAccount = accounts.find((item) => item.id === accountId);
+ const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId) ?? null;
+ const selectedPreset = presets.find((item) => String(item.id ?? "") === selectedPresetId) ?? null;
  const activeInstrument = useMemo<InstrumentRef>(
  () => ({
  ...instrumentRef,
@@ -305,12 +465,139 @@ export function WorkflowEditor({
  }),
  [exchange, instrumentRef, symbol]
  );
+ const suggestedDsl = useMemo(() => conditionsToDsl(combine, conditions), [combine, conditions]);
+ const suggestedCopy = useMemo(() => suggestedTemplates(conditions, combine), [combine, conditions]);
+ const dslSuggestions = useMemo<DslSuggestion[]>(() => {
+ const registrySuggestions: DslSuggestion[] = [
+ ...(conditionRegistry?.fields ?? []).map((item) => ({
+ value: item.name,
+ label: item.name,
+ description: item.description,
+ kind: "field" as const
+ })),
+ ...(conditionRegistry?.operators ?? []).map((item) => ({
+ value: `${item.operator}(`,
+ label: `${item.operator}()`,
+ description: item.description,
+ kind: "operator" as const
+ })),
+ ...(conditionRegistry?.functions ?? []).map((item) => ({
+ value: `${item.name}(`,
+ label: `${item.name}()`,
+ description: item.description,
+ kind: "function" as const
+ }))
+ ];
+ const placeholderSuggestions = messageTemplateFields.map((item) => ({
+ value: item,
+ label: `{${item}}`,
+ description: "Notification placeholder available from live tick, enrichment, or runtime context.",
+ kind: "placeholder" as const
+ }));
+ const query = dslSuggestionQuery.toLowerCase();
+ return [...registrySuggestions, ...placeholderSuggestions]
+ .filter((item) => !query || item.label.toLowerCase().includes(query) || item.value.toLowerCase().includes(query))
+ .slice(0, 12);
+ }, [conditionRegistry, dslSuggestionQuery]);
+ const dynamicTargetUniverse = useMemo(() => {
+ if (dynamicUniverseKind === "curated_preset") {
+ return {
+ kind: "curated_preset",
+ preset_id: selectedPresetId,
+ label: String(selectedPreset?.label ?? selectedPresetId)
+ };
+ }
+ if (dynamicUniverseKind === "metadata_filter") {
+ return {
+ kind: "metadata_filter",
+ label: "Metadata filter",
+ filters: {
+ exchange: metadataExchange.trim().toUpperCase() || undefined,
+ instrument_type: metadataInstrumentType.trim().toUpperCase() || undefined,
+ segment_contains: metadataSegmentContains.trim() || undefined
+ }
+ };
+ }
+ return {
+ kind: "watchlist",
+ watchlist_id: selectedWatchlistId,
+ label: selectedWatchlist?.name ?? selectedWatchlistId
+ };
+ }, [dynamicUniverseKind, metadataExchange, metadataInstrumentType, metadataSegmentContains, selectedPreset?.label, selectedPresetId, selectedWatchlist?.name, selectedWatchlistId]);
+ const dynamicTargetUniverseKey = JSON.stringify(dynamicTargetUniverse);
+ const universeSymbols = useMemo<UniverseSymbolPreview[]>(() => {
+ if (targetMode === "symbol_list") {
+ return targetEntries.map((entry) => ({
+ symbol: entry.symbol,
+ exchange: entry.exchange,
+ instrument_ref: entry.instrument_ref,
+ source_type: "symbol_list"
+ }));
+ }
+ if (targetMode === "single_symbol" && symbol.trim()) {
+ return [{ symbol: symbol.trim().toUpperCase(), exchange, instrument_ref: activeInstrument, source_type: "single_symbol" }];
+ }
+ if (targetMode !== "preset_universe") return [];
+ if (dynamicUniverseKind === "watchlist") {
+ return (selectedWatchlist?.items ?? []).map((item) => ({
+ symbol: item.symbol,
+ exchange: item.exchange,
+ instrument_ref: item.instrument_ref,
+ source_label: selectedWatchlist?.name,
+ source_type: "watchlist"
+ }));
+ }
+ return (universePreview?.sample ?? []).map((item) => ({
+ symbol: String(item.symbol ?? ""),
+ exchange: typeof item.exchange === "string" ? item.exchange : null,
+ source_label: typeof item.source_label === "string" ? item.source_label : null,
+ source_type: typeof item.source_type === "string" ? item.source_type : dynamicUniverseKind
+ })).filter((item) => item.symbol);
+ }, [activeInstrument, dynamicUniverseKind, exchange, selectedWatchlist, symbol, targetEntries, targetMode, universePreview?.sample]);
 
  useEffect(() => {
  if (selectedAccount?.broker_code) {
  setBrokerCode(selectedAccount.broker_code);
  }
  }, [selectedAccount?.broker_code]);
+
+ useEffect(() => {
+ let cancelled = false;
+ startTransition(async () => {
+ try {
+ const registry = await getAlertConditionRegistry();
+ if (!cancelled) setConditionRegistry(registry);
+ } catch {
+ if (!cancelled) setConditionRegistry(null);
+ }
+ });
+ return () => {
+ cancelled = true;
+ };
+ }, [startTransition]);
+
+ useEffect(() => {
+ if (targetMode !== "preset_universe" || dynamicUniverseKind === "watchlist") {
+ setUniversePreview(null);
+ setUniversePreviewLoading(false);
+ return;
+ }
+ let cancelled = false;
+ setUniversePreviewLoading(true);
+ startTransition(async () => {
+ try {
+ const result = await previewAlertUniverse(dynamicTargetUniverse, 5000);
+ if (!cancelled) setUniversePreview(result);
+ } catch {
+ if (!cancelled) setUniversePreview({ count: 0, sample: [] });
+ } finally {
+ if (!cancelled) setUniversePreviewLoading(false);
+ }
+ });
+ return () => {
+ cancelled = true;
+ };
+ }, [dynamicTargetUniverseKey, dynamicUniverseKind, startTransition, targetMode]);
 
  useEffect(() => {
  function handlePointerDown(event: MouseEvent) {
@@ -478,33 +765,9 @@ export function WorkflowEditor({
  channels: channelSelection()
  };
  }
- const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId);
- const selectedPreset = presets.find((item) => String(item.id ?? "") === selectedPresetId);
- const targetUniverse =
- dynamicUniverseKind === "curated_preset"
- ? {
- kind: "curated_preset",
- preset_id: selectedPresetId,
- label: String(selectedPreset?.label ?? selectedPresetId)
- }
- : dynamicUniverseKind === "metadata_filter"
- ? {
- kind: "metadata_filter",
- label: "Metadata filter",
- filters: {
- exchange: metadataExchange.trim().toUpperCase() || undefined,
- instrument_type: metadataInstrumentType.trim().toUpperCase() || undefined,
- segment_contains: metadataSegmentContains.trim() || undefined
- }
- }
- : {
- kind: "watchlist",
- watchlist_id: selectedWatchlistId,
- label: selectedWatchlist?.name ?? selectedWatchlistId
- };
  return {
  version: 2,
- target_universe: targetUniverse,
+ target_universe: dynamicTargetUniverse,
  logic: {
  kind: combine,
  children: conditions.map((condition) => ({ kind: "condition", ...condition }))
@@ -599,6 +862,35 @@ export function WorkflowEditor({
 
  const filteredMessageFields = messageTemplateFields.filter((item) => item.includes(messageFieldQuery));
 
+ function updateDslAutocomplete(nextValue: string, caretPosition: number, force = false) {
+ const token = dslTokenAt(nextValue, caretPosition);
+ setDslSuggestionQuery(token.token);
+ setDslSuggestionRange({ start: token.start, end: token.end });
+ setShowDslSuggestions(force || token.token.length > 0);
+ }
+
+ function applyDslSuggestion(item: DslSuggestion) {
+ const range = dslSuggestionRange ?? { start: dslText.length, end: dslText.length };
+ const nextValue = `${dslText.slice(0, range.start)}${item.value}${dslText.slice(range.end)}`;
+ setDslText(nextValue);
+ setShowDslSuggestions(false);
+ setDslSuggestionQuery("");
+ }
+
+ function syncVisualBuilderFromAst(workflowAst: unknown) {
+ if (!isRecord(workflowAst)) return false;
+ const parsed = logicNodeToConditions(workflowAst.logic);
+ if (!parsed || !parsed.conditions.length) return false;
+ setCombine(parsed.combine);
+ setConditions(parsed.conditions);
+ if (parsed.flattened) {
+ setEngineFeedback("Script compiled. The visual builder was updated with supported conditions; nested or inverted groups remain represented by the script.");
+ } else {
+ setEngineFeedback("Script compiled and the visual rule builder was updated.");
+ }
+ return true;
+ }
+
  function save() {
  setError("");
  startTransition(async () => {
@@ -615,26 +907,63 @@ export function WorkflowEditor({
  });
  }
 
+ function buildPreviewTick(): Record<string, unknown> {
+ const ohlcRaw = (preview.ohlc?.raw as JsonObject | undefined) ?? {};
+ const quoteDetail = (preview.quote?.detail as JsonObject | undefined) ?? {};
+ const quoteRaw = (quoteDetail.raw as JsonObject | undefined) ?? {};
+ const ltp = numeric(preview.quote?.ltp) ?? numeric(conditions[0]?.value) ?? 0;
+ const openValue = numeric(preview.ohlc?.open) ?? numeric(quoteRaw.open) ?? 0;
+ const closeValue = numeric(preview.ohlc?.close) ?? numeric(quoteRaw.close) ?? 0;
+ const highValue = numeric(preview.ohlc?.high) ?? numeric(quoteRaw.high) ?? 0;
+ const lowValue = numeric(preview.ohlc?.low) ?? numeric(quoteRaw.low) ?? 0;
+ const volume = numeric(ohlcRaw.volume) ?? numeric(quoteRaw.volume) ?? 120000;
+ const avgVolume = numeric(ohlcRaw.avg_volume) ?? numeric(quoteRaw.avg_volume) ?? null;
+ const firstPct = conditions.find((condition) => condition.operator.includes("pct_change"));
+ const referenceKey = firstPct?.compare_to || "open";
+ const referenceMap: Record<string, number | null> = {
+ open: openValue,
+ close: closeValue,
+ high: highValue,
+ low: lowValue,
+ avg_volume: avgVolume
+ };
+ const referenceValue = numeric(referenceMap[referenceKey]);
+ const changePct = referenceValue && referenceValue !== 0 ? Number((((ltp - referenceValue) / referenceValue) * 100).toFixed(2)) : numeric(quoteRaw.day_change_perc);
+ const absChange = referenceValue !== null ? Number((ltp - referenceValue).toFixed(2)) : null;
+ const gapPct = closeValue ? Number((((openValue - closeValue) / closeValue) * 100).toFixed(2)) : null;
+ return {
+ ...quoteRaw,
+ ...ohlcRaw,
+ symbol,
+ exchange,
+ ltp,
+ open: openValue,
+ high: highValue,
+ low: lowValue,
+ close: closeValue,
+ reference_price: referenceValue,
+ change_pct: changePct,
+ abs_change: absChange,
+ gap_pct: gapPct,
+ volume,
+ avg_volume: avgVolume,
+ volume_ratio: avgVolume ? Number((volume / avgVolume).toFixed(2)) : null,
+ open_interest: numeric(quoteRaw.open_interest) ?? 15000,
+ day_change: numeric(quoteRaw.day_change),
+ day_change_perc: numeric(quoteRaw.day_change_perc) ?? changePct,
+ last_trade_time: quoteRaw.last_trade_time ?? null,
+ broker_code: selectedAccount?.broker_code ?? brokerCode,
+ account_id: selectedAccount?.id ?? accountId
+ };
+ }
+
  function previewTest() {
  if (!initialWorkflow) return;
  setError("");
  setMatchPreview("");
  startTransition(async () => {
  try {
- const ohlcRaw = (preview.ohlc?.raw as JsonObject | undefined) ?? {};
- const quoteDetail = (preview.quote?.detail as JsonObject | undefined) ?? {};
- const quoteRaw = (quoteDetail.raw as JsonObject | undefined) ?? {};
- const result = await testAlertWorkflow(initialWorkflow.id, {
- symbol,
- exchange,
- ltp: Number(preview.quote?.ltp ?? conditions[0]?.value ?? 0),
- open: Number((preview.ohlc?.open as number | undefined) ?? 0),
- high: Number((preview.ohlc?.high as number | undefined) ?? 0),
- low: Number((preview.ohlc?.low as number | undefined) ?? 0),
- close: Number((preview.ohlc?.close as number | undefined) ?? 0),
- volume: Number((ohlcRaw.volume as number | undefined) ?? 120000),
- open_interest: Number((quoteRaw.open_interest as number | undefined) ?? 15000)
- });
+ const result = await testAlertWorkflow(initialWorkflow.id, buildPreviewTick());
  setMatchPreview(result.matched ? `Current preview tick matched the workflow: ${result.reason}` : `Current preview tick did not match: ${result.reason}`);
  } catch (caught) {
  setError(caught instanceof Error ? caught.message : "Could not test workflow.");
@@ -648,23 +977,36 @@ export function WorkflowEditor({
  setMatchPreview("");
  startTransition(async () => {
  try {
- const ohlcRaw = (preview.ohlc?.raw as JsonObject | undefined) ?? {};
- const quoteDetail = (preview.quote?.detail as JsonObject | undefined) ?? {};
- const quoteRaw = (quoteDetail.raw as JsonObject | undefined) ?? {};
- const result = await sendWorkflowTestNotification(initialWorkflow.id, {
- symbol,
- exchange,
- ltp: Number(preview.quote?.ltp ?? conditions[0]?.value ?? 0),
- open: Number((preview.ohlc?.open as number | undefined) ?? 0),
- high: Number((preview.ohlc?.high as number | undefined) ?? 0),
- low: Number((preview.ohlc?.low as number | undefined) ?? 0),
- close: Number((preview.ohlc?.close as number | undefined) ?? 0),
- volume: Number((ohlcRaw.volume as number | undefined) ?? 120000),
- open_interest: Number((quoteRaw.open_interest as number | undefined) ?? 15000)
- });
+ const result = await sendWorkflowTestNotification(initialWorkflow.id, buildPreviewTick());
  setMatchPreview(`${result.message} Notification id: ${result.notification_id}`);
  } catch (caught) {
  setError(caught instanceof Error ? caught.message : "Could not send test alert.");
+ }
+ });
+ }
+
+ function loadSymbolQuote(item: UniverseSymbolPreview) {
+ const key = `${item.symbol}:${item.exchange ?? ""}`;
+ setHoveredSymbolKey(key);
+ setHoverQuote(null);
+ if (!selectedAccount || !item.symbol) return;
+ setHoverQuoteLoading(true);
+ startTransition(async () => {
+ try {
+ const [quote] = await getDataQuotes(selectedAccount.id, {
+ instruments: [
+ {
+ ...(item.instrument_ref ?? {}),
+ symbol: item.symbol,
+ exchange: item.exchange ?? undefined
+ }
+ ]
+ });
+ setHoverQuote(quote ?? null);
+ } catch {
+ setHoverQuote(null);
+ } finally {
+ setHoverQuoteLoading(false);
  }
  });
  }
@@ -727,9 +1069,15 @@ export function WorkflowEditor({
  if (action === "validate") {
  result = (await validateAlertWorkflow(initialWorkflow.id)) as unknown as Record<string, unknown>;
  setEngineFeedback((result.valid as boolean) ? "Workflow validation passed." : "Workflow validation failed.");
+ if (result.valid && result.workflow_ast) {
+ syncVisualBuilderFromAst(result.workflow_ast);
+ }
  } else if (action === "compile") {
  result = (await compilePreviewAlertWorkflow(initialWorkflow.id)) as unknown as Record<string, unknown>;
  setEngineFeedback((result.valid as boolean) ? "Compile preview is valid." : "Compile preview has errors.");
+ if (result.valid && result.workflow_ast) {
+ syncVisualBuilderFromAst(result.workflow_ast);
+ }
  } else if (action === "explain") {
  result = await explainAlertWorkflow(initialWorkflow.id);
  setEngineFeedback(String(result.summary ?? "Workflow explanation generated."));
@@ -759,6 +1107,7 @@ export function WorkflowEditor({
  : dynamicUniverseKind === "metadata_filter"
  ? Boolean(metadataExchange.trim() || metadataInstrumentType.trim() || metadataSegmentContains.trim())
  : Boolean(selectedWatchlistId);
+ const currentTemplatesMatchSuggestion = titleTemplate === suggestedCopy.title && messageTemplate === suggestedCopy.message;
 
  return (
  <div className="grid gap-6">
@@ -856,6 +1205,44 @@ export function WorkflowEditor({
  </span>
  </button>
  ))}
+ </div>
+ ) : null}
+ {targetMode === "preset_universe" ? (
+ <div className="mt-4 grid gap-3 border border-border p-4">
+ <div className="flex flex-wrap items-center justify-between gap-3">
+ <div>
+ <div className="text-sm font-bold">Resolved symbols</div>
+ <HelpText>
+ {dynamicUniverseKind === "watchlist"
+ ? `${universeSymbols.length} symbol${universeSymbols.length === 1 ? "" : "s"} from ${selectedWatchlist?.name ?? "watchlist"}.`
+ : universePreviewLoading
+ ? "Resolving universe..."
+ : `${universePreview?.count ?? universeSymbols.length} matching symbol${(universePreview?.count ?? universeSymbols.length) === 1 ? "" : "s"}.`}
+ </HelpText>
+ </div>
+ </div>
+ <div className="flex max-h-56 flex-wrap gap-2 overflow-auto">
+ {universeSymbols.map((item) => {
+ const key = `${item.symbol}:${item.exchange ?? ""}`;
+ return (
+ <div className="relative" key={key}>
+ <button
+ className="border border-border px-2 py-1 font-mono text-xs hover:border-primary"
+ onFocus={() => loadSymbolQuote(item)}
+ onMouseEnter={() => loadSymbolQuote(item)}
+ onMouseLeave={() => setHoveredSymbolKey("")}
+ type="button"
+ >
+ {[item.symbol, item.exchange].filter(Boolean).join(" · ")}
+ </button>
+ {hoveredSymbolKey === key ? (
+ <SymbolQuoteTooltip loading={hoverQuoteLoading} quote={hoverQuote} />
+ ) : null}
+ </div>
+ );
+ })}
+ {!universeSymbols.length ? <div className="text-sm text-muted-foreground">No symbols resolved for this universe yet.</div> : null}
+ </div>
  </div>
  ) : null}
  </div>
@@ -1068,6 +1455,31 @@ export function WorkflowEditor({
  </TabsContent>
  </Tabs>
 
+ {!currentTemplatesMatchSuggestion ? (
+ <div className="grid gap-3 border border-border bg-secondary/20 p-4">
+ <div className="flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <div className="text-sm font-bold">Suggested alert copy</div>
+ <HelpText>The conditions changed or the copy was manually edited. You can keep your current text, or replace it with a generated version that includes the active fields.</HelpText>
+ </div>
+ <Button
+ onClick={() => {
+ setTitleTemplate(suggestedCopy.title);
+ setMessageTemplate(suggestedCopy.message);
+ }}
+ type="button"
+ variant="outline"
+ >
+ Use suggested copy
+ </Button>
+ </div>
+ <div className="grid gap-2 text-sm text-muted-foreground">
+ <div><span className="font-semibold text-foreground">Title:</span> {suggestedCopy.title}</div>
+ <div><span className="font-semibold text-foreground">Message:</span> {suggestedCopy.message}</div>
+ </div>
+ </div>
+ ) : null}
+
  <div className="grid gap-4 border border-border p-4">
  <div className="flex flex-wrap items-start justify-between gap-3">
  <div>
@@ -1082,12 +1494,64 @@ export function WorkflowEditor({
  <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("deploy")} size="sm" type="button">Deploy</Button>
  </div>
  </div>
+ <div className="relative">
  <textarea
  className="min-h-[120px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
- onChange={(event) => setDslText(event.target.value)}
- placeholder="all(ltp >= 100, volume_spike(volume, value=2, compare_to=avg_volume))"
+ onBlur={() => window.setTimeout(() => setShowDslSuggestions(false), 120)}
+ onChange={(event) => {
+ setDslText(event.target.value);
+ updateDslAutocomplete(event.target.value, event.target.selectionStart ?? event.target.value.length);
+ }}
+ onClick={(event) => updateDslAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+ onKeyDown={(event) => {
+ if ((event.ctrlKey || event.metaKey) && event.key === " ") {
+ event.preventDefault();
+ updateDslAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, true);
+ return;
+ }
+ if (event.key === "Tab") {
+ if (showDslSuggestions && dslSuggestions[0]) {
+ event.preventDefault();
+ applyDslSuggestion(dslSuggestions[0]);
+ return;
+ }
+ if (!dslText.trim() && suggestedDsl) {
+ event.preventDefault();
+ setDslText(suggestedDsl);
+ }
+ }
+ }}
+ onKeyUp={(event) => updateDslAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+ placeholder={suggestedDsl}
  value={dslText}
  />
+ {showDslSuggestions && dslSuggestions.length ? (
+ <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-72 overflow-y-auto border border-border bg-background shadow-lg">
+ {dslSuggestions.map((item) => (
+ <button
+ className="grid w-full gap-1 border-b border-border px-3 py-2 text-left text-xs last:border-b-0 hover:bg-[var(--accent-glow)]"
+ key={`${item.kind}:${item.value}`}
+ onMouseDown={(event) => {
+ event.preventDefault();
+ applyDslSuggestion(item);
+ }}
+ type="button"
+ >
+ <span className="font-mono font-bold">{item.label}</span>
+ <span className="text-muted-foreground">{item.kind} - {item.description}</span>
+ </button>
+ ))}
+ </div>
+ ) : null}
+ </div>
+ <div className="flex flex-wrap items-start justify-between gap-3 border border-border px-3 py-2 text-xs text-muted-foreground">
+ <div>
+ <span className="font-bold uppercase">Generated from visual logic:</span>{" "}
+ <code className="font-mono">{suggestedDsl}</code>
+ </div>
+ <Button onClick={() => setDslText(suggestedDsl)} size="sm" type="button" variant="ghost">Use generated script</Button>
+ </div>
+ <HelpText>Use Ctrl+Space for suggestions. Tab accepts the highlighted suggestion; when empty, Tab inserts the generated script from the visual rule builder.</HelpText>
  <div className="grid gap-3 min-[900px]:grid-cols-3">
  <div className="border border-border p-3">
  <div className="text-xs font-bold uppercase text-muted-foreground">Deployment</div>
@@ -1253,6 +1717,33 @@ function LivePreviewSummary({
  );
 }
 
+function SymbolQuoteTooltip({ loading, quote }: { loading: boolean; quote: QuoteResponse | null }) {
+ const detail = (quote?.detail as JsonObject | undefined) ?? {};
+ const raw = (detail.raw as JsonObject | undefined) ?? {};
+ return (
+ <div className="absolute left-0 top-[calc(100%+6px)] z-30 min-w-64 border border-border bg-popover p-3 shadow-lg">
+ {loading ? (
+ <div className="text-xs text-muted-foreground">Loading live quote...</div>
+ ) : quote ? (
+ <div className="grid gap-2 text-xs">
+ <div className="flex items-center justify-between gap-4">
+ <span className="font-mono font-bold">{quote.symbol ?? "Symbol"}</span>
+ <span className="font-mono text-primary">{quote.ltp}</span>
+ </div>
+ <div className="grid grid-cols-2 gap-2 text-muted-foreground">
+ <div>Change {String(raw.day_change_perc ?? raw.change_pct ?? "-")}</div>
+ <div>Volume {String(raw.volume ?? "-")}</div>
+ <div>OI {String(raw.open_interest ?? "-")}</div>
+ <div>Last {String(raw.last_trade_time ?? "-")}</div>
+ </div>
+ </div>
+ ) : (
+ <div className="text-xs text-muted-foreground">No live quote available.</div>
+ )}
+ </div>
+ );
+}
+
 function RuleEditor({
  addCondition,
  applyMessageField,
@@ -1350,7 +1841,7 @@ function RuleEditor({
  </div>
  ) : null}
  </div>
- <HelpText>Type {"{"} to insert dynamic live-data fields like {"{ltp}"}, {"{volume}"}, {"{day_change_perc}"}, and {"{open_interest}"}.</HelpText>
+ <HelpText>Type {"{"} to insert any supported live-data or computed field, including price, volume, open-interest, account, connection, and derived change fields.</HelpText>
  </div>
  </div>
  </div>

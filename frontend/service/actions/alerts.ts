@@ -5,6 +5,7 @@ import { fetchFastApi } from "@/lib/fastapi";
 import type {
   AlertChannel,
   AlertChannelSelection,
+  AlertConditionRegistry,
   AlertGraphDsl,
   AlertNotification,
   AlertTemplate,
@@ -272,8 +273,8 @@ export async function getAlertPresets(): Promise<Array<Record<string, unknown>>>
   return request<Array<Record<string, unknown>>>("/alert-presets");
 }
 
-export async function getAlertConditionRegistry(): Promise<Record<string, unknown>> {
-  return request<Record<string, unknown>>("/alert-runtime/condition-registry");
+export async function getAlertConditionRegistry(): Promise<AlertConditionRegistry> {
+  return request<AlertConditionRegistry>("/alert-runtime/condition-registry");
 }
 
 export async function getLiveSubscriptions(): Promise<LiveSubscription[]> {
