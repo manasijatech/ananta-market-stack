@@ -47,6 +47,49 @@ def _workflow_tick_key(workflow_id: str) -> str:
     return f"alert:workflow:last-tick:{workflow_id}"
 
 
+def _first_depth(raw: dict[str, Any], side: str) -> dict[str, Any]:
+    depth = raw.get("depth") if isinstance(raw, dict) else {}
+    rows = depth.get(side) if isinstance(depth, dict) else []
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return {}
+
+
+def _computed_quote_fields(raw: dict[str, Any], ltp: Any, ohlc: dict[str, Any]) -> dict[str, Any]:
+    open_price = ohlc.get("open")
+    close_price = ohlc.get("close")
+    reference_price = close_price or open_price
+    change_pct = raw.get("day_change_perc")
+    abs_change = None
+    gap_pct = None
+    volume_ratio = None
+    try:
+        if ltp not in (None, "") and reference_price not in (None, "", 0, "0"):
+            abs_change = round(float(ltp) - float(reference_price), 2)
+            if change_pct in (None, ""):
+                change_pct = round(((float(ltp) - float(reference_price)) / float(reference_price)) * 100, 2)
+    except Exception:
+        pass
+    try:
+        if open_price not in (None, "") and close_price not in (None, "", 0, "0"):
+            gap_pct = round(((float(open_price) - float(close_price)) / float(close_price)) * 100, 2)
+    except Exception:
+        pass
+    try:
+        avg_volume = raw.get("avg_volume")
+        if raw.get("volume") not in (None, "") and avg_volume not in (None, "", 0, "0"):
+            volume_ratio = round(float(raw["volume"]) / float(avg_volume), 2)
+    except Exception:
+        pass
+    return {
+        "reference_price": reference_price,
+        "change_pct": change_pct,
+        "abs_change": abs_change,
+        "gap_pct": gap_pct,
+        "volume_ratio": volume_ratio,
+    }
+
+
 def _normalize_tick_payload(
     *,
     user_id: str,
@@ -61,6 +104,10 @@ def _normalize_tick_payload(
     detail = quote_payload.get("detail") or {}
     raw = detail.get("raw") if isinstance(detail, dict) else {}
     ohlc = raw.get("ohlc") if isinstance(raw, dict) else {}
+    buy_top = _first_depth(raw, "buy") if isinstance(raw, dict) else {}
+    sell_top = _first_depth(raw, "sell") if isinstance(raw, dict) else {}
+    ltp = quote_payload.get("ltp")
+    computed = _computed_quote_fields(raw if isinstance(raw, dict) else {}, ltp, ohlc if isinstance(ohlc, dict) else {})
     return {
         "user_id": user_id,
         "account_id": account_id,
@@ -68,16 +115,44 @@ def _normalize_tick_payload(
         "symbol": row.symbol,
         "exchange": row.exchange,
         "instrument_key": row.symbol,
-        "ltp": quote_payload.get("ltp"),
+        "ltp": ltp,
+        "last_price": raw.get("last_price") if isinstance(raw, dict) else None,
         "open": ohlc.get("open"),
         "high": ohlc.get("high"),
         "low": ohlc.get("low"),
         "close": ohlc.get("close"),
+        "average_price": raw.get("average_price") if isinstance(raw, dict) else None,
         "volume": raw.get("volume"),
+        "avg_volume": raw.get("avg_volume") if isinstance(raw, dict) else None,
         "open_interest": raw.get("open_interest"),
+        "previous_open_interest": raw.get("previous_open_interest") if isinstance(raw, dict) else None,
+        "oi_day_change": raw.get("oi_day_change") if isinstance(raw, dict) else None,
+        "oi_day_change_percentage": raw.get("oi_day_change_percentage") if isinstance(raw, dict) else None,
         "day_change": raw.get("day_change"),
         "day_change_perc": raw.get("day_change_perc"),
+        "last_trade_quantity": raw.get("last_trade_quantity") if isinstance(raw, dict) else None,
         "last_trade_time": raw.get("last_trade_time"),
+        "total_buy_quantity": raw.get("total_buy_quantity") if isinstance(raw, dict) else None,
+        "total_sell_quantity": raw.get("total_sell_quantity") if isinstance(raw, dict) else None,
+        "best_bid_price": buy_top.get("price"),
+        "best_bid_quantity": buy_top.get("quantity"),
+        "best_bid_orders": buy_top.get("orderCount"),
+        "best_ask_price": sell_top.get("price"),
+        "best_ask_quantity": sell_top.get("quantity"),
+        "best_ask_orders": sell_top.get("orderCount"),
+        "bid_price": raw.get("bid_price") if isinstance(raw, dict) else None,
+        "bid_quantity": raw.get("bid_quantity") if isinstance(raw, dict) else None,
+        "offer_price": raw.get("offer_price") if isinstance(raw, dict) else None,
+        "offer_quantity": raw.get("offer_quantity") if isinstance(raw, dict) else None,
+        "upper_circuit_limit": raw.get("upper_circuit_limit") if isinstance(raw, dict) else None,
+        "lower_circuit_limit": raw.get("lower_circuit_limit") if isinstance(raw, dict) else None,
+        "week_52_high": raw.get("week_52_high") if isinstance(raw, dict) else None,
+        "week_52_low": raw.get("week_52_low") if isinstance(raw, dict) else None,
+        "high_trade_range": raw.get("high_trade_range") if isinstance(raw, dict) else None,
+        "low_trade_range": raw.get("low_trade_range") if isinstance(raw, dict) else None,
+        "implied_volatility": raw.get("implied_volatility") if isinstance(raw, dict) else None,
+        "market_cap": raw.get("market_cap") if isinstance(raw, dict) else None,
+        **computed,
         "received_at": _utc_now().isoformat(),
         "raw": quote_payload,
         "adapter": "polling",

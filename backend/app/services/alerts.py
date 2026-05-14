@@ -450,6 +450,48 @@ def _default_graph_from_dsl(dsl: AlertWorkflowDsl) -> AlertGraphDsl:
     return AlertGraphDsl(nodes=nodes, edges=edges)
 
 
+def _legacy_conditions_from_logic(logic: dict[str, Any]) -> tuple[str, list[AlertCondition]]:
+    kind = str(logic.get("kind") or "all")
+    if kind not in {"all", "any"}:
+        children = [logic]
+        combine = "all"
+    else:
+        children = [child for child in logic.get("children") or [] if isinstance(child, dict)]
+        combine = kind
+    conditions: list[AlertCondition] = []
+    for child in children:
+        if str(child.get("kind") or "condition") != "condition":
+            continue
+        field = str(child.get("field") or "").strip()
+        operator = str(child.get("operator") or "").strip()
+        if not field and operator != "always":
+            continue
+        if not operator:
+            continue
+        conditions.append(
+            AlertCondition(
+                field=field or "ltp",
+                operator=operator,
+                value=child.get("value"),
+                compare_to=child.get("compare_to"),
+                window_seconds=child.get("window_seconds"),
+            )
+        )
+    return combine, conditions
+
+
+def _apply_compiled_ast_to_legacy_dsl(dsl: AlertWorkflowDsl, compiled_ast: dict[str, Any] | None) -> None:
+    if not compiled_ast:
+        return
+    logic = compiled_ast.get("logic")
+    if not isinstance(logic, dict):
+        return
+    combine, conditions = _legacy_conditions_from_logic(logic)
+    if conditions:
+        dsl.combine = "any" if combine == "any" else "all"
+        dsl.conditions = conditions
+
+
 def ensure_system_templates(db: Session) -> None:
     global _templates_seeded
     if _templates_seeded:
@@ -460,6 +502,7 @@ def ensure_system_templates(db: Session) -> None:
         row = existing.get(payload["slug"])
         workflow_dsl = AlertWorkflowDsl(**payload["workflow_dsl"])
         compiled = compile_workflow_dsl(workflow_dsl)
+        _apply_compiled_ast_to_legacy_dsl(workflow_dsl, compiled.get("workflow_ast"))
         workflow_dsl.workflow_ast = compiled.get("workflow_ast")
         workflow_dsl.compiled_summary = compiled.get("compiled_summary") or {}
         workflow_dsl.validation_status = "valid" if compiled.get("valid") else "invalid"
@@ -659,6 +702,7 @@ def _persist_workflow(
             normalized_targeting = _default_targeting(incoming_symbol, incoming_exchange, next_instrument_ref)
         workflow_dsl.targeting = normalized_targeting
         compiled = compile_workflow_dsl(workflow_dsl)
+        _apply_compiled_ast_to_legacy_dsl(workflow_dsl, compiled["workflow_ast"])
         workflow_dsl.workflow_ast = compiled["workflow_ast"]
         workflow_dsl.compiled_summary = compiled["compiled_summary"]
         workflow_dsl.validation_status = "valid" if compiled["valid"] else "invalid"
@@ -701,6 +745,7 @@ def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> 
     if not payload.workflow_dsl.targeting.entries:
         payload.workflow_dsl.targeting = _default_targeting(payload.symbol, payload.exchange, payload.instrument_ref)
     compiled = compile_workflow_dsl(payload.workflow_dsl)
+    _apply_compiled_ast_to_legacy_dsl(payload.workflow_dsl, compiled["workflow_ast"])
     payload.workflow_dsl.workflow_ast = compiled["workflow_ast"]
     payload.workflow_dsl.compiled_summary = compiled["compiled_summary"]
     payload.workflow_dsl.validation_status = "valid" if compiled["valid"] else "invalid"
@@ -953,6 +998,7 @@ def validate_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, 
         return None
     dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
     result = compile_workflow_dsl(dsl)
+    _apply_compiled_ast_to_legacy_dsl(dsl, result["workflow_ast"])
     row.workflow_dsl_json = _json_dumps({**dsl.model_dump(), "workflow_ast": result["workflow_ast"], "validation_status": "valid" if result["valid"] else "invalid", "compiled_summary": result["compiled_summary"]})
     row.compiled_summary_json = _json_dumps(result["compiled_summary"])
     row.last_validated_at = _now()
@@ -968,7 +1014,12 @@ def compile_preview_workflow(db: Session, user_id: str, workflow_id: str) -> dic
     row = db.get(AlertWorkflow, workflow_id)
     if not row or row.user_id != user_id:
         return None
-    return compile_workflow_dsl(_workflow_dsl(_json_loads(row.workflow_dsl_json, {})))
+    dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
+    result = compile_workflow_dsl(dsl)
+    _apply_compiled_ast_to_legacy_dsl(dsl, result["workflow_ast"])
+    result["legacy_conditions"] = [condition.model_dump(exclude_none=True) for condition in dsl.conditions]
+    result["legacy_combine"] = dsl.combine
+    return result
 
 
 def explain_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, Any] | None:
@@ -989,15 +1040,17 @@ def deploy_workflow(db: Session, user_id: str, workflow_id: str) -> AlertWorkflo
     row = db.get(AlertWorkflow, workflow_id)
     if not row or row.user_id != user_id:
         return None
-    result = compile_workflow_dsl(_workflow_dsl(_json_loads(row.workflow_dsl_json, {})))
+    dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
+    result = compile_workflow_dsl(dsl)
     if not result["valid"]:
         row.deployment_status = "error"
         row.last_runtime_error = "; ".join(result["errors"])
     else:
+        _apply_compiled_ast_to_legacy_dsl(dsl, result["workflow_ast"])
         row.deploy_version = int(row.deploy_version or 0) + 1
         row.deployment_status = "active"
         row.status = "active"
-        row.workflow_dsl_json = _json_dumps({**_json_loads(row.workflow_dsl_json, {}), "workflow_ast": result["workflow_ast"], "validation_status": "valid", "compiled_summary": result["compiled_summary"]})
+        row.workflow_dsl_json = _json_dumps({**dsl.model_dump(), "workflow_ast": result["workflow_ast"], "validation_status": "valid", "compiled_summary": result["compiled_summary"]})
         row.compiled_summary_json = _json_dumps(result["compiled_summary"])
         row.last_runtime_error = None
         row.last_compiled_at = _now()

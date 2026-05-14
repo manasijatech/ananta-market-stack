@@ -62,12 +62,47 @@ function buildGraph(dsl: AlertWorkflowDsl): AlertGraphDsl {
 
 const fieldOptions = [
  { value: "ltp", label: "Last traded price", help: "Latest traded price for the symbol." },
+ { value: "last_price", label: "Raw last price", help: "Last price from the raw broker payload." },
+ { value: "average_price", label: "Average price", help: "Broker-reported average traded price when available." },
  { value: "volume", label: "Volume", help: "Current traded volume from the live quote payload." },
+ { value: "avg_volume", label: "Average volume", help: "Reference average volume when provided by enrichment." },
+ { value: "volume_ratio", label: "Volume ratio", help: "Computed volume divided by average/reference volume." },
  { value: "open_interest", label: "Open interest", help: "Useful for derivatives and option-chain driven workflows." },
+ { value: "previous_open_interest", label: "Previous open interest", help: "Previous open interest when available." },
+ { value: "oi_day_change", label: "OI day change", help: "Open-interest day change." },
+ { value: "oi_day_change_percentage", label: "OI day change %", help: "Open-interest day change percentage." },
  { value: "high", label: "Day high", help: "Current day high from OHLC/live quote data." },
  { value: "low", label: "Day low", help: "Current day low from OHLC/live quote data." },
  { value: "open", label: "Day open", help: "Current day open." },
- { value: "close", label: "Previous close", help: "Reference close returned by the broker." }
+ { value: "close", label: "Previous close", help: "Reference close returned by the broker." },
+ { value: "day_change", label: "Day change", help: "Broker-reported absolute day change." },
+ { value: "day_change_perc", label: "Day change %", help: "Broker-reported day change percentage." },
+ { value: "reference_price", label: "Reference price", help: "Computed reference price for change calculations." },
+ { value: "change_pct", label: "Computed change %", help: "Computed percent change versus selected reference." },
+ { value: "abs_change", label: "Absolute change", help: "Computed absolute move versus selected reference." },
+ { value: "gap_pct", label: "Gap %", help: "Computed open-versus-close gap percentage." },
+ { value: "last_trade_quantity", label: "Last trade quantity", help: "Quantity from the latest trade." },
+ { value: "last_trade_time", label: "Last trade time", help: "Latest trade timestamp from the broker." },
+ { value: "total_buy_quantity", label: "Total buy quantity", help: "Total buy quantity in the order book." },
+ { value: "total_sell_quantity", label: "Total sell quantity", help: "Total sell quantity in the order book." },
+ { value: "best_bid_price", label: "Best bid price", help: "Top-of-book bid price." },
+ { value: "best_bid_quantity", label: "Best bid quantity", help: "Top-of-book bid quantity." },
+ { value: "best_bid_orders", label: "Best bid orders", help: "Top-of-book bid order count." },
+ { value: "best_ask_price", label: "Best ask price", help: "Top-of-book ask price." },
+ { value: "best_ask_quantity", label: "Best ask quantity", help: "Top-of-book ask quantity." },
+ { value: "best_ask_orders", label: "Best ask orders", help: "Top-of-book ask order count." },
+ { value: "bid_price", label: "Broker bid price", help: "Broker-provided bid price when available." },
+ { value: "bid_quantity", label: "Broker bid quantity", help: "Broker-provided bid quantity when available." },
+ { value: "offer_price", label: "Broker offer price", help: "Broker-provided offer price when available." },
+ { value: "offer_quantity", label: "Broker offer quantity", help: "Broker-provided offer quantity when available." },
+ { value: "upper_circuit_limit", label: "Upper circuit", help: "Upper circuit price limit." },
+ { value: "lower_circuit_limit", label: "Lower circuit", help: "Lower circuit price limit." },
+ { value: "week_52_high", label: "52-week high", help: "52-week high from the broker payload." },
+ { value: "week_52_low", label: "52-week low", help: "52-week low from the broker payload." },
+ { value: "high_trade_range", label: "High trade range", help: "Broker high trade range when available." },
+ { value: "low_trade_range", label: "Low trade range", help: "Broker low trade range when available." },
+ { value: "implied_volatility", label: "Implied volatility", help: "Implied volatility when available for derivatives." },
+ { value: "market_cap", label: "Market cap", help: "Market capitalization when provided by the broker." }
 ];
 
 const operatorOptions = [
@@ -100,12 +135,11 @@ const operatorOptions = [
 
 const compareOptions = [
  { value: "", label: "Manual value", help: "Use the numeric value box directly." },
- { value: "open", label: "Compare to open", help: "Use day open as the reference." },
- { value: "close", label: "Compare to close", help: "Use previous close as the reference." },
- { value: "high", label: "Compare to high", help: "Use day high as the reference." },
- { value: "low", label: "Compare to low", help: "Use day low as the reference." },
- { value: "avg_volume", label: "Compare to average volume", help: "Use average/reference volume from enrichment as the reference." },
- { value: "open_interest", label: "Compare to open interest", help: "Use current open interest as a same-tick comparison reference." }
+ ...fieldOptions.map((item) => ({
+ value: item.value,
+ label: `Compare to ${item.label.toLowerCase()}`,
+ help: item.help
+ }))
 ];
 
 const messageTemplateFields = [
@@ -116,6 +150,8 @@ const messageTemplateFields = [
  "high",
  "low",
  "close",
+ "last_price",
+ "average_price",
  "reference_price",
  "change_pct",
  "abs_change",
@@ -124,9 +160,33 @@ const messageTemplateFields = [
  "avg_volume",
  "volume_ratio",
  "open_interest",
+ "previous_open_interest",
+ "oi_day_change",
+ "oi_day_change_percentage",
  "day_change",
  "day_change_perc",
+ "last_trade_quantity",
  "last_trade_time",
+ "total_buy_quantity",
+ "total_sell_quantity",
+ "best_bid_price",
+ "best_bid_quantity",
+ "best_bid_orders",
+ "best_ask_price",
+ "best_ask_quantity",
+ "best_ask_orders",
+ "bid_price",
+ "bid_quantity",
+ "offer_price",
+ "offer_quantity",
+ "upper_circuit_limit",
+ "lower_circuit_limit",
+ "week_52_high",
+ "week_52_low",
+ "high_trade_range",
+ "low_trade_range",
+ "implied_volatility",
+ "market_cap",
  "received_at",
  "broker_code",
  "account_id",
@@ -334,6 +394,115 @@ function dslTokenAt(text: string, position: number): { token: string; start: num
  const match = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
  const start = match ? position - match[0].length : position;
  return { token: match?.[0] ?? "", start, end: position };
+}
+
+function stripOuterParens(value: string): string {
+ const trimmed = value.trim();
+ if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) return trimmed;
+ let depth = 0;
+ for (let index = 0; index < trimmed.length; index += 1) {
+ const char = trimmed[index];
+ if (char === "(") depth += 1;
+ if (char === ")") depth -= 1;
+ if (depth === 0 && index < trimmed.length - 1) return trimmed;
+ }
+ return trimmed.slice(1, -1).trim();
+}
+
+function splitTopLevel(value: string): string[] {
+ const parts: string[] = [];
+ let current = "";
+ let depth = 0;
+ let quote: string | null = null;
+ for (const char of value) {
+ if (quote) {
+ current += char;
+ if (char === quote) quote = null;
+ continue;
+ }
+ if (char === "'" || char === '"') {
+ quote = char;
+ current += char;
+ continue;
+ }
+ if (char === "(") depth += 1;
+ if (char === ")") depth -= 1;
+ if (char === "," && depth === 0) {
+ parts.push(current.trim());
+ current = "";
+ continue;
+ }
+ current += char;
+ }
+ if (current.trim()) parts.push(current.trim());
+ return parts;
+}
+
+function parseDslLiteral(raw: string): string | number | boolean | null {
+ const value = raw.trim();
+ if (!value) return null;
+ if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+ return value.slice(1, -1);
+ }
+ if (value === "true") return true;
+ if (value === "false") return false;
+ const asNumber = Number(value);
+ if (Number.isFinite(asNumber)) return asNumber;
+ return value;
+}
+
+function parseLocalDslExpression(text: string): Record<string, unknown> | null {
+ const expression = stripOuterParens(text.trim());
+ if (!expression) return null;
+ const callMatch = expression.match(/^([A-Za-z_][A-Za-z0-9_]*)\(([\s\S]*)\)$/);
+ if (callMatch) {
+ const [, name, rawArgs] = callMatch;
+ const args = splitTopLevel(rawArgs);
+ if (name === "all" || name === "any") {
+ return { kind: name, children: args.map(parseLocalDslExpression).filter(Boolean) };
+ }
+ if (name === "not") {
+ return { kind: "not", children: args.slice(0, 1).map(parseLocalDslExpression).filter(Boolean) };
+ }
+ const condition: Record<string, unknown> = { kind: "condition", operator: name, children: [] };
+ for (const [index, arg] of args.entries()) {
+ const equalsIndex = arg.indexOf("=");
+ if (equalsIndex > 0) {
+ const key = arg.slice(0, equalsIndex).trim();
+ const value = parseDslLiteral(arg.slice(equalsIndex + 1));
+ if (key === "value") condition.value = value;
+ if (key === "compare_to") condition.compare_to = value;
+ if (key === "field") condition.field = value;
+ if (key === "window_seconds") condition.window_seconds = Number(value);
+ continue;
+ }
+ if (index === 0) condition.field = arg.trim();
+ }
+ if (!condition.field && name !== "always") condition.field = "ltp";
+ return condition;
+ }
+ const compareMatch = expression.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(>=|<=|>|<)\s*([A-Za-z_][A-Za-z0-9_]*|-?\d+(?:\.\d+)?)$/);
+ if (compareMatch) {
+ const [, field, symbol, rawRight] = compareMatch;
+ const operatorMap: Record<string, string> = { ">": "gt", ">=": "gte", "<": "lt", "<=": "lte" };
+ const parsedRight = parseDslLiteral(rawRight);
+ const isFieldCompare = typeof parsedRight === "string" && fieldOptions.some((item) => item.value === parsedRight);
+ return {
+ kind: "condition",
+ field,
+ operator: isFieldCompare ? `field_${operatorMap[symbol]}` : operatorMap[symbol],
+ value: isFieldCompare ? null : parsedRight,
+ compare_to: isFieldCompare ? parsedRight : null,
+ children: []
+ };
+ }
+ return null;
+}
+
+function compileLocalDslToAst(text: string, baseAst: Record<string, unknown>): Record<string, unknown> | null {
+ const logic = parseLocalDslExpression(text);
+ if (!logic) return null;
+ return { ...baseAst, logic };
 }
 
 function numeric(value: unknown): number | null {
@@ -877,12 +1046,16 @@ export function WorkflowEditor({
  setDslSuggestionQuery("");
  }
 
- function syncVisualBuilderFromAst(workflowAst: unknown) {
+ function syncVisualBuilderFromAst(workflowAst: unknown, options: { silent?: boolean } = {}) {
  if (!isRecord(workflowAst)) return false;
  const parsed = logicNodeToConditions(workflowAst.logic);
  if (!parsed || !parsed.conditions.length) return false;
+ const nextConditionsJson = JSON.stringify(parsed.conditions);
+ const currentConditionsJson = JSON.stringify(conditions);
+ if (nextConditionsJson === currentConditionsJson && parsed.combine === combine) return true;
  setCombine(parsed.combine);
  setConditions(parsed.conditions);
+ if (options.silent) return true;
  if (parsed.flattened) {
  setEngineFeedback("Script compiled. The visual builder was updated with supported conditions; nested or inverted groups remain represented by the script.");
  } else {
@@ -890,6 +1063,14 @@ export function WorkflowEditor({
  }
  return true;
  }
+
+ useEffect(() => {
+ if (!dslText.trim()) return;
+ const targeting = workflowTargetingPayload();
+ const localAst = compileLocalDslToAst(dslText, workflowAstPayload(targeting) as unknown as Record<string, unknown>);
+ if (!localAst) return;
+ syncVisualBuilderFromAst(localAst, { silent: true });
+ }, [dslText]);
 
  function save() {
  setError("");
@@ -911,11 +1092,17 @@ export function WorkflowEditor({
  const ohlcRaw = (preview.ohlc?.raw as JsonObject | undefined) ?? {};
  const quoteDetail = (preview.quote?.detail as JsonObject | undefined) ?? {};
  const quoteRaw = (quoteDetail.raw as JsonObject | undefined) ?? {};
+ const quoteOhlc = (quoteRaw.ohlc as JsonObject | undefined) ?? {};
+ const rawOhlc = (ohlcRaw.ohlc as JsonObject | undefined) ?? {};
+ const buyDepth = ((quoteRaw.depth as JsonObject | undefined)?.buy as JsonObject[] | undefined) ?? [];
+ const sellDepth = ((quoteRaw.depth as JsonObject | undefined)?.sell as JsonObject[] | undefined) ?? [];
+ const bestBid = buyDepth[0] ?? {};
+ const bestAsk = sellDepth[0] ?? {};
  const ltp = numeric(preview.quote?.ltp) ?? numeric(conditions[0]?.value) ?? 0;
- const openValue = numeric(preview.ohlc?.open) ?? numeric(quoteRaw.open) ?? 0;
- const closeValue = numeric(preview.ohlc?.close) ?? numeric(quoteRaw.close) ?? 0;
- const highValue = numeric(preview.ohlc?.high) ?? numeric(quoteRaw.high) ?? 0;
- const lowValue = numeric(preview.ohlc?.low) ?? numeric(quoteRaw.low) ?? 0;
+ const openValue = numeric(preview.ohlc?.open) ?? numeric(rawOhlc.open) ?? numeric(quoteOhlc.open) ?? numeric(quoteRaw.open) ?? 0;
+ const closeValue = numeric(preview.ohlc?.close) ?? numeric(rawOhlc.close) ?? numeric(quoteOhlc.close) ?? numeric(quoteRaw.close) ?? 0;
+ const highValue = numeric(preview.ohlc?.high) ?? numeric(rawOhlc.high) ?? numeric(quoteOhlc.high) ?? numeric(quoteRaw.high) ?? 0;
+ const lowValue = numeric(preview.ohlc?.low) ?? numeric(rawOhlc.low) ?? numeric(quoteOhlc.low) ?? numeric(quoteRaw.low) ?? 0;
  const volume = numeric(ohlcRaw.volume) ?? numeric(quoteRaw.volume) ?? 120000;
  const avgVolume = numeric(ohlcRaw.avg_volume) ?? numeric(quoteRaw.avg_volume) ?? null;
  const firstPct = conditions.find((condition) => condition.operator.includes("pct_change"));
@@ -937,10 +1124,12 @@ export function WorkflowEditor({
  symbol,
  exchange,
  ltp,
+ last_price: numeric(quoteRaw.last_price) ?? ltp,
  open: openValue,
  high: highValue,
  low: lowValue,
  close: closeValue,
+ average_price: numeric(quoteRaw.average_price),
  reference_price: referenceValue,
  change_pct: changePct,
  abs_change: absChange,
@@ -948,10 +1137,34 @@ export function WorkflowEditor({
  volume,
  avg_volume: avgVolume,
  volume_ratio: avgVolume ? Number((volume / avgVolume).toFixed(2)) : null,
- open_interest: numeric(quoteRaw.open_interest) ?? 15000,
+ open_interest: numeric(quoteRaw.open_interest),
+ previous_open_interest: numeric(quoteRaw.previous_open_interest),
+ oi_day_change: numeric(quoteRaw.oi_day_change),
+ oi_day_change_percentage: numeric(quoteRaw.oi_day_change_percentage),
  day_change: numeric(quoteRaw.day_change),
  day_change_perc: numeric(quoteRaw.day_change_perc) ?? changePct,
+ last_trade_quantity: numeric(quoteRaw.last_trade_quantity),
  last_trade_time: quoteRaw.last_trade_time ?? null,
+ total_buy_quantity: numeric(quoteRaw.total_buy_quantity),
+ total_sell_quantity: numeric(quoteRaw.total_sell_quantity),
+ best_bid_price: numeric(bestBid.price),
+ best_bid_quantity: numeric(bestBid.quantity),
+ best_bid_orders: numeric(bestBid.orderCount),
+ best_ask_price: numeric(bestAsk.price),
+ best_ask_quantity: numeric(bestAsk.quantity),
+ best_ask_orders: numeric(bestAsk.orderCount),
+ bid_price: numeric(quoteRaw.bid_price),
+ bid_quantity: numeric(quoteRaw.bid_quantity),
+ offer_price: numeric(quoteRaw.offer_price),
+ offer_quantity: numeric(quoteRaw.offer_quantity),
+ upper_circuit_limit: numeric(quoteRaw.upper_circuit_limit),
+ lower_circuit_limit: numeric(quoteRaw.lower_circuit_limit),
+ week_52_high: numeric(quoteRaw.week_52_high),
+ week_52_low: numeric(quoteRaw.week_52_low),
+ high_trade_range: numeric(quoteRaw.high_trade_range),
+ low_trade_range: numeric(quoteRaw.low_trade_range),
+ implied_volatility: numeric(quoteRaw.implied_volatility),
+ market_cap: numeric(quoteRaw.market_cap),
  broker_code: selectedAccount?.broker_code ?? brokerCode,
  account_id: selectedAccount?.id ?? accountId
  };
