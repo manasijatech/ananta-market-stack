@@ -18,6 +18,10 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
     app_public_base_url: str | None = Field(default=None, validation_alias="APP_PUBLIC_BASE_URL")
+    alpha_api_base_url: str = Field(
+        default="https://developers.manasija.in",
+        validation_alias="MANASIJA_API_BASE_URL",
+    )
 
     redis_host: str = "127.0.0.1"
     redis_port: int = 6379

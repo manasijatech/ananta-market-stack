@@ -21,6 +21,19 @@ export interface AlertChannelSelection {
   enabled: AlertChannelType[];
 }
 
+export type LlmProvider = "openai" | "openrouter" | "gemini";
+
+export interface AlertLlmAnalysisConfig {
+  enabled: boolean;
+  provider?: LlmProvider | null;
+  model_id?: string | null;
+  prompt_template: string;
+  context_placeholders: Record<string, unknown>[];
+  temperature: number;
+  max_completion_tokens: number;
+  timeout_seconds: number;
+}
+
 export interface AlertTargetEntry {
   symbol: string;
   exchange?: string | null;
@@ -46,6 +59,7 @@ export interface AlertWorkflowDsl {
   targeting: AlertWorkflowTargeting;
   notification: AlertNotificationConfig;
   channels: AlertChannelSelection;
+  llm_analysis: AlertLlmAnalysisConfig;
   workflow_ast?: Record<string, unknown> | null;
   dsl_text?: string | null;
   validation_status?: "unknown" | "valid" | "invalid";
@@ -251,6 +265,31 @@ export interface AlertWorkflowValidation {
   errors: string[];
   workflow_ast?: Record<string, unknown> | null;
   compiled_summary: Record<string, unknown>;
+}
+
+export interface AlertLlmPlaceholderCatalog {
+  defaults: {
+    prompt_template: string;
+  };
+  placeholders: Array<{
+    name: string;
+    label: string;
+    description: string;
+    example: string;
+    params: string[];
+  }>;
+}
+
+export interface AlertLlmContextPreview {
+  symbol: string;
+  rendered_prompt: string;
+  placeholders: Record<string, unknown>;
+  context_errors: Array<Record<string, unknown>>;
+  metadata: Record<string, unknown>;
+}
+
+export interface AlertLlmTestResult extends AlertLlmContextPreview {
+  llm_analysis: Record<string, unknown>;
 }
 
 export interface AlertConditionRegistryField {

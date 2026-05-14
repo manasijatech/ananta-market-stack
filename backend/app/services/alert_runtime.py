@@ -12,6 +12,7 @@ import redis
 from sqlalchemy import select
 
 from app.services import alerts as alert_svc
+from app.services.alert_llm_analysis import run_workflow_llm_analysis
 from app.services.alerts_engine.reconcile import reconcile_all_users
 from app.services import broker_data
 from db.models import (
@@ -405,10 +406,12 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
         try:
             workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
             previous_tick = _previous_tick_for_workflow(db, redis_client, workflow.id)
-            matched, reason = alert_svc.evaluate_workflow_payload(workflow, tick, previous_tick)
+            evaluation = alert_svc.evaluate_workflow_payload_detail(workflow, tick, previous_tick)
+            matched, reason = evaluation.matched, evaluation.reason
             evaluation_tick = tick
             notification_id = None
             should_record_run = False
+            llm_analysis: dict[str, Any] = {"enabled": False, "status": "disabled", "output": ""}
             if matched:
                 cooldown = workflow.workflow_dsl.cooldown_seconds
                 can_trigger = True
@@ -416,10 +419,19 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     can_trigger = (_utc_now() - row.last_triggered_at).total_seconds() >= cooldown
                 if can_trigger:
                     evaluation_tick = _enrich_tick_for_match(db, row, tick)
+                    llm_analysis = run_workflow_llm_analysis(
+                        db,
+                        workflow=workflow,
+                        tick=evaluation_tick,
+                        previous_tick=previous_tick,
+                        reason=reason,
+                        evaluation_details=evaluation.details,
+                    )
                     render_context = alert_svc._notification_context(  # type: ignore[attr-defined]
                         workflow,
                         evaluation_tick,
                         previous_tick,
+                        llm_analysis,
                     )
                     title = alert_svc._render_message(  # type: ignore[attr-defined]
                         workflow.workflow_dsl.notification.title_template,
@@ -429,6 +441,8 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                         workflow.workflow_dsl.notification.message_template,
                         render_context,
                     )
+                    if llm_analysis.get("output") and "{llm_analysis}" not in workflow.workflow_dsl.notification.message_template:
+                        message = f"{message}\n\nLLM Analysis: {llm_analysis['output']}"
                     notification = alert_svc.create_alert_notification(
                         db,
                         user_id=workflow.user_id,
@@ -437,7 +451,7 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                         message=message,
                         level=workflow.workflow_dsl.notification.level,
                         channels=_workflow_channels(db, workflow.user_id, workflow),
-                        payload=evaluation_tick,
+                        payload={**evaluation_tick, "llm_analysis": llm_analysis},
                         dedupe_key=f"{workflow.id}:{str(render_context.get('symbol') or '')}:{reason}",
                     )
                     notification_id = notification.id
@@ -452,6 +466,7 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     workflow,
                     evaluation_tick,
                     previous_tick,
+                    llm_analysis,
                 )
                 title = alert_svc._render_message(  # type: ignore[attr-defined]
                     workflow.workflow_dsl.notification.title_template,
@@ -461,6 +476,8 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     workflow.workflow_dsl.notification.message_template,
                     render_context,
                 )
+                if llm_analysis.get("output") and "{llm_analysis}" not in workflow.workflow_dsl.notification.message_template:
+                    message = f"{message}\n\nLLM Analysis: {llm_analysis['output']}"
                 db.add(
                     AlertWorkflowRun(
                         id=str(uuid4()),
@@ -472,7 +489,15 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                         rendered_message=message,
                         channels_json=json.dumps(_workflow_channels(db, workflow.user_id, workflow)),
                         tick_json=json.dumps(evaluation_tick, default=str),
-                        evaluation_payload_json=json.dumps({"previous_tick": previous_tick, "event_driven": True}, default=str),
+                        evaluation_payload_json=json.dumps(
+                            {
+                                "previous_tick": previous_tick,
+                                "event_driven": True,
+                                "evaluation_details": evaluation.details,
+                                "llm_analysis": llm_analysis,
+                            },
+                            default=str,
+                        ),
                     )
                 )
             _store_previous_tick_for_workflow(redis_client, workflow.id, tick)

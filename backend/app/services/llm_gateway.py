@@ -113,6 +113,7 @@ def generate_text(
     max_completion_tokens: int | None = None,
     stream: bool = False,
     extra_body: dict[str, Any] | None = None,
+    timeout: float | None = None,
 ) -> Any:
     """Generate text via Chat Completions using a provider-specific OpenAI client.
 
@@ -121,7 +122,7 @@ def generate_text(
     Callers can pass either `user_text` or a prebuilt multimodal `user_content`.
     """
 
-    client = build_provider_client(db, user_id, provider)
+    client = build_provider_client(db, user_id, provider, timeout=timeout)
     messages: list[dict[str, Any]] = []
     if developer_prompt:
         messages.append({"role": "system", "content": developer_prompt})

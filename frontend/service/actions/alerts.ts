@@ -7,6 +7,9 @@ import type {
   AlertChannelSelection,
   AlertConditionRegistry,
   AlertGraphDsl,
+  AlertLlmContextPreview,
+  AlertLlmPlaceholderCatalog,
+  AlertLlmTestResult,
   AlertNotification,
   AlertTemplate,
   AlertUnreadCount,
@@ -151,6 +154,30 @@ export async function deleteAlertWorkflow(id: string): Promise<void> {
 
 export async function testAlertWorkflow(id: string, tick: Record<string, unknown>): Promise<{ matched: boolean; reason: string }> {
   return request<{ matched: boolean; reason: string }>(`/alert-workflows/${id}/test`, {
+    method: "POST",
+    body: JSON.stringify({ tick })
+  });
+}
+
+export async function getAlertLlmPlaceholders(): Promise<AlertLlmPlaceholderCatalog> {
+  return request<AlertLlmPlaceholderCatalog>("/alert-workflows/llm/placeholders");
+}
+
+export async function previewAlertWorkflowLlmContext(
+  id: string,
+  tick: Record<string, unknown>
+): Promise<AlertLlmContextPreview> {
+  return request<AlertLlmContextPreview>(`/alert-workflows/${id}/llm/preview-context`, {
+    method: "POST",
+    body: JSON.stringify({ tick })
+  });
+}
+
+export async function testAlertWorkflowLlm(
+  id: string,
+  tick: Record<string, unknown>
+): Promise<AlertLlmTestResult> {
+  return request<AlertLlmTestResult>(`/alert-workflows/${id}/llm/test`, {
     method: "POST",
     body: JSON.stringify({ tick })
   });

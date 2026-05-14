@@ -15,9 +15,12 @@ import {
  explainAlertWorkflow,
  getWorkflowSampleAlerts,
  getAlertConditionRegistry,
+ getAlertLlmPlaceholders,
  previewAlertUniverse,
+ previewAlertWorkflowLlmContext,
  sendWorkflowTestNotification,
  testAlertWorkflow,
+ testAlertWorkflowLlm,
  updateAlertWorkflow,
  validateAlertWorkflow
 } from "@/service/actions/alerts";
@@ -35,7 +38,7 @@ import type {
  InstrumentRef,
  AlertWorkflowTargeting
 } from "@/service/types/alerts";
-import type { BrokerAccount, InstrumentSearchRow, JsonObject, QuoteResponse } from "@/service/types/broker";
+import type { BrokerAccount, InstrumentSearchRow, JsonObject, LlmProvider, LlmProviderConfig, QuoteResponse } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -198,6 +201,18 @@ const messageTemplateFields = [
 ];
 
 const targetListExample = "RELIANCE,NSE\nTCS,NSE\nINFY,NSE";
+
+const fallbackLlmPrompt = `Analyze why this alert triggered for {symbol}.
+
+Trigger: @trigger.reason
+Workflow: @trigger.summary
+Price data: @price.full
+Recent news: @news(days=2, max_pages=1, max_items=5)
+Recent announcements: @announcements(days=2, max_pages=1, max_items=5, detailed=true)
+Recent earnings: @earnings(days=2, max_pages=1, max_items=3, detailed=true)
+Recent concalls: @concalls(days=2, max_pages=1, max_items=2)
+
+Give a concise market-relevant explanation, include likely drivers, and mention when context is insufficient.`;
 
 type PreviewState = {
  quote: QuoteResponse | null;
@@ -499,6 +514,15 @@ function parseLocalDslExpression(text: string): Record<string, unknown> | null {
  return null;
 }
 
+function parseLlmPromptPlaceholders(prompt: string): Record<string, unknown>[] {
+ const matches = prompt.matchAll(/@([A-Za-z][A-Za-z0-9_.]*)(?:\(([^)]*)\))?/g);
+ return Array.from(matches).map((match) => ({
+ raw: match[0],
+ name: match[1],
+ args: match[2] ?? ""
+ }));
+}
+
 function compileLocalDslToAst(text: string, baseAst: Record<string, unknown>): Record<string, unknown> | null {
  const logic = parseLocalDslExpression(text);
  if (!logic) return null;
@@ -535,13 +559,15 @@ function HelpText({ children }: { children: React.ReactNode }) {
 }
 
 export function WorkflowEditor({
- accounts,
- initialWorkflow,
+accounts,
+initialWorkflow,
+ llmProviders = [],
  presets = [],
  watchlists = []
 }: {
  accounts: BrokerAccount[];
  initialWorkflow?: AlertWorkflow | null;
+ llmProviders?: LlmProviderConfig[];
  presets?: Array<Record<string, unknown>>;
  watchlists?: Watchlist[];
 }) {
@@ -596,6 +622,33 @@ export function WorkflowEditor({
  const [level, setLevel] = useState(initialWorkflow?.workflow_dsl.notification.level ?? "info");
  const [titleTemplate, setTitleTemplate] = useState(initialWorkflow?.workflow_dsl.notification.title_template ?? "{symbol} alert");
  const [messageTemplate, setMessageTemplate] = useState(initialWorkflow?.workflow_dsl.notification.message_template ?? "{symbol} matched workflow");
+ const initialLlm = initialWorkflow?.workflow_dsl.llm_analysis;
+ const enabledLlmProviders = llmProviders.filter((provider) => provider.has_api_key && provider.is_enabled);
+ const firstLlmProvider = enabledLlmProviders[0];
+ const firstLlmModel = firstLlmProvider?.models.find((model) => model.is_enabled);
+ const [llmEnabled, setLlmEnabled] = useState(Boolean(initialLlm?.enabled));
+ const [llmProvider, setLlmProvider] = useState<LlmProvider | "">(initialLlm?.provider ?? firstLlmProvider?.provider ?? "");
+ const [llmModelId, setLlmModelId] = useState(initialLlm?.model_id ?? firstLlmModel?.model_id ?? "");
+ const [llmPromptTemplate, setLlmPromptTemplate] = useState(initialLlm?.prompt_template || fallbackLlmPrompt);
+ const [llmTemperature, setLlmTemperature] = useState(String(initialLlm?.temperature ?? 0.2));
+ const [llmMaxTokens, setLlmMaxTokens] = useState(String(initialLlm?.max_completion_tokens ?? 500));
+ const [llmTimeout, setLlmTimeout] = useState(String(initialLlm?.timeout_seconds ?? 25));
+ const [llmPromptTab, setLlmPromptTab] = useState<"prompt" | "preview">("prompt");
+ const [llmFeedback, setLlmFeedback] = useState("");
+ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(null);
+ const [llmSuggestionQuery, setLlmSuggestionQuery] = useState("");
+ const [llmSuggestionRange, setLlmSuggestionRange] = useState<{ start: number; end: number } | null>(null);
+ const [showLlmSuggestions, setShowLlmSuggestions] = useState(false);
+ const [llmPlaceholderExamples, setLlmPlaceholderExamples] = useState([
+ "@price.full",
+ "@trigger.reason",
+ "@trigger.summary",
+ "@trigger.details",
+ "@news(days=2, max_pages=1, max_items=5)",
+ "@announcements(days=2, max_pages=1, max_items=5, detailed=true)",
+ "@earnings(days=2, max_pages=1, max_items=3, detailed=true)",
+ "@concalls(days=2, max_pages=1, max_items=2)"
+ ]);
  const [dslText, setDslText] = useState(initialWorkflow?.workflow_dsl.dsl_text ?? "");
  const [engineFeedback, setEngineFeedback] = useState("");
  const [engineDetails, setEngineDetails] = useState<Record<string, unknown> | null>(null);
@@ -744,6 +797,34 @@ export function WorkflowEditor({
  cancelled = true;
  };
  }, [startTransition]);
+
+ useEffect(() => {
+ let cancelled = false;
+ startTransition(async () => {
+ try {
+ const catalog = await getAlertLlmPlaceholders();
+ if (!cancelled) {
+ setLlmPlaceholderExamples(catalog.placeholders.map((item) => item.example));
+ if (!initialLlm?.prompt_template && catalog.defaults.prompt_template) {
+ setLlmPromptTemplate(catalog.defaults.prompt_template);
+ }
+ }
+ } catch {
+ if (!cancelled) setLlmPlaceholderExamples((current) => current);
+ }
+ });
+ return () => {
+ cancelled = true;
+ };
+ }, [initialLlm?.prompt_template, startTransition]);
+
+ useEffect(() => {
+ const provider = llmProviders.find((item) => item.provider === llmProvider);
+ if (!provider) return;
+ if (provider.models.some((model) => model.model_id === llmModelId && model.is_enabled)) return;
+ const nextModel = provider.models.find((model) => model.is_enabled);
+ setLlmModelId(nextModel?.model_id ?? "");
+ }, [llmModelId, llmProvider, llmProviders]);
 
  useEffect(() => {
  if (targetMode !== "preset_universe" || dynamicUniverseKind === "watchlist") {
@@ -966,6 +1047,16 @@ export function WorkflowEditor({
  message_template: messageTemplate
  },
  channels: channelSelection(),
+ llm_analysis: {
+ enabled: llmEnabled,
+ provider: llmProvider || null,
+ model_id: llmModelId || null,
+ prompt_template: llmPromptTemplate,
+ context_placeholders: parseLlmPromptPlaceholders(llmPromptTemplate),
+ temperature: Number(llmTemperature || 0.2),
+ max_completion_tokens: Number(llmMaxTokens || 500),
+ timeout_seconds: Number(llmTimeout || 25)
+ },
  dsl_text: dslText.trim() || null,
  workflow_ast: workflowAstPayload(targeting),
  validation_status: "unknown",
@@ -1030,6 +1121,33 @@ export function WorkflowEditor({
  }
 
  const filteredMessageFields = messageTemplateFields.filter((item) => item.includes(messageFieldQuery));
+
+ function updateLlmPromptAutocomplete(nextValue: string, caretPosition: number, force = false) {
+ const before = nextValue.slice(0, caretPosition);
+ const match = before.match(/@[A-Za-z0-9_.]*(?:\([^)]*)?$/);
+ if (!match) {
+ setShowLlmSuggestions(force);
+ setLlmSuggestionQuery("");
+ setLlmSuggestionRange({ start: caretPosition, end: caretPosition });
+ return;
+ }
+ const start = caretPosition - match[0].length;
+ setLlmSuggestionQuery(match[0].toLowerCase());
+ setLlmSuggestionRange({ start, end: caretPosition });
+ setShowLlmSuggestions(force || match[0].length > 0);
+ }
+
+ function applyLlmSuggestion(example: string) {
+ const range = llmSuggestionRange ?? { start: llmPromptTemplate.length, end: llmPromptTemplate.length };
+ const nextValue = `${llmPromptTemplate.slice(0, range.start)}${example}${llmPromptTemplate.slice(range.end)}`;
+ setLlmPromptTemplate(nextValue);
+ setShowLlmSuggestions(false);
+ setLlmSuggestionQuery("");
+ }
+
+ const filteredLlmPlaceholders = llmPlaceholderExamples
+ .filter((item) => !llmSuggestionQuery || item.toLowerCase().includes(llmSuggestionQuery.replace(/^@/, "")))
+ .slice(0, 10);
 
  function updateDslAutocomplete(nextValue: string, caretPosition: number, force = false) {
  const token = dslTokenAt(nextValue, caretPosition);
@@ -1198,6 +1316,41 @@ export function WorkflowEditor({
  });
  }
 
+ function previewLlmContext() {
+ if (!initialWorkflow?.id) return;
+ setError("");
+ setLlmFeedback("");
+ setLlmDetails(null);
+ startTransition(async () => {
+ try {
+ const result = await previewAlertWorkflowLlmContext(initialWorkflow.id, buildPreviewTick());
+ setLlmFeedback(`Resolved ${Object.keys(result.placeholders ?? {}).length} placeholder context block${Object.keys(result.placeholders ?? {}).length === 1 ? "" : "s"} for ${result.symbol}.`);
+ setLlmDetails(result as unknown as Record<string, unknown>);
+ setLlmPromptTab("preview");
+ } catch (caught) {
+ setError(caught instanceof Error ? caught.message : "Could not preview LLM context.");
+ }
+ });
+ }
+
+ function testLlmAnalysis() {
+ if (!initialWorkflow?.id) return;
+ setError("");
+ setLlmFeedback("");
+ setLlmDetails(null);
+ startTransition(async () => {
+ try {
+ const result = await testAlertWorkflowLlm(initialWorkflow.id, buildPreviewTick());
+ const analysis = result.llm_analysis ?? {};
+ setLlmFeedback(String(analysis.output || analysis.error || analysis.status || "LLM test completed."));
+ setLlmDetails(result as unknown as Record<string, unknown>);
+ setLlmPromptTab("preview");
+ } catch (caught) {
+ setError(caught instanceof Error ? caught.message : "Could not run LLM test.");
+ }
+ });
+ }
+
  function loadSymbolQuote(item: UniverseSymbolPreview) {
  const key = `${item.symbol}:${item.exchange ?? ""}`;
  setHoveredSymbolKey(key);
@@ -1321,6 +1474,8 @@ export function WorkflowEditor({
  ? Boolean(metadataExchange.trim() || metadataInstrumentType.trim() || metadataSegmentContains.trim())
  : Boolean(selectedWatchlistId);
  const currentTemplatesMatchSuggestion = titleTemplate === suggestedCopy.title && messageTemplate === suggestedCopy.message;
+ const selectedLlmProvider = llmProviders.find((item) => item.provider === llmProvider);
+ const selectedLlmModels = selectedLlmProvider?.models.filter((model) => model.is_enabled) ?? [];
 
  return (
  <div className="grid gap-6">
@@ -1667,6 +1822,128 @@ export function WorkflowEditor({
  </div>
  </TabsContent>
  </Tabs>
+
+ <div className="grid gap-4 border border-border p-4">
+ <div className="flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <div className="text-sm font-bold">LLM Analysis</div>
+ <HelpText>Optional post-trigger analysis runs after a real match and before the alert is sent. Turning it off keeps the provider, model, and prompt saved.</HelpText>
+ </div>
+ <label className="flex items-center gap-2 text-sm">
+ <input checked={llmEnabled} onChange={(event) => setLlmEnabled(event.target.checked)} type="checkbox" />
+ Enable
+ </label>
+ </div>
+ <div className="grid gap-3 min-[960px]:grid-cols-[1fr_1fr_120px_140px_120px]">
+ <div className="grid gap-2">
+ <select
+ className="h-10 border border-input bg-background px-3 text-sm"
+ disabled={!llmProviders.length}
+ onChange={(event) => setLlmProvider(event.target.value as LlmProvider | "")}
+ value={llmProvider}
+ >
+ <option value="">Select provider</option>
+ {llmProviders.map((provider) => (
+ <option disabled={!provider.has_api_key || !provider.is_enabled} key={provider.provider} value={provider.provider}>
+ {provider.label}{provider.has_api_key && provider.is_enabled ? "" : " · configure key"}
+ </option>
+ ))}
+ </select>
+ <HelpText>Uses the encrypted provider key from System Config.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <select
+ className="h-10 border border-input bg-background px-3 text-sm"
+ disabled={!selectedLlmModels.length}
+ onChange={(event) => setLlmModelId(event.target.value)}
+ value={llmModelId}
+ >
+ <option value="">Select model</option>
+ {selectedLlmModels.map((model) => (
+ <option key={model.id} value={model.model_id}>
+ {model.label || model.model_id}
+ </option>
+ ))}
+ </select>
+ <HelpText>Saved enabled models for the selected provider.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input onChange={(event) => setLlmTemperature(event.target.value)} placeholder="0.2" value={llmTemperature} />
+ <HelpText>Temperature.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input onChange={(event) => setLlmMaxTokens(event.target.value)} placeholder="500" value={llmMaxTokens} />
+ <HelpText>Max tokens.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input onChange={(event) => setLlmTimeout(event.target.value)} placeholder="25" value={llmTimeout} />
+ <HelpText>Timeout sec.</HelpText>
+ </div>
+ </div>
+ <div className="flex flex-wrap items-center justify-between gap-3">
+ <div className="inline-flex border border-border p-1">
+ <button
+ className={llmPromptTab === "prompt" ? "px-2 py-1 text-xs font-semibold bg-secondary" : "px-2 py-1 text-xs text-muted-foreground"}
+ onClick={() => setLlmPromptTab("prompt")}
+ type="button"
+ >
+ Prompt
+ </button>
+ <button
+ className={llmPromptTab === "preview" ? "px-2 py-1 text-xs font-semibold bg-secondary" : "px-2 py-1 text-xs text-muted-foreground"}
+ onClick={() => setLlmPromptTab("preview")}
+ type="button"
+ >
+ Context Preview
+ </button>
+ </div>
+ <div className="flex flex-wrap gap-2">
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={previewLlmContext} size="sm" type="button" variant="outline">Preview Context</Button>
+ <Button disabled={isPending || !initialWorkflow?.id || !llmEnabled} onClick={testLlmAnalysis} size="sm" type="button" variant="outline">Test LLM</Button>
+ </div>
+ </div>
+ {llmPromptTab === "prompt" ? (
+ <div className="relative">
+ <textarea
+ className="min-h-[220px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
+ onBlur={() => window.setTimeout(() => setShowLlmSuggestions(false), 120)}
+ onChange={(event) => {
+ setLlmPromptTemplate(event.target.value);
+ updateLlmPromptAutocomplete(event.target.value, event.target.selectionStart ?? event.target.value.length);
+ }}
+ onClick={(event) => updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+ onKeyDown={(event) => {
+ if ((event.ctrlKey || event.metaKey) && event.key === " ") {
+ event.preventDefault();
+ updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, true);
+ }
+ }}
+ placeholder="Type @ for context placeholders"
+ value={llmPromptTemplate}
+ />
+ {showLlmSuggestions && filteredLlmPlaceholders.length ? (
+ <div className="absolute left-0 top-[calc(100%+4px)] z-20 max-h-[260px] w-full overflow-y-auto border border-border bg-background">
+ {filteredLlmPlaceholders.map((item) => (
+ <button
+ className="block w-full border-b border-border px-3 py-2 text-left font-mono text-xs last:border-b-0 hover:bg-[var(--accent-glow)]"
+ key={item}
+ onClick={() => applyLlmSuggestion(item)}
+ type="button"
+ >
+ {item}
+ </button>
+ ))}
+ </div>
+ ) : null}
+ <HelpText>Use `@` placeholders for symbol-scoped API context. Save the workflow before previewing or testing changes.</HelpText>
+ </div>
+ ) : (
+ <div className="grid gap-3">
+ {llmFeedback ? <div className="border border-border px-3 py-2 text-sm text-muted-foreground">{llmFeedback}</div> : null}
+ <pre className="max-h-[420px] overflow-auto border border-border bg-secondary/20 p-3 text-xs text-muted-foreground">{llmDetails ? compactPreview(llmDetails) : "No context preview yet."}</pre>
+ </div>
+ )}
+ </div>
 
  {!currentTemplatesMatchSuggestion ? (
  <div className="grid gap-3 border border-border bg-secondary/20 p-4">

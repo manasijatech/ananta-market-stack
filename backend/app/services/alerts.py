@@ -39,11 +39,18 @@ from app.schemas.alert import (
 )
 from app.services.alerts_engine.ast import AlertUniverseNode, ast_to_dict, ensure_workflow_ast
 from app.services.alerts_engine.compiler import compile_workflow_dsl
-from app.services.alerts_engine.conditions import condition_registry_payload, evaluate_logic
+from app.services.alerts_engine.conditions import ConditionEvaluation, condition_registry_payload, evaluate_logic
 from app.services.alerts_engine.explain import explain_ast
 from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
 from app.services.alerts_engine.samples import sample_alerts_for_ast
 from app.services.alerts_engine.universes import list_presets, resolve_universe
+from app.services.alert_llm_analysis import run_workflow_llm_analysis
+from app.services.alert_llm_context import (
+    default_prompt_template,
+    placeholder_catalog,
+    prompt_placeholders_from_config,
+    resolve_llm_context,
+)
 from app.services import broker_sessions as broker_session_svc
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
@@ -894,12 +901,19 @@ def _notification_context(
     workflow: AlertWorkflowOut,
     tick: dict[str, Any],
     previous_tick: dict[str, Any] | None = None,
+    llm_analysis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a template context with computed fields used by notification placeholders."""
 
     context: dict[str, Any] = dict(tick)
     context["symbol"] = str(context.get("symbol") or workflow.symbol or "")
     context["exchange"] = str(context.get("exchange") or workflow.exchange or "")
+    if llm_analysis:
+        context["llm_analysis"] = str(llm_analysis.get("output") or "")
+        context["llm_analysis_status"] = str(llm_analysis.get("status") or "")
+    else:
+        context["llm_analysis"] = ""
+        context["llm_analysis_status"] = ""
 
     if context.get("change_pct") is None:
         computed_change_pct: float | None = None
@@ -976,9 +990,17 @@ def evaluate_workflow_payload(
     tick: dict[str, Any],
     previous_tick: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
-    workflow_ast = ensure_workflow_ast(workflow.workflow_dsl)
-    result = evaluate_logic(workflow_ast.logic, tick, previous_tick or {})
+    result = evaluate_workflow_payload_detail(workflow, tick, previous_tick)
     return result.matched, result.reason
+
+
+def evaluate_workflow_payload_detail(
+    workflow: AlertWorkflowOut,
+    tick: dict[str, Any],
+    previous_tick: dict[str, Any] | None = None,
+) -> ConditionEvaluation:
+    workflow_ast = ensure_workflow_ast(workflow.workflow_dsl)
+    return evaluate_logic(workflow_ast.logic, tick, previous_tick or {})
 
 
 def list_workflow_runs(
@@ -1045,7 +1067,76 @@ def explain_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, A
     row = db.get(AlertWorkflow, workflow_id)
     if not row or row.user_id != user_id:
         return None
-    return explain_ast(ensure_workflow_ast(_workflow_dsl(_json_loads(row.workflow_dsl_json, {}))))
+    dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
+    explanation = explain_ast(ensure_workflow_ast(dsl))
+    if dsl.llm_analysis.enabled:
+        explanation["llm_analysis"] = {
+            "enabled": True,
+            "provider": dsl.llm_analysis.provider,
+            "model_id": dsl.llm_analysis.model_id,
+            "placeholders": prompt_placeholders_from_config(dsl.llm_analysis),
+        }
+    return explanation
+
+
+def llm_placeholder_catalog() -> dict[str, Any]:
+    return placeholder_catalog()
+
+
+def preview_workflow_llm_context(
+    db: Session,
+    user_id: str,
+    workflow_id: str,
+    tick: dict[str, Any],
+    previous_tick: dict[str, Any] | None = None,
+    reason: str | None = None,
+) -> dict[str, Any] | None:
+    workflow = get_workflow(db, user_id, workflow_id)
+    if workflow is None:
+        return None
+    evaluation = evaluate_workflow_payload_detail(workflow, tick, previous_tick)
+    return resolve_llm_context(
+        db,
+        workflow=workflow,
+        tick=tick,
+        previous_tick=previous_tick,
+        reason=reason or evaluation.reason,
+        evaluation_details=evaluation.details,
+    )
+
+
+def test_workflow_llm_analysis(
+    db: Session,
+    user_id: str,
+    workflow_id: str,
+    tick: dict[str, Any],
+    previous_tick: dict[str, Any] | None = None,
+    reason: str | None = None,
+) -> dict[str, Any] | None:
+    workflow = get_workflow(db, user_id, workflow_id)
+    if workflow is None:
+        return None
+    if not workflow.workflow_dsl.llm_analysis.prompt_template:
+        workflow.workflow_dsl.llm_analysis.prompt_template = default_prompt_template()
+    evaluation = evaluate_workflow_payload_detail(workflow, tick, previous_tick)
+    analysis = run_workflow_llm_analysis(
+        db,
+        workflow=workflow,
+        tick=tick,
+        previous_tick=previous_tick,
+        reason=reason or evaluation.reason,
+        evaluation_details=evaluation.details,
+        call_llm=True,
+    )
+    context = resolve_llm_context(
+        db,
+        workflow=workflow,
+        tick=tick,
+        previous_tick=previous_tick,
+        reason=reason or evaluation.reason,
+        evaluation_details=evaluation.details,
+    )
+    return {**context, "llm_analysis": analysis}
 
 
 def sample_workflow_alerts(db: Session, user_id: str, workflow_id: str) -> dict[str, Any] | None:

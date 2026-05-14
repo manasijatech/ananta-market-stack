@@ -7,6 +7,9 @@ from app.deps import get_current_user
 from app.schemas.alert import (
     AlertWorkflowCreate,
     AlertWorkflowOut,
+    AlertWorkflowLlmContextPreviewOut,
+    AlertWorkflowLlmPreviewIn,
+    AlertWorkflowLlmTestOut,
     AlertWorkflowRunOut,
     AlertWorkflowTestIn,
     AlertWorkflowUpdate,
@@ -35,6 +38,51 @@ def create_workflow(
     user: User = Depends(get_current_user),
 ) -> AlertWorkflowOut:
     return alert_svc.create_workflow(db, user.id, body)
+
+
+@router.get("/llm/placeholders")
+def llm_placeholders() -> dict[str, object]:
+    return alert_svc.llm_placeholder_catalog()
+
+
+@router.post("/{workflow_id}/llm/preview-context", response_model=AlertWorkflowLlmContextPreviewOut)
+def preview_llm_context(
+    workflow_id: str,
+    body: AlertWorkflowLlmPreviewIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlertWorkflowLlmContextPreviewOut:
+    result = alert_svc.preview_workflow_llm_context(
+        db,
+        user.id,
+        workflow_id,
+        body.tick,
+        previous_tick=body.previous_tick,
+        reason=body.reason,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return result
+
+
+@router.post("/{workflow_id}/llm/test", response_model=AlertWorkflowLlmTestOut)
+def test_llm_analysis(
+    workflow_id: str,
+    body: AlertWorkflowLlmPreviewIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlertWorkflowLlmTestOut:
+    result = alert_svc.test_workflow_llm_analysis(
+        db,
+        user.id,
+        workflow_id,
+        body.tick,
+        previous_tick=body.previous_tick,
+        reason=body.reason,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return result
 
 
 @router.get("/{workflow_id}", response_model=AlertWorkflowOut)

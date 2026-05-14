@@ -33,6 +33,13 @@ function useIncrementalRows<T>(rows: T[], pageSize = PAGE_SIZE) {
  };
 }
 
+function llmOutput(payload: Record<string, unknown>) {
+ const analysis = payload.llm_analysis;
+ if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) return "";
+ const output = (analysis as Record<string, unknown>).output;
+ return typeof output === "string" ? output : "";
+}
+
 export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
  const { visibleRows, hasMore, sentinelRef } = useIncrementalRows(runs);
  const [expandedRaw, setExpandedRaw] = useState<Record<string, boolean>>({});
@@ -62,6 +69,7 @@ export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
  <div className="text-xs text-muted-foreground">{new Date(run.created_at).toLocaleString()}</div>
  </div>
  <div className="mt-1 text-xs text-muted-foreground">{run.rendered_message || run.reason}</div>
+ {llmOutput(run.evaluation_payload) ? <div className="mt-3 border-l-2 border-primary pl-3 text-xs text-muted-foreground">{llmOutput(run.evaluation_payload)}</div> : null}
  <div className="mt-3 grid gap-2 text-xs text-muted-foreground min-[900px]:grid-cols-4">
  <span>Matched: {run.matched ? "Yes" : "No"}</span>
  <span>Reason: {run.reason || "-"}</span>

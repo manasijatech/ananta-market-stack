@@ -33,6 +33,13 @@ function useInfiniteSlice<T>(rows: T[], pageSize = PAGE_SIZE) {
  };
 }
 
+function llmOutput(payload: Record<string, unknown>) {
+ const analysis = payload.llm_analysis;
+ if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) return "";
+ const output = (analysis as Record<string, unknown>).output;
+ return typeof output === "string" ? output : "";
+}
+
 export function AlertHistoryList({
  notifications,
  runs
@@ -63,6 +70,7 @@ export function AlertHistoryList({
  <div className=" border border-border p-4" key={item.id}>
  <div className="text-sm font-bold">{item.title}</div>
  <div className="mt-1 text-xs text-muted-foreground">{item.message}</div>
+ {llmOutput(item.payload) ? <div className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">{llmOutput(item.payload)}</div> : null}
  <div className="mt-2 text-xs text-muted-foreground">
  {item.symbol ?? "-"} · {item.level} · {item.channels.join(", ") || "in_app"}
  </div>
@@ -97,6 +105,7 @@ export function AlertHistoryList({
  <div className="mt-1 text-xs text-muted-foreground">
  {item.matched ? "Matched" : "No match"} · {item.channels.join(", ") || "in_app"}
  </div>
+ {llmOutput(item.evaluation_payload) ? <div className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">{llmOutput(item.evaluation_payload)}</div> : null}
  </div>
  ))}
  {!runs.length ? <div className="text-sm text-muted-foreground">No workflow runs yet.</div> : null}

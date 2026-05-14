@@ -16,6 +16,13 @@ function sseSupported() {
  return typeof window !== "undefined" && "EventSource" in window;
 }
 
+function llmOutput(payload: Record<string, unknown>) {
+ const analysis = payload.llm_analysis;
+ if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) return "";
+ const output = (analysis as Record<string, unknown>).output;
+ return typeof output === "string" ? output : "";
+}
+
 export function AlertNotificationsTray() {
  const [items, setItems] = useState<AlertNotification[]>([]);
  const [unreadCount, setUnreadCount] = useState(0);
@@ -127,6 +134,7 @@ export function AlertNotificationsTray() {
  <div>
  <div className="text-sm font-bold">{item.title}</div>
  <div className="mt-1 text-xs text-muted-foreground">{item.message}</div>
+ {llmOutput(item.payload) ? <div className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">{llmOutput(item.payload)}</div> : null}
  </div>
  <Button onClick={() => markRead(item.id)} size="sm" type="button" variant="ghost">
  Read

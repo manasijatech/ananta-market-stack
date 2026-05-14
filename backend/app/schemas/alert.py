@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.broker import InstrumentRef
+from app.schemas.system_config import LlmProvider
 
 
 AlertChannelType = Literal["in_app", "discord", "telegram"]
@@ -30,6 +31,17 @@ class AlertNotificationConfig(BaseModel):
 class AlertChannelSelection(BaseModel):
     inherit_defaults: bool = True
     enabled: list[AlertChannelType] = Field(default_factory=lambda: ["in_app"])
+
+
+class AlertLlmAnalysisConfig(BaseModel):
+    enabled: bool = False
+    provider: LlmProvider | None = None
+    model_id: str | None = None
+    prompt_template: str = ""
+    context_placeholders: list[dict[str, Any]] = Field(default_factory=list)
+    temperature: float = Field(default=0.2, ge=0, le=2)
+    max_completion_tokens: int = Field(default=500, ge=1, le=8000)
+    timeout_seconds: int = Field(default=25, ge=1, le=120)
 
 
 class AlertTargetEntry(BaseModel):
@@ -57,6 +69,7 @@ class AlertWorkflowDsl(BaseModel):
     targeting: AlertWorkflowTargeting = Field(default_factory=AlertWorkflowTargeting)
     notification: AlertNotificationConfig = Field(default_factory=AlertNotificationConfig)
     channels: AlertChannelSelection = Field(default_factory=AlertChannelSelection)
+    llm_analysis: AlertLlmAnalysisConfig = Field(default_factory=AlertLlmAnalysisConfig)
     workflow_ast: dict[str, Any] | None = None
     dsl_text: str | None = None
     validation_status: Literal["unknown", "valid", "invalid"] = "unknown"
@@ -165,6 +178,24 @@ class AlertWorkflowInstantiateIn(BaseModel):
 
 class AlertWorkflowTestIn(BaseModel):
     tick: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlertWorkflowLlmPreviewIn(BaseModel):
+    tick: dict[str, Any] = Field(default_factory=dict)
+    previous_tick: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+
+
+class AlertWorkflowLlmContextPreviewOut(BaseModel):
+    symbol: str
+    rendered_prompt: str
+    placeholders: dict[str, Any] = Field(default_factory=dict)
+    context_errors: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlertWorkflowLlmTestOut(AlertWorkflowLlmContextPreviewOut):
+    llm_analysis: dict[str, Any] = Field(default_factory=dict)
 
 
 class AlertWorkflowValidationOut(BaseModel):
