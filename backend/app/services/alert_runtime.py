@@ -13,13 +13,20 @@ from sqlalchemy import select
 
 from app.services import alerts as alert_svc
 from app.services.alert_llm_analysis import run_workflow_llm_analysis
+from app.services.alert_llm_analysis import _response_text, _usage_payload, validate_llm_model
+from app.services import llm_gateway
 from app.services.alerts_engine.reconcile import reconcile_all_users
 from app.services import broker_data
+from app.services.alerts_engine.universes import resolve_universe
+from app.services.alerts_engine.ast import AlertUniverseNode
 from db.models import (
+    AlphaWebSocketEvent,
     AlertWorkflow,
     AlertWorkflowRun,
     BrokerAccount,
     LiveSymbolSubscription,
+    UserWatchlist,
+    UserWatchlistSymbol,
 )
 from db.session import SessionLocal
 
@@ -506,6 +513,247 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
     db.commit()
 
 
+def _collect_event_symbols(value: Any, symbols: set[str]) -> None:
+    if isinstance(value, dict):
+        for key in ("symbol", "symbols", "nse"):
+            raw = value.get(key)
+            if isinstance(raw, str):
+                for part in raw.replace(",", ":").split(":"):
+                    symbol = part.strip().upper()
+                    if symbol:
+                        symbols.add(symbol)
+            elif isinstance(raw, list):
+                for item in raw:
+                    _collect_event_symbols(item, symbols)
+        for key in ("payload", "data"):
+            if key in value:
+                _collect_event_symbols(value[key], symbols)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_event_symbols(item, symbols)
+
+
+def _workflow_symbol_filter(db, workflow, trigger) -> set[str] | None:
+    if trigger.source_scope == "full_market":
+        return None
+    if trigger.source_scope == "current_alpha_subscription":
+        rows = db.scalars(
+            select(LiveSymbolSubscription.symbol).where(
+                LiveSymbolSubscription.user_id == workflow.user_id,
+                LiveSymbolSubscription.status == "active",
+            )
+        ).all()
+        return {str(item).strip().upper() for item in rows if str(item).strip()}
+    if trigger.source_scope == "watchlists":
+        stmt = (
+            select(UserWatchlistSymbol.symbol)
+            .join(UserWatchlist, UserWatchlist.id == UserWatchlistSymbol.watchlist_id)
+            .where(UserWatchlist.user_id == workflow.user_id)
+        )
+        if not trigger.include_all_watchlists:
+            if not trigger.watchlist_ids:
+                return set()
+            stmt = stmt.where(UserWatchlist.id.in_(trigger.watchlist_ids))
+        rows = db.scalars(stmt).all()
+        return {str(item).strip().upper() for item in rows if str(item).strip()}
+    symbols: set[str] = set()
+    for preset_id in trigger.preset_ids:
+        for item in resolve_universe(db, workflow.user_id, AlertUniverseNode(kind="curated_preset", preset_id=preset_id)):
+            symbol = str(getattr(item, "symbol", "")).strip().upper()
+            if symbol:
+                symbols.add(symbol)
+    return symbols
+
+
+def _feed_event_text(product: str, payload: dict[str, Any]) -> str:
+    return json.dumps({"product": product, "event": payload}, default=str, ensure_ascii=False)
+
+
+def _parse_trigger_response(text: str) -> dict[str, Any]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        parsed = json.loads(cleaned[start : end + 1]) if start >= 0 and end > start else {}
+    if not isinstance(parsed, dict):
+        parsed = {}
+    return {
+        "matches": bool(parsed.get("matches")),
+        "reason": str(parsed.get("reason") or ""),
+        "confidence": parsed.get("confidence"),
+        "matched_terms": parsed.get("matched_terms") if isinstance(parsed.get("matched_terms"), list) else [],
+    }
+
+
+def _run_feed_trigger_llm(db, workflow, event: AlphaWebSocketEvent, payload: dict[str, Any]) -> dict[str, Any]:
+    trigger = workflow.workflow_dsl.feed_trigger
+    if not trigger.enabled or not trigger.condition_prompt.strip():
+        return {"matches": False, "reason": "Feed trigger is not configured", "status": "disabled"}
+    validate_llm_model(db, workflow.user_id, trigger.provider, trigger.model_id)
+    developer_prompt = (
+        "You classify Manasija websocket market-data events for alert triggers. "
+        "Return only strict JSON matching this schema: "
+        '{"matches": boolean, "reason": string, "confidence": number, "matched_terms": string[]}. '
+        "Use only the provided event and user condition. Do not add markdown."
+    )
+    user_text = (
+        f"User condition:\n{trigger.condition_prompt.strip()}\n\n"
+        f"Incoming {event.product} websocket event:\n{_feed_event_text(event.product, payload)}"
+    )
+    response = llm_gateway.generate_text(
+        db,
+        workflow.user_id,
+        trigger.provider,  # type: ignore[arg-type]
+        model=str(trigger.model_id),
+        developer_prompt=developer_prompt,
+        user_text=user_text,
+        temperature=trigger.temperature,
+        max_completion_tokens=trigger.max_completion_tokens,
+        timeout=float(trigger.timeout_seconds),
+    )
+    text = _response_text(response)
+    return {
+        **_parse_trigger_response(text),
+        "status": "success",
+        "provider": trigger.provider,
+        "model_id": trigger.model_id,
+        "raw_output": text,
+        "usage": _usage_payload(response),
+    }
+
+
+def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
+    payload = json.loads(event.payload_json or "{}")
+    event_symbols: set[str] = set()
+    _collect_event_symbols(payload, event_symbols)
+    rows = db.scalars(
+        select(AlertWorkflow).where(
+            AlertWorkflow.user_id == event.user_id,
+            AlertWorkflow.status == "active",
+        )
+    ).all()
+    for row in rows:
+        workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
+        if workflow.workflow_dsl.workflow_type != "alpha_feed":
+            continue
+        trigger = workflow.workflow_dsl.feed_trigger
+        if not trigger.enabled or event.product not in trigger.products:
+            continue
+        allowed_symbols = _workflow_symbol_filter(db, workflow, trigger)
+        if allowed_symbols is not None and event_symbols and not event_symbols.intersection(allowed_symbols):
+            continue
+        if allowed_symbols is not None and not event_symbols and trigger.source_scope != "current_alpha_subscription":
+            continue
+        cooldown = workflow.workflow_dsl.cooldown_seconds
+        if row.last_triggered_at and (_utc_now() - row.last_triggered_at).total_seconds() < cooldown:
+            continue
+        try:
+            trigger_result = _run_feed_trigger_llm(db, workflow, event, payload)
+        except Exception as exc:
+            db.add(
+                AlertWorkflowRun(
+                    id=str(uuid4()),
+                    workflow_id=workflow.id,
+                    notification_id=None,
+                    matched=False,
+                    reason=f"Feed trigger LLM failed: {exc}",
+                    rendered_title="",
+                    rendered_message="",
+                    channels_json=json.dumps([]),
+                    tick_json=json.dumps(payload, default=str),
+                    evaluation_payload_json=json.dumps({"alpha_event_id": event.id, "error": str(exc)}, default=str),
+                )
+            )
+            continue
+        if not trigger_result.get("matches"):
+            continue
+        reason = str(trigger_result.get("reason") or "Feed trigger matched")
+        tick = {
+            **payload,
+            "symbol": event.symbol or next(iter(event_symbols), ""),
+            "alpha_product": event.product,
+            "alpha_event_id": event.id,
+            "received_at": event.received_at.isoformat() if event.received_at else None,
+        }
+        llm_analysis = run_workflow_llm_analysis(
+            db,
+            workflow=workflow,
+            tick=tick,
+            previous_tick={},
+            reason=reason,
+            evaluation_details={"feed_trigger": trigger_result},
+        )
+        render_context = alert_svc._notification_context(workflow, tick, None, llm_analysis)  # type: ignore[attr-defined]
+        render_context["alpha_product"] = event.product
+        render_context["feed_trigger_reason"] = reason
+        title = alert_svc._render_message(workflow.workflow_dsl.notification.title_template, render_context)  # type: ignore[attr-defined]
+        message = alert_svc._render_message(workflow.workflow_dsl.notification.message_template, render_context)  # type: ignore[attr-defined]
+        if llm_analysis.get("output") and "{llm_analysis}" not in workflow.workflow_dsl.notification.message_template:
+            message = f"{message}\n\nLLM Analysis: {llm_analysis['output']}"
+        notification = alert_svc.create_alert_notification(
+            db,
+            user_id=workflow.user_id,
+            workflow=workflow,
+            title=title,
+            message=message,
+            level=workflow.workflow_dsl.notification.level,
+            channels=_workflow_channels(db, workflow.user_id, workflow),
+            payload={**tick, "feed_trigger": trigger_result, "llm_analysis": llm_analysis},
+            dedupe_key=f"{workflow.id}:{event.event_key}",
+        )
+        row.last_triggered_at = _utc_now()
+        db.add(row)
+        db.add(
+            AlertWorkflowRun(
+                id=str(uuid4()),
+                workflow_id=workflow.id,
+                notification_id=notification.id,
+                matched=True,
+                reason=reason,
+                rendered_title=title,
+                rendered_message=message,
+                channels_json=json.dumps(_workflow_channels(db, workflow.user_id, workflow)),
+                tick_json=json.dumps(tick, default=str),
+                evaluation_payload_json=json.dumps(
+                    {"alpha_event_id": event.id, "feed_trigger": trigger_result, "llm_analysis": llm_analysis},
+                    default=str,
+                ),
+            )
+        )
+    event.processed_at = _utc_now()
+    db.add(event)
+    db.commit()
+
+
+async def run_alpha_feed_alert_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 2.0) -> None:
+    while not stop_event.is_set():
+        db = SessionLocal()
+        try:
+            events = db.scalars(
+                select(AlphaWebSocketEvent)
+                .where(AlphaWebSocketEvent.processed_at.is_(None))
+                .order_by(AlphaWebSocketEvent.received_at.asc())
+                .limit(100)
+            ).all()
+            for event in events:
+                _process_alpha_feed_event(db, event)
+        except Exception as exc:
+            logger.warning("alpha feed alert loop failed: %s", exc)
+            db.rollback()
+        finally:
+            db.close()
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval_seconds)
+        except TimeoutError:
+            continue
+
+
 async def run_alert_evaluator_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 2.0) -> None:
     redis_client = _redis()
     stream_offsets: dict[str, str] = {}
@@ -670,6 +918,7 @@ def create_alert_worker_service() -> CompositeBackgroundService:
         [
             BackgroundAsyncService("alert-live-worker", run_live_market_data_worker),
             BackgroundAsyncService("alert-evaluator-worker", run_alert_evaluator_worker),
+            BackgroundAsyncService("alpha-feed-alert-worker", run_alpha_feed_alert_worker),
             BackgroundAsyncService("alert-delivery-worker", run_alert_delivery_worker),
             BackgroundAsyncService("alert-reconciler-worker", run_subscription_reconciler_worker),
         ]

@@ -238,6 +238,54 @@ def workflow_target_entry_for_tick(workflow: AlertWorkflowOut, tick: dict[str, A
 
 SYSTEM_TEMPLATES: list[dict[str, Any]] = [
     {
+        "slug": "feed-order-wins",
+        "name": "Feed Order Wins",
+        "description": "Watch Alpha news and announcements for order-win or contract-award events using an LLM trigger.",
+        "category": "alpha-feed",
+        "workflow_dsl": {
+            "workflow_type": "alpha_feed",
+            "combine": "all",
+            "cooldown_seconds": 900,
+            "conditions": [{"operator": "always"}],
+            "notification": {
+                "level": "warning",
+                "title_template": "{symbol} order-win update",
+                "message_template": "{symbol} matched the feed trigger: {feed_trigger_reason}",
+            },
+            "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
+            "feed_trigger": {
+                "enabled": True,
+                "products": ["news", "announcements"],
+                "condition_prompt": "Tell me when this item is about a confirmed order win, contract award, significant deal, or large customer mandate.",
+                "source_scope": "current_alpha_subscription",
+            },
+        },
+    },
+    {
+        "slug": "feed-earnings-surprise",
+        "name": "Feed Earnings Surprise",
+        "description": "Watch earnings and concall feed items for material positive or negative surprises.",
+        "category": "alpha-feed",
+        "workflow_dsl": {
+            "workflow_type": "alpha_feed",
+            "combine": "all",
+            "cooldown_seconds": 1800,
+            "conditions": [{"operator": "always"}],
+            "notification": {
+                "level": "info",
+                "title_template": "{symbol} earnings feed signal",
+                "message_template": "{symbol} matched the earnings feed condition: {feed_trigger_reason}",
+            },
+            "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
+            "feed_trigger": {
+                "enabled": True,
+                "products": ["earnings", "concalls"],
+                "condition_prompt": "Tell me when this item points to a material earnings surprise, guidance change, margin shock, or management commentary that changes the business outlook.",
+                "source_scope": "current_alpha_subscription",
+            },
+        },
+    },
+    {
         "slug": "price-cross",
         "name": "Price Cross",
         "description": "Alert when price crosses above or below a configured level.",

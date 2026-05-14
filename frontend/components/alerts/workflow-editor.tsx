@@ -193,12 +193,16 @@ const messageTemplateFields = [
  "received_at",
  "broker_code",
  "account_id",
+ "alpha_product",
+ "alpha_event_id",
+ "feed_trigger_reason",
  "instrument_key",
  "connection_id",
  "connection_index",
  "symbol_count",
  "capacity"
 ];
+const alphaFeedProducts = ["news", "announcements", "earnings", "concalls", "alerts"] as const;
 
 const targetListExample = "RELIANCE,NSE\nTCS,NSE\nINFY,NSE";
 
@@ -576,6 +580,8 @@ initialWorkflow,
  const [error, setError] = useState("");
  const [matchPreview, setMatchPreview] = useState("");
  const [editorMode, setEditorMode] = useState<EditorMode>(initialWorkflow?.editor_mode ?? "rule");
+ const initialWorkflowType = initialWorkflow?.workflow_dsl.workflow_type ?? "market_data";
+ const [workflowType, setWorkflowType] = useState<"market_data" | "alpha_feed">(initialWorkflowType);
  const [name, setName] = useState(initialWorkflow?.name ?? "");
  const [description, setDescription] = useState(initialWorkflow?.description ?? "");
  const [accountId, setAccountId] = useState(initialWorkflow?.account_id ?? accounts[0]?.id ?? "");
@@ -633,6 +639,18 @@ initialWorkflow,
  const [llmTemperature, setLlmTemperature] = useState(String(initialLlm?.temperature ?? 0.2));
  const [llmMaxTokens, setLlmMaxTokens] = useState(String(initialLlm?.max_completion_tokens ?? 500));
  const [llmTimeout, setLlmTimeout] = useState(String(initialLlm?.timeout_seconds ?? 25));
+ const initialFeedTrigger = initialWorkflow?.workflow_dsl.feed_trigger;
+ const [feedProducts, setFeedProducts] = useState<string[]>(initialFeedTrigger?.products ?? ["news"]);
+ const [feedConditionPrompt, setFeedConditionPrompt] = useState(initialFeedTrigger?.condition_prompt ?? "");
+ const [feedSourceScope, setFeedSourceScope] = useState(initialFeedTrigger?.source_scope ?? "current_alpha_subscription");
+ const [feedWatchlistIds, setFeedWatchlistIds] = useState<string[]>(initialFeedTrigger?.watchlist_ids ?? []);
+ const [feedPresetIds, setFeedPresetIds] = useState<string[]>(initialFeedTrigger?.preset_ids ?? []);
+ const [feedIncludeAllWatchlists, setFeedIncludeAllWatchlists] = useState(Boolean(initialFeedTrigger?.include_all_watchlists));
+ const [feedProvider, setFeedProvider] = useState<LlmProvider | "">(initialFeedTrigger?.provider ?? firstLlmProvider?.provider ?? "");
+ const [feedModelId, setFeedModelId] = useState(initialFeedTrigger?.model_id ?? firstLlmModel?.model_id ?? "");
+ const [feedTemperature, setFeedTemperature] = useState(String(initialFeedTrigger?.temperature ?? 0.1));
+ const [feedMaxTokens, setFeedMaxTokens] = useState(String(initialFeedTrigger?.max_completion_tokens ?? 400));
+ const [feedTimeout, setFeedTimeout] = useState(String(initialFeedTrigger?.timeout_seconds ?? 25));
  const [llmPromptTab, setLlmPromptTab] = useState<"prompt" | "preview">("prompt");
  const [llmFeedback, setLlmFeedback] = useState("");
  const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(null);
@@ -827,6 +845,14 @@ initialWorkflow,
  }, [llmModelId, llmProvider, llmProviders]);
 
  useEffect(() => {
+ const provider = llmProviders.find((item) => item.provider === feedProvider);
+ if (!provider) return;
+ if (provider.models.some((model) => model.model_id === feedModelId && model.is_enabled)) return;
+ const nextModel = provider.models.find((model) => model.is_enabled);
+ setFeedModelId(nextModel?.model_id ?? "");
+ }, [feedModelId, feedProvider, llmProviders]);
+
+ useEffect(() => {
  if (targetMode !== "preset_universe" || dynamicUniverseKind === "watchlist") {
  setUniversePreview(null);
  setUniversePreviewLoading(false);
@@ -987,7 +1013,7 @@ initialWorkflow,
  };
  }
 
- function workflowAstPayload(targeting: AlertWorkflowTargeting) {
+ function workflowAstPayload(targeting: AlertWorkflowTargeting, astConditions = conditions) {
  const staticUniverse = {
  kind: "static_symbols",
  symbols: targeting.entries.map((entry) => ({
@@ -1004,7 +1030,7 @@ initialWorkflow,
  target_universe: staticUniverse,
  logic: {
  kind: combine,
- children: conditions.map((condition) => ({ kind: "condition", ...condition }))
+ children: astConditions.map((condition) => ({ kind: "condition", ...condition }))
  },
  cooldown_seconds: Number(cooldownSeconds || 0),
  notification: {
@@ -1020,7 +1046,7 @@ initialWorkflow,
  target_universe: dynamicTargetUniverse,
  logic: {
  kind: combine,
- children: conditions.map((condition) => ({ kind: "condition", ...condition }))
+ children: astConditions.map((condition) => ({ kind: "condition", ...condition }))
  },
  cooldown_seconds: Number(cooldownSeconds || 0),
  notification: {
@@ -1035,11 +1061,13 @@ initialWorkflow,
  function workflowPayload() {
  const targeting = workflowTargetingPayload();
  const primaryTarget = targeting.entries[0];
+ const effectiveConditions = workflowType === "alpha_feed" ? [{ operator: "always", field: "event" }] : conditions;
  const workflowDsl: AlertWorkflowDsl = {
  version: 2,
+ workflow_type: workflowType,
  combine,
  cooldown_seconds: Number(cooldownSeconds || 0),
- conditions,
+ conditions: effectiveConditions,
  targeting,
  notification: {
  level,
@@ -1057,8 +1085,22 @@ initialWorkflow,
  max_completion_tokens: Number(llmMaxTokens || 500),
  timeout_seconds: Number(llmTimeout || 25)
  },
+ feed_trigger: {
+ enabled: workflowType === "alpha_feed",
+ products: feedProducts as AlertWorkflowDsl["feed_trigger"]["products"],
+ condition_prompt: feedConditionPrompt,
+ source_scope: feedSourceScope as AlertWorkflowDsl["feed_trigger"]["source_scope"],
+ watchlist_ids: feedWatchlistIds,
+ preset_ids: feedPresetIds,
+ include_all_watchlists: feedIncludeAllWatchlists,
+ provider: feedProvider || null,
+ model_id: feedModelId || null,
+ temperature: Number(feedTemperature || 0.1),
+ max_completion_tokens: Number(feedMaxTokens || 400),
+ timeout_seconds: Number(feedTimeout || 25)
+ },
  dsl_text: dslText.trim() || null,
- workflow_ast: workflowAstPayload(targeting),
+ workflow_ast: workflowAstPayload(targeting, effectiveConditions),
  validation_status: "unknown",
  compiled_summary: {}
  };
@@ -1463,8 +1505,9 @@ initialWorkflow,
  });
  }
 
- const canSave =
- targetMode === "single_symbol"
+ const canSave = workflowType === "alpha_feed"
+ ? Boolean(name.trim() && feedProducts.length && feedConditionPrompt.trim() && feedProvider && feedModelId)
+ : targetMode === "single_symbol"
  ? Boolean(symbol.trim())
  : targetMode === "symbol_list"
  ? targetEntries.length > 0
@@ -1476,6 +1519,20 @@ initialWorkflow,
  const currentTemplatesMatchSuggestion = titleTemplate === suggestedCopy.title && messageTemplate === suggestedCopy.message;
  const selectedLlmProvider = llmProviders.find((item) => item.provider === llmProvider);
  const selectedLlmModels = selectedLlmProvider?.models.filter((model) => model.is_enabled) ?? [];
+ const selectedFeedProvider = llmProviders.find((item) => item.provider === feedProvider);
+ const selectedFeedModels = selectedFeedProvider?.models.filter((model) => model.is_enabled) ?? [];
+
+ function toggleFeedProduct(product: string, checked: boolean) {
+ setFeedProducts((current) => checked ? Array.from(new Set([...current, product])) : current.filter((item) => item !== product));
+ }
+
+ function toggleFeedWatchlist(id: string, checked: boolean) {
+ setFeedWatchlistIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
+ }
+
+ function toggleFeedPreset(id: string, checked: boolean) {
+ setFeedPresetIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
+ }
 
  return (
  <div className="grid gap-6">
@@ -1494,8 +1551,103 @@ initialWorkflow,
  <HelpText>Use this for strategy intent, not execution logic.</HelpText>
  </div>
  </div>
+ <div className="mt-4 grid gap-2 min-[760px]:grid-cols-2">
+ <label className="grid gap-1 text-sm">
+ <span className="text-xs font-bold uppercase text-muted-foreground">Workflow type</span>
+ <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
+ <option value="market_data">Broker market data trigger</option>
+ <option value="alpha_feed">Manasija websocket feed trigger</option>
+ </select>
+ </label>
+ <div className="text-xs text-muted-foreground">
+ {workflowType === "alpha_feed" ? "This workflow analyzes stored Manasija websocket items from your configured feed symbols, watchlists, presets, or full-market tier." : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
+ </div>
+ </div>
  </div>
 
+ {workflowType === "alpha_feed" ? (
+ <div className="border border-border p-4">
+ <div className="mb-3 text-sm font-bold">Feed trigger</div>
+ <div className="grid gap-5 min-[980px]:grid-cols-3">
+ <div>
+ <div className="text-xs font-bold uppercase text-muted-foreground">Products</div>
+ <div className="mt-3 grid gap-2">
+ {alphaFeedProducts.map((product) => (
+ <label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={product}>
+ <span>{product}</span>
+ <input checked={feedProducts.includes(product)} onChange={(event) => toggleFeedProduct(product, event.target.checked)} type="checkbox" />
+ </label>
+ ))}
+ </div>
+ </div>
+ <div>
+ <div className="text-xs font-bold uppercase text-muted-foreground">Feed scope</div>
+ <select className="mt-3 h-10 w-full border border-input bg-background px-3 text-sm" onChange={(event) => setFeedSourceScope(event.target.value as typeof feedSourceScope)} value={feedSourceScope}>
+ <option value="current_alpha_subscription">Current configured Alpha subscription</option>
+ <option value="watchlists">Specific watchlists</option>
+ <option value="preset_lists">Preset lists</option>
+ <option value="full_market">Full market feed</option>
+ </select>
+ <HelpText>Events are only available for symbols currently subscribed by the background Manasija websocket worker unless full-market is enabled for the chosen products.</HelpText>
+ </div>
+ <div>
+ <div className="text-xs font-bold uppercase text-muted-foreground">Trigger LLM</div>
+ <div className="mt-3 grid gap-2">
+ <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")} value={feedProvider}>
+ <option value="">Select provider</option>
+ {enabledLlmProviders.map((provider) => <option key={provider.provider} value={provider.provider}>{provider.label}</option>)}
+ </select>
+ <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedModelId(event.target.value)} value={feedModelId}>
+ <option value="">Select model</option>
+ {selectedFeedModels.map((model) => <option key={model.id} value={model.model_id}>{model.label || model.model_id}</option>)}
+ </select>
+ </div>
+ </div>
+ </div>
+ {feedSourceScope === "watchlists" ? (
+ <div className="grid gap-2">
+ <label className="flex items-center gap-2 text-sm">
+ <input checked={feedIncludeAllWatchlists} onChange={(event) => setFeedIncludeAllWatchlists(event.target.checked)} type="checkbox" />
+ All watchlists
+ </label>
+ <div className="max-h-44 overflow-auto border border-border">
+ {watchlists.map((watchlist) => (
+ <label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={watchlist.id}>
+ <span>{watchlist.name}</span>
+ <input checked={feedWatchlistIds.includes(watchlist.id)} disabled={feedIncludeAllWatchlists} onChange={(event) => toggleFeedWatchlist(watchlist.id, event.target.checked)} type="checkbox" />
+ </label>
+ ))}
+ </div>
+ </div>
+ ) : null}
+ {feedSourceScope === "preset_lists" ? (
+ <div className="grid gap-2">
+ <div className="text-xs font-bold uppercase text-muted-foreground">Preset lists</div>
+ <div className="max-h-44 overflow-auto border border-border">
+ {presets.map((preset) => {
+ const id = String(preset.id ?? "");
+ return (
+ <label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={id}>
+ <span>{String(preset.label ?? id)}</span>
+ <input checked={feedPresetIds.includes(id)} onChange={(event) => toggleFeedPreset(id, event.target.checked)} type="checkbox" />
+ </label>
+ );
+ })}
+ </div>
+ </div>
+ ) : null}
+ <div className="grid gap-2">
+ <label className="text-xs font-bold uppercase text-muted-foreground">Natural-language trigger condition</label>
+ <textarea className="min-h-28 border border-input bg-background p-3 text-sm" onChange={(event) => setFeedConditionPrompt(event.target.value)} placeholder="Example: Alert me when the item is about a confirmed order win, large contract, or new customer mandate." value={feedConditionPrompt} />
+ <HelpText>The trigger model returns strict JSON with match, reason, confidence, and matched terms. Optional post-trigger LLM analysis below still runs separately.</HelpText>
+ </div>
+ <div className="grid gap-3 min-[720px]:grid-cols-3">
+ <Input onChange={(event) => setFeedTemperature(event.target.value)} placeholder="Trigger temperature" value={feedTemperature} />
+ <Input onChange={(event) => setFeedMaxTokens(event.target.value)} placeholder="Trigger max tokens" value={feedMaxTokens} />
+ <Input onChange={(event) => setFeedTimeout(event.target.value)} placeholder="Trigger timeout seconds" value={feedTimeout} />
+ </div>
+ </div>
+ ) : (
  <div className=" border border-border p-4">
  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
  <div>
@@ -1733,6 +1885,7 @@ initialWorkflow,
  </div>
  ) : null}
  </div>
+ )}
 
  <div className=" border border-border p-4">
  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">

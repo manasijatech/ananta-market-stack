@@ -41,9 +41,32 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id"),
     )
+    op.create_table(
+        "alpha_websocket_events",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("user_id", sa.String(length=36), nullable=False),
+        sa.Column("product", sa.String(length=32), nullable=False),
+        sa.Column("symbol", sa.String(length=128), nullable=True),
+        sa.Column("event_key", sa.String(length=256), nullable=False),
+        sa.Column("payload_json", sa.Text(), nullable=False, server_default="{}"),
+        sa.Column("received_at", sa.DateTime(), nullable=True),
+        sa.Column("processed_at", sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    for name, columns in (
+        ("ix_alpha_websocket_events_user_id", ["user_id"]),
+        ("ix_alpha_websocket_events_product", ["product"]),
+        ("ix_alpha_websocket_events_symbol", ["symbol"]),
+        ("ix_alpha_websocket_events_event_key", ["event_key"]),
+        ("ix_alpha_websocket_events_received_at", ["received_at"]),
+        ("ix_alpha_websocket_events_processed_at", ["processed_at"]),
+    ):
+        op.create_index(name, "alpha_websocket_events", columns)
 
 
 def downgrade() -> None:
+    op.drop_table("alpha_websocket_events")
     op.drop_table("user_alpha_websocket_configs")
     op.drop_column("user_alpha_api_credentials", "account_error")
     op.drop_column("user_alpha_api_credentials", "account_checked_at")

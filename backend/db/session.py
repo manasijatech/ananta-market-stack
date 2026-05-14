@@ -279,6 +279,20 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "alpha_websocket_events",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "product": "VARCHAR(32)",
+                "symbol": "VARCHAR(128)",
+                "event_key": "VARCHAR(256)",
+                "payload_json": "TEXT DEFAULT '{}'",
+                "received_at": "DATETIME",
+                "processed_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "alert_workflow_templates",
             {
                 "id": "VARCHAR(36)",

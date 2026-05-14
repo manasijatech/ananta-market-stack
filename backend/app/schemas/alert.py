@@ -44,6 +44,26 @@ class AlertLlmAnalysisConfig(BaseModel):
     timeout_seconds: int = Field(default=25, ge=1, le=120)
 
 
+class AlertFeedTriggerConfig(BaseModel):
+    enabled: bool = False
+    products: list[Literal["news", "announcements", "earnings", "concalls", "alerts"]] = Field(default_factory=list)
+    condition_prompt: str = ""
+    source_scope: Literal[
+        "current_alpha_subscription",
+        "watchlists",
+        "preset_lists",
+        "full_market",
+    ] = "current_alpha_subscription"
+    watchlist_ids: list[str] = Field(default_factory=list)
+    preset_ids: list[str] = Field(default_factory=list)
+    include_all_watchlists: bool = False
+    provider: LlmProvider | None = None
+    model_id: str | None = None
+    temperature: float = Field(default=0.1, ge=0, le=2)
+    max_completion_tokens: int = Field(default=400, ge=1, le=4000)
+    timeout_seconds: int = Field(default=25, ge=1, le=120)
+
+
 class AlertTargetEntry(BaseModel):
     symbol: str
     exchange: str | None = None
@@ -63,6 +83,7 @@ class AlertWorkflowTargeting(BaseModel):
 
 class AlertWorkflowDsl(BaseModel):
     version: int = 2
+    workflow_type: Literal["market_data", "alpha_feed"] = "market_data"
     combine: Literal["all", "any"] = "all"
     cooldown_seconds: int = 300
     conditions: list[AlertCondition] = Field(default_factory=list)
@@ -70,6 +91,7 @@ class AlertWorkflowDsl(BaseModel):
     notification: AlertNotificationConfig = Field(default_factory=AlertNotificationConfig)
     channels: AlertChannelSelection = Field(default_factory=AlertChannelSelection)
     llm_analysis: AlertLlmAnalysisConfig = Field(default_factory=AlertLlmAnalysisConfig)
+    feed_trigger: AlertFeedTriggerConfig = Field(default_factory=AlertFeedTriggerConfig)
     workflow_ast: dict[str, Any] | None = None
     dsl_text: str | None = None
     validation_status: Literal["unknown", "valid", "invalid"] = "unknown"
@@ -266,6 +288,17 @@ class AlertNotificationOut(BaseModel):
 
 class AlertNotificationUnreadCountOut(BaseModel):
     unread_count: int
+
+
+class AlphaWebSocketEventOut(BaseModel):
+    id: str
+    user_id: str
+    product: str
+    symbol: str | None = None
+    event_key: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    received_at: datetime
+    processed_at: datetime | None = None
 
 
 class AlertNotificationTestIn(BaseModel):

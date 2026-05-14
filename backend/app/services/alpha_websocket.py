@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -18,6 +19,7 @@ from app.config import get_settings
 from broker.core.redis_cache import _redis_client
 from broker.crypto import decrypt_value
 from db.models import (
+    AlphaWebSocketEvent,
     LiveSymbolSubscription,
     UserAlphaApiCredential,
     UserAlphaWebSocketConfig,
@@ -54,6 +56,41 @@ def _json_dumps(value: Any) -> str:
 def _normalize_symbol(value: str | None) -> str | None:
     symbol = (value or "").strip().upper()
     return symbol or None
+
+
+def _collect_symbols(value: Any, symbols: set[str]) -> None:
+    if isinstance(value, dict):
+        for key in ("symbol", "symbols", "nse"):
+            raw = value.get(key)
+            if isinstance(raw, str):
+                for part in raw.replace(",", ":").split(":"):
+                    symbol = _normalize_symbol(part)
+                    if symbol:
+                        symbols.add(symbol)
+            elif isinstance(raw, list):
+                for item in raw:
+                    _collect_symbols(item, symbols)
+        for key in ("payload", "data"):
+            if key in value:
+                _collect_symbols(value[key], symbols)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_symbols(item, symbols)
+
+
+def _event_key(product: str, payload: dict[str, Any]) -> str:
+    for key in ("id", "_id", "event_id", "announcement_id", "news_id"):
+        value = payload.get(key)
+        if value not in (None, ""):
+            return f"{product}:{value}"
+    parts = [
+        product,
+        str(payload.get("symbol") or payload.get("nse") or ""),
+        str(payload.get("timestamp") or payload.get("date") or payload.get("created_at") or ""),
+        str(payload.get("title") or payload.get("headline") or payload.get("type") or ""),
+    ]
+    raw = ":".join(parts) or _json_dumps(payload)[:500]
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _account_data(row: UserAlphaApiCredential | None) -> dict[str, Any]:
@@ -305,6 +342,28 @@ def _publish_event(client: redis.Redis | None, user_id: str, product: str, paylo
         logger.warning("Alpha websocket publish failed for %s/%s: %s", user_id, product, exc)
 
 
+def _store_event(user_id: str, product: str, payload: dict[str, Any]) -> AlphaWebSocketEvent:
+    db = SessionLocal()
+    try:
+        symbols: set[str] = set()
+        _collect_symbols(payload, symbols)
+        row = AlphaWebSocketEvent(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            product=product,
+            symbol=next(iter(sorted(symbols)), None),
+            event_key=_event_key(product, payload),
+            payload_json=_json_dumps(payload),
+            received_at=_utc_now(),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
+    finally:
+        db.close()
+
+
 def _mark_config(user_id: str, **patch: Any) -> None:
     db = SessionLocal()
     try:
@@ -343,7 +402,9 @@ async def _run_user_subscription(subscription: EffectiveAlphaSubscription, stop_
                     if parsed.get("status") == "subscribed":
                         continue
                     data = parsed.get("data") if isinstance(parsed, dict) else parsed
-                    _publish_event(redis_client, subscription.user_id, product, data if isinstance(data, dict) else {"raw": data})
+                    event_payload = data if isinstance(data, dict) else {"raw": data}
+                    _store_event(subscription.user_id, product, event_payload)
+                    _publish_event(redis_client, subscription.user_id, product, event_payload)
                     _mark_config(subscription.user_id, last_status="connected", last_error=None, last_event_at=_utc_now())
         except (asyncio.CancelledError, KeyboardInterrupt):
             raise

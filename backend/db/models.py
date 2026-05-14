@@ -268,6 +268,21 @@ class UserAlphaWebSocketConfig(Base):
     user: Mapped[User] = relationship("User", back_populates="alpha_websocket_config")
 
 
+class AlphaWebSocketEvent(Base):
+    __tablename__ = "alpha_websocket_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    product: Mapped[str] = mapped_column(String(32), index=True)
+    symbol: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    event_key: Mapped[str] = mapped_column(String(256), index=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
 class ZerodhaCredentials(Base):
     __tablename__ = "broker_zerodha_credentials"
 

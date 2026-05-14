@@ -34,6 +34,21 @@ export interface AlertLlmAnalysisConfig {
   timeout_seconds: number;
 }
 
+export interface AlertFeedTriggerConfig {
+  enabled: boolean;
+  products: Array<"news" | "announcements" | "earnings" | "concalls" | "alerts">;
+  condition_prompt: string;
+  source_scope: "current_alpha_subscription" | "watchlists" | "preset_lists" | "full_market";
+  watchlist_ids: string[];
+  preset_ids: string[];
+  include_all_watchlists: boolean;
+  provider?: LlmProvider | null;
+  model_id?: string | null;
+  temperature: number;
+  max_completion_tokens: number;
+  timeout_seconds: number;
+}
+
 export interface AlertTargetEntry {
   symbol: string;
   exchange?: string | null;
@@ -53,6 +68,7 @@ export interface AlertWorkflowTargeting {
 
 export interface AlertWorkflowDsl {
   version?: number;
+  workflow_type: "market_data" | "alpha_feed";
   combine: "all" | "any";
   cooldown_seconds: number;
   conditions: AlertCondition[];
@@ -60,6 +76,7 @@ export interface AlertWorkflowDsl {
   notification: AlertNotificationConfig;
   channels: AlertChannelSelection;
   llm_analysis: AlertLlmAnalysisConfig;
+  feed_trigger: AlertFeedTriggerConfig;
   workflow_ast?: Record<string, unknown> | null;
   dsl_text?: string | null;
   validation_status?: "unknown" | "valid" | "invalid";

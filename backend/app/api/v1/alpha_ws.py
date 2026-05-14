@@ -4,12 +4,47 @@ import asyncio
 import json
 
 import redis
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.deps import get_current_user
+from app.schemas.alert import AlphaWebSocketEventOut
 from app.services.alpha_websocket import ALPHA_WS_PRODUCTS
 from broker.core.redis_cache import _redis_client
+from db.models import AlphaWebSocketEvent, User
+from db.session import get_db
 
 router = APIRouter()
+
+
+@router.get("/events", response_model=list[AlphaWebSocketEventOut])
+def list_alpha_websocket_events(
+    product: str | None = Query(default=None),
+    symbol: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AlphaWebSocketEventOut]:
+    stmt = select(AlphaWebSocketEvent).where(AlphaWebSocketEvent.user_id == user.id)
+    if product:
+        stmt = stmt.where(AlphaWebSocketEvent.product == product)
+    if symbol:
+        stmt = stmt.where(AlphaWebSocketEvent.symbol == symbol.strip().upper())
+    rows = db.scalars(stmt.order_by(AlphaWebSocketEvent.received_at.desc()).limit(limit)).all()
+    return [
+        AlphaWebSocketEventOut(
+            id=row.id,
+            user_id=row.user_id,
+            product=row.product,
+            symbol=row.symbol,
+            event_key=row.event_key,
+            payload=json.loads(row.payload_json or "{}"),
+            received_at=row.received_at,
+            processed_at=row.processed_at,
+        )
+        for row in rows
+    ]
 
 
 def _stream_names(user_id: str, products: list[str]) -> dict[str, str]:
