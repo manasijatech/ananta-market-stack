@@ -157,6 +157,7 @@ def _default_config(user_id: str) -> UserAlphaWebSocketConfig:
         watchlist_ids_json="[]",
         include_all_watchlists=False,
         full_market=False,
+        last_status="unknown",
     )
 
 
@@ -302,7 +303,7 @@ def alpha_ws_config_out(db: Session, user_id: str) -> dict[str, Any]:
         "effective_products": effective.products if effective else [],
         "effective_symbols": effective.symbols if effective else [],
         "full_market_allowed": full_market_allowed,
-        "status": config.last_status,
+        "status": config.last_status or "unknown",
         "last_error": config.last_error,
         "last_connected_at": config.last_connected_at,
         "last_event_at": config.last_event_at,
