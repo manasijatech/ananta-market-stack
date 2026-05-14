@@ -10,6 +10,7 @@ import {
  readAllAlertNotifications
 } from "@/service/actions/alerts";
 import { Button } from "@/components/ui/button";
+import { subscribeToAlertNotificationStream } from "@/lib/alert-notification-stream";
 import type { AlertNotification } from "@/service/types/alerts";
 
 function sseSupported() {
@@ -30,58 +31,52 @@ export function AlertNotificationsTray() {
  const [isPending, startTransition] = useTransition();
 
  useEffect(() => {
- let cancelled = false;
- let fallbackTimer: number | undefined;
- let source: EventSource | null = null;
+  let cancelled = false;
+  let fallbackTimer: number | undefined;
 
- async function load() {
- const [count, notifications] = await Promise.all([
- getAlertUnreadCount(),
- getAlertNotifications({ unread_only: true, limit: 8 })
- ]);
- if (cancelled) return;
- setUnreadCount(count.unread_count);
- setItems(notifications);
- }
+  async function load() {
+    const [count, notifications] = await Promise.all([
+      getAlertUnreadCount(),
+      getAlertNotifications({ unread_only: true, limit: 8 })
+    ]);
+    if (cancelled) return;
+    setUnreadCount(count.unread_count);
+    setItems(notifications);
+  }
 
- startTransition(async () => {
- await load();
- });
+  startTransition(async () => {
+    await load();
+  });
 
- function startPolling() {
- fallbackTimer = window.setInterval(() => {
- startTransition(async () => {
- await load();
- });
- }, 15000);
- }
+  function startPolling() {
+    fallbackTimer = window.setInterval(() => {
+      startTransition(async () => {
+        await load();
+      });
+    }, 15000);
+  }
 
- if (sseSupported()) {
- source = new EventSource("/api/alert-notifications/stream");
- source.addEventListener("alert", (event) => {
- try {
- const payload = JSON.parse(event.data) as AlertNotification;
- if (cancelled) return;
- setItems((current) => [payload, ...current.filter((item) => item.id !== payload.id)].slice(0, 8));
- setUnreadCount((current) => current + (payload.is_read ? 0 : 1));
- } catch {
- return;
- }
- });
- source.onerror = () => {
- source?.close();
- source = null;
- startPolling();
- };
- } else {
- startPolling();
- }
+  let unsubscribe: () => void = () => {};
+  if (sseSupported()) {
+    unsubscribe = subscribeToAlertNotificationStream((payloadText) => {
+      try {
+        const payload = JSON.parse(payloadText) as AlertNotification;
+        if (cancelled) return;
+        setItems((current) => [payload, ...current.filter((item) => item.id !== payload.id)].slice(0, 8));
+        setUnreadCount((current) => current + (payload.is_read ? 0 : 1));
+      } catch {
+        return;
+      }
+    });
+  } else {
+    startPolling();
+  }
 
- return () => {
- cancelled = true;
- source?.close();
- if (fallbackTimer) window.clearInterval(fallbackTimer);
- };
+  return () => {
+    cancelled = true;
+    unsubscribe();
+    if (fallbackTimer) window.clearInterval(fallbackTimer);
+  };
  }, []);
 
  function markRead(id: string) {

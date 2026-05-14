@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.schemas.alert import (
@@ -1437,15 +1437,14 @@ def list_alert_notifications(
 
 
 def unread_alert_count(db: Session, user_id: str) -> int:
-    return len(
-        list(
-            db.scalars(
-                select(UserAlertNotification.id).where(
-                    UserAlertNotification.user_id == user_id,
-                    UserAlertNotification.is_read.is_(False),
-                )
-            ).all()
+    return int(
+        db.scalar(
+            select(func.count(UserAlertNotification.id)).where(
+                UserAlertNotification.user_id == user_id,
+                UserAlertNotification.is_read.is_(False),
+            )
         )
+        or 0
     )
 
 
