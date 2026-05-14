@@ -12,7 +12,7 @@ const navItems = [
  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
  { href: "/brokers", label: "Broker Connections", icon: WalletCards },
  { href: "/watchlists", label: "Watchlists", icon: ListChecks },
- { href: "/market-intelligence/news", label: "Market Intelligence", icon: Newspaper },
+ { href: "/market-intelligence", label: "Market Intelligence", icon: Newspaper },
  { href: "/alerts", label: "Alerts Workspace", icon: Siren },
  { href: "/alert-channels", label: "Alert Channels", icon: Waypoints },
  { href: "/dashboard/system-config", label: "System Config", icon: Settings2 },
@@ -23,7 +23,7 @@ function isNavItemActive(pathname: string, href: string) {
  if (href === "/dashboard") {
  return pathname === "/dashboard";
  }
- if (href === "/market-intelligence/news") {
+ if (href === "/market-intelligence") {
  return pathname.startsWith("/market-intelligence");
  }
  if (href === "/brokers") {

@@ -260,11 +260,6 @@ export async function upsertAlphaApiCredential(payload: {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/system-config");
   revalidatePath("/market-intelligence");
-  revalidatePath("/market-intelligence/news");
-  revalidatePath("/market-intelligence/alerts");
-  revalidatePath("/market-intelligence/announcements");
-  revalidatePath("/market-intelligence/earnings");
-  revalidatePath("/market-intelligence/concalls");
   return result;
 }
 
@@ -275,11 +270,6 @@ export async function deleteAlphaApiCredential(): Promise<AlphaApiConfig> {
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/system-config");
   revalidatePath("/market-intelligence");
-  revalidatePath("/market-intelligence/news");
-  revalidatePath("/market-intelligence/alerts");
-  revalidatePath("/market-intelligence/announcements");
-  revalidatePath("/market-intelligence/earnings");
-  revalidatePath("/market-intelligence/concalls");
   return result;
 }
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import html
 import json
+import queue
+import threading
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -77,6 +79,23 @@ def _now() -> datetime:
 
 def _alert_notification_stream(user_id: str) -> str:
     return f"alert:notifications:{user_id}"
+
+
+def _ping_redis_with_timeout(timeout_seconds: float = 2.0) -> tuple[bool, str]:
+    result_queue: queue.Queue[tuple[bool, str]] = queue.Queue(maxsize=1)
+
+    def run_ping() -> None:
+        try:
+            result_queue.put(ping_redis(), block=False)
+        except Exception as exc:
+            result_queue.put((False, str(exc)), block=False)
+
+    thread = threading.Thread(target=run_ping, daemon=True)
+    thread.start()
+    try:
+        return result_queue.get(timeout=timeout_seconds)
+    except queue.Empty:
+        return False, "redis ping timed out"
 
 
 def _instrument_ref(ref: dict[str, Any] | None) -> InstrumentRef:
@@ -1777,9 +1796,20 @@ def _broker_statuses(
 
 
 def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
-    ok, error = ping_redis()
+    desired = list_subscriptions(db, user_id)
+    if not desired:
+        return LiveStreamsStatusOut(
+            redis_ok=False,
+            redis_error="no live subscriptions to monitor",
+            worker_mode="redis-event-driven-alerts",
+            active_sessions=[],
+            desired_subscriptions=[],
+            broker_statuses=[],
+        )
+
+    ok, error = _ping_redis_with_timeout()
     activity_sessions: list[LiveWorkerSessionOut] = []
-    client = _redis_client()
+    client = _redis_client() if ok else None
     if client:
         try:
             for key in client.scan_iter(match=f"alert-live:session:{user_id}:*"):
@@ -1804,7 +1834,6 @@ def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
                 )
         except Exception:
             activity_sessions = []
-    desired = list_subscriptions(db, user_id)
     activity_index = {
         (session.account_id, session.broker_code, session.connection_index): session
         for session in activity_sessions

@@ -22,7 +22,8 @@ def _redis_client() -> redis.Redis | None:
             password=s.redis_password or None,
             db=s.redis_db,
             decode_responses=True,
-            socket_connect_timeout=5,
+            socket_connect_timeout=2,
+            socket_timeout=2,
         )
     except Exception as e:
         logger.warning("Redis client init failed: %s", e)

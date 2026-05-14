@@ -19,7 +19,7 @@ export interface AlphaFeedParams {
 const ALPHA_BATCH_LIMIT = 20;
 const ALPHA_DEFAULT_BASE_URL = "https://developers.manasija.in";
 
-function alphaBaseUrl() {
+export function alphaBaseUrl() {
   return (process.env.MANASIJA_API_BASE_URL || ALPHA_DEFAULT_BASE_URL).replace(/\/+$/, "");
 }
 
@@ -102,7 +102,7 @@ async function readResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-async function getAlphaApiKey() {
+export async function getAlphaApiKey() {
   const response = await fetchFastApi("/system-config/alpha/key");
   const payload = await parseJson(response);
 

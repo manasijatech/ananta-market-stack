@@ -1,35 +1,40 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { PageHeader } from "@/components/brokers/ui";
+import { MarketIntelligenceLiveFeed, StateMessage } from "@/components/market-intelligence/market-intelligence-live-feed";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import {
  ALPHA_SYMBOL_LIMIT,
- StateMessage,
  coverageGroupsForSymbols,
  marketIntelligenceSections,
+ type AlphaSection,
+ type MarketIntelligenceFeeds,
  type WatchlistCoverageGroup
-} from "@/components/market-intelligence/market-intelligence-page";
+} from "@/components/market-intelligence/market-intelligence-data";
 
 export function MarketIntelligenceChrome({
  allSymbolsCount,
  children,
  error,
+ initialFeeds,
  symbolMetadata,
  symbols,
+ streamSymbols,
  watchlistGroups
 }: {
  allSymbolsCount: number;
  children: React.ReactNode;
  error?: string;
+ initialFeeds: MarketIntelligenceFeeds;
  symbolMetadata: Record<string, AlphaSymbolMetadata>;
  symbols: string[];
+ streamSymbols: string[];
  watchlistGroups: WatchlistCoverageGroup[];
 }) {
- const pathname = usePathname();
- const sectionId = pathname.split("/").filter(Boolean).at(-1);
- const activeSection = marketIntelligenceSections.find((item) => item.id === sectionId) ?? marketIntelligenceSections[0];
+ const [activeSectionId, setActiveSectionId] = useState<AlphaSection>(marketIntelligenceSections[0].id);
+ const activeSection = marketIntelligenceSections.find((item) => item.id === activeSectionId) ?? marketIntelligenceSections[0];
  const visibleCoverageGroups = coverageGroupsForSymbols(watchlistGroups, symbols);
 
  return (
@@ -44,16 +49,18 @@ export function MarketIntelligenceChrome({
  {marketIntelligenceSections.map((item) => {
  const active = item.id === activeSection.id;
  return (
- <Link
+ <button
  className={[
- "px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-100 ease-out",
+ "cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-100 ease-out",
  active ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
  ].join(" ")}
- href={`/market-intelligence/${item.id}`}
  key={item.id}
+ onClick={() => setActiveSectionId(item.id)}
+ type="button"
+ aria-pressed={active}
  >
  {item.label}
- </Link>
+ </button>
  );
  })}
  </nav>
@@ -97,7 +104,8 @@ export function MarketIntelligenceChrome({
  {!error && !symbols.length ? (
  <StateMessage message="Add symbols to a watchlist to view Alpha market intelligence." action={<Link className="font-semibold text-primary hover:underline" href="/watchlists">Open watchlists</Link>} />
  ) : null}
- {!error && symbols.length ? children : null}
+ {!error && symbols.length ? <MarketIntelligenceLiveFeed activeSection={activeSection.id} initialFeeds={initialFeeds} symbols={streamSymbols} /> : null}
+ {children}
  </>
  );
 }
