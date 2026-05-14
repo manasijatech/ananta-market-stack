@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -17,6 +17,7 @@ from app.services.alert_llm_analysis import _response_text, _usage_payload, vali
 from app.services import llm_gateway
 from app.services.alerts_engine.reconcile import reconcile_all_users
 from app.services import broker_data
+from app.services.broker_sessions import _create_notification_once_per_day
 from app.services.alerts_engine.universes import resolve_universe
 from app.services.alerts_engine.ast import AlertUniverseNode
 from db.models import (
@@ -35,6 +36,9 @@ STREAM_BLOCK_MS = 1000
 STREAM_MAX_BATCH = 200
 WORKFLOW_TICK_TTL_SECONDS = 24 * 60 * 60
 RECONCILE_INTERVAL_SECONDS = 5 * 60
+ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
+TRANSIENT_RETRY_SECONDS = 60
+_ACCOUNT_RETRY_NOT_BEFORE: dict[str, datetime] = {}
 
 
 def _redis() -> redis.Redis | None:
@@ -207,6 +211,88 @@ def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> Non
         logger.warning("tick publish failed: %s", exc)
 
 
+def _retry_not_before(account_id: str) -> datetime | None:
+    return _ACCOUNT_RETRY_NOT_BEFORE.get(account_id)
+
+
+def _should_skip_account_until_retry(account_id: str) -> bool:
+    retry_at = _retry_not_before(account_id)
+    return bool(retry_at and retry_at > _utc_now())
+
+
+def _schedule_account_retry(account_id: str, delay_seconds: int) -> None:
+    _ACCOUNT_RETRY_NOT_BEFORE[account_id] = _utc_now() + timedelta(seconds=delay_seconds)
+
+
+def _clear_account_retry(account_id: str) -> None:
+    _ACCOUNT_RETRY_NOT_BEFORE.pop(account_id, None)
+
+
+def _is_action_required_broker_error(message: str) -> bool:
+    normalized = message.lower()
+    markers = (
+        "token is expired",
+        "token is missing",
+        "access token is expired",
+        "access token is missing",
+        "session token is expired",
+        "session token is missing",
+        "session bundle is missing",
+        "session is expired",
+        "log in again",
+        "login required",
+        "complete the",
+        "refresh the session",
+        "refresh it manually",
+        "broker portal token",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _mark_subscription_health(
+    rows: list[LiveSymbolSubscription],
+    *,
+    status: str,
+    reason: str,
+) -> None:
+    for row in rows:
+        row.health_status = status
+        row.health_reason = reason[:2000]
+
+
+def _broker_notification_title(acc: BrokerAccount) -> str:
+    return f"{acc.label}: broker session action required"
+
+
+def _record_action_required_failure(
+    db,
+    acc: BrokerAccount,
+    subscriptions: list[LiveSymbolSubscription],
+    message: str,
+) -> None:
+    acc.session_status = "action_required"
+    acc.last_error = message[:2000]
+    db.add(acc)
+    _mark_subscription_health(subscriptions, status="action_required", reason=message)
+    _create_notification_once_per_day(
+        db,
+        user_id=acc.user_id,
+        account_id=acc.id,
+        broker_code=acc.broker_code,
+        kind="session_action_required",
+        title=_broker_notification_title(acc),
+        message=message,
+        level="warning",
+    )
+
+
+def _record_transient_failure(
+    subscriptions: list[LiveSymbolSubscription],
+    message: str,
+) -> None:
+    _mark_subscription_health(subscriptions, status="error", reason=message)
+
+
 async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 2.0) -> None:
     redis_client = _redis()
     while not stop_event.is_set():
@@ -221,6 +307,8 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                     continue
                 grouped.setdefault((row.user_id, row.account_id, row.broker_code), []).append(row)
             for (user_id, account_id, _broker_code), subscriptions in grouped.items():
+                if _should_skip_account_until_retry(account_id):
+                    continue
                 acc = db.get(BrokerAccount, account_id)
                 if not acc:
                     continue
@@ -240,6 +328,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                     unique_subscriptions.values(),
                     key=lambda items: (items[0].exchange or "", items[0].symbol),
                 )
+                account_failed = False
                 for chunk_index, start in enumerate(range(0, len(ordered_subscription_groups), 1000), start=1):
                     chunk_groups = ordered_subscription_groups[start : start + 1000]
                     chunk_rows = [items[0] for items in chunk_groups]
@@ -254,8 +343,20 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                     try:
                         quotes = await asyncio.to_thread(broker_data.fetch_quotes, db, acc, instruments)
                     except Exception as exc:
-                        logger.warning("quote poll failed for %s: %s", account_id, exc)
-                        continue
+                        message = str(exc)
+                        if _is_action_required_broker_error(message):
+                            _record_action_required_failure(db, acc, subscriptions, message)
+                            _schedule_account_retry(account_id, ACTION_REQUIRED_RETRY_SECONDS)
+                            logger.info("live market data paused for %s: %s", account_id, message)
+                        else:
+                            _record_transient_failure(subscriptions, message)
+                            _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
+                            logger.warning("quote poll failed for %s: %s", account_id, exc)
+                        account_failed = True
+                        break
+                    _clear_account_retry(account_id)
+                    acc.last_error = None
+                    db.add(acc)
                     quote_index = {str(item.symbol or ""): item for item in quotes}
                     for row, duplicate_rows in zip(chunk_rows, chunk_groups, strict=False):
                         quote = quote_index.get(row.symbol)
@@ -266,6 +367,8 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                         for subscription_row in duplicate_rows:
                             subscription_row.last_quote_json = json.dumps(payload, default=str)
                             subscription_row.last_received_at = received_at
+                            subscription_row.health_status = "ok"
+                            subscription_row.health_reason = ""
                             db.add(subscription_row)
                         _publish_tick(redis_client, _normalize_tick_payload(
                             user_id=user_id,
@@ -277,7 +380,12 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                             quote_payload=payload,
                             row=row,
                         ))
+                if account_failed:
+                    continue
             db.commit()
+        except Exception as exc:
+            logger.warning("live market data loop failed: %s", exc)
+            db.rollback()
         finally:
             db.close()
         try:

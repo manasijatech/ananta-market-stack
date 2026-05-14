@@ -7,6 +7,9 @@ This repo now includes Alembic for schema tracking.
 - Alembic is the primary migration mechanism.
 - The SQLite startup patcher in `db/session.py` is now only a compatibility fallback for legacy databases that do not yet have an `alembic_version` table.
 - Once a database is stamped or upgraded under Alembic, runtime column patching is skipped.
+- On server startup, the backend now auto-handles both cases:
+  - Alembic-managed databases run `upgrade head`.
+  - Legacy SQLite databases bootstrap through the compatibility patcher once, then get stamped to `head` so later restarts avoid the slow legacy path.
 
 ## Commands
 

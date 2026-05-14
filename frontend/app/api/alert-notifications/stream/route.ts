@@ -1,6 +1,7 @@
 import { fetchFastApi } from "@/lib/fastapi";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
  const response = await fetchFastApi("/alert-notifications/stream", {
@@ -14,7 +15,8 @@ export async function GET() {
  headers: {
  "content-type": "text/event-stream",
  "cache-control": "no-cache, no-transform",
- connection: "keep-alive"
+ connection: "keep-alive",
+ "x-accel-buffering": "no"
  }
  });
 }

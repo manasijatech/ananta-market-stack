@@ -1,11 +1,16 @@
+import logging
 import os
 import sqlite3
+import threading
 from collections.abc import Generator
+from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -37,6 +42,7 @@ if _settings.database_url.startswith("sqlite"):
         cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+_INIT_LOCK = threading.Lock()
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -50,8 +56,56 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     from db import models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
-    _apply_sqlite_legacy_patches_if_needed()
+    with _INIT_LOCK:
+        _check_database_health()
+        if _requires_sqlite_legacy_bootstrap():
+            logger.info("Applying legacy SQLite bootstrap for Market-Stack database")
+            Base.metadata.create_all(bind=engine)
+            _apply_sqlite_legacy_patches_if_needed()
+            _stamp_database_at_head()
+            return
+        _upgrade_database_to_head()
+
+
+def _check_database_health() -> None:
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+
+
+def _requires_sqlite_legacy_bootstrap() -> bool:
+    if not _settings.database_url.startswith("sqlite:///"):
+        return False
+    conn = sqlite3.connect(_settings.database_url.replace("sqlite:///", "", 1))
+    try:
+        return not _has_alembic_version_table(conn)
+    finally:
+        conn.close()
+
+
+def _alembic_config():
+    from alembic.config import Config
+
+    backend_root = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "alembic"))
+    return config
+
+
+def _upgrade_database_to_head() -> None:
+    from alembic import command
+
+    logger.info("Running database migrations to head")
+    command.upgrade(_alembic_config(), "head")
+
+
+def _stamp_database_at_head() -> None:
+    from alembic import command
+
+    try:
+        command.stamp(_alembic_config(), "head")
+    except Exception:
+        logger.exception("Failed to stamp legacy SQLite database at Alembic head")
+        raise
 
 
 def _apply_sqlite_legacy_patches_if_needed() -> None:

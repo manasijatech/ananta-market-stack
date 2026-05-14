@@ -420,40 +420,43 @@ async def _run_user_subscription(subscription: EffectiveAlphaSubscription, stop_
 async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
     tasks: dict[str, tuple[str, asyncio.Task[None]]] = {}
     while not stop_event.is_set():
-        db = SessionLocal()
         try:
-            rows = db.scalars(
-                select(UserAlphaApiCredential).where(
-                    UserAlphaApiCredential.is_enabled.is_(True),
-                    UserAlphaApiCredential.api_key_cipher != "",
-                )
-            ).all()
-            subscriptions: dict[str, EffectiveAlphaSubscription] = {}
-            for row in rows:
-                if (
-                    row.account_checked_at is None
-                    or row.account_checked_at < _utc_now() - timedelta(seconds=ACCOUNT_REFRESH_SECONDS)
-                ):
-                    try:
-                        await refresh_account_for_user(row.user_id)
-                    except Exception as exc:
-                        logger.warning("Alpha account refresh failed for %s: %s", row.user_id, exc)
-                subscription = effective_subscription_for_user(db, row.user_id)
-                if subscription and subscription.enabled and subscription.products:
-                    subscriptions[row.user_id] = subscription
-            for user_id, (config_hash, task) in list(tasks.items()):
-                current = subscriptions.get(user_id)
-                if current is None or current.config_hash != config_hash:
-                    task.cancel()
-                    tasks.pop(user_id, None)
-            for user_id, subscription in subscriptions.items():
-                if user_id not in tasks:
-                    tasks[user_id] = (
-                        subscription.config_hash,
-                        asyncio.create_task(_run_user_subscription(subscription, stop_event)),
+            db = SessionLocal()
+            try:
+                rows = db.scalars(
+                    select(UserAlphaApiCredential).where(
+                        UserAlphaApiCredential.is_enabled.is_(True),
+                        UserAlphaApiCredential.api_key_cipher != "",
                     )
-        finally:
-            db.close()
+                ).all()
+                subscriptions: dict[str, EffectiveAlphaSubscription] = {}
+                for row in rows:
+                    if (
+                        row.account_checked_at is None
+                        or row.account_checked_at < _utc_now() - timedelta(seconds=ACCOUNT_REFRESH_SECONDS)
+                    ):
+                        try:
+                            await refresh_account_for_user(row.user_id)
+                        except Exception as exc:
+                            logger.warning("Alpha account refresh failed for %s: %s", row.user_id, exc)
+                    subscription = effective_subscription_for_user(db, row.user_id)
+                    if subscription and subscription.enabled and subscription.products:
+                        subscriptions[row.user_id] = subscription
+                for user_id, (config_hash, task) in list(tasks.items()):
+                    current = subscriptions.get(user_id)
+                    if current is None or current.config_hash != config_hash:
+                        task.cancel()
+                        tasks.pop(user_id, None)
+                for user_id, subscription in subscriptions.items():
+                    if user_id not in tasks:
+                        tasks[user_id] = (
+                            subscription.config_hash,
+                            asyncio.create_task(_run_user_subscription(subscription, stop_event)),
+                        )
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning("alpha websocket supervisor loop failed: %s", exc)
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=SUPERVISOR_INTERVAL_SECONDS)
         except TimeoutError:

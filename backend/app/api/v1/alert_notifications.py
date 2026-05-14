@@ -85,6 +85,7 @@ async def stream_alert_notifications(
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ) -> StreamingResponse:
     async def event_stream():
+        yield "retry: 5000\n: connected\n\n"
         stream_id = last_event_id if last_event_id and "-" in last_event_id else "$"
         last_seen = None
         if last_event_id and "-" not in last_event_id:
@@ -142,4 +143,12 @@ async def stream_alert_notifications(
                     body = payload.decode() if isinstance(payload, bytes) else str(payload)
                     yield f"id: {event_id}\n" "event: alert\n" f"data: {body}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import asyncio
+import logging
 import threading
 from threading import Thread
 
@@ -11,6 +12,8 @@ from app.services.alert_runtime import create_alert_worker_service
 from app.services.alpha_websocket import run_alpha_websocket_worker
 from app.services.broker_sessions import maintenance_loop
 from db.session import init_db
+
+logger = logging.getLogger(__name__)
 
 
 class BackgroundAsyncLoopThread:
@@ -35,6 +38,8 @@ class BackgroundAsyncLoopThread:
             self.ready.set()
             try:
                 loop.run_until_complete(self.target(stop_event))
+            except Exception:
+                logger.exception("%s crashed", self.name)
             finally:
                 pending = asyncio.all_tasks(loop)
                 for task in pending:
@@ -64,22 +69,35 @@ class BackgroundAsyncLoopThread:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    maintenance_service = BackgroundAsyncLoopThread("maintenance-loop", maintenance_loop)
-    maintenance_service.start()
+    maintenance_service = _start_background_service("maintenance-loop", maintenance_loop)
     alert_worker_service = None
     if settings.enable_in_process_alert_workers:
-        alert_worker_service = create_alert_worker_service()
-        alert_worker_service.start()
+        try:
+            alert_worker_service = create_alert_worker_service()
+            alert_worker_service.start()
+        except Exception:
+            logger.exception("alert-worker-service failed to start")
+            alert_worker_service = None
     alpha_ws_worker_service = None
     if settings.enable_in_process_alpha_ws_worker:
-        alpha_ws_worker_service = BackgroundAsyncLoopThread("alpha-ws-worker", run_alpha_websocket_worker)
-        alpha_ws_worker_service.start()
+        alpha_ws_worker_service = _start_background_service("alpha-ws-worker", run_alpha_websocket_worker)
     yield
-    maintenance_service.stop()
+    if maintenance_service:
+        maintenance_service.stop()
     if alert_worker_service:
         alert_worker_service.stop()
     if alpha_ws_worker_service:
         alpha_ws_worker_service.stop()
+
+
+def _start_background_service(name: str, target) -> BackgroundAsyncLoopThread | None:
+    service = BackgroundAsyncLoopThread(name, target)
+    try:
+        service.start()
+    except Exception:
+        logger.exception("%s failed to start", name)
+        return None
+    return service
 
 
 settings = get_settings()
