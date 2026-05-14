@@ -17,6 +17,7 @@ import {
 import type { TablerIcon } from "@tabler/icons-react";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertNotificationsTray } from "@/components/alerts/alert-notifications-tray";
+import { BrandLogo } from "@/components/brand-logo";
 import { useSession } from "@/components/session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -106,9 +107,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  <div className="fixed inset-x-0 top-0 z-50 h-[3px] bg-primary" />
  <aside className="border-b border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:w-[252px] min-[980px]:border-b-0 min-[980px]:border-r">
  <div className="flex h-full flex-col">
- <div className="flex h-18 items-center gap-3 border-b border-border px-5 min-[980px]:h-20">
- <span className="font-mono text-[13px] font-bold text-primary">MS</span>
- <span className="text-sm font-semibold uppercase tracking-[0.08em]">Market Stack</span>
+ <div className="flex h-18 items-center border-b border-border px-5 min-[980px]:h-20">
+ <BrandLogo imageClassName="h-10 w-48" />
  </div>
  <nav className="flex gap-1 px-3 pb-4 min-[980px]:flex-col min-[980px]:overflow-y-auto" aria-label="Primary navigation">
  {navGroups.map((group, groupIndex) => (

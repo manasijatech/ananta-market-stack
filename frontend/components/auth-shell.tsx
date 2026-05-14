@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 type AuthShellProps = {
@@ -31,12 +32,7 @@ export function AuthShell({
  />
  <div className="absolute inset-x-0 bottom-0 -z-10 h-[58%] bg-gradient-to-t from-background/88 via-background/44 to-transparent dark:from-background/92 dark:via-background/46" />
  <div className="absolute inset-x-0 top-0 z-10 h-[3px] bg-primary" />
- <div className="flex items-center gap-3 text-[15px] font-extrabold">
- <div className="flex aspect-square w-10 shrink-0 items-center justify-center border border-primary font-mono text-[13px] font-black text-primary" aria-hidden="true">
- MS
- </div>
- <span className="uppercase tracking-[0.08em]">Market Stack</span>
- </div>
+ <BrandLogo imageClassName="h-14 w-72 drop-shadow-[0_1px_10px_var(--background)]" />
  <div className="max-w-[720px]">
  <p className="mb-3.5 font-mono text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary">
  {eyebrow}
