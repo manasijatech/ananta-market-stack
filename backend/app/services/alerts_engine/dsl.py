@@ -66,7 +66,14 @@ def _compile_call(node: py_ast.Call) -> AlertLogicNode:
         return AlertLogicNode(kind="not", children=[_compile_expr(node.args[0])])
     if name not in CONDITION_REGISTRY:
         raise DslValidationError(f"Unknown function/operator '{name}'.")
-    kwargs = {kw.arg: _literal(kw.value) for kw in node.keywords if kw.arg}
+    kwargs: dict[str, Any] = {}
+    for kw in node.keywords:
+        if not kw.arg:
+            continue
+        if kw.arg in {"compare_to", "field"} and isinstance(kw.value, py_ast.Name):
+            kwargs[kw.arg] = _name(kw.value)
+        else:
+            kwargs[kw.arg] = _literal(kw.value)
     if node.args:
         field = _name(node.args[0])
     else:
@@ -138,4 +145,3 @@ def ast_to_dsl(logic: AlertLogicNode) -> str:
 
 def dsl_for_workflow(dsl: Any) -> str:
     return ast_to_dsl(ensure_workflow_ast(dsl).logic)
-

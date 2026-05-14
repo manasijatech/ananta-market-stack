@@ -8,11 +8,16 @@ import {
  searchDefaultBrokerInstruments
 } from "@/service/actions/broker";
 import {
+ compilePreviewAlertWorkflow,
  createAlertWorkflow,
  deleteAlertWorkflow,
+ deployAlertWorkflow,
+ explainAlertWorkflow,
+ getWorkflowSampleAlerts,
  sendWorkflowTestNotification,
  testAlertWorkflow,
- updateAlertWorkflow
+ updateAlertWorkflow,
+ validateAlertWorkflow
 } from "@/service/actions/alerts";
 import type {
  AlertChannelSelection,
@@ -248,10 +253,17 @@ export function WorkflowEditor({
  ? "preset_universe"
  : initialTargeting.mode;
  const [targetMode, setTargetMode] = useState<AlertWorkflowTargeting["mode"]>(initialTargetMode as AlertWorkflowTargeting["mode"]);
- const initialDynamicUniverseKind = initialUniverse.kind === "curated_preset" ? "curated_preset" : "watchlist";
+ const initialDynamicUniverseKind =
+ initialUniverse.kind === "curated_preset" || initialUniverse.kind === "metadata_filter"
+ ? initialUniverse.kind
+ : "watchlist";
  const [dynamicUniverseKind, setDynamicUniverseKind] = useState(initialDynamicUniverseKind);
  const [selectedWatchlistId, setSelectedWatchlistId] = useState(String(initialUniverse.watchlist_id ?? watchlists[0]?.id ?? ""));
  const [selectedPresetId, setSelectedPresetId] = useState(String(initialUniverse.preset_id ?? presets[0]?.id ?? "nse-equity"));
+ const initialUniverseFilters = (initialUniverse.filters as JsonObject | undefined) ?? {};
+ const [metadataExchange, setMetadataExchange] = useState(String(initialUniverseFilters.exchange ?? "NSE"));
+ const [metadataInstrumentType, setMetadataInstrumentType] = useState(String(initialUniverseFilters.instrument_type ?? "EQ"));
+ const [metadataSegmentContains, setMetadataSegmentContains] = useState(String(initialUniverseFilters.segment_contains ?? ""));
  const [targetEntries, setTargetEntries] = useState<AlertTargetEntry[]>(normalizeTargets(initialTargeting.entries));
  const [bulkTargets, setBulkTargets] = useState("");
  const initialEditableStatus = initialWorkflow?.status === "inactive" ? "inactive" : "active";
@@ -266,6 +278,9 @@ export function WorkflowEditor({
  const [level, setLevel] = useState(initialWorkflow?.workflow_dsl.notification.level ?? "info");
  const [titleTemplate, setTitleTemplate] = useState(initialWorkflow?.workflow_dsl.notification.title_template ?? "{symbol} alert");
  const [messageTemplate, setMessageTemplate] = useState(initialWorkflow?.workflow_dsl.notification.message_template ?? "{symbol} matched workflow");
+ const [dslText, setDslText] = useState(initialWorkflow?.workflow_dsl.dsl_text ?? "");
+ const [engineFeedback, setEngineFeedback] = useState("");
+ const [engineDetails, setEngineDetails] = useState<Record<string, unknown> | null>(null);
  const [inheritDefaults, setInheritDefaults] = useState(initialWorkflow?.channel_override?.inherit_defaults ?? true);
  const [channelInApp, setChannelInApp] = useState(initialWorkflow?.workflow_dsl.channels.enabled.includes("in_app") ?? true);
  const [channelDiscord, setChannelDiscord] = useState(initialWorkflow?.workflow_dsl.channels.enabled.includes("discord") ?? false);
@@ -472,6 +487,16 @@ export function WorkflowEditor({
  preset_id: selectedPresetId,
  label: String(selectedPreset?.label ?? selectedPresetId)
  }
+ : dynamicUniverseKind === "metadata_filter"
+ ? {
+ kind: "metadata_filter",
+ label: "Metadata filter",
+ filters: {
+ exchange: metadataExchange.trim().toUpperCase() || undefined,
+ instrument_type: metadataInstrumentType.trim().toUpperCase() || undefined,
+ segment_contains: metadataSegmentContains.trim() || undefined
+ }
+ }
  : {
  kind: "watchlist",
  watchlist_id: selectedWatchlistId,
@@ -509,6 +534,7 @@ export function WorkflowEditor({
  message_template: messageTemplate
  },
  channels: channelSelection(),
+ dsl_text: dslText.trim() || null,
  workflow_ast: workflowAstPayload(targeting),
  validation_status: "unknown",
  compiled_summary: {}
@@ -690,6 +716,39 @@ export function WorkflowEditor({
  setTargetEntries([]);
  }
 
+ function runEngineAction(action: "validate" | "compile" | "explain" | "samples" | "deploy") {
+ if (!initialWorkflow?.id) return;
+ setError("");
+ setEngineFeedback("");
+ setEngineDetails(null);
+ startTransition(async () => {
+ try {
+ let result: Record<string, unknown>;
+ if (action === "validate") {
+ result = (await validateAlertWorkflow(initialWorkflow.id)) as unknown as Record<string, unknown>;
+ setEngineFeedback((result.valid as boolean) ? "Workflow validation passed." : "Workflow validation failed.");
+ } else if (action === "compile") {
+ result = (await compilePreviewAlertWorkflow(initialWorkflow.id)) as unknown as Record<string, unknown>;
+ setEngineFeedback((result.valid as boolean) ? "Compile preview is valid." : "Compile preview has errors.");
+ } else if (action === "explain") {
+ result = await explainAlertWorkflow(initialWorkflow.id);
+ setEngineFeedback(String(result.summary ?? "Workflow explanation generated."));
+ } else if (action === "samples") {
+ result = await getWorkflowSampleAlerts(initialWorkflow.id);
+ setEngineFeedback("Sample alert payload generated.");
+ } else {
+ const deployed = await deployAlertWorkflow(initialWorkflow.id);
+ result = deployed as unknown as Record<string, unknown>;
+ setEngineFeedback(`Workflow deployed as version ${deployed.deploy_version ?? 0}.`);
+ router.refresh();
+ }
+ setEngineDetails(result);
+ } catch (caught) {
+ setError(caught instanceof Error ? caught.message : "Workflow engine action failed.");
+ }
+ });
+ }
+
  const canSave =
  targetMode === "single_symbol"
  ? Boolean(symbol.trim())
@@ -697,6 +756,8 @@ export function WorkflowEditor({
  ? targetEntries.length > 0
  : dynamicUniverseKind === "curated_preset"
  ? Boolean(selectedPresetId)
+ : dynamicUniverseKind === "metadata_filter"
+ ? Boolean(metadataExchange.trim() || metadataInstrumentType.trim() || metadataSegmentContains.trim())
  : Boolean(selectedWatchlistId);
 
  return (
@@ -865,6 +926,7 @@ export function WorkflowEditor({
  >
  <option value="watchlist">Watchlist</option>
  <option value="curated_preset">Curated preset</option>
+ <option value="metadata_filter">Metadata filter</option>
  </select>
  </div>
  {dynamicUniverseKind === "watchlist" ? (
@@ -882,7 +944,7 @@ export function WorkflowEditor({
  </select>
  {!watchlists.length ? <HelpText>Create a watchlist first, then return here to link it to this workflow.</HelpText> : <HelpText>Symbols added to or removed from this watchlist are reconciled into live subscriptions automatically.</HelpText>}
  </div>
- ) : (
+ ) : dynamicUniverseKind === "curated_preset" ? (
  <div className="grid gap-2">
  <select
  className="h-10 border border-input bg-background px-3 text-sm"
@@ -897,7 +959,22 @@ export function WorkflowEditor({
  </select>
  <HelpText>Presets are resolved from backend registry rules and broker instrument metadata.</HelpText>
  </div>
- )}
+ ) : dynamicUniverseKind === "metadata_filter" ? (
+ <div className="grid gap-3 min-[900px]:grid-cols-3">
+ <div className="grid gap-2">
+ <Input className="font-mono uppercase" onChange={(event) => setMetadataExchange(event.target.value.toUpperCase())} placeholder="NSE" value={metadataExchange} />
+ <HelpText>Exchange filter.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input className="font-mono uppercase" onChange={(event) => setMetadataInstrumentType(event.target.value.toUpperCase())} placeholder="EQ" value={metadataInstrumentType} />
+ <HelpText>Instrument type filter.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input className="font-mono uppercase" onChange={(event) => setMetadataSegmentContains(event.target.value.toUpperCase())} placeholder="FO" value={metadataSegmentContains} />
+ <HelpText>Optional segment contains filter.</HelpText>
+ </div>
+ </div>
+ ) : null}
  </div>
  ) : null}
  </div>
@@ -990,6 +1067,46 @@ export function WorkflowEditor({
  </div>
  </TabsContent>
  </Tabs>
+
+ <div className="grid gap-4 border border-border p-4">
+ <div className="flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <div className="text-sm font-bold">Script, validation, and deployment</div>
+ <HelpText>The script is optional. When present, it is validated by the sandboxed expression compiler and overrides the visual logic in the compiled workflow AST.</HelpText>
+ </div>
+ <div className="flex flex-wrap gap-2">
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("validate")} size="sm" type="button" variant="outline">Validate</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("compile")} size="sm" type="button" variant="outline">Compile</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("explain")} size="sm" type="button" variant="outline">Explain</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("samples")} size="sm" type="button" variant="outline">Samples</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("deploy")} size="sm" type="button">Deploy</Button>
+ </div>
+ </div>
+ <textarea
+ className="min-h-[120px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
+ onChange={(event) => setDslText(event.target.value)}
+ placeholder="all(ltp >= 100, volume_spike(volume, value=2, compare_to=avg_volume))"
+ value={dslText}
+ />
+ <div className="grid gap-3 min-[900px]:grid-cols-3">
+ <div className="border border-border p-3">
+ <div className="text-xs font-bold uppercase text-muted-foreground">Deployment</div>
+ <div className="mt-2 text-sm text-muted-foreground">
+ {(initialWorkflow?.deployment_status ?? "draft")} · version {initialWorkflow?.deploy_version ?? 0}
+ </div>
+ </div>
+ <div className="border border-border p-3">
+ <div className="text-xs font-bold uppercase text-muted-foreground">Last validation</div>
+ <div className="mt-2 text-sm text-muted-foreground">{initialWorkflow?.last_validated_at ? new Date(initialWorkflow.last_validated_at).toLocaleString() : "-"}</div>
+ </div>
+ <div className="border border-border p-3">
+ <div className="text-xs font-bold uppercase text-muted-foreground">Runtime error</div>
+ <div className="mt-2 text-sm text-muted-foreground">{initialWorkflow?.last_runtime_error || "-"}</div>
+ </div>
+ </div>
+ {engineFeedback ? <div className="border border-border px-3 py-2 text-sm text-muted-foreground">{engineFeedback}</div> : null}
+ {engineDetails ? <pre className="max-h-[260px] overflow-auto border border-border p-3 text-xs text-muted-foreground">{compactPreview(engineDetails)}</pre> : null}
+ </div>
 
  <div className="grid gap-4 border border-border p-4 min-[960px]:grid-cols-2">
  <div>

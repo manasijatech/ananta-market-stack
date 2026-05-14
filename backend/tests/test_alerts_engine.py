@@ -51,10 +51,37 @@ def test_condition_registry_evaluates_nested_logic():
 
 
 def test_dsl_validation_returns_ast_for_safe_expression():
-    result = validate_dsl_text("all(ltp >= 100, volume_spike(volume, value=2, compare_to='avg_volume'))")
+    result = validate_dsl_text("all(ltp >= 100, volume_spike(volume, value=2, compare_to=avg_volume))")
 
     assert result["valid"] is True
     assert result["workflow_ast"]["logic"]["kind"] == "all"
+
+
+def test_condition_registry_evaluates_practical_operator_families():
+    ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "all",
+                    "children": [
+                        {"kind": "condition", "field": "ltp", "operator": "breaks_day_high"},
+                        {"kind": "condition", "field": "open", "operator": "gap_up_pct_gte", "value": 2, "compare_to": "close"},
+                        {"kind": "condition", "field": "open_interest", "operator": "oi_change_gte", "value": 1000},
+                    ],
+                },
+            }
+        }
+    )
+
+    result = evaluate_logic(
+        ast.logic,
+        {"ltp": 105, "high": 105, "open": 104, "close": 100, "open_interest": 25000},
+        {"open_interest": 23000},
+    )
+
+    assert result.matched is True
+    assert "breaks_day_high" in result.reason
 
 
 def test_dsl_validation_rejects_unknown_field():
