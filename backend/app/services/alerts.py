@@ -246,7 +246,7 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
             "workflow_type": "alpha_feed",
             "combine": "all",
             "cooldown_seconds": 900,
-            "conditions": [{"operator": "always"}],
+            "conditions": [{"field": "event", "operator": "always"}],
             "notification": {
                 "level": "warning",
                 "title_template": "{symbol} order-win update",
@@ -270,7 +270,7 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
             "workflow_type": "alpha_feed",
             "combine": "all",
             "cooldown_seconds": 1800,
-            "conditions": [{"operator": "always"}],
+            "conditions": [{"field": "event", "operator": "always"}],
             "notification": {
                 "level": "info",
                 "title_template": "{symbol} earnings feed signal",
