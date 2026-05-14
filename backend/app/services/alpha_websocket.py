@@ -21,6 +21,7 @@ from broker.crypto import decrypt_value
 from db.models import (
     AlphaWebSocketEvent,
     LiveSymbolSubscription,
+    SystemWatchlistPresetSymbol,
     UserAlphaApiCredential,
     UserAlphaWebSocketConfig,
     UserWatchlist,
@@ -193,17 +194,26 @@ def _symbols_from_watchlists(
     watchlist_ids: list[str],
     include_all: bool,
 ) -> list[str]:
-    stmt = (
-        select(UserWatchlistSymbol.symbol)
-        .join(UserWatchlist, UserWatchlist.id == UserWatchlistSymbol.watchlist_id)
-        .where(UserWatchlist.user_id == user_id)
-    )
+    stmt = select(UserWatchlist).where(UserWatchlist.user_id == user_id)
     if not include_all:
         if not watchlist_ids:
             return []
         stmt = stmt.where(UserWatchlist.id.in_(watchlist_ids))
-    rows = db.scalars(stmt).all()
-    return [symbol for symbol in (_normalize_symbol(row) for row in rows) if symbol]
+    watchlists = db.scalars(stmt).all()
+    symbols: list[str] = []
+    for watchlist in watchlists:
+        if watchlist.kind == "preset" and watchlist.system_preset_id:
+            rows = db.scalars(
+                select(SystemWatchlistPresetSymbol.symbol).where(
+                    SystemWatchlistPresetSymbol.preset_id == watchlist.system_preset_id
+                )
+            ).all()
+        else:
+            rows = db.scalars(
+                select(UserWatchlistSymbol.symbol).where(UserWatchlistSymbol.watchlist_id == watchlist.id)
+            ).all()
+        symbols.extend(symbol for symbol in (_normalize_symbol(row) for row in rows) if symbol)
+    return symbols
 
 
 @dataclass(frozen=True)

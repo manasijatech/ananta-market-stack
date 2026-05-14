@@ -5,6 +5,7 @@ import { fetchFastApi } from "@/lib/fastapi";
 import type {
   Watchlist,
   WatchlistCreateInput,
+  WatchlistPresetCatalogEntry,
   WatchlistSymbolsBulkInput,
   WatchlistSymbolsBulkResponse,
   WatchlistSymbolsReplaceInput,
@@ -54,10 +55,28 @@ export async function getWatchlists(): Promise<Watchlist[]> {
   return request<Watchlist[]>("/watchlists");
 }
 
+export async function searchWatchlistPresets(query = "", limit = 30): Promise<WatchlistPresetCatalogEntry[]> {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set("q", query.trim());
+  params.set("limit", String(limit));
+  return request<WatchlistPresetCatalogEntry[]>(`/watchlists/presets/catalog?${params.toString()}`);
+}
+
 export async function createWatchlist(payload: WatchlistCreateInput): Promise<Watchlist> {
   const result = await request<Watchlist>("/watchlists", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+  revalidatePath("/watchlists");
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
+  return result;
+}
+
+export async function addPresetWatchlist(presetId: string): Promise<Watchlist> {
+  const result = await request<Watchlist>("/watchlists/presets/add", {
+    method: "POST",
+    body: JSON.stringify({ preset_id: presetId })
   });
   revalidatePath("/watchlists");
   revalidatePath("/alerts/subscriptions");
@@ -79,6 +98,14 @@ export async function deleteWatchlist(id: string): Promise<void> {
   revalidatePath("/watchlists");
   revalidatePath("/alerts/subscriptions");
   revalidatePath("/alerts/stream-manager");
+}
+
+export async function refreshWatchlist(id: string): Promise<Watchlist> {
+  const result = await request<Watchlist>(`/watchlists/${id}/refresh`, { method: "POST" });
+  revalidatePath("/watchlists");
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
+  return result;
 }
 
 export async function addSymbolsToWatchlist(

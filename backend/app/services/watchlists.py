@@ -13,6 +13,7 @@ from app.schemas.broker import InstrumentRef
 from app.schemas.watchlist import (
     WatchlistCreateIn,
     WatchlistOut,
+    WatchlistPresetCatalogEntryOut,
     WatchlistSymbolCreateIn,
     WatchlistSymbolOut,
     WatchlistSymbolsBulkIn,
@@ -21,9 +22,12 @@ from app.schemas.watchlist import (
     WatchlistUpdateIn,
 )
 from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
+from app.services import watchlist_presets as preset_svc
 from db.models import (
     BrokerAccount,
     LiveSymbolSubscription,
+    SystemWatchlistPreset,
+    SystemWatchlistPresetSymbol,
     UserBrokerDataPreference,
     UserWatchlist,
     UserWatchlistSymbol,
@@ -72,13 +76,22 @@ def _instrument_ref(ref: InstrumentRef | dict[str, Any] | None, symbol: str, exc
 
 
 def _watchlist_to_out(watchlist: UserWatchlist) -> WatchlistOut:
-    ordered_symbols = sorted(watchlist.symbols, key=lambda item: item.sort_order)
+    ordered_symbols: list[UserWatchlistSymbol | SystemWatchlistPresetSymbol]
+    preset = watchlist.system_preset if watchlist.kind == "preset" else None
+    if watchlist.kind == "preset" and preset is not None:
+        ordered_symbols = sorted(preset.symbols, key=lambda item: item.sort_order)
+    else:
+        ordered_symbols = sorted(watchlist.symbols, key=lambda item: item.sort_order)
     items = [
         WatchlistSymbolOut(
             id=item.id,
             symbol=item.symbol,
             exchange=item.exchange or None,
-            instrument_ref=_instrument_ref(_json_loads(item.instrument_ref_json, {}), item.symbol, item.exchange),
+            instrument_ref=_instrument_ref(
+                _json_loads(getattr(item, "instrument_ref_json", None), {}),
+                item.symbol,
+                item.exchange,
+            ),
             sort_order=item.sort_order,
             created_at=item.created_at,
         )
@@ -88,6 +101,12 @@ def _watchlist_to_out(watchlist: UserWatchlist) -> WatchlistOut:
         id=watchlist.id,
         user_id=watchlist.user_id,
         name=watchlist.name,
+        kind=watchlist.kind,
+        is_editable=watchlist.kind == "manual",
+        preset_id=preset.id if preset else None,
+        preset_slug=preset.slug if preset else None,
+        preset_sync_status=preset.sync_status if preset else None,
+        preset_last_synced_at=preset.last_constituents_sync_at if preset else None,
         symbols=[item.symbol for item in ordered_symbols],
         items=items,
         created_at=watchlist.created_at,
@@ -109,6 +128,11 @@ def _watchlist_name_exists(db: Session, user_id: str, name: str, exclude_id: str
     if exclude_id:
         stmt = stmt.where(UserWatchlist.id != exclude_id)
     return db.scalar(stmt) is not None
+
+
+def _ensure_manual_watchlist(watchlist: UserWatchlist) -> None:
+    if watchlist.kind != "manual":
+        raise HTTPException(status_code=400, detail="Preset watchlists cannot be modified")
 
 
 def _dedupe_symbol_strings(symbols: list[str], exchange: str = "") -> list[tuple[str, str]]:
@@ -260,6 +284,7 @@ def create_watchlist(db: Session, user_id: str, payload: WatchlistCreateIn) -> W
         id=str(uuid.uuid4()),
         user_id=user_id,
         name=name,
+        kind="manual",
         created_at=now,
         updated_at=now,
     )
@@ -299,6 +324,7 @@ def update_watchlist(db: Session, user_id: str, watchlist_id: str, payload: Watc
     watchlist = _get_owned_watchlist(db, user_id, watchlist_id)
     if watchlist is None:
         return None
+    _ensure_manual_watchlist(watchlist)
 
     name = _normalize_name(payload.name)
     if _watchlist_name_exists(db, user_id, name, exclude_id=watchlist.id):
@@ -330,6 +356,7 @@ def add_symbols_to_watchlist(
     watchlist = _get_owned_watchlist(db, user_id, watchlist_id)
     if watchlist is None:
         return None
+    _ensure_manual_watchlist(watchlist)
 
     exchange = _normalize_exchange(payload.exchange)
     existing = {(item.symbol, item.exchange) for item in watchlist.symbols}
@@ -397,6 +424,7 @@ def replace_watchlist_symbols(
     watchlist = _get_owned_watchlist(db, user_id, watchlist_id)
     if watchlist is None:
         return None
+    _ensure_manual_watchlist(watchlist)
 
     now = _now()
     for item in list(watchlist.symbols):
@@ -449,6 +477,7 @@ def remove_symbol_from_watchlist(
     watchlist = _get_owned_watchlist(db, user_id, watchlist_id)
     if watchlist is None:
         return None
+    _ensure_manual_watchlist(watchlist)
 
     normalized_symbol = _normalize_symbol(symbol)
     normalized_exchange = _normalize_exchange(exchange)
@@ -471,3 +500,32 @@ def remove_symbol_from_watchlist(
     reconcile_user_subscriptions(db, user_id)
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(updated or watchlist)
+
+
+def list_preset_catalog(
+    db: Session,
+    user_id: str,
+    *,
+    query: str = "",
+    limit: int = 30,
+) -> list[WatchlistPresetCatalogEntryOut]:
+    return [WatchlistPresetCatalogEntryOut(**item) for item in preset_svc.list_preset_catalog(db, user_id, query=query, limit=limit)]
+
+
+def add_preset_watchlist(db: Session, user_id: str, preset_id: str) -> WatchlistOut:
+    watchlist = preset_svc.add_preset_to_user_watchlists(db, user_id, preset_id)
+    reconcile_user_subscriptions(db, user_id)
+    updated = _get_owned_watchlist(db, user_id, watchlist.id)
+    return _watchlist_to_out(updated or watchlist)
+
+
+def refresh_watchlist(db: Session, user_id: str, watchlist_id: str) -> WatchlistOut | None:
+    watchlist = _get_owned_watchlist(db, user_id, watchlist_id)
+    if watchlist is None:
+        return None
+    if watchlist.kind != "preset":
+        raise HTTPException(status_code=400, detail="Only preset watchlists can be refreshed")
+    refreshed = preset_svc.refresh_user_preset_watchlist(db, user_id, watchlist_id)
+    reconcile_user_subscriptions(db, user_id)
+    updated = _get_owned_watchlist(db, user_id, refreshed.id)
+    return _watchlist_to_out(updated or refreshed)

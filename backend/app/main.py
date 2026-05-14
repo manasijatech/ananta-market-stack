@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.services.alert_runtime import create_alert_worker_service
 from app.services.alpha_websocket import run_alpha_websocket_worker
 from app.services.broker_sessions import maintenance_loop
+from app.services.watchlist_preset_worker import run_watchlist_preset_worker
 from db.session import init_db
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,12 @@ async def lifespan(_app: FastAPI):
     alpha_ws_worker_service = None
     if settings.enable_in_process_alpha_ws_worker:
         alpha_ws_worker_service = _start_background_service("alpha-ws-worker", run_alpha_websocket_worker)
+    watchlist_preset_worker_service = None
+    if settings.enable_in_process_watchlist_preset_worker:
+        watchlist_preset_worker_service = _start_background_service(
+            "watchlist-preset-worker",
+            run_watchlist_preset_worker,
+        )
     yield
     if maintenance_service:
         maintenance_service.stop()
@@ -100,6 +107,8 @@ async def lifespan(_app: FastAPI):
         alert_worker_service.stop()
     if alpha_ws_worker_service:
         alpha_ws_worker_service.stop()
+    if watchlist_preset_worker_service:
+        watchlist_preset_worker_service.stop()
 
 
 def _start_background_service(name: str, target) -> BackgroundAsyncLoopThread | None:

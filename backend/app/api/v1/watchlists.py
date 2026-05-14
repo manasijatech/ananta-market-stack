@@ -7,6 +7,8 @@ from app.deps import get_current_user
 from app.schemas.watchlist import (
     WatchlistCreateIn,
     WatchlistOut,
+    WatchlistPresetAddIn,
+    WatchlistPresetCatalogEntryOut,
     WatchlistSymbolsBulkIn,
     WatchlistSymbolsBulkOut,
     WatchlistSymbolsReplaceIn,
@@ -34,6 +36,25 @@ def create_watchlist(
     user: User = Depends(get_current_user),
 ) -> WatchlistOut:
     return watchlist_svc.create_watchlist(db, user.id, body)
+
+
+@router.get("/presets/catalog", response_model=list[WatchlistPresetCatalogEntryOut])
+def list_watchlist_presets(
+    q: str = Query(default=""),
+    limit: int = Query(default=30, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[WatchlistPresetCatalogEntryOut]:
+    return watchlist_svc.list_preset_catalog(db, user.id, query=q, limit=limit)
+
+
+@router.post("/presets/add", response_model=WatchlistOut)
+def add_preset_watchlist(
+    body: WatchlistPresetAddIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> WatchlistOut:
+    return watchlist_svc.add_preset_watchlist(db, user.id, body.preset_id)
 
 
 @router.get("/{watchlist_id}", response_model=WatchlistOut)
@@ -71,6 +92,18 @@ def delete_watchlist(
     if not ok:
         raise HTTPException(status_code=404, detail="watchlist not found")
     return {"ok": True}
+
+
+@router.post("/{watchlist_id}/refresh", response_model=WatchlistOut)
+def refresh_watchlist(
+    watchlist_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> WatchlistOut:
+    row = watchlist_svc.refresh_watchlist(db, user.id, watchlist_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    return row
 
 
 @router.post("/{watchlist_id}/symbols", response_model=WatchlistSymbolsBulkOut)

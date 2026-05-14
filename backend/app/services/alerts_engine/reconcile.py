@@ -17,6 +17,7 @@ from db.models import (
     AlertWorkflow,
     BrokerAccount,
     LiveSymbolSubscription,
+    SystemWatchlistPresetSymbol,
     UserBrokerDataPreference,
     UserWatchlist,
     UserWatchlistSymbol,
@@ -99,9 +100,18 @@ def _watchlist_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
     watchlists = db.scalars(select(UserWatchlist).where(UserWatchlist.user_id == user_id)).all()
     account_id, broker_code = _resolve_account(db, user_id, None, None)
     for watchlist in watchlists:
-        rows = db.scalars(select(UserWatchlistSymbol).where(UserWatchlistSymbol.watchlist_id == watchlist.id)).all()
+        if watchlist.kind == "preset" and watchlist.system_preset_id:
+            rows = db.scalars(
+                select(SystemWatchlistPresetSymbol).where(
+                    SystemWatchlistPresetSymbol.preset_id == watchlist.system_preset_id
+                )
+            ).all()
+            source_type = "preset_watchlist"
+        else:
+            rows = db.scalars(select(UserWatchlistSymbol).where(UserWatchlistSymbol.watchlist_id == watchlist.id)).all()
+            source_type = "watchlist"
         for row in rows:
-            ref = InstrumentRef(**_json_loads(row.instrument_ref_json))
+            ref = InstrumentRef(**_json_loads(getattr(row, "instrument_ref_json", None)))
             ref.symbol = ref.symbol or row.symbol
             ref.exchange = ref.exchange or row.exchange or None
             desired.append(
@@ -114,7 +124,7 @@ def _watchlist_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
                     exchange=row.exchange or None,
                     instrument_ref=ref,
                     source_kind="watchlist",
-                    source_type="watchlist",
+                    source_type=source_type,
                     source_id=watchlist.id,
                     source_label=watchlist.name,
                     owner_kind="watchlist",
@@ -280,4 +290,3 @@ def reconcile_all_users(db: Session) -> dict[str, Any]:
     totals["reports"] = reports
     totals["ran_at"] = _now().isoformat()
     return totals
-

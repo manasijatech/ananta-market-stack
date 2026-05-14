@@ -47,6 +47,12 @@ class WatchlistOut(BaseModel):
     id: str
     user_id: str
     name: str
+    kind: str = "manual"
+    is_editable: bool = True
+    preset_id: str | None = None
+    preset_slug: str | None = None
+    preset_sync_status: str | None = None
+    preset_last_synced_at: datetime | None = None
     symbols: list[str] = Field(default_factory=list)
     items: list[WatchlistSymbolOut] = Field(default_factory=list)
     created_at: datetime
@@ -57,3 +63,24 @@ class WatchlistSymbolsBulkOut(BaseModel):
     watchlist: WatchlistOut
     added_symbols: list[str] = Field(default_factory=list)
     skipped_symbols: list[str] = Field(default_factory=list)
+
+
+class WatchlistPresetCatalogEntryOut(BaseModel):
+    id: str
+    slug: str
+    name: str
+    trading_index_name: str
+    constituent_csv_url: str | None = None
+    constituent_count: int = 0
+    is_popular: bool = False
+    auto_sync_enabled: bool = False
+    sync_status: str
+    sync_error: str | None = None
+    last_catalog_sync_at: datetime | None = None
+    last_constituents_sync_at: datetime | None = None
+    is_added: bool = False
+    user_watchlist_id: str | None = None
+
+
+class WatchlistPresetAddIn(BaseModel):
+    preset_id: str

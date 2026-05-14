@@ -433,12 +433,23 @@ class UserWatchlist(Base):
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="manual", index=True)
+    system_preset_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("system_watchlist_presets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True
     )
 
     user: Mapped[User] = relationship("User", back_populates="watchlists")
+    system_preset: Mapped[SystemWatchlistPreset | None] = relationship(
+        "SystemWatchlistPreset",
+        back_populates="watchlist_links",
+    )
     symbols: Mapped[list[UserWatchlistSymbol]] = relationship(
         "UserWatchlistSymbol",
         back_populates="watchlist",
@@ -470,6 +481,76 @@ class UserWatchlistSymbol(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     watchlist: Mapped[UserWatchlist] = relationship("UserWatchlist", back_populates="symbols")
+
+
+class SystemWatchlistPreset(Base):
+    __tablename__ = "system_watchlist_presets"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_system_watchlist_presets_slug"),
+        UniqueConstraint("trading_index_name", name="uq_system_watchlist_presets_trading_index_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    trading_index_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    constituent_csv_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    constituent_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    search_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sync_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_popular: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    auto_sync_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    last_catalog_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_constituents_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True
+    )
+
+    symbols: Mapped[list[SystemWatchlistPresetSymbol]] = relationship(
+        "SystemWatchlistPresetSymbol",
+        back_populates="preset",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="SystemWatchlistPresetSymbol.sort_order",
+    )
+    watchlist_links: Mapped[list[UserWatchlist]] = relationship(
+        "UserWatchlist",
+        back_populates="system_preset",
+    )
+
+
+class SystemWatchlistPresetSymbol(Base):
+    __tablename__ = "system_watchlist_preset_symbols"
+    __table_args__ = (
+        UniqueConstraint(
+            "preset_id",
+            "symbol",
+            "exchange",
+            name="uq_system_watchlist_preset_symbols_symbol_exchange",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    preset_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("system_watchlist_presets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    exchange: Mapped[str] = mapped_column(String(32), nullable=False, default="NSE")
+    company_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    isin: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    series: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    weight: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
+    raw_row_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    preset: Mapped[SystemWatchlistPreset] = relationship("SystemWatchlistPreset", back_populates="symbols")
 
 
 class BrokerInstrument(Base):

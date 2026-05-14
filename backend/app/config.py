@@ -40,6 +40,14 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="ENABLE_IN_PROCESS_ALPHA_WS_WORKER",
     )
+    enable_in_process_watchlist_preset_worker: bool = Field(
+        default=True,
+        validation_alias="ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER",
+    )
+    watchlist_preset_worker_interval_seconds: int = Field(
+        default=60 * 60,
+        validation_alias="WATCHLIST_PRESET_WORKER_INTERVAL_SECONDS",
+    )
 
     # Development-only fallback if no key set (not for production).
     allow_insecure_dev_credentials: bool = False
