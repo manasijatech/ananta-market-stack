@@ -2,8 +2,9 @@ import { AlertsNav } from "@/components/alerts/alerts-nav";
 import { ExecutionHistory } from "@/components/alerts/execution-history";
 import { WorkflowEditor } from "@/components/alerts/workflow-editor";
 import { PageHeader, Shell } from "@/components/brokers/ui";
-import { getAlertWorkflow, getAlertWorkflowRuns } from "@/service/actions/alerts";
+import { getAlertPresets, getAlertWorkflow, getAlertWorkflowRuns } from "@/service/actions/alerts";
 import { getBrokerAccounts } from "@/service/actions/broker";
+import { getWatchlists } from "@/service/actions/watchlist";
 
 type WorkflowDetailPageProps = {
  params: Promise<{ id: string }>;
@@ -11,10 +12,12 @@ type WorkflowDetailPageProps = {
 
 export default async function WorkflowDetailPage({ params }: WorkflowDetailPageProps) {
  const { id } = await params;
- const [accounts, workflow, runs] = await Promise.all([
+ const [accounts, workflow, runs, watchlists, presets] = await Promise.all([
  getBrokerAccounts(),
  getAlertWorkflow(id),
- getAlertWorkflowRuns(id, 100)
+ getAlertWorkflowRuns(id, 100),
+ getWatchlists(),
+ getAlertPresets()
  ]);
 
  return (
@@ -26,7 +29,7 @@ export default async function WorkflowDetailPage({ params }: WorkflowDetailPageP
  />
  <AlertsNav />
  <div className="grid gap-8">
- <WorkflowEditor accounts={accounts} initialWorkflow={workflow} />
+ <WorkflowEditor accounts={accounts} initialWorkflow={workflow} presets={presets} watchlists={watchlists} />
  <ExecutionHistory runs={runs} />
  </div>
  </Shell>

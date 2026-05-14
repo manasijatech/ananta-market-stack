@@ -77,6 +77,8 @@ export async function updateWatchlist(id: string, payload: WatchlistUpdateInput)
 export async function deleteWatchlist(id: string): Promise<void> {
   await request<{ ok: boolean }>(`/watchlists/${id}`, { method: "DELETE" });
   revalidatePath("/watchlists");
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
 }
 
 export async function addSymbolsToWatchlist(
@@ -118,5 +120,7 @@ export async function removeSymbolFromWatchlist(
     { method: "DELETE" }
   );
   revalidatePath("/watchlists");
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
   return result;
 }

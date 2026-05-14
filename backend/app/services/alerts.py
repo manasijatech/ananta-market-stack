@@ -34,6 +34,13 @@ from app.schemas.alert import (
     LiveSubscriptionOut,
     LiveWorkerSessionOut,
 )
+from app.services.alerts_engine.ast import AlertUniverseNode, ast_to_dict, ensure_workflow_ast
+from app.services.alerts_engine.compiler import compile_workflow_dsl
+from app.services.alerts_engine.conditions import condition_registry_payload, evaluate_logic
+from app.services.alerts_engine.explain import explain_ast
+from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
+from app.services.alerts_engine.samples import sample_alerts_for_ast
+from app.services.alerts_engine.universes import list_presets, resolve_universe
 from app.services import broker_sessions as broker_session_svc
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
@@ -76,7 +83,17 @@ def _instrument_ref(ref: dict[str, Any] | None) -> InstrumentRef:
 
 
 def _workflow_dsl(payload: dict[str, Any] | None) -> AlertWorkflowDsl:
-    return AlertWorkflowDsl(**(payload or {}))
+    dsl = AlertWorkflowDsl(**(payload or {}))
+    if dsl.workflow_ast is None:
+        dsl.workflow_ast = ast_to_dict(ensure_workflow_ast(dsl))
+    if not dsl.compiled_summary:
+        try:
+            compiled = compile_workflow_dsl(dsl)
+            dsl.compiled_summary = compiled["compiled_summary"]
+            dsl.validation_status = "valid" if compiled["valid"] else "invalid"
+        except Exception:
+            dsl.validation_status = "invalid"
+    return dsl
 
 
 def _graph_dsl(payload: dict[str, Any] | None) -> AlertGraphDsl:
@@ -453,6 +470,12 @@ def _workflow_to_out(row: AlertWorkflow) -> AlertWorkflowOut:
         editor_mode=row.editor_mode,  # type: ignore[arg-type]
         status=row.status,  # type: ignore[arg-type]
         channel_override=_channel_selection(_json_loads(row.channel_override_json, None)),
+        deployment_status=row.deployment_status,
+        deploy_version=row.deploy_version,
+        compiled_summary=_json_loads(row.compiled_summary_json, {}),
+        last_validated_at=row.last_validated_at,
+        last_compiled_at=row.last_compiled_at,
+        last_runtime_error=row.last_runtime_error,
         last_triggered_at=row.last_triggered_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -470,29 +493,7 @@ def _clear_workflow_subscriptions(db: Session, workflow_id: str) -> None:
 
 
 def _sync_workflow_subscription(db: Session, workflow: AlertWorkflow) -> None:
-    _clear_workflow_subscriptions(db, workflow.id)
-    if workflow.status != "active":
-        return
-    targeting = _workflow_targeting_for_row(workflow)
-    entries = _targeting_entries(targeting)
-    if not entries:
-        return
-    ensure_symbol_subscriptions(
-        db,
-        workflow.user_id,
-        [
-            LiveSubscriptionCreateIn(
-                account_id=workflow.account_id,
-                broker_code=workflow.broker_code,
-                workflow_id=workflow.id,
-                symbol=entry.symbol,
-                exchange=entry.exchange,
-                instrument_ref=entry.instrument_ref,
-                source_kind="workflow",
-            )
-            for entry in entries
-        ],
-    )
+    reconcile_user_subscriptions(db, workflow.user_id)
 
 
 def list_workflows(db: Session, user_id: str, *, status: str | None = None) -> list[AlertWorkflowOut]:
@@ -535,7 +536,16 @@ def _persist_workflow(
         if not normalized_targeting.entries:
             normalized_targeting = _default_targeting(incoming_symbol, incoming_exchange, next_instrument_ref)
         workflow_dsl.targeting = normalized_targeting
+        compiled = compile_workflow_dsl(workflow_dsl)
+        workflow_dsl.workflow_ast = compiled["workflow_ast"]
+        workflow_dsl.compiled_summary = compiled["compiled_summary"]
+        workflow_dsl.validation_status = "valid" if compiled["valid"] else "invalid"
         row.workflow_dsl_json = _json_dumps(workflow_dsl.model_dump())
+        row.compiled_summary_json = _json_dumps(compiled["compiled_summary"])
+        row.last_validated_at = _now()
+        row.last_compiled_at = _now() if compiled["valid"] else row.last_compiled_at
+        row.last_runtime_error = "; ".join(compiled["errors"]) if compiled["errors"] else None
+        row.deployment_status = "validated" if compiled["valid"] else "error"
         primary_target = _primary_target_entry(normalized_targeting)
         row.symbol = primary_target.symbol if primary_target else incoming_symbol
         row.exchange = primary_target.exchange if primary_target else incoming_exchange
@@ -568,6 +578,10 @@ def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> 
     payload.workflow_dsl.targeting = _normalize_targeting(payload.workflow_dsl.targeting)
     if not payload.workflow_dsl.targeting.entries:
         payload.workflow_dsl.targeting = _default_targeting(payload.symbol, payload.exchange, payload.instrument_ref)
+    compiled = compile_workflow_dsl(payload.workflow_dsl)
+    payload.workflow_dsl.workflow_ast = compiled["workflow_ast"]
+    payload.workflow_dsl.compiled_summary = compiled["compiled_summary"]
+    payload.workflow_dsl.validation_status = "valid" if compiled["valid"] else "invalid"
     primary_target = _primary_target_entry(payload.workflow_dsl.targeting)
     graph = payload.graph_dsl if payload.graph_dsl.nodes else _default_graph_from_dsl(payload.workflow_dsl)
     row = AlertWorkflow(
@@ -588,6 +602,11 @@ def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> 
         editor_mode=payload.editor_mode,
         status="active",
         channel_override_json=_json_dumps(payload.channel_override.model_dump()) if payload.channel_override else "null",
+        deployment_status="validated" if compiled["valid"] else "error",
+        compiled_summary_json=_json_dumps(compiled["compiled_summary"]),
+        last_validated_at=_now(),
+        last_compiled_at=_now() if compiled["valid"] else None,
+        last_runtime_error="; ".join(compiled["errors"]) if compiled["errors"] else None,
     )
     db.add(row)
     db.commit()
@@ -617,6 +636,7 @@ def delete_workflow(db: Session, user_id: str, workflow_id: str) -> bool:
     _clear_workflow_subscriptions(db, workflow_id)
     db.delete(row)
     db.commit()
+    reconcile_user_subscriptions(db, user_id)
     return True
 
 
@@ -754,45 +774,9 @@ def evaluate_workflow_payload(
     tick: dict[str, Any],
     previous_tick: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
-    previous = previous_tick or {}
-    results: list[bool] = []
-    reasons: list[str] = []
-    for condition in workflow.workflow_dsl.conditions:
-        current, reference = _condition_value(condition, tick, previous)
-        matched = False
-        operator = condition.operator
-        value = condition.value
-        if operator == "gt" and current is not None:
-            matched = current > float(value or 0)
-        elif operator == "gte" and current is not None:
-            matched = current >= float(value or 0)
-        elif operator == "lt" and current is not None:
-            matched = current < float(value or 0)
-        elif operator == "lte" and current is not None:
-            matched = current <= float(value or 0)
-        elif operator == "crosses_above" and current is not None:
-            previous_value = previous.get(condition.field)
-            try:
-                threshold = float(value or 0)
-                matched = current >= threshold if previous_value is None else float(previous_value) < threshold <= current
-            except Exception:
-                matched = False
-        elif operator == "crosses_below" and current is not None:
-            previous_value = previous.get(condition.field)
-            try:
-                threshold = float(value or 0)
-                matched = current <= threshold if previous_value is None else float(previous_value) > threshold >= current
-            except Exception:
-                matched = False
-        elif operator == "pct_change_gte" and current is not None and reference not in (None, 0):
-            matched = ((current - reference) / reference) * 100 >= float(value or 0)
-        elif operator == "pct_change_lte" and current is not None and reference not in (None, 0):
-            matched = ((current - reference) / reference) * 100 <= float(value or 0)
-        if matched:
-            reasons.append(f"{condition.field} {operator}")
-        results.append(matched)
-    final_match = all(results) if workflow.workflow_dsl.combine == "all" else any(results)
-    return final_match, ", ".join(reasons) or "no conditions matched"
+    workflow_ast = ensure_workflow_ast(workflow.workflow_dsl)
+    result = evaluate_logic(workflow_ast.logic, tick, previous_tick or {})
+    return result.matched, result.reason
 
 
 def list_workflow_runs(
@@ -823,6 +807,97 @@ def list_workflow_runs(
         )
         for row in rows
     ]
+
+
+def validate_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, Any] | None:
+    row = db.get(AlertWorkflow, workflow_id)
+    if not row or row.user_id != user_id:
+        return None
+    dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
+    result = compile_workflow_dsl(dsl)
+    row.workflow_dsl_json = _json_dumps({**dsl.model_dump(), "workflow_ast": result["workflow_ast"], "validation_status": "valid" if result["valid"] else "invalid", "compiled_summary": result["compiled_summary"]})
+    row.compiled_summary_json = _json_dumps(result["compiled_summary"])
+    row.last_validated_at = _now()
+    row.last_compiled_at = _now() if result["valid"] else row.last_compiled_at
+    row.deployment_status = "validated" if result["valid"] else "error"
+    row.last_runtime_error = "; ".join(result["errors"]) if result["errors"] else None
+    db.add(row)
+    db.commit()
+    return result
+
+
+def compile_preview_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, Any] | None:
+    row = db.get(AlertWorkflow, workflow_id)
+    if not row or row.user_id != user_id:
+        return None
+    return compile_workflow_dsl(_workflow_dsl(_json_loads(row.workflow_dsl_json, {})))
+
+
+def explain_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, Any] | None:
+    row = db.get(AlertWorkflow, workflow_id)
+    if not row or row.user_id != user_id:
+        return None
+    return explain_ast(ensure_workflow_ast(_workflow_dsl(_json_loads(row.workflow_dsl_json, {}))))
+
+
+def sample_workflow_alerts(db: Session, user_id: str, workflow_id: str) -> dict[str, Any] | None:
+    row = db.get(AlertWorkflow, workflow_id)
+    if not row or row.user_id != user_id:
+        return None
+    return sample_alerts_for_ast(ensure_workflow_ast(_workflow_dsl(_json_loads(row.workflow_dsl_json, {}))))
+
+
+def deploy_workflow(db: Session, user_id: str, workflow_id: str) -> AlertWorkflowOut | None:
+    row = db.get(AlertWorkflow, workflow_id)
+    if not row or row.user_id != user_id:
+        return None
+    result = compile_workflow_dsl(_workflow_dsl(_json_loads(row.workflow_dsl_json, {})))
+    if not result["valid"]:
+        row.deployment_status = "error"
+        row.last_runtime_error = "; ".join(result["errors"])
+    else:
+        row.deploy_version = int(row.deploy_version or 0) + 1
+        row.deployment_status = "active"
+        row.status = "active"
+        row.workflow_dsl_json = _json_dumps({**_json_loads(row.workflow_dsl_json, {}), "workflow_ast": result["workflow_ast"], "validation_status": "valid", "compiled_summary": result["compiled_summary"]})
+        row.compiled_summary_json = _json_dumps(result["compiled_summary"])
+        row.last_runtime_error = None
+        row.last_compiled_at = _now()
+    row.last_validated_at = _now()
+    db.add(row)
+    db.commit()
+    reconcile_user_subscriptions(db, user_id)
+    db.refresh(row)
+    return _workflow_to_out(row)
+
+
+def preview_universe(db: Session, user_id: str, target_universe: dict[str, Any], limit: int = 50) -> dict[str, Any]:
+    symbols = resolve_universe(db, user_id, AlertUniverseNode(**(target_universe or {})))
+    return {
+        "count": len(symbols),
+        "sample": [
+            {
+                "symbol": item.symbol,
+                "exchange": item.exchange,
+                "source_type": item.source_type,
+                "source_id": item.source_id,
+                "source_label": item.source_label,
+            }
+            for item in symbols[:limit]
+        ],
+    }
+
+
+def reconcile_subscriptions_for_user(db: Session, user_id: str) -> dict[str, Any]:
+    return reconcile_user_subscriptions(db, user_id)
+
+
+def alert_condition_registry() -> dict[str, Any]:
+    return condition_registry_payload()
+
+
+def alert_presets() -> list[dict[str, Any]]:
+    return list_presets()
 
 
 def _channel_config_payload(row: UserAlertChannel) -> dict[str, Any]:
@@ -1263,9 +1338,17 @@ def _subscription_to_out(row: LiveSymbolSubscription) -> LiveSubscriptionOut:
         exchange=row.exchange,
         instrument_ref=_instrument_ref(_json_loads(row.instrument_ref_json, {})),
         source_kind=row.source_kind,
+        source_type=row.source_type,
+        source_id=row.source_id,
+        source_label=row.source_label,
+        owner_kind=row.owner_kind,
+        owner_id=row.owner_id,
         status=row.status,
         last_quote=_json_loads(row.last_quote_json, {}),
         last_received_at=row.last_received_at,
+        reconciled_at=row.reconciled_at,
+        health_status=row.health_status,
+        health_reason=row.health_reason,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -1312,7 +1395,14 @@ def ensure_symbol_subscription(db: Session, user_id: str, payload: LiveSubscript
         )
     row.instrument_ref_json = _json_dumps(payload.instrument_ref.model_dump(exclude_none=True))
     row.broker_code = payload.broker_code
+    row.source_type = payload.source_type or payload.source_kind
+    row.source_id = payload.source_id
+    row.source_label = payload.source_label
+    row.owner_kind = payload.owner_kind or payload.source_kind
+    row.owner_id = payload.owner_id or payload.workflow_id
     row.status = "active"
+    row.health_status = "healthy"
+    row.health_reason = ""
     db.add(row)
     db.commit()
     db.refresh(row)

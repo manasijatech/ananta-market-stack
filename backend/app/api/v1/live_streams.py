@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
 from app.schemas.alert import (
+    AlertReconcileReportOut,
     LiveStreamsStatusOut,
     LiveSubscriptionBulkIn,
     LiveSubscriptionCreateIn,
@@ -87,5 +88,5 @@ def remove_subscriptions_bulk(
 def reconcile_subscriptions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> LiveStreamsStatusOut:
-    return alert_svc.live_stream_status(db, user.id)
+) -> AlertReconcileReportOut:
+    return alert_svc.reconcile_subscriptions_for_user(db, user.id)

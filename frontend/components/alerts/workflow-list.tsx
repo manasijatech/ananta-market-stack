@@ -91,10 +91,11 @@ export function WorkflowList({
  </div>
  </div>
  <div className=" border border-border px-3 py-1 text-xs font-bold uppercase text-muted-foreground">
- {workflow.status}
+ {workflow.deployment_status || workflow.status}
  </div>
  </div>
  <div className="mt-3 text-sm text-muted-foreground">{workflow.description || "No description"}</div>
+ {workflow.last_runtime_error ? <div className="mt-2 text-xs text-[var(--danger)]">{workflow.last_runtime_error}</div> : null}
  <div className="mt-4 flex flex-wrap gap-2">
  <Button
  disabled={isPending && pendingId === workflow.id}

@@ -1,5 +1,5 @@
 export type AlertChannelType = "in_app" | "discord" | "telegram";
-export type WorkflowStatus = "active" | "inactive";
+export type WorkflowStatus = "active" | "inactive" | "draft" | "validated" | "paused" | "error";
 export type EditorMode = "rule" | "graph";
 
 export interface AlertCondition {
@@ -39,12 +39,17 @@ export interface AlertWorkflowTargeting {
 }
 
 export interface AlertWorkflowDsl {
+  version?: number;
   combine: "all" | "any";
   cooldown_seconds: number;
   conditions: AlertCondition[];
   targeting: AlertWorkflowTargeting;
   notification: AlertNotificationConfig;
   channels: AlertChannelSelection;
+  workflow_ast?: Record<string, unknown> | null;
+  dsl_text?: string | null;
+  validation_status?: "unknown" | "valid" | "invalid";
+  compiled_summary?: Record<string, unknown>;
 }
 
 export interface AlertGraphNode {
@@ -111,6 +116,12 @@ export interface AlertWorkflow {
   editor_mode: EditorMode;
   status: WorkflowStatus;
   channel_override?: AlertChannelSelection | null;
+  deployment_status?: string;
+  deploy_version?: number;
+  compiled_summary?: Record<string, unknown>;
+  last_validated_at?: string | null;
+  last_compiled_at?: string | null;
+  last_runtime_error?: string | null;
   last_triggered_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -178,9 +189,17 @@ export interface LiveSubscription {
   exchange?: string | null;
   instrument_ref: InstrumentRef;
   source_kind: string;
+  source_type?: string | null;
+  source_id?: string | null;
+  source_label?: string | null;
+  owner_kind?: string | null;
+  owner_id?: string | null;
   status: string;
   last_quote: Record<string, unknown>;
   last_received_at?: string | null;
+  reconciled_at?: string | null;
+  health_status?: string;
+  health_reason?: string;
   created_at: string;
   updated_at: string;
 }
@@ -225,4 +244,30 @@ export interface LiveStreamsStatus {
   active_sessions: LiveWorkerSession[];
   desired_subscriptions: LiveSubscription[];
   broker_statuses: LiveBrokerAccountStatus[];
+}
+
+export interface AlertWorkflowValidation {
+  valid: boolean;
+  errors: string[];
+  workflow_ast?: Record<string, unknown> | null;
+  compiled_summary: Record<string, unknown>;
+}
+
+export interface AlertUniversePreview {
+  count: number;
+  sample: Array<Record<string, unknown>>;
+}
+
+export interface AlertReconcileReport {
+  user_id?: string | null;
+  users?: number | null;
+  created: number;
+  restored: number;
+  updated: number;
+  deactivated: number;
+  orphaned: number;
+  errors: number;
+  desired: number;
+  ran_at?: string | null;
+  reports: Array<Record<string, unknown>>;
 }

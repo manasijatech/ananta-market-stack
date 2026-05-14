@@ -3,7 +3,10 @@ from fastapi import APIRouter
 from app.api.v1 import (
     alert_channels,
     alert_notifications,
+    alert_presets,
+    alert_runtime,
     alert_templates,
+    alert_universes,
     alert_workflows,
     broker_accounts,
     broker_data_config,
@@ -32,6 +35,15 @@ api_router.include_router(
 )
 api_router.include_router(
     alert_templates.router, prefix="/alert-templates", tags=["alert-templates"]
+)
+api_router.include_router(
+    alert_universes.router, prefix="/alert-universes", tags=["alert-universes"]
+)
+api_router.include_router(
+    alert_presets.router, prefix="/alert-presets", tags=["alert-presets"]
+)
+api_router.include_router(
+    alert_runtime.router, prefix="/alert-runtime", tags=["alert-runtime"]
 )
 api_router.include_router(
     alert_channels.router, prefix="/alert-channels", tags=["alert-channels"]

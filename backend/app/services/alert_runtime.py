@@ -12,6 +12,7 @@ import redis
 from sqlalchemy import select
 
 from app.services import alerts as alert_svc
+from app.services.alerts_engine.reconcile import reconcile_all_users
 from app.services import broker_data
 from db.models import (
     AlertWorkflow,
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 STREAM_BLOCK_MS = 1000
 STREAM_MAX_BATCH = 200
 WORKFLOW_TICK_TTL_SECONDS = 24 * 60 * 60
+RECONCILE_INTERVAL_SECONDS = 5 * 60
 
 
 def _redis() -> redis.Redis | None:
@@ -480,6 +482,21 @@ async def run_alert_delivery_worker(stop_event: asyncio.Event, poll_interval_sec
             continue
 
 
+async def run_subscription_reconciler_worker(stop_event: asyncio.Event, interval_seconds: float = RECONCILE_INTERVAL_SECONDS) -> None:
+    while not stop_event.is_set():
+        db = SessionLocal()
+        try:
+            await asyncio.to_thread(reconcile_all_users, db)
+        except Exception as exc:
+            logger.warning("alert subscription reconcile loop failed: %s", exc)
+        finally:
+            db.close()
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except TimeoutError:
+            continue
+
+
 def _workflow_channels(db, user_id: str, workflow) -> list[str]:
     _ = user_id
     return alert_svc.resolve_workflow_channels(db, workflow)
@@ -554,5 +571,6 @@ def create_alert_worker_service() -> CompositeBackgroundService:
             BackgroundAsyncService("alert-live-worker", run_live_market_data_worker),
             BackgroundAsyncService("alert-evaluator-worker", run_alert_evaluator_worker),
             BackgroundAsyncService("alert-delivery-worker", run_alert_delivery_worker),
+            BackgroundAsyncService("alert-reconciler-worker", run_subscription_reconciler_worker),
         ]
     )

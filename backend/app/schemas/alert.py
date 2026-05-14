@@ -9,7 +9,7 @@ from app.schemas.broker import InstrumentRef
 
 
 AlertChannelType = Literal["in_app", "discord", "telegram"]
-WorkflowStatus = Literal["active", "inactive"]
+WorkflowStatus = Literal["active", "inactive", "draft", "validated", "paused", "error"]
 EditorMode = Literal["rule", "graph"]
 
 
@@ -50,12 +50,17 @@ class AlertWorkflowTargeting(BaseModel):
 
 
 class AlertWorkflowDsl(BaseModel):
+    version: int = 2
     combine: Literal["all", "any"] = "all"
     cooldown_seconds: int = 300
     conditions: list[AlertCondition] = Field(default_factory=list)
     targeting: AlertWorkflowTargeting = Field(default_factory=AlertWorkflowTargeting)
     notification: AlertNotificationConfig = Field(default_factory=AlertNotificationConfig)
     channels: AlertChannelSelection = Field(default_factory=AlertChannelSelection)
+    workflow_ast: dict[str, Any] | None = None
+    dsl_text: str | None = None
+    validation_status: Literal["unknown", "valid", "invalid"] = "unknown"
+    compiled_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class AlertGraphNode(BaseModel):
@@ -137,6 +142,12 @@ class AlertWorkflowOut(BaseModel):
     editor_mode: EditorMode
     status: WorkflowStatus
     channel_override: AlertChannelSelection | None
+    deployment_status: str = "draft"
+    deploy_version: int = 0
+    compiled_summary: dict[str, Any] = Field(default_factory=dict)
+    last_validated_at: datetime | None = None
+    last_compiled_at: datetime | None = None
+    last_runtime_error: str | None = None
     last_triggered_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -154,6 +165,37 @@ class AlertWorkflowInstantiateIn(BaseModel):
 
 class AlertWorkflowTestIn(BaseModel):
     tick: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlertWorkflowValidationOut(BaseModel):
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    workflow_ast: dict[str, Any] | None = None
+    compiled_summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlertUniversePreviewIn(BaseModel):
+    target_universe: dict[str, Any] = Field(default_factory=dict)
+    limit: int = Field(default=50, ge=1, le=500)
+
+
+class AlertUniversePreviewOut(BaseModel):
+    count: int
+    sample: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AlertReconcileReportOut(BaseModel):
+    user_id: str | None = None
+    users: int | None = None
+    created: int = 0
+    restored: int = 0
+    updated: int = 0
+    deactivated: int = 0
+    orphaned: int = 0
+    errors: int = 0
+    desired: int = 0
+    ran_at: str | None = None
+    reports: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AlertWorkflowRunOut(BaseModel):
@@ -234,6 +276,11 @@ class LiveSubscriptionCreateIn(BaseModel):
     exchange: str | None = None
     instrument_ref: InstrumentRef = Field(default_factory=InstrumentRef)
     source_kind: str = "manual"
+    source_type: str | None = None
+    source_id: str | None = None
+    source_label: str | None = None
+    owner_kind: str | None = None
+    owner_id: str | None = None
 
 
 class LiveSubscriptionReplaceIn(BaseModel):
@@ -254,9 +301,17 @@ class LiveSubscriptionOut(BaseModel):
     exchange: str | None
     instrument_ref: InstrumentRef
     source_kind: str
+    source_type: str | None = None
+    source_id: str | None = None
+    source_label: str | None = None
+    owner_kind: str | None = None
+    owner_id: str | None = None
     status: str
     last_quote: dict[str, Any] = Field(default_factory=dict)
     last_received_at: datetime | None
+    reconciled_at: datetime | None = None
+    health_status: str = "unknown"
+    health_reason: str = ""
     created_at: datetime
     updated_at: datetime
 

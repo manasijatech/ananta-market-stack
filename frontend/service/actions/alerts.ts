@@ -12,6 +12,9 @@ import type {
   AlertWorkflow,
   AlertWorkflowDsl,
   AlertWorkflowRun,
+  AlertWorkflowValidation,
+  AlertReconcileReport,
+  AlertUniversePreview,
   LiveStreamsStatus,
   LiveSubscription
 } from "@/service/types/alerts";
@@ -159,6 +162,30 @@ export async function sendWorkflowTestNotification(id: string, tick: Record<stri
   });
 }
 
+export async function validateAlertWorkflow(id: string): Promise<AlertWorkflowValidation> {
+  return request<AlertWorkflowValidation>(`/alert-workflows/${id}/validate`, { method: "POST" });
+}
+
+export async function compilePreviewAlertWorkflow(id: string): Promise<AlertWorkflowValidation> {
+  return request<AlertWorkflowValidation>(`/alert-workflows/${id}/compile-preview`, { method: "POST" });
+}
+
+export async function explainAlertWorkflow(id: string): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(`/alert-workflows/${id}/explain`, { method: "POST" });
+}
+
+export async function getWorkflowSampleAlerts(id: string): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(`/alert-workflows/${id}/sample-alerts`, { method: "POST" });
+}
+
+export async function deployAlertWorkflow(id: string): Promise<AlertWorkflow> {
+  const result = await request<AlertWorkflow>(`/alert-workflows/${id}/deploy`, { method: "POST" });
+  revalidatePath("/alerts");
+  revalidatePath("/alerts/workflows");
+  revalidatePath(`/alerts/workflows/${id}`);
+  return result;
+}
+
 export async function getAlertWorkflowRuns(id: string, limit = 50): Promise<AlertWorkflowRun[]> {
   return request<AlertWorkflowRun[]>(`/alert-workflows/${id}/runs?limit=${encodeURIComponent(String(limit))}`);
 }
@@ -225,6 +252,28 @@ export async function testAlertChannel(channelType: string, message: string): Pr
 
 export async function getLiveStreamsStatus(): Promise<LiveStreamsStatus> {
   return request<LiveStreamsStatus>("/live-streams/status");
+}
+
+export async function reconcileLiveSubscriptions(): Promise<AlertReconcileReport> {
+  const result = await request<AlertReconcileReport>("/live-streams/subscriptions/reconcile", { method: "POST" });
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/alerts/stream-manager");
+  return result;
+}
+
+export async function previewAlertUniverse(target_universe: Record<string, unknown>, limit = 50): Promise<AlertUniversePreview> {
+  return request<AlertUniversePreview>("/alert-universes/preview", {
+    method: "POST",
+    body: JSON.stringify({ target_universe, limit })
+  });
+}
+
+export async function getAlertPresets(): Promise<Array<Record<string, unknown>>> {
+  return request<Array<Record<string, unknown>>>("/alert-presets");
+}
+
+export async function getAlertConditionRegistry(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/alert-runtime/condition-registry");
 }
 
 export async function getLiveSubscriptions(): Promise<LiveSubscription[]> {

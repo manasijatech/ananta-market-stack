@@ -1,16 +1,27 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { getLiveStreamsStatus } from "@/service/actions/alerts";
+import { getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
 import type { LiveStreamsStatus } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 
 export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsStatus }) {
  const [status, setStatus] = useState(initialStatus);
+ const [reconcileNotice, setReconcileNotice] = useState("");
  const [isPending, startTransition] = useTransition();
 
  function refresh() {
  startTransition(async () => {
+ setStatus(await getLiveStreamsStatus());
+ });
+ }
+
+ function reconcile() {
+ startTransition(async () => {
+ const report = await reconcileLiveSubscriptions();
+ setReconcileNotice(
+ `Reconciled ${report.desired} desired subscriptions · created ${report.created} · restored ${report.restored} · deactivated ${report.deactivated}`
+ );
  setStatus(await getLiveStreamsStatus());
  });
  }
@@ -27,7 +38,11 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
  <Button disabled={isPending} onClick={refresh} type="button" variant="outline">
  Refresh
  </Button>
+ <Button disabled={isPending} onClick={reconcile} type="button" variant="outline">
+ Reconcile
+ </Button>
  </div>
+ {reconcileNotice ? <div className="border border-border px-4 py-3 text-sm text-muted-foreground">{reconcileNotice}</div> : null}
 
  <section className="grid gap-3">
  <div className="text-sm font-bold">Broker readiness</div>
@@ -88,8 +103,14 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
  <div className=" border border-border p-4" key={subscription.id}>
  <div className="text-sm font-bold">{subscription.symbol}</div>
  <div className="text-xs text-muted-foreground">
- {subscription.exchange ?? "-"} · {subscription.broker_code ?? "-"} · {subscription.status}
+ {subscription.exchange ?? "-"} · {subscription.broker_code ?? "-"} · {subscription.status} · {subscription.source_kind}
  </div>
+ <div className="mt-1 text-xs text-muted-foreground">
+ {[subscription.source_type, subscription.source_label || subscription.source_id, subscription.owner_kind, subscription.health_status]
+ .filter(Boolean)
+ .join(" · ")}
+ </div>
+ {subscription.health_reason ? <div className="mt-1 text-xs text-[var(--danger)]">{subscription.health_reason}</div> : null}
  </div>
  ))}
  </section>

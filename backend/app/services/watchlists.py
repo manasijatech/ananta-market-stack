@@ -20,6 +20,7 @@ from app.schemas.watchlist import (
     WatchlistSymbolsReplaceIn,
     WatchlistUpdateIn,
 )
+from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
 from db.models import (
     BrokerAccount,
     LiveSymbolSubscription,
@@ -281,9 +282,8 @@ def create_watchlist(db: Session, user_id: str, payload: WatchlistCreateIn) -> W
         )
         subscription_items.append((symbol, exchange, ref, None, None))
 
-    _ensure_watchlist_subscriptions(db, user_id, subscription_items)
-
     db.commit()
+    reconcile_user_subscriptions(db, user_id)
     created = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(created or watchlist)
 
@@ -317,6 +317,7 @@ def delete_watchlist(db: Session, user_id: str, watchlist_id: str) -> bool:
         return False
     db.delete(watchlist)
     db.commit()
+    reconcile_user_subscriptions(db, user_id)
     return True
 
 
@@ -376,8 +377,8 @@ def add_symbols_to_watchlist(
         next_sort_order += 1
 
     watchlist.updated_at = now
-    _ensure_watchlist_subscriptions(db, user_id, subscription_items)
     db.commit()
+    reconcile_user_subscriptions(db, user_id)
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     out = _watchlist_to_out(updated or watchlist)
     return WatchlistSymbolsBulkOut(
@@ -432,8 +433,8 @@ def replace_watchlist_symbols(
         subscription_items.append((symbol, exchange, ref, account_id, broker_code))
 
     watchlist.updated_at = now
-    _ensure_watchlist_subscriptions(db, user_id, subscription_items)
     db.commit()
+    reconcile_user_subscriptions(db, user_id)
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(updated or watchlist)
 
@@ -467,5 +468,6 @@ def remove_symbol_from_watchlist(
     db.delete(row)
     watchlist.updated_at = _now()
     db.commit()
+    reconcile_user_subscriptions(db, user_id)
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(updated or watchlist)

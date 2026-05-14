@@ -27,6 +27,7 @@ import type {
  AlertWorkflowTargeting
 } from "@/service/types/alerts";
 import type { BrokerAccount, InstrumentSearchRow, JsonObject, QuoteResponse } from "@/service/types/broker";
+import type { Watchlist } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -212,10 +213,14 @@ function HelpText({ children }: { children: React.ReactNode }) {
 
 export function WorkflowEditor({
  accounts,
- initialWorkflow
+ initialWorkflow,
+ presets = [],
+ watchlists = []
 }: {
  accounts: BrokerAccount[];
  initialWorkflow?: AlertWorkflow | null;
+ presets?: Array<Record<string, unknown>>;
+ watchlists?: Watchlist[];
 }) {
  const router = useRouter();
  const [isPending, startTransition] = useTransition();
@@ -236,10 +241,21 @@ export function WorkflowEditor({
  preset_label: null,
  filters: {}
  };
- const [targetMode, setTargetMode] = useState<AlertWorkflowTargeting["mode"]>(initialTargeting.mode);
+ const initialAst = initialWorkflow?.workflow_dsl.workflow_ast as JsonObject | null | undefined;
+ const initialUniverse = (initialAst?.target_universe as JsonObject | undefined) ?? {};
+ const initialTargetMode =
+ initialUniverse.kind && initialUniverse.kind !== "static_symbols"
+ ? "preset_universe"
+ : initialTargeting.mode;
+ const [targetMode, setTargetMode] = useState<AlertWorkflowTargeting["mode"]>(initialTargetMode as AlertWorkflowTargeting["mode"]);
+ const initialDynamicUniverseKind = initialUniverse.kind === "curated_preset" ? "curated_preset" : "watchlist";
+ const [dynamicUniverseKind, setDynamicUniverseKind] = useState(initialDynamicUniverseKind);
+ const [selectedWatchlistId, setSelectedWatchlistId] = useState(String(initialUniverse.watchlist_id ?? watchlists[0]?.id ?? ""));
+ const [selectedPresetId, setSelectedPresetId] = useState(String(initialUniverse.preset_id ?? presets[0]?.id ?? "nse-equity"));
  const [targetEntries, setTargetEntries] = useState<AlertTargetEntry[]>(normalizeTargets(initialTargeting.entries));
  const [bulkTargets, setBulkTargets] = useState("");
- const [status, setStatus] = useState<"active" | "inactive">(initialWorkflow?.status ?? "active");
+ const initialEditableStatus = initialWorkflow?.status === "inactive" ? "inactive" : "active";
+ const [status, setStatus] = useState<"active" | "inactive">(initialEditableStatus);
  const [combine, setCombine] = useState<"all" | "any">(initialWorkflow?.workflow_dsl.combine ?? "all");
  const [cooldownSeconds, setCooldownSeconds] = useState(String(initialWorkflow?.workflow_dsl.cooldown_seconds ?? 300));
  const [conditions, setConditions] = useState<AlertCondition[]>(
@@ -419,10 +435,70 @@ export function WorkflowEditor({
  };
  }
 
+ function workflowAstPayload(targeting: AlertWorkflowTargeting) {
+ const staticUniverse = {
+ kind: "static_symbols",
+ symbols: targeting.entries.map((entry) => ({
+ symbol: entry.symbol,
+ exchange: entry.exchange ?? null,
+ instrument_ref: serializeInstrumentRef(entry.instrument_ref),
+ label: entry.label ?? null,
+ metadata: entry.metadata ?? {}
+ }))
+ };
+ if (targetMode !== "preset_universe") {
+ return {
+ version: 2,
+ target_universe: staticUniverse,
+ logic: {
+ kind: combine,
+ children: conditions.map((condition) => ({ kind: "condition", ...condition }))
+ },
+ cooldown_seconds: Number(cooldownSeconds || 0),
+ notification: {
+ level,
+ title_template: titleTemplate,
+ message_template: messageTemplate
+ },
+ channels: channelSelection()
+ };
+ }
+ const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId);
+ const selectedPreset = presets.find((item) => String(item.id ?? "") === selectedPresetId);
+ const targetUniverse =
+ dynamicUniverseKind === "curated_preset"
+ ? {
+ kind: "curated_preset",
+ preset_id: selectedPresetId,
+ label: String(selectedPreset?.label ?? selectedPresetId)
+ }
+ : {
+ kind: "watchlist",
+ watchlist_id: selectedWatchlistId,
+ label: selectedWatchlist?.name ?? selectedWatchlistId
+ };
+ return {
+ version: 2,
+ target_universe: targetUniverse,
+ logic: {
+ kind: combine,
+ children: conditions.map((condition) => ({ kind: "condition", ...condition }))
+ },
+ cooldown_seconds: Number(cooldownSeconds || 0),
+ notification: {
+ level,
+ title_template: titleTemplate,
+ message_template: messageTemplate
+ },
+ channels: channelSelection()
+ };
+ }
+
  function workflowPayload() {
  const targeting = workflowTargetingPayload();
  const primaryTarget = targeting.entries[0];
  const workflowDsl: AlertWorkflowDsl = {
+ version: 2,
  combine,
  cooldown_seconds: Number(cooldownSeconds || 0),
  conditions,
@@ -432,7 +508,10 @@ export function WorkflowEditor({
  title_template: titleTemplate,
  message_template: messageTemplate
  },
- channels: channelSelection()
+ channels: channelSelection(),
+ workflow_ast: workflowAstPayload(targeting),
+ validation_status: "unknown",
+ compiled_summary: {}
  };
 
  return {
@@ -611,7 +690,14 @@ export function WorkflowEditor({
  setTargetEntries([]);
  }
 
- const canSave = targetMode === "single_symbol" ? Boolean(symbol.trim()) : targetEntries.length > 0;
+ const canSave =
+ targetMode === "single_symbol"
+ ? Boolean(symbol.trim())
+ : targetMode === "symbol_list"
+ ? targetEntries.length > 0
+ : dynamicUniverseKind === "curated_preset"
+ ? Boolean(selectedPresetId)
+ : Boolean(selectedWatchlistId);
 
  return (
  <div className="grid gap-6">
@@ -766,8 +852,52 @@ export function WorkflowEditor({
  </div>
  ) : null}
  {targetMode === "preset_universe" ? (
- <div className="mt-4 border border-border p-4 text-sm text-muted-foreground">
- Preset universes are not wired yet. The backend model now supports this mode so NIFTY 500, top market-cap lists, and other reusable baskets can be added without changing the workflow runtime shape again.
+ <div className="mt-4 grid gap-4 border border-border p-4">
+ <div className="flex flex-wrap items-center justify-between gap-3">
+ <div>
+ <div className="text-sm font-bold">Dynamic universe</div>
+ <HelpText>Use a live watchlist or a backend preset as the workflow target. The subscription reconciler keeps the resolved symbols current.</HelpText>
+ </div>
+ <select
+ className="h-10 border border-input bg-background px-3 text-sm"
+ onChange={(event) => setDynamicUniverseKind(event.target.value)}
+ value={dynamicUniverseKind}
+ >
+ <option value="watchlist">Watchlist</option>
+ <option value="curated_preset">Curated preset</option>
+ </select>
+ </div>
+ {dynamicUniverseKind === "watchlist" ? (
+ <div className="grid gap-2">
+ <select
+ className="h-10 border border-input bg-background px-3 text-sm"
+ onChange={(event) => setSelectedWatchlistId(event.target.value)}
+ value={selectedWatchlistId}
+ >
+ {watchlists.map((watchlist) => (
+ <option key={watchlist.id} value={watchlist.id}>
+ {watchlist.name} · {watchlist.items.length} symbols
+ </option>
+ ))}
+ </select>
+ {!watchlists.length ? <HelpText>Create a watchlist first, then return here to link it to this workflow.</HelpText> : <HelpText>Symbols added to or removed from this watchlist are reconciled into live subscriptions automatically.</HelpText>}
+ </div>
+ ) : (
+ <div className="grid gap-2">
+ <select
+ className="h-10 border border-input bg-background px-3 text-sm"
+ onChange={(event) => setSelectedPresetId(event.target.value)}
+ value={selectedPresetId}
+ >
+ {presets.map((preset) => (
+ <option key={String(preset.id)} value={String(preset.id)}>
+ {String(preset.label ?? preset.id)}
+ </option>
+ ))}
+ </select>
+ <HelpText>Presets are resolved from backend registry rules and broker instrument metadata.</HelpText>
+ </div>
+ )}
  </div>
  ) : null}
  </div>

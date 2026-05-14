@@ -10,6 +10,7 @@ from app.schemas.alert import (
     AlertWorkflowRunOut,
     AlertWorkflowTestIn,
     AlertWorkflowUpdate,
+    AlertWorkflowValidationOut,
 )
 from app.services import alerts as alert_svc
 from db.models import User
@@ -121,6 +122,66 @@ def test_workflow(
         raise HTTPException(status_code=404, detail="workflow not found")
     matched, reason = alert_svc.evaluate_workflow_payload(workflow, body.tick)
     return {"matched": matched, "reason": reason}
+
+
+@router.post("/{workflow_id}/validate", response_model=AlertWorkflowValidationOut)
+def validate_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlertWorkflowValidationOut:
+    result = alert_svc.validate_workflow(db, user.id, workflow_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return result
+
+
+@router.post("/{workflow_id}/compile-preview", response_model=AlertWorkflowValidationOut)
+def compile_preview_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlertWorkflowValidationOut:
+    result = alert_svc.compile_preview_workflow(db, user.id, workflow_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return result
+
+
+@router.post("/{workflow_id}/explain")
+def explain_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    result = alert_svc.explain_workflow(db, user.id, workflow_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return result
+
+
+@router.post("/{workflow_id}/sample-alerts")
+def sample_workflow_alerts(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    result = alert_svc.sample_workflow_alerts(db, user.id, workflow_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return result
+
+
+@router.post("/{workflow_id}/deploy", response_model=AlertWorkflowOut)
+def deploy_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlertWorkflowOut:
+    row = alert_svc.deploy_workflow(db, user.id, workflow_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return row
 
 
 @router.post("/{workflow_id}/test-notification")

@@ -1,8 +1,9 @@
 import { AlertsNav } from "@/components/alerts/alerts-nav";
 import { WorkflowEditor } from "@/components/alerts/workflow-editor";
 import { PageHeader, Shell } from "@/components/brokers/ui";
-import { getAlertTemplates } from "@/service/actions/alerts";
+import { getAlertPresets, getAlertTemplates } from "@/service/actions/alerts";
 import { getBrokerAccounts } from "@/service/actions/broker";
+import { getWatchlists } from "@/service/actions/watchlist";
 
 type NewWorkflowPageProps = {
  searchParams?: Promise<{ template?: string }>;
@@ -10,7 +11,12 @@ type NewWorkflowPageProps = {
 
 export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageProps) {
  const params = await searchParams;
- const [accounts, templates] = await Promise.all([getBrokerAccounts(), getAlertTemplates()]);
+ const [accounts, templates, watchlists, presets] = await Promise.all([
+ getBrokerAccounts(),
+ getAlertTemplates(),
+ getWatchlists(),
+ getAlertPresets()
+ ]);
  const template = templates.find((item) => item.id === params?.template);
  const initialWorkflow = template
  ? {
@@ -43,7 +49,7 @@ export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageP
  description="Build a live alert workflow with either the rule form or the graph editor over the same workflow model."
  />
  <AlertsNav />
- <WorkflowEditor accounts={accounts} initialWorkflow={initialWorkflow} />
+ <WorkflowEditor accounts={accounts} initialWorkflow={initialWorkflow} presets={presets} watchlists={watchlists} />
  </Shell>
  );
 }
