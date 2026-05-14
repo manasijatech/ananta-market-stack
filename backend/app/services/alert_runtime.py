@@ -36,6 +36,7 @@ STREAM_BLOCK_MS = 1000
 STREAM_MAX_BATCH = 200
 WORKFLOW_TICK_TTL_SECONDS = 24 * 60 * 60
 RECONCILE_INTERVAL_SECONDS = 5 * 60
+BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
 TRANSIENT_RETRY_SECONDS = 60
 _ACCOUNT_RETRY_NOT_BEFORE: dict[str, datetime] = {}
@@ -979,9 +980,20 @@ class BackgroundAsyncService:
             self._stop_event = stop_event
             self._ready.set()
             try:
-                loop.run_until_complete(self._target(stop_event))
-            except Exception:
-                logger.exception("%s crashed", self.name)
+                while not stop_event.is_set():
+                    try:
+                        loop.run_until_complete(self._target(stop_event))
+                        break
+                    except Exception:
+                        logger.exception("%s crashed; restarting in %.1fs", self.name, BACKGROUND_RESTART_DELAY_SECONDS)
+                        if stop_event.is_set():
+                            break
+                        try:
+                            loop.run_until_complete(
+                                asyncio.wait_for(stop_event.wait(), timeout=BACKGROUND_RESTART_DELAY_SECONDS)
+                            )
+                        except TimeoutError:
+                            continue
             finally:
                 pending = asyncio.all_tasks(loop)
                 for task in pending:

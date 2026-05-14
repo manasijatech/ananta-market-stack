@@ -34,6 +34,12 @@ ALPHA_WS_PRODUCTS = ["news", "announcements", "earnings", "concalls", "alerts"]
 ACCOUNT_REFRESH_SECONDS = 15 * 60
 SUPERVISOR_INTERVAL_SECONDS = 5
 STREAM_MAXLEN = 2000
+WS_CONNECT_TIMEOUT_SECONDS = 20
+WS_PING_INTERVAL_SECONDS = 20
+WS_PING_TIMEOUT_SECONDS = 20
+WS_RECV_TIMEOUT_SECONDS = 45
+WS_INITIAL_RETRY_DELAY_SECONDS = 2
+WS_MAX_RETRY_DELAY_SECONDS = 60
 
 
 def _utc_now() -> datetime:
@@ -379,20 +385,53 @@ def _mark_config(user_id: str, **patch: Any) -> None:
         db.close()
 
 
+async def _send_subscriptions(
+    websocket,
+    subscription: EffectiveAlphaSubscription,
+) -> None:
+    for product in subscription.products:
+        symbols = [] if product in subscription.full_feed_products else subscription.symbols
+        await websocket.send(_json_dumps({"op": "subscribe", "product": product, "symbols": symbols}))
+
+
+async def _await_message(websocket) -> str | None:
+    try:
+        return await asyncio.wait_for(websocket.recv(), timeout=WS_RECV_TIMEOUT_SECONDS)
+    except TimeoutError:
+        pong_waiter = await websocket.ping()
+        await asyncio.wait_for(pong_waiter, timeout=WS_PING_TIMEOUT_SECONDS)
+        return None
+
+
+def _next_retry_delay(current_delay: int | float) -> int | float:
+    return min(max(current_delay * 2, WS_INITIAL_RETRY_DELAY_SECONDS), WS_MAX_RETRY_DELAY_SECONDS)
+
+
 async def _run_user_subscription(subscription: EffectiveAlphaSubscription, stop_event: asyncio.Event) -> None:
     settings = get_settings()
     ws_base = settings.alpha_api_base_url.rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
     url = f"{ws_base}/v1/ws"
     redis_client = _redis_client()
+    retry_delay: int | float = WS_INITIAL_RETRY_DELAY_SECONDS
     while not stop_event.is_set():
         try:
-            async with websockets.connect(url, additional_headers={"X-API-Key": subscription.api_key}) as websocket:
+            _mark_config(subscription.user_id, last_status="connecting", last_error=None)
+            async with websockets.connect(
+                url,
+                additional_headers={"X-API-Key": subscription.api_key},
+                open_timeout=WS_CONNECT_TIMEOUT_SECONDS,
+                ping_interval=WS_PING_INTERVAL_SECONDS,
+                ping_timeout=WS_PING_TIMEOUT_SECONDS,
+                close_timeout=10,
+                max_queue=1000,
+            ) as websocket:
                 _mark_config(subscription.user_id, last_status="connected", last_error=None, last_connected_at=_utc_now())
-                for product in subscription.products:
-                    symbols = [] if product in subscription.full_feed_products else subscription.symbols
-                    await websocket.send(_json_dumps({"op": "subscribe", "product": product, "symbols": symbols}))
+                retry_delay = WS_INITIAL_RETRY_DELAY_SECONDS
+                await _send_subscriptions(websocket, subscription)
                 while not stop_event.is_set():
-                    raw = await websocket.recv()
+                    raw = await _await_message(websocket)
+                    if raw is None:
+                        continue
                     try:
                         parsed = json.loads(raw)
                     except json.JSONDecodeError:
@@ -410,11 +449,19 @@ async def _run_user_subscription(subscription: EffectiveAlphaSubscription, stop_
         except (asyncio.CancelledError, KeyboardInterrupt):
             raise
         except Exception as exc:
-            _mark_config(subscription.user_id, last_status="error", last_error=str(exc))
+            logger.warning(
+                "Alpha websocket loop failed for %s: %s; retrying in %.1fs",
+                subscription.user_id,
+                exc,
+                retry_delay,
+            )
+            _mark_config(subscription.user_id, last_status="reconnecting", last_error=str(exc))
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=5)
+                await asyncio.wait_for(stop_event.wait(), timeout=retry_delay)
             except TimeoutError:
+                retry_delay = _next_retry_delay(retry_delay)
                 continue
+    _mark_config(subscription.user_id, last_status="stopped")
 
 
 async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
@@ -444,15 +491,28 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
                         subscriptions[row.user_id] = subscription
                 for user_id, (config_hash, task) in list(tasks.items()):
                     current = subscriptions.get(user_id)
+                    if task.done():
+                        try:
+                            task.result()
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception as exc:
+                            logger.warning("alpha websocket task crashed for %s: %s", user_id, exc)
+                        tasks.pop(user_id, None)
+                        continue
                     if current is None or current.config_hash != config_hash:
                         task.cancel()
                         tasks.pop(user_id, None)
+                        _mark_config(user_id, last_status="reconfiguring")
                 for user_id, subscription in subscriptions.items():
                     if user_id not in tasks:
                         tasks[user_id] = (
                             subscription.config_hash,
                             asyncio.create_task(_run_user_subscription(subscription, stop_event)),
                         )
+                inactive_user_ids = {row.user_id for row in rows if row.user_id not in subscriptions}
+                for user_id in inactive_user_ids:
+                    _mark_config(user_id, last_status="inactive")
             finally:
                 db.close()
         except Exception as exc:

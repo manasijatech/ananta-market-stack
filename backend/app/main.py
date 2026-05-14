@@ -14,6 +14,7 @@ from app.services.broker_sessions import maintenance_loop
 from db.session import init_db
 
 logger = logging.getLogger(__name__)
+BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 
 
 class BackgroundAsyncLoopThread:
@@ -37,9 +38,20 @@ class BackgroundAsyncLoopThread:
             self.stop_event = stop_event
             self.ready.set()
             try:
-                loop.run_until_complete(self.target(stop_event))
-            except Exception:
-                logger.exception("%s crashed", self.name)
+                while not stop_event.is_set():
+                    try:
+                        loop.run_until_complete(self.target(stop_event))
+                        break
+                    except Exception:
+                        logger.exception("%s crashed; restarting in %.1fs", self.name, BACKGROUND_RESTART_DELAY_SECONDS)
+                        if stop_event.is_set():
+                            break
+                        try:
+                            loop.run_until_complete(
+                                asyncio.wait_for(stop_event.wait(), timeout=BACKGROUND_RESTART_DELAY_SECONDS)
+                            )
+                        except TimeoutError:
+                            continue
             finally:
                 pending = asyncio.all_tasks(loop)
                 for task in pending:
