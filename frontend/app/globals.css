@@ -116,6 +116,38 @@
   --ring: var(--accent);
 }
 
+.ripple-button__wave {
+  position: absolute;
+  display: block;
+  border-radius: 9999px !important;
+  background: color-mix(in srgb, var(--primary-foreground) 34%, transparent);
+  opacity: 0;
+  transform: scale(0);
+  animation: ripple-button-wave 650ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes ripple-button-wave {
+  0% {
+    opacity: 0.42;
+    transform: scale(0);
+  }
+
+  72% {
+    opacity: 0.22;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ripple-button__wave {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

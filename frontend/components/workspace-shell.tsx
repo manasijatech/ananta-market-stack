@@ -2,22 +2,58 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { BookOpen, LayoutDashboard, ListChecks, Newspaper, Settings2, Siren, WalletCards, Waypoints } from "lucide-react";
+import {
+ IconBook,
+ IconBellRinging,
+ IconExternalLink,
+ IconLayoutDashboard,
+ IconListCheck,
+ IconLogout,
+ IconNews,
+ IconRoute,
+ IconSettings2,
+ IconWallet
+} from "@tabler/icons-react";
+import type { TablerIcon } from "@tabler/icons-react";
 import { usePathname, useRouter } from "next/navigation";
 import { AlertNotificationsTray } from "@/components/alerts/alert-notifications-tray";
 import { useSession } from "@/components/session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-const navItems = [
- { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
- { href: "/brokers", label: "Broker Connections", icon: WalletCards },
- { href: "/watchlists", label: "Watchlists", icon: ListChecks },
- { href: "/market-intelligence", label: "Market Intelligence", icon: Newspaper },
- { href: "/alerts", label: "Alerts Workspace", icon: Siren },
- { href: "/alert-channels", label: "Alert Channels", icon: Waypoints },
- { href: "/dashboard/system-config", label: "System Config", icon: Settings2 },
- { href: "/brokers/docs", label: "Docs", icon: BookOpen }
+type NavItem = {
+ href: string;
+ label: string;
+ icon: TablerIcon;
+ external?: boolean;
+};
+
+const navGroups: { label: string; items: NavItem[] }[] = [
+ {
+ label: "MAIN",
+ items: [
+ { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
+ { href: "/brokers", label: "Broker Connections", icon: IconWallet },
+ { href: "/watchlists", label: "Watchlists", icon: IconListCheck }
+ ]
+ },
+ {
+ label: "INTELLIGENCE",
+ items: [
+ { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
+ { href: "/alerts", label: "Alerts Workspace", icon: IconBellRinging },
+ { href: "/alert-channels", label: "Alert Channels", icon: IconRoute }
+ ]
+ },
+ {
+ label: "SETTINGS",
+ items: [
+ { href: "/dashboard/system-config", label: "System Config", icon: IconSettings2 },
+ { href: "/brokers/docs", label: "Docs", icon: IconBook, external: true }
+ ]
+ }
 ];
+
+const navItems = navGroups.flatMap((group) => group.items);
 
 function isNavItemActive(pathname: string, href: string) {
  if (href === "/dashboard") {
@@ -74,8 +110,14 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  <span className="font-mono text-[13px] font-bold text-primary">MS</span>
  <span className="text-sm font-semibold uppercase tracking-[0.08em]">Market Stack</span>
  </div>
- <nav className="flex gap-1 px-3 pb-4 min-[980px]:flex-col" aria-label="Primary navigation">
- {navItems.map((item) => {
+ <nav className="flex gap-1 px-3 pb-4 min-[980px]:flex-col min-[980px]:overflow-y-auto" aria-label="Primary navigation">
+ {navGroups.map((group, groupIndex) => (
+ <div className="flex flex-col gap-1" key={group.label}>
+ {groupIndex > 0 ? <div className="my-2 border-t border-border" /> : null}
+ <div className="px-3 pt-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+ {group.label}
+ </div>
+ {group.items.map((item) => {
  const Icon = item.icon;
  const active = isNavItemActive(pathname, item.href);
  return (
@@ -83,18 +125,39 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  className={[
  "flex h-10 items-center gap-3 border-l-2 px-3 text-sm font-semibold uppercase tracking-[0.04em] transition-colors duration-100 ease-out",
  active
- ? "border-l-primary text-foreground"
+ ? "border-l-primary text-primary"
  : "border-l-transparent text-muted-foreground hover:border-l-primary/50 hover:text-foreground"
  ].join(" ")}
  href={item.href}
  key={item.href}
  >
- <Icon className="size-4" strokeWidth={1.8} />
- {item.label}
+ <Icon className="size-4 shrink-0" stroke={1.8} />
+ <span className="truncate">{item.label}</span>
+ {item.external ? <IconExternalLink className="size-3 shrink-0" stroke={1.8} /> : null}
  </Link>
  );
  })}
+ </div>
+ ))}
  </nav>
+ <div className="mt-auto border-t border-border p-3">
+ <div className="flex items-center gap-3 px-2 py-2">
+ <span className="flex size-8 shrink-0 items-center justify-center !rounded-full border border-border bg-secondary font-mono text-[11px] font-bold text-secondary-foreground">
+ {initials(user.name, user.email)}
+ </span>
+ <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground">
+ {user.email}
+ </span>
+ <button
+ aria-label="Sign out"
+ className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center border border-input bg-transparent text-muted-foreground transition-colors duration-100 ease-out hover:border-primary hover:text-primary"
+ onClick={handleSignOut}
+ type="button"
+ >
+ <IconLogout className="size-4" stroke={1.8} />
+ </button>
+ </div>
+ </div>
  </div>
  </aside>
 
@@ -118,19 +181,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  <div className="flex flex-wrap items-center gap-3 self-start min-[860px]:ml-auto min-[860px]:self-auto">
  <AlertNotificationsTray />
  <ThemeToggle />
- <span className="flex size-8 items-center justify-center border border-border bg-secondary font-mono text-[11px] font-bold text-secondary-foreground">
- {initials(user.name, user.email)}
- </span>
- <span className="max-w-[220px] truncate text-xs font-semibold text-muted-foreground">
- {user.email}
- </span>
- <button
- className="inline-flex h-9 cursor-pointer items-center justify-center border border-input bg-transparent px-3 text-xs font-semibold uppercase tracking-[0.08em] transition-colors duration-100 ease-out hover:border-primary hover:text-primary"
- onClick={handleSignOut}
- type="button"
- >
- Sign out
- </button>
  </div>
  </div>
  </header>

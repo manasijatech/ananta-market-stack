@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RippleButton } from "@/components/ui/ripple-button";
 
 type AuthMode = "sign-in" | "sign-up";
 
@@ -124,9 +125,15 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
  </Alert>
  ) : null}
 
+ {mode === "sign-in" ? (
+ <RippleButton className="mt-1 h-12 w-full font-extrabold" disabled={isSubmitting} type="submit">
+ {isSubmitting ? "Please wait..." : "Sign in"}
+ </RippleButton>
+ ) : (
  <Button className="mt-1 h-12 w-full font-extrabold" disabled={isSubmitting} type="submit">
- {isSubmitting ? "Please wait..." : mode === "sign-up" ? "Create account" : "Sign in"}
+ {isSubmitting ? "Please wait..." : "Create account"}
  </Button>
+ )}
  </form>
  );
 }
