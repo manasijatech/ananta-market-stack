@@ -1,7 +1,6 @@
-import { AlertsNav } from "@/components/alerts/alerts-nav";
+import { AlertsHeaderOverride } from "@/components/alerts/alerts-workspace-chrome";
 import { ExecutionHistory } from "@/components/alerts/execution-history";
 import { WorkflowEditor } from "@/components/alerts/workflow-editor";
-import { PageHeader, Shell } from "@/components/brokers/ui";
 import { getAlertPresets, getAlertWorkflow, getAlertWorkflowRuns } from "@/service/actions/alerts";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
 import { getWatchlists } from "@/service/actions/watchlist";
@@ -22,17 +21,10 @@ export default async function WorkflowDetailPage({ params }: WorkflowDetailPageP
  ]);
 
  return (
- <Shell>
- <PageHeader
- eyebrow="Alerts workspace"
- title={workflow.name}
- description="Edit workflow target sets, conditions, notification channels, and inspect the latest live evaluation history."
- />
- <AlertsNav />
  <div className="grid gap-8">
+ <AlertsHeaderOverride title={workflow.name} />
  <WorkflowEditor accounts={accounts} initialWorkflow={workflow} llmProviders={systemConfig.llm_providers} presets={presets} watchlists={watchlists} />
  <ExecutionHistory runs={runs} />
  </div>
- </Shell>
  );
 }

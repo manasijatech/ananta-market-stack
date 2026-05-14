@@ -1,6 +1,4 @@
-import { AlertsNav } from "@/components/alerts/alerts-nav";
 import { WorkflowEditor } from "@/components/alerts/workflow-editor";
-import { PageHeader, Shell } from "@/components/brokers/ui";
 import { getAlertPresets, getAlertTemplates } from "@/service/actions/alerts";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
 import { getWatchlists } from "@/service/actions/watchlist";
@@ -43,14 +41,6 @@ export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageP
  : null;
 
  return (
- <Shell>
- <PageHeader
- eyebrow="Alerts workspace"
- title="Create workflow"
- description="Build a live alert workflow with either the rule form or the graph editor over the same workflow model."
- />
- <AlertsNav />
  <WorkflowEditor accounts={accounts} initialWorkflow={initialWorkflow} llmProviders={systemConfig.llm_providers} presets={presets} watchlists={watchlists} />
- </Shell>
  );
 }

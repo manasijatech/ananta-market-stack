@@ -1,8 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { AlertsNav } from "@/components/alerts/alerts-nav";
 import { AlertHistoryList } from "@/components/alerts/alert-history-list";
-import { PageHeader, PrimaryLink, Shell } from "@/components/brokers/ui";
 import {
   getAlertHistory,
   getAlertNotifications,
@@ -91,14 +89,7 @@ function HistoryFallback() {
 
 export default function AlertsOverviewPage() {
   return (
-    <Shell>
-      <PageHeader
-        eyebrow="Alerts workspace"
-        title="Trading workflows"
-        description="Create, run, and review live market workflows, user alerts, and outbound channels from one workspace."
-        action={<PrimaryLink href="/alerts/workflows/new">+ New workflow</PrimaryLink>}
-      />
-      <AlertsNav />
+    <>
       <Suspense fallback={<StatGridSkeleton />}>
         <AlertsOverviewStats />
       </Suspense>
@@ -106,6 +97,6 @@ export default function AlertsOverviewPage() {
       <Suspense fallback={<HistoryFallback />}>
         <AlertsOverviewHistory />
       </Suspense>
-    </Shell>
+    </>
   );
 }

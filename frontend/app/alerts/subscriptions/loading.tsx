@@ -1,10 +1,9 @@
-import { AlertsNavSkeleton, HeaderSkeleton, LoadingShell, TableSkeleton } from "@/components/ui/loading-skeletons";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function AlertSubscriptionsLoading() {
   return (
-    <LoadingShell header={<HeaderSkeleton titleWidth="w-80" />}>
-      <AlertsNavSkeleton />
+    <>
       <section className="mb-6 border border-border p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -19,6 +18,6 @@ export default function AlertSubscriptionsLoading() {
         </div>
       </section>
       <TableSkeleton columns={5} rows={6} />
-    </LoadingShell>
+    </>
   );
 }
