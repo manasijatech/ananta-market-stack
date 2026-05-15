@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { PageHeader } from "@/components/brokers/ui";
 import { MarketIntelligenceLiveFeed, StateMessage } from "@/components/market-intelligence/market-intelligence-live-feed";
+import { Button } from "@/components/ui/button";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import {
  ALPHA_SYMBOL_LIMIT,
@@ -49,18 +50,20 @@ export function MarketIntelligenceChrome({
  {marketIntelligenceSections.map((item) => {
  const active = item.id === activeSection.id;
  return (
- <button
+ <Button
  className={[
- "cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-colors duration-100 ease-out",
- active ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+ "px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em]",
+ active ? "" : "text-muted-foreground hover:text-foreground"
  ].join(" ")}
  key={item.id}
  onClick={() => setActiveSectionId(item.id)}
+ size="sm"
  type="button"
  aria-pressed={active}
+ variant={active ? "default" : "secondary"}
  >
  {item.label}
- </button>
+ </Button>
  );
  })}
  </nav>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AlertNotification, AlertWorkflowRun } from "@/service/types/alerts";
+import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 12;
 
@@ -89,13 +90,15 @@ export function AlertHistoryList({
  {runStats.latestAt ? ` · Last ${new Date(runStats.latestAt).toLocaleString()}` : ""}
  </div>
  </div>
- <button
- className="text-xs font-semibold text-muted-foreground hover:text-foreground"
+ <Button
+ className="h-auto px-0 text-xs font-semibold text-muted-foreground hover:text-foreground"
  onClick={() => setShowRuns((current) => !current)}
+ size="sm"
  type="button"
+ variant="link"
  >
  {showRuns ? "Hide details" : "View details"}
- </button>
+ </Button>
  </div>
  {showRuns ? (
  <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-1">

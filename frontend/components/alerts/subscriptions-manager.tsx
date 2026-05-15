@@ -8,7 +8,10 @@ import type { InstrumentRef, LiveSubscription } from "@/service/types/alerts";
 import type { AlphaWebSocketConfig, BrokerAccount, InstrumentSearchRow } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
  return {
@@ -238,33 +241,23 @@ export function SubscriptionsManager({
  <div className="text-xs font-bold uppercase text-muted-foreground">Products from account</div>
  <div className="mt-3 grid gap-2">
  {enabledAddons.map((addon) => (
- <label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={addon.product}>
+ <Label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={addon.product}>
  <span>{addon.product} · {addon.tier ?? "tier unknown"}</span>
- <input
+ <Checkbox
  checked={alphaWsConfig.products.includes(addon.product)}
- onChange={(event) => toggleAlphaProduct(addon.product, event.target.checked)}
- type="checkbox"
+ onCheckedChange={(checked) => toggleAlphaProduct(addon.product, Boolean(checked))}
  />
- </label>
+ </Label>
  ))}
  {!enabledAddons.length ? <div className="text-sm text-muted-foreground">No websocket addons were found for the saved key.</div> : null}
  </div>
  </div>
  <div>
  <div className="text-xs font-bold uppercase text-muted-foreground">Symbol scope</div>
- <div className="mt-3 grid gap-2 text-sm">
- <label className="flex items-center gap-2">
- <input checked={alphaWsConfig.scope_mode === "alert_subscriptions"} onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alert_subscriptions", full_market: false }))} type="radio" />
- Alert subscriptions only
- </label>
- <label className="flex items-center gap-2">
- <input checked={alphaWsConfig.scope_mode === "alerts_and_watchlists"} onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alerts_and_watchlists", full_market: false }))} type="radio" />
- Alert subscriptions + watchlists
- </label>
- <label className="flex items-center gap-2 text-muted-foreground">
- <input checked={alphaWsConfig.scope_mode === "full_market"} disabled={!alphaWsConfig.full_market_allowed} onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "full_market", full_market: true }))} type="radio" />
- Full market
- </label>
+ <div className="mt-3 flex flex-wrap gap-2 text-sm">
+ <Button onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alert_subscriptions", full_market: false }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "alert_subscriptions" ? "default" : "outline"}>Alert subscriptions only</Button>
+ <Button onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alerts_and_watchlists", full_market: false }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "alerts_and_watchlists" ? "default" : "outline"}>Alert subscriptions + watchlists</Button>
+ <Button disabled={!alphaWsConfig.full_market_allowed} onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "full_market", full_market: true }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "full_market" ? "default" : "outline"}>Full market</Button>
  </div>
  <div className="mt-3 text-xs text-muted-foreground">
  Effective: {alphaWsConfig.effective_products.length} products / {alphaWsConfig.scope_mode === "full_market" ? "full-feed" : `${alphaWsConfig.effective_symbols.length} symbols`}
@@ -273,26 +266,24 @@ export function SubscriptionsManager({
  </div>
  <div>
  <div className="text-xs font-bold uppercase text-muted-foreground">Watchlists</div>
- <label className="mt-3 flex items-center gap-2 text-sm">
- <input
+ <Label className="mt-3 flex items-center gap-2 text-sm">
+ <Checkbox
  checked={alphaWsConfig.include_all_watchlists}
  disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists"}
- onChange={(event) => setAlphaWsConfig((current) => ({ ...current, include_all_watchlists: event.target.checked }))}
- type="checkbox"
+ onCheckedChange={(checked) => setAlphaWsConfig((current) => ({ ...current, include_all_watchlists: Boolean(checked) }))}
  />
  All watchlists
- </label>
+ </Label>
  <div className="mt-2 max-h-40 overflow-auto border border-border">
  {watchlists.map((watchlist) => (
- <label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={watchlist.id}>
+ <Label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={watchlist.id}>
  <span>{watchlist.name} · {watchlist.items.length || watchlist.symbols.length}</span>
- <input
+ <Checkbox
  checked={alphaWsConfig.watchlist_ids.includes(watchlist.id)}
  disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists" || alphaWsConfig.include_all_watchlists}
- onChange={(event) => toggleWatchlist(watchlist.id, event.target.checked)}
- type="checkbox"
+ onCheckedChange={(checked) => toggleWatchlist(watchlist.id, Boolean(checked))}
  />
- </label>
+ </Label>
  ))}
  {!watchlists.length ? <div className="px-3 py-3 text-sm text-muted-foreground">No watchlists available.</div> : null}
  </div>
@@ -310,7 +301,7 @@ export function SubscriptionsManager({
  </Button>
  </div>
  <div className="grid gap-3 min-[960px]:grid-cols-[1fr_1.4fr_160px]">
- <select
+ <Select
  className={`${inputBase} h-11 text-sm`}
  onChange={(event) => {
  setAccountId(event.target.value);
@@ -325,7 +316,7 @@ export function SubscriptionsManager({
  {account.label} · {account.broker_code}
  </option>
  ))}
- </select>
+ </Select>
  <div className="relative" ref={searchWrapRef}>
  <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
  <Input
@@ -347,10 +338,10 @@ export function SubscriptionsManager({
  {showSuggestions && symbolSearch.trim() ? (
  <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto border border-border bg-popover" id="subscription-symbol-suggestions" role="listbox">
  {suggestions.map((row, index) => (
- <button
+ <Button
  aria-selected={index === activeSuggestionIndex}
  className={[
- "flex w-full items-center justify-between gap-4 border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
+ "h-auto w-full justify-between gap-4 rounded-none border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
  index === activeSuggestionIndex ? "border-l-primary bg-[var(--accent-glow)] text-foreground" : "border-l-transparent text-foreground"
  ].join(" ")}
  disabled={isPending}
@@ -359,6 +350,7 @@ export function SubscriptionsManager({
  onClick={() => addSearchedSymbol(row)}
  onMouseEnter={() => setActiveSuggestionIndex(index)}
  role="option"
+ variant="ghost"
  type="button"
  >
  <span className="min-w-0">
@@ -366,7 +358,7 @@ export function SubscriptionsManager({
  <span className="block truncate text-xs text-muted-foreground">{[row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" / ")}</span>
  </span>
  <span className="shrink-0 font-mono text-xs uppercase text-primary">{[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}</span>
- </button>
+ </Button>
  ))}
  {!suggestions.length && !searchLoading ? <div className="px-3 py-3 text-sm text-muted-foreground">No matching instruments found.</div> : null}
  </div>
@@ -378,12 +370,11 @@ export function SubscriptionsManager({
  </div>
  <div className="grid gap-3">
  {items.map((item) => (
- <label className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border border-border p-4" key={item.id}>
+ <Label className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border border-border p-4" key={item.id}>
  <div className="flex items-start gap-3">
- <input
+ <Checkbox
  checked={selectedIds.includes(item.id)}
- onChange={(event) => toggleSelected(item.id, event.target.checked)}
- type="checkbox"
+ onCheckedChange={(checked) => toggleSelected(item.id, Boolean(checked))}
  />
  <div>
  <div className="text-sm font-bold">{item.symbol}</div>
@@ -395,7 +386,7 @@ export function SubscriptionsManager({
  <div className="text-xs text-muted-foreground">
  {item.last_received_at ? `Last tick ${new Date(item.last_received_at).toLocaleTimeString()}` : "Awaiting tick"}
  </div>
- </label>
+ </Label>
  ))}
  {!items.length ? <div className="text-sm text-muted-foreground">No subscribed symbols yet.</div> : null}
  </div>

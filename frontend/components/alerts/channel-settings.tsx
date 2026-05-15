@@ -1,16 +1,80 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useState, useTransition } from "react";
+import { CircleHelpIcon } from "lucide-react";
 import { saveAlertChannel, sendTestAlert, testAlertChannel } from "@/service/actions/alerts";
 import type { AlertChannel } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import {
+ Dialog,
+ DialogContent,
+ DialogDescription,
+ DialogHeader,
+ DialogTitle,
+ DialogTrigger
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 type ChannelState = {
  label: string;
  is_enabled: boolean;
  is_default: boolean;
  config: Record<string, string>;
+};
+
+type ChannelField = {
+ key: string;
+ label: string;
+ required?: boolean;
+};
+
+type ChannelGuide = {
+ title: string;
+ summary: string;
+ requiredFields: string[];
+ optionalFields: string[];
+ steps: string[];
+ notes: string[];
+};
+
+const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
+ discord: {
+ title: "Discord setup guide",
+ summary: "Market Stack sends alerts to Discord by posting to one incoming webhook URL.",
+ requiredFields: ["Discord webhook URL"],
+ optionalFields: ["Label"],
+ steps: [
+ "Open the Discord server where you want alerts to arrive.",
+ "Go to Server Settings > Integrations > Webhooks.",
+ "Create a webhook, choose the target text channel, and copy the generated webhook URL.",
+ "Paste that value into `Discord webhook URL`, then save and run a test."
+ ],
+ notes: [
+ "The backend only uses `webhook_url` for Discord delivery and test sends.",
+ "A webhook posts into one specific Discord channel, so pick the channel during webhook setup."
+ ]
+ },
+ telegram: {
+ title: "Telegram setup guide",
+ summary: "Market Stack sends alerts through the Telegram Bot API using your bot token and a destination chat id.",
+ requiredFields: ["Telegram bot token", "Telegram chat id"],
+ optionalFields: ["Label"],
+ steps: [
+ "In Telegram, open `@BotFather`, create a bot with `/newbot`, and copy the bot token.",
+ "Open a direct chat with your bot or add it to the target group/channel.",
+ "Send at least one message in that destination so Telegram creates an update for the bot.",
+ "Fetch updates from `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates` and copy the destination `chat.id`.",
+ "Paste the token into `Telegram bot token` and the numeric id into `Telegram chat id`, then save and run a test."
+ ],
+ notes: [
+ "The backend sends Telegram messages with `bot_token` plus `chat_id` only.",
+ "Group or channel ids may be negative numbers. Keep the value exactly as Telegram returns it.",
+ "If the bot is posting to a group or channel, make sure the bot has permission to send messages there."
+ ]
+ }
 };
 
 function stateFor(channel?: AlertChannel, defaults?: Record<string, string>): ChannelState {
@@ -84,7 +148,8 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
  </div>
  <ChannelCard
  channel={discord}
- fields={[{ key: "webhook_url", label: "Discord webhook URL" }]}
+ fields={[{ key: "webhook_url", label: "Discord webhook URL", required: true }]}
+ guide={CHANNEL_GUIDES.discord}
  onChange={setDiscord}
  onSave={() => save("discord")}
  onTest={() => test("discord")}
@@ -93,9 +158,10 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
  <ChannelCard
  channel={telegram}
  fields={[
- { key: "bot_token", label: "Telegram bot token" },
- { key: "chat_id", label: "Telegram chat id" }
+ { key: "bot_token", label: "Telegram bot token", required: true },
+ { key: "chat_id", label: "Telegram chat id", required: true }
  ]}
+ guide={CHANNEL_GUIDES.telegram}
  onChange={setTelegram}
  onSave={() => save("telegram")}
  onTest={() => test("telegram")}
@@ -108,13 +174,15 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
 function ChannelCard({
  channel,
  fields,
+ guide,
  onChange,
  onSave,
  onTest,
  title
 }: {
  channel: ChannelState;
- fields: Array<{ key: string; label: string }>;
+ fields: ChannelField[];
+ guide: ChannelGuide;
  onChange: (value: ChannelState) => void;
  onSave: () => void;
  onTest: () => void;
@@ -123,21 +191,27 @@ function ChannelCard({
  return (
  <div className=" border border-border p-4">
  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+ <div className="flex items-center gap-2">
  <div className="text-sm font-bold">{title}</div>
+ <SetupGuide guide={guide} />
+ </div>
  <div className="flex gap-3 text-sm">
- <label className="flex items-center gap-2"><input checked={channel.is_enabled} onChange={(event) => onChange({ ...channel, is_enabled: event.target.checked })} type="checkbox" />Enabled</label>
- <label className="flex items-center gap-2"><input checked={channel.is_default} onChange={(event) => onChange({ ...channel, is_default: event.target.checked })} type="checkbox" />Default</label>
+ <Label className="flex items-center gap-2"><Checkbox checked={channel.is_enabled} onCheckedChange={(checked) => onChange({ ...channel, is_enabled: Boolean(checked) })} />Enabled</Label>
+ <Label className="flex items-center gap-2"><Checkbox checked={channel.is_default} onCheckedChange={(checked) => onChange({ ...channel, is_default: Boolean(checked) })} />Default</Label>
  </div>
  </div>
  <div className="grid gap-3">
+ <LabeledField label={`${title} label`} required={false}>
  <Input onChange={(event) => onChange({ ...channel, label: event.target.value })} placeholder={`${title} label`} value={channel.label} />
+ </LabeledField>
  {fields.map((field) => (
+ <LabeledField key={field.key} label={field.label} required={Boolean(field.required)}>
  <Input
- key={field.key}
  onChange={(event) => onChange({ ...channel, config: { ...channel.config, [field.key]: event.target.value } })}
  placeholder={field.label}
  value={channel.config[field.key] ?? ""}
  />
+ </LabeledField>
  ))}
  </div>
  <div className="mt-4 flex flex-wrap gap-3">
@@ -145,5 +219,76 @@ function ChannelCard({
  <Button onClick={onTest} type="button" variant="outline">Test</Button>
  </div>
  </div>
+ );
+}
+
+function LabeledField({
+ children,
+ label,
+ required
+}: {
+ children: ReactNode;
+ label: string;
+ required: boolean;
+}) {
+ return (
+ <Label className="grid gap-2">
+ <div className="flex items-center gap-2 text-sm font-medium">
+ <span>{label}</span>
+ <span className={`rounded border px-2 py-0.5 text-[11px] uppercase tracking-[0.08em] ${required ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>
+ {required ? "Required" : "Optional"}
+ </span>
+ </div>
+ {children}
+ </Label>
+ );
+}
+
+function SetupGuide({ guide }: { guide: ChannelGuide }) {
+ return (
+ <Dialog>
+ <DialogTrigger asChild>
+ <Button
+ aria-label={`${guide.title} help`}
+ className="size-6 border-transparent bg-transparent p-0 text-muted-foreground hover:bg-transparent hover:text-primary"
+ size="icon"
+ type="button"
+ variant="ghost"
+ >
+ <CircleHelpIcon className="size-4" />
+ </Button>
+ </DialogTrigger>
+ <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl overflow-y-auto p-0">
+ <DialogHeader className="border-b border-border px-6 py-5 pr-14">
+ <DialogTitle>{guide.title}</DialogTitle>
+ <DialogDescription>{guide.summary}</DialogDescription>
+ </DialogHeader>
+ <div className="grid gap-6 px-6 py-5 text-sm">
+ <section className="grid gap-3">
+ <div className="font-semibold text-foreground">Fields</div>
+ <div className="grid gap-2">
+ <div><span className="font-medium">Required:</span> {guide.requiredFields.join(", ")}</div>
+ <div><span className="font-medium">Optional:</span> {guide.optionalFields.join(", ")}</div>
+ </div>
+ </section>
+ <section className="grid gap-3">
+ <div className="font-semibold text-foreground">Setup</div>
+ <ol className="grid list-decimal gap-2 pl-5">
+ {guide.steps.map((step) => (
+ <li key={step}>{step}</li>
+ ))}
+ </ol>
+ </section>
+ <section className="grid gap-3">
+ <div className="font-semibold text-foreground">Notes</div>
+ <ul className="grid list-disc gap-2 pl-5">
+ {guide.notes.map((note) => (
+ <li key={note}>{note}</li>
+ ))}
+ </ul>
+ </section>
+ </div>
+ </DialogContent>
+ </Dialog>
  );
 }

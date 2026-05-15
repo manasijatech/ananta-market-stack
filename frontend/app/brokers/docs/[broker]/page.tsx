@@ -6,6 +6,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { BrokerLogo, brokerNames, Shell } from "@/components/brokers/ui";
 import { Button } from "@/components/ui/button";
+import {
+ Table,
+ TableBody,
+ TableCell,
+ TableHead,
+ TableHeader,
+ TableRow,
+} from "@/components/ui/table";
 import { getBrokerGuideMarkdown } from "@/service/broker-guide-markdown";
 import { brokerGuides, getBrokerGuide } from "@/service/broker-guides";
 
@@ -65,13 +73,15 @@ export default async function BrokerDocsPage({ params }: BrokerDocsPageProps) {
  />
  ),
  table: ({ children }) => (
- <div className="mb-8 overflow-x-auto border-y">
- <table className="w-full min-w-[720px] text-left text-sm">{children}</table>
+ <div className="mb-8 border-y">
+ <Table className="min-w-[720px] text-left text-sm">{children}</Table>
  </div>
  ),
- thead: ({ children }) => <thead className="text-xs uppercase text-muted-foreground">{children}</thead>,
- th: ({ children }) => <th className="border-b px-0 py-3 pr-6 font-bold">{children}</th>,
- td: ({ children }) => <td className="border-b px-0 py-3 pr-6 text-muted-foreground">{children}</td>,
+ thead: ({ children }) => <TableHeader className="text-xs uppercase text-muted-foreground">{children}</TableHeader>,
+ tbody: ({ children }) => <TableBody>{children}</TableBody>,
+ tr: ({ children }) => <TableRow>{children}</TableRow>,
+ th: ({ children }) => <TableHead className="border-b px-0 py-3 pr-6 font-bold text-foreground">{children}</TableHead>,
+ td: ({ children }) => <TableCell className="border-b px-0 py-3 pr-6 text-muted-foreground">{children}</TableCell>,
  a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
  code: ({ children }) => <code className="bg-muted px-1.5 py-0.5 text-xs text-foreground">{children}</code>,
  strong: ({ children }) => <strong className="font-bold text-foreground">{children}</strong>

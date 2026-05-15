@@ -209,13 +209,14 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
  <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
  <aside className="grid gap-3 self-start">
  {supportedBrokers.map((code) => (
- <button
+ <Button
  className={cn(
- "cursor-pointer border bg-card p-4 text-left transition hover:border-primary/40",
+ "h-auto justify-start border bg-card p-4 text-left transition hover:border-primary/40",
  broker === code && "border-primary bg-[var(--accent-glow)] text-primary"
  )}
  key={code}
  onClick={() => setBroker(code)}
+ variant="ghost"
  type="button"
  >
  <div className="flex items-center gap-3">
@@ -227,7 +228,7 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
  <span className="block text-lg font-bold">{brokerNames[code]}</span>
  </div>
  </div>
- </button>
+ </Button>
  ))}
  </aside>
 

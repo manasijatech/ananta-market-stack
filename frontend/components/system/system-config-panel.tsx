@@ -13,7 +13,10 @@ import {
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
 
 type ProviderDraftState = {
@@ -222,7 +225,7 @@ export function SystemConfigPanel({
           The selected broker cache is used first for symbol search. If it is unavailable, search falls back to the next available synced broker without blocking the UI.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <select
+          <Select
             className="h-10 min-w-[280px] rounded-md border border-input bg-background px-3 text-sm"
             onChange={(event) => setSelectedAccountId(event.target.value)}
             value={selectedAccountId}
@@ -232,7 +235,7 @@ export function SystemConfigPanel({
                 {account.label} · {account.broker_code}
               </option>
             ))}
-          </select>
+          </Select>
           <Button disabled={isPending} onClick={saveBrokerPreference} type="button">
             {isPending ? "Saving..." : "Save"}
           </Button>
@@ -349,10 +352,10 @@ export function SystemConfigPanel({
           </div>
           <div className="mt-4 grid gap-2 min-[760px]:grid-cols-2">
             {alphaWsConfig.entitled_addons.filter((addon) => addon.enabled).map((addon) => (
-              <label className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm" key={addon.product}>
+              <Label className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm" key={addon.product}>
                 <span>{addon.product} · {addon.tier ?? "tier unknown"}</span>
-                <input checked={alphaWsConfig.products.includes(addon.product)} onChange={(event) => toggleAlphaWsProduct(addon.product, event.target.checked)} type="checkbox" />
-              </label>
+                <Checkbox checked={alphaWsConfig.products.includes(addon.product)} onCheckedChange={(checked) => toggleAlphaWsProduct(addon.product, Boolean(checked))} />
+              </Label>
             ))}
           </div>
           {config.alpha_api.account_error ? <div className="mt-3 text-sm text-destructive">{config.alpha_api.account_error}</div> : null}

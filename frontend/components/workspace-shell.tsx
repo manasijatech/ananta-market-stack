@@ -20,6 +20,8 @@ import { AlertNotificationsTray } from "@/components/alerts/alert-notifications-
 import { BrandLogo } from "@/components/brand-logo";
 import { useSession } from "@/components/session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 
 type NavItem = {
  href: string;
@@ -113,7 +115,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  <nav className="flex gap-1 px-3 pb-4 min-[980px]:flex-col min-[980px]:overflow-y-auto" aria-label="Primary navigation">
  {navGroups.map((group, groupIndex) => (
  <div className="flex flex-col gap-1" key={group.label}>
- {groupIndex > 0 ? <div className="my-2 border-t border-border" /> : null}
+ {groupIndex > 0 ? <Separator className="my-2" /> : null}
  <div className="px-3 pt-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
  {group.label}
  </div>
@@ -148,14 +150,16 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground">
  {user.email}
  </span>
- <button
+ <Button
  aria-label="Sign out"
- className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center border border-input bg-transparent text-muted-foreground transition-colors duration-100 ease-out hover:border-primary hover:text-primary"
+ className="size-8 shrink-0 text-muted-foreground hover:text-primary"
  onClick={handleSignOut}
+ size="icon"
  type="button"
+ variant="outline"
  >
  <IconLogout className="size-4" stroke={1.8} />
- </button>
+ </Button>
  </div>
  </div>
  </div>

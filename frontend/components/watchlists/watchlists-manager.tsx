@@ -18,8 +18,18 @@ import type { InstrumentRef } from "@/service/types/alerts";
 import type { InstrumentSearchRow } from "@/service/types/broker";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist, WatchlistPresetCatalogEntry } from "@/service/types/watchlist";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+ Table,
+ TableBody,
+ TableCell,
+ TableHead,
+ TableHeader,
+ TableRow,
+} from "@/components/ui/table";
 
 function parseSymbols(input: string): string[] {
  return Array.from(
@@ -779,7 +789,7 @@ function refreshSelectedPreset() {
 
  <div className="space-y-7 px-6 py-6 min-[760px]:px-8">
  <div>
- <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Watchlist Name</label>
+ <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Watchlist Name</Label>
  <Input
  className={`${inputBase} h-12 text-lg`}
  maxLength={128}
@@ -793,7 +803,7 @@ function refreshSelectedPreset() {
  <div className="min-w-0">
  <div className="grid gap-4 min-[760px]:grid-cols-[1fr_8rem]">
  <div className="min-w-0">
- <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Search Symbols</label>
+ <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Search Symbols</Label>
  <div>
  <div className="relative">
  <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
@@ -819,10 +829,10 @@ function refreshSelectedPreset() {
  {createSuggestions.map((row, index) => {
  const metadata = createSuggestionMetadata[row.symbol.trim().toUpperCase()];
  return (
- <button
+ <Button
  aria-selected={index === createActiveSuggestionIndex}
  className={[
- "flex w-full items-center justify-between gap-5 border-b border-l-2 border-border px-4 py-3 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
+ "h-auto w-full justify-between gap-5 rounded-none border-b border-l-2 border-border px-4 py-3 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
  index === createActiveSuggestionIndex ? "border-l-primary bg-[var(--accent-glow)] text-foreground" : "border-l-transparent bg-background/70 text-foreground"
  ].join(" ")}
  disabled={isPending}
@@ -831,6 +841,7 @@ function refreshSelectedPreset() {
  onClick={() => addCreateSearchedSymbol(row)}
  onMouseEnter={() => setCreateActiveSuggestionIndex(index)}
  role="option"
+ variant="ghost"
  type="button"
  >
  <span className="flex min-w-0 items-center gap-4">
@@ -847,7 +858,7 @@ function refreshSelectedPreset() {
  </span>
  </span>
  <span className="shrink-0 font-mono text-xs uppercase text-primary">{[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}</span>
- </button>
+ </Button>
  );
  })}
  {!createSuggestions.length && !createSearchLoading ? <div className="px-3 py-3 text-sm text-muted-foreground">No matching instruments found.</div> : null}
@@ -856,7 +867,7 @@ function refreshSelectedPreset() {
  </div>
  </div>
  <div>
- <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Exchange</label>
+ <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Exchange</Label>
  <Input className={`${inputBase} h-12 font-mono text-base uppercase`} onChange={(event) => setExchange(event.target.value.toUpperCase())} placeholder="NSE" value={exchange} />
  </div>
  </div>
@@ -865,16 +876,18 @@ function refreshSelectedPreset() {
  <div className="min-w-0 border-l-0 border-border min-[980px]:border-l min-[980px]:pl-8">
  <div className="mb-2 flex items-center justify-between gap-3">
  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Selected Symbols</div>
- <button
+ <Button
  className="inline-flex items-center gap-1 border-b border-border pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70 disabled:opacity-30"
  disabled={isPending}
  onClick={() => createCsvInputRef.current?.click()}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  <Upload className="size-3" />
  CSV
- </button>
- <input accept=".csv,text/csv" className="hidden" onChange={(event) => importCreateCsv(event.target.files?.[0] ?? null)} ref={createCsvInputRef} type="file" />
+ </Button>
+ <Input accept=".csv,text/csv" className="hidden" onChange={(event) => importCreateCsv(event.target.files?.[0] ?? null)} ref={createCsvInputRef} type="file" />
  </div>
  <div className="min-h-72 border border-border">
  {createParsedSymbols.length ? (
@@ -894,9 +907,9 @@ function refreshSelectedPreset() {
  )}
  <span className="block truncate text-sm font-semibold text-foreground">{displayName}</span>
  </span>
- <button aria-label={`Remove ${displayName}`} className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)] hover:text-destructive" onClick={() => removeCreateSearchedSymbol(row)} type="button">
+ <Button aria-label={`Remove ${displayName}`} className="size-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => removeCreateSearchedSymbol(row)} size="icon" type="button" variant="ghost">
  <X className="size-4" />
- </button>
+ </Button>
  </div>
  );
  })}
@@ -922,17 +935,19 @@ function refreshSelectedPreset() {
  <DialogFooter className="flex-row items-center justify-between gap-4 border-t border-border px-6 py-5 min-[760px]:px-8">
  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{createParsedSymbols.length} symbols selected</span>
  <div className="flex items-center gap-3">
- <button className="border-b border-border pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70 disabled:opacity-40" disabled={isPending} onClick={resetCreateModal} type="button">
+ <Button className="h-auto border-b border-border px-0 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70" disabled={isPending} onClick={resetCreateModal} size="sm" type="button" variant="ghost">
  Cancel
- </button>
- <button
+ </Button>
+ <Button
  className="border-b border-primary pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-30"
  disabled={isPending || !createName.trim()}
  onClick={create}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  Create
- </button>
+ </Button>
  </div>
  </DialogFooter>
  </DialogContent>
@@ -942,24 +957,26 @@ function refreshSelectedPreset() {
  <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:w-[292px] min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-6">
  <div className="mb-4 flex items-center justify-between gap-3">
  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your Watchlists</div>
- <button
+ <Button
  aria-label="Create watchlist"
- className="flex size-8 items-center justify-center border border-transparent text-primary transition-colors duration-100 ease-out hover:border-primary disabled:opacity-40"
+ className="size-8 border-transparent text-primary hover:border-primary"
  disabled={isPending}
  onClick={() => setShowCreateForm(true)}
+ size="icon"
  type="button"
+ variant="ghost"
  >
  <Plus className="size-4" />
- </button>
+ </Button>
  </div>
 
  <nav aria-label="Watchlists" className="flex flex-col">
  {watchlists.map((item) => {
  const active = item.id === selected?.id;
  return (
- <button
+ <Button
  className={[
- "group relative flex min-h-11 w-full items-center justify-between gap-4 border-l-2 px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
+ "group relative h-auto min-h-11 w-full justify-between gap-4 border-l-2 px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
  active ? "border-primary bg-[var(--accent-glow)]" : "border-transparent"
  ].join(" ")}
  key={item.id}
@@ -969,6 +986,7 @@ function refreshSelectedPreset() {
  setError("");
  setNotice("");
  }}
+ variant="ghost"
  type="button"
  >
  <span
@@ -986,7 +1004,7 @@ function refreshSelectedPreset() {
  </span>
  </span>
  <span className="font-mono text-[10px] uppercase text-muted-foreground">{formatDate(item.updated_at).split(",")[0]}</span>
- </button>
+ </Button>
  );
  })}
  {!watchlists.length ? <div className="border-l-2 border-primary px-3 py-4 text-sm text-muted-foreground">No watchlists yet.</div> : null}
@@ -1010,14 +1028,16 @@ function refreshSelectedPreset() {
  {[item.trading_index_name, `${item.constituent_count} symbols`, item.sync_status].filter(Boolean).join(" / ")}
  </div>
  </div>
- <button
+ <Button
  className="border-b border-primary pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-default disabled:opacity-40"
  disabled={isPending || item.is_added}
  onClick={() => addPreset(item)}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  {item.is_added ? "Added" : "Add"}
- </button>
+ </Button>
  </div>
  </div>
  ))}
@@ -1038,21 +1058,23 @@ function refreshSelectedPreset() {
  {editingName ? (
  <div className="flex max-w-2xl items-end gap-3">
  <Input className={`${inputBase} h-11 text-2xl font-semibold`} maxLength={128} onChange={(event) => setDraftName(event.target.value)} value={draftName} />
- <button aria-label="Save watchlist name" className="flex size-9 items-center justify-center text-primary transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)] disabled:opacity-40" disabled={isPending || !draftName.trim()} onClick={saveName} type="button">
+ <Button aria-label="Save watchlist name" className="size-9 text-primary hover:bg-[var(--accent-glow)]" disabled={isPending || !draftName.trim()} onClick={saveName} size="icon" type="button" variant="ghost">
  <Check className="size-4" />
- </button>
- <button
+ </Button>
+ <Button
  aria-label="Cancel rename"
- className="flex size-9 items-center justify-center text-muted-foreground transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)] disabled:opacity-40"
+ className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)]"
  disabled={isPending}
  onClick={() => {
  setDraftName(selected.name);
  setEditingName(false);
  }}
+ size="icon"
  type="button"
+ variant="ghost"
  >
  <X className="size-4" />
- </button>
+ </Button>
  </div>
  ) : (
  <>
@@ -1073,43 +1095,47 @@ function refreshSelectedPreset() {
  </div>
  <div className="flex items-center gap-2">
  {selected.kind === "preset" ? (
- <button
+ <Button
  aria-label="Refresh preset watchlist"
- className="flex size-9 items-center justify-center text-muted-foreground transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)] hover:text-primary disabled:opacity-40"
+ className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-primary"
  disabled={isPending}
  onClick={refreshSelectedPreset}
+ size="icon"
  type="button"
+ variant="ghost"
  >
  <RefreshCw className="size-4" />
- </button>
+ </Button>
  ) : null}
  {canEditSelected ? (
- <button
+ <Button
  aria-label="Rename watchlist"
- className="flex size-9 items-center justify-center text-muted-foreground transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)] hover:text-primary disabled:opacity-40"
+ className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-primary"
  disabled={isPending}
  onClick={() => {
  setDraftName(selected.name);
  setEditingName(true);
  }}
+ size="icon"
  type="button"
+ variant="ghost"
  >
  <Pencil className="size-4" />
- </button>
+ </Button>
  ) : null}
  {confirmDelete ? (
  <>
- <button className="border-b border-destructive pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-destructive disabled:opacity-40" disabled={isPending} onClick={removeWatchlist} type="button">
+ <Button className="h-auto border-b border-destructive px-0 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-destructive" disabled={isPending} onClick={removeWatchlist} size="sm" type="button" variant="ghost">
  Confirm
- </button>
- <button className="border-b border-border pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground disabled:opacity-40" disabled={isPending} onClick={() => setConfirmDelete(false)} type="button">
+ </Button>
+ <Button className="h-auto border-b border-border px-0 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground" disabled={isPending} onClick={() => setConfirmDelete(false)} size="sm" type="button" variant="ghost">
  Cancel
- </button>
+ </Button>
  </>
  ) : (
- <button aria-label="Delete watchlist" className="flex size-9 items-center justify-center text-muted-foreground transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)] hover:text-destructive disabled:opacity-40" disabled={isPending} onClick={() => setConfirmDelete(true)} type="button">
+ <Button aria-label="Delete watchlist" className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-destructive" disabled={isPending} onClick={() => setConfirmDelete(true)} size="icon" type="button" variant="ghost">
  <Trash2 className="size-4" />
- </button>
+ </Button>
  )}
  </div>
  </div>
@@ -1118,7 +1144,7 @@ function refreshSelectedPreset() {
  <div className="mb-7">
  <div className="mb-3 flex flex-col gap-3 min-[760px]:flex-row min-[760px]:items-end">
  <div className="min-w-0 flex-1">
- <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Add Symbol</label>
+ <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Add Symbol</Label>
  <div className="relative" ref={searchWrapRef}>
  <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
  <Input
@@ -1142,10 +1168,10 @@ function refreshSelectedPreset() {
  {suggestions.map((row, index) => {
  const metadata = suggestionMetadata[row.symbol.trim().toUpperCase()];
  return (
- <button
+ <Button
  aria-selected={index === activeSuggestionIndex}
  className={[
- "flex w-full items-center justify-between gap-4 border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
+ "h-auto w-full justify-between gap-4 rounded-none border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
  index === activeSuggestionIndex ? "border-l-primary bg-[var(--accent-glow)] text-foreground" : "border-l-transparent bg-background/70 text-foreground"
  ].join(" ")}
  disabled={isPending}
@@ -1154,6 +1180,7 @@ function refreshSelectedPreset() {
  onClick={() => addSearchedSymbol(row)}
  onMouseEnter={() => setActiveSuggestionIndex(index)}
  role="option"
+ variant="ghost"
  type="button"
  >
  <span className="flex min-w-0 items-center gap-3">
@@ -1170,7 +1197,7 @@ function refreshSelectedPreset() {
  </span>
  </span>
  <span className="shrink-0 font-mono text-xs uppercase text-primary">{[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}</span>
- </button>
+ </Button>
  );
  })}
  {!suggestions.length && !searchLoading ? <div className="px-3 py-3 text-sm text-muted-foreground">No matching instruments found.</div> : null}
@@ -1179,46 +1206,47 @@ function refreshSelectedPreset() {
  </div>
  </div>
  <div className="w-full min-[760px]:w-32">
- <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Exchange</label>
+ <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Exchange</Label>
  <Input className={`${inputBase} h-11 font-mono text-sm uppercase`} onChange={(event) => setExchange(event.target.value.toUpperCase())} placeholder="NSE" value={exchange} />
  </div>
  <div className="w-full min-[760px]:w-auto">
- <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">CSV</label>
- <button
+ <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">CSV</Label>
+ <Button
  className="inline-flex h-11 items-center gap-2 border-b border-border pb-1 font-mono text-xs uppercase text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70 disabled:opacity-30"
  disabled={isPending}
  onClick={() => addCsvInputRef.current?.click()}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  <Upload className="size-4" />
  Import CSV
- </button>
- <input accept=".csv,text/csv" className="hidden" onChange={(event) => importSymbolsIntoSelected(event.target.files?.[0] ?? null)} ref={addCsvInputRef} type="file" />
+ </Button>
+ <Input accept=".csv,text/csv" className="hidden" onChange={(event) => importSymbolsIntoSelected(event.target.files?.[0] ?? null)} ref={addCsvInputRef} type="file" />
  </div>
  </div>
  </div>
  ) : null}
 
- <div className="overflow-x-auto">
- <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
- <thead>
- <tr className="border-y border-border text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
- <th className="py-2 pr-4 font-semibold">Ticker</th>
- <th className="px-4 py-2 font-semibold">Company</th>
- <th className="px-4 py-2 font-semibold">Exchange</th>
- <th className="px-4 py-2 font-semibold">Sector</th>
- <th className="px-4 py-2 text-right font-semibold">Market cap</th>
- <th className="px-4 py-2 text-right font-semibold">Order</th>
- <th className="px-4 py-2 font-semibold">Added</th>
- <th className="w-20 py-2 pl-4 text-right font-semibold">Actions</th>
- </tr>
- </thead>
- <tbody>
+ <Table className="min-w-[1040px] border-collapse text-left text-sm">
+ <TableHeader>
+ <TableRow className="border-y border-border text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+ <TableHead className="py-2 pr-4 font-semibold">Ticker</TableHead>
+ <TableHead className="px-4 py-2 font-semibold">Company</TableHead>
+ <TableHead className="px-4 py-2 font-semibold">Exchange</TableHead>
+ <TableHead className="px-4 py-2 font-semibold">Sector</TableHead>
+ <TableHead className="px-4 py-2 text-right font-semibold">Market cap</TableHead>
+ <TableHead className="px-4 py-2 text-right font-semibold">Order</TableHead>
+ <TableHead className="px-4 py-2 font-semibold">Added</TableHead>
+ <TableHead className="w-20 py-2 pl-4 text-right font-semibold">Actions</TableHead>
+ </TableRow>
+ </TableHeader>
+ <TableBody>
  {selected.items.map((item, index) => {
  const metadata = watchlistMetadata[item.symbol.trim().toUpperCase()];
  return (
- <tr className="watchlist-data-row group border-b border-border text-foreground odd:bg-muted/40 hover:bg-[var(--bg-hover)]" key={item.id} style={{ animationDelay: `${Math.min(index * 18, 120)}ms` }}>
- <td className="py-3 pr-4">
+ <TableRow className="watchlist-data-row group border-b border-border text-foreground odd:bg-muted/40 hover:bg-[var(--bg-hover)]" key={item.id} style={{ animationDelay: `${Math.min(index * 18, 120)}ms` }}>
+ <TableCell className="py-3 pr-4">
  <div className="flex items-center gap-3">
  {metadata?.logo ? (
  <img alt="" className="size-8 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
@@ -1232,33 +1260,32 @@ function refreshSelectedPreset() {
  {metadata?.scrip_code ? <div className="font-mono text-[10px] uppercase text-muted-foreground">BSE {metadata.scrip_code}</div> : null}
  </div>
  </div>
- </td>
- <td className="max-w-[260px] px-4 py-3">
+ </TableCell>
+ <TableCell className="max-w-[260px] px-4 py-3">
  <div className="truncate text-sm font-medium text-foreground">{metadata?.company_name ?? "-"}</div>
  <div className="truncate text-xs text-muted-foreground">{metadata?.basic_industry ?? metadata?.theme ?? ""}</div>
- </td>
- <td className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">{item.exchange ?? "-"}</td>
- <td className="max-w-[220px] px-4 py-3">
+ </TableCell>
+ <TableCell className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">{item.exchange ?? "-"}</TableCell>
+ <TableCell className="max-w-[220px] px-4 py-3">
  <div className="truncate text-xs font-medium text-foreground">{metadata?.sector ?? "-"}</div>
  <div className="truncate text-xs text-muted-foreground">{metadata?.industry ?? metadata?.macro_economic_indicator ?? ""}</div>
- </td>
- <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{formatMarketCap(metadata?.market_cap ?? null)}</td>
- <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{item.sort_order + 1}</td>
- <td className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">{formatDate(item.created_at)}</td>
- <td className="w-20 py-3 pl-4 text-right">
+ </TableCell>
+ <TableCell className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{formatMarketCap(metadata?.market_cap ?? null)}</TableCell>
+ <TableCell className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{item.sort_order + 1}</TableCell>
+ <TableCell className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">{formatDate(item.created_at)}</TableCell>
+ <TableCell className="w-20 py-3 pl-4 text-right">
  {canEditSelected ? (
- <button aria-label={`Remove ${item.symbol}`} className="inline-flex size-8 items-center justify-center text-muted-foreground opacity-0 transition-all duration-100 ease-out hover:bg-[var(--accent-glow)] hover:text-destructive focus:opacity-100 group-hover:opacity-100 disabled:opacity-30" disabled={isPending} onClick={() => removeSymbol(item.symbol, item.exchange)} type="button">
+ <Button aria-label={`Remove ${item.symbol}`} className="size-8 text-muted-foreground opacity-0 transition-all duration-100 ease-out hover:bg-[var(--accent-glow)] hover:text-destructive focus:opacity-100 group-hover:opacity-100" disabled={isPending} onClick={() => removeSymbol(item.symbol, item.exchange)} size="icon" type="button" variant="ghost">
  <Trash2 className="size-4" />
- </button>
+ </Button>
  ) : null}
- </td>
- </tr>
+ </TableCell>
+ </TableRow>
  );
  })}
- </tbody>
- </table>
+ </TableBody>
+ </Table>
  {!selected.items.length ? <div className="border-b border-border py-10 text-center text-sm text-muted-foreground">Search above to add the first symbol.</div> : null}
- </div>
  </>
  ) : (
  <div className="border-l-2 border-primary px-5 py-12">

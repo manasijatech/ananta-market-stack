@@ -41,8 +41,12 @@ import type {
 import type { BrokerAccount, InstrumentSearchRow, JsonObject, LlmProvider, LlmProviderConfig, QuoteResponse } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 
 function buildGraph(dsl: AlertWorkflowDsl): AlertGraphDsl {
  const nodes: AlertGraphDsl["nodes"] = [
@@ -1728,13 +1732,13 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
  <div className="mt-4 grid gap-2 min-[760px]:grid-cols-2">
- <label className="grid gap-1 text-sm">
+ <Label className="grid gap-1 text-sm">
  <span className="text-xs font-bold uppercase text-muted-foreground">Workflow type</span>
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
  <option value="market_data">Broker market data trigger</option>
  <option value="alpha_feed">Manasija websocket feed trigger</option>
- </select>
- </label>
+ </Select>
+ </Label>
  <div className="text-xs text-muted-foreground">
  {workflowType === "alpha_feed" ? "This workflow analyzes stored Manasija websocket items from your configured feed symbols, watchlists, presets, or full-market tier." : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
  </div>
@@ -1748,10 +1752,10 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="text-sm font-bold">Active market period</div>
  <HelpText>Broker market-data workflows ignore ticks outside this window, preventing stale post-close quotes from creating alerts. Scope fields are optional; leave them empty to apply the window to every exchange and segment in this workflow.</HelpText>
  </div>
- <label className="flex items-center gap-2 text-sm">
- <input checked={activePeriodEnabled} onChange={(event) => setActivePeriodEnabled(event.target.checked)} type="checkbox" />
+ <Label className="flex items-center gap-2 text-sm">
+ <Checkbox checked={activePeriodEnabled} onCheckedChange={(checked) => setActivePeriodEnabled(Boolean(checked))} />
  Enforce active period
- </label>
+ </Label>
  </div>
  <div className="grid gap-3 min-[900px]:grid-cols-[1fr_120px_120px]">
  <div className="grid gap-2">
@@ -1775,10 +1779,10 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="grid gap-2">
  <div className="flex flex-wrap gap-2">
  {dayOptions.map(([day, label]) => (
- <label className="flex items-center gap-1 border border-border px-2 py-1 text-xs" key={day}>
- <input checked={activeDays.includes(day)} onChange={(event) => toggleActiveDay(day, event.target.checked)} type="checkbox" />
+ <Label className="flex items-center gap-1 border border-border px-2 py-1 text-xs" key={day}>
+ <Checkbox checked={activeDays.includes(day)} onCheckedChange={(checked) => toggleActiveDay(day, Boolean(checked))} />
  {label}
- </label>
+ </Label>
  ))}
  </div>
  <HelpText>Common default is Monday-Friday.</HelpText>
@@ -1813,21 +1817,21 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="text-xs font-bold uppercase text-muted-foreground">Products</div>
  <div className="mt-3 grid gap-2">
  {alphaFeedProducts.map((product) => (
- <label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={product}>
+ <Label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={product}>
  <span>{product}</span>
- <input checked={feedProducts.includes(product)} onChange={(event) => toggleFeedProduct(product, event.target.checked)} type="checkbox" />
- </label>
+ <Checkbox checked={feedProducts.includes(product)} onCheckedChange={(checked) => toggleFeedProduct(product, Boolean(checked))} />
+ </Label>
  ))}
  </div>
  </div>
  <div>
  <div className="text-xs font-bold uppercase text-muted-foreground">Feed scope</div>
- <select className="mt-3 h-10 w-full border border-input bg-background px-3 text-sm" onChange={(event) => setFeedSourceScope(event.target.value as typeof feedSourceScope)} value={feedSourceScope}>
+ <Select className="mt-3 h-10 w-full border border-input bg-background px-3 text-sm" onChange={(event) => setFeedSourceScope(event.target.value as typeof feedSourceScope)} value={feedSourceScope}>
  <option value="current_alpha_subscription">Current configured Alpha subscription</option>
  <option value="watchlists">Specific watchlists</option>
  <option value="preset_lists">Preset lists</option>
  <option value="full_market">Full market feed</option>
- </select>
+ </Select>
  <HelpText>Events are only available for symbols currently subscribed by the background Manasija websocket worker unless full-market is enabled for the chosen products.</HelpText>
  </div>
  {announcementsEnabled ? (
@@ -1847,16 +1851,16 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <Button onClick={clearAnnouncementCategorySelection} type="button" variant="ghost">Clear all</Button>
  </div>
  <Input onChange={(event) => setFeedCategoryQuery(event.target.value)} placeholder="Filter categories" value={feedCategoryQuery} />
- <label className="flex items-center gap-2 text-sm">
- <input checked={feedIncludeRelatedCategories} onChange={(event) => setFeedIncludeRelatedCategories(event.target.checked)} type="checkbox" />
+ <Label className="flex items-center gap-2 text-sm">
+ <Checkbox checked={feedIncludeRelatedCategories} onCheckedChange={(checked) => setFeedIncludeRelatedCategories(Boolean(checked))} />
  Also match related announcement categories
- </label>
+ </Label>
  <div className="max-h-44 overflow-auto border border-border">
  {filteredAnnouncementCategories.map((category) => (
- <label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={category}>
+ <Label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={category}>
  <span>{category}</span>
- <input checked={feedAnnouncementCategories.includes(category)} onChange={(event) => toggleFeedAnnouncementCategory(category, event.target.checked)} type="checkbox" />
- </label>
+ <Checkbox checked={feedAnnouncementCategories.includes(category)} onCheckedChange={(checked) => toggleFeedAnnouncementCategory(category, Boolean(checked))} />
+ </Label>
  ))}
  {!filteredAnnouncementCategories.length ? <div className="px-3 py-2 text-sm text-muted-foreground">No categories available for the current filter.</div> : null}
  </div>
@@ -1870,16 +1874,16 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  {feedSourceScope === "watchlists" ? (
  <div className="grid gap-2">
- <label className="flex items-center gap-2 text-sm">
- <input checked={feedIncludeAllWatchlists} onChange={(event) => setFeedIncludeAllWatchlists(event.target.checked)} type="checkbox" />
+ <Label className="flex items-center gap-2 text-sm">
+ <Checkbox checked={feedIncludeAllWatchlists} onCheckedChange={(checked) => setFeedIncludeAllWatchlists(Boolean(checked))} />
  All watchlists
- </label>
+ </Label>
  <div className="max-h-44 overflow-auto border border-border">
  {watchlists.map((watchlist) => (
- <label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={watchlist.id}>
+ <Label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={watchlist.id}>
  <span>{watchlist.name}</span>
- <input checked={feedWatchlistIds.includes(watchlist.id)} disabled={feedIncludeAllWatchlists} onChange={(event) => toggleFeedWatchlist(watchlist.id, event.target.checked)} type="checkbox" />
- </label>
+ <Checkbox checked={feedWatchlistIds.includes(watchlist.id)} disabled={feedIncludeAllWatchlists} onCheckedChange={(checked) => toggleFeedWatchlist(watchlist.id, Boolean(checked))} />
+ </Label>
  ))}
  </div>
  </div>
@@ -1891,10 +1895,10 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {presets.map((preset) => {
  const id = String(preset.id ?? "");
  return (
- <label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={id}>
+ <Label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={id}>
  <span>{String(preset.label ?? id)}</span>
- <input checked={feedPresetIds.includes(id)} onChange={(event) => toggleFeedPreset(id, event.target.checked)} type="checkbox" />
- </label>
+ <Checkbox checked={feedPresetIds.includes(id)} onCheckedChange={(checked) => toggleFeedPreset(id, Boolean(checked))} />
+ </Label>
  );
  })}
  </div>
@@ -1903,19 +1907,19 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="grid gap-2">
  <div className="text-xs font-bold uppercase text-muted-foreground">Trigger LLM</div>
  <div className="grid gap-2">
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")} value={feedProvider}>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")} value={feedProvider}>
  <option value="">Select provider</option>
  {enabledLlmProviders.map((provider) => <option key={provider.provider} value={provider.provider}>{provider.label}</option>)}
- </select>
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedModelId(event.target.value)} value={feedModelId}>
+ </Select>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedModelId(event.target.value)} value={feedModelId}>
  <option value="">Select model</option>
  {selectedFeedModels.map((model) => <option key={model.id} value={model.model_id}>{model.label || model.model_id}</option>)}
- </select>
+ </Select>
  </div>
  </div>
  <div className="grid gap-2">
- <label className="text-xs font-bold uppercase text-muted-foreground">Natural-language trigger condition</label>
- <textarea className="min-h-28 border border-input bg-background p-3 text-sm" onChange={(event) => setFeedConditionPrompt(event.target.value)} placeholder="Example: Alert me when the item is about a confirmed order win, large contract, or new customer mandate." value={feedConditionPrompt} />
+ <Label className="text-xs font-bold uppercase text-muted-foreground">Natural-language trigger condition</Label>
+ <Textarea className="min-h-28 border border-input bg-background p-3 text-sm" onChange={(event) => setFeedConditionPrompt(event.target.value)} placeholder="Example: Alert me when the item is about a confirmed order win, large contract, or new customer mandate." value={feedConditionPrompt} />
  <HelpText>The trigger model returns strict JSON with match, reason, confidence, and matched terms. Optional post-trigger LLM analysis below still runs separately.</HelpText>
  </div>
  <div className="grid gap-3 min-[720px]:grid-cols-3">
@@ -1931,7 +1935,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="text-sm font-bold">Target selection</div>
  <HelpText>The workflow can target one symbol today or a shared symbol list under the same rules. Preset universes are reserved for the next layer.</HelpText>
  </div>
- <select
+ <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => {
  const nextMode = event.target.value as AlertWorkflowTargeting["mode"];
@@ -1948,11 +1952,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <option value="single_symbol">Single symbol</option>
  <option value="symbol_list">Symbol list</option>
  <option value="preset_universe">Preset universe</option>
- </select>
+ </Select>
  </div>
  <div className="grid gap-3 min-[900px]:grid-cols-[1.3fr_1fr_160px]">
  <div className="grid gap-2">
- <select
+ <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => setAccountId(event.target.value)}
  value={accountId}
@@ -1962,7 +1966,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {account.label} · {account.broker_code}
  </option>
  ))}
- </select>
+ </Select>
  <HelpText>The broker account decides which instrument universe and quote API will be used.</HelpText>
  </div>
  <div className="relative grid gap-2" ref={symbolWrapRef}>
@@ -1990,17 +1994,18 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {showSuggestions && suggestions.length ? (
  <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto border border-border bg-background ">
  {suggestions.map((row) => (
- <button
+ <Button
  className="grid w-full gap-1 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--accent-glow)]"
  key={[row.symbol, row.exchange, row.trading_symbol].join(":")}
  onClick={() => selectSuggestion(row)}
+ variant="ghost"
  type="button"
  >
  <span className="font-semibold">{row.symbol}</span>
  <span className="text-xs text-muted-foreground">
  {[row.exchange, row.instrument_type, row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" · ")}
  </span>
- </button>
+ </Button>
  ))}
  </div>
  ) : null}
@@ -2023,15 +2028,17 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  const key = `${item.symbol}:${item.exchange ?? ""}`;
  return (
  <div className="relative" key={key}>
- <button
+ <Button
  className="border border-border px-2 py-1 font-mono text-xs hover:border-primary"
  onFocus={() => loadSymbolQuote(item)}
  onMouseEnter={() => loadSymbolQuote(item)}
  onMouseLeave={() => setHoveredSymbolKey("")}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  {[item.symbol, item.exchange].filter(Boolean).join(" · ")}
- </button>
+ </Button>
  {hoveredSymbolKey === key ? (
  <SymbolQuoteTooltip loading={hoverQuoteLoading} quote={hoverQuote} />
  ) : null}
@@ -2070,7 +2077,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  <div className="grid gap-2">
  <div className="text-xs font-bold uppercase text-muted-foreground">Bulk import</div>
- <textarea
+ <Textarea
  className="min-h-[108px] w-full border border-input bg-background px-3 py-2 text-sm outline-none"
  onChange={(event) => setBulkTargets(event.target.value.toUpperCase())}
  placeholder={targetListExample}
@@ -2085,10 +2092,10 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="text-xs font-bold uppercase text-muted-foreground">Current targets · {targetEntries.length}</div>
  {targetEntries.map((entry, index) => (
  <div className="flex flex-wrap items-center justify-between gap-3 border border-border px-3 py-2" key={`${entry.symbol}:${entry.exchange ?? ""}:${index}`}>
- <button className="text-left" onClick={() => loadTarget(entry)} type="button">
+ <Button className="h-auto px-0 text-left" onClick={() => loadTarget(entry)} type="button" variant="ghost">
  <div className="font-semibold">{entry.symbol}</div>
  <div className="text-xs text-muted-foreground">{entry.exchange ?? "-"} · shared rule target</div>
- </button>
+ </Button>
  <Button onClick={() => removeTarget(index)} size="sm" type="button" variant="ghost">Remove</Button>
  </div>
  ))}
@@ -2103,7 +2110,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="text-sm font-bold">Dynamic universe</div>
  <HelpText>Use a live watchlist or a backend preset as the workflow target. The subscription reconciler keeps the resolved symbols current.</HelpText>
  </div>
- <select
+ <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => setDynamicUniverseKind(event.target.value)}
  value={dynamicUniverseKind}
@@ -2111,11 +2118,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <option value="watchlist">Watchlist</option>
  <option value="curated_preset">Curated preset</option>
  <option value="metadata_filter">Metadata filter</option>
- </select>
+ </Select>
  </div>
  {dynamicUniverseKind === "watchlist" ? (
  <div className="grid gap-2">
- <select
+ <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => setSelectedWatchlistId(event.target.value)}
  value={selectedWatchlistId}
@@ -2125,12 +2132,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {watchlist.name} · {watchlist.items.length} symbols
  </option>
  ))}
- </select>
+ </Select>
  {!watchlists.length ? <HelpText>Create a watchlist first, then return here to link it to this workflow.</HelpText> : <HelpText>Symbols added to or removed from this watchlist are reconciled into live subscriptions automatically.</HelpText>}
  </div>
  ) : dynamicUniverseKind === "curated_preset" ? (
  <div className="grid gap-2">
- <select
+ <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => setSelectedPresetId(event.target.value)}
  value={selectedPresetId}
@@ -2140,7 +2147,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {String(preset.label ?? preset.id)}
  </option>
  ))}
- </select>
+ </Select>
  <HelpText>Presets are resolved from backend registry rules and broker instrument metadata.</HelpText>
  </div>
  ) : dynamicUniverseKind === "metadata_filter" ? (
@@ -2173,20 +2180,24 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="flex items-center gap-2">
  <div className="text-xs text-muted-foreground">{preview.loading ? "Refreshing..." : preview.quote ? "Live preview active" : "No symbol selected"}</div>
  <div className="inline-flex border border-border p-1">
- <button
+ <Button
  className={previewMode === "summary" ? " px-2 py-1 text-xs font-semibold bg-secondary" : " px-2 py-1 text-xs text-muted-foreground"}
  onClick={() => setPreviewMode("summary")}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  Summary
- </button>
- <button
+ </Button>
+ <Button
  className={previewMode === "raw" ? " px-2 py-1 text-xs font-semibold bg-secondary" : " px-2 py-1 text-xs text-muted-foreground"}
  onClick={() => setPreviewMode("raw")}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  Raw
- </button>
+ </Button>
  </div>
  </div>
  </div>
@@ -2259,14 +2270,14 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="text-sm font-bold">LLM Analysis</div>
  <HelpText>Optional post-trigger analysis runs after a real match and before the alert is sent. Turning it off keeps the provider, model, and prompt saved.</HelpText>
  </div>
- <label className="flex items-center gap-2 text-sm">
- <input checked={llmEnabled} onChange={(event) => setLlmEnabled(event.target.checked)} type="checkbox" />
+ <Label className="flex items-center gap-2 text-sm">
+ <Checkbox checked={llmEnabled} onCheckedChange={(checked) => setLlmEnabled(Boolean(checked))} />
  Enable
- </label>
+ </Label>
  </div>
  <div className="grid gap-3 min-[960px]:grid-cols-[1fr_1fr_120px_140px_120px]">
  <div className="grid gap-2">
- <select
+ <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  disabled={!llmProviders.length}
  onChange={(event) => setLlmProvider(event.target.value as LlmProvider | "")}
@@ -2278,11 +2289,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {provider.label}{provider.has_api_key && provider.is_enabled ? "" : " · configure key"}
  </option>
  ))}
- </select>
+ </Select>
  <HelpText>Uses the encrypted provider key from System Config.</HelpText>
  </div>
  <div className="grid gap-2">
- <select
+ <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  disabled={!selectedLlmModels.length}
  onChange={(event) => setLlmModelId(event.target.value)}
@@ -2294,7 +2305,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {model.label || model.model_id}
  </option>
  ))}
- </select>
+ </Select>
  <HelpText>Saved enabled models for the selected provider.</HelpText>
  </div>
  <div className="grid gap-2">
@@ -2312,20 +2323,24 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div className="inline-flex border border-border p-1">
- <button
+ <Button
  className={llmPromptTab === "prompt" ? "px-2 py-1 text-xs font-semibold bg-secondary" : "px-2 py-1 text-xs text-muted-foreground"}
  onClick={() => setLlmPromptTab("prompt")}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  Prompt
- </button>
- <button
+ </Button>
+ <Button
  className={llmPromptTab === "preview" ? "px-2 py-1 text-xs font-semibold bg-secondary" : "px-2 py-1 text-xs text-muted-foreground"}
  onClick={() => setLlmPromptTab("preview")}
+ size="sm"
  type="button"
+ variant="ghost"
  >
  Context Preview
- </button>
+ </Button>
  </div>
  <div className="flex flex-wrap gap-2">
  <Button disabled={isPending || !initialWorkflow?.id} onClick={previewLlmContext} size="sm" type="button" variant="outline">Preview Context</Button>
@@ -2334,7 +2349,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  {llmPromptTab === "prompt" ? (
  <div className="relative">
- <textarea
+ <Textarea
  className="min-h-[220px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
  onBlur={() => window.setTimeout(() => setShowLlmSuggestions(false), 120)}
  onChange={(event) => {
@@ -2354,14 +2369,15 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {showLlmSuggestions && filteredLlmPlaceholders.length ? (
  <div className="absolute left-0 top-[calc(100%+4px)] z-20 max-h-[260px] w-full overflow-y-auto border border-border bg-background">
  {filteredLlmPlaceholders.map((item) => (
- <button
+ <Button
  className="block w-full border-b border-border px-3 py-2 text-left font-mono text-xs last:border-b-0 hover:bg-[var(--accent-glow)]"
  key={item}
  onClick={() => applyLlmSuggestion(item)}
+ variant="ghost"
  type="button"
  >
  {item}
- </button>
+ </Button>
  ))}
  </div>
  ) : null}
@@ -2415,7 +2431,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
  <div className="relative">
- <textarea
+ <Textarea
  className="min-h-[120px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
  onBlur={() => window.setTimeout(() => setShowDslSuggestions(false), 120)}
  onChange={(event) => {
@@ -2448,18 +2464,19 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {showDslSuggestions && dslSuggestions.length ? (
  <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-72 overflow-y-auto border border-border bg-background shadow-lg">
  {dslSuggestions.map((item) => (
- <button
+ <Button
  className="grid w-full gap-1 border-b border-border px-3 py-2 text-left text-xs last:border-b-0 hover:bg-[var(--accent-glow)]"
  key={`${item.kind}:${item.value}`}
  onMouseDown={(event) => {
  event.preventDefault();
  applyDslSuggestion(item);
  }}
+ variant="ghost"
  type="button"
  >
  <span className="font-mono font-bold">{item.label}</span>
  <span className="text-muted-foreground">{item.kind} - {item.description}</span>
- </button>
+ </Button>
  ))}
  </div>
  ) : null}
@@ -2501,19 +2518,19 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="mb-2 text-sm font-bold">Channels</div>
  <HelpText>Choose where the alert should be delivered. Inherit defaults uses your channel settings page as the base.</HelpText>
  <div className="mt-3 flex flex-wrap gap-3 text-sm">
- <label className="flex items-center gap-2" title="Always recommended so alerts remain visible inside the app."><input checked={channelInApp} onChange={(event) => setChannelInApp(event.target.checked)} type="checkbox" />In-app</label>
- <label className="flex items-center gap-2" title="Send through your saved Discord webhook configuration."><input checked={channelDiscord} onChange={(event) => setChannelDiscord(event.target.checked)} type="checkbox" />Discord</label>
- <label className="flex items-center gap-2" title="Send through your saved Telegram bot configuration."><input checked={channelTelegram} onChange={(event) => setChannelTelegram(event.target.checked)} type="checkbox" />Telegram</label>
- <label className="flex items-center gap-2" title="When enabled, default channels from the alert channel settings page are included automatically."><input checked={inheritDefaults} onChange={(event) => setInheritDefaults(event.target.checked)} type="checkbox" />Inherit defaults</label>
+ <Label className="flex items-center gap-2" title="Always recommended so alerts remain visible inside the app."><Checkbox checked={channelInApp} onCheckedChange={(checked) => setChannelInApp(Boolean(checked))} />In-app</Label>
+ <Label className="flex items-center gap-2" title="Send through your saved Discord webhook configuration."><Checkbox checked={channelDiscord} onCheckedChange={(checked) => setChannelDiscord(Boolean(checked))} />Discord</Label>
+ <Label className="flex items-center gap-2" title="Send through your saved Telegram bot configuration."><Checkbox checked={channelTelegram} onCheckedChange={(checked) => setChannelTelegram(Boolean(checked))} />Telegram</Label>
+ <Label className="flex items-center gap-2" title="When enabled, default channels from the alert channel settings page are included automatically."><Checkbox checked={inheritDefaults} onCheckedChange={(checked) => setInheritDefaults(Boolean(checked))} />Inherit defaults</Label>
  </div>
  </div>
  <div>
  <div className="mb-2 text-sm font-bold">Lifecycle</div>
  <HelpText>Active workflows are evaluated by the alert worker. Inactive workflows stay saved but do not trigger.</HelpText>
- <select className="mt-3 h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setStatus(event.target.value as "active" | "inactive")} value={status}>
+ <Select className="mt-3 h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setStatus(event.target.value as "active" | "inactive")} value={status}>
  <option value="active">Active</option>
  <option value="inactive">Inactive</option>
- </select>
+ </Select>
  </div>
  </div>
 
@@ -2707,10 +2724,10 @@ function RuleEditor({
  <div className="grid gap-4 border border-border p-4">
  <div className="grid gap-3 min-[960px]:grid-cols-[180px_180px_1fr]">
  <div className="grid gap-2">
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setCombine(event.target.value as "all" | "any")} value={combine}>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setCombine(event.target.value as "all" | "any")} value={combine}>
  <option value="all">All conditions</option>
  <option value="any">Any condition</option>
- </select>
+ </Select>
  <HelpText>`All` means every condition must match. `Any` means one matching condition is enough.</HelpText>
  </div>
  <div className="grid gap-2">
@@ -2737,7 +2754,7 @@ function RuleEditor({
  </div>
  <div className="grid gap-2">
  <div className="relative">
- <textarea
+ <Textarea
  className="min-h-[92px] w-full border border-input bg-background px-3 py-2 text-sm outline-none"
  onChange={(event) => updateMessageTemplate(event.target.value, event.target.selectionStart ?? undefined)}
  onClick={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined)}
@@ -2749,14 +2766,15 @@ function RuleEditor({
  {showMessageFieldSuggestions && filteredMessageFields.length ? (
  <div className="absolute left-0 top-[calc(100%+4px)] z-20 max-h-[220px] w-full overflow-y-auto border border-border bg-background ">
  {filteredMessageFields.map((field) => (
- <button
+ <Button
  className="block w-full border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--accent-glow)]"
  key={field}
  onClick={() => applyMessageField(field)}
+ variant="ghost"
  type="button"
  >
  {`{${field}}`}
- </button>
+ </Button>
  ))}
  </div>
  ) : null}
@@ -2786,16 +2804,16 @@ function ConditionEditor({
  return (
  <div className="grid gap-3">
  <div className="grid gap-3 min-[960px]:grid-cols-[1fr_1fr_1fr_1fr_auto]">
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { field: event.target.value })} value={condition.field}>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { field: event.target.value })} value={condition.field}>
  {fieldOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
- </select>
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { operator: event.target.value })} value={condition.operator}>
+ </Select>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { operator: event.target.value })} value={condition.operator}>
  {operatorOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
- </select>
+ </Select>
  <Input onChange={(event) => updateCondition(index, { value: event.target.value })} placeholder="Value" value={String(condition.value ?? "")} />
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })} value={condition.compare_to ?? ""}>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })} value={condition.compare_to ?? ""}>
  {compareOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
- </select>
+ </Select>
  <Button onClick={() => removeCondition(index)} type="button" variant="ghost">Remove</Button>
  </div>
  <div className="grid gap-1 text-xs text-muted-foreground">

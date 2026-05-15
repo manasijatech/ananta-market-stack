@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AlertWorkflowRun } from "@/service/types/alerts";
+import { Button } from "@/components/ui/button";
 
 const PAGE_SIZE = 20;
 
@@ -80,13 +81,15 @@ export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
  <div className="text-xs text-muted-foreground">
  LTP: {String(run.tick.ltp ?? "-")} · Symbol: {String(run.tick.symbol ?? "-")}
  </div>
- <button
- className="text-xs font-semibold text-muted-foreground hover:text-foreground"
+ <Button
+ className="h-auto px-0 text-xs font-semibold text-muted-foreground hover:text-foreground"
  onClick={() => setExpandedRaw((current) => ({ ...current, [run.id]: !isExpanded }))}
+ size="sm"
  type="button"
+ variant="link"
  >
  {isExpanded ? "Hide raw" : "View raw"}
- </button>
+ </Button>
  </div>
  {isExpanded ? (
  <pre className="mt-3 max-h-[180px] overflow-auto bg-secondary/50 p-3 text-xs text-muted-foreground">

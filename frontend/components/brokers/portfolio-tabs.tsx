@@ -23,6 +23,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton as UISkeleton } from "@/components/ui/skeleton";
+import {
+ Table,
+ TableBody,
+ TableCell,
+ TableHead,
+ TableHeader,
+ TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FundsResponse, Holding, Order, Position, Profile, Trade } from "@/service/types/broker";
 
@@ -248,36 +256,34 @@ export function PortfolioTabs({ accountId, sessionActive }: { accountId: string;
 
  {sessionActive && active === "orders" && state.orders ? (
  filteredOrders.length ? (
- <div className="overflow-x-auto">
- <table className="w-full min-w-[720px] text-left text-sm">
- <thead className="text-xs uppercase text-muted-foreground">
- <tr><th className="py-2">Symbol</th><th>Action</th><th>Qty</th><th>Price</th><th>Status</th><th>Time</th></tr>
- </thead>
- <tbody>{filteredOrders.map((row) => (
- <tr className="border-t border-border" key={row.id}>
- <td className="py-3 font-bold">{row.symbol}</td><td>{row.action}</td><td>{row.quantity}</td><td>{money(row.price)}</td><td>{row.status}</td><td>{row.time ?? "-"}</td>
- </tr>
- ))}</tbody>
- </table>
- </div>
+ <Table className="min-w-[720px] text-left text-sm">
+ <TableHeader className="text-xs uppercase text-muted-foreground">
+ <TableRow className="border-b-0"><TableHead className="py-2">Symbol</TableHead><TableHead>Action</TableHead><TableHead>Qty</TableHead><TableHead>Price</TableHead><TableHead>Status</TableHead><TableHead>Time</TableHead></TableRow>
+ </TableHeader>
+ <TableBody>{filteredOrders.map((row) => (
+ <TableRow className="border-t border-border" key={row.id}>
+ <TableCell className="py-3 font-bold">{row.symbol}</TableCell><TableCell>{row.action}</TableCell><TableCell>{row.quantity}</TableCell><TableCell>{money(row.price)}</TableCell><TableCell>{row.status}</TableCell><TableCell>{row.time ?? "-"}</TableCell>
+ </TableRow>
+ ))}</TableBody>
+ </Table>
  ) : <Empty message="No orders found." />
  ) : null}
 
  {sessionActive && active === "trades" && state.trades ? (
  filteredTrades.length ? (
- <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="text-xs uppercase text-muted-foreground"><tr><th className="py-2">Symbol</th><th>Action</th><th>Qty</th><th>Avg price</th><th>Time</th></tr></thead><tbody>{filteredTrades.map((row) => <tr className="border-t border-border" key={row.id}><td className="py-3 font-bold">{row.symbol}</td><td>{row.action}</td><td>{row.quantity}</td><td>{money(row.avg_price)}</td><td>{row.time ?? "-"}</td></tr>)}</tbody></table></div>
+ <Table className="min-w-[680px] text-left text-sm"><TableHeader className="text-xs uppercase text-muted-foreground"><TableRow className="border-b-0"><TableHead className="py-2">Symbol</TableHead><TableHead>Action</TableHead><TableHead>Qty</TableHead><TableHead>Avg price</TableHead><TableHead>Time</TableHead></TableRow></TableHeader><TableBody>{filteredTrades.map((row) => <TableRow className="border-t border-border" key={row.id}><TableCell className="py-3 font-bold">{row.symbol}</TableCell><TableCell>{row.action}</TableCell><TableCell>{row.quantity}</TableCell><TableCell>{money(row.avg_price)}</TableCell><TableCell>{row.time ?? "-"}</TableCell></TableRow>)}</TableBody></Table>
  ) : <Empty message="No trades found." />
  ) : null}
 
  {sessionActive && active === "positions" && state.positions ? (
  <div>
  <Button className="mb-3" disabled type="button" variant="outline">Close all positions</Button>
- {filteredPositions.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="text-xs uppercase text-muted-foreground"><tr><th className="py-2">Symbol</th><th>Product</th><th>Qty</th><th>PNL</th></tr></thead><tbody>{filteredPositions.map((row) => <tr className="border-t border-border" key={row.id}><td className="py-3 font-bold">{row.symbol}</td><td>{row.product ?? "-"}</td><td>{row.quantity}</td><td className={(row.pnl ?? 0) >= 0 ? "text-primary" : "text-destructive"}>{money(row.pnl)}</td></tr>)}</tbody></table></div> : <Empty message="No positions found." />}
+ {filteredPositions.length ? <Table className="min-w-[680px] text-left text-sm"><TableHeader className="text-xs uppercase text-muted-foreground"><TableRow className="border-b-0"><TableHead className="py-2">Symbol</TableHead><TableHead>Product</TableHead><TableHead>Qty</TableHead><TableHead>PNL</TableHead></TableRow></TableHeader><TableBody>{filteredPositions.map((row) => <TableRow className="border-t border-border" key={row.id}><TableCell className="py-3 font-bold">{row.symbol}</TableCell><TableCell>{row.product ?? "-"}</TableCell><TableCell>{row.quantity}</TableCell><TableCell className={(row.pnl ?? 0) >= 0 ? "text-primary" : "text-destructive"}>{money(row.pnl)}</TableCell></TableRow>)}</TableBody></Table> : <Empty message="No positions found." />}
  </div>
  ) : null}
 
  {sessionActive && active === "holdings" && state.holdings ? (
- filteredHoldings.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="text-xs uppercase text-muted-foreground"><tr><th className="py-2">Symbol</th><th>Qty</th><th>Avg</th><th>LTP</th><th>PNL</th><th>PNL %</th></tr></thead><tbody>{filteredHoldings.map((row) => <tr className="border-t border-border" key={row.id}><td className="py-3 font-bold">{row.symbol}</td><td>{row.quantity}</td><td>{money(row.average_price)}</td><td>{money(row.last_price)}</td><td className={(row.pnl ?? 0) >= 0 ? "text-primary" : "text-destructive"}>{money(row.pnl)}</td><td>{row.pnl_percent ?? "-"}</td></tr>)}<tr className="border-t-2 border-border font-bold"><td className="py-3" colSpan={4}>Total PNL</td><td className={holdingsTotal >= 0 ? "text-primary" : "text-destructive"}>{money(holdingsTotal)}</td><td /></tr></tbody></table></div> : <Empty message="No holdings found." />
+ filteredHoldings.length ? <Table className="min-w-[760px] text-left text-sm"><TableHeader className="text-xs uppercase text-muted-foreground"><TableRow className="border-b-0"><TableHead className="py-2">Symbol</TableHead><TableHead>Qty</TableHead><TableHead>Avg</TableHead><TableHead>LTP</TableHead><TableHead>PNL</TableHead><TableHead>PNL %</TableHead></TableRow></TableHeader><TableBody>{filteredHoldings.map((row) => <TableRow className="border-t border-border" key={row.id}><TableCell className="py-3 font-bold">{row.symbol}</TableCell><TableCell>{row.quantity}</TableCell><TableCell>{money(row.average_price)}</TableCell><TableCell>{money(row.last_price)}</TableCell><TableCell className={(row.pnl ?? 0) >= 0 ? "text-primary" : "text-destructive"}>{money(row.pnl)}</TableCell><TableCell>{row.pnl_percent ?? "-"}</TableCell></TableRow>)}<TableRow className="border-t-2 border-border font-bold"><TableCell className="py-3" colSpan={4}>Total PNL</TableCell><TableCell className={holdingsTotal >= 0 ? "text-primary" : "text-destructive"}>{money(holdingsTotal)}</TableCell><TableCell /></TableRow></TableBody></Table> : <Empty message="No holdings found." />
  ) : null}
  </div>
  </section>

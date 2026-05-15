@@ -1,5 +1,13 @@
 import { PageHeader, Shell } from "@/components/brokers/ui";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export function HeaderSkeleton({
   eyebrowWidth = "w-32",
@@ -97,29 +105,29 @@ export function TableSkeleton({
   columns?: number;
 }) {
   return (
-    <div className="overflow-x-auto border-y border-border">
-      <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-        <thead>
-          <tr className="border-b border-border">
+    <div className="border-y border-border">
+      <Table className="min-w-[760px] border-collapse text-left text-sm">
+        <TableHeader>
+          <TableRow className="border-b border-border">
             {Array.from({ length: columns }).map((_, index) => (
-              <th className="px-4 py-3" key={index}>
+              <TableHead className="px-4 py-3" key={index}>
                 <Skeleton className="h-3 w-24" />
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {Array.from({ length: rows }).map((_, rowIndex) => (
-            <tr className="border-b border-border" key={rowIndex}>
+            <TableRow className="border-b border-border" key={rowIndex}>
               {Array.from({ length: columns }).map((_, columnIndex) => (
-                <td className="px-4 py-4" key={columnIndex}>
+                <TableCell className="px-4 py-4" key={columnIndex}>
                   <Skeleton className={columnIndex === 0 ? "h-5 w-32" : "h-4 w-24"} />
-                </td>
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -26,7 +26,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+ Table,
+ TableBody,
+ TableCell,
+ TableHead,
+ TableHeader,
+ TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type {
  BrokerAccountDetail,
@@ -431,49 +440,49 @@ export function BrokerDataTest({
  Search
  </Button>
  </div>
- <div className="mt-4 overflow-x-auto">
- <table className="w-full min-w-[760px] text-left text-sm">
- <thead className="text-xs uppercase text-muted-foreground">
- <tr>
- <th className="py-2">Symbol</th>
- <th>Source</th>
- <th>Exchange</th>
- <th>Type</th>
- <th>Expiry</th>
- <th>Identifiers</th>
- </tr>
- </thead>
- <tbody>
+ <div className="mt-4">
+ <Table className="min-w-[760px] text-left text-sm">
+ <TableHeader className="text-xs uppercase text-muted-foreground">
+ <TableRow className="border-b-0">
+ <TableHead className="py-2">Symbol</TableHead>
+ <TableHead>Source</TableHead>
+ <TableHead>Exchange</TableHead>
+ <TableHead>Type</TableHead>
+ <TableHead>Expiry</TableHead>
+ <TableHead>Identifiers</TableHead>
+ </TableRow>
+ </TableHeader>
+ <TableBody>
  {isPending && !searchRows.length ? Array.from({ length: 4 }).map((_, index) => (
- <tr className="border-t border-border" key={`search-loading-${index}`}>
- <td className="py-3"><Skeleton className="h-5 w-28" /><Skeleton className="mt-2 h-3 w-40" /></td>
- <td><Skeleton className="h-4 w-12" /></td>
- <td><Skeleton className="h-4 w-14" /></td>
- <td><Skeleton className="h-4 w-20" /></td>
- <td><Skeleton className="h-4 w-24" /></td>
- <td><Skeleton className="h-4 w-56" /></td>
- </tr>
+ <TableRow className="border-t border-border" key={`search-loading-${index}`}>
+ <TableCell className="py-3"><Skeleton className="h-5 w-28" /><Skeleton className="mt-2 h-3 w-40" /></TableCell>
+ <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+ <TableCell><Skeleton className="h-4 w-14" /></TableCell>
+ <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+ <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+ <TableCell><Skeleton className="h-4 w-56" /></TableCell>
+ </TableRow>
  )) : null}
  {searchRows.map((row) => (
- <tr className="border-t border-border" key={`${row.exchange}-${row.symbol}-${row.expiry ?? "na"}`}>
- <td className="py-3">
+ <TableRow className="border-t border-border" key={`${row.exchange}-${row.symbol}-${row.expiry ?? "na"}`}>
+ <TableCell className="py-3">
  <div className="font-bold">{row.symbol}</div>
  <div className="text-xs text-muted-foreground">{row.name ?? row.trading_symbol ?? "-"}</div>
- </td>
- <td>{row.source ?? "db"}</td>
- <td>{row.exchange ?? "-"}</td>
- <td>{row.instrument_type ?? "-"}</td>
- <td>{row.expiry ? formatDate(row.expiry) : "-"}</td>
- <td className="max-w-[280px] truncate text-xs text-muted-foreground">
+ </TableCell>
+ <TableCell>{row.source ?? "db"}</TableCell>
+ <TableCell>{row.exchange ?? "-"}</TableCell>
+ <TableCell>{row.instrument_type ?? "-"}</TableCell>
+ <TableCell>{row.expiry ? formatDate(row.expiry) : "-"}</TableCell>
+ <TableCell className="max-w-[280px] truncate text-xs text-muted-foreground">
  {Object.entries(row.identifiers)
  .filter(([, value]) => value)
  .map(([key, value]) => `${key}:${value}`)
  .join(" · ") || "-"}
- </td>
- </tr>
+ </TableCell>
+ </TableRow>
  ))}
- </tbody>
- </table>
+ </TableBody>
+ </Table>
  {!searchRows.length && !isPending ? (
  <div className="border-t border-border py-4 text-sm text-muted-foreground">No instrument rows loaded yet.</div>
  ) : null}
@@ -666,10 +675,10 @@ export function BrokerDataTest({
  <Button disabled={!wsMessages.length} onClick={() => setWsMessages([])} type="button" variant="outline">
  Clear
  </Button>
- <label className="flex items-center gap-2 text-sm text-muted-foreground">
+ <Label className="flex items-center gap-2 text-sm text-muted-foreground">
  <Checkbox checked={wsKeepHistory} onCheckedChange={(checked) => setWsKeepHistory(Boolean(checked))} />
  See all received messages
- </label>
+ </Label>
  </div>
  <div className="mt-4 text-sm text-muted-foreground">
  {wsConnected ? "Connected" : "Disconnected"} · {streamStatus.subscription_count} active subscriptions
