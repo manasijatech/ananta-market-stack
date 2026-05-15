@@ -8,6 +8,7 @@ Modular trading/data platform: self-hosted core plus future managed offerings. T
 
 See `idea.md` for product narrative and roadmap.
 See `docs/broker_auth_flows.md` for broker session/auth behavior and `docs/migrations.md` for the Alembic workflow.
+See `docs/windows_runtime_compat.md` for Python 3.10 / Windows-safe runtime conventions.
 
 ## Current phase (roadmap)
 
@@ -39,6 +40,13 @@ Next roadmap items (not implemented here): production-grade native broker websoc
 | HTTP to brokers | `httpx` (sync) inside broker clients |
 
 MongoDB is listed in `idea.md` for workflows later; it is **not** required for the broker module today.
+
+## Cross-platform runtime conventions
+
+- Import UTC only from `common.datetime_compat`. Do not use `from datetime import UTC`; that breaks Python 3.10 Windows environments at import time.
+- For asyncio worker loops and websocket polling, catch `asyncio.TimeoutError`, not a bare `TimeoutError`.
+- Keep platform-marked runtime dependencies in `requirements.txt`: `uvloop` only outside Windows, `winloop` only on Windows, and `tzdata` on Windows.
+- When persisting SQLite datetimes, keep the existing convention of storing naive UTC values deliberately and normalize aware-vs-naive comparisons explicitly before comparing timestamps.
 
 ## Repository layout
 
