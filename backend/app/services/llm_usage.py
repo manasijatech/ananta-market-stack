@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -23,6 +23,7 @@ from app.schemas.llm_usage import (
     LlmUsageTotalsOut,
     WorkflowLlmUsageSummaryOut,
 )
+from common.datetime_compat import UTC
 from db.models import LlmUsageDailySnapshot, LlmUsageEvent
 from db.session import SessionLocal
 

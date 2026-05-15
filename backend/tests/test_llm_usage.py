@@ -1,10 +1,11 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.schemas.llm_usage import LlmUsageFilterOut
 from app.services import llm_usage
+from common.datetime_compat import UTC
 from db.models import LlmUsageDailySnapshot, LlmUsageEvent, User
 from db.session import Base
 

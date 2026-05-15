@@ -18,7 +18,7 @@ The helpers here are documented for later workflow reuse:
 from __future__ import annotations
 
 import base64
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from openai import OpenAI
@@ -28,6 +28,7 @@ from app.config import get_settings
 from app.schemas.system_config import LlmProvider
 from app.services import llm_config
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
+from common.datetime_compat import UTC
 
 _settings = get_settings()
 
