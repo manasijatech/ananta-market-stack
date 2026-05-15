@@ -22,5 +22,5 @@ async def run_watchlist_preset_worker(stop_event: asyncio.Event) -> None:
             db.close()
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             continue

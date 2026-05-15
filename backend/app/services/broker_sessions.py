@@ -817,5 +817,5 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
         initial_cycle = False
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=300)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             continue

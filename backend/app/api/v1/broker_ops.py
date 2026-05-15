@@ -395,7 +395,7 @@ async def broker_data_stream(account_id: str, websocket: WebSocket) -> None:
                     await websocket.send_json({"type": "unsubscribed"})
                 elif message_type == "ping":
                     await websocket.send_json({"type": "pong"})
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 if not subscriptions:
                     continue
                 poll_db = SessionLocal()
