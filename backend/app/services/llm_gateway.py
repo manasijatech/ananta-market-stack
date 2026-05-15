@@ -18,6 +18,7 @@ The helpers here are documented for later workflow reuse:
 from __future__ import annotations
 
 import base64
+from datetime import UTC, datetime
 from typing import Any
 
 from openai import OpenAI
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.schemas.system_config import LlmProvider
 from app.services import llm_config
+from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 
 _settings = get_settings()
 
@@ -114,6 +116,7 @@ def generate_text(
     stream: bool = False,
     extra_body: dict[str, Any] | None = None,
     timeout: float | None = None,
+    tracking: LlmTrackingContext | None = None,
 ) -> Any:
     """Generate text via Chat Completions using a provider-specific OpenAI client.
 
@@ -123,6 +126,7 @@ def generate_text(
     """
 
     client = build_provider_client(db, user_id, provider, timeout=timeout)
+    started_at = datetime.now(tz=UTC).replace(tzinfo=None)
     messages: list[dict[str, Any]] = []
     if developer_prompt:
         messages.append({"role": "system", "content": developer_prompt})
@@ -144,7 +148,33 @@ def generate_text(
         payload["max_completion_tokens"] = max_completion_tokens
     if extra_body:
         payload["extra_body"] = extra_body
-    return client.chat.completions.create(**payload)
+    try:
+        response = client.chat.completions.create(**payload)
+    except Exception as exc:
+        record_llm_usage(
+            user_id=user_id,
+            provider=provider,
+            requested_model_id=model,
+            api_surface="chat_completions",
+            started_at=started_at,
+            completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+            status="error",
+            tracking=tracking,
+            error=str(exc),
+        )
+        raise
+    record_llm_usage(
+        user_id=user_id,
+        provider=provider,
+        requested_model_id=model,
+        api_surface="chat_completions",
+        started_at=started_at,
+        completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+        status="success",
+        tracking=tracking,
+        response=response,
+    )
+    return response
 
 
 def generate_text_response_api(
@@ -156,6 +186,7 @@ def generate_text_response_api(
     instructions: str | None = None,
     input_text: str,
     reasoning_effort: str | None = None,
+    tracking: LlmTrackingContext | None = None,
 ) -> Any:
     """Generate text through the Responses API.
 
@@ -165,6 +196,7 @@ def generate_text_response_api(
     """
 
     client = build_provider_client(db, user_id, provider)
+    started_at = datetime.now(tz=UTC).replace(tzinfo=None)
     payload: dict[str, Any] = {
         "model": model,
         "input": input_text,
@@ -173,4 +205,30 @@ def generate_text_response_api(
         payload["instructions"] = instructions
     if reasoning_effort:
         payload["reasoning"] = {"effort": reasoning_effort}
-    return client.responses.create(**payload)
+    try:
+        response = client.responses.create(**payload)
+    except Exception as exc:
+        record_llm_usage(
+            user_id=user_id,
+            provider=provider,
+            requested_model_id=model,
+            api_surface="responses_api",
+            started_at=started_at,
+            completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+            status="error",
+            tracking=tracking,
+            error=str(exc),
+        )
+        raise
+    record_llm_usage(
+        user_id=user_id,
+        provider=provider,
+        requested_model_id=model,
+        api_surface="responses_api",
+        started_at=started_at,
+        completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+        status="success",
+        tracking=tracking,
+        response=response,
+    )
+    return response

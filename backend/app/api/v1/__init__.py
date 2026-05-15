@@ -14,6 +14,7 @@ from app.api.v1 import (
     broker_ops,
     health,
     live_streams,
+    llm_usage,
     meta,
     notifications,
     system_config,
@@ -66,6 +67,9 @@ api_router.include_router(
 )
 api_router.include_router(
     system_config.router, prefix="/system-config", tags=["system-config"]
+)
+api_router.include_router(
+    llm_usage.router, prefix="/llm-usage", tags=["llm-usage"]
 )
 api_router.include_router(
     broker_ops.router, prefix="/broker-accounts", tags=["broker-operations"]

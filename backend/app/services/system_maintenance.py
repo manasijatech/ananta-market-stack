@@ -20,6 +20,8 @@ from db.models import (
     AlertWorkflowRun,
     AlphaWebSocketEvent,
     BrokerNotification,
+    LlmUsageDailySnapshot,
+    LlmUsageEvent,
     LiveSymbolSubscription,
     SystemMaintenanceLog,
     User,
@@ -243,6 +245,18 @@ def _cleanup_sqlite_tables(*, exclude_log_id: str) -> dict[str, Any]:
             retention_days=settings.system_maintenance_log_retention_days,
             soft_limit=max(settings.system_maintenance_log_soft_row_limit, 1),
         ),
+        TableCleanupPolicy(
+            model=LlmUsageEvent,
+            timestamp_column=LlmUsageEvent.completed_at,
+            retention_days=settings.system_llm_usage_event_retention_days,
+            soft_limit=max(settings.system_llm_usage_event_soft_row_limit, 1),
+        ),
+        TableCleanupPolicy(
+            model=LlmUsageDailySnapshot,
+            timestamp_column=LlmUsageDailySnapshot.bucket_date,
+            retention_days=settings.system_llm_usage_snapshot_retention_days,
+            soft_limit=max(settings.system_llm_usage_snapshot_soft_row_limit, 1),
+        ),
     )
     db = SessionLocal()
     try:
@@ -251,6 +265,8 @@ def _cleanup_sqlite_tables(*, exclude_log_id: str) -> dict[str, Any]:
         for policy in policies:
             table_deleted = 0
             cutoff = _utc_now() - timedelta(days=max(policy.retention_days, 1))
+            if policy.model is LlmUsageDailySnapshot:
+                cutoff = cutoff.date()
             delete_stmt = delete(policy.model).where(policy.timestamp_column < cutoff)
             if policy.model is SystemMaintenanceLog:
                 delete_stmt = delete_stmt.where(SystemMaintenanceLog.id != exclude_log_id)

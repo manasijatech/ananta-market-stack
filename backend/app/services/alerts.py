@@ -53,6 +53,7 @@ from app.services.alert_llm_context import (
     resolve_llm_context,
 )
 from app.services import broker_sessions as broker_session_svc
+from app.services import llm_usage as llm_usage_svc
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import (
@@ -1176,6 +1177,7 @@ def test_workflow_llm_analysis(
         reason=reason or evaluation.reason,
         evaluation_details=evaluation.details,
         call_llm=True,
+        request_kind="workflow_llm_test",
     )
     context = resolve_llm_context(
         db,
@@ -1186,6 +1188,26 @@ def test_workflow_llm_analysis(
         evaluation_details=evaluation.details,
     )
     return {**context, "llm_analysis": analysis}
+
+
+def workflow_llm_usage_summary(
+    db: Session,
+    user_id: str,
+    workflow_id: str,
+    *,
+    date_from=None,
+    date_to=None,
+):
+    row = db.get(AlertWorkflow, workflow_id)
+    if not row or row.user_id != user_id:
+        return None
+    return llm_usage_svc.workflow_usage_summary(
+        db,
+        user_id,
+        workflow_id=workflow_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 def sample_workflow_alerts(db: Session, user_id: str, workflow_id: str) -> dict[str, Any] | None:

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.schemas.alert import AlertWorkflowOut
 from app.services import llm_gateway
 from app.services.alert_llm_context import resolve_llm_context
+from app.services.llm_usage import workflow_tracking_context
 from db.models import UserLlmModel
 
 
@@ -69,6 +70,7 @@ def run_workflow_llm_analysis(
     reason: str = "",
     evaluation_details: dict[str, Any] | None = None,
     call_llm: bool = True,
+    request_kind: str = "workflow_llm_analysis",
 ) -> dict[str, Any]:
     config = workflow.workflow_dsl.llm_analysis
     if not config.enabled:
@@ -108,6 +110,15 @@ def run_workflow_llm_analysis(
             temperature=config.temperature,
             max_completion_tokens=config.max_completion_tokens,
             timeout=float(config.timeout_seconds),
+            tracking=workflow_tracking_context(
+                workflow,
+                request_kind=request_kind,
+                metadata={
+                    "reason": reason,
+                    "call_llm": call_llm,
+                    "context_error_count": len(context["context_errors"]),
+                },
+            ),
         )
         result["status"] = "success"
         result["output"] = _response_text(response)

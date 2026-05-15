@@ -16,6 +16,7 @@ from app.services import alerts as alert_svc
 from app.services.alert_llm_analysis import run_workflow_llm_analysis
 from app.services.alert_llm_analysis import _response_text, _usage_payload, validate_llm_model
 from app.services import llm_gateway
+from app.services.llm_usage import workflow_tracking_context
 from app.services.alerts_engine.reconcile import reconcile_all_users
 from app.services import broker_data
 from app.services.broker_sessions import _create_notification_once_per_day
@@ -806,6 +807,15 @@ def _run_feed_trigger_llm(db, workflow, event: AlphaWebSocketEvent, payload: dic
         temperature=trigger.temperature,
         max_completion_tokens=trigger.max_completion_tokens,
         timeout=float(trigger.timeout_seconds),
+        tracking=workflow_tracking_context(
+            workflow,
+            request_kind="workflow_feed_trigger",
+            metadata={
+                "alpha_product": event.product,
+                "alpha_event_id": event.id,
+                "event_key": event.event_key,
+            },
+        ),
     )
     text = _response_text(response)
     return {
@@ -882,6 +892,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             previous_tick={},
             reason=reason,
             evaluation_details={"feed_trigger": trigger_result, "category_filter": category_details},
+            request_kind="workflow_followup_analysis",
         )
         render_context = alert_svc._notification_context(workflow, tick, None, llm_analysis)  # type: ignore[attr-defined]
         render_context["alpha_product"] = event.product

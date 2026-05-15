@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,7 @@ from app.schemas.alert import (
     AlertWorkflowUpdate,
     AlertWorkflowValidationOut,
 )
+from app.schemas.llm_usage import WorkflowLlmUsageSummaryOut
 from app.services import alerts as alert_svc
 from db.models import User
 from db.session import get_db
@@ -257,6 +260,35 @@ def list_workflow_runs(
     if workflow is None:
         raise HTTPException(status_code=404, detail="workflow not found")
     return alert_svc.list_workflow_runs(db, user.id, workflow_id=workflow_id, limit=limit)
+
+
+@router.get(
+    "/{workflow_id}/llm/usage",
+    response_model=WorkflowLlmUsageSummaryOut,
+    summary="Workflow LLM usage summary",
+    description=(
+        "Returns lifetime and daily LLM usage for a single workflow id. "
+        "Historical usage survives later workflow deletion in the ledger, but this route still requires the workflow "
+        "to exist for the current user so the frontend can treat it as a workflow-scoped detail view."
+    ),
+)
+def workflow_llm_usage_summary(
+    workflow_id: str,
+    date_from: date | None = Query(default=None, description="Optional inclusive lower date bound in UTC."),
+    date_to: date | None = Query(default=None, description="Optional inclusive upper date bound in UTC."),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> WorkflowLlmUsageSummaryOut:
+    result = alert_svc.workflow_llm_usage_summary(
+        db,
+        user.id,
+        workflow_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    return result
 
 
 @router.get("/history/all", response_model=list[AlertWorkflowRunOut])

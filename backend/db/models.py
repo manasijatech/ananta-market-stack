@@ -1,10 +1,10 @@
-"""SQLite models: users, broker account registry, and per-broker credential tables."""
+"""SQLite models: users, broker account registry, LLM usage, and per-broker credential tables."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.session import Base
@@ -38,6 +38,18 @@ class User(Base):
     )
     llm_models: Mapped[list[UserLlmModel]] = relationship(
         "UserLlmModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    llm_usage_events: Mapped[list[LlmUsageEvent]] = relationship(
+        "LlmUsageEvent",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    llm_usage_daily_snapshots: Mapped[list[LlmUsageDailySnapshot]] = relationship(
+        "LlmUsageDailySnapshot",
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -223,6 +235,106 @@ class UserLlmModel(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="llm_models")
+
+
+class LlmUsageEvent(Base):
+    __tablename__ = "llm_usage_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    model_id: Mapped[str] = mapped_column(String(256), index=True)
+    api_surface: Mapped[str] = mapped_column(String(64), default="chat_completions", index=True)
+    request_kind: Mapped[str] = mapped_column(String(64), default="generic", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="success", index=True)
+    provider_response_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    workflow_ref: Mapped[str] = mapped_column(String(64), default="", index=True)
+    workflow_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    workflow_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    workflow_status: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    workflow_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    template_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    account_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    reasoning_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    input_audio_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_audio_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    image_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    video_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    provider_cost: Mapped[float | None] = mapped_column(nullable=True)
+    provider_cost_currency: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_byok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    usage_json: Mapped[str] = mapped_column(Text, default="{}")
+    cost_details_json: Mapped[str] = mapped_column(Text, default="{}")
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    user: Mapped[User] = relationship("User", back_populates="llm_usage_events")
+
+
+class LlmUsageDailySnapshot(Base):
+    __tablename__ = "llm_usage_daily_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "bucket_date",
+            "provider",
+            "model_id",
+            "api_surface",
+            "request_kind",
+            "workflow_ref",
+            name="uq_llm_usage_daily_snapshot_dimensions",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    bucket_date: Mapped[date] = mapped_column(Date, index=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    model_id: Mapped[str] = mapped_column(String(256), index=True)
+    api_surface: Mapped[str] = mapped_column(String(64), default="chat_completions", index=True)
+    request_kind: Mapped[str] = mapped_column(String(64), default="generic", index=True)
+    workflow_ref: Mapped[str] = mapped_column(String(64), default="", index=True)
+    workflow_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    workflow_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    workflow_status: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    workflow_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    template_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    account_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    request_count: Mapped[int] = mapped_column(Integer, default=0)
+    success_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_count: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    reasoning_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    input_audio_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_audio_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    image_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    video_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    provider_cost_total: Mapped[float] = mapped_column(default=0.0)
+    priced_request_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_request_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="llm_usage_daily_snapshots")
 
 
 class UserAlphaApiCredential(Base):

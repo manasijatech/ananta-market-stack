@@ -56,6 +56,22 @@ class Settings(BaseSettings):
         default=5_000,
         validation_alias="SYSTEM_MAINTENANCE_LOG_SOFT_ROW_LIMIT",
     )
+    system_llm_usage_event_retention_days: int = Field(
+        default=180,
+        validation_alias="SYSTEM_LLM_USAGE_EVENT_RETENTION_DAYS",
+    )
+    system_llm_usage_event_soft_row_limit: int = Field(
+        default=250_000,
+        validation_alias="SYSTEM_LLM_USAGE_EVENT_SOFT_ROW_LIMIT",
+    )
+    system_llm_usage_snapshot_retention_days: int = Field(
+        default=730,
+        validation_alias="SYSTEM_LLM_USAGE_SNAPSHOT_RETENTION_DAYS",
+    )
+    system_llm_usage_snapshot_soft_row_limit: int = Field(
+        default=500_000,
+        validation_alias="SYSTEM_LLM_USAGE_SNAPSHOT_SOFT_ROW_LIMIT",
+    )
     system_sqlite_vacuum_min_interval_seconds: int = Field(
         default=24 * 60 * 60,
         validation_alias="SYSTEM_SQLITE_VACUUM_MIN_INTERVAL_SECONDS",
