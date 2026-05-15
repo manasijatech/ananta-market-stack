@@ -794,6 +794,12 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
     initial_cycle = True
     while not stop_event.is_set():
         try:
+            from app.services import system_maintenance
+
+            system_maintenance.run_scheduled_maintenance_once()
+        except Exception:
+            pass
+        try:
             run_daily_maintenance_once()
         except Exception:
             pass

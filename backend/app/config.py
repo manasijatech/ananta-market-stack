@@ -28,6 +28,42 @@ class Settings(BaseSettings):
     redis_password: str | None = None
     redis_db: int = 0
     redis_quote_ttl_seconds: int = 30
+    system_maintenance_interval_seconds: int = Field(
+        default=6 * 60 * 60,
+        validation_alias="SYSTEM_MAINTENANCE_INTERVAL_SECONDS",
+    )
+    system_runtime_retention_days: int = Field(
+        default=14,
+        validation_alias="SYSTEM_RUNTIME_RETENTION_DAYS",
+    )
+    system_runtime_soft_row_limit: int = Field(
+        default=100_000,
+        validation_alias="SYSTEM_RUNTIME_SOFT_ROW_LIMIT",
+    )
+    system_notification_retention_days: int = Field(
+        default=45,
+        validation_alias="SYSTEM_NOTIFICATION_RETENTION_DAYS",
+    )
+    system_notification_soft_row_limit: int = Field(
+        default=25_000,
+        validation_alias="SYSTEM_NOTIFICATION_SOFT_ROW_LIMIT",
+    )
+    system_maintenance_log_retention_days: int = Field(
+        default=30,
+        validation_alias="SYSTEM_MAINTENANCE_LOG_RETENTION_DAYS",
+    )
+    system_maintenance_log_soft_row_limit: int = Field(
+        default=5_000,
+        validation_alias="SYSTEM_MAINTENANCE_LOG_SOFT_ROW_LIMIT",
+    )
+    system_sqlite_vacuum_min_interval_seconds: int = Field(
+        default=24 * 60 * 60,
+        validation_alias="SYSTEM_SQLITE_VACUUM_MIN_INTERVAL_SECONDS",
+    )
+    system_redis_rebuild_on_startup: bool = Field(
+        default=True,
+        validation_alias="SYSTEM_REDIS_REBUILD_ON_STARTUP",
+    )
 
     # Fernet key (urlsafe base64 32-byte). Required for production; see AGENTS.md.
     credential_encryption_key: str | None = None

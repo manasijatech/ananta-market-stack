@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.services.alert_runtime import create_alert_worker_service
 from app.services.alpha_websocket import run_alpha_websocket_worker
 from app.services.broker_sessions import maintenance_loop
+from app.services.system_maintenance import run_startup_maintenance
 from app.services.watchlist_preset_worker import run_watchlist_preset_worker
 from db.session import init_db
 
@@ -82,6 +83,10 @@ class BackgroundAsyncLoopThread:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    try:
+        run_startup_maintenance()
+    except Exception:
+        logger.exception("startup system maintenance failed")
     maintenance_service = _start_background_service("maintenance-loop", maintenance_loop)
     alert_worker_service = None
     if settings.enable_in_process_alert_workers:

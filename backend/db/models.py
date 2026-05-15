@@ -422,6 +422,24 @@ class BrokerNotification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class SystemMaintenanceLog(Base):
+    __tablename__ = "system_maintenance_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    task_name: Mapped[str] = mapped_column(String(64), index=True)
+    trigger: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    details_json: Mapped[str] = mapped_column(Text, default="{}")
+    deleted_rows: Mapped[int] = mapped_column(Integer, default=0)
+    deleted_redis_keys: Mapped[int] = mapped_column(Integer, default=0)
+    rebuilt_redis_keys: Mapped[int] = mapped_column(Integer, default=0)
+    vacuum_performed: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
 class UserWatchlist(Base):
     __tablename__ = "user_watchlists"
     __table_args__ = (
