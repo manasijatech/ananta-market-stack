@@ -1087,15 +1087,16 @@ function refreshSelectedPreset() {
  <div className="space-y-2">
  {presetResults.map((item) => (
  <div className="border-l-2 border-transparent px-3 py-2 transition-colors duration-100 ease-out hover:border-primary hover:bg-[var(--accent-glow)]" key={item.id}>
+ <div className="flex flex-col gap-2">
+ <div className="break-words text-sm font-medium leading-5 text-foreground">{item.name}</div>
  <div className="flex items-start justify-between gap-3">
- <div className="min-w-0">
- <div className="truncate text-sm font-medium text-foreground">{item.name}</div>
+ <div className="min-w-0 flex-1">
  <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
  {[item.trading_index_name, `${item.constituent_count} symbols`, item.sync_status].filter(Boolean).join(" / ")}
  </div>
  </div>
  <Button
- className="border-b border-primary pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-default disabled:opacity-40"
+ className="shrink-0 border-b border-primary pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-default disabled:opacity-40"
  disabled={isPending || item.is_added}
  onClick={() => addPreset(item)}
  size="sm"
@@ -1104,6 +1105,7 @@ function refreshSelectedPreset() {
  >
  {item.is_added ? "Added" : "Add"}
  </Button>
+ </div>
  </div>
  </div>
  ))}
