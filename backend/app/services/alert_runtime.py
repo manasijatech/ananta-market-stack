@@ -13,10 +13,13 @@ import redis
 from sqlalchemy import select
 
 from app.services import alerts as alert_svc
+from app.services.alert_feed_batch import (
+    FeedAnalysisRequest,
+    feed_case_from_workflow,
+    run_feed_trigger_batches,
+    run_followup_analysis_batches,
+)
 from app.services.alert_llm_analysis import run_workflow_llm_analysis
-from app.services.alert_llm_analysis import _response_text, _usage_payload, validate_llm_model
-from app.services import llm_gateway
-from app.services.llm_usage import workflow_tracking_context
 from app.services.alerts_engine.reconcile import reconcile_all_users
 from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services import broker_data
@@ -810,78 +813,6 @@ def _workflow_symbol_filter(db, workflow, trigger) -> set[str] | None:
     return symbols
 
 
-def _feed_event_text(product: str, payload: dict[str, Any]) -> str:
-    return json.dumps({"product": product, "event": payload}, default=str, ensure_ascii=False)
-
-
-def _parse_trigger_response(text: str) -> dict[str, Any]:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        if cleaned.lower().startswith("json"):
-            cleaned = cleaned[4:].strip()
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        parsed = json.loads(cleaned[start : end + 1]) if start >= 0 and end > start else {}
-    if not isinstance(parsed, dict):
-        parsed = {}
-    return {
-        "matches": bool(parsed.get("matches")),
-        "reason": str(parsed.get("reason") or ""),
-        "confidence": parsed.get("confidence"),
-        "matched_terms": parsed.get("matched_terms") if isinstance(parsed.get("matched_terms"), list) else [],
-    }
-
-
-def _run_feed_trigger_llm(db, workflow, event: AlphaWebSocketEvent, payload: dict[str, Any]) -> dict[str, Any]:
-    trigger = workflow.workflow_dsl.feed_trigger
-    if not trigger.enabled or not trigger.condition_prompt.strip():
-        return {"matches": False, "reason": "Feed trigger is not configured", "status": "disabled"}
-    validate_llm_model(db, workflow.user_id, trigger.provider, trigger.model_id)
-    developer_prompt = (
-        "You classify Manasija websocket market-data events for alert triggers. "
-        "Return only strict JSON matching this schema: "
-        '{"matches": boolean, "reason": string, "confidence": number, "matched_terms": string[]}. '
-        "Use only the provided event and user condition. Do not add markdown."
-    )
-    user_text = (
-        f"User condition:\n{trigger.condition_prompt.strip()}\n\n"
-        f"Incoming {event.product} websocket event:\n{_feed_event_text(event.product, payload)}"
-    )
-    response = llm_gateway.generate_text(
-        db,
-        workflow.user_id,
-        trigger.provider,  # type: ignore[arg-type]
-        model=str(trigger.model_id),
-        developer_prompt=developer_prompt,
-        user_text=user_text,
-        temperature=trigger.temperature,
-        max_completion_tokens=trigger.max_completion_tokens,
-        timeout=float(trigger.timeout_seconds),
-        tracking=workflow_tracking_context(
-            workflow,
-            request_kind="workflow_feed_trigger",
-            metadata={
-                "alpha_product": event.product,
-                "alpha_event_id": event.id,
-                "event_key": event.event_key,
-            },
-        ),
-    )
-    text = _response_text(response)
-    return {
-        **_parse_trigger_response(text),
-        "status": "success",
-        "provider": trigger.provider,
-        "model_id": trigger.model_id,
-        "raw_output": text,
-        "usage": _usage_payload(response),
-    }
-
-
 def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
     payload = json.loads(event.payload_json or "{}")
     event_symbols: set[str] = set()
@@ -892,12 +823,16 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             AlertWorkflow.status == "active",
         )
     ).all()
+    eligible: list[dict[str, Any]] = []
+    cases = []
     for row in rows:
         workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
         if workflow.workflow_dsl.workflow_type != "alpha_feed":
             continue
         trigger = workflow.workflow_dsl.feed_trigger
         if not trigger.enabled or event.product not in trigger.products:
+            continue
+        if not trigger.condition_prompt.strip():
             continue
         category_match, category_details = _event_matches_category_filter(event, trigger, payload)
         if not category_match:
@@ -910,8 +845,13 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
         cooldown = workflow.workflow_dsl.cooldown_seconds
         if row.last_triggered_at and (_utc_now() - row.last_triggered_at).total_seconds() < cooldown:
             continue
+        case_index = len(cases)
         try:
-            trigger_result = _run_feed_trigger_llm(db, workflow, event, payload)
+            case = feed_case_from_workflow(
+                workflow,
+                batch_index=case_index,
+                metadata={"category_filter": category_details},
+            )
         except Exception as exc:
             db.add(
                 AlertWorkflowRun(
@@ -919,12 +859,65 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
                     workflow_id=workflow.id,
                     notification_id=None,
                     matched=False,
-                    reason=f"Feed trigger LLM failed: {exc}",
+                    reason=f"Feed trigger configuration failed: {exc}",
                     rendered_title="",
                     rendered_message="",
                     channels_json=json.dumps([]),
                     tick_json=json.dumps(payload, default=str),
-                    evaluation_payload_json=json.dumps({"alpha_event_id": event.id, "error": str(exc)}, default=str),
+                    evaluation_payload_json=json.dumps(
+                        {"alpha_event_id": event.id, "event_key": event.event_key, "error": str(exc)},
+                        default=str,
+                    ),
+                )
+            )
+            continue
+        cases.append(case)
+        eligible.append({"row": row, "workflow": workflow, "category_details": category_details, "case": case})
+
+    trigger_results = run_feed_trigger_batches(
+        db,
+        user_id=event.user_id,
+        event_id=event.id,
+        event_key=event.event_key,
+        product=event.product,
+        payload=payload,
+        cases=cases,
+    )
+    matched_items: list[dict[str, Any]] = []
+    for item in eligible:
+        row = item["row"]
+        workflow = item["workflow"]
+        category_details = item["category_details"]
+        trigger_result = trigger_results.get(workflow.id) or {
+            "matches": False,
+            "status": "error",
+            "error": "Feed trigger batch did not return this workflow",
+            "batch": {"alpha_event_id": event.id, "event_key": event.event_key},
+        }
+        if trigger_result.get("status") == "error":
+            error = str(trigger_result.get("error") or "Feed trigger LLM failed")
+            db.add(
+                AlertWorkflowRun(
+                    id=str(uuid4()),
+                    workflow_id=workflow.id,
+                    notification_id=None,
+                    matched=False,
+                    reason=f"Feed trigger LLM failed: {error}",
+                    rendered_title="",
+                    rendered_message="",
+                    channels_json=json.dumps([]),
+                    tick_json=json.dumps(payload, default=str),
+                    evaluation_payload_json=json.dumps(
+                        {
+                            "alpha_event_id": event.id,
+                            "event_key": event.event_key,
+                            "feed_trigger": trigger_result,
+                            "category_filter": category_details,
+                            "batch": trigger_result.get("batch") or {},
+                            "error": error,
+                        },
+                        default=str,
+                    ),
                 )
             )
             continue
@@ -939,7 +932,44 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             "received_at": event.received_at.isoformat() if event.received_at else None,
             "alpha_category_filter": category_details,
         }
-        llm_analysis = run_workflow_llm_analysis(
+        matched_items.append(
+            {
+                "row": row,
+                "workflow": workflow,
+                "category_details": category_details,
+                "trigger_result": trigger_result,
+                "reason": reason,
+                "tick": tick,
+            }
+        )
+
+    analysis_results = run_followup_analysis_batches(
+        db,
+        user_id=event.user_id,
+        event_id=event.id,
+        event_key=event.event_key,
+        product=event.product,
+        requests=[
+            FeedAnalysisRequest(
+                workflow=item["workflow"],
+                tick=item["tick"],
+                reason=item["reason"],
+                evaluation_details={
+                    "feed_trigger": item["trigger_result"],
+                    "category_filter": item["category_details"],
+                },
+            )
+            for item in matched_items
+        ],
+    )
+    for item in matched_items:
+        row = item["row"]
+        workflow = item["workflow"]
+        category_details = item["category_details"]
+        trigger_result = item["trigger_result"]
+        reason = item["reason"]
+        tick = item["tick"]
+        llm_analysis = analysis_results.get(workflow.id) or run_workflow_llm_analysis(
             db,
             workflow=workflow,
             tick=tick,
@@ -982,9 +1012,11 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
                 evaluation_payload_json=json.dumps(
                     {
                         "alpha_event_id": event.id,
+                        "event_key": event.event_key,
                         "feed_trigger": trigger_result,
                         "category_filter": category_details,
                         "llm_analysis": llm_analysis,
+                        "batch": trigger_result.get("batch") or {},
                     },
                     default=str,
                 ),
