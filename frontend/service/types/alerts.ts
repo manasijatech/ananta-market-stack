@@ -37,6 +37,8 @@ export interface AlertLlmAnalysisConfig {
 export interface AlertFeedTriggerConfig {
   enabled: boolean;
   products: Array<"news" | "announcements" | "earnings" | "concalls" | "alerts">;
+  announcement_categories: string[];
+  include_related_categories: boolean;
   condition_prompt: string;
   source_scope: "current_alpha_subscription" | "watchlists" | "preset_lists" | "full_market";
   watchlist_ids: string[];

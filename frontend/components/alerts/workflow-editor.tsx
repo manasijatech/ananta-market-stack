@@ -195,6 +195,13 @@ const messageTemplateFields = [
  "account_id",
  "alpha_product",
  "alpha_event_id",
+ "category",
+ "related_categories",
+ "company_name",
+ "headline",
+ "title",
+ "summary",
+ "alpha_category_filter",
  "feed_trigger_reason",
  "instrument_key",
  "connection_id",
@@ -564,12 +571,14 @@ function HelpText({ children }: { children: React.ReactNode }) {
 
 export function WorkflowEditor({
 accounts,
+announcementCategories = [],
 initialWorkflow,
  llmProviders = [],
  presets = [],
  watchlists = []
 }: {
  accounts: BrokerAccount[];
+ announcementCategories?: string[];
  initialWorkflow?: AlertWorkflow | null;
  llmProviders?: LlmProviderConfig[];
  presets?: Array<Record<string, unknown>>;
@@ -641,6 +650,10 @@ initialWorkflow,
  const [llmTimeout, setLlmTimeout] = useState(String(initialLlm?.timeout_seconds ?? 25));
  const initialFeedTrigger = initialWorkflow?.workflow_dsl.feed_trigger;
  const [feedProducts, setFeedProducts] = useState<string[]>(initialFeedTrigger?.products ?? ["news"]);
+ const [feedAnnouncementCategories, setFeedAnnouncementCategories] = useState<string[]>(initialFeedTrigger?.announcement_categories ?? []);
+ const [feedCategoryFilterEnabled, setFeedCategoryFilterEnabled] = useState(Boolean(initialFeedTrigger?.announcement_categories?.length));
+ const [feedIncludeRelatedCategories, setFeedIncludeRelatedCategories] = useState(initialFeedTrigger?.include_related_categories ?? true);
+ const [feedCategoryQuery, setFeedCategoryQuery] = useState("");
  const [feedConditionPrompt, setFeedConditionPrompt] = useState(initialFeedTrigger?.condition_prompt ?? "");
  const [feedSourceScope, setFeedSourceScope] = useState(initialFeedTrigger?.source_scope ?? "current_alpha_subscription");
  const [feedWatchlistIds, setFeedWatchlistIds] = useState<string[]>(initialFeedTrigger?.watchlist_ids ?? []);
@@ -739,6 +752,25 @@ initialWorkflow,
  .filter((item) => !query || item.label.toLowerCase().includes(query) || item.value.toLowerCase().includes(query))
  .slice(0, 12);
  }, [conditionRegistry, dslSuggestionQuery]);
+ const availableAnnouncementCategories = useMemo(() => {
+ const seen = new Set<string>();
+ return [...announcementCategories, ...feedAnnouncementCategories]
+ .map((item) => item.trim())
+ .filter(Boolean)
+ .sort((left, right) => left.localeCompare(right))
+ .filter((item) => {
+ const key = item.toLowerCase();
+ if (seen.has(key)) return false;
+ seen.add(key);
+ return true;
+ });
+ }, [announcementCategories, feedAnnouncementCategories]);
+ const filteredAnnouncementCategories = useMemo(() => {
+ const query = feedCategoryQuery.trim().toLowerCase();
+ if (!query) return availableAnnouncementCategories;
+ return availableAnnouncementCategories.filter((item) => item.toLowerCase().includes(query));
+ }, [availableAnnouncementCategories, feedCategoryQuery]);
+ const announcementsEnabled = feedProducts.includes("announcements");
  const dynamicTargetUniverse = useMemo(() => {
  if (dynamicUniverseKind === "curated_preset") {
  return {
@@ -1088,6 +1120,8 @@ initialWorkflow,
  feed_trigger: {
  enabled: workflowType === "alpha_feed",
  products: feedProducts as AlertWorkflowDsl["feed_trigger"]["products"],
+ announcement_categories: announcementsEnabled && feedCategoryFilterEnabled ? feedAnnouncementCategories : [],
+ include_related_categories: feedIncludeRelatedCategories,
  condition_prompt: feedConditionPrompt,
  source_scope: feedSourceScope as AlertWorkflowDsl["feed_trigger"]["source_scope"],
  watchlist_ids: feedWatchlistIds,
@@ -1506,7 +1540,14 @@ initialWorkflow,
  }
 
  const canSave = workflowType === "alpha_feed"
- ? Boolean(name.trim() && feedProducts.length && feedConditionPrompt.trim() && feedProvider && feedModelId)
+ ? Boolean(
+ name.trim() &&
+ feedProducts.length &&
+ feedConditionPrompt.trim() &&
+ feedProvider &&
+ feedModelId &&
+ (!announcementsEnabled || !feedCategoryFilterEnabled || feedAnnouncementCategories.length > 0)
+ )
  : targetMode === "single_symbol"
  ? Boolean(symbol.trim())
  : targetMode === "symbol_list"
@@ -1522,13 +1563,35 @@ initialWorkflow,
  const selectedFeedProvider = llmProviders.find((item) => item.provider === feedProvider);
  const selectedFeedModels = selectedFeedProvider?.models.filter((model) => model.is_enabled) ?? [];
 
- function toggleFeedProduct(product: string, checked: boolean) {
+function toggleFeedProduct(product: string, checked: boolean) {
  setFeedProducts((current) => checked ? Array.from(new Set([...current, product])) : current.filter((item) => item !== product));
+}
+
+ function toggleFeedAnnouncementCategory(category: string, checked: boolean) {
+ setFeedAnnouncementCategories((current) => checked ? Array.from(new Set([...current, category])) : current.filter((item) => item !== category));
  }
 
- function toggleFeedWatchlist(id: string, checked: boolean) {
- setFeedWatchlistIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
+ function enableSpecificAnnouncementCategories() {
+ setFeedCategoryFilterEnabled(true);
  }
+
+ function useAllAnnouncementCategories() {
+ setFeedCategoryFilterEnabled(false);
+ setFeedCategoryQuery("");
+ }
+
+ function selectAllAnnouncementCategories() {
+ setFeedCategoryFilterEnabled(true);
+ setFeedAnnouncementCategories(availableAnnouncementCategories);
+ }
+
+ function clearAnnouncementCategorySelection() {
+ setFeedAnnouncementCategories([]);
+ }
+
+function toggleFeedWatchlist(id: string, checked: boolean) {
+ setFeedWatchlistIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
+}
 
  function toggleFeedPreset(id: string, checked: boolean) {
  setFeedPresetIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
@@ -1590,19 +1653,43 @@ initialWorkflow,
  </select>
  <HelpText>Events are only available for symbols currently subscribed by the background Manasija websocket worker unless full-market is enabled for the chosen products.</HelpText>
  </div>
+ {announcementsEnabled ? (
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Trigger LLM</div>
+ <div className="text-xs font-bold uppercase text-muted-foreground">Announcement categories</div>
  <div className="mt-3 grid gap-2">
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")} value={feedProvider}>
- <option value="">Select provider</option>
- {enabledLlmProviders.map((provider) => <option key={provider.provider} value={provider.provider}>{provider.label}</option>)}
- </select>
- <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedModelId(event.target.value)} value={feedModelId}>
- <option value="">Select model</option>
- {selectedFeedModels.map((model) => <option key={model.id} value={model.model_id}>{model.label || model.model_id}</option>)}
- </select>
+ <div className="flex flex-wrap gap-2">
+ <Button onClick={useAllAnnouncementCategories} type="button" variant={!feedCategoryFilterEnabled ? "default" : "outline"}>All categories</Button>
+ <Button onClick={enableSpecificAnnouncementCategories} type="button" variant={feedCategoryFilterEnabled ? "default" : "outline"}>Choose specific categories</Button>
+ </div>
+ {!feedCategoryFilterEnabled ? (
+ <HelpText>All announcement categories are currently allowed. Turn on specific-category mode only when you want to restrict this workflow.</HelpText>
+ ) : (
+ <>
+ <div className="flex flex-wrap gap-2">
+ <Button onClick={selectAllAnnouncementCategories} type="button" variant="outline">Select all</Button>
+ <Button onClick={clearAnnouncementCategorySelection} type="button" variant="ghost">Clear all</Button>
+ </div>
+ <Input onChange={(event) => setFeedCategoryQuery(event.target.value)} placeholder="Filter categories" value={feedCategoryQuery} />
+ <label className="flex items-center gap-2 text-sm">
+ <input checked={feedIncludeRelatedCategories} onChange={(event) => setFeedIncludeRelatedCategories(event.target.checked)} type="checkbox" />
+ Also match related announcement categories
+ </label>
+ <div className="max-h-44 overflow-auto border border-border">
+ {filteredAnnouncementCategories.map((category) => (
+ <label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={category}>
+ <span>{category}</span>
+ <input checked={feedAnnouncementCategories.includes(category)} onChange={(event) => toggleFeedAnnouncementCategory(category, event.target.checked)} type="checkbox" />
+ </label>
+ ))}
+ {!filteredAnnouncementCategories.length ? <div className="px-3 py-2 text-sm text-muted-foreground">No categories available for the current filter.</div> : null}
+ </div>
+ {!feedAnnouncementCategories.length ? <HelpText>Select at least one category, or switch back to `All categories`.</HelpText> : null}
+ </>
+ )}
+ <HelpText>The category API is only used while this editor page loads. Live matching uses the category fields already present in incoming announcement payloads.</HelpText>
  </div>
  </div>
+ ) : null}
  </div>
  {feedSourceScope === "watchlists" ? (
  <div className="grid gap-2">
@@ -1636,6 +1723,19 @@ initialWorkflow,
  </div>
  </div>
  ) : null}
+ <div className="grid gap-2">
+ <div className="text-xs font-bold uppercase text-muted-foreground">Trigger LLM</div>
+ <div className="grid gap-2">
+ <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")} value={feedProvider}>
+ <option value="">Select provider</option>
+ {enabledLlmProviders.map((provider) => <option key={provider.provider} value={provider.provider}>{provider.label}</option>)}
+ </select>
+ <select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedModelId(event.target.value)} value={feedModelId}>
+ <option value="">Select model</option>
+ {selectedFeedModels.map((model) => <option key={model.id} value={model.model_id}>{model.label || model.model_id}</option>)}
+ </select>
+ </div>
+ </div>
  <div className="grid gap-2">
  <label className="text-xs font-bold uppercase text-muted-foreground">Natural-language trigger condition</label>
  <textarea className="min-h-28 border border-input bg-background p-3 text-sm" onChange={(event) => setFeedConditionPrompt(event.target.value)} placeholder="Example: Alert me when the item is about a confirmed order win, large contract, or new customer mandate." value={feedConditionPrompt} />
