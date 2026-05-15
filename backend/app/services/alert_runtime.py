@@ -642,6 +642,76 @@ def _collect_event_symbols(value: Any, symbols: set[str]) -> None:
             _collect_event_symbols(item, symbols)
 
 
+def _normalize_category_label(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _collect_event_categories(value: Any, categories: set[str], related_categories: set[str]) -> None:
+    if isinstance(value, dict):
+        category = _normalize_category_label(value.get("category"))
+        if category:
+            categories.add(category)
+        raw_related = value.get("related_categories")
+        if isinstance(raw_related, list):
+            for item in raw_related:
+                normalized = _normalize_category_label(item)
+                if normalized:
+                    related_categories.add(normalized)
+        elif isinstance(raw_related, str):
+            for part in raw_related.split(","):
+                normalized = _normalize_category_label(part)
+                if normalized:
+                    related_categories.add(normalized)
+        if "metadata" in value:
+            _collect_event_categories(value.get("metadata"), categories, related_categories)
+        for key in ("payload", "data"):
+            if key in value:
+                _collect_event_categories(value[key], categories, related_categories)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_event_categories(item, categories, related_categories)
+
+
+def _normalized_category_set(values: list[str]) -> set[str]:
+    return {
+        value.strip().casefold()
+        for value in values
+        if isinstance(value, str) and value.strip()
+    }
+
+
+def _event_matches_category_filter(event: AlphaWebSocketEvent, trigger, payload: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+    if event.product != "announcements":
+        return True, {"selected_categories": [], "matched_categories": [], "related_categories_considered": False}
+    selected = _normalized_category_set(trigger.announcement_categories)
+    if not selected:
+        return True, {"selected_categories": [], "matched_categories": [], "related_categories_considered": False}
+
+    primary_categories: set[str] = set()
+    related_categories: set[str] = set()
+    _collect_event_categories(payload, primary_categories, related_categories)
+
+    matched_primary = {item for item in primary_categories if item.casefold() in selected}
+    matched_related = {item for item in related_categories if item.casefold() in selected}
+    matched = set(matched_primary)
+    if trigger.include_related_categories:
+        matched.update(matched_related)
+
+    details = {
+        "selected_categories": sorted(selected),
+        "event_categories": sorted(primary_categories),
+        "event_related_categories": sorted(related_categories),
+        "matched_categories": sorted(matched),
+        "related_categories_considered": bool(trigger.include_related_categories),
+    }
+    if matched:
+        return True, details
+    if event.product in {"announcements", "earnings"} or primary_categories or related_categories:
+        return False, details
+    return True, {**details, "skipped_reason": "event carried no category metadata"}
+
+
 def _workflow_symbol_filter(db, workflow, trigger) -> set[str] | None:
     if trigger.source_scope == "full_market":
         return None
@@ -754,6 +824,9 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
         trigger = workflow.workflow_dsl.feed_trigger
         if not trigger.enabled or event.product not in trigger.products:
             continue
+        category_match, category_details = _event_matches_category_filter(event, trigger, payload)
+        if not category_match:
+            continue
         allowed_symbols = _workflow_symbol_filter(db, workflow, trigger)
         if allowed_symbols is not None and event_symbols and not event_symbols.intersection(allowed_symbols):
             continue
@@ -789,6 +862,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             "alpha_product": event.product,
             "alpha_event_id": event.id,
             "received_at": event.received_at.isoformat() if event.received_at else None,
+            "alpha_category_filter": category_details,
         }
         llm_analysis = run_workflow_llm_analysis(
             db,
@@ -796,7 +870,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             tick=tick,
             previous_tick={},
             reason=reason,
-            evaluation_details={"feed_trigger": trigger_result},
+            evaluation_details={"feed_trigger": trigger_result, "category_filter": category_details},
         )
         render_context = alert_svc._notification_context(workflow, tick, None, llm_analysis)  # type: ignore[attr-defined]
         render_context["alpha_product"] = event.product
@@ -830,7 +904,12 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
                 channels_json=json.dumps(_workflow_channels(db, workflow.user_id, workflow)),
                 tick_json=json.dumps(tick, default=str),
                 evaluation_payload_json=json.dumps(
-                    {"alpha_event_id": event.id, "feed_trigger": trigger_result, "llm_analysis": llm_analysis},
+                    {
+                        "alpha_event_id": event.id,
+                        "feed_trigger": trigger_result,
+                        "category_filter": category_details,
+                        "llm_analysis": llm_analysis,
+                    },
                     default=str,
                 ),
             )

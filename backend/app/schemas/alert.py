@@ -47,6 +47,8 @@ class AlertLlmAnalysisConfig(BaseModel):
 class AlertFeedTriggerConfig(BaseModel):
     enabled: bool = False
     products: list[Literal["news", "announcements", "earnings", "concalls", "alerts"]] = Field(default_factory=list)
+    announcement_categories: list[str] = Field(default_factory=list)
+    include_related_categories: bool = True
     condition_prompt: str = ""
     source_scope: Literal[
         "current_alpha_subscription",
