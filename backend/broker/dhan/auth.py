@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
+from common.datetime_compat import UTC
 from broker.core.http import get_httpx_client
 
 

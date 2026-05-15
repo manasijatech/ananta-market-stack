@@ -63,10 +63,25 @@ python -m venv .venv
 cp .env.example .env
 ```
 
+PowerShell on Windows:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\pip.exe install -r requirements.txt
+Copy-Item .env.example .env
+```
+
 Generate a production-safe Fernet key and set `CREDENTIAL_ENCRYPTION_KEY` in `backend/.env`:
 
 ```bash
 .venv/bin/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+PowerShell on Windows:
+
+```powershell
+.\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 Run database migrations:
@@ -75,10 +90,22 @@ Run database migrations:
 .venv/bin/alembic upgrade head
 ```
 
+PowerShell on Windows:
+
+```powershell
+.\.venv\Scripts\alembic.exe upgrade head
+```
+
 Start the API:
 
 ```bash
 .venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+PowerShell on Windows:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Useful backend URLs:
@@ -94,6 +121,16 @@ cd backend
 PYTHONPATH=. .venv/bin/python -m app.workers.live_market_data
 PYTHONPATH=. .venv/bin/python -m app.workers.alert_evaluator
 PYTHONPATH=. .venv/bin/python -m app.workers.alert_delivery
+```
+
+PowerShell on Windows:
+
+```powershell
+cd backend
+$env:PYTHONPATH = "."
+.\.venv\Scripts\python.exe -m app.workers.live_market_data
+.\.venv\Scripts\python.exe -m app.workers.alert_evaluator
+.\.venv\Scripts\python.exe -m app.workers.alert_delivery
 ```
 
 ## Frontend Setup
@@ -136,6 +173,15 @@ cd backend
 .venv/bin/alembic current
 .venv/bin/alembic revision --autogenerate -m "describe_change"
 .venv/bin/alembic upgrade head
+```
+
+PowerShell on Windows:
+
+```powershell
+cd backend
+.\.venv\Scripts\alembic.exe current
+.\.venv\Scripts\alembic.exe revision --autogenerate -m "describe_change"
+.\.venv\Scripts\alembic.exe upgrade head
 ```
 
 Frontend:

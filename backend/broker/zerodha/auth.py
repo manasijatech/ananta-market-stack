@@ -3,10 +3,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-from datetime import UTC, datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import httpx
+from common.datetime_compat import UTC
 
 from broker.core.http import get_httpx_client
 

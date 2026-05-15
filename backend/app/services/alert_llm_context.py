@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+from common.datetime_compat import UTC
 from sqlalchemy.orm import Session
 
 from app.config import get_settings

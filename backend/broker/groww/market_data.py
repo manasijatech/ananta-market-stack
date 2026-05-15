@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import csv
-from datetime import UTC, datetime
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from typing import Any
-from zoneinfo import ZoneInfo
 
+from common.datetime_compat import UTC
 from broker.core.data_features import ohlc_from_quotes, unsupported_operation
 from broker.core.http import get_httpx_client
 from broker.core.instruments import InstrumentResolver
 from broker.groww.http_api import GrowwHTTP
 from broker.groww.mapping import map_exchange, map_segment
 
-IST = ZoneInfo("Asia/Kolkata")
+IST = timezone(timedelta(hours=5, minutes=30))
 
 _HISTORICAL_INTERVALS = {
     "minute": "1minute",

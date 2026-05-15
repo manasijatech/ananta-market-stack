@@ -6,10 +6,11 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from common.datetime_compat import UTC
 import redis
 from sqlalchemy import delete, select
 

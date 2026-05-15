@@ -4,10 +4,11 @@ import asyncio
 import json
 import logging
 import threading
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+from common.datetime_compat import UTC
 import redis
 from sqlalchemy import select
 
@@ -46,6 +47,18 @@ def _redis() -> redis.Redis | None:
     from broker.core.redis_cache import _redis_client
 
     return _redis_client()
+
+
+async def _wait_for_stop(stop_event: asyncio.Event, timeout: float) -> bool:
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        return False
+    except asyncio.CancelledError:
+        if stop_event.is_set():
+            return True
+        raise
 
 
 def _utc_now() -> datetime:
@@ -389,9 +402,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
             db.rollback()
         finally:
             db.close()
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval_seconds)
-        except TimeoutError:
+        if not await _wait_for_stop(stop_event, poll_interval_seconds):
             continue
 
 
@@ -857,9 +868,7 @@ async def run_alpha_feed_alert_worker(stop_event: asyncio.Event, poll_interval_s
             db.rollback()
         finally:
             db.close()
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval_seconds)
-        except TimeoutError:
+        if not await _wait_for_stop(stop_event, poll_interval_seconds):
             continue
 
 
@@ -868,22 +877,19 @@ async def run_alert_evaluator_worker(stop_event: asyncio.Event, poll_interval_se
     stream_offsets: dict[str, str] = {}
     while not stop_event.is_set():
         if redis_client is None:
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=poll_interval_seconds)
-            except TimeoutError:
+            if not await _wait_for_stop(stop_event, poll_interval_seconds):
                 redis_client = _redis()
-            continue
+                continue
+            break
         db = SessionLocal()
         try:
             streams = _active_streams(db)
         finally:
             db.close()
         if not streams:
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=poll_interval_seconds)
-            except TimeoutError:
+            if not await _wait_for_stop(stop_event, poll_interval_seconds):
                 continue
-            continue
+            break
         for name in streams:
             stream_offsets.setdefault(name, _initial_stream_offset(redis_client, name))
         stream_query = {name: stream_offsets.get(name, "$") for name in streams}
@@ -896,11 +902,10 @@ async def run_alert_evaluator_worker(stop_event: asyncio.Event, poll_interval_se
             )
         except redis.RedisError as exc:
             logger.warning("alert evaluator stream read failed: %s", exc)
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=poll_interval_seconds)
-            except TimeoutError:
+            if not await _wait_for_stop(stop_event, poll_interval_seconds):
                 redis_client = _redis()
-            continue
+                continue
+            break
         if not events:
             continue
         db = SessionLocal()
@@ -933,9 +938,7 @@ async def run_alert_delivery_worker(stop_event: asyncio.Event, poll_interval_sec
             logger.warning("alert delivery loop failed: %s", exc)
         finally:
             db.close()
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval_seconds)
-        except TimeoutError:
+        if not await _wait_for_stop(stop_event, poll_interval_seconds):
             continue
 
 
@@ -948,9 +951,7 @@ async def run_subscription_reconciler_worker(stop_event: asyncio.Event, interval
             logger.warning("alert subscription reconcile loop failed: %s", exc)
         finally:
             db.close()
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-        except TimeoutError:
+        if not await _wait_for_stop(stop_event, interval_seconds):
             continue
 
 
@@ -984,16 +985,17 @@ class BackgroundAsyncService:
                     try:
                         loop.run_until_complete(self._target(stop_event))
                         break
+                    except asyncio.CancelledError:
+                        if stop_event.is_set():
+                            break
+                        raise
                     except Exception:
                         logger.exception("%s crashed; restarting in %.1fs", self.name, BACKGROUND_RESTART_DELAY_SECONDS)
                         if stop_event.is_set():
                             break
-                        try:
-                            loop.run_until_complete(
-                                asyncio.wait_for(stop_event.wait(), timeout=BACKGROUND_RESTART_DELAY_SECONDS)
-                            )
-                        except TimeoutError:
+                        if not loop.run_until_complete(_wait_for_stop(stop_event, BACKGROUND_RESTART_DELAY_SECONDS)):
                             continue
+                        break
             finally:
                 pending = asyncio.all_tasks(loop)
                 for task in pending:

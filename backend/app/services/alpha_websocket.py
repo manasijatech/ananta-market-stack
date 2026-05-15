@@ -6,9 +6,10 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
+from common.datetime_compat import UTC
 import httpx
 import redis
 import websockets
@@ -45,6 +46,18 @@ WS_MAX_RETRY_DELAY_SECONDS = 60
 
 def _utc_now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+async def _wait_for_stop(stop_event: asyncio.Event, timeout: float) -> bool:
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        return False
+    except asyncio.CancelledError:
+        if stop_event.is_set():
+            return True
+        raise
 
 
 def _json_loads(value: str | None, default: Any) -> Any:
@@ -407,7 +420,7 @@ async def _send_subscriptions(
 async def _await_message(websocket) -> str | None:
     try:
         return await asyncio.wait_for(websocket.recv(), timeout=WS_RECV_TIMEOUT_SECONDS)
-    except TimeoutError:
+    except asyncio.TimeoutError:
         pong_waiter = await websocket.ping()
         await asyncio.wait_for(pong_waiter, timeout=WS_PING_TIMEOUT_SECONDS)
         return None
@@ -466,11 +479,10 @@ async def _run_user_subscription(subscription: EffectiveAlphaSubscription, stop_
                 retry_delay,
             )
             _mark_config(subscription.user_id, last_status="reconnecting", last_error=str(exc))
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=retry_delay)
-            except TimeoutError:
+            if not await _wait_for_stop(stop_event, retry_delay):
                 retry_delay = _next_retry_delay(retry_delay)
                 continue
+            break
     _mark_config(subscription.user_id, last_status="stopped")
 
 
@@ -527,10 +539,9 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
                 db.close()
         except Exception as exc:
             logger.warning("alpha websocket supervisor loop failed: %s", exc)
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=SUPERVISOR_INTERVAL_SECONDS)
-        except TimeoutError:
+        if not await _wait_for_stop(stop_event, SUPERVISOR_INTERVAL_SECONDS):
             continue
+        break
     for _, task in tasks.values():
         task.cancel()
     if tasks:

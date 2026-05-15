@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import UTC, date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
+from common.datetime_compat import UTC
 import pyotp
 from sqlalchemy import select
 from sqlalchemy.orm import Session

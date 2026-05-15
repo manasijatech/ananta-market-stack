@@ -14,7 +14,7 @@ def _build_api_key_hint(api_key: str) -> str | None:
     if not cleaned:
         return None
     visible_suffix = cleaned[-4:] if len(cleaned) >= 4 else cleaned
-    return f"{'\u2022' * 8}{visible_suffix}"
+    return ("*" * 8) + visible_suffix
 
 
 def get_alpha_api_config(db: Session, user_id: str) -> AlphaApiConfigOut:
@@ -51,7 +51,9 @@ def upsert_alpha_api_credential(
 ) -> AlphaApiConfigOut:
     import asyncio
     import json
-    from datetime import UTC, datetime
+    from datetime import datetime
+
+    from common.datetime_compat import UTC
 
     try:
         account = asyncio.run(fetch_alpha_account(payload.api_key))

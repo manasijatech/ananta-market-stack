@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
+from common.datetime_compat import UTC
 from sqlalchemy.orm import Session
 
 from app.schemas.broker import (

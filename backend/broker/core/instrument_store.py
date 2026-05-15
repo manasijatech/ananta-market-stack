@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+from common.datetime_compat import UTC
 from sqlalchemy import delete, desc, or_, select
 from sqlalchemy.orm import Session
 

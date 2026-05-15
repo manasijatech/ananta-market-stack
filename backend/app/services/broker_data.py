@@ -4,9 +4,10 @@ import csv
 import json
 import sys
 from pathlib import Path
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
+from common.datetime_compat import UTC
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 

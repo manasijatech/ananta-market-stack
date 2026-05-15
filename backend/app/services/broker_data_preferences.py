@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
+from common.datetime_compat import UTC
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 

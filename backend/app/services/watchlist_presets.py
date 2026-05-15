@@ -7,9 +7,10 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
+from common.datetime_compat import UTC
 import httpx
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select

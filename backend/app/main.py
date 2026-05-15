@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 
 
+async def _wait_for_stop(stop_event: asyncio.Event, timeout: float) -> bool:
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        return False
+
+
 class BackgroundAsyncLoopThread:
     def __init__(self, name: str, target) -> None:
         self.name = name
@@ -44,16 +52,17 @@ class BackgroundAsyncLoopThread:
                     try:
                         loop.run_until_complete(self.target(stop_event))
                         break
+                    except asyncio.CancelledError:
+                        if stop_event.is_set():
+                            break
+                        raise
                     except Exception:
                         logger.exception("%s crashed; restarting in %.1fs", self.name, BACKGROUND_RESTART_DELAY_SECONDS)
                         if stop_event.is_set():
                             break
-                        try:
-                            loop.run_until_complete(
-                                asyncio.wait_for(stop_event.wait(), timeout=BACKGROUND_RESTART_DELAY_SECONDS)
-                            )
-                        except TimeoutError:
+                        if not loop.run_until_complete(_wait_for_stop(stop_event, BACKGROUND_RESTART_DELAY_SECONDS)):
                             continue
+                        break
             finally:
                 pending = asyncio.all_tasks(loop)
                 for task in pending:

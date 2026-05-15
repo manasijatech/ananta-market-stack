@@ -6,9 +6,10 @@ import queue
 import threading
 import uuid
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+from common.datetime_compat import UTC
 import httpx
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.orm import Session

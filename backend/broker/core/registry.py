@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
+from common.datetime_compat import UTC
 from broker.core.types import BrokerCode
 from broker.crypto import decrypt_value
 from broker.zerodha.auth import is_session_active

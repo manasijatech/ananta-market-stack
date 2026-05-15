@@ -47,7 +47,7 @@ def _build_api_key_hint(api_key: str) -> str | None:
     if not cleaned:
         return None
     visible_suffix = cleaned[-4:] if len(cleaned) >= 4 else cleaned
-    return f"{'\u2022' * 8}{visible_suffix}"
+    return ("*" * 8) + visible_suffix
 
 
 def provider_definitions() -> dict[LlmProvider, dict[str, str]]:

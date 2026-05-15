@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
+from common.datetime_compat import UTC
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
