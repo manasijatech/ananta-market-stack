@@ -33,7 +33,7 @@ Keep the API secret private. Groww may not show it again after you leave the pag
 
 ## 4. Add Groww In Market Stack
 
-1. Open Market Stack at `http://localhost:3000`.
+1. Open Market Stack at `http://localhost:3001`.
 2. Go to **Brokers**.
 3. Click **Add broker**.
 4. Select **Groww**.

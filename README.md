@@ -46,15 +46,91 @@ Market-Stack/
     service/          Server actions, broker types, guide loading
 ```
 
-The frontend talks to the backend through `NEXT_PUBLIC_API_BASE_URL`. Server actions add `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` headers from the Better Auth session. In backend-only development, missing `X-User-Id` falls back to `local-dev-user`.
+The frontend talks to the backend through the configured API base URL. In Docker, server-side frontend calls use `http://backend:8004/api/v1` inside the Compose network while browser-facing URLs use `http://localhost:8004/api/v1`. Server actions add `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` headers from the Better Auth session. In backend-only development, missing `X-User-Id` falls back to `local-dev-user`.
 
 ## Prerequisites
 
-- Node.js compatible with Next.js 16 and React 19.
-- Python 3.12 recommended.
+- Docker and Docker Compose for the fastest full-stack setup.
+- Node.js compatible with Next.js 16 and React 19 for manual frontend development.
+- Python 3.12 recommended for manual backend development.
 - Redis is optional for broker CRUD and read-only data APIs. Redis is required for production live alerting, workflow evaluation fanout, and stream coordination.
 
-## Backend Setup
+## Quick Start With Docker
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+Open:
+
+```text
+http://localhost:3001
+```
+
+The default Docker stack runs:
+
+- Frontend on `http://localhost:3001`
+- Backend on `http://localhost:8004`
+- Backend API base at `http://localhost:8004/api/v1`
+- Redis inside the Compose network as `redis:6379`
+- SQLite and generated secrets in Docker named volumes
+
+The backend also uses `8004` inside the Compose network, so frontend server-side calls go to `http://backend:8004/api/v1`.
+
+Useful Docker commands:
+
+```bash
+docker compose up -d --build
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose down
+```
+
+To update a running self-hosted instance:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+To reset all Docker-managed development data and generated secrets:
+
+```bash
+docker compose down -v
+```
+
+Do not use `down -v` on a real self-hosted instance unless you have backups.
+
+## Docker Data And Secrets
+
+Docker Compose creates these named volumes:
+
+- `market-stack_backend_data` - SQLite database and backend data files.
+- `market-stack_market_stack_config` - generated `CREDENTIAL_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, and `REDIS_PASSWORD`.
+- `market-stack_redis_data` - Redis append-only data.
+
+The `bootstrap` service generates missing secrets once and keeps them stable across restarts and image rebuilds. Back up `market-stack_backend_data` and `market-stack_market_stack_config` together. If `CREDENTIAL_ENCRYPTION_KEY` is lost, existing encrypted broker credentials in SQLite cannot be decrypted.
+
+For production domains, override these values before starting Compose:
+
+```bash
+FRONTEND_PORT=3001
+BACKEND_PORT=8004
+BETTER_AUTH_URL=https://your-frontend-domain.example
+BETTER_AUTH_TRUSTED_ORIGINS=https://your-frontend-domain.example
+NEXT_PUBLIC_APP_URL=https://your-frontend-domain.example
+NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
+MARKET_STACK_PUBLIC_APP_URL=https://your-frontend-domain.example
+MARKET_STACK_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
+MARKET_STACK_API_INTERNAL_URL=http://backend:8004/api/v1
+APP_PUBLIC_BASE_URL=https://your-backend-domain.example
+```
+
+If you use an external Redis, set `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, and `REDIS_PASSWORD`, and remove or ignore the bundled Redis service as part of your deployment-specific Compose override.
+
+## Manual Backend Setup
 
 ```bash
 cd backend
@@ -99,20 +175,20 @@ PowerShell on Windows:
 Start the API:
 
 ```bash
-.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8004
 ```
 
 PowerShell on Windows:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8004
 ```
 
 Useful backend URLs:
 
-- API health: `http://127.0.0.1:8000/health`
-- Versioned health: `http://127.0.0.1:8000/api/v1/health`
-- OpenAPI docs: `http://127.0.0.1:8000/docs`
+- API health: `http://127.0.0.1:8004/health`
+- Versioned health: `http://127.0.0.1:8004/api/v1/health`
+- OpenAPI docs: `http://127.0.0.1:8004/docs`
 
 Optional live alert worker processes:
 
@@ -133,7 +209,7 @@ $env:PYTHONPATH = "."
 .\.venv\Scripts\python.exe -m app.workers.alert_delivery
 ```
 
-## Frontend Setup
+## Manual Frontend Setup
 
 ```bash
 cd frontend
@@ -144,10 +220,14 @@ cp .env.example .env.local
 Set the frontend environment values:
 
 ```env
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
+NEXT_PUBLIC_APP_URL=http://localhost:3001
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8004/api/v1
+MARKET_STACK_PUBLIC_APP_URL=http://localhost:3001
+MARKET_STACK_PUBLIC_API_BASE_URL=http://127.0.0.1:8004/api/v1
+MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8004/api/v1
 BETTER_AUTH_SECRET=
-BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_URL=http://localhost:3001
+BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3001,http://127.0.0.1:3001
 ```
 
 Generate `BETTER_AUTH_SECRET` with:
@@ -159,10 +239,10 @@ openssl rand -base64 32
 Start the frontend:
 
 ```bash
-npm run dev
+npm run dev -- -p 3001
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3001`.
 
 ## Development Commands
 
@@ -190,7 +270,7 @@ Frontend:
 cd frontend
 npm run lint
 npm run build
-npm run dev
+npm run dev -- -p 3001
 ```
 
 ## API Overview
@@ -292,14 +372,17 @@ Frontend environment:
 
 - `NEXT_PUBLIC_APP_URL` is the browser-facing frontend URL.
 - `NEXT_PUBLIC_API_BASE_URL` points to the backend `/api/v1` base.
+- `MARKET_STACK_API_INTERNAL_URL` lets frontend server actions call the backend through an internal Docker URL such as `http://backend:8004/api/v1`.
+- `MARKET_STACK_PUBLIC_APP_URL` and `MARKET_STACK_PUBLIC_API_BASE_URL` are runtime-friendly public URLs for server-rendered frontend flows.
 - `BETTER_AUTH_SECRET` signs auth state.
 - `BETTER_AUTH_URL` is the Better Auth base URL.
+- `BETTER_AUTH_TRUSTED_ORIGINS` is a comma-separated allow-list for frontend origins.
 
 ## Data And Security
 
 - Backend broker credentials are stored in broker-specific SQLAlchemy tables and encrypted with Fernet.
-- Backend SQLite data is stored under `backend/data/` by default.
-- Frontend Better Auth SQLite data is stored under `frontend/data/` by default.
+- Backend SQLite data is stored under `backend/data/` by default in manual development and `/data/app.db` in Docker.
+- Frontend Better Auth uses the same SQLite database by default so backend user IDs and frontend sessions stay aligned.
 - Do not commit `.env`, SQLite databases, broker tokens, generated auth secrets, or production Fernet keys.
 - Broker API responses are generally broker-native shapes; the API layer does not fully normalize portfolio/order payloads.
 

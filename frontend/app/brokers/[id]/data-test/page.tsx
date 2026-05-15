@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { BrokerDataTest } from "@/components/brokers/broker-data-test";
 import { PageHeader, Shell, brokerNames } from "@/components/brokers/ui";
 import { Button } from "@/components/ui/button";
+import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { getBrokerAccount, getDataCapabilities, getSessionStatus, getStreamStatus } from "@/service/actions/broker";
 
 type BrokerDataTestPageProps = {
@@ -17,7 +18,7 @@ export default async function BrokerDataTestPage({ params }: BrokerDataTestPageP
  getDataCapabilities(account.id),
  getStreamStatus(account.id)
  ]);
- const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
+ const apiBaseUrl = getPublicApiBaseUrl();
 
  return (
  <Shell>

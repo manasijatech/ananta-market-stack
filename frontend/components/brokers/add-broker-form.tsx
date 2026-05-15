@@ -3,7 +3,7 @@
 import { BookOpen } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState, useTransition } from "react";
+import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { createBrokerAccount } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { BrokerLogo, brokerNames } from "@/components/brokers/ui";
@@ -18,7 +18,7 @@ import type { BrokerCode, CreateBrokerAccountPayload, FieldErrors } from "@/serv
 
 type GrowwMode = "approval" | "totp" | "token";
 
-const defaultBrokerRedirectUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/brokers`;
+const fallbackBrokerRedirectUrl = "http://localhost:3001/brokers";
 
 function stringField(formData: FormData, key: string): string {
  return String(formData.get(key) ?? "").trim();
@@ -29,7 +29,12 @@ function nullableField(formData: FormData, key: string): string | null {
  return value || null;
 }
 
-function makePayload(broker: BrokerCode, formData: FormData, growwMode: GrowwMode): CreateBrokerAccountPayload {
+function makePayload(
+ broker: BrokerCode,
+ formData: FormData,
+ growwMode: GrowwMode,
+ defaultBrokerRedirectUrl: string
+): CreateBrokerAccountPayload {
  const label = stringField(formData, "label");
  switch (broker) {
  case "zerodha":
@@ -183,13 +188,18 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
  const [isPending, startTransition] = useTransition();
  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
  const [message, setMessage] = useState("");
+ const [defaultBrokerRedirectUrl, setDefaultBrokerRedirectUrl] = useState(fallbackBrokerRedirectUrl);
 
  const selectedName = useMemo(() => brokerNames[broker], [broker]);
+
+ useEffect(() => {
+ setDefaultBrokerRedirectUrl(`${window.location.origin}/brokers`);
+ }, []);
 
  function onSubmit(event: FormEvent<HTMLFormElement>) {
  event.preventDefault();
  const formData = new FormData(event.currentTarget);
- const payload = makePayload(broker, formData, growwMode);
+ const payload = makePayload(broker, formData, growwMode, defaultBrokerRedirectUrl);
  setFieldErrors({});
  setMessage("");
 
@@ -258,6 +268,7 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
  <Field error={fieldErrors.api_key} label="API key" name="api_key" />
  <Field error={fieldErrors.api_secret} label="API secret" name="api_secret" type="password" />
  <Field
+ key={defaultBrokerRedirectUrl}
  error={fieldErrors.redirect_uri}
  label="Redirect URI"
  name="redirect_uri"
