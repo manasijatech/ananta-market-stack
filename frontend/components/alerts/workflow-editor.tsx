@@ -210,6 +210,25 @@ const messageTemplateFields = [
  "capacity"
 ];
 const alphaFeedProducts = ["news", "announcements", "earnings", "concalls", "alerts"] as const;
+const defaultActivePeriod = {
+ enabled: true,
+ timezone: "Asia/Kolkata",
+ days: ["mon", "tue", "wed", "thu", "fri"],
+ sessions: [{ label: "Regular market", start: "09:15", end: "15:30" }],
+ exchanges: [],
+ exchange_types: [],
+ segments: [],
+ instrument_types: []
+};
+const dayOptions = [
+ ["mon", "Mon"],
+ ["tue", "Tue"],
+ ["wed", "Wed"],
+ ["thu", "Thu"],
+ ["fri", "Fri"],
+ ["sat", "Sat"],
+ ["sun", "Sun"]
+] as const;
 
 const targetListExample = "RELIANCE,NSE\nTCS,NSE\nINFY,NSE";
 
@@ -546,6 +565,50 @@ function numeric(value: unknown): number | null {
  return Number.isFinite(next) ? next : null;
 }
 
+function csvList(value: string): string[] {
+ return value
+ .split(",")
+ .map((item) => item.trim().toUpperCase())
+ .filter(Boolean);
+}
+
+function listCsv(value: string[] | undefined): string {
+ return (value ?? []).join(", ");
+}
+
+function timeToMinutes(value: string): number | null {
+ const match = value.match(/^(\d{2}):(\d{2})$/);
+ if (!match) return null;
+ const hour = Number(match[1]);
+ const minute = Number(match[2]);
+ if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+ return hour * 60 + minute;
+}
+
+function timezoneParts(timezone: string): { day: string; minutes: number } | null {
+ try {
+ const parts = new Intl.DateTimeFormat("en-US", {
+ timeZone: timezone || "Asia/Kolkata",
+ weekday: "short",
+ hour: "2-digit",
+ minute: "2-digit",
+ hourCycle: "h23"
+ }).formatToParts(new Date());
+ const weekday = parts.find((part) => part.type === "weekday")?.value.slice(0, 3).toLowerCase();
+ const hour = Number(parts.find((part) => part.type === "hour")?.value);
+ const minute = Number(parts.find((part) => part.type === "minute")?.value);
+ if (!weekday || !Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+ return { day: weekday, minutes: hour * 60 + minute };
+ } catch {
+ return null;
+ }
+}
+
+function isWithinSession(nowMinutes: number, start: number, end: number): boolean {
+ if (start <= end) return nowMinutes >= start && nowMinutes <= end;
+ return nowMinutes >= start || nowMinutes <= end;
+}
+
 function targetScopeSummary(targeting: AlertWorkflowTargeting): string {
  if (targeting.mode === "preset_universe") {
  return targeting.preset_label || targeting.preset_id || "Preset universe";
@@ -629,6 +692,17 @@ initialWorkflow,
  const [status, setStatus] = useState<"active" | "inactive">(initialEditableStatus);
  const [combine, setCombine] = useState<"all" | "any">(initialWorkflow?.workflow_dsl.combine ?? "all");
  const [cooldownSeconds, setCooldownSeconds] = useState(String(initialWorkflow?.workflow_dsl.cooldown_seconds ?? 300));
+ const initialActivePeriod = { ...defaultActivePeriod, ...(initialWorkflow?.workflow_dsl.active_period ?? {}) };
+ const [activePeriodEnabled, setActivePeriodEnabled] = useState(initialActivePeriod.enabled);
+ const [activeTimezone, setActiveTimezone] = useState(initialActivePeriod.timezone);
+ const [activeDays, setActiveDays] = useState<string[]>(initialActivePeriod.days.length ? initialActivePeriod.days : defaultActivePeriod.days);
+ const [activeSessionLabel, setActiveSessionLabel] = useState(initialActivePeriod.sessions[0]?.label ?? "Regular market");
+ const [activeSessionStart, setActiveSessionStart] = useState(initialActivePeriod.sessions[0]?.start ?? "09:15");
+ const [activeSessionEnd, setActiveSessionEnd] = useState(initialActivePeriod.sessions[0]?.end ?? "15:30");
+ const [activeExchanges, setActiveExchanges] = useState(listCsv(initialActivePeriod.exchanges));
+ const [activeExchangeTypes, setActiveExchangeTypes] = useState(listCsv(initialActivePeriod.exchange_types));
+ const [activeSegments, setActiveSegments] = useState(listCsv(initialActivePeriod.segments));
+ const [activeInstrumentTypes, setActiveInstrumentTypes] = useState(listCsv(initialActivePeriod.instrument_types));
  const [conditions, setConditions] = useState<AlertCondition[]>(
  initialWorkflow?.workflow_dsl.conditions.length
  ? initialWorkflow.workflow_dsl.conditions
@@ -720,6 +794,16 @@ initialWorkflow,
  );
  const suggestedDsl = useMemo(() => conditionsToDsl(combine, conditions), [combine, conditions]);
  const suggestedCopy = useMemo(() => suggestedTemplates(conditions, combine), [combine, conditions]);
+ const livePreviewAllowed = useMemo(() => {
+ if (workflowType !== "market_data" || !activePeriodEnabled) return true;
+ const current = timezoneParts(activeTimezone);
+ if (!current) return true;
+ if (!activeDays.includes(current.day)) return false;
+ const start = timeToMinutes(activeSessionStart);
+ const end = timeToMinutes(activeSessionEnd);
+ if (start === null || end === null) return true;
+ return isWithinSession(current.minutes, start, end);
+ }, [activeDays, activePeriodEnabled, activeSessionEnd, activeSessionStart, activeTimezone, workflowType]);
  const dslSuggestions = useMemo<DslSuggestion[]>(() => {
  const registrySuggestions: DslSuggestion[] = [
  ...(conditionRegistry?.fields ?? []).map((item) => ({
@@ -949,6 +1033,15 @@ initialWorkflow,
  setPreview({ quote: null, ohlc: null, loading: false, error: "" });
  return;
  }
+ if (!livePreviewAllowed) {
+ setPreview({
+ quote: null,
+ ohlc: null,
+ loading: false,
+ error: "Live broker preview is paused outside this workflow's active market period."
+ });
+ return;
+ }
  const accountIdForFetch = account.id;
  let cancelled = false;
  async function load() {
@@ -981,7 +1074,7 @@ initialWorkflow,
  cancelled = true;
  window.clearInterval(timer);
  };
- }, [activeInstrument, selectedAccount]);
+ }, [activeInstrument, livePreviewAllowed, selectedAccount]);
 
  function selectSuggestion(row: InstrumentSearchRow) {
  setSymbol(row.symbol);
@@ -1014,6 +1107,10 @@ initialWorkflow,
  inherit_defaults: inheritDefaults,
  enabled: enabled.length ? enabled : ["in_app"]
  };
+ }
+
+ function toggleActiveDay(day: string, checked: boolean) {
+ setActiveDays((current) => checked ? Array.from(new Set([...current, day])) : current.filter((item) => item !== day));
  }
 
  function workflowTargetingPayload(): AlertWorkflowTargeting {
@@ -1132,6 +1229,22 @@ initialWorkflow,
  temperature: Number(feedTemperature || 0.1),
  max_completion_tokens: Number(feedMaxTokens || 400),
  timeout_seconds: Number(feedTimeout || 25)
+ },
+ active_period: {
+ enabled: activePeriodEnabled,
+ timezone: activeTimezone.trim() || "Asia/Kolkata",
+ days: activeDays.length ? activeDays : defaultActivePeriod.days,
+ sessions: [
+ {
+ label: activeSessionLabel.trim() || "Regular market",
+ start: activeSessionStart || "09:15",
+ end: activeSessionEnd || "15:30"
+ }
+ ],
+ exchanges: csvList(activeExchanges),
+ exchange_types: csvList(activeExchangeTypes),
+ segments: csvList(activeSegments),
+ instrument_types: csvList(activeInstrumentTypes)
  },
  dsl_text: dslText.trim() || null,
  workflow_ast: workflowAstPayload(targeting, effectiveConditions),
@@ -1431,7 +1544,7 @@ initialWorkflow,
  const key = `${item.symbol}:${item.exchange ?? ""}`;
  setHoveredSymbolKey(key);
  setHoverQuote(null);
- if (!selectedAccount || !item.symbol) return;
+ if (!selectedAccount || !item.symbol || !livePreviewAllowed) return;
  setHoverQuoteLoading(true);
  startTransition(async () => {
  try {
@@ -1627,6 +1740,70 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
  </div>
+
+ {workflowType === "market_data" ? (
+ <div className="border border-border p-4">
+ <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+ <div>
+ <div className="text-sm font-bold">Active market period</div>
+ <HelpText>Broker market-data workflows ignore ticks outside this window, preventing stale post-close quotes from creating alerts. Scope fields are optional; leave them empty to apply the window to every exchange and segment in this workflow.</HelpText>
+ </div>
+ <label className="flex items-center gap-2 text-sm">
+ <input checked={activePeriodEnabled} onChange={(event) => setActivePeriodEnabled(event.target.checked)} type="checkbox" />
+ Enforce active period
+ </label>
+ </div>
+ <div className="grid gap-3 min-[900px]:grid-cols-[1fr_120px_120px]">
+ <div className="grid gap-2">
+ <Input onChange={(event) => setActiveTimezone(event.target.value)} placeholder="Asia/Kolkata" value={activeTimezone} />
+ <HelpText>Timezone. Default is `Asia/Kolkata` for NSE/BSE market hours.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input onChange={(event) => setActiveSessionStart(event.target.value)} placeholder="09:15" value={activeSessionStart} />
+ <HelpText>Start.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input onChange={(event) => setActiveSessionEnd(event.target.value)} placeholder="15:30" value={activeSessionEnd} />
+ <HelpText>End.</HelpText>
+ </div>
+ </div>
+ <div className="mt-3 grid gap-3 min-[900px]:grid-cols-[1fr_1fr]">
+ <div className="grid gap-2">
+ <Input onChange={(event) => setActiveSessionLabel(event.target.value)} placeholder="Regular market" value={activeSessionLabel} />
+ <HelpText>Session label saved with runtime evaluation metadata.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <div className="flex flex-wrap gap-2">
+ {dayOptions.map(([day, label]) => (
+ <label className="flex items-center gap-1 border border-border px-2 py-1 text-xs" key={day}>
+ <input checked={activeDays.includes(day)} onChange={(event) => toggleActiveDay(day, event.target.checked)} type="checkbox" />
+ {label}
+ </label>
+ ))}
+ </div>
+ <HelpText>Common default is Monday-Friday.</HelpText>
+ </div>
+ </div>
+ <div className="mt-3 grid gap-3 min-[900px]:grid-cols-4">
+ <div className="grid gap-2">
+ <Input className="font-mono uppercase" onChange={(event) => setActiveExchanges(event.target.value.toUpperCase())} placeholder="NSE, BSE" value={activeExchanges} />
+ <HelpText>Optional exchange scope.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input className="font-mono uppercase" onChange={(event) => setActiveExchangeTypes(event.target.value.toUpperCase())} placeholder="NSE, BSE, NFO" value={activeExchangeTypes} />
+ <HelpText>Optional exchange-type scope.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input className="font-mono uppercase" onChange={(event) => setActiveSegments(event.target.value.toUpperCase())} placeholder="NSE, NFO-OPT" value={activeSegments} />
+ <HelpText>Optional broker segment scope from synced instruments.</HelpText>
+ </div>
+ <div className="grid gap-2">
+ <Input className="font-mono uppercase" onChange={(event) => setActiveInstrumentTypes(event.target.value.toUpperCase())} placeholder="EQ, FUT, CE, PE" value={activeInstrumentTypes} />
+ <HelpText>Optional instrument-type scope.</HelpText>
+ </div>
+ </div>
+ </div>
+ ) : null}
 
  {workflowType === "alpha_feed" ? (
  <div className="border border-border p-4">

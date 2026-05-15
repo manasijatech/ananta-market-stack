@@ -66,6 +66,23 @@ class AlertFeedTriggerConfig(BaseModel):
     timeout_seconds: int = Field(default=25, ge=1, le=120)
 
 
+class AlertMarketSessionWindow(BaseModel):
+    label: str = "Regular market"
+    start: str = Field(default="09:15", pattern=r"^\d{2}:\d{2}$")
+    end: str = Field(default="15:30", pattern=r"^\d{2}:\d{2}$")
+
+
+class AlertWorkflowActivePeriod(BaseModel):
+    enabled: bool = True
+    timezone: str = "Asia/Kolkata"
+    days: list[str] = Field(default_factory=lambda: ["mon", "tue", "wed", "thu", "fri"])
+    sessions: list[AlertMarketSessionWindow] = Field(default_factory=lambda: [AlertMarketSessionWindow()])
+    exchanges: list[str] = Field(default_factory=list)
+    exchange_types: list[str] = Field(default_factory=list)
+    segments: list[str] = Field(default_factory=list)
+    instrument_types: list[str] = Field(default_factory=list)
+
+
 class AlertTargetEntry(BaseModel):
     symbol: str
     exchange: str | None = None
@@ -94,6 +111,7 @@ class AlertWorkflowDsl(BaseModel):
     channels: AlertChannelSelection = Field(default_factory=AlertChannelSelection)
     llm_analysis: AlertLlmAnalysisConfig = Field(default_factory=AlertLlmAnalysisConfig)
     feed_trigger: AlertFeedTriggerConfig = Field(default_factory=AlertFeedTriggerConfig)
+    active_period: AlertWorkflowActivePeriod = Field(default_factory=AlertWorkflowActivePeriod)
     workflow_ast: dict[str, Any] | None = None
     dsl_text: str | None = None
     validation_status: Literal["unknown", "valid", "invalid"] = "unknown"

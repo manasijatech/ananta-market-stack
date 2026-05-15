@@ -1,3 +1,8 @@
+from datetime import datetime
+
+from common.datetime_compat import UTC
+from app.schemas.alert import AlertWorkflowActivePeriod
+from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services.alerts_engine.ast import ensure_workflow_ast
 from app.services.alerts_engine.conditions import evaluate_logic
 from app.services.alerts_engine.dsl import validate_dsl_text
@@ -128,3 +133,32 @@ def test_reconcile_creates_and_deactivates_watchlist_subscription():
         assert row.health_status == "orphaned"
     finally:
         db.close()
+
+
+def test_active_period_blocks_market_data_after_close():
+    result = evaluate_active_period(
+        AlertWorkflowActivePeriod(),
+        {"exchange": "NSE", "segment": "NSE", "instrument_type": "EQ"},
+        now=datetime(2026, 5, 15, 11, 0, tzinfo=UTC),
+    )
+
+    assert result.active is False
+    assert result.reason == "outside active market hours"
+
+
+def test_active_period_scope_only_applies_to_matching_segment():
+    config = AlertWorkflowActivePeriod(segments=["NFO"])
+    outside_equity = evaluate_active_period(
+        config,
+        {"exchange": "NSE", "segment": "NSE", "instrument_type": "EQ"},
+        now=datetime(2026, 5, 15, 11, 0, tzinfo=UTC),
+    )
+    matching_derivative = evaluate_active_period(
+        config,
+        {"exchange": "NFO", "segment": "NFO", "instrument_type": "FUT"},
+        now=datetime(2026, 5, 15, 11, 0, tzinfo=UTC),
+    )
+
+    assert outside_equity.active is True
+    assert outside_equity.reason == "active period scope does not apply"
+    assert matching_derivative.active is False

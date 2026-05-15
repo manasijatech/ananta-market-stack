@@ -18,6 +18,7 @@ from app.services.alert_llm_analysis import _response_text, _usage_payload, vali
 from app.services import llm_gateway
 from app.services.llm_usage import workflow_tracking_context
 from app.services.alerts_engine.reconcile import reconcile_all_users
+from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services import broker_data
 from app.services.broker_sessions import _create_notification_once_per_day
 from app.services.alerts_engine.universes import resolve_universe
@@ -27,6 +28,7 @@ from db.models import (
     AlertWorkflow,
     AlertWorkflowRun,
     BrokerAccount,
+    BrokerInstrument,
     LiveSymbolSubscription,
     UserWatchlist,
     UserWatchlistSymbol,
@@ -115,6 +117,54 @@ def _computed_quote_fields(raw: dict[str, Any], ltp: Any, ohlc: dict[str, Any]) 
         "gap_pct": gap_pct,
         "volume_ratio": volume_ratio,
     }
+
+
+def _instrument_scope_for_tick(db, workflow, tick: dict[str, Any]) -> dict[str, Any]:
+    exchange = str(tick.get("exchange") or workflow.exchange or "").strip().upper()
+    scope: dict[str, Any] = {
+        "symbol": str(tick.get("symbol") or workflow.symbol or "").strip().upper(),
+        "exchange": exchange,
+        "exchange_type": exchange,
+    }
+    try:
+        target = alert_svc.workflow_target_entry_for_tick(workflow, tick)  # type: ignore[attr-defined]
+        metadata = target.metadata if target else {}
+        if isinstance(metadata, dict):
+            scope.update(
+                {
+                    "exchange_type": str(metadata.get("exchange_type") or scope["exchange_type"]).strip().upper(),
+                    "segment": str(metadata.get("segment") or "").strip().upper(),
+                    "instrument_type": str(metadata.get("instrument_type") or "").strip().upper(),
+                }
+            )
+    except Exception:
+        pass
+    if scope.get("segment") or scope.get("instrument_type"):
+        return scope
+    row = db.scalars(
+        select(BrokerInstrument)
+        .where(
+            BrokerInstrument.broker_code == str(tick.get("broker_code") or workflow.broker_code or ""),
+            BrokerInstrument.symbol == scope["symbol"],
+            BrokerInstrument.exchange == exchange,
+        )
+        .limit(1)
+    ).first()
+    if row:
+        scope["segment"] = str(row.segment or "").strip().upper()
+        scope["instrument_type"] = str(row.instrument_type or "").strip().upper()
+    return scope
+
+
+def _workflow_active_for_tick(db, workflow, tick: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+    if workflow.workflow_dsl.workflow_type != "market_data":
+        return True, {"active": True, "reason": "not a broker market-data workflow"}
+    result = evaluate_active_period(
+        workflow.workflow_dsl.active_period,
+        _instrument_scope_for_tick(db, workflow, tick),
+        now=_utc_now().replace(tzinfo=UTC),
+    )
+    return result.active, {"active": result.active, "reason": result.reason, **result.details}
 
 
 def _normalize_tick_payload(
@@ -533,6 +583,9 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
     for row in workflows:
         try:
             workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
+            active, active_period_details = _workflow_active_for_tick(db, workflow, tick)
+            if not active:
+                continue
             previous_tick = _previous_tick_for_workflow(db, redis_client, workflow.id)
             evaluation = alert_svc.evaluate_workflow_payload_detail(workflow, tick, previous_tick)
             matched, reason = evaluation.matched, evaluation.reason
@@ -621,6 +674,7 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                             {
                                 "previous_tick": previous_tick,
                                 "event_driven": True,
+                                "active_period": active_period_details,
                                 "evaluation_details": evaluation.details,
                                 "llm_analysis": llm_analysis,
                             },

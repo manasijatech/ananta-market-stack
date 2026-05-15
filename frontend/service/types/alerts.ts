@@ -51,6 +51,23 @@ export interface AlertFeedTriggerConfig {
   timeout_seconds: number;
 }
 
+export interface AlertMarketSessionWindow {
+  label: string;
+  start: string;
+  end: string;
+}
+
+export interface AlertWorkflowActivePeriod {
+  enabled: boolean;
+  timezone: string;
+  days: string[];
+  sessions: AlertMarketSessionWindow[];
+  exchanges: string[];
+  exchange_types: string[];
+  segments: string[];
+  instrument_types: string[];
+}
+
 export interface AlertTargetEntry {
   symbol: string;
   exchange?: string | null;
@@ -79,6 +96,7 @@ export interface AlertWorkflowDsl {
   channels: AlertChannelSelection;
   llm_analysis: AlertLlmAnalysisConfig;
   feed_trigger: AlertFeedTriggerConfig;
+  active_period: AlertWorkflowActivePeriod;
   workflow_ast?: Record<string, unknown> | null;
   dsl_text?: string | null;
   validation_status?: "unknown" | "valid" | "invalid";
