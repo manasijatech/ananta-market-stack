@@ -18,6 +18,7 @@ import type { InstrumentRef } from "@/service/types/alerts";
 import type { InstrumentSearchRow } from "@/service/types/broker";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist, WatchlistPresetCatalogEntry } from "@/service/types/watchlist";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 function parseSymbols(input: string): string[] {
@@ -144,6 +145,14 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  const [createName, setCreateName] = useState("");
  const [createSymbols, setCreateSymbols] = useState("");
  const [showCreateForm, setShowCreateForm] = useState(false);
+ const [createSearch, setCreateSearch] = useState("");
+ const [createSuggestions, setCreateSuggestions] = useState<InstrumentSearchRow[]>([]);
+ const [createSuggestionMetadata, setCreateSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
+ const [createSelectedInstruments, setCreateSelectedInstruments] = useState<InstrumentSearchRow[]>([]);
+ const [createSelectedMetadata, setCreateSelectedMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
+ const [createActiveSuggestionIndex, setCreateActiveSuggestionIndex] = useState(-1);
+ const [createSearchLoading, setCreateSearchLoading] = useState(false);
+ const [showCreateSuggestions, setShowCreateSuggestions] = useState(false);
  const [symbolSearch, setSymbolSearch] = useState("");
  const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
  const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
@@ -173,9 +182,12 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  () => selected?.items.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean) ?? [],
  [selected]
  );
- const alphaSymbols = useMemo(() => selectedSymbols.slice(0, 20), [selectedSymbols]);
+ const alphaSymbols = selectedSymbols;
  const alphaSymbolKey = alphaSymbols.join(",");
- const createParsedSymbols = useMemo(() => parseSymbols(createSymbols), [createSymbols]);
+ const createParsedSymbols = useMemo(
+ () => Array.from(new Set([...createSelectedInstruments.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean), ...parseSymbols(createSymbols)])),
+ [createSelectedInstruments, createSymbols]
+ );
  const canEditSelected = Boolean(selected?.is_editable);
 
  useEffect(() => {
@@ -224,6 +236,78 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  document.addEventListener("mousedown", handlePointerDown);
  return () => document.removeEventListener("mousedown", handlePointerDown);
  }, []);
+
+ useEffect(() => {
+ if (!showCreateSuggestions || createActiveSuggestionIndex < 0) return;
+ document
+ .getElementById(`create-watchlist-symbol-suggestion-${createActiveSuggestionIndex}`)
+ ?.scrollIntoView({ block: "nearest" });
+ }, [createActiveSuggestionIndex, showCreateSuggestions]);
+
+ useEffect(() => {
+ if (!showSuggestions || activeSuggestionIndex < 0) return;
+ document
+ .getElementById(`watchlist-symbol-suggestion-${activeSuggestionIndex}`)
+ ?.scrollIntoView({ block: "nearest" });
+ }, [activeSuggestionIndex, showSuggestions]);
+
+ useEffect(() => {
+ const query = createSearch.trim();
+ if (!query || !showCreateForm) {
+ setCreateSuggestions([]);
+ setCreateSuggestionMetadata({});
+ setCreateActiveSuggestionIndex(-1);
+ setCreateSearchLoading(false);
+ return;
+ }
+ let cancelled = false;
+ const handle = window.setTimeout(() => {
+ setCreateSearchLoading(true);
+ startTransition(async () => {
+ try {
+ const result = await searchDefaultBrokerInstruments({
+ q: query,
+ exchange: exchange.trim() || undefined,
+ limit: 20
+ });
+ if (cancelled) return;
+ setCreateSuggestions(result);
+ setCreateActiveSuggestionIndex(result.length ? 0 : -1);
+ setShowCreateSuggestions(true);
+ const symbols = Array.from(new Set(result.map((row) => row.symbol.trim().toUpperCase()).filter(Boolean)));
+ if (!symbols.length) {
+ setCreateSuggestionMetadata({});
+ return;
+ }
+ try {
+ const metadata = await getAlphaSymbolMetadata(symbols);
+ if (cancelled) return;
+ setCreateSuggestionMetadata(
+ metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
+ acc[item.symbol.trim().toUpperCase()] = item;
+ return acc;
+ }, {})
+ );
+ } catch {
+ if (!cancelled) setCreateSuggestionMetadata({});
+ }
+ } catch {
+ if (cancelled) return;
+ setCreateSuggestions([]);
+ setCreateSuggestionMetadata({});
+ setCreateActiveSuggestionIndex(-1);
+ } finally {
+ if (!cancelled) {
+ setCreateSearchLoading(false);
+ }
+ }
+ });
+ }, 250);
+ return () => {
+ cancelled = true;
+ window.clearTimeout(handle);
+ };
+ }, [createSearch, exchange, showCreateForm, startTransition]);
 
  useEffect(() => {
  const query = symbolSearch.trim();
@@ -365,6 +449,46 @@ function importSymbolsIntoSelected(file: File | null) {
  });
 }
 
+function createInstrumentKey(row: InstrumentSearchRow): string {
+ return [row.symbol.trim().toUpperCase(), row.exchange ?? "", row.trading_symbol ?? "", row.account_id ?? ""].join(":");
+}
+
+function addCreateSearchedSymbol(row: InstrumentSearchRow) {
+ const symbol = row.symbol.trim().toUpperCase();
+ const metadata = createSuggestionMetadata[symbol];
+ setCreateSelectedInstruments((current) => {
+ const nextKey = createInstrumentKey(row);
+ if (current.some((item) => createInstrumentKey(item) === nextKey)) return current;
+ return [...current, row];
+ });
+ if (metadata) {
+ setCreateSelectedMetadata((current) => ({ ...current, [symbol]: metadata }));
+ }
+ setCreateSearch("");
+ setCreateSuggestions([]);
+ setCreateActiveSuggestionIndex(-1);
+ setShowCreateSuggestions(false);
+}
+
+function removeCreateSearchedSymbol(row: InstrumentSearchRow) {
+ const removeKey = createInstrumentKey(row);
+ setCreateSelectedInstruments((current) => current.filter((item) => createInstrumentKey(item) !== removeKey));
+}
+
+function resetCreateModal() {
+ setCreateName("");
+ setCreateSymbols("");
+ setCreateSearch("");
+ setCreateSuggestions([]);
+ setCreateSuggestionMetadata({});
+ setCreateSelectedInstruments([]);
+ setCreateSelectedMetadata({});
+ setCreateActiveSuggestionIndex(-1);
+ setCreateSearchLoading(false);
+ setShowCreateSuggestions(false);
+ setShowCreateForm(false);
+}
+
 function create() {
  const name = createName.trim();
  if (!name) {
@@ -379,13 +503,25 @@ function create() {
  setNotice("");
  startTransition(async () => {
  try {
- const created = await createWatchlist({ name, symbols: createParsedSymbols });
- setWatchlists((current) => upsertWatchlist(current, created));
- setSelectedId(created.id);
- setCreateName("");
- setCreateSymbols("");
- setShowCreateForm(false);
- setNotice(`Created ${created.name}.`);
+ const created = await createWatchlist({ name, symbols: parseSymbols(createSymbols) });
+ let finalWatchlist = created;
+ if (createSelectedInstruments.length) {
+ const result = await addSymbolsToWatchlist(created.id, {
+ symbols: [],
+ items: createSelectedInstruments.map((row) => ({
+ symbol: row.symbol,
+ exchange: row.exchange ?? (exchange.trim().toUpperCase() || null),
+ account_id: row.account_id ?? null,
+ broker_code: row.broker_code ?? null,
+ instrument_ref: instrumentFromSearch(row)
+ }))
+ });
+ finalWatchlist = result.watchlist;
+ }
+ setWatchlists((current) => upsertWatchlist(current, finalWatchlist));
+ setSelectedId(finalWatchlist.id);
+ resetCreateModal();
+ setNotice(`Created ${finalWatchlist.name}.`);
  } catch (caught) {
  fail(caught, "Could not create watchlist.");
  }
@@ -470,13 +606,13 @@ function create() {
  if (event.key === "ArrowDown") {
  event.preventDefault();
  setShowSuggestions(true);
- setActiveSuggestionIndex((current) => (current + 1) % suggestions.length);
+ setActiveSuggestionIndex((current) => Math.min(current < 0 ? 0 : current + 1, suggestions.length - 1));
  return;
  }
  if (event.key === "ArrowUp") {
  event.preventDefault();
  setShowSuggestions(true);
- setActiveSuggestionIndex((current) => (current <= 0 ? suggestions.length - 1 : current - 1));
+ setActiveSuggestionIndex((current) => Math.max(current - 1, 0));
  return;
  }
  if (event.key === "Enter" && showSuggestions) {
@@ -484,6 +620,35 @@ function create() {
  const selectedSuggestion = suggestions[Math.max(0, activeSuggestionIndex)];
  if (selectedSuggestion) {
  addSearchedSymbol(selectedSuggestion);
+ }
+ }
+ }
+
+ function handleCreateSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+ if (event.key === "Escape") {
+ setShowCreateSuggestions(false);
+ return;
+ }
+ if (!createSuggestions.length) {
+ return;
+ }
+ if (event.key === "ArrowDown") {
+ event.preventDefault();
+ setShowCreateSuggestions(true);
+ setCreateActiveSuggestionIndex((current) => Math.min(current < 0 ? 0 : current + 1, createSuggestions.length - 1));
+ return;
+ }
+ if (event.key === "ArrowUp") {
+ event.preventDefault();
+ setShowCreateSuggestions(true);
+ setCreateActiveSuggestionIndex((current) => Math.max(current - 1, 0));
+ return;
+ }
+ if (event.key === "Enter" && showCreateSuggestions) {
+ event.preventDefault();
+ const selectedSuggestion = createSuggestions[Math.max(0, createActiveSuggestionIndex)];
+ if (selectedSuggestion) {
+ addCreateSearchedSymbol(selectedSuggestion);
  }
  }
  }
@@ -596,39 +761,110 @@ function refreshSelectedPreset() {
  </p>
  </header>
 
- <div className="flex flex-col gap-8 min-[980px]:flex-row min-[980px]:gap-10">
- <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:w-[292px] min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-6">
- <div className="mb-4 flex items-center justify-between gap-3">
- <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your Watchlists</div>
- <button
- aria-label={showCreateForm ? "Close create watchlist form" : "Create watchlist"}
- className="flex size-8 items-center justify-center border border-transparent text-primary transition-colors duration-100 ease-out hover:border-primary disabled:opacity-40"
- disabled={isPending}
- onClick={() => setShowCreateForm((current) => !current)}
- type="button"
+ <Dialog
+ open={showCreateForm}
+ onOpenChange={(open) => {
+ if (open) {
+ setShowCreateForm(true);
+ } else {
+ resetCreateModal();
+ }
+ }}
  >
- {showCreateForm ? <X className="size-4" /> : <Plus className="size-4" />}
- </button>
- </div>
+ <DialogContent className="max-h-[calc(100vh-2.5rem)] max-w-6xl overflow-y-auto p-0">
+ <DialogHeader className="border-b border-border px-6 py-5 pr-16 min-[760px]:px-8">
+ <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">New Watchlist</div>
+ <DialogTitle className="mt-1 text-2xl font-semibold">Create Watchlist</DialogTitle>
+ </DialogHeader>
 
- {showCreateForm ? (
- <div className="mb-5 border-l-2 border-primary pl-3">
+ <div className="space-y-7 px-6 py-6 min-[760px]:px-8">
+ <div>
+ <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Watchlist Name</label>
  <Input
- className={`${inputBase} h-9 text-sm`}
+ className={`${inputBase} h-12 text-lg`}
  maxLength={128}
  onChange={(event) => setCreateName(event.target.value)}
- placeholder="Watchlist name"
+ placeholder="Name"
  value={createName}
  />
+ </div>
+
+ <div className="grid gap-8 min-[980px]:grid-cols-[minmax(0,1fr)_22rem]">
+ <div className="min-w-0">
+ <div className="grid gap-4 min-[760px]:grid-cols-[1fr_8rem]">
+ <div className="min-w-0">
+ <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Search Symbols</label>
+ <div>
+ <div className="relative">
+ <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
  <Input
- className={`${inputBase} mt-2 h-9 text-xs uppercase`}
- onChange={(event) => setCreateSymbols(event.target.value.toUpperCase())}
- placeholder="Optional seed: RELIANCE, TCS"
- value={createSymbols}
+ aria-activedescendant={createActiveSuggestionIndex >= 0 ? `create-watchlist-symbol-suggestion-${createActiveSuggestionIndex}` : undefined}
+ aria-autocomplete="list"
+ aria-controls="create-watchlist-symbol-suggestions"
+ aria-expanded={showCreateSuggestions && createSearch.trim() ? "true" : "false"}
+ className={`${inputBase} h-12 pl-7 pr-9 font-mono text-base uppercase`}
+ onChange={(event) => setCreateSearch(event.target.value.toUpperCase())}
+ onFocus={() => {
+ if (createSuggestions.length) setShowCreateSuggestions(true);
+ }}
+ onKeyDown={handleCreateSearchKeyDown}
+ placeholder="SEARCH SYMBOL, TRADING SYMBOL, COMPANY"
+ role="combobox"
+ value={createSearch}
  />
- <div className="mt-3 flex items-center justify-between gap-3">
- <div className="flex items-center gap-3">
- <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{createParsedSymbols.length} seed</span>
+ {createSearchLoading ? <Loader2 className="absolute right-0 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" /> : null}
+ </div>
+ {showCreateSuggestions && createSearch.trim() ? (
+ <div className="mt-3 max-h-[28rem] w-full overflow-auto border border-border bg-popover" id="create-watchlist-symbol-suggestions" role="listbox">
+ {createSuggestions.map((row, index) => {
+ const metadata = createSuggestionMetadata[row.symbol.trim().toUpperCase()];
+ return (
+ <button
+ aria-selected={index === createActiveSuggestionIndex}
+ className={[
+ "flex w-full items-center justify-between gap-5 border-b border-l-2 border-border px-4 py-3 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
+ index === createActiveSuggestionIndex ? "border-l-primary bg-[var(--accent-glow)] text-foreground" : "border-l-transparent bg-background/70 text-foreground"
+ ].join(" ")}
+ disabled={isPending}
+ id={`create-watchlist-symbol-suggestion-${index}`}
+ key={[row.symbol, row.exchange, row.trading_symbol, row.expiry].join(":")}
+ onClick={() => addCreateSearchedSymbol(row)}
+ onMouseEnter={() => setCreateActiveSuggestionIndex(index)}
+ role="option"
+ type="button"
+ >
+ <span className="flex min-w-0 items-center gap-4">
+ {metadata?.logo ? (
+ <img alt="" className="size-10 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
+ ) : (
+ <span className="flex size-10 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ {row.symbol.slice(0, 2)}
+ </span>
+ )}
+ <span className="min-w-0">
+ <span className="block font-mono text-base font-semibold">{row.symbol}</span>
+ <span className="block truncate text-xs text-muted-foreground">{[metadata?.company_name ?? row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" / ")}</span>
+ </span>
+ </span>
+ <span className="shrink-0 font-mono text-xs uppercase text-primary">{[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}</span>
+ </button>
+ );
+ })}
+ {!createSuggestions.length && !createSearchLoading ? <div className="px-3 py-3 text-sm text-muted-foreground">No matching instruments found.</div> : null}
+ </div>
+ ) : null}
+ </div>
+ </div>
+ <div>
+ <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Exchange</label>
+ <Input className={`${inputBase} h-12 font-mono text-base uppercase`} onChange={(event) => setExchange(event.target.value.toUpperCase())} placeholder="NSE" value={exchange} />
+ </div>
+ </div>
+ </div>
+
+ <div className="min-w-0 border-l-0 border-border min-[980px]:border-l min-[980px]:pl-8">
+ <div className="mb-2 flex items-center justify-between gap-3">
+ <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Selected Symbols</div>
  <button
  className="inline-flex items-center gap-1 border-b border-border pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70 disabled:opacity-30"
  disabled={isPending}
@@ -640,6 +876,55 @@ function refreshSelectedPreset() {
  </button>
  <input accept=".csv,text/csv" className="hidden" onChange={(event) => importCreateCsv(event.target.files?.[0] ?? null)} ref={createCsvInputRef} type="file" />
  </div>
+ <div className="min-h-72 border border-border">
+ {createParsedSymbols.length ? (
+ <div className="max-h-[32rem] divide-y divide-border overflow-auto">
+ {createSelectedInstruments.map((row) => {
+ const metadata = createSelectedMetadata[row.symbol.trim().toUpperCase()] ?? createSuggestionMetadata[row.symbol.trim().toUpperCase()];
+ const displayName = metadata?.company_name ?? row.name ?? row.trading_symbol ?? row.symbol;
+ return (
+ <div className="flex items-start justify-between gap-4 px-4 py-3" key={createInstrumentKey(row)}>
+ <span className="flex min-w-0 items-center gap-3">
+ {metadata?.logo ? (
+ <img alt="" className="size-9 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
+ ) : (
+ <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ {displayName.slice(0, 2)}
+ </span>
+ )}
+ <span className="block truncate text-sm font-semibold text-foreground">{displayName}</span>
+ </span>
+ <button aria-label={`Remove ${displayName}`} className="flex size-8 shrink-0 items-center justify-center text-muted-foreground transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)] hover:text-destructive" onClick={() => removeCreateSearchedSymbol(row)} type="button">
+ <X className="size-4" />
+ </button>
+ </div>
+ );
+ })}
+ {parseSymbols(createSymbols).map((symbol) => (
+ <div className="flex items-center justify-between gap-4 px-4 py-3" key={`csv:${symbol}`}>
+ <span className="flex min-w-0 items-center gap-3">
+ <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ {symbol.slice(0, 2)}
+ </span>
+ <span className="block truncate text-sm font-semibold text-foreground">{symbol}</span>
+ </span>
+ </div>
+ ))}
+ </div>
+ ) : (
+ <div className="px-4 py-12 text-sm text-muted-foreground">Search and select symbols to seed this watchlist.</div>
+ )}
+ </div>
+ </div>
+ </div>
+ </div>
+
+ <DialogFooter className="flex-row items-center justify-between gap-4 border-t border-border px-6 py-5 min-[760px]:px-8">
+ <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{createParsedSymbols.length} symbols selected</span>
+ <div className="flex items-center gap-3">
+ <button className="border-b border-border pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70 disabled:opacity-40" disabled={isPending} onClick={resetCreateModal} type="button">
+ Cancel
+ </button>
  <button
  className="border-b border-primary pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-30"
  disabled={isPending || !createName.trim()}
@@ -649,44 +934,23 @@ function refreshSelectedPreset() {
  Create
  </button>
  </div>
- </div>
- ) : null}
+ </DialogFooter>
+ </DialogContent>
+ </Dialog>
 
- <div className="mt-8 border-t border-border pt-5">
- <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Index Presets</div>
- <Input
- className={`${inputBase} h-9 text-xs`}
- onChange={(event) => setPresetQuery(event.target.value)}
- placeholder="Search Nifty indices"
- value={presetQuery}
- />
- <div className="mt-3 space-y-2">
- {presetResults.map((item) => (
- <div className="border-l-2 border-transparent px-3 py-2 transition-colors duration-100 ease-out hover:border-primary hover:bg-[var(--accent-glow)]" key={item.id}>
- <div className="flex items-start justify-between gap-3">
- <div className="min-w-0">
- <div className="truncate text-sm font-medium text-foreground">{item.name}</div>
- <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
- {[item.trading_index_name, `${item.constituent_count} symbols`, item.sync_status].filter(Boolean).join(" / ")}
- </div>
- </div>
+ <div className="flex flex-col gap-8 min-[980px]:flex-row min-[980px]:gap-10">
+ <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:w-[292px] min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-6">
+ <div className="mb-4 flex items-center justify-between gap-3">
+ <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your Watchlists</div>
  <button
- className="border-b border-primary pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-default disabled:opacity-40"
- disabled={isPending || item.is_added}
- onClick={() => addPreset(item)}
+ aria-label="Create watchlist"
+ className="flex size-8 items-center justify-center border border-transparent text-primary transition-colors duration-100 ease-out hover:border-primary disabled:opacity-40"
+ disabled={isPending}
+ onClick={() => setShowCreateForm(true)}
  type="button"
  >
- {item.is_added ? "Added" : "Add"}
+ <Plus className="size-4" />
  </button>
- </div>
- </div>
- ))}
- {!presetResults.length ? (
- <div className="px-3 py-3 text-sm text-muted-foreground">
- {presetLoading ? "Loading preset indices..." : "No matching preset indices found."}
- </div>
- ) : null}
- </div>
  </div>
 
  <nav aria-label="Watchlists" className="flex flex-col">
@@ -727,6 +991,43 @@ function refreshSelectedPreset() {
  })}
  {!watchlists.length ? <div className="border-l-2 border-primary px-3 py-4 text-sm text-muted-foreground">No watchlists yet.</div> : null}
  </nav>
+
+ <div className="mt-8 border-t border-border pt-5">
+ <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Index Presets</div>
+ <Input
+ className={`${inputBase} h-9 text-xs`}
+ onChange={(event) => setPresetQuery(event.target.value)}
+ placeholder="Search Nifty indices"
+ value={presetQuery}
+ />
+ <div className="mt-3 space-y-2">
+ {presetResults.map((item) => (
+ <div className="border-l-2 border-transparent px-3 py-2 transition-colors duration-100 ease-out hover:border-primary hover:bg-[var(--accent-glow)]" key={item.id}>
+ <div className="flex items-start justify-between gap-3">
+ <div className="min-w-0">
+ <div className="truncate text-sm font-medium text-foreground">{item.name}</div>
+ <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+ {[item.trading_index_name, `${item.constituent_count} symbols`, item.sync_status].filter(Boolean).join(" / ")}
+ </div>
+ </div>
+ <button
+ className="border-b border-primary pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-default disabled:opacity-40"
+ disabled={isPending || item.is_added}
+ onClick={() => addPreset(item)}
+ type="button"
+ >
+ {item.is_added ? "Added" : "Add"}
+ </button>
+ </div>
+ </div>
+ ))}
+ {!presetResults.length ? (
+ <div className="px-3 py-3 text-sm text-muted-foreground">
+ {presetLoading ? "Loading preset indices..." : "No matching preset indices found."}
+ </div>
+ ) : null}
+ </div>
+ </div>
  </aside>
 
  <main className="min-w-0 flex-1">
@@ -845,7 +1146,7 @@ function refreshSelectedPreset() {
  aria-selected={index === activeSuggestionIndex}
  className={[
  "flex w-full items-center justify-between gap-4 border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
- index === activeSuggestionIndex ? "border-l-primary bg-[var(--accent-glow)] text-foreground" : "border-l-transparent text-foreground"
+ index === activeSuggestionIndex ? "border-l-primary bg-[var(--accent-glow)] text-foreground" : "border-l-transparent bg-background/70 text-foreground"
  ].join(" ")}
  disabled={isPending}
  id={`watchlist-symbol-suggestion-${index}`}
