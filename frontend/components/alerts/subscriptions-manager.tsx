@@ -226,8 +226,8 @@ export function SubscriptionsManager({
  <div className="border border-border p-4">
  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
  <div>
- <div className="text-sm font-bold">Manasija websocket subscriptions</div>
- <div className="mt-1 text-xs text-muted-foreground">
+ <div className="type-section-title">Manasija websocket subscriptions</div>
+ <div className="type-help mt-1 text-muted-foreground">
  Backend worker status: {alphaWsConfig.status}{alphaWsConfig.last_event_at ? ` · last event ${new Date(alphaWsConfig.last_event_at).toLocaleTimeString("en-IN")}` : ""}
  </div>
  </div>
@@ -238,7 +238,7 @@ export function SubscriptionsManager({
  {alphaWsConfig.last_error ? <div className="mb-3 border-l-2 border-destructive px-3 py-2 text-sm text-destructive">{alphaWsConfig.last_error}</div> : null}
  <div className="grid gap-5 min-[980px]:grid-cols-3">
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Products from account</div>
+ <div className="type-step-eyebrow">Products from account</div>
  <div className="mt-3 grid gap-2">
  {enabledAddons.map((addon) => (
  <Label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={addon.product}>
@@ -249,23 +249,23 @@ export function SubscriptionsManager({
  />
  </Label>
  ))}
- {!enabledAddons.length ? <div className="text-sm text-muted-foreground">No websocket addons were found for the saved key.</div> : null}
+ {!enabledAddons.length ? <div className="type-body text-muted-foreground">No websocket addons were found for the saved key.</div> : null}
  </div>
  </div>
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Symbol scope</div>
+ <div className="type-step-eyebrow">Symbol scope</div>
  <div className="mt-3 flex flex-wrap gap-2 text-sm">
  <Button onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alert_subscriptions", full_market: false }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "alert_subscriptions" ? "default" : "outline"}>Alert subscriptions only</Button>
  <Button onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alerts_and_watchlists", full_market: false }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "alerts_and_watchlists" ? "default" : "outline"}>Alert subscriptions + watchlists</Button>
  <Button disabled={!alphaWsConfig.full_market_allowed} onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "full_market", full_market: true }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "full_market" ? "default" : "outline"}>Full market</Button>
  </div>
- <div className="mt-3 text-xs text-muted-foreground">
+ <div className="type-help mt-3 text-muted-foreground">
  Effective: {alphaWsConfig.effective_products.length} products / {alphaWsConfig.scope_mode === "full_market" ? "full-feed" : `${alphaWsConfig.effective_symbols.length} symbols`}
  </div>
- {fullMarketProducts.length ? <div className="mt-1 text-xs text-muted-foreground">Full-market tier: {fullMarketProducts.map((item) => item.product).join(", ")}</div> : null}
+ {fullMarketProducts.length ? <div className="type-meta mt-1">Full-market tier: {fullMarketProducts.map((item) => item.product).join(", ")}</div> : null}
  </div>
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Watchlists</div>
+ <div className="type-step-eyebrow">Watchlists</div>
  <Label className="mt-3 flex items-center gap-2 text-sm">
  <Checkbox
  checked={alphaWsConfig.include_all_watchlists}
@@ -285,7 +285,7 @@ export function SubscriptionsManager({
  />
  </Label>
  ))}
- {!watchlists.length ? <div className="px-3 py-3 text-sm text-muted-foreground">No watchlists available.</div> : null}
+ {!watchlists.length ? <div className="type-body px-3 py-3 text-muted-foreground">No watchlists available.</div> : null}
  </div>
  </div>
  </div>
@@ -293,8 +293,8 @@ export function SubscriptionsManager({
  <div className=" border border-border p-4">
  <div className="mb-3 flex items-center justify-between gap-3">
  <div>
- <div className="text-sm font-bold">Add subscribed symbols</div>
- <div className="text-xs text-muted-foreground">Search the selected broker instrument cache and pick a symbol to subscribe.</div>
+ <div className="type-section-title">Add subscribed symbols</div>
+ <div className="type-help text-muted-foreground">Search the selected broker instrument cache and pick a symbol to subscribe.</div>
  </div>
  <Button disabled={isPending || !selectedIds.length} onClick={removeSelected} type="button" variant="outline">
  Remove selected
@@ -355,18 +355,18 @@ export function SubscriptionsManager({
  >
  <span className="min-w-0">
  <span className="block font-mono text-sm font-semibold">{row.symbol}</span>
- <span className="block truncate text-xs text-muted-foreground">{[row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" / ")}</span>
+ <span className="type-meta block truncate">{[row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" / ")}</span>
  </span>
- <span className="shrink-0 font-mono text-xs uppercase text-primary">{[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}</span>
+ <span className="type-meta shrink-0 font-mono uppercase text-primary">{[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}</span>
  </Button>
  ))}
- {!suggestions.length && !searchLoading ? <div className="px-3 py-3 text-sm text-muted-foreground">No matching instruments found.</div> : null}
+ {!suggestions.length && !searchLoading ? <div className="type-body px-3 py-3 text-muted-foreground">No matching instruments found.</div> : null}
  </div>
  ) : null}
  </div>
  <Input className={`${inputBase} h-11 font-mono text-sm uppercase`} onChange={(event) => setExchange(event.target.value.toUpperCase())} placeholder="NSE" value={exchange} />
  </div>
- {!accounts.length ? <div className="mt-3 text-xs text-muted-foreground">Connect a broker account before adding subscriptions.</div> : null}
+ {!accounts.length ? <div className="type-help mt-3 text-muted-foreground">Connect a broker account before adding subscriptions.</div> : null}
  </div>
  <div className="grid gap-3">
  {items.map((item) => (
@@ -377,18 +377,18 @@ export function SubscriptionsManager({
  onCheckedChange={(checked) => toggleSelected(item.id, Boolean(checked))}
  />
  <div>
- <div className="text-sm font-bold">{item.symbol}</div>
- <div className="text-xs text-muted-foreground">
+ <div className="type-section-title">{item.symbol}</div>
+ <div className="type-meta text-muted-foreground">
  {item.exchange ?? "-"} · {item.broker_code ?? "-"} · {item.source_kind}
  </div>
  </div>
  </div>
- <div className="text-xs text-muted-foreground">
+ <div className="type-meta">
  {item.last_received_at ? `Last tick ${new Date(item.last_received_at).toLocaleTimeString()}` : "Awaiting tick"}
  </div>
  </Label>
  ))}
- {!items.length ? <div className="text-sm text-muted-foreground">No subscribed symbols yet.</div> : null}
+ {!items.length ? <div className="type-body text-muted-foreground">No subscribed symbols yet.</div> : null}
  </div>
  </div>
  );

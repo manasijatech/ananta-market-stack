@@ -632,8 +632,39 @@ function targetScopeSummary(targeting: AlertWorkflowTargeting): string {
  return remainder > 0 ? `${entries.length} targets · ${preview} +${remainder} more` : `${entries.length} targets · ${preview}`;
 }
 
-function HelpText({ children }: { children: React.ReactNode }) {
- return <div className="text-xs text-muted-foreground">{children}</div>;
+function HelpText({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+ return <div className={["type-help text-muted-foreground", className].filter(Boolean).join(" ")}>{children}</div>;
+}
+
+function FieldLabel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+ return <span className={["type-label", className].filter(Boolean).join(" ")}>{children}</span>;
+}
+
+function SectionTitle({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+ return <h3 className={["type-section-title", className].filter(Boolean).join(" ")}>{children}</h3>;
+}
+
+function StepHeader({
+ step,
+ title,
+ description,
+ action
+}: {
+ step: string;
+ title: string;
+ description: React.ReactNode;
+ action?: React.ReactNode;
+}) {
+ return (
+ <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+ <div className="max-w-[760px]">
+ <div className="type-step-eyebrow">{step}</div>
+ <h2 className="type-step-title mt-1">{title}</h2>
+ <HelpText className="mt-2">{description}</HelpText>
+ </div>
+ {action}
+ </div>
+ );
 }
 
 export function WorkflowEditor({
@@ -702,11 +733,19 @@ initialWorkflow,
  const [activeDays, setActiveDays] = useState<string[]>(initialActivePeriod.days.length ? initialActivePeriod.days : defaultActivePeriod.days);
  const [activeSessionLabel, setActiveSessionLabel] = useState(initialActivePeriod.sessions[0]?.label ?? "Regular market");
  const [activeSessionStart, setActiveSessionStart] = useState(initialActivePeriod.sessions[0]?.start ?? "09:15");
- const [activeSessionEnd, setActiveSessionEnd] = useState(initialActivePeriod.sessions[0]?.end ?? "15:30");
- const [activeExchanges, setActiveExchanges] = useState(listCsv(initialActivePeriod.exchanges));
- const [activeExchangeTypes, setActiveExchangeTypes] = useState(listCsv(initialActivePeriod.exchange_types));
- const [activeSegments, setActiveSegments] = useState(listCsv(initialActivePeriod.segments));
- const [activeInstrumentTypes, setActiveInstrumentTypes] = useState(listCsv(initialActivePeriod.instrument_types));
+const [activeSessionEnd, setActiveSessionEnd] = useState(initialActivePeriod.sessions[0]?.end ?? "15:30");
+const [activeExchanges, setActiveExchanges] = useState(listCsv(initialActivePeriod.exchanges));
+const [activeExchangeTypes, setActiveExchangeTypes] = useState(listCsv(initialActivePeriod.exchange_types));
+const [activeSegments, setActiveSegments] = useState(listCsv(initialActivePeriod.segments));
+const [activeInstrumentTypes, setActiveInstrumentTypes] = useState(listCsv(initialActivePeriod.instrument_types));
+ const [showAdvancedMarketScope, setShowAdvancedMarketScope] = useState(
+ Boolean(
+ initialActivePeriod.exchanges.length ||
+ initialActivePeriod.exchange_types.length ||
+ initialActivePeriod.segments.length ||
+ initialActivePeriod.instrument_types.length
+ )
+ );
  const [conditions, setConditions] = useState<AlertCondition[]>(
  initialWorkflow?.workflow_dsl.conditions.length
  ? initialWorkflow.workflow_dsl.conditions
@@ -739,12 +778,14 @@ initialWorkflow,
  const [feedIncludeAllWatchlists, setFeedIncludeAllWatchlists] = useState(Boolean(initialFeedTrigger?.include_all_watchlists));
  const [feedProvider, setFeedProvider] = useState<LlmProvider | "">(initialFeedTrigger?.provider ?? firstLlmProvider?.provider ?? "");
  const [feedModelId, setFeedModelId] = useState(initialFeedTrigger?.model_id ?? firstLlmModel?.model_id ?? "");
- const [feedTemperature, setFeedTemperature] = useState(String(initialFeedTrigger?.temperature ?? 0.1));
- const [feedMaxTokens, setFeedMaxTokens] = useState(String(initialFeedTrigger?.max_completion_tokens ?? 400));
- const [feedTimeout, setFeedTimeout] = useState(String(initialFeedTrigger?.timeout_seconds ?? 25));
- const [llmPromptTab, setLlmPromptTab] = useState<"prompt" | "preview">("prompt");
- const [llmFeedback, setLlmFeedback] = useState("");
- const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(null);
+const [feedTemperature, setFeedTemperature] = useState(String(initialFeedTrigger?.temperature ?? 0.1));
+const [feedMaxTokens, setFeedMaxTokens] = useState(String(initialFeedTrigger?.max_completion_tokens ?? 400));
+const [feedTimeout, setFeedTimeout] = useState(String(initialFeedTrigger?.timeout_seconds ?? 25));
+const [llmPromptTab, setLlmPromptTab] = useState<"prompt" | "preview">("prompt");
+ const [llmSectionExpanded, setLlmSectionExpanded] = useState(false);
+ const [engineSectionExpanded, setEngineSectionExpanded] = useState(false);
+const [llmFeedback, setLlmFeedback] = useState("");
+const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(null);
  const [llmSuggestionQuery, setLlmSuggestionQuery] = useState("");
  const [llmSuggestionRange, setLlmSuggestionRange] = useState<{ start: number; end: number } | null>(null);
  const [showLlmSuggestions, setShowLlmSuggestions] = useState(false);
@@ -785,10 +826,16 @@ initialWorkflow,
  const symbolWrapRef = useRef<HTMLDivElement | null>(null);
  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
 
- const selectedAccount = accounts.find((item) => item.id === accountId);
- const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId) ?? null;
- const selectedPreset = presets.find((item) => String(item.id ?? "") === selectedPresetId) ?? null;
- const activeInstrument = useMemo<InstrumentRef>(
+const selectedAccount = accounts.find((item) => item.id === accountId);
+const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId) ?? null;
+const selectedPreset = presets.find((item) => String(item.id ?? "") === selectedPresetId) ?? null;
+ const advancedMarketScopeCount = [
+ activeExchanges,
+ activeExchangeTypes,
+ activeSegments,
+ activeInstrumentTypes
+ ].filter((value) => value.trim()).length;
+const activeInstrument = useMemo<InstrumentRef>(
  () => ({
  ...instrumentRef,
  symbol: symbol || instrumentRef.symbol || null,
@@ -1385,6 +1432,11 @@ initialWorkflow,
 
  function save() {
  setError("");
+ const saveBlockReason = getSaveBlockReason();
+ if (saveBlockReason) {
+ setError(saveBlockReason);
+ return;
+ }
  startTransition(async () => {
  try {
  const payload = workflowPayload();
@@ -1397,6 +1449,45 @@ initialWorkflow,
  setError(caught instanceof Error ? caught.message : "Could not save workflow.");
  }
  });
+ }
+
+ function getSaveBlockReason() {
+ if (!name.trim()) {
+ return "Enter a workflow name before creating this workflow.";
+ }
+ if (workflowType === "alpha_feed") {
+ if (!feedProducts.length) {
+ return "Select at least one feed product before creating this workflow.";
+ }
+ if (!feedConditionPrompt.trim()) {
+ return "Enter a natural-language trigger condition before creating this workflow.";
+ }
+ if (!feedProvider) {
+ return "Select a trigger LLM provider before creating this workflow.";
+ }
+ if (!feedModelId) {
+ return "Select a trigger LLM model before creating this workflow.";
+ }
+ if (announcementsEnabled && feedCategoryFilterEnabled && !feedAnnouncementCategories.length) {
+ return "Select at least one announcement category, or switch back to all categories.";
+ }
+ return null;
+ }
+ if (targetMode === "single_symbol") {
+ return symbol.trim() ? null : "Select a symbol target before creating this workflow.";
+ }
+ if (targetMode === "symbol_list") {
+ return targetEntries.length > 0 ? null : "Add at least one symbol to the target list before creating this workflow.";
+ }
+ if (dynamicUniverseKind === "curated_preset") {
+ return selectedPresetId ? null : "Select a preset universe before creating this workflow.";
+ }
+ if (dynamicUniverseKind === "metadata_filter") {
+ return metadataExchange.trim() || metadataInstrumentType.trim() || metadataSegmentContains.trim()
+ ? null
+ : "Add at least one metadata filter before creating this workflow.";
+ }
+ return selectedWatchlistId ? null : "Select a watchlist before creating this workflow.";
  }
 
  function buildPreviewTick(): Record<string, unknown> {
@@ -1674,6 +1765,7 @@ initialWorkflow,
  : dynamicUniverseKind === "metadata_filter"
  ? Boolean(metadataExchange.trim() || metadataInstrumentType.trim() || metadataSegmentContains.trim())
  : Boolean(selectedWatchlistId);
+ const saveBlockReason = getSaveBlockReason();
  const currentTemplatesMatchSuggestion = titleTemplate === suggestedCopy.title && messageTemplate === suggestedCopy.message;
  const selectedLlmProvider = llmProviders.find((item) => item.provider === llmProvider);
  const selectedLlmModels = selectedLlmProvider?.models.filter((model) => model.is_enabled) ?? [];
@@ -1717,69 +1809,81 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  return (
  <div className="grid gap-6">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
- {matchPreview ? <div className=" border border-border px-4 py-3 text-sm text-muted-foreground">{matchPreview}</div> : null}
+{matchPreview ? <div className="type-body border border-border px-4 py-3 text-muted-foreground">{matchPreview}</div> : null}
 
- <div className=" border border-border p-4">
- <div className="mb-3 text-sm font-bold">Workflow identity</div>
- <div className="grid gap-3 min-[900px]:grid-cols-2">
- <div className="grid gap-2">
- <Input onChange={(event) => setName(event.target.value)} placeholder="Workflow name" title="Use a short trading-oriented name. Example: RELIANCE breakout above 1430." value={name} />
- <HelpText>This is the name shown in workflow lists and alert history.</HelpText>
- </div>
- <div className="grid gap-2">
- <Input onChange={(event) => setDescription(event.target.value)} placeholder="Description" title="Optional human note about why this workflow exists." value={description} />
- <HelpText>Use this for strategy intent, not execution logic.</HelpText>
- </div>
- </div>
- <div className="mt-4 grid gap-2 min-[760px]:grid-cols-2">
- <Label className="grid gap-1 text-sm">
- <span className="text-xs font-bold uppercase text-muted-foreground">Workflow type</span>
- <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
+ <div className={workflowType === "market_data" ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]" : "grid gap-6"}>
+ <div className="grid gap-6">
+ <div className="border border-border p-4">
+ <StepHeader
+ step="Step 1"
+ title="Workflow basics"
+ description="Set the workflow identity first so the trigger mode and naming are clear before you configure the market window or targets."
+ />
+ <div className="grid items-start gap-3 min-[980px]:grid-cols-[240px_minmax(0,420px)]">
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>Workflow type</FieldLabel>
+ <Select className="h-10 max-w-full border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
  <option value="market_data">Broker market data trigger</option>
  <option value="alpha_feed">Manasija websocket feed trigger</option>
  </Select>
+ <HelpText>
+ {workflowType === "alpha_feed"
+ ? "This workflow analyzes stored Manasija websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
+ : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
+ </HelpText>
  </Label>
- <div className="text-xs text-muted-foreground">
- {workflowType === "alpha_feed" ? "This workflow analyzes stored Manasija websocket items from your configured feed symbols, watchlists, presets, or full-market tier." : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>Workflow name</FieldLabel>
+ <Input onChange={(event) => setName(event.target.value)} placeholder="Workflow name" title="Use a short trading-oriented name. Example: RELIANCE breakout above 1430." value={name} />
+ <HelpText>This is the name shown in workflow lists and alert history.</HelpText>
+ </Label>
  </div>
- </div>
+ <Label className="mt-3 grid max-w-[760px] gap-2 text-sm">
+ <FieldLabel>Description</FieldLabel>
+ <Input onChange={(event) => setDescription(event.target.value)} placeholder="Description" title="Optional human note about why this workflow exists." value={description} />
+ <HelpText>Use this for strategy intent, not execution logic.</HelpText>
+ </Label>
  </div>
 
- {workflowType === "market_data" ? (
+{workflowType === "market_data" ? (
  <div className="border border-border p-4">
- <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
- <div>
- <div className="text-sm font-bold">Active market period</div>
- <HelpText>Broker market-data workflows ignore ticks outside this window, preventing stale post-close quotes from creating alerts. Scope fields are optional; leave them empty to apply the window to every exchange and segment in this workflow.</HelpText>
- </div>
- <Label className="flex items-center gap-2 text-sm">
+ <StepHeader
+ step="Step 2"
+ title="Market window"
+ description="Broker market-data workflows ignore ticks outside this window, preventing stale post-close quotes from creating alerts."
+ action={<Label className="flex items-center gap-2 text-sm">
  <Checkbox checked={activePeriodEnabled} onCheckedChange={(checked) => setActivePeriodEnabled(Boolean(checked))} />
  Enforce active period
+ </Label>}
+ />
+ <div className="grid items-start gap-3 min-[980px]:grid-cols-[minmax(0,320px)_120px_120px]">
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>Timezone</FieldLabel>
+ <Input onChange={(event) => setActiveTimezone(event.target.value)} placeholder="Asia/Kolkata" value={activeTimezone} />
+ <HelpText>Default is `Asia/Kolkata` for NSE/BSE market hours.</HelpText>
+ </Label>
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>Start</FieldLabel>
+ <Input onChange={(event) => setActiveSessionStart(event.target.value)} placeholder="09:15" value={activeSessionStart} />
+ <HelpText>Session start time.</HelpText>
+ </Label>
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>End</FieldLabel>
+ <Input onChange={(event) => setActiveSessionEnd(event.target.value)} placeholder="15:30" value={activeSessionEnd} />
+ <HelpText>Session end time.</HelpText>
  </Label>
  </div>
- <div className="grid gap-3 min-[900px]:grid-cols-[1fr_120px_120px]">
- <div className="grid gap-2">
- <Input onChange={(event) => setActiveTimezone(event.target.value)} placeholder="Asia/Kolkata" value={activeTimezone} />
- <HelpText>Timezone. Default is `Asia/Kolkata` for NSE/BSE market hours.</HelpText>
- </div>
- <div className="grid gap-2">
- <Input onChange={(event) => setActiveSessionStart(event.target.value)} placeholder="09:15" value={activeSessionStart} />
- <HelpText>Start.</HelpText>
- </div>
- <div className="grid gap-2">
- <Input onChange={(event) => setActiveSessionEnd(event.target.value)} placeholder="15:30" value={activeSessionEnd} />
- <HelpText>End.</HelpText>
- </div>
- </div>
- <div className="mt-3 grid gap-3 min-[900px]:grid-cols-[1fr_1fr]">
- <div className="grid gap-2">
+ <div className="mt-3 grid items-start gap-3 min-[980px]:grid-cols-[minmax(0,320px)_1fr]">
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>Session label</FieldLabel>
  <Input onChange={(event) => setActiveSessionLabel(event.target.value)} placeholder="Regular market" value={activeSessionLabel} />
- <HelpText>Session label saved with runtime evaluation metadata.</HelpText>
- </div>
- <div className="grid gap-2">
- <div className="flex flex-wrap gap-2">
+ <HelpText>Saved with runtime evaluation metadata.</HelpText>
+ </Label>
+ <div className="grid content-start self-start gap-2">
+ <FieldLabel>Days</FieldLabel>
+ <div className="flex flex-wrap gap-3">
  {dayOptions.map(([day, label]) => (
- <Label className="flex items-center gap-1 border border-border px-2 py-1 text-xs" key={day}>
+ <Label className="flex items-center gap-1.5 text-sm" key={day}>
  <Checkbox checked={activeDays.includes(day)} onCheckedChange={(checked) => toggleActiveDay(day, Boolean(checked))} />
  {label}
  </Label>
@@ -1788,33 +1892,55 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <HelpText>Common default is Monday-Friday.</HelpText>
  </div>
  </div>
- <div className="mt-3 grid gap-3 min-[900px]:grid-cols-4">
- <div className="grid gap-2">
+ <div className="mt-4 border border-border p-3">
+ <div className="flex flex-wrap items-center justify-between gap-3">
+ <div>
+ <SectionTitle>Advanced scope</SectionTitle>
+ <HelpText>Optional filters for restricting the active period to specific markets and instruments.</HelpText>
+ </div>
+ <Button
+ onClick={() => setShowAdvancedMarketScope((current) => !current)}
+ size="sm"
+ type="button"
+ variant="secondary"
+ >
+ {showAdvancedMarketScope ? "Hide optional scope" : `Show optional scope${advancedMarketScopeCount ? ` (${advancedMarketScopeCount})` : ""}`}
+ </Button>
+ </div>
+ {showAdvancedMarketScope ? (
+ <div className="mt-3 grid gap-3 min-[980px]:grid-cols-2">
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Exchanges</FieldLabel>
  <Input className="font-mono uppercase" onChange={(event) => setActiveExchanges(event.target.value.toUpperCase())} placeholder="NSE, BSE" value={activeExchanges} />
  <HelpText>Optional exchange scope.</HelpText>
- </div>
- <div className="grid gap-2">
+ </Label>
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Exchange types</FieldLabel>
  <Input className="font-mono uppercase" onChange={(event) => setActiveExchangeTypes(event.target.value.toUpperCase())} placeholder="NSE, BSE, NFO" value={activeExchangeTypes} />
  <HelpText>Optional exchange-type scope.</HelpText>
- </div>
- <div className="grid gap-2">
+ </Label>
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Segments</FieldLabel>
  <Input className="font-mono uppercase" onChange={(event) => setActiveSegments(event.target.value.toUpperCase())} placeholder="NSE, NFO-OPT" value={activeSegments} />
  <HelpText>Optional broker segment scope from synced instruments.</HelpText>
- </div>
- <div className="grid gap-2">
+ </Label>
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Instrument types</FieldLabel>
  <Input className="font-mono uppercase" onChange={(event) => setActiveInstrumentTypes(event.target.value.toUpperCase())} placeholder="EQ, FUT, CE, PE" value={activeInstrumentTypes} />
  <HelpText>Optional instrument-type scope.</HelpText>
- </div>
- </div>
+ </Label>
  </div>
  ) : null}
+ </div>
+ </div>
+) : null}
 
  {workflowType === "alpha_feed" ? (
  <div className="border border-border p-4">
- <div className="mb-3 text-sm font-bold">Feed trigger</div>
+ <SectionTitle className="mb-3">Feed trigger</SectionTitle>
  <div className="grid gap-5 min-[980px]:grid-cols-3">
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Products</div>
+ <FieldLabel>Products</FieldLabel>
  <div className="mt-3 grid gap-2">
  {alphaFeedProducts.map((product) => (
  <Label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={product}>
@@ -1825,7 +1951,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Feed scope</div>
+ <FieldLabel>Feed scope</FieldLabel>
  <Select className="mt-3 h-10 w-full border border-input bg-background px-3 text-sm" onChange={(event) => setFeedSourceScope(event.target.value as typeof feedSourceScope)} value={feedSourceScope}>
  <option value="current_alpha_subscription">Current configured Alpha subscription</option>
  <option value="watchlists">Specific watchlists</option>
@@ -1836,7 +1962,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  {announcementsEnabled ? (
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Announcement categories</div>
+ <FieldLabel>Announcement categories</FieldLabel>
  <div className="mt-3 grid gap-2">
  <div className="flex flex-wrap gap-2">
  <Button onClick={useAllAnnouncementCategories} type="button" variant={!feedCategoryFilterEnabled ? "default" : "outline"}>All categories</Button>
@@ -1847,8 +1973,8 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  ) : (
  <>
  <div className="flex flex-wrap gap-2">
- <Button onClick={selectAllAnnouncementCategories} type="button" variant="outline">Select all</Button>
- <Button onClick={clearAnnouncementCategorySelection} type="button" variant="ghost">Clear all</Button>
+ <Button onClick={selectAllAnnouncementCategories} type="button" variant="secondary">Select all</Button>
+ <Button onClick={clearAnnouncementCategorySelection} type="button" variant="secondary">Clear all</Button>
  </div>
  <Input onChange={(event) => setFeedCategoryQuery(event.target.value)} placeholder="Filter categories" value={feedCategoryQuery} />
  <Label className="flex items-center gap-2 text-sm">
@@ -1862,7 +1988,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <Checkbox checked={feedAnnouncementCategories.includes(category)} onCheckedChange={(checked) => toggleFeedAnnouncementCategory(category, Boolean(checked))} />
  </Label>
  ))}
- {!filteredAnnouncementCategories.length ? <div className="px-3 py-2 text-sm text-muted-foreground">No categories available for the current filter.</div> : null}
+{!filteredAnnouncementCategories.length ? <div className="type-help px-3 py-2 text-muted-foreground">No categories available for the current filter.</div> : null}
  </div>
  {!feedAnnouncementCategories.length ? <HelpText>Select at least one category, or switch back to `All categories`.</HelpText> : null}
  </>
@@ -1890,7 +2016,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  ) : null}
  {feedSourceScope === "preset_lists" ? (
  <div className="grid gap-2">
- <div className="text-xs font-bold uppercase text-muted-foreground">Preset lists</div>
+ <FieldLabel>Preset lists</FieldLabel>
  <div className="max-h-44 overflow-auto border border-border">
  {presets.map((preset) => {
  const id = String(preset.id ?? "");
@@ -1905,7 +2031,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : null}
  <div className="grid gap-2">
- <div className="text-xs font-bold uppercase text-muted-foreground">Trigger LLM</div>
+ <FieldLabel>Trigger LLM</FieldLabel>
  <div className="grid gap-2">
  <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")} value={feedProvider}>
  <option value="">Select provider</option>
@@ -1918,8 +2044,10 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
  <div className="grid gap-2">
- <Label className="text-xs font-bold uppercase text-muted-foreground">Natural-language trigger condition</Label>
+ <Label className="grid gap-2">
+ <FieldLabel>Natural-language trigger condition</FieldLabel>
  <Textarea className="min-h-28 border border-input bg-background p-3 text-sm" onChange={(event) => setFeedConditionPrompt(event.target.value)} placeholder="Example: Alert me when the item is about a confirmed order win, large contract, or new customer mandate." value={feedConditionPrompt} />
+ </Label>
  <HelpText>The trigger model returns strict JSON with match, reason, confidence, and matched terms. Optional post-trigger LLM analysis below still runs separately.</HelpText>
  </div>
  <div className="grid gap-3 min-[720px]:grid-cols-3">
@@ -1930,11 +2058,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : (
  <div className=" border border-border p-4">
- <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
- <div>
- <div className="text-sm font-bold">Target selection</div>
- <HelpText>The workflow can target one symbol today or a shared symbol list under the same rules. Preset universes are reserved for the next layer.</HelpText>
- </div>
+ <StepHeader
+ step="Step 3"
+ title="Target"
+ description="The workflow can target one symbol today or a shared symbol list under the same rules. Preset universes are reserved for the next layer."
+ action={<Label className="grid max-w-[280px] gap-2 text-sm">
+ <FieldLabel>Target mode</FieldLabel>
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => {
@@ -1953,9 +2082,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <option value="symbol_list">Symbol list</option>
  <option value="preset_universe">Preset universe</option>
  </Select>
- </div>
- <div className="grid gap-3 min-[900px]:grid-cols-[1.3fr_1fr_160px]">
- <div className="grid gap-2">
+ </Label>}
+ />
+ <div className="grid gap-3">
+ <Label className="grid max-w-[420px] gap-2 text-sm">
+ <FieldLabel>Broker account</FieldLabel>
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => setAccountId(event.target.value)}
@@ -1968,8 +2099,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  ))}
  </Select>
  <HelpText>The broker account decides which instrument universe and quote API will be used.</HelpText>
- </div>
+ </Label>
+ <div className="grid gap-3 min-[980px]:grid-cols-[minmax(0,1fr)_140px]">
  <div className="relative grid gap-2" ref={symbolWrapRef}>
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Search symbol</FieldLabel>
  <Input
  onChange={(event) => {
  setSymbol(event.target.value.toUpperCase());
@@ -1986,6 +2120,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  title="Start typing to search the synced broker instrument master for live suggestions."
  value={symbol}
  />
+ </Label>
  <HelpText>
  {searchLoading
  ? "Searching instruments..."
@@ -2002,18 +2137,18 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  type="button"
  >
  <span className="font-semibold">{row.symbol}</span>
- <span className="text-xs text-muted-foreground">
+ <span className="type-meta">
  {[row.exchange, row.instrument_type, row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" · ")}
  </span>
  </Button>
  ))}
  </div>
  ) : null}
- {targetMode === "preset_universe" ? (
+ {targetMode === "preset_universe" && String(workflowType) === "alpha_feed" ? (
  <div className="mt-4 grid gap-3 border border-border p-4">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
- <div className="text-sm font-bold">Resolved symbols</div>
+ <SectionTitle>Resolved symbols</SectionTitle>
  <HelpText>
  {dynamicUniverseKind === "watchlist"
  ? `${universeSymbols.length} symbol${universeSymbols.length === 1 ? "" : "s"} from ${selectedWatchlist?.name ?? "watchlist"}.`
@@ -2045,12 +2180,13 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  );
  })}
- {!universeSymbols.length ? <div className="text-sm text-muted-foreground">No symbols resolved for this universe yet.</div> : null}
+{!universeSymbols.length ? <div className="type-help text-muted-foreground">No symbols resolved for this universe yet.</div> : null}
  </div>
  </div>
  ) : null}
  </div>
- <div className="grid gap-2">
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Exchange</FieldLabel>
  <Input
  onChange={(event) => {
  setExchange(event.target.value.toUpperCase());
@@ -2060,23 +2196,23 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  title="Usually NSE or BSE. Kept editable in case the selected trading symbol exists on multiple exchanges."
  value={exchange}
  />
- <HelpText>Used together with the selected instrument identifiers for market data requests.</HelpText>
- </div>
+ <HelpText>Used with the selected instrument identifiers for market data requests.</HelpText>
+ </Label>
  </div>
  {targetMode === "symbol_list" ? (
  <div className="mt-4 grid gap-3 border border-border p-4">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
- <div className="text-sm font-bold">Target list</div>
+ <SectionTitle>Target list</SectionTitle>
  <HelpText>Add one symbol at a time from the search box above or bulk import many symbols. These all share the same workflow conditions and notification rules.</HelpText>
  </div>
  <div className="flex flex-wrap gap-2">
- <Button onClick={addCurrentTarget} type="button" variant="outline">Add current symbol</Button>
- <Button onClick={clearTargets} type="button" variant="ghost">Clear list</Button>
+ <Button onClick={addCurrentTarget} type="button">Add current symbol</Button>
+ <Button onClick={clearTargets} type="button" variant="destructive">Clear list</Button>
  </div>
  </div>
  <div className="grid gap-2">
- <div className="text-xs font-bold uppercase text-muted-foreground">Bulk import</div>
+ <FieldLabel>Bulk import</FieldLabel>
  <Textarea
  className="min-h-[108px] w-full border border-input bg-background px-3 py-2 text-sm outline-none"
  onChange={(event) => setBulkTargets(event.target.value.toUpperCase())}
@@ -2085,33 +2221,33 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  />
  <div className="flex flex-wrap items-center justify-between gap-2">
  <HelpText>Use one per line. Accepted forms: `RELIANCE`, `RELIANCE NSE`, `RELIANCE:NSE`.</HelpText>
- <Button onClick={importBulkTargets} type="button" variant="outline">Import symbols</Button>
+ <Button onClick={importBulkTargets} type="button">Import symbols</Button>
  </div>
  </div>
  <div className="grid gap-2">
- <div className="text-xs font-bold uppercase text-muted-foreground">Current targets · {targetEntries.length}</div>
+ <div className="type-step-eyebrow">Current targets · {targetEntries.length}</div>
  {targetEntries.map((entry, index) => (
  <div className="flex flex-wrap items-center justify-between gap-3 border border-border px-3 py-2" key={`${entry.symbol}:${entry.exchange ?? ""}:${index}`}>
  <Button className="h-auto px-0 text-left" onClick={() => loadTarget(entry)} type="button" variant="ghost">
  <div className="font-semibold">{entry.symbol}</div>
- <div className="text-xs text-muted-foreground">{entry.exchange ?? "-"} · shared rule target</div>
+ <div className="type-meta">{entry.exchange ?? "-"} · shared rule target</div>
  </Button>
- <Button onClick={() => removeTarget(index)} size="sm" type="button" variant="ghost">Remove</Button>
+ <Button onClick={() => removeTarget(index)} size="sm" type="button" variant="destructive">Remove</Button>
  </div>
  ))}
- {!targetEntries.length ? <div className="text-sm text-muted-foreground">No targets added yet.</div> : null}
+{!targetEntries.length ? <div className="type-help text-muted-foreground">No targets added yet.</div> : null}
  </div>
  </div>
  ) : null}
- {targetMode === "preset_universe" ? (
+{targetMode === "preset_universe" ? (
  <div className="mt-4 grid gap-4 border border-border p-4">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
- <div className="text-sm font-bold">Dynamic universe</div>
+ <SectionTitle>Dynamic universe</SectionTitle>
  <HelpText>Use a live watchlist or a backend preset as the workflow target. The subscription reconciler keeps the resolved symbols current.</HelpText>
  </div>
  <Select
- className="h-10 border border-input bg-background px-3 text-sm"
+ className="h-10 min-w-[220px] border border-input bg-background px-3 text-sm"
  onChange={(event) => setDynamicUniverseKind(event.target.value)}
  value={dynamicUniverseKind}
  >
@@ -2121,7 +2257,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Select>
  </div>
  {dynamicUniverseKind === "watchlist" ? (
- <div className="grid gap-2">
+ <div className="grid max-w-[420px] gap-2">
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => setSelectedWatchlistId(event.target.value)}
@@ -2136,7 +2272,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {!watchlists.length ? <HelpText>Create a watchlist first, then return here to link it to this workflow.</HelpText> : <HelpText>Symbols added to or removed from this watchlist are reconciled into live subscriptions automatically.</HelpText>}
  </div>
  ) : dynamicUniverseKind === "curated_preset" ? (
- <div className="grid gap-2">
+ <div className="grid max-w-[420px] gap-2">
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
  onChange={(event) => setSelectedPresetId(event.target.value)}
@@ -2151,37 +2287,76 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <HelpText>Presets are resolved from backend registry rules and broker instrument metadata.</HelpText>
  </div>
  ) : dynamicUniverseKind === "metadata_filter" ? (
- <div className="grid gap-3 min-[900px]:grid-cols-3">
- <div className="grid gap-2">
+ <div className="grid gap-3 min-[980px]:grid-cols-3">
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Exchange filter</FieldLabel>
  <Input className="font-mono uppercase" onChange={(event) => setMetadataExchange(event.target.value.toUpperCase())} placeholder="NSE" value={metadataExchange} />
  <HelpText>Exchange filter.</HelpText>
- </div>
- <div className="grid gap-2">
+ </Label>
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Instrument type</FieldLabel>
  <Input className="font-mono uppercase" onChange={(event) => setMetadataInstrumentType(event.target.value.toUpperCase())} placeholder="EQ" value={metadataInstrumentType} />
  <HelpText>Instrument type filter.</HelpText>
- </div>
- <div className="grid gap-2">
+ </Label>
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>Segment contains</FieldLabel>
  <Input className="font-mono uppercase" onChange={(event) => setMetadataSegmentContains(event.target.value.toUpperCase())} placeholder="FO" value={metadataSegmentContains} />
  <HelpText>Optional segment contains filter.</HelpText>
+ </Label>
+ </div>
+ ) : null}
+ <div className="grid gap-3 border border-border p-4">
+ <SectionTitle>Resolved symbols</SectionTitle>
+ <HelpText>
+ {dynamicUniverseKind === "watchlist"
+ ? `${universeSymbols.length} symbol${universeSymbols.length === 1 ? "" : "s"} from ${selectedWatchlist?.name ?? "watchlist"}.`
+ : universePreviewLoading
+ ? "Resolving universe..."
+ : `${universePreview?.count ?? universeSymbols.length} matching symbol${(universePreview?.count ?? universeSymbols.length) === 1 ? "" : "s"}.`}
+ </HelpText>
+ <div className="flex max-h-56 flex-wrap gap-2 overflow-auto">
+ {universeSymbols.map((item) => {
+ const key = `${item.symbol}:${item.exchange ?? ""}`;
+ return (
+ <div className="relative" key={key}>
+ <Button
+ className="border border-border px-2 py-1 font-mono text-xs hover:border-primary"
+ onFocus={() => loadSymbolQuote(item)}
+ onMouseEnter={() => loadSymbolQuote(item)}
+ onMouseLeave={() => setHoveredSymbolKey("")}
+ size="sm"
+ type="button"
+ variant="ghost"
+ >
+ {[item.symbol, item.exchange].filter(Boolean).join(" - ")}
+ </Button>
+ {hoveredSymbolKey === key ? (
+ <SymbolQuoteTooltip loading={hoverQuoteLoading} quote={hoverQuote} />
+ ) : null}
+ </div>
+ );
+ })}
+{!universeSymbols.length ? <div className="type-help text-muted-foreground">No symbols resolved for this universe yet.</div> : null}
+ </div>
  </div>
  </div>
  ) : null}
  </div>
- ) : null}
  </div>
  )}
 
- <div className=" border border-border p-4">
- <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
- <div>
- <div className="text-sm font-bold">Live symbol preview</div>
- <HelpText>While this page stays open, the editor refreshes quote and OHLC data for the currently selected symbol every few seconds. In multi-target mode this preview is only for the symbol currently loaded in the search box.</HelpText>
  </div>
- <div className="flex items-center gap-2">
- <div className="text-xs text-muted-foreground">{preview.loading ? "Refreshing..." : preview.quote ? "Live preview active" : "No symbol selected"}</div>
+{workflowType === "market_data" ? (
+ <div className="border border-border p-4 xl:sticky xl:top-4 xl:self-start">
+ <StepHeader
+ step="Step 4"
+ title="Validate target"
+ description="Use the live preview to confirm the selected symbol and market data before you move on to rule building."
+ action={<div className="flex items-center gap-2">
+ <div className="type-meta">{preview.loading ? "Refreshing..." : preview.quote ? "Live preview active" : "No symbol selected"}</div>
  <div className="inline-flex border border-border p-1">
  <Button
- className={previewMode === "summary" ? " px-2 py-1 text-xs font-semibold bg-secondary" : " px-2 py-1 text-xs text-muted-foreground"}
+ className={previewMode === "summary" ? "bg-secondary text-foreground" : "text-muted-foreground"}
  onClick={() => setPreviewMode("summary")}
  size="sm"
  type="button"
@@ -2190,7 +2365,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  Summary
  </Button>
  <Button
- className={previewMode === "raw" ? " px-2 py-1 text-xs font-semibold bg-secondary" : " px-2 py-1 text-xs text-muted-foreground"}
+ className={previewMode === "raw" ? "bg-secondary text-foreground" : "text-muted-foreground"}
  onClick={() => setPreviewMode("raw")}
  size="sm"
  type="button"
@@ -2199,25 +2374,40 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  Raw
  </Button>
  </div>
- </div>
+ </div>}
+ />
+ <div className="type-meta mb-3 border border-border px-3 py-2">
+ <div className="font-semibold text-foreground">{symbol || "No symbol selected"}</div>
+ <div className="mt-1">{selectedAccount ? `${selectedAccount.label} - ${selectedAccount.broker_code}` : "No broker account selected"}{exchange ? ` - ${exchange}` : ""}</div>
  </div>
  {preview.error ? <div className="mb-3 border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">{preview.error}</div> : null}
  {previewMode === "summary" ? (
  <LivePreviewSummary exchange={exchange} preview={preview} symbol={symbol} />
  ) : (
  <div className=" border border-border p-3">
- <div className="text-xs font-bold uppercase text-muted-foreground">Raw payload</div>
- <pre className="mt-2 max-h-[320px] overflow-auto text-xs text-muted-foreground">{compactPreview({ quote: preview.quote, ohlc: preview.ohlc })}</pre>
+ <div className="type-step-eyebrow">Raw payload</div>
+ <pre className="type-meta mt-2 max-h-[320px] overflow-auto">{compactPreview({ quote: preview.quote, ohlc: preview.ohlc })}</pre>
  </div>
  )}
  </div>
+) : null}
+ </div>
 
+ <div className="max-w-[920px]">
  <Tabs onValueChange={(value) => setEditorMode(value as EditorMode)} value={editorMode}>
+ <div className="grid max-w-[920px] gap-4 border border-border p-4">
+ <div className="flex flex-wrap items-start justify-between gap-4">
+ <div className="max-w-[760px]">
+ <div className="type-step-eyebrow">Step 5</div>
+ <h2 className="type-step-title mt-1">Build trigger</h2>
+ <HelpText className="mt-2">Start with the rule logic first, then refine the outgoing alert content underneath it.</HelpText>
+ </div>
  <TabsList>
  <TabsTrigger value="rule">Rule Builder</TabsTrigger>
  <TabsTrigger value="graph">Graph Builder</TabsTrigger>
  </TabsList>
- <TabsContent className="mt-6" value="rule">
+ </div>
+ <TabsContent className="mt-0" value="rule">
  <RuleEditor
  addCondition={addCondition}
  applyMessageField={applyMessageField}
@@ -2239,43 +2429,54 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  updateCondition={updateCondition}
  />
  </TabsContent>
- <TabsContent className="mt-6" value="graph">
- <div className="grid gap-4 min-[960px]:grid-cols-[1fr_1fr_1fr]">
- <div className=" border border-border p-4">
- <div className="mb-2 text-sm font-bold">Trigger</div>
+ <TabsContent className="mt-0" value="graph">
+ <div className="grid max-w-[920px] gap-3 min-[960px]:grid-cols-[150px_1fr_1fr]">
+ <div className="border border-border p-3">
+ <SectionTitle className="mb-2">Trigger</SectionTitle>
  <HelpText>The graph starts from the live quote stream for the selected symbol and account.</HelpText>
  </div>
  {conditions.map((condition, index) => (
- <div className=" border border-border p-4" key={`${condition.field}-${index}`}>
- <div className="mb-2 text-sm font-bold">Condition node {index + 1}</div>
+ <div className="border border-border p-3" key={`${condition.field}-${index}`}>
+ <SectionTitle className="mb-2">Condition node {index + 1}</SectionTitle>
  <ConditionEditor condition={condition} index={index} removeCondition={removeCondition} updateCondition={updateCondition} />
  </div>
  ))}
- <div className=" border border-border p-4">
- <div className="mb-2 text-sm font-bold">Notification node</div>
+ <div className="border border-border p-3 min-[960px]:col-span-3">
+ <SectionTitle className="mb-2">Notification node</SectionTitle>
  <HelpText>These templates render the alert title and body when the conditions match.</HelpText>
- <div className="mt-3 grid gap-3">
- <Input onChange={(event) => setTitleTemplate(event.target.value)} placeholder="Title template" value={titleTemplate} />
+ <div className="mt-3 grid max-w-[820px] gap-3 min-[960px]:grid-cols-[200px_minmax(0,1fr)_120px]">
+ <Input className="max-w-[200px]" onChange={(event) => setTitleTemplate(event.target.value)} placeholder="Title template" value={titleTemplate} />
  <Input onChange={(event) => setMessageTemplate(event.target.value)} placeholder="Message template" value={messageTemplate} />
- <Input onChange={(event) => setLevel(event.target.value)} placeholder="Level" value={level} />
+ <Input className="max-w-[120px]" onChange={(event) => setLevel(event.target.value)} placeholder="Level" value={level} />
  </div>
  </div>
  </div>
  </TabsContent>
- </Tabs>
-
- <div className="grid gap-4 border border-border p-4">
- <div className="flex flex-wrap items-start justify-between gap-3">
- <div>
- <div className="text-sm font-bold">LLM Analysis</div>
- <HelpText>Optional post-trigger analysis runs after a real match and before the alert is sent. Turning it off keeps the provider, model, and prompt saved.</HelpText>
  </div>
+ </Tabs>
+ </div>
+
+ <div className="grid max-w-[920px] gap-4 border border-border p-4">
+ <div className="flex flex-wrap items-start justify-between gap-4">
+ <div className="max-w-[760px]">
+ <div className="type-step-eyebrow">Step 6</div>
+ <h2 className="type-step-title mt-1">Optional analysis</h2>
+ <HelpText className="mt-2">Post-trigger analysis is optional and stays tucked away until you need it.</HelpText>
+ </div>
+ <div className="flex flex-wrap items-center gap-2">
+ <div className="type-meta border border-border px-2 py-1">{llmEnabled ? "Enabled" : "Disabled"}</div>
  <Label className="flex items-center gap-2 text-sm">
  <Checkbox checked={llmEnabled} onCheckedChange={(checked) => setLlmEnabled(Boolean(checked))} />
  Enable
  </Label>
+ <Button onClick={() => setLlmSectionExpanded((current) => !current)} size="sm" type="button" variant="secondary">
+ {llmSectionExpanded ? "Hide details" : "Show details"}
+ </Button>
  </div>
- <div className="grid gap-3 min-[960px]:grid-cols-[1fr_1fr_120px_140px_120px]">
+ </div>
+ {llmSectionExpanded ? (
+ <>
+ <div className="grid max-w-[820px] gap-3 min-[980px]:grid-cols-[200px_200px_88px_96px_88px]">
  <div className="grid gap-2">
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
@@ -2309,22 +2510,22 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <HelpText>Saved enabled models for the selected provider.</HelpText>
  </div>
  <div className="grid gap-2">
- <Input onChange={(event) => setLlmTemperature(event.target.value)} placeholder="0.2" value={llmTemperature} />
+ <Input className="max-w-[96px]" onChange={(event) => setLlmTemperature(event.target.value)} placeholder="0.2" value={llmTemperature} />
  <HelpText>Temperature.</HelpText>
  </div>
  <div className="grid gap-2">
- <Input onChange={(event) => setLlmMaxTokens(event.target.value)} placeholder="500" value={llmMaxTokens} />
+ <Input className="max-w-[110px]" onChange={(event) => setLlmMaxTokens(event.target.value)} placeholder="500" value={llmMaxTokens} />
  <HelpText>Max tokens.</HelpText>
  </div>
  <div className="grid gap-2">
- <Input onChange={(event) => setLlmTimeout(event.target.value)} placeholder="25" value={llmTimeout} />
+ <Input className="max-w-[96px]" onChange={(event) => setLlmTimeout(event.target.value)} placeholder="25" value={llmTimeout} />
  <HelpText>Timeout sec.</HelpText>
  </div>
  </div>
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div className="inline-flex border border-border p-1">
  <Button
- className={llmPromptTab === "prompt" ? "px-2 py-1 text-xs font-semibold bg-secondary" : "px-2 py-1 text-xs text-muted-foreground"}
+ className={llmPromptTab === "prompt" ? "bg-secondary text-foreground" : "text-muted-foreground"}
  onClick={() => setLlmPromptTab("prompt")}
  size="sm"
  type="button"
@@ -2333,7 +2534,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  Prompt
  </Button>
  <Button
- className={llmPromptTab === "preview" ? "px-2 py-1 text-xs font-semibold bg-secondary" : "px-2 py-1 text-xs text-muted-foreground"}
+ className={llmPromptTab === "preview" ? "bg-secondary text-foreground" : "text-muted-foreground"}
  onClick={() => setLlmPromptTab("preview")}
  size="sm"
  type="button"
@@ -2343,8 +2544,8 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Button>
  </div>
  <div className="flex flex-wrap gap-2">
- <Button disabled={isPending || !initialWorkflow?.id} onClick={previewLlmContext} size="sm" type="button" variant="outline">Preview Context</Button>
- <Button disabled={isPending || !initialWorkflow?.id || !llmEnabled} onClick={testLlmAnalysis} size="sm" type="button" variant="outline">Test LLM</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={previewLlmContext} size="sm" type="button" variant="secondary">Preview Context</Button>
+ <Button disabled={isPending || !initialWorkflow?.id || !llmEnabled} onClick={testLlmAnalysis} size="sm" type="button" variant="secondary">Test LLM</Button>
  </div>
  </div>
  {llmPromptTab === "prompt" ? (
@@ -2385,51 +2586,62 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : (
  <div className="grid gap-3">
- {llmFeedback ? <div className="border border-border px-3 py-2 text-sm text-muted-foreground">{llmFeedback}</div> : null}
- <pre className="max-h-[420px] overflow-auto border border-border bg-secondary/20 p-3 text-xs text-muted-foreground">{llmDetails ? compactPreview(llmDetails) : "No context preview yet."}</pre>
+{llmFeedback ? <div className="type-body border border-border px-3 py-2 text-muted-foreground">{llmFeedback}</div> : null}
+<pre className="type-meta max-h-[420px] overflow-auto border border-border bg-secondary/20 p-3">{llmDetails ? compactPreview(llmDetails) : "No context preview yet."}</pre>
  </div>
  )}
+ </>
+ ) : null}
  </div>
 
  {!currentTemplatesMatchSuggestion ? (
- <div className="grid gap-3 border border-border bg-secondary/20 p-4">
- <div className="flex flex-wrap items-start justify-between gap-3">
- <div>
- <div className="text-sm font-bold">Suggested alert copy</div>
- <HelpText>The conditions changed or the copy was manually edited. You can keep your current text, or replace it with a generated version that includes the active fields.</HelpText>
+ <div className="grid max-w-[920px] gap-3 border border-border bg-secondary/20 p-4">
+ <div className="flex flex-wrap items-start justify-between gap-4">
+ <div className="max-w-[760px]">
+ <div className="type-step-eyebrow">Step 7</div>
+ <h2 className="type-step-title mt-1">Review alert copy</h2>
+ <HelpText className="mt-2">The conditions changed or the copy was manually edited. You can keep your current text, or replace it with a generated version that includes the active fields.</HelpText>
  </div>
  <Button
  onClick={() => {
  setTitleTemplate(suggestedCopy.title);
  setMessageTemplate(suggestedCopy.message);
  }}
+ size="sm"
  type="button"
- variant="outline"
  >
  Use suggested copy
  </Button>
  </div>
- <div className="grid gap-2 text-sm text-muted-foreground">
+ <div className="type-body grid gap-2 text-muted-foreground">
  <div><span className="font-semibold text-foreground">Title:</span> {suggestedCopy.title}</div>
  <div><span className="font-semibold text-foreground">Message:</span> {suggestedCopy.message}</div>
  </div>
  </div>
  ) : null}
 
- <div className="grid gap-4 border border-border p-4">
- <div className="flex flex-wrap items-start justify-between gap-3">
- <div>
- <div className="text-sm font-bold">Script, validation, and deployment</div>
- <HelpText>The script is optional. When present, it is validated by the sandboxed expression compiler and overrides the visual logic in the compiled workflow AST.</HelpText>
+ <div className="grid max-w-[920px] gap-4 border border-border p-4">
+ <div className="flex flex-wrap items-start justify-between gap-4">
+ <div className="max-w-[760px]">
+ <div className="type-step-eyebrow">Step 8</div>
+ <h2 className="type-step-title mt-1">Advanced script and deployment</h2>
+ <HelpText className="mt-2">The script is optional. When present, it is validated by the sandboxed expression compiler and overrides the visual logic in the compiled workflow AST.</HelpText>
  </div>
+ <div className="flex flex-wrap items-center gap-2">
  <div className="flex flex-wrap gap-2">
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("validate")} size="sm" type="button" variant="outline">Validate</Button>
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("compile")} size="sm" type="button" variant="outline">Compile</Button>
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("explain")} size="sm" type="button" variant="outline">Explain</Button>
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("samples")} size="sm" type="button" variant="outline">Samples</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("validate")} size="sm" type="button" variant="secondary">Validate</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("compile")} size="sm" type="button" variant="secondary">Compile</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("explain")} size="sm" type="button" variant="secondary">Explain</Button>
+ <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("samples")} size="sm" type="button" variant="secondary">Samples</Button>
  <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("deploy")} size="sm" type="button">Deploy</Button>
  </div>
+ <Button onClick={() => setEngineSectionExpanded((current) => !current)} size="sm" type="button" variant="secondary">
+ {engineSectionExpanded ? "Hide details" : "Show details"}
+ </Button>
  </div>
+ </div>
+ {engineSectionExpanded ? (
+ <>
  <div className="relative">
  <Textarea
  className="min-h-[120px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
@@ -2481,41 +2693,59 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : null}
  </div>
- <div className="flex flex-wrap items-start justify-between gap-3 border border-border px-3 py-2 text-xs text-muted-foreground">
+ <div className="type-meta flex max-w-[820px] flex-wrap items-start justify-between gap-3 border border-border px-3 py-2">
  <div>
  <span className="font-bold uppercase">Generated from visual logic:</span>{" "}
  <code className="font-mono">{suggestedDsl}</code>
  </div>
- <Button onClick={() => setDslText(suggestedDsl)} size="sm" type="button" variant="ghost">Use generated script</Button>
+ <Button onClick={() => setDslText(suggestedDsl)} size="sm" type="button" variant="secondary">Use generated script</Button>
  </div>
  <HelpText>Use Ctrl+Space for suggestions. Tab accepts the highlighted suggestion; when empty, Tab inserts the generated script from the visual rule builder.</HelpText>
- <div className="grid gap-3 min-[900px]:grid-cols-3">
+ <div className="grid max-w-[820px] gap-3 min-[900px]:grid-cols-3">
  <div className="border border-border p-3">
- <div className="text-xs font-bold uppercase text-muted-foreground">Deployment</div>
- <div className="mt-2 text-sm text-muted-foreground">
+ <div className="type-step-eyebrow">Deployment</div>
+ <div className="type-body mt-2 text-muted-foreground">
  {(initialWorkflow?.deployment_status ?? "draft")} · version {initialWorkflow?.deploy_version ?? 0}
  </div>
  </div>
  <div className="border border-border p-3">
- <div className="text-xs font-bold uppercase text-muted-foreground">Last validation</div>
- <div className="mt-2 text-sm text-muted-foreground">{initialWorkflow?.last_validated_at ? new Date(initialWorkflow.last_validated_at).toLocaleString() : "-"}</div>
+ <div className="type-step-eyebrow">Last validation</div>
+ <div className="type-body mt-2 text-muted-foreground">{initialWorkflow?.last_validated_at ? new Date(initialWorkflow.last_validated_at).toLocaleString() : "-"}</div>
  </div>
  <div className="border border-border p-3">
- <div className="text-xs font-bold uppercase text-muted-foreground">Runtime error</div>
- <div className="mt-2 text-sm text-muted-foreground">{initialWorkflow?.last_runtime_error || "-"}</div>
+ <div className="type-step-eyebrow">Runtime error</div>
+ <div className="type-body mt-2 text-muted-foreground">{initialWorkflow?.last_runtime_error || "-"}</div>
  </div>
  </div>
- {engineFeedback ? <div className="border border-border px-3 py-2 text-sm text-muted-foreground">{engineFeedback}</div> : null}
- {engineDetails ? <pre className="max-h-[260px] overflow-auto border border-border p-3 text-xs text-muted-foreground">{compactPreview(engineDetails)}</pre> : null}
+ {engineFeedback ? <div className="type-body border border-border px-3 py-2 text-muted-foreground">{engineFeedback}</div> : null}
+ {engineDetails ? <pre className="type-meta max-h-[260px] overflow-auto border border-border p-3">{compactPreview(engineDetails)}</pre> : null}
+ </>
+ ) : null}
  </div>
 
- <div className="grid gap-4 border border-border p-4 min-[960px]:grid-cols-2">
+ <div className="grid max-w-[920px] gap-4 border border-border p-4">
  <div>
- <div className="mb-2 text-sm font-bold">Workflow scope</div>
+ <div className="type-step-eyebrow">Step 9</div>
+ <h2 className="type-step-title mt-1">Delivery and lifecycle</h2>
+ <HelpText className="mt-2">Choose where the alert goes, set the workflow state, and then save or test it.</HelpText>
+ </div>
+ <div className="grid gap-4 min-[980px]:grid-cols-[260px_minmax(0,1fr)]">
+ <div className="grid gap-4">
+ <div className="border border-border p-3">
+ <SectionTitle className="mb-2">Workflow scope</SectionTitle>
  <HelpText>{targetScopeSummary(workflowTargetingPayload())}</HelpText>
  </div>
- <div>
- <div className="mb-2 text-sm font-bold">Channels</div>
+ <div className="border border-border p-3">
+ <SectionTitle className="mb-2">Lifecycle</SectionTitle>
+ <HelpText>Active workflows are evaluated by the alert worker. Inactive workflows stay saved but do not trigger.</HelpText>
+ <Select className="mt-3 h-10 max-w-[220px] border border-input bg-background px-3 text-sm" onChange={(event) => setStatus(event.target.value as "active" | "inactive")} value={status}>
+ <option value="active">Active</option>
+ <option value="inactive">Inactive</option>
+ </Select>
+ </div>
+ </div>
+ <div className="border border-border p-3">
+ <SectionTitle className="mb-2">Channels</SectionTitle>
  <HelpText>Choose where the alert should be delivered. Inherit defaults uses your channel settings page as the base.</HelpText>
  <div className="mt-3 flex flex-wrap gap-3 text-sm">
  <Label className="flex items-center gap-2" title="Always recommended so alerts remain visible inside the app."><Checkbox checked={channelInApp} onCheckedChange={(checked) => setChannelInApp(Boolean(checked))} />In-app</Label>
@@ -2524,27 +2754,19 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <Label className="flex items-center gap-2" title="When enabled, default channels from the alert channel settings page are included automatically."><Checkbox checked={inheritDefaults} onCheckedChange={(checked) => setInheritDefaults(Boolean(checked))} />Inherit defaults</Label>
  </div>
  </div>
- <div>
- <div className="mb-2 text-sm font-bold">Lifecycle</div>
- <HelpText>Active workflows are evaluated by the alert worker. Inactive workflows stay saved but do not trigger.</HelpText>
- <Select className="mt-3 h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setStatus(event.target.value as "active" | "inactive")} value={status}>
- <option value="active">Active</option>
- <option value="inactive">Inactive</option>
- </Select>
- </div>
  </div>
 
- <div className="flex flex-wrap gap-3">
- <Button disabled={isPending || !name.trim() || !canSave} onClick={save} type="button">
+ <div className="flex flex-wrap gap-3 border-t border-border pt-4">
+ <Button disabled={isPending} onClick={save} type="button">
  {isPending ? "Saving..." : initialWorkflow?.id ? "Save workflow" : "Create workflow"}
  </Button>
  {initialWorkflow?.id ? (
- <Button disabled={isPending} onClick={previewTest} type="button" variant="outline">
+ <Button disabled={isPending} onClick={previewTest} type="button" variant="secondary">
  Evaluate current preview
  </Button>
  ) : null}
  {initialWorkflow?.id ? (
- <Button disabled={isPending} onClick={sendTestAlert} type="button" variant="outline">
+ <Button disabled={isPending} onClick={sendTestAlert} type="button" variant="secondary">
  Send test alert
  </Button>
  ) : null}
@@ -2555,11 +2777,17 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  ) : null}
  </div>
  {initialWorkflow?.id ? (
- <div className="grid gap-1 text-xs text-muted-foreground">
+ <div className="type-help grid gap-1 border border-border px-3 py-2 text-muted-foreground">
  <div>`Evaluate current preview` checks the workflow conditions against the live preview tick shown above. It does not create an alert or notify any channel.</div>
  <div>`Send test alert` renders the current title and message templates with the preview payload and attempts delivery through the selected channels.</div>
  </div>
  ) : null}
+ {!canSave && saveBlockReason ? (
+ <div className="type-help border border-border px-3 py-2 text-muted-foreground">
+ {saveBlockReason}
+ </div>
+ ) : null}
+ </div>
  </div>
  );
 }
@@ -2578,12 +2806,12 @@ function LivePreviewSummary({
  const buyDepth = Array.isArray(depth.buy) ? depth.buy.slice(0, 3) : [];
  const sellDepth = Array.isArray(depth.sell) ? depth.sell.slice(0, 3) : [];
  return (
- <div className="grid gap-4 min-[1180px]:grid-cols-[240px_220px_220px_1fr]">
+ <div className="grid gap-3 min-[560px]:grid-cols-2">
  <div className=" border border-border p-3">
- <div className="text-xs font-bold uppercase text-muted-foreground">Quote</div>
- <div className="mt-2 text-2xl font-bold">{preview.quote?.ltp ?? "-"}</div>
- <div className="mt-1 text-xs text-muted-foreground">{symbol || "-"} - {exchange || "-"}</div>
- <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+ <div className="type-step-eyebrow">Quote</div>
+ <div className="mt-2 text-xl font-bold">{preview.quote?.ltp ?? "-"}</div>
+ <div className="type-meta mt-1">{symbol || "-"} - {exchange || "-"}</div>
+ <div className="type-meta mt-3 grid gap-1">
  <div>Change: {String(quoteRaw.day_change ?? "-")}</div>
  <div>Change %: {String(quoteRaw.day_change_perc ?? "-")}</div>
  <div>Volume: {String(quoteRaw.volume ?? "-")}</div>
@@ -2591,21 +2819,21 @@ function LivePreviewSummary({
  </div>
  </div>
  <div className=" border border-border p-3">
- <div className="text-xs font-bold uppercase text-muted-foreground">OHLC</div>
+ <div className="type-step-eyebrow">OHLC</div>
  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
  <span>Open: {String(preview.ohlc?.open ?? "-")}</span>
  <span>High: {String(preview.ohlc?.high ?? "-")}</span>
  <span>Low: {String(preview.ohlc?.low ?? "-")}</span>
  <span>Close: {String(preview.ohlc?.close ?? "-")}</span>
  </div>
- <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+ <div className="type-meta mt-3 grid gap-1">
  <div>52w high: {String(quoteRaw.week_52_high ?? "-")}</div>
  <div>52w low: {String(quoteRaw.week_52_low ?? "-")}</div>
  </div>
  </div>
  <div className=" border border-border p-3">
- <div className="text-xs font-bold uppercase text-muted-foreground">Market internals</div>
- <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+ <div className="type-step-eyebrow">Market internals</div>
+ <div className="type-meta mt-3 grid gap-1">
  <div>Total buy qty: {String(quoteRaw.total_buy_quantity ?? "-")}</div>
  <div>Total sell qty: {String(quoteRaw.total_sell_quantity ?? "-")}</div>
  <div>Last trade qty: {String(quoteRaw.last_trade_quantity ?? "-")}</div>
@@ -2614,38 +2842,38 @@ function LivePreviewSummary({
  <div>Lower circuit: {String(quoteRaw.lower_circuit_limit ?? "-")}</div>
  </div>
  </div>
- <div className=" border border-border p-3">
- <div className="grid gap-3 min-[980px]:grid-cols-2">
+ <div className=" border border-border p-3 min-[560px]:col-span-2">
+ <div className="grid gap-3 min-[860px]:grid-cols-2">
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Top bids</div>
+ <div className="type-step-eyebrow">Top bids</div>
  <div className="mt-2 grid gap-2">
  {buyDepth.map((row, index) => {
  const item = row as JsonObject;
  return (
- <div className=" border border-border px-2 py-2 text-xs text-muted-foreground" key={`buy-${index}`}>
+ <div className="type-meta border border-border px-2 py-2" key={`buy-${index}`}>
  <div>Price: {String(item.price ?? "-")}</div>
  <div>Qty: {String(item.quantity ?? "-")}</div>
  <div>Orders: {String(item.orderCount ?? "-")}</div>
  </div>
  );
  })}
- {!buyDepth.length ? <div className="text-xs text-muted-foreground">No bid depth available.</div> : null}
+ {!buyDepth.length ? <div className="type-meta">No bid depth available.</div> : null}
  </div>
  </div>
  <div>
- <div className="text-xs font-bold uppercase text-muted-foreground">Top asks</div>
+ <div className="type-step-eyebrow">Top asks</div>
  <div className="mt-2 grid gap-2">
  {sellDepth.map((row, index) => {
  const item = row as JsonObject;
  return (
- <div className=" border border-border px-2 py-2 text-xs text-muted-foreground" key={`sell-${index}`}>
+ <div className="type-meta border border-border px-2 py-2" key={`sell-${index}`}>
  <div>Price: {String(item.price ?? "-")}</div>
  <div>Qty: {String(item.quantity ?? "-")}</div>
  <div>Orders: {String(item.orderCount ?? "-")}</div>
  </div>
  );
  })}
- {!sellDepth.length ? <div className="text-xs text-muted-foreground">No ask depth available.</div> : null}
+ {!sellDepth.length ? <div className="type-meta">No ask depth available.</div> : null}
  </div>
  </div>
  </div>
@@ -2660,9 +2888,9 @@ function SymbolQuoteTooltip({ loading, quote }: { loading: boolean; quote: Quote
  return (
  <div className="absolute left-0 top-[calc(100%+6px)] z-30 min-w-64 border border-border bg-popover p-3 shadow-lg">
  {loading ? (
- <div className="text-xs text-muted-foreground">Loading live quote...</div>
+ <div className="type-meta">Loading live quote...</div>
  ) : quote ? (
- <div className="grid gap-2 text-xs">
+ <div className="type-meta grid gap-2">
  <div className="flex items-center justify-between gap-4">
  <span className="font-mono font-bold">{quote.symbol ?? "Symbol"}</span>
  <span className="font-mono text-primary">{quote.ltp}</span>
@@ -2675,7 +2903,7 @@ function SymbolQuoteTooltip({ loading, quote }: { loading: boolean; quote: Quote
  </div>
  </div>
  ) : (
- <div className="text-xs text-muted-foreground">No live quote available.</div>
+ <div className="type-meta">No live quote available.</div>
  )}
  </div>
  );
@@ -2721,39 +2949,49 @@ function RuleEditor({
  updateCondition: (index: number, patch: Partial<AlertCondition>) => void;
 }) {
  return (
- <div className="grid gap-4 border border-border p-4">
- <div className="grid gap-3 min-[960px]:grid-cols-[180px_180px_1fr]">
- <div className="grid gap-2">
+ <div className="grid max-w-[780px] gap-4">
+ <div className="max-w-[520px] border border-border p-4">
+ <SectionTitle className="mb-3">Trigger settings</SectionTitle>
+ <div className="grid items-start gap-3 min-[980px]:grid-cols-[150px_140px_140px]">
+ <div className="grid content-start self-start gap-2">
+ <FieldLabel>Match mode</FieldLabel>
  <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setCombine(event.target.value as "all" | "any")} value={combine}>
  <option value="all">All conditions</option>
  <option value="any">Any condition</option>
  </Select>
  <HelpText>`All` means every condition must match. `Any` means one matching condition is enough.</HelpText>
  </div>
- <div className="grid gap-2">
- <Input onChange={(event) => setCooldownSeconds(event.target.value)} placeholder="Cooldown seconds" title="Minimum wait time before the same workflow can trigger again." value={cooldownSeconds} />
+ <div className="grid content-start self-start gap-2">
+ <FieldLabel>Cooldown</FieldLabel>
+ <Input className="max-w-[140px]" onChange={(event) => setCooldownSeconds(event.target.value)} placeholder="Cooldown seconds" title="Minimum wait time before the same workflow can trigger again." value={cooldownSeconds} />
  <HelpText>Prevents repeated alerts on every tick after the first match.</HelpText>
  </div>
- <div className="grid gap-2">
- <Input onChange={(event) => setLevel(event.target.value)} placeholder="Level" title="Examples: info, warning, critical." value={level} />
+ <div className="grid content-start self-start gap-2">
+ <FieldLabel>Level</FieldLabel>
+ <Input className="max-w-[140px]" onChange={(event) => setLevel(event.target.value)} placeholder="Level" title="Examples: info, warning, critical." value={level} />
  <HelpText>Used only for display and downstream routing emphasis.</HelpText>
  </div>
  </div>
- <div className="grid gap-3">
+ </div>
+ <div className="grid max-w-[780px] gap-3">
  {conditions.map((condition, index) => (
- <div className=" border border-border p-4" key={`${condition.field}-${index}`}>
+ <div className="border border-border p-3" key={`${condition.field}-${index}`}>
  <ConditionEditor condition={condition} index={index} removeCondition={removeCondition} updateCondition={updateCondition} />
  </div>
  ))}
  </div>
- <Button onClick={addCondition} type="button" variant="outline">Add condition</Button>
- <div className="grid gap-3 min-[960px]:grid-cols-2">
- <div className="grid gap-2">
+ <Button className="max-w-[196px]" onClick={addCondition} type="button">Add condition</Button>
+ <div className="max-w-[780px] border border-border p-4">
+ <SectionTitle className="mb-3">Alert content</SectionTitle>
+ <div className="grid max-w-[720px] gap-3">
+ <div className="grid max-w-[260px] gap-2">
+ <FieldLabel>Title template</FieldLabel>
  <Input onChange={(event) => setTitleTemplate(event.target.value)} placeholder="Title template" value={titleTemplate} />
  <HelpText>Supports placeholders like {"{symbol}"} and {"{ltp}"}.</HelpText>
  </div>
  <div className="grid gap-2">
- <div className="relative">
+ <FieldLabel>Message template</FieldLabel>
+ <div className="relative max-w-[720px]">
  <Textarea
  className="min-h-[92px] w-full border border-input bg-background px-3 py-2 text-sm outline-none"
  onChange={(event) => updateMessageTemplate(event.target.value, event.target.selectionStart ?? undefined)}
@@ -2783,6 +3021,7 @@ function RuleEditor({
  </div>
  </div>
  </div>
+ </div>
  );
 }
 
@@ -2803,23 +3042,40 @@ function ConditionEditor({
 
  return (
  <div className="grid gap-3">
- <div className="grid gap-3 min-[960px]:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+ <div className="grid max-w-[780px] gap-3 min-[980px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_96px_minmax(0,0.9fr)_108px]">
+ <div className="grid min-w-0 gap-2">
+ <FieldLabel>Field</FieldLabel>
  <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { field: event.target.value })} value={condition.field}>
  {fieldOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
+ </div>
+ <div className="grid min-w-0 gap-2">
+ <FieldLabel>Operator</FieldLabel>
  <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { operator: event.target.value })} value={condition.operator}>
  {operatorOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
+ </div>
+ <div className="grid min-w-0 gap-2">
+ <FieldLabel>Value</FieldLabel>
  <Input onChange={(event) => updateCondition(index, { value: event.target.value })} placeholder="Value" value={String(condition.value ?? "")} />
+ </div>
+ <div className="grid min-w-0 gap-2">
+ <FieldLabel>Compare to</FieldLabel>
  <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })} value={condition.compare_to ?? ""}>
  {compareOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
- <Button onClick={() => removeCondition(index)} type="button" variant="ghost">Remove</Button>
  </div>
- <div className="grid gap-1 text-xs text-muted-foreground">
+ <div className="grid min-w-0 gap-2">
+ <FieldLabel>Action</FieldLabel>
+ <Button className="w-full min-w-0" onClick={() => removeCondition(index)} type="button" variant="destructive">Remove</Button>
+ </div>
+ </div>
+ <div className="type-help grid gap-2 text-muted-foreground min-[980px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_96px_minmax(0,0.9fr)_108px]">
  <div>{fieldMeta?.help}</div>
  <div>{operatorMeta?.help}</div>
+ <div />
  <div>{compareMeta?.help}</div>
+ <div />
  </div>
  </div>
  );

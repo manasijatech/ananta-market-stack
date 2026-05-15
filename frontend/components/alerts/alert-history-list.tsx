@@ -65,27 +65,27 @@ export function AlertHistoryList({
  return (
  <div className="grid gap-6 min-[1100px]:grid-cols-2">
  <section className="grid gap-3">
- <div className="text-sm font-bold">Recent alerts</div>
+ <div className="type-section-title">Recent alerts</div>
  <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-1">
  {alertList.rows.map((item) => (
  <div className=" border border-border p-4" key={item.id}>
- <div className="text-sm font-bold">{item.title}</div>
- <div className="mt-1 text-xs text-muted-foreground">{item.message}</div>
- {llmOutput(item.payload) ? <div className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">{llmOutput(item.payload)}</div> : null}
- <div className="mt-2 text-xs text-muted-foreground">
+ <div className="type-section-title">{item.title}</div>
+ <div className="type-help mt-1 text-muted-foreground">{item.message}</div>
+ {llmOutput(item.payload) ? <div className="type-help mt-2 border-l-2 border-primary pl-2 text-muted-foreground">{llmOutput(item.payload)}</div> : null}
+ <div className="type-meta mt-2 text-muted-foreground">
  {item.symbol ?? "-"} · {item.level} · {item.channels.join(", ") || "in_app"}
  </div>
  </div>
  ))}
- {!notifications.length ? <div className="text-sm text-muted-foreground">No alert notifications yet.</div> : null}
+ {!notifications.length ? <div className="type-body text-muted-foreground">No alert notifications yet.</div> : null}
  {alertList.hasMore ? <div className="h-4" ref={alertList.sentinelRef} /> : null}
  </div>
  </section>
  <section className="grid gap-3">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
- <div className="text-sm font-bold">Recent workflow runs</div>
- <div className="mt-1 text-xs text-muted-foreground">
+ <div className="type-section-title">Recent workflow runs</div>
+ <div className="type-help mt-1 text-muted-foreground">
  {runStats.total} loaded · {runStats.matched} matched · {runStats.unmatched} not matched
  {runStats.latestAt ? ` · Last ${new Date(runStats.latestAt).toLocaleString()}` : ""}
  </div>
@@ -104,18 +104,18 @@ export function AlertHistoryList({
  <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-1">
  {runList.rows.map((item) => (
  <div className=" border border-border p-4" key={item.id}>
- <div className="text-sm font-bold">{item.rendered_title || item.reason}</div>
- <div className="mt-1 text-xs text-muted-foreground">
+ <div className="type-section-title">{item.rendered_title || item.reason}</div>
+ <div className="type-meta mt-1 text-muted-foreground">
  {item.matched ? "Matched" : "No match"} · {item.channels.join(", ") || "in_app"}
  </div>
- {llmOutput(item.evaluation_payload) ? <div className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">{llmOutput(item.evaluation_payload)}</div> : null}
+ {llmOutput(item.evaluation_payload) ? <div className="type-help mt-2 border-l-2 border-primary pl-2 text-muted-foreground">{llmOutput(item.evaluation_payload)}</div> : null}
  </div>
  ))}
- {!runs.length ? <div className="text-sm text-muted-foreground">No workflow runs yet.</div> : null}
+ {!runs.length ? <div className="type-body text-muted-foreground">No workflow runs yet.</div> : null}
  {runList.hasMore ? <div className="h-4" ref={runList.sentinelRef} /> : null}
  </div>
  ) : (
- <div className=" border border-border p-4 text-sm text-muted-foreground">
+ <div className="type-body border border-border p-4 text-muted-foreground">
  Keep this collapsed for the summary view. Open details only when you want to inspect recent evaluations.
  </div>
  )}

@@ -54,8 +54,8 @@ export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
  <section className="grid gap-3">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
- <div className="text-sm font-bold">Recent execution history</div>
- <div className="mt-1 text-xs text-muted-foreground">
+ <div className="type-section-title">Recent execution history</div>
+ <div className="type-help mt-1 text-muted-foreground">
  {stats.total} loaded · {stats.matched} matched · {stats.unmatched} not matched
  </div>
  </div>
@@ -66,19 +66,19 @@ export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
  return (
  <div className=" border border-border p-4" key={run.id}>
  <div className="flex flex-wrap items-center justify-between gap-3">
- <div className="text-sm font-bold">{run.rendered_title || run.reason}</div>
- <div className="text-xs text-muted-foreground">{new Date(run.created_at).toLocaleString()}</div>
+ <div className="type-section-title">{run.rendered_title || run.reason}</div>
+ <div className="type-meta">{new Date(run.created_at).toLocaleString()}</div>
  </div>
- <div className="mt-1 text-xs text-muted-foreground">{run.rendered_message || run.reason}</div>
- {llmOutput(run.evaluation_payload) ? <div className="mt-3 border-l-2 border-primary pl-3 text-xs text-muted-foreground">{llmOutput(run.evaluation_payload)}</div> : null}
- <div className="mt-3 grid gap-2 text-xs text-muted-foreground min-[900px]:grid-cols-4">
+ <div className="type-help mt-1 text-muted-foreground">{run.rendered_message || run.reason}</div>
+ {llmOutput(run.evaluation_payload) ? <div className="type-help mt-3 border-l-2 border-primary pl-3 text-muted-foreground">{llmOutput(run.evaluation_payload)}</div> : null}
+ <div className="type-meta mt-3 grid gap-2 text-muted-foreground min-[900px]:grid-cols-4">
  <span>Matched: {run.matched ? "Yes" : "No"}</span>
  <span>Reason: {run.reason || "-"}</span>
  <span>Channels: {run.channels.join(", ") || "-"}</span>
  <span>Notification: {run.notification_id ?? "-"}</span>
  </div>
  <div className="mt-3 flex items-center justify-between">
- <div className="text-xs text-muted-foreground">
+ <div className="type-meta">
  LTP: {String(run.tick.ltp ?? "-")} · Symbol: {String(run.tick.symbol ?? "-")}
  </div>
  <Button
@@ -92,14 +92,14 @@ export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
  </Button>
  </div>
  {isExpanded ? (
- <pre className="mt-3 max-h-[180px] overflow-auto bg-secondary/50 p-3 text-xs text-muted-foreground">
+ <pre className="type-meta mt-3 max-h-[180px] overflow-auto bg-secondary/50 p-3">
  {JSON.stringify(run.tick, null, 2)}
  </pre>
  ) : null}
  </div>
  );
  })}
- {!runs.length ? <div className="text-sm text-muted-foreground">No execution history yet.</div> : null}
+{!runs.length ? <div className="type-body text-muted-foreground">No execution history yet.</div> : null}
  {hasMore ? <div className="h-4" ref={sentinelRef} /> : null}
  </div>
  </section>

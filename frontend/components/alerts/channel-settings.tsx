@@ -28,6 +28,7 @@ type ChannelState = {
 type ChannelField = {
  key: string;
  label: string;
+ placeholder?: string;
  required?: boolean;
 };
 
@@ -39,6 +40,9 @@ type ChannelGuide = {
  steps: string[];
  notes: string[];
 };
+
+const compactFieldClassName = "h-10 w-full min-[1200px]:w-[min(25vw,24rem)]";
+const compactFieldGridClassName = "grid max-w-full gap-3 min-[1200px]:grid-cols-2 min-[1600px]:grid-cols-3";
 
 const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
  discord: {
@@ -137,18 +141,18 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
  return (
  <div className="grid gap-6">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
- <div className=" border border-border p-4">
- <div className="mb-3 text-sm font-bold">Shared test message</div>
- <div className="grid gap-3 min-[960px]:grid-cols-[1fr_auto]">
- <Input onChange={(event) => setMessage(event.target.value)} value={message} />
- <Button disabled={isPending} onClick={sendInAppTest} type="button" variant="outline">
+ <div className="border border-border p-4">
+ <div className="mb-3 text-base font-bold tracking-tight">Shared test message</div>
+ <div className="flex flex-wrap items-end gap-3">
+ <Input className={compactFieldClassName} onChange={(event) => setMessage(event.target.value)} value={message} />
+ <Button className="h-10 px-5" disabled={isPending} onClick={sendInAppTest} type="button" variant="outline">
  Test in-app alert
  </Button>
  </div>
  </div>
  <ChannelCard
  channel={discord}
- fields={[{ key: "webhook_url", label: "Discord webhook URL", required: true }]}
+ fields={[{ key: "webhook_url", label: "Webhook URL", placeholder: "Paste webhook URL", required: true }]}
  guide={CHANNEL_GUIDES.discord}
  onChange={setDiscord}
  onSave={() => save("discord")}
@@ -158,8 +162,8 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
  <ChannelCard
  channel={telegram}
  fields={[
- { key: "bot_token", label: "Telegram bot token", required: true },
- { key: "chat_id", label: "Telegram chat id", required: true }
+ { key: "bot_token", label: "Bot token", placeholder: "Paste bot token", required: true },
+ { key: "chat_id", label: "Chat ID", placeholder: "Paste destination chat id", required: true }
  ]}
  guide={CHANNEL_GUIDES.telegram}
  onChange={setTelegram}
@@ -188,11 +192,17 @@ function ChannelCard({
  onTest: () => void;
  title: string;
 }) {
+ const brandIcon = title === "Discord" ? "/brand/providers/discord.svg" : title === "Telegram" ? "/brand/providers/telegram.svg" : null;
+ const brandIconClassName = title === "Telegram" ? "h-6 w-6" : "h-5 w-5";
+
  return (
- <div className=" border border-border p-4">
+ <div className="border border-border p-4">
  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
  <div className="flex items-center gap-2">
- <div className="text-sm font-bold">{title}</div>
+ <div className="flex items-center gap-3 text-[22px] font-bold leading-none tracking-tight">
+ {brandIcon ? <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center"><img alt="" className={`${brandIconClassName} object-contain`} draggable={false} src={brandIcon} /></span> : null}
+ <span>{title}</span>
+ </div>
  <SetupGuide guide={guide} />
  </div>
  <div className="flex gap-3 text-sm">
@@ -200,23 +210,24 @@ function ChannelCard({
  <Label className="flex items-center gap-2"><Checkbox checked={channel.is_default} onCheckedChange={(checked) => onChange({ ...channel, is_default: Boolean(checked) })} />Default</Label>
  </div>
  </div>
- <div className="grid gap-3">
- <LabeledField label={`${title} label`} required={false}>
- <Input onChange={(event) => onChange({ ...channel, label: event.target.value })} placeholder={`${title} label`} value={channel.label} />
+ <div className={compactFieldGridClassName}>
+ <LabeledField label="Label" required={false}>
+ <Input className={compactFieldClassName} onChange={(event) => onChange({ ...channel, label: event.target.value })} placeholder="Optional label" value={channel.label} />
  </LabeledField>
  {fields.map((field) => (
  <LabeledField key={field.key} label={field.label} required={Boolean(field.required)}>
  <Input
+ className={compactFieldClassName}
  onChange={(event) => onChange({ ...channel, config: { ...channel.config, [field.key]: event.target.value } })}
- placeholder={field.label}
+ placeholder={field.placeholder ?? field.label}
  value={channel.config[field.key] ?? ""}
  />
  </LabeledField>
  ))}
  </div>
  <div className="mt-4 flex flex-wrap gap-3">
- <Button onClick={onSave} type="button">Save</Button>
- <Button onClick={onTest} type="button" variant="outline">Test</Button>
+ <Button className="h-10 px-5" onClick={onSave} type="button">Save</Button>
+ <Button className="h-10 px-5" onClick={onTest} type="button" variant="outline">Test</Button>
  </div>
  </div>
  );
