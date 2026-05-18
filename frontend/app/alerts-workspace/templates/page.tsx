@@ -18,7 +18,7 @@ export default async function AlertTemplatesPage() {
  <div className="type-step-eyebrow mt-3">{template.category}</div>
  <div className="mt-5">
  <Button asChild type="button">
- <Link href={`/alerts-workspace/workflows/new?template=${template.id}`}>Use template</Link>
+ <Link href={`/alerts-workspace/workflows/new?template=${template.id}`}>Create workflow from template</Link>
  </Button>
  </div>
  </CardContent>

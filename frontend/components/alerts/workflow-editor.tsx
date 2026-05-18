@@ -685,6 +685,7 @@ initialWorkflow,
  const router = useRouter();
  const [isPending, startTransition] = useTransition();
  const [error, setError] = useState("");
+ const [notice, setNotice] = useState("");
  const [matchPreview, setMatchPreview] = useState("");
  const [editorMode, setEditorMode] = useState<EditorMode>(initialWorkflow?.editor_mode ?? "rule");
  const initialWorkflowType = initialWorkflow?.workflow_dsl.workflow_type ?? "market_data";
@@ -829,6 +830,7 @@ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(nul
 const selectedAccount = accounts.find((item) => item.id === accountId);
 const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId) ?? null;
 const selectedPreset = presets.find((item) => String(item.id ?? "") === selectedPresetId) ?? null;
+const isTemplateDraft = Boolean(initialWorkflow?.template_id && !initialWorkflow?.id);
  const advancedMarketScopeCount = [
  activeExchanges,
  activeExchangeTypes,
@@ -1136,16 +1138,35 @@ const activeInstrument = useMemo<InstrumentRef>(
  setShowSuggestions(false);
  }
 
+ function clearScriptIfVisualLogicChanged(nextCombine: "all" | "any", nextConditions: AlertCondition[]) {
+ const nextDsl = conditionsToDsl(nextCombine, nextConditions);
+ if (dslText.trim() && dslText.trim() !== nextDsl) {
+ setDslText("");
+ setEngineFeedback("Advanced script cleared because the visual conditions were edited. The saved workflow will now use the visible rule builder.");
+ }
+ }
+
+ function updateCombine(nextCombine: "all" | "any") {
+ clearScriptIfVisualLogicChanged(nextCombine, conditions);
+ setCombine(nextCombine);
+ }
+
  function updateCondition(index: number, patch: Partial<AlertCondition>) {
- setConditions((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+ const nextConditions = conditions.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item));
+ clearScriptIfVisualLogicChanged(combine, nextConditions);
+ setConditions(nextConditions);
  }
 
  function addCondition() {
- setConditions((current) => [...current, { field: "ltp", operator: "gte", value: 0 }]);
+ const nextConditions = [...conditions, { field: "ltp", operator: "gte", value: 0 }];
+ clearScriptIfVisualLogicChanged(combine, nextConditions);
+ setConditions(nextConditions);
  }
 
  function removeCondition(index: number) {
- setConditions((current) => current.filter((_, itemIndex) => itemIndex !== index));
+ const nextConditions = conditions.filter((_, itemIndex) => itemIndex !== index);
+ clearScriptIfVisualLogicChanged(combine, nextConditions);
+ setConditions(nextConditions);
  }
 
  function channelSelection(): AlertChannelSelection {
@@ -1304,6 +1325,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  };
 
  return {
+ template_id: initialWorkflow?.template_id ?? null,
  name,
  description,
  account_id: accountId || null,
@@ -1432,6 +1454,7 @@ const activeInstrument = useMemo<InstrumentRef>(
 
  function save() {
  setError("");
+ setNotice("");
  const saveBlockReason = getSaveBlockReason();
  if (saveBlockReason) {
  setError(saveBlockReason);
@@ -1443,8 +1466,13 @@ const activeInstrument = useMemo<InstrumentRef>(
  const workflow = initialWorkflow?.id
  ? await updateAlertWorkflow(initialWorkflow.id, payload)
  : await createAlertWorkflow(payload);
+ setNotice(initialWorkflow?.id ? "Workflow saved." : "Workflow created.");
+ if (initialWorkflow?.id) {
+ router.refresh();
+ } else {
  router.push(`/alerts-workspace/workflows/${workflow.id}`);
  router.refresh();
+ }
  } catch (caught) {
  setError(caught instanceof Error ? caught.message : "Could not save workflow.");
  }
@@ -1771,6 +1799,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  const selectedLlmModels = selectedLlmProvider?.models.filter((model) => model.is_enabled) ?? [];
  const selectedFeedProvider = llmProviders.find((item) => item.provider === feedProvider);
  const selectedFeedModels = selectedFeedProvider?.models.filter((model) => model.is_enabled) ?? [];
+ const footerFeedback = error || (!canSave && saveBlockReason ? saveBlockReason : "");
 
 function toggleFeedProduct(product: string, checked: boolean) {
  setFeedProducts((current) => checked ? Array.from(new Set([...current, product])) : current.filter((item) => item !== product));
@@ -1809,6 +1838,8 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  return (
  <div className="grid max-w-5xl gap-4">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
+ {notice ? <div className="border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">{notice}</div> : null}
+ {isTemplateDraft ? <div className="border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">Template loaded as a new workflow draft. Saving creates your own workflow and leaves the system template unchanged.</div> : null}
 {matchPreview ? <div className="type-body border border-border px-4 py-3 text-muted-foreground">{matchPreview}</div> : null}
 
  <div className="grid gap-4">
@@ -2420,7 +2451,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  messageTemplate={messageTemplate}
  messageInputRef={messageInputRef}
  removeCondition={removeCondition}
- setCombine={setCombine}
+ setCombine={updateCombine}
  setCooldownSeconds={setCooldownSeconds}
  setLevel={setLevel}
  setTitleTemplate={setTitleTemplate}
@@ -2777,6 +2808,16 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Button>
  ) : null}
  </div>
+ {footerFeedback ? (
+ <div className={`type-help border px-3 py-2 ${error ? "border-[var(--danger)] bg-[var(--danger-subtle)] text-[var(--danger)]" : "border-border text-muted-foreground"}`}>
+ {footerFeedback}
+ </div>
+ ) : null}
+ {notice ? (
+ <div className="type-help border border-border px-3 py-2 text-muted-foreground">
+ {notice}
+ </div>
+ ) : null}
  {initialWorkflow?.id ? (
  <div className="type-help grid gap-1 border border-border px-3 py-2 text-muted-foreground">
  <div>`Evaluate current preview` checks the workflow conditions against the live preview tick shown above. It does not create an alert or notify any channel.</div>
