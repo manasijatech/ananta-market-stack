@@ -302,6 +302,11 @@ export function MarketIntelligenceLiveFeed({
  const watchlistSymbols = useMemo(() => new Set(symbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean)), [symbols]);
 
  useEffect(() => {
+ setFeeds(initialFeeds);
+ setLiveUpdateCounts(emptyLiveUpdateCounts);
+ }, [initialFeeds]);
+
+ useEffect(() => {
  let socket: WebSocket | null = null;
  let cancelled = false;
 
