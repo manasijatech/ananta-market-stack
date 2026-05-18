@@ -39,7 +39,7 @@ export function BrokerDetailActions({
  startTransition(async () => {
  try {
  await deleteBrokerAccount(accountId);
- router.push("/brokers");
+ router.push("/broker-connections");
  } catch (error) {
  setMessage(parseActionError(error).message);
  }
@@ -55,7 +55,7 @@ export function BrokerDetailActions({
  </Button>
  {verified ? (
  <Button asChild disabled={isPending} type="button" variant="outline">
- <Link href={`/brokers/${accountId}/data-test`}>Test data APIs</Link>
+ <Link href={`/broker-connections/${accountId}/data-test`}>Test data APIs</Link>
  </Button>
  ) : null}
  <Button disabled={isPending} onClick={remove} type="button" variant="destructive">

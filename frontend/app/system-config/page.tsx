@@ -10,7 +10,7 @@ export default async function SystemConfigPage() {
       <div className="max-w-5xl">
         <PageHeader
           eyebrow="Workspace"
-          title="System config"
+          title="System Config"
           description="Manage project-wide broker data behavior, encrypted LLM provider credentials, and saved provider models."
         />
         <SystemConfigPanel initialConfig={config} />

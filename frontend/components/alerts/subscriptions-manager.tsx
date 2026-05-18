@@ -217,7 +217,7 @@ export function SubscriptionsManager({
  liveSymbolLimit >= 0 &&
  nextSymbolCount > liveSymbolLimit
  ) {
- setError(`This Pulse plan allows ${liveSymbolLimit} live symbols. Your selected scope currently resolves to about ${nextSymbolCount}.`);
+ setError(`This Market Stack plan allows ${liveSymbolLimit} live symbols. Your selected scope currently resolves to about ${nextSymbolCount}.`);
  return;
  }
  startTransition(async () => {
@@ -274,12 +274,12 @@ export function SubscriptionsManager({
  <div className="border border-border p-3">
  <div className="mb-3 flex items-start justify-between gap-3">
  <div>
- <div className="text-base font-semibold leading-5 text-foreground">Manasija websocket subscriptions</div>
+ <div className="text-base font-semibold leading-5 text-foreground">Market Stack websocket subscriptions</div>
  <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
  Backend worker status: {alphaWsConfig.status}{alphaWsConfig.last_event_at ? ` · last event ${new Date(alphaWsConfig.last_event_at).toLocaleTimeString("en-IN")}` : ""}
  </div>
  <div className="mt-1 text-xs text-muted-foreground">
- Pulse plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"} · {alphaWsConfig.scope_mode === "full_market" ? "full market" : `${activeLiveSymbols}${typeof liveSymbolLimit === "number" ? ` / ${liveSymbolLimit}` : ""} live symbols`}
+ Market Stack plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"} · {alphaWsConfig.scope_mode === "full_market" ? "full market" : `${activeLiveSymbols}${typeof liveSymbolLimit === "number" ? ` / ${liveSymbolLimit}` : ""} live symbols`}
  {typeof alphaWsConfig.monthly_unique_symbol_limit === "number" ? ` · ${alphaWsConfig.monthly_unique_symbol_limit} unique/month` : ""}
  </div>
  </div>
@@ -499,10 +499,10 @@ export function SubscriptionsManager({
 
 function SymbolLogo({ metadata, symbol }: { metadata?: AlphaSymbolMetadata; symbol: string }) {
  if (metadata?.logo) {
- return <img alt="" className="size-9 shrink-0 border border-border bg-background object-contain" src={metadata.logo} />;
+ return <img alt="" className="size-9 shrink-0 object-contain" src={metadata.logo} />;
  }
  return (
- <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-muted font-mono text-[11px] font-semibold text-muted-foreground">
+ <span className="flex size-9 shrink-0 items-center justify-center font-mono text-[11px] font-semibold text-muted-foreground">
  {symbol.slice(0, 2)}
  </span>
  );

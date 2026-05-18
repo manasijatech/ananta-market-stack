@@ -26,8 +26,12 @@ function isZerodhaStatus(status: SessionStatus): status is ZerodhaSessionStatus 
  return status.broker === "zerodha" && "access_token_generated_at" in status;
 }
 
+function brokerSessionInputName(key: string): string {
+ return `market_stack_broker_session_${key}`;
+}
+
 function payloadFromForm(broker: BrokerCode, formData: FormData): SessionLoginPayload {
- const value = (key: string) => String(formData.get(key) ?? "").trim();
+ const value = (key: string) => String(formData.get(brokerSessionInputName(key)) ?? formData.get(key) ?? "").trim();
  switch (broker) {
  case "zerodha":
  return { broker, request_token: value("request_token") };
@@ -47,11 +51,17 @@ function payloadFromForm(broker: BrokerCode, formData: FormData): SessionLoginPa
 }
 
 function TOTPInput({ name = "totp", onComplete }: { name?: string; onComplete?: () => void }) {
+ const inputName = brokerSessionInputName(name);
  return (
  <Input
+ autoComplete="one-time-code"
+ data-1p-ignore="true"
+ data-form-type="other"
+ data-lpignore="true"
+ id={inputName}
  inputMode="numeric"
  maxLength={6}
- name={name}
+ name={inputName}
  onChange={(event) => {
  event.currentTarget.value = event.currentTarget.value.replace(/\D/g, "").slice(0, 6);
  if (event.currentTarget.value.length === 6) {
@@ -83,7 +93,7 @@ export function SessionPanel({
  const expiresAt = isZerodhaStatus(sessionStatus)
  ? sessionStatus.access_token_expires_at
  : sessionStatus.token_expires_at;
- const shouldPulseLogin =
+ const shouldHighlightLogin =
  !sessionStatus.session_active && "login_url" in sessionStatus && Boolean(sessionStatus.login_url);
  const hasManualSessionForm =
  !sessionStatus.session_active &&
@@ -190,7 +200,7 @@ export function SessionPanel({
  asChild
  className={cn(
  "mt-5",
- shouldPulseLogin &&
+ shouldHighlightLogin &&
  "border-primary bg-[var(--accent-glow)] text-primary hover:bg-[var(--accent-subtle)]"
  )}
  >
@@ -256,27 +266,27 @@ export function SessionPanel({
  ) : null}
 
  {hasManualSessionForm ? (
- <form ref={formRef} className="mt-6 grid gap-3 border-t border-border pt-5" onSubmit={submit}>
- {broker === "zerodha" ? <Input name="request_token" placeholder="request_token" required /> : null}
- {broker === "upstox" ? <Input name="authorization_code" placeholder="authorization_code" required /> : null}
+ <form ref={formRef} autoComplete="off" className="mt-6 grid gap-3 border-t border-border pt-5" data-form-type="other" onSubmit={submit}>
+ {broker === "zerodha" ? <Input autoComplete="off" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("request_token")} placeholder="request_token" required /> : null}
+ {broker === "upstox" ? <Input autoComplete="off" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("authorization_code")} placeholder="authorization_code" required /> : null}
  {broker === "angel" ? (
  <>
- <Input name="client_code" placeholder="Client code" required />
- <Input name="pin" placeholder="PIN" required type="password" />
+ <Input autoComplete="off" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("client_code")} placeholder="Client code" required />
+ <Input autoComplete="new-password" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("pin")} placeholder="PIN" required type="password" />
  <TOTPInput onComplete={() => formRef.current?.requestSubmit()} />
  </>
  ) : null}
- {broker === "dhan" ? <Input name="token_id" placeholder="token_id" required /> : null}
+ {broker === "dhan" ? <Input autoComplete="off" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("token_id")} placeholder="token_id" required /> : null}
  {broker === "groww" && mode === "totp" ? <TOTPInput onComplete={() => formRef.current?.requestSubmit()} /> : null}
- {broker === "groww" && mode === "token" ? <Input name="access_token" placeholder="Access token" required type="password" /> : null}
+ {broker === "groww" && mode === "token" ? <Input autoComplete="new-password" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("access_token")} placeholder="Access token" required type="password" /> : null}
  {broker === "kotak" ? (
  <>
- <Input name="mobile_number" placeholder="Mobile number" required />
+ <Input autoComplete="off" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("mobile_number")} placeholder="Mobile number" required />
  <TOTPInput onComplete={() => undefined} />
- <Input name="mpin" placeholder="MPIN" required type="password" />
+ <Input autoComplete="new-password" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("mpin")} placeholder="MPIN" required type="password" />
  </>
  ) : null}
- {broker === "indmoney" ? <Input name="access_token" placeholder="Access token" required type="password" /> : null}
+ {broker === "indmoney" ? <Input autoComplete="new-password" data-1p-ignore="true" data-form-type="other" data-lpignore="true" name={brokerSessionInputName("access_token")} placeholder="Access token" required type="password" /> : null}
  <Button disabled={isPending} type="submit">
  {isPending ? "Submitting..." : broker === "groww" && mode === "auto" ? "Run automatic refresh" : "Update session"}
  </Button>

@@ -3,12 +3,12 @@ import { PageHeader, Shell } from "@/components/brokers/ui";
 
 const quickAccessItems = [
   {
-    href: "/brokers",
+    href: "/broker-connections",
     label: "Broker Connections",
     description: "Connect, verify, and refresh broker sessions for portfolio and live data access."
   },
   {
-    href: "/alerts",
+    href: "/alerts-workspace",
     label: "Alerts Workspace",
     description: "Manage workflows, live subscriptions, alert history, and stream health."
   },
@@ -18,7 +18,7 @@ const quickAccessItems = [
     description: "Save Discord and Telegram delivery credentials and test outbound channels."
   },
   {
-    href: "/dashboard/system-config",
+    href: "/system-config",
     label: "System Config",
     description: "Manage broker-data behavior, encrypted provider credentials, and saved LLM models."
   }

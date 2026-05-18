@@ -81,7 +81,7 @@ export function BrokerCard({ account }: { account: BrokerAccount }) {
  const verified = Boolean(account.last_verified_at);
  return (
  <Card className="group p-0 transition-colors duration-100 ease-out hover:border-primary/60">
- <Link className="block p-5" href={`/brokers/${account.id}`}>
+ <Link className="block p-5" href={`/broker-connections/${account.id}`}>
  <div className="mb-5 flex items-start justify-between gap-4">
  <div className="flex min-w-0 items-start gap-3">
  <BrokerLogo broker={account.broker_code} />

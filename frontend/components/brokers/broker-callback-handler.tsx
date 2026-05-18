@@ -134,7 +134,7 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
  await createSession(selectedAccount.id, selectedPayload.broker, selectedPayload.payload);
  await verifyBrokerAccount(selectedAccount.id);
  window.localStorage.removeItem(pendingLoginKey);
- router.replace(`/brokers/${selectedAccount.id}`);
+ router.replace(`/broker-connections/${selectedAccount.id}`);
  router.refresh();
  } catch (caught) {
  const message = parseActionError(caught).message;

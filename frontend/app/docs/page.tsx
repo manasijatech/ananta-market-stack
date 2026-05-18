@@ -11,11 +11,11 @@ export default function BrokerDocsIndexPage() {
  <Shell>
  <PageHeader
  eyebrow="Broker docs"
- title="Setup guides"
+ title="Docs"
  description="First-party Market Stack setup notes for each supported broker and the exact fields our backend accepts."
  action={
  <Button asChild variant="outline">
- <Link href="/brokers/new">Add broker</Link>
+ <Link href="/broker-connections/new">Add broker</Link>
  </Button>
  }
  />
@@ -33,7 +33,7 @@ export default function BrokerDocsIndexPage() {
  <CardContent>
  <p className="mb-5 text-sm text-muted-foreground">{guide.summary}</p>
  <Button asChild className="w-full" variant="outline">
- <Link href={`/brokers/docs/${guide.broker}`} target="_blank" rel="noreferrer">
+ <Link href={`/docs/${guide.broker}`} target="_blank" rel="noreferrer">
  Open docs
  </Link>
  </Button>

@@ -16,7 +16,7 @@ export default async function NewBrokerPage() {
  description="Choose a broker and enter the required credentials. Session authorization can be completed on the detail page."
  action={
  <Button asChild variant="outline">
- <Link href="/brokers">
+ <Link href="/broker-connections">
  <ArrowLeft className="size-4" aria-hidden="true" />
  Back to brokers
  </Link>

@@ -35,7 +35,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
  label: "MAIN",
  items: [
  { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
- { href: "/brokers", label: "Broker Connections", icon: IconWallet },
+ { href: "/broker-connections", label: "Broker Connections", icon: IconWallet },
  { href: "/watchlists", label: "Watchlists", icon: IconListCheck }
  ]
  },
@@ -43,15 +43,15 @@ const navGroups: { label: string; items: NavItem[] }[] = [
  label: "INTELLIGENCE",
  items: [
  { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
- { href: "/alerts", label: "Alerts Workspace", icon: IconBellRinging },
+ { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging },
  { href: "/alert-channels", label: "Alert Channels", icon: IconRoute }
  ]
  },
  {
  label: "SETTINGS",
  items: [
- { href: "/dashboard/system-config", label: "System Config", icon: IconSettings2 },
- { href: "/brokers/docs", label: "Docs", icon: IconBook, external: true }
+ { href: "/system-config", label: "System Config", icon: IconSettings2 },
+ { href: "/docs", label: "Docs", icon: IconBook, external: true }
  ]
  }
 ];
@@ -65,8 +65,8 @@ function isNavItemActive(pathname: string, href: string) {
  if (href === "/market-intelligence") {
  return pathname.startsWith("/market-intelligence");
  }
- if (href === "/brokers") {
- return pathname === "/brokers" || (pathname.startsWith("/brokers/") && !pathname.startsWith("/brokers/docs"));
+ if (href === "/broker-connections") {
+ return pathname === "/broker-connections" || pathname.startsWith("/broker-connections/");
  }
  return pathname === href || pathname.startsWith(`${href}/`);
 }

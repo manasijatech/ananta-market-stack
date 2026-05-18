@@ -217,7 +217,11 @@ function ChannelCard({
  {fields.map((field) => (
  <LabeledField key={field.key} label={field.label} required={Boolean(field.required)}>
  <Input
+ autoComplete="off"
  className={compactFieldClassName}
+ data-1p-ignore="true"
+ data-form-type="other"
+ data-lpignore="true"
  onChange={(event) => onChange({ ...channel, config: { ...channel.config, [field.key]: event.target.value } })}
  placeholder={field.placeholder ?? field.label}
  value={channel.config[field.key] ?? ""}

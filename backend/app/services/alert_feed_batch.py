@@ -245,7 +245,7 @@ def run_feed_trigger_batches(
         try:
             validate_llm_model(db, user_id, first.provider, first.model_id)
             developer_prompt = (
-                "You classify one Manasija websocket market-data event against multiple independent alert workflow conditions. "
+                "You classify one Market Stack websocket market-data event against multiple independent alert workflow conditions. "
                 "Return only strict JSON matching this schema: "
                 '{"results":[{"workflow_id":"string","matches":boolean,"reason":"string","confidence":number,'
                 '"matched_terms":["string"],"error":null|string}],"diagnostics":{}}. '

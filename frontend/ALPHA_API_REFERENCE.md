@@ -34,7 +34,7 @@ REST products and notable route IDs:
 
 WebSocket products: `news`, `announcements`, `earnings`, `concalls`, `alerts`. Each requires a live entitlement, costs 0 credits to connect/subscribe, has concurrency limit 5, and supports tiers `pro_500`, `scale_1000`, and `full_market`.
 
-Pulse subscription tiers:
+Market Stack subscription tiers:
 
 | Tier | Price | REST limits | Included credits | Live entitlement |
 |---|---:|---:|---:|---|

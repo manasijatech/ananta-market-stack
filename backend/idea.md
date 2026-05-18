@@ -6,7 +6,7 @@ Fully managed SaaS for teams that want zero operational overhead
 Address a key challenge early: seamless updates across all customer environments, whether self-hosted or managed.
 Go beyond shipping code. Deliver high-quality documentation, setup guides, and best practices so users can onboard quickly and continuously improve their systems.
 Monetization layers:
-Applications: Pulse, Myuki (including Optrack)
+Applications: Market Stack, Myuki (including Optrack)
 Managed services: hosted, scalable deployments
 Implementation & maintenance: custom setups, integrations, and long-term support for the core platform 
 
@@ -152,5 +152,4 @@ redis - price data, symbols,
 
 
 ---
-
 

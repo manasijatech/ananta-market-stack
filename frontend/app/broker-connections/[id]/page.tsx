@@ -26,7 +26,7 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
  description="Review account status, update broker sessions, fetch quotes, and inspect broker-native portfolio data."
  action={
  <Button asChild variant="outline">
- <Link href="/brokers">
+ <Link href="/broker-connections">
  <ArrowLeft className="size-4" aria-hidden="true" />
  Back to brokers
  </Link>

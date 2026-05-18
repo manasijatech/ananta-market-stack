@@ -65,7 +65,7 @@ export function MarketIntelligenceChrome({
  <>
  <PageHeader
  eyebrow="Alpha intelligence"
- title={activeSection.label}
+ title="Market Intelligence"
  description={activeSection.description}
  />
 
