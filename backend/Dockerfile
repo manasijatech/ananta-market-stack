@@ -15,7 +15,7 @@ RUN chmod +x /usr/local/bin/market-stack-backend-entrypoint \
     && rm -rf /app/data \
     && ln -s /data /app/data
 
-EXPOSE 8004
+EXPOSE 8000
 
 ENTRYPOINT ["market-stack-backend-entrypoint"]
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

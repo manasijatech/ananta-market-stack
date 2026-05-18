@@ -62,7 +62,7 @@ def main() -> None:
         ),
         encoding="utf-8",
     )
-    CONFIG_PATH.chmod(0o600)
+    CONFIG_PATH.chmod(0o644)
 
 
 if __name__ == "__main__":

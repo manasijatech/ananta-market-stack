@@ -139,20 +139,20 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
     setupSteps: [
       "Create an Upstox developer app.",
       "Copy the API key and API secret.",
-      "Set the redirect URI to http://localhost:3001/brokers for local development.",
+      "Set the redirect URI to http://localhost:3000/brokers for local development.",
       "Save the exact same redirect URI in Market Stack."
     ],
     formMapping: [
       { label: "API key", field: "api_key", note: "Upstox client ID or API key." },
       { label: "API secret", field: "api_secret", note: "Upstox API secret." },
-      { label: "Redirect URI", field: "redirect_uri", note: "Use http://localhost:3001/brokers locally; it must match Upstox exactly." }
+      { label: "Redirect URI", field: "redirect_uri", note: "Use http://localhost:3000/brokers locally; it must match Upstox exactly." }
     ],
     sessionSteps: [
       "Save the account, then open the broker detail page.",
       "Open the Upstox login URL from the session panel.",
       "After authorization, Market Stack reads the code from /brokers and connects the account automatically."
     ],
-    notes: ["Use http://localhost:3001 before and after broker login."]
+    notes: ["Use http://localhost:3000 before and after broker login."]
   },
   zerodha: {
     broker: "zerodha",
@@ -162,7 +162,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
     setupSteps: [
       "Create or open your Kite Connect app.",
       "Copy the API key and API secret.",
-      "Set the app redirect URL to http://localhost:3001/brokers for local development.",
+      "Set the app redirect URL to http://localhost:3000/brokers for local development.",
       "Save the credentials in Market Stack."
     ],
     formMapping: [
@@ -174,7 +174,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
       "Open the Zerodha login URL shown in the session panel.",
       "After authorization, Market Stack reads the request_token from /brokers and connects the account automatically."
     ],
-    notes: ["Use http://localhost:3001 before and after broker login."]
+    notes: ["Use http://localhost:3000 before and after broker login."]
   }
 };
 

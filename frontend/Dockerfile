@@ -4,8 +4,8 @@ WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-ARG NEXT_PUBLIC_APP_URL=http://localhost:3001
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
     NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 
@@ -19,7 +19,7 @@ RUN chmod +x /usr/local/bin/market-stack-frontend-entrypoint \
 
 ENV NODE_ENV=production
 
-EXPOSE 3001
+EXPOSE 3000
 
 ENTRYPOINT ["market-stack-frontend-entrypoint"]
-CMD ["npm", "run", "start", "--", "-p", "3001", "-H", "0.0.0.0"]
+CMD ["npm", "run", "start", "--", "-p", "3000", "-H", "0.0.0.0"]

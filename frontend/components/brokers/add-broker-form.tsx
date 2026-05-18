@@ -18,7 +18,7 @@ import type { BrokerCode, CreateBrokerAccountPayload, FieldErrors } from "@/serv
 
 type GrowwMode = "approval" | "totp" | "token";
 
-const fallbackBrokerRedirectUrl = "http://localhost:3001/brokers";
+const fallbackBrokerRedirectUrl = "http://localhost:3000/brokers";
 
 function stringField(formData: FormData, key: string): string {
  return String(formData.get(key) ?? "").trim();

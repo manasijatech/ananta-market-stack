@@ -105,7 +105,7 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
  setCallbackState({
  tone: "warning",
  message:
- "Broker login returned successfully, but this browser session cannot see any broker accounts. Open Market Stack using localhost:3001 before starting broker login, then use the same host for the callback."
+ "Broker login returned successfully, but this browser session cannot see any broker accounts. Open Market Stack using localhost:3000 before starting broker login, then use the same host for the callback."
  });
  return;
  }

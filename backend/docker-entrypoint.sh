@@ -12,7 +12,7 @@ load_generated_env() {
     esac
     key="${line%%=*}"
     value="${line#*=}"
-    eval current="\${$key:-}"
+    current="$(printenv "$key" 2>/dev/null || true)"
     if [ -z "$current" ]; then
       export "$key=$value"
     fi

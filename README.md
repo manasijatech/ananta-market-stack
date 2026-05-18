@@ -46,7 +46,7 @@ Market-Stack/
     service/          Server actions, broker types, guide loading
 ```
 
-The frontend talks to the backend through the configured API base URL. In Docker, server-side frontend calls use `http://backend:8004/api/v1` inside the Compose network while browser-facing URLs use `http://localhost:8004/api/v1`. Server actions add `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` headers from the Better Auth session. In backend-only development, missing `X-User-Id` falls back to `local-dev-user`.
+The frontend talks to the backend through the configured API base URL. In Docker, server-side frontend calls use `http://backend:8000/api/v1` inside the Compose network while browser-facing websocket/testing URLs use `http://localhost:8000/api/v1` by default. Server actions add `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` headers from the Better Auth session. In backend-only development, missing `X-User-Id` falls back to `local-dev-user`.
 
 ## Prerequisites
 
@@ -66,18 +66,33 @@ docker compose up --build
 Open:
 
 ```text
-http://localhost:3001
+http://localhost:3000
 ```
 
 The default Docker stack runs:
 
-- Frontend on `http://localhost:3001`
-- Backend on `http://localhost:8004`
-- Backend API base at `http://localhost:8004/api/v1`
+- Frontend on `http://localhost:3000`
+- Backend on `http://localhost:8000`
+- Backend API base at `http://localhost:8000/api/v1`
 - Redis inside the Compose network as `redis:6379`
 - SQLite and generated secrets in Docker named volumes
 
-The backend also uses `8004` inside the Compose network, so frontend server-side calls go to `http://backend:8004/api/v1`.
+The backend also uses `8000` inside the Compose network, so frontend server-side calls go to `http://backend:8000/api/v1`.
+
+Optional local overrides can be set in a root `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+For example, if backend port `8000` is already occupied on your machine:
+
+```env
+BACKEND_PORT=8004
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
+MARKET_STACK_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
+APP_PUBLIC_BASE_URL=http://localhost:8004
+```
 
 Useful Docker commands:
 
@@ -116,17 +131,19 @@ The `bootstrap` service generates missing secrets once and keeps them stable acr
 For production domains, override these values before starting Compose:
 
 ```bash
-FRONTEND_PORT=3001
-BACKEND_PORT=8004
+FRONTEND_PORT=3000
+BACKEND_PORT=8000
 BETTER_AUTH_URL=https://your-frontend-domain.example
 BETTER_AUTH_TRUSTED_ORIGINS=https://your-frontend-domain.example
 NEXT_PUBLIC_APP_URL=https://your-frontend-domain.example
 NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
 MARKET_STACK_PUBLIC_APP_URL=https://your-frontend-domain.example
 MARKET_STACK_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
-MARKET_STACK_API_INTERNAL_URL=http://backend:8004/api/v1
+MARKET_STACK_API_INTERNAL_URL=http://backend:8000/api/v1
 APP_PUBLIC_BASE_URL=https://your-backend-domain.example
 ```
+
+Most HTTP API calls are made by the Next.js server, so a private backend works for normal pages. The backend still needs a browser-reachable URL for the current websocket features: broker data websocket testing and market-intelligence live feed. If you do not use those features, you can keep backend access private behind your deployment. If you do use them, expose the backend through a reverse proxy/subdomain and point `MARKET_STACK_PUBLIC_API_BASE_URL` at that public backend URL.
 
 If you use an external Redis, set `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, and `REDIS_PASSWORD`, and remove or ignore the bundled Redis service as part of your deployment-specific Compose override.
 
@@ -175,20 +192,20 @@ PowerShell on Windows:
 Start the API:
 
 ```bash
-.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8004
+.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 PowerShell on Windows:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8004
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Useful backend URLs:
 
-- API health: `http://127.0.0.1:8004/health`
-- Versioned health: `http://127.0.0.1:8004/api/v1/health`
-- OpenAPI docs: `http://127.0.0.1:8004/docs`
+- API health: `http://127.0.0.1:8000/health`
+- Versioned health: `http://127.0.0.1:8000/api/v1/health`
+- OpenAPI docs: `http://127.0.0.1:8000/docs`
 
 Optional live alert worker processes:
 
@@ -220,14 +237,14 @@ cp .env.example .env.local
 Set the frontend environment values:
 
 ```env
-NEXT_PUBLIC_APP_URL=http://localhost:3001
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8004/api/v1
-MARKET_STACK_PUBLIC_APP_URL=http://localhost:3001
-MARKET_STACK_PUBLIC_API_BASE_URL=http://127.0.0.1:8004/api/v1
-MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8004/api/v1
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
+MARKET_STACK_PUBLIC_APP_URL=http://localhost:3000
+MARKET_STACK_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
+MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 BETTER_AUTH_SECRET=
-BETTER_AUTH_URL=http://localhost:3001
-BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3001,http://127.0.0.1:3001
+BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
 Generate `BETTER_AUTH_SECRET` with:
@@ -239,10 +256,10 @@ openssl rand -base64 32
 Start the frontend:
 
 ```bash
-npm run dev -- -p 3001
+npm run dev
 ```
 
-Open `http://localhost:3001`.
+Open `http://localhost:3000`.
 
 ## Development Commands
 
@@ -270,7 +287,7 @@ Frontend:
 cd frontend
 npm run lint
 npm run build
-npm run dev -- -p 3001
+npm run dev
 ```
 
 ## API Overview
@@ -372,7 +389,7 @@ Frontend environment:
 
 - `NEXT_PUBLIC_APP_URL` is the browser-facing frontend URL.
 - `NEXT_PUBLIC_API_BASE_URL` points to the backend `/api/v1` base.
-- `MARKET_STACK_API_INTERNAL_URL` lets frontend server actions call the backend through an internal Docker URL such as `http://backend:8004/api/v1`.
+- `MARKET_STACK_API_INTERNAL_URL` lets frontend server actions call the backend through an internal Docker URL such as `http://backend:8000/api/v1`.
 - `MARKET_STACK_PUBLIC_APP_URL` and `MARKET_STACK_PUBLIC_API_BASE_URL` are runtime-friendly public URLs for server-rendered frontend flows.
 - `BETTER_AUTH_SECRET` signs auth state.
 - `BETTER_AUTH_URL` is the Better Auth base URL.

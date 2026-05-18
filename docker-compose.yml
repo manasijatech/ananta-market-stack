@@ -24,13 +24,13 @@ services:
       - sh
       - -c
       - |
-        . /config/market-stack.env
+        REDIS_PASSWORD="$$(awk -F= '$$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/market-stack.env)"
         exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
     healthcheck:
       test:
         - CMD-SHELL
         - |
-          if [ -f /config/market-stack.env ]; then . /config/market-stack.env; fi
+          REDIS_PASSWORD="$(awk -F= '$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/market-stack.env)"
           redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG
       interval: 10s
       timeout: 5s
@@ -47,7 +47,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/app.db}
-      APP_PUBLIC_BASE_URL: ${APP_PUBLIC_BASE_URL:-http://localhost:8004}
+      APP_PUBLIC_BASE_URL: ${APP_PUBLIC_BASE_URL:-http://localhost:${BACKEND_PORT:-8000}}
       MANASIJA_API_BASE_URL: ${MANASIJA_API_BASE_URL:-https://developers.manasija.in}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
@@ -62,11 +62,11 @@ services:
       - market_stack_config:/config:ro
       - backend_data:/data
     ports:
-      - "${BACKEND_PORT:-8004}:8004"
+      - "${BACKEND_PORT:-8000}:8000"
     healthcheck:
       test:
         - CMD-SHELL
-        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8004/health', timeout=5).read()"
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"
       interval: 15s
       timeout: 10s
       retries: 10
@@ -77,34 +77,34 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8004/api/v1}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:${BACKEND_PORT:-8000}/api/v1}
     depends_on:
       bootstrap:
         condition: service_completed_successfully
       backend:
         condition: service_healthy
     environment:
-      PORT: 3001
+      PORT: 3000
       HOSTNAME: 0.0.0.0
       AUTH_DATABASE_PATH: /data/app.db
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
-      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3001,http://127.0.0.1:3001}
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3001}
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8004/api/v1}
-      MARKET_STACK_PUBLIC_APP_URL: ${MARKET_STACK_PUBLIC_APP_URL:-http://localhost:3001}
-      MARKET_STACK_PUBLIC_API_BASE_URL: ${MARKET_STACK_PUBLIC_API_BASE_URL:-http://localhost:8004/api/v1}
-      MARKET_STACK_API_INTERNAL_URL: ${MARKET_STACK_API_INTERNAL_URL:-http://backend:8004/api/v1}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:${FRONTEND_PORT:-3000},http://127.0.0.1:${FRONTEND_PORT:-3000}}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:${BACKEND_PORT:-8000}/api/v1}
+      MARKET_STACK_PUBLIC_APP_URL: ${MARKET_STACK_PUBLIC_APP_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      MARKET_STACK_PUBLIC_API_BASE_URL: ${MARKET_STACK_PUBLIC_API_BASE_URL:-http://localhost:${BACKEND_PORT:-8000}/api/v1}
+      MARKET_STACK_API_INTERNAL_URL: ${MARKET_STACK_API_INTERNAL_URL:-http://backend:8000/api/v1}
       MANASIJA_API_BASE_URL: ${MANASIJA_API_BASE_URL:-https://developers.manasija.in}
     volumes:
       - market_stack_config:/config:ro
       - backend_data:/data
     ports:
-      - "${FRONTEND_PORT:-3001}:3001"
+      - "${FRONTEND_PORT:-3000}:3000"
     healthcheck:
       test:
         - CMD-SHELL
-        - node -e "fetch('http://127.0.0.1:3001').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        - node -e "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
       interval: 15s
       timeout: 10s
       retries: 10

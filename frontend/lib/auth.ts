@@ -69,8 +69,8 @@ const authBaseURL = process.env.BETTER_AUTH_URL ?? getPublicAppUrl();
 const trustedOrigins = Array.from(
   new Set([
     authBaseURL,
-    "http://127.0.0.1:3001",
-    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
     ...String(process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
       .split(",")
       .map((origin) => origin.trim())
