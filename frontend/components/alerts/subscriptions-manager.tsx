@@ -66,7 +66,11 @@ export function SubscriptionsManager({
 
  const selectedAccount = accounts.find((item) => item.id === accountId);
  const enabledAddons = alphaWsConfig.entitled_addons.filter((item) => item.enabled);
- const fullMarketProducts = enabledAddons.filter((item) => item.tier === "full_market");
+ const fullMarketProducts = alphaWsConfig.full_market_products.length
+ ? alphaWsConfig.full_market_products
+ : enabledAddons.filter((item) => item.tier === "full_market").map((item) => item.product);
+ const activeLiveSymbols = alphaWsConfig.effective_symbol_count ?? alphaWsConfig.effective_symbols.length;
+ const liveSymbolLimit = alphaWsConfig.live_symbol_limit;
 
  useEffect(() => {
  function handlePointerDown(event: MouseEvent) {
@@ -206,6 +210,16 @@ export function SubscriptionsManager({
 
  function saveAlphaWebSocketConfig() {
  setError("");
+ const nextSymbolCount = estimateConfiguredAlphaSymbolCount();
+ if (
+ alphaWsConfig.scope_mode !== "full_market" &&
+ typeof liveSymbolLimit === "number" &&
+ liveSymbolLimit >= 0 &&
+ nextSymbolCount > liveSymbolLimit
+ ) {
+ setError(`This Pulse plan allows ${liveSymbolLimit} live symbols. Your selected scope currently resolves to about ${nextSymbolCount}.`);
+ return;
+ }
  startTransition(async () => {
  try {
  const next = await updateAlphaWebSocketConfig({
@@ -223,6 +237,25 @@ export function SubscriptionsManager({
  });
  }
 
+ function estimateConfiguredAlphaSymbolCount() {
+ const symbols = new Set<string>();
+ if (alphaWsConfig.scope_mode === "alert_subscriptions" || alphaWsConfig.scope_mode === "alerts_and_watchlists") {
+ for (const item of items) {
+ if (item.status === "active" && item.symbol) symbols.add(item.symbol.toUpperCase());
+ }
+ }
+ if (alphaWsConfig.scope_mode === "alerts_and_watchlists") {
+ for (const watchlist of watchlists) {
+ if (!alphaWsConfig.include_all_watchlists && !alphaWsConfig.watchlist_ids.includes(watchlist.id)) continue;
+ const rows = watchlist.symbols.length ? watchlist.symbols : watchlist.items.map((item) => item.symbol);
+ for (const symbol of rows) {
+ if (symbol) symbols.add(symbol.toUpperCase());
+ }
+ }
+ }
+ return symbols.size;
+ }
+
  return (
  <div className="grid max-w-5xl gap-4">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
@@ -232,6 +265,10 @@ export function SubscriptionsManager({
  <div className="text-base font-semibold leading-5 text-foreground">Manasija websocket subscriptions</div>
  <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
  Backend worker status: {alphaWsConfig.status}{alphaWsConfig.last_event_at ? ` · last event ${new Date(alphaWsConfig.last_event_at).toLocaleTimeString("en-IN")}` : ""}
+ </div>
+ <div className="mt-1 text-xs text-muted-foreground">
+ Pulse plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"} · {alphaWsConfig.scope_mode === "full_market" ? "full market" : `${activeLiveSymbols}${typeof liveSymbolLimit === "number" ? ` / ${liveSymbolLimit}` : ""} live symbols`}
+ {typeof alphaWsConfig.monthly_unique_symbol_limit === "number" ? ` · ${alphaWsConfig.monthly_unique_symbol_limit} unique/month` : ""}
  </div>
  </div>
  </div>
@@ -296,10 +333,10 @@ export function SubscriptionsManager({
  </span>
  </Label>
  </div>
- <div className="type-help mt-3 text-muted-foreground">
- Effective: {alphaWsConfig.effective_products.length} products / {alphaWsConfig.scope_mode === "full_market" ? "full-feed" : `${alphaWsConfig.effective_symbols.length} symbols`}
+ <div className="mt-3 text-xs text-muted-foreground">
+ Effective: {alphaWsConfig.effective_products.length} products / {alphaWsConfig.scope_mode === "full_market" ? "full-feed" : `${activeLiveSymbols} symbols`}
  </div>
- {fullMarketProducts.length ? <div className="type-meta mt-1">Full-market tier: {fullMarketProducts.map((item) => item.product).join(", ")}</div> : null}
+ {fullMarketProducts.length ? <div className="mt-1 text-xs text-muted-foreground">Full-market products: {fullMarketProducts.join(", ")}</div> : null}
  </div>
  <div>
  <div className="type-step-eyebrow">Watchlists</div>

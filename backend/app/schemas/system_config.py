@@ -89,6 +89,12 @@ class AlphaWebSocketConfigOut(BaseModel):
     entitled_addons: list[AlphaWebSocketAddonOut] = Field(default_factory=list)
     effective_products: list[str] = Field(default_factory=list)
     effective_symbols: list[str] = Field(default_factory=list)
+    plan_id: str | None = None
+    plan_name: str | None = None
+    live_symbol_limit: int | None = None
+    monthly_unique_symbol_limit: int | None = None
+    effective_symbol_count: int = 0
+    full_market_products: list[str] = Field(default_factory=list)
     full_market_allowed: bool = False
     status: str = "unknown"
     last_error: str | None = None

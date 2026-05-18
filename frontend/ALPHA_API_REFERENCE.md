@@ -22,17 +22,26 @@ This document maps every mounted Alpha API endpoint to its frontend use case and
 
 REST products and notable route IDs:
 
-| Product | Route IDs | Default rate limits | Credit notes |
+| Product | Route IDs | Plan rate limits | Credit notes |
 |---|---|---:|---|
-| News | `news_feed` | 120 rpm / 50000 daily | 1 credit |
-| Announcements | `announcements_summary`, `announcement_categories`, `announcement_detail`, `announcement_symbol_metadata`, `announcement_attachment` | 60 rpm / 10000 daily | categories cost 0, attachments cost 2 |
-| Earnings | `earnings_summary`, `earnings_detail`, `earnings_attachment` | 60 rpm / 10000 daily | attachments cost 2 |
-| Alerts | `alerts` | 60 rpm / 15000 daily | 1 credit |
-| Conference Calls | `concalls`, `concall_detail`, `concall_transcript` | 40 rpm / 5000 daily | transcript costs 2 |
-| Daily Summary | `daily_summary_generate` | 10 rpm / 1000 daily | 10 credits |
-| Batch Summary | `batch_submit`, `batch_list`, `batch_status`, `batch_cancel`, `batch_results` | 10 rpm / 500 daily | route calls cost 0, each processed item costs 10 |
+| News | `news_feed` | Shared plan bucket | 1 credit |
+| Announcements | `announcements_summary`, `announcement_categories`, `announcement_detail`, `announcement_symbol_metadata`, `announcement_attachment` | Shared plan bucket | list 1, categories 0, items 2, attachments 4 per ready URL |
+| Earnings | `earnings_summary`, `earnings_detail`, `earnings_attachment` | Shared plan bucket | list 2, detail 3, attachments 4 per ready URL |
+| Alerts | `alerts` | Shared plan bucket | 1 credit |
+| Conference Calls | `concalls`, `concall_detail`, `concall_transcript` | Shared plan bucket | list 2, detail 3, transcript 4 per ready URL |
+| Daily Summary | `daily_summary_generate` | Shared plan bucket | 20 credits |
+| Batch Summary | `batch_submit`, `batch_list`, `batch_status`, `batch_cancel`, `batch_results` | Shared plan bucket | accepted job 1, successful processed item 18 |
 
-WebSocket products: `news`, `announcements`, `earnings`, `concalls`, `alerts`. Each requires an addon, costs 1 credit to connect and 1 credit to subscribe, has concurrency limit 5, and supports tiers `basic_500`, `pro_1000`, and `full_market`.
+WebSocket products: `news`, `announcements`, `earnings`, `concalls`, `alerts`. Each requires a live entitlement, costs 0 credits to connect/subscribe, has concurrency limit 5, and supports tiers `pro_500`, `scale_1000`, and `full_market`.
+
+Pulse subscription tiers:
+
+| Tier | Price | REST limits | Included credits | Live entitlement |
+|---|---:|---:|---:|---|
+| Sandbox | Free | 10 RPM | 500 | REST only |
+| Pro | ~₹2,000/mo | 60 RPM | 10,000 | 500 symbols |
+| Scale | ~₹5,000/mo | 180 RPM | 25,000 | 1,000 symbols |
+| Full Market | ~₹10,000/mo | 300 RPM | 50,000 | Full-market streams |
 
 ## Frontend Integration Map
 
@@ -129,7 +138,7 @@ JSONL result line shape:
 | Method | Endpoint | Auth | Query/body | Response schema | Frontend use case |
 |---|---|---|---|---|---|
 | GET | `/v1/account` | customer | none | `AccountDetailResponse` | Account status, balance, enabled products, websocket addons. |
-| GET | `/v1/account/limits` | customer | none | `dict` | Show effective per-route limits after product/account/key overrides. |
+| GET | `/v1/account/limits` | customer | none | `dict` | Show effective plan-wide REST limits after account/key policy. |
 | GET | `/v1/account/usage` | customer | none | `AccountUsageEnvelope` | Live credits, debited today, route counters, rate limits. |
 | GET | `/v1/account/ledger` | customer | `limit<=200` | `LedgerListResponse` | Balance history and audit trail. |
 
@@ -148,7 +157,7 @@ Subscribe message:
 Subscribe response:
 
 ```json
-{"status":"subscribed","product":"announcements","tier":"basic_500","full_feed":false,"symbols":["RELIANCE","TCS"]}
+{"status":"subscribed","product":"announcements","tier":"pro_500","full_feed":false,"symbols":["RELIANCE","TCS"]}
 ```
 
 ### Global API Key Management
@@ -323,7 +332,7 @@ Scope validation: `apis`, `ws_channels`, `allowed_products`, and `allowed_ws_pro
 | Schema | Fields |
 |---|---|
 | `ProductEntitlement` | `product: str`, `enabled: bool=true`, `rpm?: int`, `daily?: int` |
-| `WebsocketAddonEntitlement` | `product: str`, `enabled: bool=true`, `tier: str="basic_500"` |
+| `WebsocketAddonEntitlement` | `product: str`, `enabled: bool=true`, `tier: str="pro_500"` |
 | `AccountCreateRequest` | `account_id: str`, `name?: str`, `status: str="active"`, `initial_credits: int=0`, `products: ProductEntitlement[]`, `websocket_addons: WebsocketAddonEntitlement[]`, `metadata: object={}` |
 | `AccountUpdateRequest` | `name?: str`, `status?: str`, `products?: ProductEntitlement[]`, `websocket_addons?: WebsocketAddonEntitlement[]`, `metadata?: object` |
 | `CreditAdjustmentRequest` | `amount: int`, `reference_id: str`, `reason: str`, `metadata: object={}` |

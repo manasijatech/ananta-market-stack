@@ -132,6 +132,41 @@ def enabled_addons_from_account(account: dict[str, Any]) -> dict[str, dict[str, 
     return addons
 
 
+def live_entitlement_from_account(account: dict[str, Any]) -> dict[str, Any]:
+    value = account.get("live_entitlement")
+    if isinstance(value, dict):
+        return value
+    metadata = account.get("metadata") if isinstance(account.get("metadata"), dict) else {}
+    return {
+        "plan_id": metadata.get("subscription_plan_id"),
+        "plan_name": metadata.get("subscription_plan_name"),
+        "active_symbol_limit": metadata.get("live_active_symbol_limit"),
+        "monthly_unique_symbol_limit": metadata.get("live_monthly_unique_symbol_limit"),
+        "full_market_products": [],
+    }
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _tier_symbol_limit(tier: str | None) -> int | None:
+    if tier in {"sandbox"}:
+        return 0
+    if tier in {"pro_500", "basic_500"}:
+        return 500
+    if tier in {"scale_1000", "pro_1000"}:
+        return 1000
+    if tier == "full_market":
+        return None
+    return None
+
+
 async def fetch_alpha_account(api_key: str) -> dict[str, Any]:
     settings = get_settings()
     url = f"{settings.alpha_api_base_url.rstrip('/')}/v1/account"
@@ -183,10 +218,18 @@ def _default_config(user_id: str) -> UserAlphaWebSocketConfig:
 
 def _entitled_products(account: dict[str, Any]) -> list[str]:
     addons = enabled_addons_from_account(account)
+    entitlement = live_entitlement_from_account(account)
+    active_limit = _int_or_none(entitlement.get("active_symbol_limit"))
+    full_market_products = {
+        str(item)
+        for item in entitlement.get("full_market_products", [])
+        if str(item) in ALPHA_WS_PRODUCTS
+    }
     return [
         product
         for product in ALPHA_WS_PRODUCTS
         if bool(addons.get(product, {}).get("enabled"))
+        and (active_limit is None or active_limit > 0 or product in full_market_products)
     ]
 
 
@@ -272,12 +315,35 @@ def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlpha
     symbols = [symbol for symbol in symbols if not (symbol in seen or seen.add(symbol))]
 
     addons = enabled_addons_from_account(account)
+    entitlement = live_entitlement_from_account(account)
+    live_symbol_limit = _int_or_none(entitlement.get("active_symbol_limit"))
+    if live_symbol_limit is None:
+        capped_limits = [
+            _tier_symbol_limit(str(addons.get(product, {}).get("tier") or ""))
+            for product in products
+        ]
+        capped_limits = [limit for limit in capped_limits if limit is not None]
+        live_symbol_limit = max(capped_limits) if capped_limits else None
+    if live_symbol_limit is not None:
+        if live_symbol_limit <= 0:
+            products = []
+            symbols = []
+        elif len(symbols) > live_symbol_limit:
+            symbols = symbols[:live_symbol_limit]
+    entitlement_full_market_products = {
+        str(item)
+        for item in entitlement.get("full_market_products", [])
+        if str(item) in ALPHA_WS_PRODUCTS
+    }
     full_feed_products = [
         product
         for product in products
         if config.full_market
         and config.scope_mode == "full_market"
-        and addons.get(product, {}).get("tier") == "full_market"
+        and (
+            product in entitlement_full_market_products
+            or addons.get(product, {}).get("tier") == "full_market"
+        )
     ]
     if config.scope_mode == "full_market":
         products = full_feed_products
@@ -308,6 +374,7 @@ def alpha_ws_config_out(db: Session, user_id: str) -> dict[str, Any]:
     credential = db.get(UserAlphaApiCredential, user_id)
     config = db.get(UserAlphaWebSocketConfig, user_id) or _default_config(user_id)
     account = _account_data(credential)
+    entitlement = live_entitlement_from_account(account)
     addons = enabled_addons_from_account(account)
     effective = effective_subscription_for_user(db, user_id)
     configured_products = _json_loads(config.products_json, [])
@@ -320,7 +387,23 @@ def alpha_ws_config_out(db: Session, user_id: str) -> dict[str, Any]:
         }
         for product in ALPHA_WS_PRODUCTS
     ]
-    full_market_allowed = any(item["enabled"] and item["tier"] == "full_market" for item in entitled_addons)
+    full_market_products = [
+        str(item)
+        for item in entitlement.get("full_market_products", [])
+        if str(item) in ALPHA_WS_PRODUCTS
+    ]
+    if not full_market_products:
+        full_market_products = [
+            item["product"]
+            for item in entitled_addons
+            if item["enabled"] and item["tier"] == "full_market"
+        ]
+    full_market_allowed = bool(full_market_products)
+    live_symbol_limit = _int_or_none(entitlement.get("active_symbol_limit"))
+    if live_symbol_limit is None and entitled_addons:
+        limits = [_tier_symbol_limit(item["tier"]) for item in entitled_addons if item["enabled"]]
+        limits = [limit for limit in limits if limit is not None]
+        live_symbol_limit = max(limits) if limits else None
     return {
         "is_enabled": bool(config.is_enabled),
         "products": visible_products,
@@ -331,6 +414,12 @@ def alpha_ws_config_out(db: Session, user_id: str) -> dict[str, Any]:
         "entitled_addons": entitled_addons,
         "effective_products": effective.products if effective else [],
         "effective_symbols": effective.symbols if effective else [],
+        "plan_id": entitlement.get("plan_id"),
+        "plan_name": entitlement.get("plan_name") or (account.get("metadata") or {}).get("subscription_plan_name"),
+        "live_symbol_limit": live_symbol_limit,
+        "monthly_unique_symbol_limit": _int_or_none(entitlement.get("monthly_unique_symbol_limit")),
+        "effective_symbol_count": len(effective.symbols) if effective else 0,
+        "full_market_products": full_market_products,
         "full_market_allowed": full_market_allowed,
         "status": config.last_status or "unknown",
         "last_error": config.last_error,
