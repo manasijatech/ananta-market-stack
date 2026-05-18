@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from common.datetime_compat import UTC
+from app.services import alerts as alert_svc
 from app.schemas.alert import AlertWorkflowActivePeriod
 from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services.alerts_engine.ast import ensure_workflow_ast
@@ -131,6 +132,75 @@ def test_reconcile_creates_and_deactivates_watchlist_subscription():
         assert removed_report["deactivated"] == 1
         assert row.status == "inactive"
         assert row.health_status == "orphaned"
+    finally:
+        db.close()
+
+
+def test_live_stream_status_excludes_inactive_subscriptions_from_desired_tracking():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    try:
+        db.add(User(id="u1", display_name="User"))
+        db.add(
+            BrokerAccount(
+                id="b1",
+                user_id="u1",
+                broker_code="zerodha",
+                label="Zerodha",
+                is_active=True,
+                session_status="active",
+            )
+        )
+        db.add_all(
+            [
+                LiveSymbolSubscription(
+                    id="sub-active",
+                    user_id="u1",
+                    workflow_id=None,
+                    account_id="b1",
+                    broker_code="zerodha",
+                    symbol="RELIANCE",
+                    exchange="NSE",
+                    source_kind="watchlist",
+                    source_type="watchlist",
+                    owner_kind="watchlist",
+                    owner_id="w1",
+                    status="active",
+                    instrument_ref_json="{}",
+                    last_quote_json="{}",
+                    health_status="healthy",
+                    health_reason="",
+                ),
+                LiveSymbolSubscription(
+                    id="sub-inactive",
+                    user_id="u1",
+                    workflow_id=None,
+                    account_id="b1",
+                    broker_code="zerodha",
+                    symbol="INFY",
+                    exchange="NSE",
+                    source_kind="watchlist",
+                    source_type="watchlist",
+                    owner_kind="watchlist",
+                    owner_id="w1",
+                    status="inactive",
+                    instrument_ref_json="{}",
+                    last_quote_json="{}",
+                    health_status="orphaned",
+                    health_reason="No active watchlist or workflow currently owns this subscription.",
+                ),
+            ]
+        )
+        db.commit()
+
+        status = alert_svc.live_stream_status(db, "u1")
+
+        assert [item.symbol for item in status.desired_subscriptions] == ["RELIANCE"]
+        assert [item.symbol for item in status.inactive_subscriptions] == ["INFY"]
+        assert status.active_sessions[0].symbols == ["RELIANCE"]
+        assert status.broker_statuses[0].desired_symbol_count == 1
     finally:
         db.close()
 

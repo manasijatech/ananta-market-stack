@@ -6,7 +6,7 @@ import queue
 import threading
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from common.datetime_compat import UTC
@@ -52,7 +52,6 @@ from app.services.alert_llm_context import (
     prompt_placeholders_from_config,
     resolve_llm_context,
 )
-from app.services import broker_sessions as broker_session_svc
 from app.services import llm_usage as llm_usage_svc
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
@@ -1729,12 +1728,20 @@ def _normalize_symbol(value: str | None) -> str:
     return (value or "").strip().upper()
 
 
-def list_subscriptions(db: Session, user_id: str) -> list[LiveSubscriptionOut]:
-    rows = db.scalars(
+def list_subscriptions(
+    db: Session,
+    user_id: str,
+    *,
+    statuses: list[str] | None = None,
+) -> list[LiveSubscriptionOut]:
+    stmt = (
         select(LiveSymbolSubscription)
         .where(LiveSymbolSubscription.user_id == user_id)
         .order_by(LiveSymbolSubscription.updated_at.desc())
-    ).all()
+    )
+    if statuses:
+        stmt = stmt.where(LiveSymbolSubscription.status.in_(statuses))
+    rows = db.scalars(stmt).all()
     return [_subscription_to_out(row) for row in rows]
 
 
@@ -1914,22 +1921,23 @@ def _broker_statuses(
             )
             continue
 
-        try:
-            session = broker_session_svc.get_broker_session_status(acc)
-            session_active = bool(session.session_active)
-            guidance = session.guidance
-            has_access_token = bool(session.has_access_token)
-            token_expires_at = session.token_expires_at
-            automation_enabled = bool(session.automation_enabled)
-            automation_mode = session.automation_mode
-        except Exception as exc:
-            session_active = False
-            guidance = str(exc)
-            has_access_token = False
-            token_expires_at = acc.session_expires_at
-            automation_enabled = bool(acc.automation_enabled)
-            automation_mode = acc.automation_mode
-
+        token_expires_at = acc.session_expires_at
+        automation_enabled = bool(acc.automation_enabled)
+        automation_mode = acc.automation_mode
+        normalized_status = (acc.session_status or "").strip().lower()
+        expiry_is_usable = token_expires_at is None or token_expires_at > (_now() - timedelta(minutes=1))
+        session_active = normalized_status in {"active", "automation_ready"} and expiry_is_usable
+        has_access_token = normalized_status in {"active", "automation_ready", "verified"}
+        guidance = None
+        if not session_active:
+            if normalized_status == "action_required":
+                guidance = acc.last_error or "Broker session needs attention before live streaming can resume."
+            elif normalized_status == "pending":
+                guidance = "Background maintenance has not finished validating this broker session yet."
+            elif normalized_status:
+                guidance = acc.last_error or f"Broker session is currently {normalized_status}."
+            else:
+                guidance = "Broker session status is still being prepared in the background."
         action_required = desired_symbol_count > 0 and not session_active
         session_status = acc.session_status or ("active" if session_active else "pending")
         last_error = acc.last_error or (guidance if action_required else None)
@@ -1957,14 +1965,16 @@ def _broker_statuses(
 
 
 def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
-    desired = list_subscriptions(db, user_id)
-    if not desired:
+    desired = list_subscriptions(db, user_id, statuses=["active"])
+    inactive = list_subscriptions(db, user_id, statuses=["inactive"])
+    if not desired and not inactive:
         return LiveStreamsStatusOut(
             redis_ok=False,
             redis_error="no live subscriptions to monitor",
             worker_mode="redis-event-driven-alerts",
             active_sessions=[],
             desired_subscriptions=[],
+            inactive_subscriptions=[],
             broker_statuses=[],
         )
 
@@ -2008,6 +2018,7 @@ def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
         worker_mode="redis-event-driven-alerts",
         active_sessions=sessions,
         desired_subscriptions=desired,
+        inactive_subscriptions=inactive,
         broker_statuses=broker_statuses,
     )
 
