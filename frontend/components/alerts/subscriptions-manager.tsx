@@ -5,6 +5,7 @@ import { Loader2, Search } from "lucide-react";
 import { addLiveSubscription, deleteLiveSubscriptions } from "@/service/actions/alerts";
 import { searchBrokerInstruments, updateAlphaWebSocketConfig } from "@/service/actions/broker";
 import type { InstrumentRef, LiveSubscription } from "@/service/types/alerts";
+import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { AlphaWebSocketConfig, BrokerAccount, InstrumentSearchRow } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
@@ -40,11 +41,13 @@ export function SubscriptionsManager({
  alphaWebSocketConfig,
  accounts,
  initialSubscriptions,
+ symbolMetadata,
  watchlists
 }: {
  alphaWebSocketConfig: AlphaWebSocketConfig;
  accounts: BrokerAccount[];
  initialSubscriptions: LiveSubscription[];
+ symbolMetadata: Record<string, AlphaSymbolMetadata>;
  watchlists: Watchlist[];
 }) {
  const [items, setItems] = useState(initialSubscriptions);
@@ -221,32 +224,29 @@ export function SubscriptionsManager({
  }
 
  return (
- <div className="grid gap-6">
+ <div className="grid max-w-5xl gap-4">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
- <div className="border border-border p-4">
- <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+ <div className="border border-border p-3">
+ <div className="mb-3">
  <div>
- <div className="type-section-title">Manasija websocket subscriptions</div>
- <div className="type-help mt-1 text-muted-foreground">
+ <div className="text-base font-semibold leading-5 text-foreground">Manasija websocket subscriptions</div>
+ <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
  Backend worker status: {alphaWsConfig.status}{alphaWsConfig.last_event_at ? ` · last event ${new Date(alphaWsConfig.last_event_at).toLocaleTimeString("en-IN")}` : ""}
  </div>
  </div>
- <Button disabled={isPending} onClick={saveAlphaWebSocketConfig} type="button">
- Save websocket config
- </Button>
  </div>
  {alphaWsConfig.last_error ? <div className="mb-3 border-l-2 border-destructive px-3 py-2 text-sm text-destructive">{alphaWsConfig.last_error}</div> : null}
- <div className="grid gap-5 min-[980px]:grid-cols-3">
- <div>
+ <div className="grid max-w-2xl gap-5">
+ <div className="max-w-sm">
  <div className="type-step-eyebrow">Products from account</div>
  <div className="mt-3 grid gap-2">
  {enabledAddons.map((addon) => (
- <Label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={addon.product}>
- <span>{addon.product} · {addon.tier ?? "tier unknown"}</span>
+ <Label className="flex items-center gap-2 text-sm" key={addon.product}>
  <Checkbox
  checked={alphaWsConfig.products.includes(addon.product)}
  onCheckedChange={(checked) => toggleAlphaProduct(addon.product, Boolean(checked))}
  />
+ <span>{addon.product} · {addon.tier ?? "tier unknown"}</span>
  </Label>
  ))}
  {!enabledAddons.length ? <div className="type-body text-muted-foreground">No websocket addons were found for the saved key.</div> : null}
@@ -254,10 +254,47 @@ export function SubscriptionsManager({
  </div>
  <div>
  <div className="type-step-eyebrow">Symbol scope</div>
- <div className="mt-3 flex flex-wrap gap-2 text-sm">
- <Button onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alert_subscriptions", full_market: false }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "alert_subscriptions" ? "default" : "outline"}>Alert subscriptions only</Button>
- <Button onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alerts_and_watchlists", full_market: false }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "alerts_and_watchlists" ? "default" : "outline"}>Alert subscriptions + watchlists</Button>
- <Button disabled={!alphaWsConfig.full_market_allowed} onClick={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "full_market", full_market: true }))} size="sm" type="button" variant={alphaWsConfig.scope_mode === "full_market" ? "default" : "outline"}>Full market</Button>
+ <div className="mt-3 grid max-w-md gap-2 text-sm">
+ <Label className="flex items-start gap-2">
+ <input
+ checked={alphaWsConfig.scope_mode === "alert_subscriptions"}
+ className="mt-1 accent-[var(--primary)]"
+ name="alpha-symbol-scope"
+ onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alert_subscriptions", full_market: false }))}
+ type="radio"
+ />
+ <span>
+ <span className="block font-semibold text-foreground">Alert subscriptions only</span>
+ <span className="block text-[12px] leading-5 text-muted-foreground">Use only symbols added on this page.</span>
+ </span>
+ </Label>
+ <Label className="flex items-start gap-2">
+ <input
+ checked={alphaWsConfig.scope_mode === "alerts_and_watchlists"}
+ className="mt-1 accent-[var(--primary)]"
+ name="alpha-symbol-scope"
+ onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "alerts_and_watchlists", full_market: false }))}
+ type="radio"
+ />
+ <span>
+ <span className="block font-semibold text-foreground">Alert subscriptions + watchlists</span>
+ <span className="block text-[12px] leading-5 text-muted-foreground">Include selected watchlists below with alert subscriptions.</span>
+ </span>
+ </Label>
+ <Label className={`flex items-start gap-2 ${alphaWsConfig.full_market_allowed ? "" : "opacity-50"}`}>
+ <input
+ checked={alphaWsConfig.scope_mode === "full_market"}
+ className="mt-1 accent-[var(--primary)]"
+ disabled={!alphaWsConfig.full_market_allowed}
+ name="alpha-symbol-scope"
+ onChange={() => setAlphaWsConfig((current) => ({ ...current, scope_mode: "full_market", full_market: true }))}
+ type="radio"
+ />
+ <span>
+ <span className="block font-semibold text-foreground">Full market</span>
+ <span className="block text-[12px] leading-5 text-muted-foreground">Use full-market products when your plan allows it.</span>
+ </span>
+ </Label>
  </div>
  <div className="type-help mt-3 text-muted-foreground">
  Effective: {alphaWsConfig.effective_products.length} products / {alphaWsConfig.scope_mode === "full_market" ? "full-feed" : `${alphaWsConfig.effective_symbols.length} symbols`}
@@ -274,35 +311,40 @@ export function SubscriptionsManager({
  />
  All watchlists
  </Label>
- <div className="mt-2 max-h-40 overflow-auto border border-border">
+ <div className="mt-2 grid max-h-40 gap-2 overflow-auto">
  {watchlists.map((watchlist) => (
- <Label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={watchlist.id}>
- <span>{watchlist.name} · {watchlist.items.length || watchlist.symbols.length}</span>
+ <Label className="flex items-center gap-2 text-sm" key={watchlist.id}>
  <Checkbox
  checked={alphaWsConfig.watchlist_ids.includes(watchlist.id)}
  disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists" || alphaWsConfig.include_all_watchlists}
  onCheckedChange={(checked) => toggleWatchlist(watchlist.id, Boolean(checked))}
  />
+ <span>{watchlist.name} · {watchlist.items.length || watchlist.symbols.length}</span>
  </Label>
  ))}
- {!watchlists.length ? <div className="type-body px-3 py-3 text-muted-foreground">No watchlists available.</div> : null}
+ {!watchlists.length ? <div className="text-sm text-muted-foreground">No watchlists available.</div> : null}
+ </div>
+ </div>
+ <div className="mt-5 border-t border-border pt-3">
+ <Button disabled={isPending} onClick={saveAlphaWebSocketConfig} type="button">
+ Save websocket config
+ </Button>
  </div>
  </div>
  </div>
- </div>
- <div className=" border border-border p-4">
+ <div className=" border border-border p-3">
  <div className="mb-3 flex items-center justify-between gap-3">
  <div>
- <div className="type-section-title">Add subscribed symbols</div>
- <div className="type-help text-muted-foreground">Search the selected broker instrument cache and pick a symbol to subscribe.</div>
+ <div className="text-base font-semibold leading-5 text-foreground">Add subscribed symbols</div>
+ <div className="text-[13px] leading-5 text-muted-foreground">Search the selected broker instrument cache and pick a symbol to subscribe.</div>
  </div>
  <Button disabled={isPending || !selectedIds.length} onClick={removeSelected} type="button" variant="outline">
  Remove selected
  </Button>
  </div>
- <div className="grid gap-3 min-[960px]:grid-cols-[1fr_1.4fr_160px]">
+ <div className="grid gap-3 min-[760px]:grid-cols-[240px_minmax(0,1fr)_96px]">
  <Select
- className={`${inputBase} h-11 text-sm`}
+ className={`${inputBase} h-9 text-sm`}
  onChange={(event) => {
  setAccountId(event.target.value);
  setSymbolSearch("");
@@ -320,7 +362,7 @@ export function SubscriptionsManager({
  <div className="relative" ref={searchWrapRef}>
  <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
  <Input
- className={`${inputBase} h-11 pl-7 pr-9 font-mono text-sm uppercase`}
+ className={`${inputBase} h-9 pl-7 pr-9 font-mono text-sm uppercase`}
  aria-activedescendant={activeSuggestionIndex >= 0 ? `subscription-symbol-suggestion-${activeSuggestionIndex}` : undefined}
  aria-autocomplete="list"
  aria-expanded={showSuggestions && symbolSearch.trim() ? "true" : "false"}
@@ -364,32 +406,51 @@ export function SubscriptionsManager({
  </div>
  ) : null}
  </div>
- <Input className={`${inputBase} h-11 font-mono text-sm uppercase`} onChange={(event) => setExchange(event.target.value.toUpperCase())} placeholder="NSE" value={exchange} />
+ <Input className={`${inputBase} h-9 font-mono text-sm uppercase`} onChange={(event) => setExchange(event.target.value.toUpperCase())} placeholder="NSE" value={exchange} />
  </div>
  {!accounts.length ? <div className="type-help mt-3 text-muted-foreground">Connect a broker account before adding subscriptions.</div> : null}
  </div>
- <div className="grid gap-3">
- {items.map((item) => (
- <Label className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border border-border p-4" key={item.id}>
- <div className="flex items-start gap-3">
+ <div className="grid gap-2">
+ {items.map((item) => {
+ const metadata = symbolMetadata[item.symbol.toUpperCase()];
+ const companyName = metadata?.company_name?.trim();
+ return (
+ <Label className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border border-border px-3 py-2.5" key={item.id}>
+ <div className="flex min-w-0 items-center gap-3">
  <Checkbox
  checked={selectedIds.includes(item.id)}
  onCheckedChange={(checked) => toggleSelected(item.id, Boolean(checked))}
  />
- <div>
- <div className="type-section-title">{item.symbol}</div>
- <div className="type-meta text-muted-foreground">
- {item.exchange ?? "-"} · {item.broker_code ?? "-"} · {item.source_kind}
+ <SymbolLogo metadata={metadata} symbol={item.symbol} />
+ <div className="min-w-0">
+ <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+ <div className="font-mono text-base font-bold leading-5 text-foreground">{item.symbol}</div>
+ {companyName ? <div className="truncate text-sm font-semibold text-muted-foreground">{companyName}</div> : null}
+ </div>
+ <div className="text-[12px] leading-5 text-muted-foreground">
+ {[item.exchange ?? "-", item.broker_code ?? "-", item.source_kind, metadata?.sector, metadata?.industry].filter(Boolean).join(" · ")}
  </div>
  </div>
  </div>
- <div className="type-meta">
+ <div className="text-[12px] leading-5 text-muted-foreground">
  {item.last_received_at ? `Last tick ${new Date(item.last_received_at).toLocaleTimeString()}` : "Awaiting tick"}
  </div>
  </Label>
- ))}
- {!items.length ? <div className="type-body text-muted-foreground">No subscribed symbols yet.</div> : null}
+ );
+ })}
+ {!items.length ? <div className="text-sm text-muted-foreground">No subscribed symbols yet.</div> : null}
  </div>
  </div>
+ );
+}
+
+function SymbolLogo({ metadata, symbol }: { metadata?: AlphaSymbolMetadata; symbol: string }) {
+ if (metadata?.logo) {
+ return <img alt="" className="size-9 shrink-0 border border-border bg-background object-contain" src={metadata.logo} />;
+ }
+ return (
+ <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-muted font-mono text-[11px] font-semibold text-muted-foreground">
+ {symbol.slice(0, 2)}
+ </span>
  );
 }

@@ -41,8 +41,8 @@ type ChannelGuide = {
  notes: string[];
 };
 
-const compactFieldClassName = "h-10 w-full min-[1200px]:w-[min(25vw,24rem)]";
-const compactFieldGridClassName = "grid max-w-full gap-3 min-[1200px]:grid-cols-2 min-[1600px]:grid-cols-3";
+const compactFieldClassName = "h-9 w-full max-w-md text-sm";
+const compactFieldGridClassName = "grid max-w-md gap-3";
 
 const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
  discord: {
@@ -139,13 +139,13 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
  }
 
  return (
- <div className="grid gap-6">
+ <div className="grid gap-5">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
  <div className="border border-border p-4">
- <div className="mb-3 text-base font-bold tracking-tight">Shared test message</div>
- <div className="flex flex-wrap items-end gap-3">
+ <div className="mb-3 text-sm font-bold tracking-tight">Shared test message</div>
+ <div className="grid max-w-md gap-2">
  <Input className={compactFieldClassName} onChange={(event) => setMessage(event.target.value)} value={message} />
- <Button className="h-10 px-5" disabled={isPending} onClick={sendInAppTest} type="button" variant="outline">
+ <Button className="h-9 w-fit px-4" disabled={isPending} onClick={sendInAppTest} type="button" variant="outline">
  Test in-app alert
  </Button>
  </div>
@@ -197,15 +197,15 @@ function ChannelCard({
 
  return (
  <div className="border border-border p-4">
- <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+ <div className="mb-4 grid gap-3">
  <div className="flex items-center gap-2">
- <div className="flex items-center gap-3 text-[22px] font-bold leading-none tracking-tight">
+ <div className="flex items-center gap-3 text-lg font-bold leading-none tracking-tight">
  {brandIcon ? <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center"><img alt="" className={`${brandIconClassName} object-contain`} draggable={false} src={brandIcon} /></span> : null}
  <span>{title}</span>
  </div>
  <SetupGuide guide={guide} />
  </div>
- <div className="flex gap-3 text-sm">
+ <div className="flex flex-col gap-2 text-sm">
  <Label className="flex items-center gap-2"><Checkbox checked={channel.is_enabled} onCheckedChange={(checked) => onChange({ ...channel, is_enabled: Boolean(checked) })} />Enabled</Label>
  <Label className="flex items-center gap-2"><Checkbox checked={channel.is_default} onCheckedChange={(checked) => onChange({ ...channel, is_default: Boolean(checked) })} />Default</Label>
  </div>
@@ -225,9 +225,9 @@ function ChannelCard({
  </LabeledField>
  ))}
  </div>
- <div className="mt-4 flex flex-wrap gap-3">
- <Button className="h-10 px-5" onClick={onSave} type="button">Save</Button>
- <Button className="h-10 px-5" onClick={onTest} type="button" variant="outline">Test</Button>
+ <div className="mt-4 flex flex-wrap gap-2">
+ <Button className="h-9 px-4" onClick={onSave} type="button">Save</Button>
+ <Button className="h-9 px-4" onClick={onTest} type="button" variant="outline">Test</Button>
  </div>
  </div>
  );

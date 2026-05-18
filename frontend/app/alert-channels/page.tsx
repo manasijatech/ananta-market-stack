@@ -7,12 +7,14 @@ export default async function AlertChannelsPage() {
 
   return (
     <Shell>
-      <PageHeader
-        eyebrow="Alert delivery"
-        title="Alert channels"
-        description="Manage optional Discord and Telegram delivery credentials, choose defaults, and test each channel independently."
-      />
-      <ChannelSettings initialChannels={channels} />
+      <div className="max-w-4xl">
+        <PageHeader
+          eyebrow="Alert delivery"
+          title="Alert channels"
+          description="Manage optional Discord and Telegram delivery credentials, choose defaults, and test each channel independently."
+        />
+        <ChannelSettings initialChannels={channels} />
+      </div>
     </Shell>
   );
 }

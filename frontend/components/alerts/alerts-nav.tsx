@@ -18,7 +18,7 @@ export function AlertsNav() {
  const searchParams = useSearchParams();
 
  return (
- <nav className="mb-8 flex flex-wrap gap-2" aria-label="Alerts workspace">
+ <nav className="mb-5 flex flex-wrap gap-1.5" aria-label="Alerts workspace">
  {items.map((item) => {
  const [itemPath, itemQuery] = item.href.split("?");
  const active = (() => {
@@ -32,7 +32,7 @@ export function AlertsNav() {
  })();
  return (
  <Link
- className={active ? "type-label border border-primary bg-primary px-3 py-2 text-primary-foreground" : "type-label border border-border px-3 py-2 text-muted-foreground hover:text-foreground"}
+ className={active ? "border border-primary bg-primary px-2.5 py-1.5 text-sm font-semibold text-primary-foreground" : "border border-border px-2.5 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground"}
  href={item.href}
  key={item.href}
  >

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { CircleHelpIcon } from "lucide-react";
 import {
   addLlmProviderModel,
   deleteAlphaApiCredential,
@@ -14,6 +15,14 @@ import {
 import { parseActionError } from "@/components/brokers/action-error";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -236,15 +245,15 @@ export function SystemConfigPanel({
   }
 
   return (
-    <div className="grid gap-8">
-      <section className="rounded-lg border border-border p-5">
+    <div className="grid gap-5">
+      <section className="border border-border p-4">
         <div className="text-sm font-bold">Default symbol-search broker</div>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
           The selected broker cache is used first for symbol search. If it is unavailable, search falls back to the next available synced broker without blocking the UI.
         </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <Select
-            className="h-10 min-w-[280px] rounded-md border border-input bg-background px-3 text-sm"
+            className="h-9 min-w-[240px] max-w-sm border border-input bg-background px-3 text-sm"
             onChange={(event) => setSelectedAccountId(event.target.value)}
             value={selectedAccountId}
           >
@@ -259,7 +268,7 @@ export function SystemConfigPanel({
           </Button>
         </div>
         {config.broker_data_search.effective_search_account_id ? (
-          <div className="mt-4 text-xs text-muted-foreground">
+          <div className="mt-3 text-xs text-muted-foreground">
             Effective search account: {config.broker_data_search.accounts.find((item) => item.account_id === config.broker_data_search.effective_search_account_id)?.label ?? config.broker_data_search.effective_search_account_id}
             {config.broker_data_search.fallback_used ? " · fallback active right now" : ""}
           </div>
@@ -267,11 +276,11 @@ export function SystemConfigPanel({
         {brokerError ? <div className="mt-3 text-sm text-destructive">{brokerError}</div> : null}
       </section>
 
-      <section className="grid gap-3">
+      <section className="grid gap-2.5">
         <div className="text-sm font-bold">Broker data status</div>
         {config.broker_data_search.accounts.map((account) => (
-          <div className="rounded-lg border border-border p-4" key={account.account_id}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="border border-border p-3.5" key={account.account_id}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <div className="text-sm font-bold">
                   {account.label} · {account.broker_code}
@@ -301,13 +310,44 @@ export function SystemConfigPanel({
 
       <section className="grid gap-4">
         <div>
-          <div className="text-sm font-bold">Manasija Alpha API</div>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-bold">Manasija Alpha API</div>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  aria-label="Manasija Alpha API help"
+                  className="size-6 border-transparent bg-transparent p-0 text-muted-foreground hover:bg-transparent hover:text-primary"
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <CircleHelpIcon className="size-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg p-0">
+                <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+                  <DialogTitle>Manasija Alpha API</DialogTitle>
+                  <DialogDescription>
+                    This key connects Market Stack to Manasija Alpha market intelligence services.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
+                  <p>
+                    It powers company metadata, announcements, concalls, news, daily summaries, and related market intelligence data used throughout the workspace.
+                  </p>
+                  <p>
+                    The key is saved server-side and shown here only as a masked hint. Replace it when the key rotates, or clear it to disable Alpha-backed intelligence calls.
+                  </p>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+          <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
             Store the Alpha API key used for market intelligence, company metadata, announcements, concalls, and daily summaries.
           </p>
         </div>
-        <div className="rounded-lg border border-border p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="border border-border p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <div className="text-sm font-bold">{config.alpha_api.label}</div>
               <div className="mt-1 text-xs text-muted-foreground">
@@ -318,9 +358,9 @@ export function SystemConfigPanel({
               ) : null}
             </div>
           </div>
-          <div className="mt-5 flex flex-col gap-3 min-[760px]:flex-row">
+          <div className="mt-4 flex flex-col gap-2 min-[760px]:flex-row">
             <Input
-              className="min-[760px]:max-w-xl"
+              className="h-9 text-sm min-[760px]:max-w-md"
               onChange={(event) => setAlphaApiKey(event.target.value)}
               placeholder={config.alpha_api.has_api_key ? "Replace saved Manasija Alpha API key" : "Add Manasija Alpha API key"}
               type={alphaReplacingApiKey || !config.alpha_api.has_api_key ? "password" : "text"}
@@ -356,23 +396,23 @@ export function SystemConfigPanel({
           </div>
           {alphaError ? <div className="mt-3 text-sm text-destructive">{alphaError}</div> : null}
         </div>
-        <div className="rounded-lg border border-border p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="border border-border p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <div className="text-sm font-bold">Backend websocket worker</div>
               <div className="mt-1 text-xs text-muted-foreground">
                 {alphaWsConfig.status} · {alphaWsConfig.effective_products.length} products · {alphaWsConfig.scope_mode === "full_market" ? "full market" : `${alphaWsConfig.effective_symbols.length} symbols`}
               </div>
             </div>
-            <Button disabled={isPending} onClick={saveAlphaWsConfig} type="button" variant="outline">
+            <Button disabled={isPending} onClick={saveAlphaWsConfig} type="button">
               Save websocket products
             </Button>
           </div>
-          <div className="mt-4 grid gap-2 min-[760px]:grid-cols-2">
+          <div className="mt-3 grid max-w-md gap-2">
             {alphaWsConfig.entitled_addons.filter((addon) => addon.enabled).map((addon) => (
-              <Label className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm" key={addon.product}>
-                <span>{addon.product} · {addon.tier ?? "tier unknown"}</span>
+              <Label className="flex items-center gap-2 text-sm" key={addon.product}>
                 <Checkbox checked={alphaWsConfig.products.includes(addon.product)} onCheckedChange={(checked) => toggleAlphaWsProduct(addon.product, Boolean(checked))} />
+                <span>{addon.product} · {addon.tier ?? "tier unknown"}</span>
               </Label>
             ))}
           </div>
@@ -383,14 +423,14 @@ export function SystemConfigPanel({
 
       <section className="grid gap-4">
         <div>
-          <div className="text-lg font-bold tracking-tight">LLM providers</div>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <div className="text-base font-bold tracking-tight">LLM providers</div>
+          <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
             Configure OpenAI, OpenRouter, or Gemini API keys and save one or more models per provider. All provider calls in the backend are routed through the OpenAI SDK with provider-specific base URLs.
           </p>
         </div>
         {config.llm_providers.map((provider) => (
-          <div className="rounded-lg border border-border p-5" key={provider.provider}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="border border-border p-4" key={provider.provider}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <div className="flex items-center gap-2.5">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center">
@@ -401,7 +441,7 @@ export function SystemConfigPanel({
                     src={PROVIDER_LOGOS[provider.provider].src}
                   />
                   </span>
-                  <div className="text-lg font-bold leading-none tracking-tight">{provider.label}</div>
+                  <div className="text-base font-bold leading-none tracking-tight">{provider.label}</div>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{provider.base_url}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
@@ -423,8 +463,9 @@ export function SystemConfigPanel({
               ) : null}
             </div>
 
-            <div className="mt-4 grid gap-3 min-[900px]:grid-cols-[1.4fr_auto_auto_auto]">
+            <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(220px,1fr)_auto_auto_auto]">
               <Input
+                className="h-9 text-sm"
                 onChange={(event) => updateDraft(provider.provider, { apiKey: event.target.value })}
                 placeholder={provider.has_api_key ? "Replace saved API key" : `Add ${provider.label} API key`}
                 type="password"
@@ -456,13 +497,15 @@ export function SystemConfigPanel({
               </Button>
             </div>
 
-            <div className="mt-5 grid gap-3 min-[900px]:grid-cols-[1.1fr_1fr_auto]">
+            <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(180px,0.8fr)_minmax(160px,0.7fr)_auto]">
               <Input
+                className="h-9 text-sm"
                 onChange={(event) => updateDraft(provider.provider, { modelId: event.target.value })}
                 placeholder="Model id"
                 value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
               />
               <Input
+                className="h-9 text-sm"
                 onChange={(event) => updateDraft(provider.provider, { label: event.target.value })}
                 placeholder="Optional label"
                 value={drafts[providerKey(provider.provider)]?.label ?? ""}
@@ -480,7 +523,7 @@ export function SystemConfigPanel({
             <div className="mt-4 grid gap-2">
               <div className="text-xs font-bold uppercase text-muted-foreground">Saved models</div>
               {provider.models.map((model) => (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border px-3 py-2" key={model.id}>
+                <div className="flex flex-wrap items-center justify-between gap-2 border border-border px-3 py-2" key={model.id}>
                   <div>
                     <div className="text-sm font-semibold">{model.model_id}</div>
                     <div className="text-xs text-muted-foreground">
