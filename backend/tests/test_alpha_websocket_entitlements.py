@@ -40,6 +40,41 @@ def test_capped_entitlement_enables_configured_live_products():
     ]
 
 
+def test_scale_addon_overrides_stale_zero_live_entitlement():
+    account = _account(
+        "scale_1000",
+        plan_id="scale",
+        live_entitlement={"plan_id": "scale", "active_symbol_limit": 0},
+    )
+
+    entitlement = live_entitlement_from_account(account)
+
+    assert entitlement["active_symbol_limit"] == 1000
+    assert entitlement["monthly_unique_symbol_limit"] == 3000
+    assert _entitled_products(account) == [
+        "news",
+        "announcements",
+        "earnings",
+        "concalls",
+        "alerts",
+    ]
+
+
+def test_scale_metadata_overrides_stale_zero_live_entitlement():
+    account = _account(
+        "sandbox",
+        plan_id="scale",
+        live_entitlement={"plan_id": "scale", "active_symbol_limit": 0},
+    )
+    account["metadata"]["live_active_symbol_limit"] = 1000
+    account["metadata"]["live_monthly_unique_symbol_limit"] = 3000
+
+    entitlement = live_entitlement_from_account(account)
+
+    assert entitlement["active_symbol_limit"] == 1000
+    assert entitlement["monthly_unique_symbol_limit"] == 3000
+
+
 def test_full_market_entitlement_is_read_from_alpha_account_summary():
     account = _account(
         "full_market",

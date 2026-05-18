@@ -132,27 +132,28 @@ def enabled_addons_from_account(account: dict[str, Any]) -> dict[str, dict[str, 
     return addons
 
 
-def live_entitlement_from_account(account: dict[str, Any]) -> dict[str, Any]:
-    value = account.get("live_entitlement")
-    if isinstance(value, dict):
-        return value
-    metadata = account.get("metadata") if isinstance(account.get("metadata"), dict) else {}
-    return {
-        "plan_id": metadata.get("subscription_plan_id"),
-        "plan_name": metadata.get("subscription_plan_name"),
-        "active_symbol_limit": metadata.get("live_active_symbol_limit"),
-        "monthly_unique_symbol_limit": metadata.get("live_monthly_unique_symbol_limit"),
-        "full_market_products": [],
-    }
+def _plan_symbol_limit(plan_id: str | None) -> int | None:
+    if plan_id == "sandbox":
+        return 0
+    if plan_id == "pro":
+        return 500
+    if plan_id == "scale":
+        return 1000
+    if plan_id == "full_market":
+        return None
+    return None
 
 
-def _int_or_none(value: Any) -> int | None:
-    if value in (None, ""):
+def _plan_monthly_unique_limit(plan_id: str | None) -> int | None:
+    if plan_id == "sandbox":
+        return 0
+    if plan_id == "pro":
+        return 1500
+    if plan_id == "scale":
+        return 3000
+    if plan_id == "full_market":
         return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return None
 
 
 def _tier_symbol_limit(tier: str | None) -> int | None:
@@ -165,6 +166,95 @@ def _tier_symbol_limit(tier: str | None) -> int | None:
     if tier == "full_market":
         return None
     return None
+
+
+def _tier_monthly_unique_limit(tier: str | None) -> int | None:
+    if tier in {"sandbox"}:
+        return 0
+    if tier in {"pro_500", "basic_500"}:
+        return 1500
+    if tier in {"scale_1000", "pro_1000"}:
+        return 3000
+    if tier == "full_market":
+        return None
+    return None
+
+
+def _best_numeric_limit(*values: Any) -> int | None:
+    limits = [limit for limit in (_int_or_none(value) for value in values) if limit is not None]
+    return max(limits) if limits else None
+
+
+def live_entitlement_from_account(account: dict[str, Any]) -> dict[str, Any]:
+    metadata = account.get("metadata") if isinstance(account.get("metadata"), dict) else {}
+    value = account.get("live_entitlement")
+    entitlement = dict(value) if isinstance(value, dict) else {}
+    addons = enabled_addons_from_account(account)
+
+    plan_id = str(entitlement.get("plan_id") or metadata.get("subscription_plan_id") or "") or None
+    plan_name = entitlement.get("plan_name") or metadata.get("subscription_plan_name")
+
+    enabled_tiers = [
+        str(item.get("tier") or "")
+        for item in addons.values()
+        if bool(item.get("enabled", True))
+    ]
+    tier_symbol_limits = [
+        limit for limit in (_tier_symbol_limit(tier) for tier in enabled_tiers) if limit is not None
+    ]
+    tier_monthly_limits = [
+        limit for limit in (_tier_monthly_unique_limit(tier) for tier in enabled_tiers) if limit is not None
+    ]
+    full_market_products: list[str] = []
+    for item in entitlement.get("full_market_products", []):
+        product = str(item)
+        if product in ALPHA_WS_PRODUCTS and product not in full_market_products:
+            full_market_products.append(product)
+    if not full_market_products:
+        for product, item in addons.items():
+            if (
+                product in ALPHA_WS_PRODUCTS
+                and product not in full_market_products
+                and bool(item.get("enabled", True))
+                and item.get("tier") == "full_market"
+            ):
+                full_market_products.append(product)
+
+    metadata_symbol_limit = metadata.get("live_active_symbol_limit")
+    metadata_monthly_limit = metadata.get("live_monthly_unique_symbol_limit")
+    active_symbol_limit = _best_numeric_limit(
+        entitlement.get("active_symbol_limit"),
+        metadata_symbol_limit,
+        max(tier_symbol_limits) if tier_symbol_limits else None,
+        _plan_symbol_limit(plan_id),
+    )
+    monthly_unique_symbol_limit = _best_numeric_limit(
+        entitlement.get("monthly_unique_symbol_limit"),
+        metadata_monthly_limit,
+        max(tier_monthly_limits) if tier_monthly_limits else None,
+        _plan_monthly_unique_limit(plan_id),
+    )
+    if full_market_products or plan_id == "full_market":
+        active_symbol_limit = None
+        monthly_unique_symbol_limit = None
+
+    return {
+        **entitlement,
+        "plan_id": plan_id,
+        "plan_name": plan_name,
+        "active_symbol_limit": active_symbol_limit,
+        "monthly_unique_symbol_limit": monthly_unique_symbol_limit,
+        "full_market_products": full_market_products,
+    }
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 async def fetch_alpha_account(api_key: str) -> dict[str, Any]:
@@ -432,6 +522,42 @@ def update_alpha_ws_config(db: Session, user_id: str, payload: Any) -> dict[str,
     config = db.get(UserAlphaWebSocketConfig, user_id)
     if config is None:
         config = _default_config(user_id)
+    credential = db.get(UserAlphaApiCredential, user_id)
+    account = _account_data(credential)
+    entitlement = live_entitlement_from_account(account)
+    addons = enabled_addons_from_account(account)
+    full_market_products = {
+        str(item)
+        for item in entitlement.get("full_market_products", [])
+        if str(item) in ALPHA_WS_PRODUCTS
+    }
+    full_market_products.update(
+        product
+        for product, item in addons.items()
+        if bool(item.get("enabled", True)) and item.get("tier") == "full_market"
+    )
+    if payload.scope_mode == "full_market" and not full_market_products:
+        raise ValueError("Full market feed is not enabled for the current Pulse plan.")
+    live_symbol_limit = _int_or_none(entitlement.get("active_symbol_limit"))
+    if payload.scope_mode != "full_market" and live_symbol_limit is not None:
+        scoped_symbols: list[str] = []
+        if payload.scope_mode in {"alert_subscriptions", "alerts_and_watchlists"}:
+            scoped_symbols.extend(_symbols_from_alert_subscriptions(db, user_id))
+        if payload.scope_mode == "alerts_and_watchlists":
+            scoped_symbols.extend(
+                _symbols_from_watchlists(
+                    db,
+                    user_id,
+                    watchlist_ids=[str(item) for item in payload.watchlist_ids],
+                    include_all=bool(payload.include_all_watchlists),
+                )
+            )
+        scoped_symbol_count = len(set(scoped_symbols))
+        if scoped_symbol_count > live_symbol_limit:
+            raise ValueError(
+                f"This Pulse plan allows {live_symbol_limit} live symbols. "
+                f"The selected scope resolves to {scoped_symbol_count}."
+            )
     products = [
         product
         for product in payload.products

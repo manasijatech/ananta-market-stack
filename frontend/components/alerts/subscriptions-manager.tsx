@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Loader2, Search } from "lucide-react";
+import { Loader2, RefreshCw, Search } from "lucide-react";
 import { addLiveSubscription, deleteLiveSubscriptions } from "@/service/actions/alerts";
-import { searchBrokerInstruments, updateAlphaWebSocketConfig } from "@/service/actions/broker";
+import { refreshAlphaWebSocketAccount, searchBrokerInstruments, updateAlphaWebSocketConfig } from "@/service/actions/broker";
 import type { InstrumentRef, LiveSubscription } from "@/service/types/alerts";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { AlphaWebSocketConfig, BrokerAccount, InstrumentSearchRow } from "@/service/types/broker";
@@ -237,6 +237,18 @@ export function SubscriptionsManager({
  });
  }
 
+ function refreshAlphaEntitlements() {
+ setError("");
+ startTransition(async () => {
+ try {
+ const next = await refreshAlphaWebSocketAccount();
+ setAlphaWsConfig(next);
+ } catch (caught) {
+ setError(caught instanceof Error ? caught.message : "Could not refresh Alpha account plan.");
+ }
+ });
+ }
+
  function estimateConfiguredAlphaSymbolCount() {
  const symbols = new Set<string>();
  if (alphaWsConfig.scope_mode === "alert_subscriptions" || alphaWsConfig.scope_mode === "alerts_and_watchlists") {
@@ -260,7 +272,7 @@ export function SubscriptionsManager({
  <div className="grid max-w-5xl gap-4">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
  <div className="border border-border p-3">
- <div className="mb-3">
+ <div className="mb-3 flex items-start justify-between gap-3">
  <div>
  <div className="text-base font-semibold leading-5 text-foreground">Manasija websocket subscriptions</div>
  <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
@@ -271,6 +283,10 @@ export function SubscriptionsManager({
  {typeof alphaWsConfig.monthly_unique_symbol_limit === "number" ? ` · ${alphaWsConfig.monthly_unique_symbol_limit} unique/month` : ""}
  </div>
  </div>
+ <Button disabled={isPending} onClick={refreshAlphaEntitlements} type="button" variant="outline">
+ <RefreshCw className="mr-2 size-4" />
+ Refresh plan
+ </Button>
  </div>
  {alphaWsConfig.last_error ? <div className="mb-3 border-l-2 border-destructive px-3 py-2 text-sm text-destructive">{alphaWsConfig.last_error}</div> : null}
  <div className="grid max-w-2xl gap-5">
