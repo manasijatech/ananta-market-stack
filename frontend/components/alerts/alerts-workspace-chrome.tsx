@@ -105,11 +105,11 @@ export function AlertsWorkspaceChrome({ children }: { children: React.ReactNode 
  return (
   <HeaderOverrideContext.Provider value={setHeaderOverride}>
    {compactAlertsHeader ? (
-    <header className="mb-5 flex max-w-5xl flex-col justify-between gap-4 border-b border-border pb-4 min-[860px]:flex-row min-[860px]:items-end">
-     <div>
+    <header className="mb-4 flex min-w-0 flex-col justify-between gap-4 border-b border-border pb-4 min-[860px]:flex-row min-[860px]:items-end">
+     <div className="min-w-0">
       <p className="type-page-eyebrow mb-2">{header.eyebrow}</p>
-      <h1 className="text-[clamp(30px,4vw,42px)] font-semibold leading-none tracking-normal">{header.title}</h1>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{header.description}</p>
+      <h1 className="text-[clamp(28px,3vw,38px)] font-semibold leading-none tracking-normal">{header.title}</h1>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{header.description}</p>
      </div>
      {header.action}
     </header>

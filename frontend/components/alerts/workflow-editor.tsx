@@ -7,6 +7,7 @@ import {
  getDataQuotes,
  searchDefaultBrokerInstruments
 } from "@/service/actions/broker";
+import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import {
  compilePreviewAlertWorkflow,
  createAlertWorkflow,
@@ -38,6 +39,7 @@ import type {
  InstrumentRef,
  AlertWorkflowTargeting
 } from "@/service/types/alerts";
+import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { BrokerAccount, InstrumentSearchRow, JsonObject, LlmProvider, LlmProviderConfig, QuoteResponse } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
@@ -334,6 +336,12 @@ function targetDisplay(entry: AlertTargetEntry) {
  return [entry.symbol, entry.exchange].filter(Boolean).join(" · ");
 }
 
+function announcementCategoryLabel(category: string) {
+ const normalized = category.replace(/^AnnouncementCategory\./, "").replace(/_/g, " ").trim();
+ if (!normalized || normalized.includes("/")) return category;
+ return normalized.toLowerCase().replace(/\b[a-z]/g, (char) => char.toUpperCase());
+}
+
 function parseBulkTargets(text: string, fallbackExchange: string): AlertTargetEntry[] {
  return normalizeTargets(
  text
@@ -443,6 +451,58 @@ function dslTokenAt(text: string, position: number): { token: string; start: num
  const match = before.match(/[A-Za-z_][A-Za-z0-9_]*$/);
  const start = match ? position - match[0].length : position;
  return { token: match?.[0] ?? "", start, end: position };
+}
+
+function textareaCaretDropdownPosition(textarea: HTMLTextAreaElement, caretPosition: number) {
+ const styles = window.getComputedStyle(textarea);
+ const mirror = document.createElement("div");
+ const properties = [
+ "box-sizing",
+ "width",
+ "font-family",
+ "font-size",
+ "font-weight",
+ "font-style",
+ "letter-spacing",
+ "text-transform",
+ "word-spacing",
+ "line-height",
+ "padding-top",
+ "padding-right",
+ "padding-bottom",
+ "padding-left",
+ "border-top-width",
+ "border-right-width",
+ "border-bottom-width",
+ "border-left-width"
+ ];
+ for (const property of properties) {
+ mirror.style.setProperty(property, styles.getPropertyValue(property));
+ }
+ mirror.style.position = "absolute";
+ mirror.style.visibility = "hidden";
+ mirror.style.pointerEvents = "none";
+ mirror.style.whiteSpace = "pre-wrap";
+ mirror.style.overflowWrap = "break-word";
+ mirror.style.wordBreak = styles.wordBreak;
+ mirror.style.top = "0";
+ mirror.style.left = "-9999px";
+ mirror.style.height = "auto";
+ mirror.style.minHeight = "0";
+ mirror.style.maxHeight = "none";
+ mirror.style.overflow = "hidden";
+ mirror.textContent = textarea.value.slice(0, caretPosition);
+ const marker = document.createElement("span");
+ marker.textContent = textarea.value.slice(caretPosition, caretPosition + 1) || "\u200b";
+ mirror.appendChild(marker);
+ document.body.appendChild(mirror);
+ const lineHeight = Number.parseFloat(styles.lineHeight) || Number.parseFloat(styles.fontSize) * 1.4 || 20;
+ const borderTop = Number.parseFloat(styles.borderTopWidth) || 0;
+ const borderLeft = Number.parseFloat(styles.borderLeftWidth) || 0;
+ const top = textarea.offsetTop + marker.offsetTop - textarea.scrollTop + lineHeight + borderTop + 4;
+ const left = textarea.offsetLeft + marker.offsetLeft - textarea.scrollLeft + borderLeft;
+ document.body.removeChild(mirror);
+ return { top, left };
 }
 
 function stripOuterParens(value: string): string {
@@ -784,12 +844,12 @@ const [feedTemperature, setFeedTemperature] = useState(String(initialFeedTrigger
 const [feedMaxTokens, setFeedMaxTokens] = useState(String(initialFeedTrigger?.max_completion_tokens ?? 400));
 const [feedTimeout, setFeedTimeout] = useState(String(initialFeedTrigger?.timeout_seconds ?? 25));
 const [llmPromptTab, setLlmPromptTab] = useState<"prompt" | "preview">("prompt");
- const [llmSectionExpanded, setLlmSectionExpanded] = useState(false);
- const [engineSectionExpanded, setEngineSectionExpanded] = useState(false);
 const [llmFeedback, setLlmFeedback] = useState("");
 const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(null);
  const [llmSuggestionQuery, setLlmSuggestionQuery] = useState("");
  const [llmSuggestionRange, setLlmSuggestionRange] = useState<{ start: number; end: number } | null>(null);
+ const [llmSuggestionPosition, setLlmSuggestionPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+ const [llmSuggestionIndex, setLlmSuggestionIndex] = useState(0);
  const [showLlmSuggestions, setShowLlmSuggestions] = useState(false);
  const [llmPlaceholderExamples, setLlmPlaceholderExamples] = useState([
  "@price.full",
@@ -818,6 +878,7 @@ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(nul
  const [channelDiscord, setChannelDiscord] = useState(initialWorkflow?.workflow_dsl.channels.enabled.includes("discord") ?? false);
  const [channelTelegram, setChannelTelegram] = useState(initialWorkflow?.workflow_dsl.channels.enabled.includes("telegram") ?? false);
  const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
+ const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
  const [searchLoading, setSearchLoading] = useState(false);
  const [selectedSearchLabel, setSelectedSearchLabel] = useState("");
  const [preview, setPreview] = useState<PreviewState>({ quote: null, ohlc: null, loading: false, error: "" });
@@ -827,6 +888,10 @@ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(nul
  const [showMessageFieldSuggestions, setShowMessageFieldSuggestions] = useState(false);
  const symbolWrapRef = useRef<HTMLDivElement | null>(null);
  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
+ const llmPromptWrapRef = useRef<HTMLDivElement | null>(null);
+ const llmPromptInputRef = useRef<HTMLTextAreaElement | null>(null);
+ const llmSuggestionListRef = useRef<HTMLDivElement | null>(null);
+ const suppressLlmAutocompleteRef = useRef(false);
 
 const selectedAccount = accounts.find((item) => item.id === accountId);
 const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId) ?? null;
@@ -1058,8 +1123,10 @@ const activeInstrument = useMemo<InstrumentRef>(
  useEffect(() => {
  if (symbol.trim().length < 1) {
  setSuggestions([]);
+ setSuggestionMetadata({});
  return;
  }
+ let cancelled = false;
  const handle = window.setTimeout(() => {
  setSearchLoading(true);
  startTransition(async () => {
@@ -1069,16 +1136,39 @@ const activeInstrument = useMemo<InstrumentRef>(
  exchange: exchange.trim() || undefined,
  limit: 20
  });
+ if (cancelled) return;
  setSuggestions(result);
  setShowSuggestions(true);
+ const symbols = Array.from(new Set(result.map((row) => row.symbol.trim().toUpperCase()).filter(Boolean))).slice(0, 20);
+ if (!symbols.length) {
+ setSuggestionMetadata({});
+ return;
+ }
+ try {
+ const metadata = await getAlphaSymbolMetadata(symbols);
+ if (cancelled) return;
+ setSuggestionMetadata(
+ metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
+ acc[item.symbol.trim().toUpperCase()] = item;
+ return acc;
+ }, {})
+ );
  } catch {
+ if (!cancelled) setSuggestionMetadata({});
+ }
+ } catch {
+ if (cancelled) return;
  setSuggestions([]);
+ setSuggestionMetadata({});
  } finally {
- setSearchLoading(false);
+ if (!cancelled) setSearchLoading(false);
  }
  });
  }, 250);
- return () => window.clearTimeout(handle);
+ return () => {
+ cancelled = true;
+ window.clearTimeout(handle);
+ };
  }, [exchange, startTransition, symbol]);
 
  useEffect(() => {
@@ -1385,17 +1475,48 @@ const activeInstrument = useMemo<InstrumentRef>(
 
  const filteredMessageFields = messageTemplateFields.filter((item) => item.includes(messageFieldQuery));
 
- function updateLlmPromptAutocomplete(nextValue: string, caretPosition: number, force = false) {
+ function updateLlmPromptAutocomplete(nextValue: string, caretPosition: number, force = false, textarea?: HTMLTextAreaElement) {
+ if (suppressLlmAutocompleteRef.current) {
+ suppressLlmAutocompleteRef.current = false;
+ return;
+ }
  const before = nextValue.slice(0, caretPosition);
  const match = before.match(/@[A-Za-z0-9_.]*(?:\([^)]*)?$/);
+ const promptInput = textarea ?? llmPromptInputRef.current;
+ if (promptInput && (force || match)) {
+ const position = textareaCaretDropdownPosition(promptInput, caretPosition);
+ const wrapWidth = llmPromptWrapRef.current?.clientWidth ?? promptInput.clientWidth;
+ const width = Math.min(520, Math.max(260, wrapWidth - 16));
+ const maxLeft = Math.max(8, wrapWidth - width - 8);
+ setLlmSuggestionPosition({
+ top: Math.max(8, position.top),
+ left: Math.min(Math.max(8, position.left), maxLeft),
+ width
+ });
+ }
  if (!match) {
  setShowLlmSuggestions(force);
  setLlmSuggestionQuery("");
  setLlmSuggestionRange({ start: caretPosition, end: caretPosition });
+ setLlmSuggestionIndex(0);
+ if (!force) setLlmSuggestionPosition(null);
  return;
  }
  const start = caretPosition - match[0].length;
- setLlmSuggestionQuery(match[0].toLowerCase());
+ const nextQuery = match[0].toLowerCase();
+ const exactPlaceholderMatch = llmPlaceholderExamples.some((item) => item.toLowerCase() === nextQuery);
+ if (exactPlaceholderMatch && !force) {
+ setShowLlmSuggestions(false);
+ setLlmSuggestionQuery("");
+ setLlmSuggestionRange(null);
+ setLlmSuggestionPosition(null);
+ setLlmSuggestionIndex(0);
+ return;
+ }
+ if (nextQuery !== llmSuggestionQuery) {
+ setLlmSuggestionIndex(0);
+ }
+ setLlmSuggestionQuery(nextQuery);
  setLlmSuggestionRange({ start, end: caretPosition });
  setShowLlmSuggestions(force || match[0].length > 0);
  }
@@ -1403,14 +1524,33 @@ const activeInstrument = useMemo<InstrumentRef>(
  function applyLlmSuggestion(example: string) {
  const range = llmSuggestionRange ?? { start: llmPromptTemplate.length, end: llmPromptTemplate.length };
  const nextValue = `${llmPromptTemplate.slice(0, range.start)}${example}${llmPromptTemplate.slice(range.end)}`;
+ const nextCaret = range.start + example.length;
  setLlmPromptTemplate(nextValue);
  setShowLlmSuggestions(false);
  setLlmSuggestionQuery("");
+ setLlmSuggestionRange(null);
+ setLlmSuggestionPosition(null);
+ setLlmSuggestionIndex(0);
+ suppressLlmAutocompleteRef.current = true;
+ requestAnimationFrame(() => {
+ llmPromptInputRef.current?.focus();
+ llmPromptInputRef.current?.setSelectionRange(nextCaret, nextCaret);
+ });
  }
 
  const filteredLlmPlaceholders = llmPlaceholderExamples
  .filter((item) => !llmSuggestionQuery || item.toLowerCase().includes(llmSuggestionQuery.replace(/^@/, "")))
  .slice(0, 10);
+
+ useEffect(() => {
+ setLlmSuggestionIndex((current) => Math.min(current, Math.max(filteredLlmPlaceholders.length - 1, 0)));
+ }, [filteredLlmPlaceholders.length]);
+
+ useEffect(() => {
+ if (!showLlmSuggestions) return;
+ const active = llmSuggestionListRef.current?.querySelector<HTMLElement>("[data-active='true']");
+ active?.scrollIntoView({ block: "nearest" });
+ }, [llmSuggestionIndex, showLlmSuggestions]);
 
  function updateDslAutocomplete(nextValue: string, caretPosition: number, force = false) {
  const token = dslTokenAt(nextValue, caretPosition);
@@ -1778,29 +1918,23 @@ const activeInstrument = useMemo<InstrumentRef>(
  });
  }
 
- const canSave = workflowType === "alpha_feed"
- ? Boolean(
- name.trim() &&
- feedProducts.length &&
- (!feedTriggerLlmEnabled || (feedConditionPrompt.trim() && feedProvider && feedModelId)) &&
- (!announcementsEnabled || !feedCategoryFilterEnabled || feedAnnouncementCategories.length > 0)
- )
- : targetMode === "single_symbol"
- ? Boolean(symbol.trim())
- : targetMode === "symbol_list"
- ? targetEntries.length > 0
- : dynamicUniverseKind === "curated_preset"
- ? Boolean(selectedPresetId)
- : dynamicUniverseKind === "metadata_filter"
- ? Boolean(metadataExchange.trim() || metadataInstrumentType.trim() || metadataSegmentContains.trim())
- : Boolean(selectedWatchlistId);
- const saveBlockReason = getSaveBlockReason();
  const currentTemplatesMatchSuggestion = titleTemplate === suggestedCopy.title && messageTemplate === suggestedCopy.message;
  const selectedLlmProvider = llmProviders.find((item) => item.provider === llmProvider);
  const selectedLlmModels = selectedLlmProvider?.models.filter((model) => model.is_enabled) ?? [];
  const selectedFeedProvider = llmProviders.find((item) => item.provider === feedProvider);
  const selectedFeedModels = selectedFeedProvider?.models.filter((model) => model.is_enabled) ?? [];
- const footerFeedback = error || (!canSave && saveBlockReason ? saveBlockReason : "");
+ let visibleStepIndex = 1;
+ const nextStep = () => `Step ${visibleStepIndex++}`;
+ const workflowBasicsStep = nextStep();
+ const marketWindowStep = workflowType === "market_data" ? nextStep() : "";
+ const feedTriggerStep = workflowType === "alpha_feed" ? nextStep() : "";
+ const targetStep = workflowType === "market_data" ? nextStep() : "";
+ const validateTargetStep = workflowType === "market_data" ? nextStep() : "";
+ const buildTriggerStep = nextStep();
+ const optionalAnalysisStep = nextStep();
+ const reviewCopyStep = !currentTemplatesMatchSuggestion ? nextStep() : "";
+ const advancedDeploymentStep = nextStep();
+ const deliveryLifecycleStep = nextStep();
 
 function toggleFeedProduct(product: string, checked: boolean) {
  setFeedProducts((current) => checked ? Array.from(new Set([...current, product])) : current.filter((item) => item !== product));
@@ -1847,9 +1981,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="grid gap-4">
  <div className="border border-border p-3">
  <StepHeader
- step="Step 1"
+ step={workflowBasicsStep}
  title="Workflow basics"
- description="Set the workflow identity first so the trigger mode and naming are clear before you configure the market window or targets."
+ description={workflowType === "alpha_feed"
+ ? "Set the workflow identity first so the trigger mode and naming are clear before you configure the feed source."
+ : "Set the workflow identity first so the trigger mode and naming are clear before you configure the market window or targets."}
  />
  <div className="grid max-w-3xl items-start gap-3 min-[760px]:grid-cols-[220px_minmax(0,360px)]">
  <Label className="grid content-start self-start gap-2 text-sm">
@@ -1880,7 +2016,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 {workflowType === "market_data" ? (
  <div className="border border-border p-3">
  <StepHeader
- step="Step 2"
+ step={marketWindowStep}
  title="Market window"
  description="Broker market-data workflows ignore ticks outside this window, preventing stale post-close quotes from creating alerts."
  action={<Label className="flex items-center gap-2 text-sm">
@@ -1969,7 +2105,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 
  {workflowType === "alpha_feed" ? (
  <div className="border border-border p-3">
- <SectionTitle className="mb-3">Feed trigger</SectionTitle>
+ <StepHeader
+ step={feedTriggerStep}
+ title="Feed trigger"
+ description="Choose which Market Stack websocket products and symbol scopes can create alerts before optional trigger LLM classification runs."
+ />
  <div className="grid max-w-3xl gap-4 min-[900px]:grid-cols-2">
  <div>
  <FieldLabel>Products</FieldLabel>
@@ -1993,30 +2133,31 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <HelpText>Events are only available for symbols currently subscribed by the background Market Stack websocket worker unless full-market is enabled for the chosen products.</HelpText>
  </div>
  {announcementsEnabled ? (
- <div>
+ <div className="min-w-0">
  <FieldLabel>Announcement categories</FieldLabel>
- <div className="mt-3 grid gap-2">
- <div className="flex flex-wrap gap-2">
- <Button onClick={useAllAnnouncementCategories} type="button" variant={!feedCategoryFilterEnabled ? "default" : "outline"}>All categories</Button>
- <Button onClick={enableSpecificAnnouncementCategories} type="button" variant={feedCategoryFilterEnabled ? "default" : "outline"}>Choose specific categories</Button>
+ <div className="mt-3 grid gap-2.5">
+ <div className="inline-flex w-fit border border-border p-1">
+ <Button className="h-7 px-2.5 text-xs" onClick={useAllAnnouncementCategories} size="sm" type="button" variant={!feedCategoryFilterEnabled ? "secondary" : "ghost"}>All</Button>
+ <Button className="h-7 px-2.5 text-xs" onClick={enableSpecificAnnouncementCategories} size="sm" type="button" variant={feedCategoryFilterEnabled ? "secondary" : "ghost"}>Specific</Button>
  </div>
  {!feedCategoryFilterEnabled ? (
  <HelpText>All announcement categories are currently allowed. Turn on specific-category mode only when you want to restrict this workflow.</HelpText>
  ) : (
  <>
- <div className="flex flex-wrap gap-2">
- <Button onClick={selectAllAnnouncementCategories} type="button" variant="secondary">Select all</Button>
- <Button onClick={clearAnnouncementCategorySelection} type="button" variant="secondary">Clear all</Button>
+ <div className="flex flex-wrap items-center gap-2">
+ <Button className="h-7 px-2.5 text-xs" onClick={selectAllAnnouncementCategories} size="sm" type="button" variant="ghost">Select all</Button>
+ <Button className="h-7 px-2.5 text-xs" onClick={clearAnnouncementCategorySelection} size="sm" type="button" variant="ghost">Clear</Button>
+ <HelpText>{feedAnnouncementCategories.length} selected</HelpText>
  </div>
- <Input onChange={(event) => setFeedCategoryQuery(event.target.value)} placeholder="Filter categories" value={feedCategoryQuery} />
+ <Input className="h-9" onChange={(event) => setFeedCategoryQuery(event.target.value)} placeholder="Filter categories" value={feedCategoryQuery} />
  <Label className="flex items-center gap-2 text-sm">
  <Checkbox checked={feedIncludeRelatedCategories} onCheckedChange={(checked) => setFeedIncludeRelatedCategories(Boolean(checked))} />
  Also match related announcement categories
  </Label>
- <div className="max-h-44 overflow-auto border border-border">
+ <div className="max-h-48 overflow-auto border border-border">
  {filteredAnnouncementCategories.map((category) => (
- <Label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={category}>
- <span>{category}</span>
+ <Label className="flex min-w-0 items-center justify-between gap-3 border-b border-border px-2.5 py-1.5 text-sm last:border-b-0" key={category} title={category}>
+ <span className="min-w-0 truncate">{announcementCategoryLabel(category)}</span>
  <Checkbox checked={feedAnnouncementCategories.includes(category)} onCheckedChange={(checked) => toggleFeedAnnouncementCategory(category, Boolean(checked))} />
  </Label>
  ))}
@@ -2098,7 +2239,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  ) : (
  <div className=" border border-border p-3">
  <StepHeader
- step="Step 3"
+ step={targetStep}
  title="Target"
  description="The workflow can target one symbol today or a shared symbol list under the same rules. Preset universes are reserved for the next layer."
  action={<Label className="grid max-w-[280px] gap-2 text-sm">
@@ -2162,21 +2303,38 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  />
  </Label>
  {showSuggestions && suggestions.length ? (
- <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto border border-border bg-background ">
- {suggestions.map((row) => (
- <Button
- className="grid w-full gap-1 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--accent-glow)]"
- key={[row.symbol, row.exchange, row.trading_symbol].join(":")}
+ <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto border border-border bg-background">
+ {suggestions.map((row, index) => {
+ const metadata = suggestionMetadata[row.symbol.trim().toUpperCase()];
+ const detail = [metadata?.company_name ?? row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" / ");
+ return (
+ <button
+ className="flex min-h-[58px] w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left text-sm normal-case tracking-normal text-foreground transition-colors last:border-b-0 hover:bg-[var(--accent-glow)] focus-visible:border-ring focus-visible:outline-none"
+ key={[row.symbol, row.exchange, row.trading_symbol, index].join(":")}
  onClick={() => selectSuggestion(row)}
- variant="ghost"
  type="button"
  >
- <span className="font-semibold">{row.symbol}</span>
- <span className="type-meta">
- {[row.exchange, row.instrument_type, row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" · ")}
+ <span className="flex min-w-0 items-center gap-3">
+ {metadata?.logo ? (
+ <img alt="" className="size-8 shrink-0 object-contain" src={metadata.logo} />
+ ) : (
+ <span className="flex size-8 shrink-0 items-center justify-center font-mono text-[10px] font-semibold uppercase text-muted-foreground">
+ {row.symbol.slice(0, 2)}
  </span>
- </Button>
- ))}
+ )}
+ <span className="min-w-0">
+ <span className="block truncate font-mono text-sm font-semibold leading-5">{row.symbol}</span>
+ <span className="block truncate text-[12px] leading-4 text-muted-foreground">
+ {detail}
+ </span>
+ </span>
+ </span>
+ <span className="shrink-0 font-mono text-[11px] uppercase leading-4 text-primary">
+ {[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}
+ </span>
+ </button>
+ );
+ })}
  </div>
  ) : null}
  {targetMode === "preset_universe" && String(workflowType) === "alpha_feed" ? (
@@ -2389,7 +2547,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 {workflowType === "market_data" ? (
  <div className="border border-border p-3">
  <StepHeader
- step="Step 4"
+ step={validateTargetStep}
  title="Validate target"
  description="Use the live preview to confirm the selected symbol and market data before you move on to rule building."
  action={<div className="flex flex-wrap items-center gap-2">
@@ -2438,7 +2596,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="grid gap-3 border border-border p-3">
  <div className="flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
- <div className="type-step-eyebrow">Step 5</div>
+ <div className="type-step-eyebrow">{buildTriggerStep}</div>
  <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Build trigger</h2>
  <HelpText className="mt-1.5">Start with the rule logic first, then refine the outgoing alert content underneath it.</HelpText>
  </div>
@@ -2499,28 +2657,23 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="grid max-w-5xl gap-3 border border-border p-3">
  <div className="flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
- <div className="type-step-eyebrow">Step 6</div>
+ <div className="type-step-eyebrow">{optionalAnalysisStep}</div>
  <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Optional analysis</h2>
  <HelpText className="mt-1.5">Post-trigger analysis is optional and stays tucked away until you need it.</HelpText>
  </div>
  <div className="flex flex-wrap items-center gap-2">
- <div className="type-meta border border-border px-2 py-1">{llmEnabled ? "Enabled" : "Disabled"}</div>
  <Label className="flex items-center gap-2 text-sm">
  <Checkbox checked={llmEnabled} onCheckedChange={(checked) => setLlmEnabled(Boolean(checked))} />
  Enable
  </Label>
- <Button onClick={() => setLlmSectionExpanded((current) => !current)} size="sm" type="button" variant="secondary">
- {llmSectionExpanded ? "Hide details" : "Show details"}
- </Button>
  </div>
  </div>
- {llmSectionExpanded ? (
  <>
  <div className="grid max-w-3xl gap-3 min-[900px]:grid-cols-[180px_180px_80px_90px_80px]">
  <div className="grid gap-2">
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
- disabled={!llmProviders.length}
+ disabled={!llmEnabled || !llmProviders.length}
  onChange={(event) => setLlmProvider(event.target.value as LlmProvider | "")}
  value={llmProvider}
  >
@@ -2536,7 +2689,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="grid gap-2">
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
- disabled={!selectedLlmModels.length}
+ disabled={!llmEnabled || !selectedLlmModels.length}
  onChange={(event) => setLlmModelId(event.target.value)}
  value={llmModelId}
  >
@@ -2550,15 +2703,15 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <HelpText>Saved enabled models for the selected provider.</HelpText>
  </div>
  <div className="grid gap-2">
- <Input className="max-w-[96px]" onChange={(event) => setLlmTemperature(event.target.value)} placeholder="0.2" value={llmTemperature} />
+ <Input className="max-w-[96px]" disabled={!llmEnabled} onChange={(event) => setLlmTemperature(event.target.value)} placeholder="0.2" value={llmTemperature} />
  <HelpText>Temperature.</HelpText>
  </div>
  <div className="grid gap-2">
- <Input className="max-w-[110px]" onChange={(event) => setLlmMaxTokens(event.target.value)} placeholder="500" value={llmMaxTokens} />
+ <Input className="max-w-[110px]" disabled={!llmEnabled} onChange={(event) => setLlmMaxTokens(event.target.value)} placeholder="500" value={llmMaxTokens} />
  <HelpText>Max tokens.</HelpText>
  </div>
  <div className="grid gap-2">
- <Input className="max-w-[96px]" onChange={(event) => setLlmTimeout(event.target.value)} placeholder="25" value={llmTimeout} />
+ <Input className="max-w-[96px]" disabled={!llmEnabled} onChange={(event) => setLlmTimeout(event.target.value)} placeholder="25" value={llmTimeout} />
  <HelpText>Timeout sec.</HelpText>
  </div>
  </div>
@@ -2584,42 +2737,94 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Button>
  </div>
  <div className="flex flex-wrap gap-2">
- <Button disabled={isPending || !initialWorkflow?.id} onClick={previewLlmContext} size="sm" type="button" variant="secondary">Preview Context</Button>
+ <Button disabled={isPending || !initialWorkflow?.id || !llmEnabled} onClick={previewLlmContext} size="sm" type="button" variant="secondary">Preview Context</Button>
  <Button disabled={isPending || !initialWorkflow?.id || !llmEnabled} onClick={testLlmAnalysis} size="sm" type="button" variant="secondary">Test LLM</Button>
  </div>
  </div>
  {llmPromptTab === "prompt" ? (
- <div className="relative">
+ <div className="relative" ref={llmPromptWrapRef}>
  <Textarea
+ ref={llmPromptInputRef}
  className="min-h-[160px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
- onBlur={() => window.setTimeout(() => setShowLlmSuggestions(false), 120)}
+ disabled={!llmEnabled}
+ onBlur={() => window.setTimeout(() => {
+ setShowLlmSuggestions(false);
+ setLlmSuggestionPosition(null);
+ }, 120)}
  onChange={(event) => {
  setLlmPromptTemplate(event.target.value);
- updateLlmPromptAutocomplete(event.target.value, event.target.selectionStart ?? event.target.value.length);
+ updateLlmPromptAutocomplete(event.target.value, event.target.selectionStart ?? event.target.value.length, false, event.currentTarget);
  }}
- onClick={(event) => updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+ onClick={(event) => updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, false, event.currentTarget)}
  onKeyDown={(event) => {
+ if (showLlmSuggestions && filteredLlmPlaceholders.length) {
+ if (event.key === "ArrowDown") {
+ event.preventDefault();
+ setLlmSuggestionIndex((current) => (current + 1) % filteredLlmPlaceholders.length);
+ return;
+ }
+ if (event.key === "ArrowUp") {
+ event.preventDefault();
+ setLlmSuggestionIndex((current) => (current - 1 + filteredLlmPlaceholders.length) % filteredLlmPlaceholders.length);
+ return;
+ }
+ if (event.key === "Enter" || event.key === "Tab") {
+ event.preventDefault();
+ applyLlmSuggestion(filteredLlmPlaceholders[llmSuggestionIndex] ?? filteredLlmPlaceholders[0]);
+ return;
+ }
+ if (event.key === "Escape") {
+ event.preventDefault();
+ setShowLlmSuggestions(false);
+ setLlmSuggestionPosition(null);
+ return;
+ }
+ }
  if ((event.ctrlKey || event.metaKey) && event.key === " ") {
  event.preventDefault();
- updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, true);
+ updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, true, event.currentTarget);
  }
  }}
+ onKeyUp={(event) => {
+ if ((event.ctrlKey || event.metaKey) && event.key === " ") return;
+ if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) return;
+ updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, false, event.currentTarget);
+ }}
+ onScroll={(event) => {
+ if (showLlmSuggestions) {
+ updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, true, event.currentTarget);
+ }
+ }}
+ onSelect={(event) => updateLlmPromptAutocomplete(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, false, event.currentTarget)}
  placeholder="Type @ for context placeholders"
  value={llmPromptTemplate}
  />
  {showLlmSuggestions && filteredLlmPlaceholders.length ? (
- <div className="absolute left-0 top-[calc(100%+4px)] z-20 max-h-[260px] w-full overflow-y-auto border border-border bg-background">
- {filteredLlmPlaceholders.map((item) => (
+ <div
+ className="absolute z-30 max-h-[220px] overflow-y-auto border border-border bg-background shadow-sm"
+ style={{
+ left: llmSuggestionPosition?.left ?? 0,
+ top: llmSuggestionPosition?.top ?? "calc(100% + 4px)",
+ width: llmSuggestionPosition?.width ?? "100%"
+ }}
+ >
+ <div ref={llmSuggestionListRef}>
+ {filteredLlmPlaceholders.map((item, index) => (
  <Button
- className="block w-full border-b border-border px-3 py-2 text-left font-mono text-xs last:border-b-0 hover:bg-[var(--accent-glow)]"
+ className={`block w-full border-b border-border px-3 py-2 text-left font-mono text-xs last:border-b-0 ${index === llmSuggestionIndex ? "bg-secondary text-foreground" : "hover:bg-[var(--accent-glow)]"}`}
+ data-active={index === llmSuggestionIndex}
  key={item}
- onClick={() => applyLlmSuggestion(item)}
+ onMouseDown={(event) => {
+ event.preventDefault();
+ applyLlmSuggestion(item);
+ }}
  variant="ghost"
  type="button"
  >
  {item}
  </Button>
  ))}
+ </div>
  </div>
  ) : null}
  <HelpText>Use `@` placeholders for symbol-scoped API context. Save the workflow before previewing or testing changes.</HelpText>
@@ -2631,14 +2836,13 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  )}
  </>
- ) : null}
  </div>
 
  {!currentTemplatesMatchSuggestion ? (
  <div className="grid max-w-5xl gap-3 border border-border bg-secondary/20 p-3">
  <div className="flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
- <div className="type-step-eyebrow">Step 7</div>
+ <div className="type-step-eyebrow">{reviewCopyStep}</div>
  <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Review alert copy</h2>
  <HelpText className="mt-1.5">The conditions changed or the copy was manually edited. You can keep your current text, or replace it with a generated version that includes the active fields.</HelpText>
  </div>
@@ -2663,7 +2867,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="grid max-w-5xl gap-3 border border-border p-3">
  <div className="flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
- <div className="type-step-eyebrow">Step 8</div>
+ <div className="type-step-eyebrow">{advancedDeploymentStep}</div>
  <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Advanced script and deployment</h2>
  <HelpText className="mt-1.5">The script is optional. When present, it is validated by the sandboxed expression compiler and overrides the visual logic in the compiled workflow AST.</HelpText>
  </div>
@@ -2675,12 +2879,8 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("samples")} size="sm" type="button" variant="secondary">Samples</Button>
  <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("deploy")} size="sm" type="button">Deploy</Button>
  </div>
- <Button onClick={() => setEngineSectionExpanded((current) => !current)} size="sm" type="button" variant="secondary">
- {engineSectionExpanded ? "Hide details" : "Show details"}
- </Button>
  </div>
  </div>
- {engineSectionExpanded ? (
  <>
  <div className="relative">
  <Textarea
@@ -2760,12 +2960,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {engineFeedback ? <div className="type-body border border-border px-3 py-2 text-muted-foreground">{engineFeedback}</div> : null}
  {engineDetails ? <pre className="type-meta max-h-[260px] overflow-auto border border-border p-3">{compactPreview(engineDetails)}</pre> : null}
  </>
- ) : null}
  </div>
 
  <div className="grid max-w-5xl gap-3 border border-border p-3">
  <div>
- <div className="type-step-eyebrow">Step 9</div>
+ <div className="type-step-eyebrow">{deliveryLifecycleStep}</div>
  <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Delivery and lifecycle</h2>
  <HelpText className="mt-1.5">Choose where the alert goes, set the workflow state, and then save or test it.</HelpText>
  </div>
@@ -2816,25 +3015,10 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Button>
  ) : null}
  </div>
- {footerFeedback ? (
- <div className={`type-help border px-3 py-2 ${error ? "border-[var(--danger)] bg-[var(--danger-subtle)] text-[var(--danger)]" : "border-border text-muted-foreground"}`}>
- {footerFeedback}
- </div>
- ) : null}
- {notice ? (
- <div className="type-help border border-border px-3 py-2 text-muted-foreground">
- {notice}
- </div>
- ) : null}
  {initialWorkflow?.id ? (
  <div className="type-help grid gap-1 border border-border px-3 py-2 text-muted-foreground">
  <div>`Evaluate current preview` checks the workflow conditions against the live preview tick shown above. It does not create an alert or notify any channel.</div>
  <div>`Send test alert` renders the current title and message templates with the preview payload and attempts delivery through the selected channels.</div>
- </div>
- ) : null}
- {!canSave && saveBlockReason ? (
- <div className="type-help border border-border px-3 py-2 text-muted-foreground">
- {saveBlockReason}
  </div>
  ) : null}
  </div>
