@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { IconBrandGithub } from "@tabler/icons-react";
+import { IconBrandGithub, IconCircleCheck } from "@tabler/icons-react";
 import {
   Handle,
   MarkerType,
@@ -282,7 +282,7 @@ function BrokerSignalMap() {
                   <div className="truncate text-sm font-semibold">{broker.name}</div>
                   <div className="landing-overline">{broker.state} · {broker.latency}</div>
                 </div>
-                <span className="landing-status-dot ml-auto size-2" />
+                <IconCircleCheck className="landing-status-check ml-auto size-5" stroke={1.9} aria-label="Connected" />
               </div>
             ))}
           </div>
@@ -495,6 +495,9 @@ export default function HomePage() {
 
       <BrokerSignalMap />
 
+      <WorkflowTimeline />
+      <MarketHeatmap symbolMetadata={symbolMetadata} />
+
       <section id="self-host" className="landing-section self-host-section">
         <div className="self-host-shell mx-auto grid max-w-7xl gap-10 min-[980px]:grid-cols-[0.95fr_1.05fr] min-[980px]:items-center">
           <div className="self-host-copy">
@@ -562,9 +565,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      <WorkflowTimeline />
-      <MarketHeatmap symbolMetadata={symbolMetadata} />
 
       <footer className="landing-footer px-5 py-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 text-xs sm:flex-row sm:items-center sm:justify-between">

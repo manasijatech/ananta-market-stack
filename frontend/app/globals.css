@@ -151,6 +151,7 @@
 
 .landing-page {
   --landing-section-spacing: 4rem;
+  --landing-adjacent-section-spacing: calc(var(--landing-section-spacing) * 1.25);
   --landing-bg: #f7f1e6;
   --landing-section-bg: var(--landing-bg);
   --landing-section-raised: var(--landing-bg);
@@ -437,13 +438,12 @@
 .landing-proof svg,
 .landing-list svg,
 .landing-positive,
-.landing-status-dot {
+.landing-status-check {
   color: var(--landing-positive);
 }
 
-.landing-status-dot {
-  background: var(--landing-positive);
-  box-shadow: 0 0 0 3px var(--landing-positive-soft) !important;
+.landing-status-check {
+  flex: 0 0 auto;
 }
 
 .landing-section {
@@ -459,6 +459,12 @@
 
 .landing-section--raised {
   background: transparent;
+}
+
+.landing-page > .landing-section + .landing-section,
+.landing-page > .landing-section + .workflow-machine-section,
+.landing-page > .workflow-machine-section + .landing-section {
+  padding-top: var(--landing-adjacent-section-spacing);
 }
 
 .landing-eyebrow {
@@ -486,9 +492,13 @@
 }
 
 .landing-tile-label {
-  color: color-mix(in srgb, #ffffff 58%, transparent);
+  color: color-mix(in srgb, var(--landing-heading) 62%, var(--landing-muted));
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
+}
+
+.dark .landing-tile-label {
+  color: color-mix(in srgb, #ffffff 62%, transparent);
 }
 
 .symbol-logo,
@@ -753,14 +763,14 @@
   position: relative;
   overflow: hidden;
   background: transparent;
-  min-height: 430px;
+  min-height: 360px;
   padding: 18px;
 }
 
 .broker-flow {
   position: relative;
   z-index: 2;
-  min-height: 330px;
+  min-height: 320px;
 }
 
 .broker-flow::before {
@@ -901,7 +911,7 @@
 .workflow-machine-layout {
   display: grid;
   gap: 42px;
-  align-items: center;
+  align-items: start;
 }
 
 .workflow-machine-heading {
@@ -911,8 +921,8 @@
 }
 
 .workflow-flow-canvas {
-  height: 440px;
-  min-height: 440px;
+  height: 360px;
+  min-height: 360px;
 }
 
 .workflow-flow-canvas .react-flow {
@@ -1180,8 +1190,8 @@
   }
 
   .workflow-flow-canvas {
-    height: 420px;
-    min-height: 420px;
+    height: 380px;
+    min-height: 380px;
   }
 
   .workflow-flow-canvas .react-flow__node-workflow {
