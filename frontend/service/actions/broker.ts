@@ -299,6 +299,16 @@ export async function updateAlphaWebSocketConfig(payload: {
   return result;
 }
 
+export async function refreshAlphaWebSocketAccount(): Promise<AlphaWebSocketConfig> {
+  const result = await request<AlphaWebSocketConfig>("/system-config/alpha/websocket/refresh", {
+    method: "POST"
+  });
+  revalidatePath("/alerts/subscriptions");
+  revalidatePath("/dashboard/system-config");
+  revalidatePath("/market-intelligence");
+  return result;
+}
+
 export async function upsertLlmProviderCredential(
   provider: LlmProvider,
   payload: { api_key: string; is_enabled?: boolean }

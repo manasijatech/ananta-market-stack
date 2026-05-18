@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -96,13 +98,28 @@ def get_alpha_websocket_config(
     return alpha_websocket.alpha_ws_config_out(db, user.id)
 
 
+@router.post("/alpha/websocket/refresh", response_model=AlphaWebSocketConfigOut)
+def refresh_alpha_websocket_account(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlphaWebSocketConfigOut:
+    try:
+        asyncio.run(alpha_websocket.refresh_account_for_user(user.id))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not refresh Alpha account plan: {exc}") from exc
+    return alpha_websocket.alpha_ws_config_out(db, user.id)
+
+
 @router.put("/alpha/websocket", response_model=AlphaWebSocketConfigOut)
 def update_alpha_websocket_config(
     body: AlphaWebSocketConfigUpdateIn,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AlphaWebSocketConfigOut:
-    return alpha_websocket.update_alpha_ws_config(db, user.id, body)
+    try:
+        return alpha_websocket.update_alpha_ws_config(db, user.id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/alpha/key", response_model=AlphaApiKeyOut)
