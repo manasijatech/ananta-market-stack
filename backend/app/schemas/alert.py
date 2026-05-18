@@ -439,4 +439,5 @@ class LiveStreamsStatusOut(BaseModel):
     worker_mode: str
     active_sessions: list[LiveWorkerSessionOut] = Field(default_factory=list)
     desired_subscriptions: list[LiveSubscriptionOut] = Field(default_factory=list)
+    inactive_subscriptions: list[LiveSubscriptionOut] = Field(default_factory=list)
     broker_statuses: list[LiveBrokerAccountStatusOut] = Field(default_factory=list)

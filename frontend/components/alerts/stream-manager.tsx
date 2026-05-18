@@ -99,6 +99,9 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
 
  <section className="grid gap-3">
  <div className="type-section-title">Desired subscriptions</div>
+ <div className="type-help text-muted-foreground">
+ Only active subscriptions are tracked here and counted toward live worker capacity.
+ </div>
  {status.desired_subscriptions.map((subscription) => (
  <div className=" border border-border p-4" key={subscription.id}>
  <div className="type-section-title">{subscription.symbol}</div>
@@ -113,6 +116,33 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
  {subscription.health_reason ? <div className="type-meta mt-1 text-[var(--danger)]">{subscription.health_reason}</div> : null}
  </div>
  ))}
+ {!status.desired_subscriptions.length ? (
+ <div className="type-body text-muted-foreground">No active subscriptions are currently being tracked.</div>
+ ) : null}
+ </section>
+
+ <section className="grid gap-3">
+ <div className="type-section-title">Inactive subscriptions</div>
+ <div className="type-help text-muted-foreground">
+ These do not consume stream-manager capacity. They remain visible only so ownership issues can be reviewed or cleaned up.
+ </div>
+ {status.inactive_subscriptions.map((subscription) => (
+ <div className=" border border-border p-4" key={subscription.id}>
+ <div className="type-section-title">{subscription.symbol}</div>
+ <div className="type-meta text-muted-foreground">
+ {subscription.exchange ?? "-"} · {subscription.broker_code ?? "-"} · {subscription.status} · {subscription.source_kind}
+ </div>
+ <div className="type-help mt-1 text-muted-foreground">
+ {[subscription.source_type, subscription.source_label || subscription.source_id, subscription.owner_kind, subscription.health_status]
+ .filter(Boolean)
+ .join(" · ")}
+ </div>
+ {subscription.health_reason ? <div className="type-meta mt-1 text-[var(--danger)]">{subscription.health_reason}</div> : null}
+ </div>
+ ))}
+ {!status.inactive_subscriptions.length ? (
+ <div className="type-body text-muted-foreground">No inactive or orphaned subscriptions.</div>
+ ) : null}
  </section>
  </div>
  );

@@ -294,6 +294,7 @@ export interface LiveStreamsStatus {
   worker_mode: string;
   active_sessions: LiveWorkerSession[];
   desired_subscriptions: LiveSubscription[];
+  inactive_subscriptions: LiveSubscription[];
   broker_statuses: LiveBrokerAccountStatus[];
 }
 
