@@ -1,7 +1,7 @@
 "use server";
 
+import { fetchFastApi } from "@/lib/fastapi";
 import type { AlphaSymbolMetadata, AlphaSymbolMetadataResponse } from "@/service/types/alpha/symbols";
-import { appendList, request, withQuery } from "@/service/actions/alpha/shared";
 
 const SYMBOL_METADATA_BATCH_SIZE = 20;
 
@@ -19,9 +19,17 @@ function normalizeSymbols(symbols: string[]): string[] {
 
 async function getAlphaSymbolMetadataBatch(symbols: string[]): Promise<AlphaSymbolMetadata[]> {
   const query = new URLSearchParams();
-  appendList(query, "symbols", symbols);
+  query.set("symbols", symbols.join(","));
   if (!query.has("symbols")) return [];
-  const result = await request<AlphaSymbolMetadataResponse>(withQuery("/v1/symbols/metadata", query));
+  const response = await fetchFastApi(`/alpha/symbols/metadata?${query.toString()}`);
+  const result = await response.json() as AlphaSymbolMetadataResponse;
+  if (!response.ok) {
+    throw new Error(JSON.stringify({
+      status: response.status,
+      message: "Could not fetch symbol metadata from the local backend cache.",
+      fieldErrors: {}
+    }));
+  }
   return result.data ?? [];
 }
 

@@ -395,6 +395,27 @@ class AlphaWebSocketEvent(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
+class AlphaSymbolMetadataCache(Base):
+    __tablename__ = "alpha_symbol_metadata_cache"
+
+    symbol: Mapped[str] = mapped_column(String(128), primary_key=True)
+    company_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    logo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    market_cap: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    basic_industry: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    industry: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    macro_economic_indicator: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    theme: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    scrip_code: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    raw_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class ZerodhaCredentials(Base):
     __tablename__ = "broker_zerodha_credentials"
 

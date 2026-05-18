@@ -4,18 +4,59 @@ import asyncio
 import json
 
 import redis
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
+from app.schemas.alpha import AlphaSymbolMetadataResponse
 from app.schemas.alert import AlphaWebSocketEventOut
+from app.services import alpha_symbols
 from app.services.alpha_websocket import ALPHA_WS_PRODUCTS
 from broker.core.redis_cache import _redis_client
 from db.models import AlphaWebSocketEvent, User
 from db.session import get_db
 
 router = APIRouter()
+
+
+def _parse_symbols_query(symbols: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_value in symbols or []:
+        for part in str(raw_value).split(","):
+            symbol = part.strip().upper()
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            normalized.append(symbol)
+    if not normalized:
+        raise HTTPException(status_code=400, detail="'symbols' is required")
+    if len(normalized) > 20:
+        raise HTTPException(status_code=400, detail="'symbols' accepts at most 20 unique symbols per request")
+    return normalized
+
+
+@router.get("/symbols/metadata", response_model=AlphaSymbolMetadataResponse)
+def get_alpha_symbol_metadata(
+    symbols: list[str] | None = Query(default=None),
+    force_refresh: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlphaSymbolMetadataResponse:
+    requested_symbols = _parse_symbols_query(symbols)
+    try:
+        rows = alpha_symbols.get_symbol_metadata(
+            db,
+            user.id,
+            requested_symbols,
+            force_refresh=force_refresh,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch Alpha symbol metadata: {exc}") from exc
+    return AlphaSymbolMetadataResponse(data=rows)
 
 
 @router.get("/events", response_model=list[AlphaWebSocketEventOut])

@@ -2100,11 +2100,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Select>
  <HelpText>The broker account decides which instrument universe and quote API will be used.</HelpText>
  </Label>
- <div className="grid max-w-3xl gap-3 min-[760px]:grid-cols-[minmax(0,1fr)_120px]">
- <div className="relative grid gap-2" ref={symbolWrapRef}>
- <Label className="grid gap-2 text-sm">
+ <div className="grid max-w-3xl items-start gap-x-3 gap-y-2 min-[760px]:grid-cols-[minmax(0,1fr)_120px]">
+ <div className="relative grid content-start gap-2" ref={symbolWrapRef}>
+ <Label className="grid content-start gap-2 text-sm">
  <FieldLabel>Search symbol</FieldLabel>
  <Input
+ className="h-10"
  onChange={(event) => {
  setSymbol(event.target.value.toUpperCase());
  setInstrumentRef({ symbol: event.target.value.toUpperCase(), exchange });
@@ -2121,11 +2122,6 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  value={symbol}
  />
  </Label>
- <HelpText>
- {searchLoading
- ? "Searching instruments..."
- : selectedSearchLabel || "Type a symbol name or trading symbol and choose a suggestion. Search uses your default synced broker cache and falls back automatically when needed."}
- </HelpText>
  {showSuggestions && suggestions.length ? (
  <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto border border-border bg-background ">
  {suggestions.map((row) => (
@@ -2185,9 +2181,10 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : null}
  </div>
- <Label className="grid gap-2 text-sm">
+ <Label className="grid content-start gap-2 text-sm">
  <FieldLabel>Exchange</FieldLabel>
  <Input
+ className="h-10"
  onChange={(event) => {
  setExchange(event.target.value.toUpperCase());
  setInstrumentRef((current) => ({ ...current, exchange: event.target.value.toUpperCase() }));
@@ -2196,8 +2193,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  title="Usually NSE or BSE. Kept editable in case the selected trading symbol exists on multiple exchanges."
  value={exchange}
  />
- <HelpText>Used with the selected instrument identifiers for market data requests.</HelpText>
  </Label>
+ <HelpText className="min-[760px]:col-span-2">
+ {searchLoading
+ ? "Searching instruments..."
+ : selectedSearchLabel || "Type a symbol name or trading symbol and choose a suggestion. Exchange is used with the selected instrument identifiers for market data requests."}
+ </HelpText>
  </div>
  {targetMode === "symbol_list" ? (
  <div className="mt-3 grid gap-3 border border-border p-3">

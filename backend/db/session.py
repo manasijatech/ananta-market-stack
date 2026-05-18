@@ -347,6 +347,26 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "alpha_symbol_metadata_cache",
+            {
+                "symbol": "VARCHAR(128)",
+                "company_name": "VARCHAR(256)",
+                "logo": "TEXT",
+                "market_cap": "VARCHAR(64)",
+                "sector": "VARCHAR(128)",
+                "basic_industry": "VARCHAR(128)",
+                "industry": "VARCHAR(128)",
+                "macro_economic_indicator": "VARCHAR(128)",
+                "theme": "VARCHAR(128)",
+                "scrip_code": "VARCHAR(64)",
+                "raw_payload_json": "TEXT DEFAULT '{}'",
+                "fetched_at": "DATETIME",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "alert_workflow_templates",
             {
                 "id": "VARCHAR(36)",
@@ -528,6 +548,8 @@ def _ensure_table_columns(
             primary_key = ", PRIMARY KEY (user_id)"
         elif table_name in {"broker_holdings_snapshots"}:
             primary_key = ", PRIMARY KEY (account_id)"
+        elif table_name in {"alpha_symbol_metadata_cache"}:
+            primary_key = ", PRIMARY KEY (symbol)"
         conn.execute(f"CREATE TABLE {table_name} ({definitions}{primary_key})")
         return
     existing = {
