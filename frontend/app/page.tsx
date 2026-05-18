@@ -527,6 +527,10 @@ export default function HomePage() {
                 FastAPI
               </span>
               <span>
+                <Image src="/brand/tech/nextjs.png" alt="" width={18} height={18} className="object-contain" />
+                Next JS
+              </span>
+              <span>
                 <Image src="/brand/tech/redis.png" alt="" width={18} height={18} className="object-contain" />
                 Redis
               </span>
