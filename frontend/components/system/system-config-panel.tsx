@@ -401,7 +401,11 @@ export function SystemConfigPanel({
             <div>
               <div className="text-sm font-bold">Backend websocket worker</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {alphaWsConfig.status} · {alphaWsConfig.effective_products.length} products · {alphaWsConfig.scope_mode === "full_market" ? "full market" : `${alphaWsConfig.effective_symbols.length} symbols`}
+                {alphaWsConfig.status} · {alphaWsConfig.effective_products.length} products · {alphaWsConfig.scope_mode === "full_market" ? "full market" : `${alphaWsConfig.effective_symbol_count ?? alphaWsConfig.effective_symbols.length}${typeof alphaWsConfig.live_symbol_limit === "number" ? ` / ${alphaWsConfig.live_symbol_limit}` : ""} symbols`}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Pulse plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"}
+                {typeof alphaWsConfig.monthly_unique_symbol_limit === "number" ? ` · ${alphaWsConfig.monthly_unique_symbol_limit} unique/month` : ""}
               </div>
             </div>
             <Button disabled={isPending} onClick={saveAlphaWsConfig} type="button">

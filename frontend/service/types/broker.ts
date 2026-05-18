@@ -386,6 +386,12 @@ export interface AlphaWebSocketConfig {
   entitled_addons: AlphaWebSocketAddon[];
   effective_products: string[];
   effective_symbols: string[];
+  plan_id?: string | null;
+  plan_name?: string | null;
+  live_symbol_limit?: number | null;
+  monthly_unique_symbol_limit?: number | null;
+  effective_symbol_count: number;
+  full_market_products: string[];
   full_market_allowed: boolean;
   status: string;
   last_error?: string | null;
