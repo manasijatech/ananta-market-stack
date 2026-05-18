@@ -633,15 +633,15 @@ function targetScopeSummary(targeting: AlertWorkflowTargeting): string {
 }
 
 function HelpText({ children, className = "" }: { children: React.ReactNode; className?: string }) {
- return <div className={["type-help text-muted-foreground", className].filter(Boolean).join(" ")}>{children}</div>;
+ return <div className={["text-[13px] leading-5 text-muted-foreground", className].filter(Boolean).join(" ")}>{children}</div>;
 }
 
 function FieldLabel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
- return <span className={["type-label", className].filter(Boolean).join(" ")}>{children}</span>;
+ return <span className={["text-sm font-semibold leading-5 text-foreground", className].filter(Boolean).join(" ")}>{children}</span>;
 }
 
 function SectionTitle({ children, className = "" }: { children: React.ReactNode; className?: string }) {
- return <h3 className={["type-section-title", className].filter(Boolean).join(" ")}>{children}</h3>;
+ return <h3 className={["text-base font-semibold leading-5 text-foreground", className].filter(Boolean).join(" ")}>{children}</h3>;
 }
 
 function StepHeader({
@@ -656,11 +656,11 @@ function StepHeader({
  action?: React.ReactNode;
 }) {
  return (
- <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+ <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
  <div className="type-step-eyebrow">{step}</div>
- <h2 className="type-step-title mt-1">{title}</h2>
- <HelpText className="mt-2">{description}</HelpText>
+ <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">{title}</h2>
+ <HelpText className="mt-1.5">{description}</HelpText>
  </div>
  {action}
  </div>
@@ -1807,22 +1807,22 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  }
 
  return (
- <div className="grid gap-6">
+ <div className="grid max-w-5xl gap-4">
  {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
 {matchPreview ? <div className="type-body border border-border px-4 py-3 text-muted-foreground">{matchPreview}</div> : null}
 
- <div className={workflowType === "market_data" ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]" : "grid gap-6"}>
- <div className="grid gap-6">
- <div className="border border-border p-4">
+ <div className="grid gap-4">
+ <div className="grid gap-4">
+ <div className="border border-border p-3">
  <StepHeader
  step="Step 1"
  title="Workflow basics"
  description="Set the workflow identity first so the trigger mode and naming are clear before you configure the market window or targets."
  />
- <div className="grid items-start gap-3 min-[980px]:grid-cols-[240px_minmax(0,420px)]">
+ <div className="grid max-w-3xl items-start gap-3 min-[760px]:grid-cols-[220px_minmax(0,360px)]">
  <Label className="grid content-start self-start gap-2 text-sm">
  <FieldLabel>Workflow type</FieldLabel>
- <Select className="h-10 max-w-full border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
+ <Select className="h-9 max-w-full border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
  <option value="market_data">Broker market data trigger</option>
  <option value="alpha_feed">Manasija websocket feed trigger</option>
  </Select>
@@ -1838,7 +1838,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <HelpText>This is the name shown in workflow lists and alert history.</HelpText>
  </Label>
  </div>
- <Label className="mt-3 grid max-w-[760px] gap-2 text-sm">
+ <Label className="mt-3 grid max-w-2xl gap-2 text-sm">
  <FieldLabel>Description</FieldLabel>
  <Input onChange={(event) => setDescription(event.target.value)} placeholder="Description" title="Optional human note about why this workflow exists." value={description} />
  <HelpText>Use this for strategy intent, not execution logic.</HelpText>
@@ -1846,7 +1846,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
 
 {workflowType === "market_data" ? (
- <div className="border border-border p-4">
+ <div className="border border-border p-3">
  <StepHeader
  step="Step 2"
  title="Market window"
@@ -1856,7 +1856,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  Enforce active period
  </Label>}
  />
- <div className="grid items-start gap-3 min-[980px]:grid-cols-[minmax(0,320px)_120px_120px]">
+ <div className="grid max-w-2xl items-start gap-3 min-[760px]:grid-cols-[minmax(0,280px)_100px_100px]">
  <Label className="grid content-start self-start gap-2 text-sm">
  <FieldLabel>Timezone</FieldLabel>
  <Input onChange={(event) => setActiveTimezone(event.target.value)} placeholder="Asia/Kolkata" value={activeTimezone} />
@@ -1873,7 +1873,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <HelpText>Session end time.</HelpText>
  </Label>
  </div>
- <div className="mt-3 grid items-start gap-3 min-[980px]:grid-cols-[minmax(0,320px)_1fr]">
+ <div className="mt-3 grid max-w-3xl items-start gap-3 min-[760px]:grid-cols-[minmax(0,280px)_1fr]">
  <Label className="grid content-start self-start gap-2 text-sm">
  <FieldLabel>Session label</FieldLabel>
  <Input onChange={(event) => setActiveSessionLabel(event.target.value)} placeholder="Regular market" value={activeSessionLabel} />
@@ -1892,7 +1892,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <HelpText>Common default is Monday-Friday.</HelpText>
  </div>
  </div>
- <div className="mt-4 border border-border p-3">
+ <div className="mt-3 border border-border p-3">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
  <SectionTitle>Advanced scope</SectionTitle>
@@ -1936,23 +1936,23 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 ) : null}
 
  {workflowType === "alpha_feed" ? (
- <div className="border border-border p-4">
+ <div className="border border-border p-3">
  <SectionTitle className="mb-3">Feed trigger</SectionTitle>
- <div className="grid gap-5 min-[980px]:grid-cols-3">
+ <div className="grid max-w-3xl gap-4 min-[900px]:grid-cols-2">
  <div>
  <FieldLabel>Products</FieldLabel>
  <div className="mt-3 grid gap-2">
  {alphaFeedProducts.map((product) => (
- <Label className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm" key={product}>
- <span>{product}</span>
+ <Label className="flex items-center gap-2 text-sm" key={product}>
  <Checkbox checked={feedProducts.includes(product)} onCheckedChange={(checked) => toggleFeedProduct(product, Boolean(checked))} />
+ <span>{product}</span>
  </Label>
  ))}
  </div>
  </div>
  <div>
  <FieldLabel>Feed scope</FieldLabel>
- <Select className="mt-3 h-10 w-full border border-input bg-background px-3 text-sm" onChange={(event) => setFeedSourceScope(event.target.value as typeof feedSourceScope)} value={feedSourceScope}>
+ <Select className="mt-3 h-9 w-full border border-input bg-background px-3 text-sm" onChange={(event) => setFeedSourceScope(event.target.value as typeof feedSourceScope)} value={feedSourceScope}>
  <option value="current_alpha_subscription">Current configured Alpha subscription</option>
  <option value="watchlists">Specific watchlists</option>
  <option value="preset_lists">Preset lists</option>
@@ -2057,7 +2057,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
  ) : (
- <div className=" border border-border p-4">
+ <div className=" border border-border p-3">
  <StepHeader
  step="Step 3"
  title="Target"
@@ -2065,7 +2065,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  action={<Label className="grid max-w-[280px] gap-2 text-sm">
  <FieldLabel>Target mode</FieldLabel>
  <Select
- className="h-10 border border-input bg-background px-3 text-sm"
+ className="h-9 border border-input bg-background px-3 text-sm"
  onChange={(event) => {
  const nextMode = event.target.value as AlertWorkflowTargeting["mode"];
  setTargetMode(nextMode);
@@ -2085,10 +2085,10 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Label>}
  />
  <div className="grid gap-3">
- <Label className="grid max-w-[420px] gap-2 text-sm">
+ <Label className="grid max-w-sm gap-2 text-sm">
  <FieldLabel>Broker account</FieldLabel>
  <Select
- className="h-10 border border-input bg-background px-3 text-sm"
+ className="h-9 border border-input bg-background px-3 text-sm"
  onChange={(event) => setAccountId(event.target.value)}
  value={accountId}
  >
@@ -2100,7 +2100,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Select>
  <HelpText>The broker account decides which instrument universe and quote API will be used.</HelpText>
  </Label>
- <div className="grid gap-3 min-[980px]:grid-cols-[minmax(0,1fr)_140px]">
+ <div className="grid max-w-3xl gap-3 min-[760px]:grid-cols-[minmax(0,1fr)_120px]">
  <div className="relative grid gap-2" ref={symbolWrapRef}>
  <Label className="grid gap-2 text-sm">
  <FieldLabel>Search symbol</FieldLabel>
@@ -2145,7 +2145,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : null}
  {targetMode === "preset_universe" && String(workflowType) === "alpha_feed" ? (
- <div className="mt-4 grid gap-3 border border-border p-4">
+ <div className="mt-3 grid gap-3 border border-border p-3">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
  <SectionTitle>Resolved symbols</SectionTitle>
@@ -2200,7 +2200,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Label>
  </div>
  {targetMode === "symbol_list" ? (
- <div className="mt-4 grid gap-3 border border-border p-4">
+ <div className="mt-3 grid gap-3 border border-border p-3">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
  <SectionTitle>Target list</SectionTitle>
@@ -2240,7 +2240,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : null}
 {targetMode === "preset_universe" ? (
- <div className="mt-4 grid gap-4 border border-border p-4">
+<div className="mt-3 grid gap-3 border border-border p-3">
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
  <SectionTitle>Dynamic universe</SectionTitle>
@@ -2347,12 +2347,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 
  </div>
 {workflowType === "market_data" ? (
- <div className="border border-border p-4 xl:sticky xl:top-4 xl:self-start">
+ <div className="border border-border p-3">
  <StepHeader
  step="Step 4"
  title="Validate target"
  description="Use the live preview to confirm the selected symbol and market data before you move on to rule building."
- action={<div className="flex items-center gap-2">
+ action={<div className="flex flex-wrap items-center gap-2">
  <div className="type-meta">{preview.loading ? "Refreshing..." : preview.quote ? "Live preview active" : "No symbol selected"}</div>
  <div className="inline-flex border border-border p-1">
  <Button
@@ -2376,7 +2376,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>}
  />
- <div className="type-meta mb-3 border border-border px-3 py-2">
+ <div className="type-meta mb-3 max-w-2xl border border-border px-3 py-2">
  <div className="font-semibold text-foreground">{symbol || "No symbol selected"}</div>
  <div className="mt-1">{selectedAccount ? `${selectedAccount.label} - ${selectedAccount.broker_code}` : "No broker account selected"}{exchange ? ` - ${exchange}` : ""}</div>
  </div>
@@ -2393,14 +2393,14 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 ) : null}
  </div>
 
- <div className="max-w-[920px]">
+ <div className="max-w-5xl">
  <Tabs onValueChange={(value) => setEditorMode(value as EditorMode)} value={editorMode}>
- <div className="grid max-w-[920px] gap-4 border border-border p-4">
- <div className="flex flex-wrap items-start justify-between gap-4">
+ <div className="grid gap-3 border border-border p-3">
+ <div className="flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
  <div className="type-step-eyebrow">Step 5</div>
- <h2 className="type-step-title mt-1">Build trigger</h2>
- <HelpText className="mt-2">Start with the rule logic first, then refine the outgoing alert content underneath it.</HelpText>
+ <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Build trigger</h2>
+ <HelpText className="mt-1.5">Start with the rule logic first, then refine the outgoing alert content underneath it.</HelpText>
  </div>
  <TabsList>
  <TabsTrigger value="rule">Rule Builder</TabsTrigger>
@@ -2430,7 +2430,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  />
  </TabsContent>
  <TabsContent className="mt-0" value="graph">
- <div className="grid max-w-[920px] gap-3 min-[960px]:grid-cols-[150px_1fr_1fr]">
+ <div className="grid gap-3 min-[960px]:grid-cols-[150px_1fr_1fr]">
  <div className="border border-border p-3">
  <SectionTitle className="mb-2">Trigger</SectionTitle>
  <HelpText>The graph starts from the live quote stream for the selected symbol and account.</HelpText>
@@ -2456,12 +2456,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Tabs>
  </div>
 
- <div className="grid max-w-[920px] gap-4 border border-border p-4">
- <div className="flex flex-wrap items-start justify-between gap-4">
+ <div className="grid max-w-5xl gap-3 border border-border p-3">
+ <div className="flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
  <div className="type-step-eyebrow">Step 6</div>
- <h2 className="type-step-title mt-1">Optional analysis</h2>
- <HelpText className="mt-2">Post-trigger analysis is optional and stays tucked away until you need it.</HelpText>
+ <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Optional analysis</h2>
+ <HelpText className="mt-1.5">Post-trigger analysis is optional and stays tucked away until you need it.</HelpText>
  </div>
  <div className="flex flex-wrap items-center gap-2">
  <div className="type-meta border border-border px-2 py-1">{llmEnabled ? "Enabled" : "Disabled"}</div>
@@ -2476,7 +2476,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  {llmSectionExpanded ? (
  <>
- <div className="grid max-w-[820px] gap-3 min-[980px]:grid-cols-[200px_200px_88px_96px_88px]">
+ <div className="grid max-w-3xl gap-3 min-[900px]:grid-cols-[180px_180px_80px_90px_80px]">
  <div className="grid gap-2">
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
@@ -2551,7 +2551,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  {llmPromptTab === "prompt" ? (
  <div className="relative">
  <Textarea
- className="min-h-[220px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
+ className="min-h-[160px] w-full border border-input bg-background px-3 py-2 font-mono text-sm outline-none"
  onBlur={() => window.setTimeout(() => setShowLlmSuggestions(false), 120)}
  onChange={(event) => {
  setLlmPromptTemplate(event.target.value);
@@ -2595,12 +2595,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
 
  {!currentTemplatesMatchSuggestion ? (
- <div className="grid max-w-[920px] gap-3 border border-border bg-secondary/20 p-4">
- <div className="flex flex-wrap items-start justify-between gap-4">
+ <div className="grid max-w-5xl gap-3 border border-border bg-secondary/20 p-3">
+ <div className="flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
  <div className="type-step-eyebrow">Step 7</div>
- <h2 className="type-step-title mt-1">Review alert copy</h2>
- <HelpText className="mt-2">The conditions changed or the copy was manually edited. You can keep your current text, or replace it with a generated version that includes the active fields.</HelpText>
+ <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Review alert copy</h2>
+ <HelpText className="mt-1.5">The conditions changed or the copy was manually edited. You can keep your current text, or replace it with a generated version that includes the active fields.</HelpText>
  </div>
  <Button
  onClick={() => {
@@ -2620,12 +2620,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : null}
 
- <div className="grid max-w-[920px] gap-4 border border-border p-4">
- <div className="flex flex-wrap items-start justify-between gap-4">
+ <div className="grid max-w-5xl gap-3 border border-border p-3">
+ <div className="flex flex-wrap items-start justify-between gap-3">
  <div className="max-w-[760px]">
  <div className="type-step-eyebrow">Step 8</div>
- <h2 className="type-step-title mt-1">Advanced script and deployment</h2>
- <HelpText className="mt-2">The script is optional. When present, it is validated by the sandboxed expression compiler and overrides the visual logic in the compiled workflow AST.</HelpText>
+ <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Advanced script and deployment</h2>
+ <HelpText className="mt-1.5">The script is optional. When present, it is validated by the sandboxed expression compiler and overrides the visual logic in the compiled workflow AST.</HelpText>
  </div>
  <div className="flex flex-wrap items-center gap-2">
  <div className="flex flex-wrap gap-2">
@@ -2723,14 +2723,14 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  ) : null}
  </div>
 
- <div className="grid max-w-[920px] gap-4 border border-border p-4">
+ <div className="grid max-w-5xl gap-3 border border-border p-3">
  <div>
  <div className="type-step-eyebrow">Step 9</div>
- <h2 className="type-step-title mt-1">Delivery and lifecycle</h2>
- <HelpText className="mt-2">Choose where the alert goes, set the workflow state, and then save or test it.</HelpText>
+ <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Delivery and lifecycle</h2>
+ <HelpText className="mt-1.5">Choose where the alert goes, set the workflow state, and then save or test it.</HelpText>
  </div>
- <div className="grid gap-4 min-[980px]:grid-cols-[260px_minmax(0,1fr)]">
- <div className="grid gap-4">
+ <div className="grid gap-3 min-[860px]:grid-cols-[240px_minmax(0,1fr)]">
+ <div className="grid gap-3">
  <div className="border border-border p-3">
  <SectionTitle className="mb-2">Workflow scope</SectionTitle>
  <HelpText>{targetScopeSummary(workflowTargetingPayload())}</HelpText>
@@ -2738,7 +2738,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="border border-border p-3">
  <SectionTitle className="mb-2">Lifecycle</SectionTitle>
  <HelpText>Active workflows are evaluated by the alert worker. Inactive workflows stay saved but do not trigger.</HelpText>
- <Select className="mt-3 h-10 max-w-[220px] border border-input bg-background px-3 text-sm" onChange={(event) => setStatus(event.target.value as "active" | "inactive")} value={status}>
+ <Select className="mt-3 h-9 max-w-[220px] border border-input bg-background px-3 text-sm" onChange={(event) => setStatus(event.target.value as "active" | "inactive")} value={status}>
  <option value="active">Active</option>
  <option value="inactive">Inactive</option>
  </Select>
@@ -2747,7 +2747,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="border border-border p-3">
  <SectionTitle className="mb-2">Channels</SectionTitle>
  <HelpText>Choose where the alert should be delivered. Inherit defaults uses your channel settings page as the base.</HelpText>
- <div className="mt-3 flex flex-wrap gap-3 text-sm">
+ <div className="mt-3 grid gap-2 text-sm min-[560px]:grid-cols-2">
  <Label className="flex items-center gap-2" title="Always recommended so alerts remain visible inside the app."><Checkbox checked={channelInApp} onCheckedChange={(checked) => setChannelInApp(Boolean(checked))} />In-app</Label>
  <Label className="flex items-center gap-2" title="Send through your saved Discord webhook configuration."><Checkbox checked={channelDiscord} onCheckedChange={(checked) => setChannelDiscord(Boolean(checked))} />Discord</Label>
  <Label className="flex items-center gap-2" title="Send through your saved Telegram bot configuration."><Checkbox checked={channelTelegram} onCheckedChange={(checked) => setChannelTelegram(Boolean(checked))} />Telegram</Label>
@@ -2756,7 +2756,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
 
- <div className="flex flex-wrap gap-3 border-t border-border pt-4">
+ <div className="flex flex-wrap gap-2 border-t border-border pt-3">
  <Button disabled={isPending} onClick={save} type="button">
  {isPending ? "Saving..." : initialWorkflow?.id ? "Save workflow" : "Create workflow"}
  </Button>
@@ -2806,7 +2806,7 @@ function LivePreviewSummary({
  const buyDepth = Array.isArray(depth.buy) ? depth.buy.slice(0, 3) : [];
  const sellDepth = Array.isArray(depth.sell) ? depth.sell.slice(0, 3) : [];
  return (
- <div className="grid gap-3 min-[560px]:grid-cols-2">
+ <div className="grid max-w-4xl gap-2 min-[720px]:grid-cols-4">
  <div className=" border border-border p-3">
  <div className="type-step-eyebrow">Quote</div>
  <div className="mt-2 text-xl font-bold">{preview.quote?.ltp ?? "-"}</div>
@@ -2842,8 +2842,8 @@ function LivePreviewSummary({
  <div>Lower circuit: {String(quoteRaw.lower_circuit_limit ?? "-")}</div>
  </div>
  </div>
- <div className=" border border-border p-3 min-[560px]:col-span-2">
- <div className="grid gap-3 min-[860px]:grid-cols-2">
+ <div className=" border border-border p-3 min-[720px]:col-span-4">
+ <div className="grid gap-3 min-[720px]:grid-cols-2">
  <div>
  <div className="type-step-eyebrow">Top bids</div>
  <div className="mt-2 grid gap-2">
@@ -2949,13 +2949,13 @@ function RuleEditor({
  updateCondition: (index: number, patch: Partial<AlertCondition>) => void;
 }) {
  return (
- <div className="grid max-w-[780px] gap-4">
- <div className="max-w-[520px] border border-border p-4">
+ <div className="grid max-w-4xl gap-3">
+ <div className="max-w-xl border border-border p-3">
  <SectionTitle className="mb-3">Trigger settings</SectionTitle>
- <div className="grid items-start gap-3 min-[980px]:grid-cols-[150px_140px_140px]">
+ <div className="grid items-start gap-3 min-[760px]:grid-cols-[150px_120px_120px]">
  <div className="grid content-start self-start gap-2">
  <FieldLabel>Match mode</FieldLabel>
- <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setCombine(event.target.value as "all" | "any")} value={combine}>
+ <Select className="h-9 border border-input bg-background px-3 text-sm" onChange={(event) => setCombine(event.target.value as "all" | "any")} value={combine}>
  <option value="all">All conditions</option>
  <option value="any">Any condition</option>
  </Select>
@@ -2963,37 +2963,37 @@ function RuleEditor({
  </div>
  <div className="grid content-start self-start gap-2">
  <FieldLabel>Cooldown</FieldLabel>
- <Input className="max-w-[140px]" onChange={(event) => setCooldownSeconds(event.target.value)} placeholder="Cooldown seconds" title="Minimum wait time before the same workflow can trigger again." value={cooldownSeconds} />
+ <Input className="h-9 max-w-[120px] text-sm" onChange={(event) => setCooldownSeconds(event.target.value)} placeholder="Cooldown seconds" title="Minimum wait time before the same workflow can trigger again." value={cooldownSeconds} />
  <HelpText>Prevents repeated alerts on every tick after the first match.</HelpText>
  </div>
  <div className="grid content-start self-start gap-2">
  <FieldLabel>Level</FieldLabel>
- <Input className="max-w-[140px]" onChange={(event) => setLevel(event.target.value)} placeholder="Level" title="Examples: info, warning, critical." value={level} />
+ <Input className="h-9 max-w-[120px] text-sm" onChange={(event) => setLevel(event.target.value)} placeholder="Level" title="Examples: info, warning, critical." value={level} />
  <HelpText>Used only for display and downstream routing emphasis.</HelpText>
  </div>
  </div>
  </div>
- <div className="grid max-w-[780px] gap-3">
+ <div className="grid max-w-4xl gap-3">
  {conditions.map((condition, index) => (
  <div className="border border-border p-3" key={`${condition.field}-${index}`}>
  <ConditionEditor condition={condition} index={index} removeCondition={removeCondition} updateCondition={updateCondition} />
  </div>
  ))}
  </div>
- <Button className="max-w-[196px]" onClick={addCondition} type="button">Add condition</Button>
- <div className="max-w-[780px] border border-border p-4">
+ <Button className="max-w-[180px]" onClick={addCondition} type="button">Add condition</Button>
+ <div className="max-w-4xl border border-border p-3">
  <SectionTitle className="mb-3">Alert content</SectionTitle>
- <div className="grid max-w-[720px] gap-3">
+ <div className="grid max-w-3xl gap-3">
  <div className="grid max-w-[260px] gap-2">
  <FieldLabel>Title template</FieldLabel>
- <Input onChange={(event) => setTitleTemplate(event.target.value)} placeholder="Title template" value={titleTemplate} />
+ <Input className="h-9 text-sm" onChange={(event) => setTitleTemplate(event.target.value)} placeholder="Title template" value={titleTemplate} />
  <HelpText>Supports placeholders like {"{symbol}"} and {"{ltp}"}.</HelpText>
  </div>
  <div className="grid gap-2">
  <FieldLabel>Message template</FieldLabel>
  <div className="relative max-w-[720px]">
  <Textarea
- className="min-h-[92px] w-full border border-input bg-background px-3 py-2 text-sm outline-none"
+ className="min-h-[84px] w-full border border-input bg-background px-3 py-2 text-sm outline-none"
  onChange={(event) => updateMessageTemplate(event.target.value, event.target.selectionStart ?? undefined)}
  onClick={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined)}
  onKeyUp={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined)}
@@ -3042,26 +3042,26 @@ function ConditionEditor({
 
  return (
  <div className="grid gap-3">
- <div className="grid max-w-[780px] gap-3 min-[980px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_96px_minmax(0,0.9fr)_108px]">
+ <div className="grid max-w-4xl gap-3 min-[900px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_88px_minmax(0,0.9fr)_96px]">
  <div className="grid min-w-0 gap-2">
  <FieldLabel>Field</FieldLabel>
- <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { field: event.target.value })} value={condition.field}>
+ <Select className="h-9 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { field: event.target.value })} value={condition.field}>
  {fieldOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
  </div>
  <div className="grid min-w-0 gap-2">
  <FieldLabel>Operator</FieldLabel>
- <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { operator: event.target.value })} value={condition.operator}>
+ <Select className="h-9 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { operator: event.target.value })} value={condition.operator}>
  {operatorOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
  </div>
  <div className="grid min-w-0 gap-2">
  <FieldLabel>Value</FieldLabel>
- <Input onChange={(event) => updateCondition(index, { value: event.target.value })} placeholder="Value" value={String(condition.value ?? "")} />
+ <Input className="h-9 text-sm" onChange={(event) => updateCondition(index, { value: event.target.value })} placeholder="Value" value={String(condition.value ?? "")} />
  </div>
  <div className="grid min-w-0 gap-2">
  <FieldLabel>Compare to</FieldLabel>
- <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })} value={condition.compare_to ?? ""}>
+ <Select className="h-9 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })} value={condition.compare_to ?? ""}>
  {compareOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
  </div>
@@ -3070,7 +3070,7 @@ function ConditionEditor({
  <Button className="w-full min-w-0" onClick={() => removeCondition(index)} type="button" variant="destructive">Remove</Button>
  </div>
  </div>
- <div className="type-help grid gap-2 text-muted-foreground min-[980px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_96px_minmax(0,0.9fr)_108px]">
+ <div className="grid gap-2 text-[13px] leading-5 text-muted-foreground min-[900px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_88px_minmax(0,0.9fr)_96px]">
  <div>{fieldMeta?.help}</div>
  <div>{operatorMeta?.help}</div>
  <div />
