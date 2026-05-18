@@ -32,7 +32,7 @@ export function AlertsNav() {
  })();
  return (
  <Link
- className={active ? " border border-primary bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground" : " border border-border px-3 py-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground"}
+ className={active ? "type-label border border-primary bg-primary px-3 py-2 text-primary-foreground" : "type-label border border-border px-3 py-2 text-muted-foreground hover:text-foreground"}
  href={item.href}
  key={item.href}
  >

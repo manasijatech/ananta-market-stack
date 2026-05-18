@@ -55,10 +55,15 @@ export async function getWatchlists(): Promise<Watchlist[]> {
   return request<Watchlist[]>("/watchlists");
 }
 
-export async function searchWatchlistPresets(query = "", limit = 30): Promise<WatchlistPresetCatalogEntry[]> {
+export async function searchWatchlistPresets(
+  query = "",
+  limit = 30,
+  offset = 0
+): Promise<WatchlistPresetCatalogEntry[]> {
   const params = new URLSearchParams();
   if (query.trim()) params.set("q", query.trim());
   params.set("limit", String(limit));
+  params.set("offset", String(Math.max(0, offset)));
   return request<WatchlistPresetCatalogEntry[]>(`/watchlists/presets/catalog?${params.toString()}`);
 }
 

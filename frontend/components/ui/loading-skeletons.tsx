@@ -331,8 +331,8 @@ export function WorkflowEditorSkeleton() {
 
 export function WatchlistsSkeleton() {
   return (
-    <section className="-mx-5 -my-8 min-h-[calc(100vh-73px)] bg-background text-foreground min-[760px]:-mx-8 min-[980px]:-mx-10 min-[980px]:-my-10">
-      <div className="px-5 py-5 min-[760px]:px-8 min-[980px]:px-10">
+    <section className="-mx-5 -my-8 h-[calc(100vh-73px)] overflow-hidden bg-background text-foreground min-[760px]:-mx-8 min-[980px]:-mx-10 min-[980px]:-my-10 min-[980px]:h-[calc(100vh-80px)]">
+      <div className="flex h-full min-h-0 flex-col px-5 py-5 min-[760px]:px-8 min-[980px]:px-10">
         <header className="mb-7 flex flex-col gap-3 border-b border-border pb-5 min-[760px]:flex-row min-[760px]:items-end min-[760px]:justify-between">
           <div>
             <Skeleton className="h-3 w-36" />
@@ -343,8 +343,8 @@ export function WatchlistsSkeleton() {
             <Skeleton className="mt-2 h-4 w-5/6" />
           </div>
         </header>
-        <div className="flex flex-col gap-8 min-[980px]:flex-row min-[980px]:gap-10">
-          <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:w-[292px] min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-6">
+        <div className="flex min-h-0 flex-1 flex-col gap-8 min-[980px]:grid min-[980px]:grid-cols-[260px_320px_minmax(0,1fr)] min-[980px]:gap-8">
+          <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <Skeleton className="h-3 w-36" />
               <Skeleton className="size-8" />
@@ -356,7 +356,19 @@ export function WatchlistsSkeleton() {
               </div>
             ))}
           </aside>
-          <main className="min-w-0 flex-1">
+          <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
+            <Skeleton className="mb-2 h-3 w-32" />
+            <Skeleton className="h-9 w-full" />
+            <div className="mt-3 grid gap-2">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div className="border-l-2 border-transparent px-3 py-3" key={index}>
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="mt-2 h-3 w-32" />
+                </div>
+              ))}
+            </div>
+          </aside>
+          <main className="min-w-0 flex-1 overflow-hidden">
             <div className="mb-7 flex flex-col gap-4 border-b border-border pb-5 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
               <div>
                 <Skeleton className="h-10 w-72" />

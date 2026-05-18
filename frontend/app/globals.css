@@ -148,6 +148,44 @@
   }
 }
 
+@layer components {
+  .type-page-eyebrow {
+    @apply font-mono text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary;
+  }
+
+  .type-step-eyebrow {
+    @apply font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-muted-foreground;
+  }
+
+  .type-step-title {
+    @apply text-[clamp(20px,2.2vw,24px)] font-semibold leading-tight tracking-[-0.01em] text-foreground;
+  }
+
+  .type-step-description {
+    @apply text-[15px] leading-6 text-muted-foreground;
+  }
+
+  .type-section-title {
+    @apply text-[17px] font-semibold leading-6 text-foreground;
+  }
+
+  .type-label {
+    @apply text-[15px] font-semibold leading-5 text-foreground;
+  }
+
+  .type-body {
+    @apply text-[15px] leading-6 text-foreground;
+  }
+
+  .type-help {
+    @apply text-[14px] leading-6 text-muted-foreground;
+  }
+
+  .type-meta {
+    @apply text-[12px] leading-5 text-muted-foreground;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

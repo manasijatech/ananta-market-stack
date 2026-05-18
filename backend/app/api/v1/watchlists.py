@@ -42,10 +42,11 @@ def create_watchlist(
 def list_watchlist_presets(
     q: str = Query(default=""),
     limit: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[WatchlistPresetCatalogEntryOut]:
-    return watchlist_svc.list_preset_catalog(db, user.id, query=q, limit=limit)
+    return watchlist_svc.list_preset_catalog(db, user.id, query=q, limit=limit, offset=offset)
 
 
 @router.post("/presets/add", response_model=WatchlistOut)

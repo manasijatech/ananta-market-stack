@@ -85,17 +85,17 @@ export function WorkflowList({
  >
  <div className="flex flex-wrap items-center justify-between gap-3">
  <div>
- <div className="text-lg font-bold">{workflow.name}</div>
- <div className="mt-1 text-sm text-muted-foreground">
+ <div className="type-section-title">{workflow.name}</div>
+ <div className="type-help mt-1 text-muted-foreground">
  {workflowScope(workflow)} · {workflow.broker_code ?? "No broker"} · {workflow.workflow_dsl.targeting.mode.replaceAll("_", " ")}
  </div>
  </div>
- <div className=" border border-border px-3 py-1 text-xs font-bold uppercase text-muted-foreground">
+ <div className="type-step-eyebrow border border-border px-3 py-1">
  {workflow.deployment_status || workflow.status}
  </div>
  </div>
- <div className="mt-3 text-sm text-muted-foreground">{workflow.description || "No description"}</div>
- {workflow.last_runtime_error ? <div className="mt-2 text-xs text-[var(--danger)]">{workflow.last_runtime_error}</div> : null}
+ <div className="type-body mt-3 text-muted-foreground">{workflow.description || "No description"}</div>
+ {workflow.last_runtime_error ? <div className="type-meta mt-2 text-[var(--danger)]">{workflow.last_runtime_error}</div> : null}
  <div className="mt-4 flex flex-wrap gap-2">
  <Button
  disabled={isPending && pendingId === workflow.id}
@@ -136,7 +136,7 @@ export function WorkflowList({
  </div>
  </div>
  ))}
- {!workflows.length ? <div className="text-sm text-muted-foreground">{emptyMessage}</div> : null}
+{!workflows.length ? <div className="type-body text-muted-foreground">{emptyMessage}</div> : null}
  </section>
  );
 }

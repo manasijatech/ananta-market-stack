@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
 import { Check, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
@@ -148,6 +148,7 @@ function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
 
 const inputBase =
  " border-0 border-b border-input bg-transparent px-0 text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-0";
+const PRESET_PAGE_SIZE = 24;
 
 export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Watchlist[] }) {
  const [watchlists, setWatchlists] = useState(() => sortWatchlists(initialWatchlists));
@@ -174,6 +175,8 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  const [presetQuery, setPresetQuery] = useState("");
  const [presetResults, setPresetResults] = useState<WatchlistPresetCatalogEntry[]>([]);
  const [presetLoading, setPresetLoading] = useState(false);
+ const [presetLoadingMore, setPresetLoadingMore] = useState(false);
+ const [presetHasMore, setPresetHasMore] = useState(true);
  const [editingName, setEditingName] = useState(false);
  const [draftName, setDraftName] = useState("");
  const [confirmDelete, setConfirmDelete] = useState(false);
@@ -181,6 +184,7 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  const [notice, setNotice] = useState("");
  const [isPending, startTransition] = useTransition();
  const searchWrapRef = useRef<HTMLDivElement | null>(null);
+ const presetListRef = useRef<HTMLDivElement | null>(null);
  const createCsvInputRef = useRef<HTMLInputElement | null>(null);
  const addCsvInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -381,22 +385,53 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
  let cancelled = false;
  const handle = window.setTimeout(() => {
  setPresetLoading(true);
- startTransition(async () => {
+ setPresetLoadingMore(false);
+ (async () => {
  try {
- const result = await searchWatchlistPresets(presetQuery, 24);
- if (!cancelled) setPresetResults(result);
+ const result = await searchWatchlistPresets(presetQuery, PRESET_PAGE_SIZE, 0);
+ if (cancelled) return;
+ setPresetResults(result);
+ setPresetHasMore(result.length === PRESET_PAGE_SIZE);
  } catch {
- if (!cancelled) setPresetResults([]);
+ if (cancelled) return;
+ setPresetResults([]);
+ setPresetHasMore(false);
  } finally {
  if (!cancelled) setPresetLoading(false);
  }
- });
+ })();
  }, 180);
  return () => {
  cancelled = true;
  window.clearTimeout(handle);
  };
- }, [presetQuery, startTransition]);
+ }, [presetQuery]);
+
+ useEffect(() => {
+ const container = presetListRef.current;
+ if (!container || presetLoading || presetLoadingMore || !presetHasMore || !presetResults.length) return;
+ if (container.scrollHeight > container.clientHeight + 24) return;
+ let cancelled = false;
+ setPresetLoadingMore(true);
+ (async () => {
+ try {
+ const result = await searchWatchlistPresets(presetQuery, PRESET_PAGE_SIZE, presetResults.length);
+ if (cancelled) return;
+ setPresetResults((current) => {
+ const existing = new Set(current.map((item) => item.id));
+ return [...current, ...result.filter((item) => !existing.has(item.id))];
+ });
+ setPresetHasMore(result.length === PRESET_PAGE_SIZE);
+ } catch {
+ if (!cancelled) setPresetHasMore(false);
+ } finally {
+ if (!cancelled) setPresetLoadingMore(false);
+ }
+ })();
+ return () => {
+ cancelled = true;
+ };
+ }, [presetHasMore, presetLoading, presetLoadingMore, presetQuery, presetResults]);
 
 function fail(caught: unknown, fallback: string) {
  setNotice("");
@@ -722,6 +757,34 @@ function addPreset(entry: WatchlistPresetCatalogEntry) {
  });
 }
 
+ function loadMorePresets() {
+ if (presetLoading || presetLoadingMore || !presetHasMore) return;
+ setPresetLoadingMore(true);
+ const currentQuery = presetQuery;
+ const currentOffset = presetResults.length;
+ void (async () => {
+ try {
+ const result = await searchWatchlistPresets(currentQuery, PRESET_PAGE_SIZE, currentOffset);
+ setPresetResults((current) => {
+ const existing = new Set(current.map((item) => item.id));
+ return [...current, ...result.filter((item) => !existing.has(item.id))];
+ });
+ setPresetHasMore(result.length === PRESET_PAGE_SIZE);
+ } catch {
+ setPresetHasMore(false);
+ } finally {
+ setPresetLoadingMore(false);
+ }
+ })();
+}
+
+function handlePresetScroll(event: UIEvent<HTMLDivElement>) {
+ const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+ if (scrollHeight - scrollTop - clientHeight <= 120) {
+ loadMorePresets();
+ }
+}
+
 function refreshSelectedPreset() {
  if (!selected || selected.kind !== "preset") return;
  setError("");
@@ -747,7 +810,7 @@ function refreshSelectedPreset() {
 
  return (
  <section
- className="-mx-5 -my-8 min-h-[calc(100vh-73px)] bg-background text-foreground min-[760px]:-mx-8 min-[980px]:-mx-10 min-[980px]:-my-10"
+ className="-mx-5 -my-8 h-[calc(100vh-73px)] overflow-hidden bg-background text-foreground min-[760px]:-mx-8 min-[980px]:-mx-10 min-[980px]:-my-10 min-[980px]:h-[calc(100vh-80px)]"
  style={{ fontFamily: '"DM Sans", "Suisse Intl", Inter, ui-sans-serif, system-ui, sans-serif' }}
  >
  <style>{`
@@ -757,7 +820,7 @@ function refreshSelectedPreset() {
  }
  .watchlist-data-row { animation: watchlist-row-fade 120ms ease-out both; }
  `}</style>
- <div className="px-5 py-5 min-[760px]:px-8 min-[980px]:px-10">
+ <div className="flex h-full min-h-0 flex-col px-5 py-5 min-[760px]:px-8 min-[980px]:px-10">
  {error ? <div className="mb-3 border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">{error}</div> : null}
  {notice ? <div className="mb-3 border-l-2 border-primary bg-[var(--accent-glow)] px-3 py-2 text-sm text-primary">{notice}</div> : null}
 
@@ -953,9 +1016,9 @@ function refreshSelectedPreset() {
  </DialogContent>
  </Dialog>
 
- <div className="flex flex-col gap-8 min-[980px]:flex-row min-[980px]:gap-10">
- <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:w-[292px] min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-6">
- <div className="mb-4 flex items-center justify-between gap-3">
+ <div className="flex min-h-0 flex-1 flex-col gap-8 min-[980px]:grid min-[980px]:grid-cols-[260px_320px_minmax(0,1fr)] min-[980px]:gap-8">
+ <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
+ <div className="mb-4 flex items-center justify-between gap-3 shrink-0">
  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your Watchlists</div>
  <Button
  aria-label="Create watchlist"
@@ -970,7 +1033,7 @@ function refreshSelectedPreset() {
  </Button>
  </div>
 
- <nav aria-label="Watchlists" className="flex flex-col">
+ <nav aria-label="Watchlists" className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
  {watchlists.map((item) => {
  const active = item.id === selected?.id;
  return (
@@ -1009,27 +1072,31 @@ function refreshSelectedPreset() {
  })}
  {!watchlists.length ? <div className="border-l-2 border-primary px-3 py-4 text-sm text-muted-foreground">No watchlists yet.</div> : null}
  </nav>
+ </aside>
 
- <div className="mt-8 border-t border-border pt-5">
- <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Index Presets</div>
+ <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
+ <div className="flex min-h-0 flex-1 flex-col border-t border-border pt-5 min-[980px]:border-t-0 min-[980px]:pt-0">
+ <div className="mb-2 shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Index Presets</div>
  <Input
  className={`${inputBase} h-9 text-xs`}
  onChange={(event) => setPresetQuery(event.target.value)}
  placeholder="Search Nifty indices"
  value={presetQuery}
  />
- <div className="mt-3 space-y-2">
+ <div className="mt-3 min-h-0 overflow-y-auto pr-1" onScroll={handlePresetScroll} ref={presetListRef}>
+ <div className="space-y-2">
  {presetResults.map((item) => (
  <div className="border-l-2 border-transparent px-3 py-2 transition-colors duration-100 ease-out hover:border-primary hover:bg-[var(--accent-glow)]" key={item.id}>
+ <div className="flex flex-col gap-2">
+ <div className="break-words text-sm font-medium leading-5 text-foreground">{item.name}</div>
  <div className="flex items-start justify-between gap-3">
- <div className="min-w-0">
- <div className="truncate text-sm font-medium text-foreground">{item.name}</div>
+ <div className="min-w-0 flex-1">
  <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
  {[item.trading_index_name, `${item.constituent_count} symbols`, item.sync_status].filter(Boolean).join(" / ")}
  </div>
  </div>
  <Button
- className="border-b border-primary pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-default disabled:opacity-40"
+ className="shrink-0 border-b border-primary pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-default disabled:opacity-40"
  disabled={isPending || item.is_added}
  onClick={() => addPreset(item)}
  size="sm"
@@ -1040,7 +1107,15 @@ function refreshSelectedPreset() {
  </Button>
  </div>
  </div>
+ </div>
  ))}
+ </div>
+ {presetLoadingMore ? (
+ <div className="flex items-center gap-2 px-3 py-3 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+ <Loader2 className="size-3 animate-spin" />
+ Loading more presets
+ </div>
+ ) : null}
  {!presetResults.length ? (
  <div className="px-3 py-3 text-sm text-muted-foreground">
  {presetLoading ? "Loading preset indices..." : "No matching preset indices found."}
@@ -1050,10 +1125,10 @@ function refreshSelectedPreset() {
  </div>
  </aside>
 
- <main className="min-w-0 flex-1">
+ <main className="flex min-h-0 min-w-0 flex-1 flex-col">
  {selected ? (
  <>
- <div className="mb-7 flex flex-col gap-4 pb-5 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
+ <div className="mb-7 flex shrink-0 flex-col gap-4 pb-5 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
  <div className="min-w-0 flex-1">
  {editingName ? (
  <div className="flex max-w-2xl items-end gap-3">
@@ -1141,7 +1216,7 @@ function refreshSelectedPreset() {
  </div>
 
  {canEditSelected ? (
- <div className="mb-7">
+ <div className="mb-7 shrink-0">
  <div className="mb-3 flex flex-col gap-3 min-[760px]:flex-row min-[760px]:items-end">
  <div className="min-w-0 flex-1">
  <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Add Symbol</Label>
@@ -1228,6 +1303,7 @@ function refreshSelectedPreset() {
  </div>
  ) : null}
 
+ <div className="min-h-0 flex-1 overflow-auto">
  <Table className="min-w-[1040px] border-collapse text-left text-sm">
  <TableHeader>
  <TableRow className="border-y border-border text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -1285,6 +1361,7 @@ function refreshSelectedPreset() {
  })}
  </TableBody>
  </Table>
+ </div>
  {!selected.items.length ? <div className="border-b border-border py-10 text-center text-sm text-muted-foreground">Search above to add the first symbol.</div> : null}
  </>
  ) : (

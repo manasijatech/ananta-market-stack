@@ -352,9 +352,12 @@ def list_preset_catalog(
     *,
     query: str = "",
     limit: int = 30,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     ensure_preset_catalog(db)
     normalized_query = _normalize_text(query).lower()
+    page_size = max(1, min(limit, 100))
+    page_offset = max(0, offset)
     stmt = select(SystemWatchlistPreset)
     if normalized_query:
         stmt = stmt.where(SystemWatchlistPreset.search_text.contains(normalized_query))
@@ -362,7 +365,9 @@ def list_preset_catalog(
         stmt.order_by(
             SystemWatchlistPreset.is_popular.desc(),
             SystemWatchlistPreset.name.asc(),
-        ).limit(max(1, min(limit, 100)))
+        )
+        .offset(page_offset)
+        .limit(page_size)
     ).all()
     added_by_preset_id = {
         row.system_preset_id: row.id

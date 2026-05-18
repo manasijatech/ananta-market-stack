@@ -101,7 +101,7 @@ export function AlertNotificationsTray() {
  <Bell className="size-4" />
  Alerts
  {unreadCount ? (
- <span className=" bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">
+ <span className="type-meta bg-primary px-2 py-0.5 text-primary-foreground">
  {unreadCount}
  </span>
  ) : null}
@@ -110,8 +110,8 @@ export function AlertNotificationsTray() {
  <div className="absolute right-0 top-12 z-30 w-[360px] border border-border bg-background p-4 ">
  <div className="mb-3 flex items-center justify-between gap-3">
  <div>
- <div className="text-sm font-bold">User alerts</div>
- <div className="text-xs text-muted-foreground">{unreadCount} unread</div>
+ <div className="type-section-title">User alerts</div>
+ <div className="type-meta">{unreadCount} unread</div>
  </div>
  <div className="flex items-center gap-2">
  <Button disabled={!items.length || isPending} onClick={markAllRead} size="sm" type="button" variant="outline">
@@ -127,9 +127,9 @@ export function AlertNotificationsTray() {
  <div className=" border border-border p-3" key={item.id}>
  <div className="flex items-start justify-between gap-3">
  <div>
- <div className="text-sm font-bold">{item.title}</div>
- <div className="mt-1 text-xs text-muted-foreground">{item.message}</div>
- {llmOutput(item.payload) ? <div className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">{llmOutput(item.payload)}</div> : null}
+ <div className="type-section-title">{item.title}</div>
+ <div className="type-help mt-1 text-muted-foreground">{item.message}</div>
+ {llmOutput(item.payload) ? <div className="type-help mt-2 border-l-2 border-primary pl-2 text-muted-foreground">{llmOutput(item.payload)}</div> : null}
  </div>
  <Button onClick={() => markRead(item.id)} size="sm" type="button" variant="ghost">
  Read
@@ -137,7 +137,7 @@ export function AlertNotificationsTray() {
  </div>
  </div>
  ))}
- {!items.length ? <div className="py-6 text-sm text-muted-foreground">No unread user alerts.</div> : null}
+{!items.length ? <div className="type-body py-6 text-muted-foreground">No unread user alerts.</div> : null}
  </div>
  </div>
  ) : null}

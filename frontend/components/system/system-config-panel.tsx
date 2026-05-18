@@ -26,6 +26,24 @@ type ProviderDraftState = {
   replacingApiKey: boolean;
 };
 
+const PROVIDER_LOGOS: Record<LlmProvider, { src: string; alt: string; imageClassName: string }> = {
+  openai: {
+    src: "/brand/providers/openai.webp",
+    alt: "OpenAI logo",
+    imageClassName: "h-5 w-auto"
+  },
+  openrouter: {
+    src: "/brand/providers/openrouter.svg",
+    alt: "OpenRouter logo",
+    imageClassName: "h-4.5 w-auto"
+  },
+  gemini: {
+    src: "/brand/providers/gemini.svg",
+    alt: "Google Gemini logo",
+    imageClassName: "h-5 w-auto"
+  }
+};
+
 function providerKey(provider: LlmProvider) {
   return provider;
 }
@@ -365,7 +383,7 @@ export function SystemConfigPanel({
 
       <section className="grid gap-4">
         <div>
-          <div className="text-sm font-bold">LLM providers</div>
+          <div className="text-lg font-bold tracking-tight">LLM providers</div>
           <p className="mt-2 text-sm text-muted-foreground">
             Configure OpenAI, OpenRouter, or Gemini API keys and save one or more models per provider. All provider calls in the backend are routed through the OpenAI SDK with provider-specific base URLs.
           </p>
@@ -374,7 +392,17 @@ export function SystemConfigPanel({
           <div className="rounded-lg border border-border p-5" key={provider.provider}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-bold">{provider.label}</div>
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                  <img
+                    alt={PROVIDER_LOGOS[provider.provider].alt}
+                    className={`${PROVIDER_LOGOS[provider.provider].imageClassName} object-contain`}
+                    draggable={false}
+                    src={PROVIDER_LOGOS[provider.provider].src}
+                  />
+                  </span>
+                  <div className="text-lg font-bold leading-none tracking-tight">{provider.label}</div>
+                </div>
                 <div className="mt-1 text-xs text-muted-foreground">{provider.base_url}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   API key {provider.has_api_key ? "configured" : "not configured"}{provider.api_key_updated_at ? ` · updated ${new Date(provider.api_key_updated_at).toLocaleString("en-IN")}` : ""}

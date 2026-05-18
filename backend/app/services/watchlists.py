@@ -509,8 +509,12 @@ def list_preset_catalog(
     *,
     query: str = "",
     limit: int = 30,
+    offset: int = 0,
 ) -> list[WatchlistPresetCatalogEntryOut]:
-    return [WatchlistPresetCatalogEntryOut(**item) for item in preset_svc.list_preset_catalog(db, user_id, query=query, limit=limit)]
+    return [
+        WatchlistPresetCatalogEntryOut(**item)
+        for item in preset_svc.list_preset_catalog(db, user_id, query=query, limit=limit, offset=offset)
+    ]
 
 
 def add_preset_watchlist(db: Session, user_id: str, preset_id: str) -> WatchlistOut:

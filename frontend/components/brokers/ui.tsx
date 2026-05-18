@@ -131,9 +131,9 @@ export function PageHeader({
  return (
  <header className="mb-8 flex flex-col justify-between gap-5 border-b border-border pb-6 min-[860px]:flex-row min-[860px]:items-end">
  <div>
- <p className="mb-3 font-mono text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary">{eyebrow}</p>
+ <p className="type-page-eyebrow mb-3">{eyebrow}</p>
  <h1 className="text-[clamp(34px,5vw,58px)] font-semibold leading-none tracking-normal">{title}</h1>
- <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
+ <p className="type-body mt-4 max-w-2xl text-muted-foreground">{description}</p>
  </div>
  {action}
  </header>
