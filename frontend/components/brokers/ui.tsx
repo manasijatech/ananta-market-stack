@@ -17,13 +17,13 @@ export const brokerNames: Record<BrokerCode, string> = {
 };
 
 export const brokerLogos: Record<BrokerCode, string> = {
- angel: "/brokers/angel.jpg",
- dhan: "/brokers/dhan.jpg",
- groww: "/brokers/groww.jpg",
- indmoney: "/brokers/indmoney.jpg",
- kotak: "/brokers/kotak.jpg",
- upstox: "/brokers/upstox.jpg",
- zerodha: "/brokers/zerodha.jpg"
+ angel: "/broker-logos/angel.jpg",
+ dhan: "/broker-logos/dhan.jpg",
+ groww: "/broker-logos/groww.jpg",
+ indmoney: "/broker-logos/indmoney.jpg",
+ kotak: "/broker-logos/kotak.jpg",
+ upstox: "/broker-logos/upstox.jpg",
+ zerodha: "/broker-logos/zerodha.jpg"
 };
 
 export function BrokerLogo({
