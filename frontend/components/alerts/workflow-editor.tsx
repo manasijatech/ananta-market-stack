@@ -777,8 +777,9 @@ const [activeInstrumentTypes, setActiveInstrumentTypes] = useState(listCsv(initi
  const [feedWatchlistIds, setFeedWatchlistIds] = useState<string[]>(initialFeedTrigger?.watchlist_ids ?? []);
  const [feedPresetIds, setFeedPresetIds] = useState<string[]>(initialFeedTrigger?.preset_ids ?? []);
  const [feedIncludeAllWatchlists, setFeedIncludeAllWatchlists] = useState(Boolean(initialFeedTrigger?.include_all_watchlists));
- const [feedProvider, setFeedProvider] = useState<LlmProvider | "">(initialFeedTrigger?.provider ?? firstLlmProvider?.provider ?? "");
- const [feedModelId, setFeedModelId] = useState(initialFeedTrigger?.model_id ?? firstLlmModel?.model_id ?? "");
+ const [feedTriggerLlmEnabled, setFeedTriggerLlmEnabled] = useState(Boolean(initialFeedTrigger?.condition_prompt || initialFeedTrigger?.provider || initialFeedTrigger?.model_id));
+ const [feedProvider, setFeedProvider] = useState<LlmProvider | "">(initialFeedTrigger?.provider ?? "");
+ const [feedModelId, setFeedModelId] = useState(initialFeedTrigger?.model_id ?? "");
 const [feedTemperature, setFeedTemperature] = useState(String(initialFeedTrigger?.temperature ?? 0.1));
 const [feedMaxTokens, setFeedMaxTokens] = useState(String(initialFeedTrigger?.max_completion_tokens ?? 400));
 const [feedTimeout, setFeedTimeout] = useState(String(initialFeedTrigger?.timeout_seconds ?? 25));
@@ -1291,13 +1292,13 @@ const activeInstrument = useMemo<InstrumentRef>(
  products: feedProducts as AlertWorkflowDsl["feed_trigger"]["products"],
  announcement_categories: announcementsEnabled && feedCategoryFilterEnabled ? feedAnnouncementCategories : [],
  include_related_categories: feedIncludeRelatedCategories,
- condition_prompt: feedConditionPrompt,
+ condition_prompt: feedTriggerLlmEnabled ? feedConditionPrompt : "",
  source_scope: feedSourceScope as AlertWorkflowDsl["feed_trigger"]["source_scope"],
  watchlist_ids: feedWatchlistIds,
  preset_ids: feedPresetIds,
  include_all_watchlists: feedIncludeAllWatchlists,
- provider: feedProvider || null,
- model_id: feedModelId || null,
+ provider: feedTriggerLlmEnabled ? feedProvider || null : null,
+ model_id: feedTriggerLlmEnabled ? feedModelId || null : null,
  temperature: Number(feedTemperature || 0.1),
  max_completion_tokens: Number(feedMaxTokens || 400),
  timeout_seconds: Number(feedTimeout || 25)
@@ -1487,14 +1488,16 @@ const activeInstrument = useMemo<InstrumentRef>(
  if (!feedProducts.length) {
  return "Select at least one feed product before creating this workflow.";
  }
+ if (feedTriggerLlmEnabled) {
  if (!feedConditionPrompt.trim()) {
- return "Enter a natural-language trigger condition before creating this workflow.";
+ return "Enter a trigger LLM condition, or turn off trigger LLM to alert on feed filters only.";
  }
  if (!feedProvider) {
- return "Select a trigger LLM provider before creating this workflow.";
+ return "Select a trigger LLM provider, or turn off trigger LLM to alert on feed filters only.";
  }
  if (!feedModelId) {
- return "Select a trigger LLM model before creating this workflow.";
+ return "Select a trigger LLM model, or turn off trigger LLM to alert on feed filters only.";
+ }
  }
  if (announcementsEnabled && feedCategoryFilterEnabled && !feedAnnouncementCategories.length) {
  return "Select at least one announcement category, or switch back to all categories.";
@@ -1779,9 +1782,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  ? Boolean(
  name.trim() &&
  feedProducts.length &&
- feedConditionPrompt.trim() &&
- feedProvider &&
- feedModelId &&
+ (!feedTriggerLlmEnabled || (feedConditionPrompt.trim() && feedProvider && feedModelId)) &&
  (!announcementsEnabled || !feedCategoryFilterEnabled || feedAnnouncementCategories.length > 0)
  )
  : targetMode === "single_symbol"
@@ -2062,24 +2063,31 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  ) : null}
  <div className="grid gap-2">
+ <div className="flex items-center justify-between gap-3">
  <FieldLabel>Trigger LLM</FieldLabel>
+ <Label className="flex items-center gap-2 text-sm">
+ <Checkbox checked={feedTriggerLlmEnabled} onCheckedChange={(checked) => setFeedTriggerLlmEnabled(Boolean(checked))} />
+ Enable
+ </Label>
+ </div>
  <div className="grid gap-2">
- <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")} value={feedProvider}>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" disabled={!feedTriggerLlmEnabled} onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")} value={feedProvider}>
  <option value="">Select provider</option>
  {enabledLlmProviders.map((provider) => <option key={provider.provider} value={provider.provider}>{provider.label}</option>)}
  </Select>
- <Select className="h-10 border border-input bg-background px-3 text-sm" onChange={(event) => setFeedModelId(event.target.value)} value={feedModelId}>
+ <Select className="h-10 border border-input bg-background px-3 text-sm" disabled={!feedTriggerLlmEnabled} onChange={(event) => setFeedModelId(event.target.value)} value={feedModelId}>
  <option value="">Select model</option>
  {selectedFeedModels.map((model) => <option key={model.id} value={model.model_id}>{model.label || model.model_id}</option>)}
  </Select>
  </div>
+ <HelpText>{feedTriggerLlmEnabled ? "The trigger model classifies matched feed items after product, symbol, and category filters pass." : "Off means every item that passes product, symbol scope, and category filters can create an alert without trigger LLM usage."}</HelpText>
  </div>
  <div className="grid gap-2">
  <Label className="grid gap-2">
  <FieldLabel>Natural-language trigger condition</FieldLabel>
- <Textarea className="min-h-28 border border-input bg-background p-3 text-sm" onChange={(event) => setFeedConditionPrompt(event.target.value)} placeholder="Example: Alert me when the item is about a confirmed order win, large contract, or new customer mandate." value={feedConditionPrompt} />
+ <Textarea className="min-h-28 border border-input bg-background p-3 text-sm" disabled={!feedTriggerLlmEnabled} onChange={(event) => setFeedConditionPrompt(event.target.value)} placeholder="Example: Alert me when the item is about a confirmed order win, large contract, or new customer mandate." value={feedConditionPrompt} />
  </Label>
- <HelpText>The trigger model returns strict JSON with match, reason, confidence, and matched terms. Optional post-trigger LLM analysis below still runs separately.</HelpText>
+ <HelpText>{feedTriggerLlmEnabled ? "The trigger model returns strict JSON with match, reason, confidence, and matched terms. Optional post-trigger LLM analysis below still runs separately." : "This is only used when trigger LLM is enabled. Category and scope filters still work without it."}</HelpText>
  </div>
  <div className="grid gap-3 min-[720px]:grid-cols-3">
  <Input onChange={(event) => setFeedTemperature(event.target.value)} placeholder="Trigger temperature" value={feedTemperature} />

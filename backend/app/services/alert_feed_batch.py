@@ -90,6 +90,8 @@ def feed_case_from_workflow(
     metadata: dict[str, Any] | None = None,
 ) -> FeedWorkflowCase:
     trigger = workflow.workflow_dsl.feed_trigger
+    if not trigger.condition_prompt.strip():
+        raise ValueError("Feed trigger LLM condition is required when trigger LLM is enabled")
     if not trigger.provider or not trigger.model_id:
         raise ValueError("Feed trigger LLM provider and model are required")
     return FeedWorkflowCase(
