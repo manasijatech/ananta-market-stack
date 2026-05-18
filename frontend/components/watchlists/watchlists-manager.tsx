@@ -1016,8 +1016,8 @@ function refreshSelectedPreset() {
  </DialogContent>
  </Dialog>
 
- <div className="flex min-h-0 flex-1 flex-col gap-8 min-[980px]:grid min-[980px]:grid-cols-[260px_320px_minmax(0,1fr)] min-[980px]:gap-8">
- <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
+ <div className="flex min-h-0 flex-1 flex-col gap-8 min-[980px]:grid min-[980px]:grid-cols-[320px_260px_minmax(0,1fr)] min-[980px]:gap-8">
+ <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:order-2 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
  <div className="mb-4 flex items-center justify-between gap-3 shrink-0">
  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your Watchlists</div>
  <Button
@@ -1074,7 +1074,7 @@ function refreshSelectedPreset() {
  </nav>
  </aside>
 
- <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
+ <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:order-1 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
  <div className="flex min-h-0 flex-1 flex-col border-t border-border pt-5 min-[980px]:border-t-0 min-[980px]:pt-0">
  <div className="mb-2 shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Index Presets</div>
  <Input
@@ -1125,7 +1125,7 @@ function refreshSelectedPreset() {
  </div>
  </aside>
 
- <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+ <main className="flex min-h-0 min-w-0 flex-1 flex-col min-[980px]:order-3">
  {selected ? (
  <>
  <div className="mb-7 flex shrink-0 flex-col gap-4 pb-5 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">

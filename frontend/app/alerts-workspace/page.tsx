@@ -179,24 +179,24 @@ function MetricTile({
   icon: typeof IconBolt;
 }) {
   return (
-    <div className="border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <div className="min-w-0 border border-border bg-card p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
           <div className="type-step-eyebrow">{eyebrow}</div>
-          <div className="mt-3 text-3xl font-semibold leading-none">{value}</div>
+          <div className="mt-2 truncate text-2xl font-semibold leading-none">{value}</div>
         </div>
-        <span className={`flex size-9 items-center justify-center border ${toneClasses(tone)}`}>
+        <span className={`flex size-8 shrink-0 items-center justify-center border ${toneClasses(tone)}`}>
           <Icon className="size-4" stroke={1.8} />
         </span>
       </div>
-      <div className="type-help mt-3">{detail}</div>
+      <div className="type-meta mt-3 line-clamp-2">{detail}</div>
     </div>
   );
 }
 
 function AttentionPanel({ items }: { items: ReturnType<typeof buildAttentionItems> }) {
   return (
-    <section className="border border-border bg-card p-5">
+    <section className="min-w-0 border border-border bg-card p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="type-step-eyebrow">Attention</p>
@@ -204,7 +204,7 @@ function AttentionPanel({ items }: { items: ReturnType<typeof buildAttentionItem
         </div>
         <IconAlertTriangle className="size-5 text-primary" stroke={1.8} />
       </div>
-      <div className="mt-5 grid gap-3">
+      <div className="mt-4 grid gap-3">
         {items.length ? items.map((item) => (
           <div className="border border-border bg-background p-3" key={`${item.title}-${item.href}`}>
             <div className="flex items-start justify-between gap-3">
@@ -257,28 +257,28 @@ function CommandCenter({
   const enabledChannels = enabledChannelCount(channels);
 
   return (
-    <div className="mb-8 grid gap-4 min-[1180px]:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
-      <section className="border border-border bg-card p-5 min-[760px]:p-6">
-        <div className="flex flex-col justify-between gap-6 min-[900px]:flex-row">
-          <div className="max-w-3xl">
+    <div className="mb-6 grid min-w-0 gap-4 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
+      <section className="min-w-0 border border-border bg-card p-4 min-[760px]:p-5">
+        <div className="flex flex-col justify-between gap-4 min-[900px]:flex-row">
+          <div className="min-w-0 max-w-3xl">
             <p className="type-step-eyebrow">Operational status</p>
-            <h2 className="mt-2 text-[clamp(24px,3vw,34px)] font-semibold leading-tight">
+            <h2 className="mt-2 text-[clamp(22px,2.4vw,30px)] font-semibold leading-tight">
               {activeWorkflows.length ? `${activeWorkflows.length} live workflow${activeWorkflows.length === 1 ? "" : "s"} watching the market.` : "No live workflows yet."}
             </h2>
-            <p className="type-body mt-3 max-w-2xl text-muted-foreground">
+            <p className="type-help mt-2 max-w-2xl text-muted-foreground">
               {runs.length
                 ? `${matchedRuns} of the last ${runs.length} evaluations matched. ${notifications.length} recent notifications are available for review.`
                 : "Create or activate a workflow to start seeing evaluation and alert history here."}
             </p>
           </div>
           <div className="flex flex-wrap items-start gap-2 min-[900px]:justify-end">
-            <Button asChild className="min-h-10">
+            <Button asChild className="min-h-9 whitespace-nowrap">
               <Link href="/alerts-workspace/workflows/new">
                 <IconBolt className="size-4" stroke={1.8} />
                 New workflow
               </Link>
             </Button>
-            <Button asChild className="min-h-10" variant="outline">
+            <Button asChild className="min-h-9 whitespace-nowrap" variant="outline">
               <Link href="/alerts-workspace/stream-manager">
                 <IconPlugConnected className="size-4" stroke={1.8} />
                 Stream manager
@@ -286,7 +286,7 @@ function CommandCenter({
             </Button>
           </div>
         </div>
-        <div className="mt-6 grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-4">
+        <div className="mt-5 grid min-w-0 gap-3 min-[760px]:grid-cols-2 min-[1360px]:grid-cols-4">
           <MetricTile
             detail={`${inactiveWorkflows.length} inactive · ${activeWorkflows.filter((workflow) => workflow.last_runtime_error).length} runtime issues`}
             eyebrow="Workflows"
@@ -330,7 +330,7 @@ function WorkflowCoverage({
   runs: AlertWorkflowRun[];
 }) {
   return (
-    <section className="border-y border-border py-5">
+    <section className="min-w-0 border-y border-border py-4">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="type-step-eyebrow">Coverage</p>
@@ -341,11 +341,11 @@ function WorkflowCoverage({
         </Link>
       </div>
       {workflows.length ? (
-        <div className="grid gap-3 min-[900px]:grid-cols-2 min-[1280px]:grid-cols-4">
+        <div className="grid min-w-0 gap-3 min-[900px]:grid-cols-2 min-[1500px]:grid-cols-3 min-[1800px]:grid-cols-4">
           {workflows.slice(0, 4).map((workflow) => {
             const latestRun = latestRunForWorkflow(runs, workflow.id);
             return (
-              <Link className="group border border-border bg-card p-4 transition-colors duration-100 hover:border-primary/70" href={`/alerts-workspace/workflows/${workflow.id}`} key={workflow.id}>
+              <Link className="group min-w-0 border border-border bg-card p-3 transition-colors duration-100 hover:border-primary/70" href={`/alerts-workspace/workflows/${workflow.id}`} key={workflow.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="type-section-title truncate">{workflow.name}</div>
@@ -356,17 +356,17 @@ function WorkflowCoverage({
                   </span>
                 </div>
                 <div className="mt-4 grid gap-2 text-sm">
-                  <div className="flex justify-between gap-3">
+                  <div className="flex min-w-0 justify-between gap-3">
                     <span className="text-muted-foreground">Target</span>
-                    <span className="truncate text-right font-semibold">{targetSummary(workflow)}</span>
+                    <span className="min-w-0 truncate text-right font-semibold">{targetSummary(workflow)}</span>
                   </div>
-                  <div className="flex justify-between gap-3">
+                  <div className="flex min-w-0 justify-between gap-3">
                     <span className="text-muted-foreground">Trigger</span>
-                    <span className="truncate text-right font-semibold">{triggerSummary(workflow)}</span>
+                    <span className="min-w-0 truncate text-right font-semibold">{triggerSummary(workflow)}</span>
                   </div>
-                  <div className="flex justify-between gap-3">
+                  <div className="flex min-w-0 justify-between gap-3">
                     <span className="text-muted-foreground">Channels</span>
-                    <span className="truncate text-right font-semibold">{channelSummary(workflow)}</span>
+                    <span className="min-w-0 truncate text-right font-semibold">{channelSummary(workflow)}</span>
                   </div>
                 </div>
                 <div className="type-meta mt-4 border-t border-border pt-3">
@@ -404,8 +404,8 @@ function StreamReadiness({ streamStatus }: { streamStatus: LiveStreamsStatus }) 
   });
 
   return (
-    <section className="border border-border bg-card p-5">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <section className="min-w-0 border border-border bg-card p-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="type-step-eyebrow">Live data</p>
           <h2 className="type-section-title mt-1">Stream readiness</h2>
@@ -415,34 +415,38 @@ function StreamReadiness({ streamStatus }: { streamStatus: LiveStreamsStatus }) 
         </Link>
       </div>
       <div className="grid gap-3">
-        <div className="grid gap-3 min-[760px]:grid-cols-3">
-          <div className="border border-border bg-background p-3">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(88px,1fr))] gap-2">
+          <div className="min-w-0 border border-border bg-background p-3">
             <div className="type-step-eyebrow">Redis</div>
             <div className={`mt-2 inline-flex border px-2.5 py-1 text-sm font-semibold ${toneClasses(streamStatus.redis_ok ? "good" : "danger")}`}>
               {streamStatus.redis_ok ? "Healthy" : "Degraded"}
             </div>
           </div>
-          <div className="border border-border bg-background p-3">
+          <div className="min-w-0 border border-border bg-background p-3">
             <div className="type-step-eyebrow">Desired symbols</div>
             <div className="mt-2 text-2xl font-semibold">{streamStatus.desired_subscriptions.length}</div>
           </div>
-          <div className="border border-border bg-background p-3">
+          <div className="min-w-0 border border-border bg-background p-3">
             <div className="type-step-eyebrow">Worker sessions</div>
             <div className="mt-2 text-2xl font-semibold">{streamStatus.active_sessions.length}</div>
           </div>
         </div>
         <div className="grid gap-2">
           {sortedBrokers.slice(0, 4).map((broker) => (
-            <div className="grid gap-3 border border-border bg-background p-3 min-[760px]:grid-cols-[minmax(0,1fr)_120px_120px_120px]" key={`${broker.broker_code}-${broker.account_id}`}>
-              <div className="min-w-0">
-                <div className="type-label truncate">{broker.label}</div>
-                <div className="type-meta mt-1">{broker.broker_code} · {broker.desired_symbol_count} desired symbols</div>
+            <div className="min-w-0 border border-border bg-background p-3" key={`${broker.broker_code}-${broker.account_id}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="type-label truncate">{broker.label}</div>
+                  <div className="type-meta mt-1">{broker.broker_code} · {broker.desired_symbol_count} desired symbols</div>
+                </div>
+                <span className={`shrink-0 border px-2 py-1 text-center font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${toneClasses(brokerTone(broker))}`}>
+                  {broker.action_required ? "action" : broker.session_active ? "session" : "paused"}
+                </span>
               </div>
-              <span className={`self-start border px-2 py-1 text-center font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${toneClasses(brokerTone(broker))}`}>
-                {broker.action_required ? "action" : broker.session_active ? "session" : "paused"}
-              </span>
-              <div className="type-meta min-[760px]:text-right">{broker.can_stream ? "Can stream" : "No stream"}</div>
-              <div className="type-meta min-[760px]:text-right">{broker.active_worker_sessions} workers</div>
+              <div className="type-meta mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                <span>{broker.can_stream ? "Can stream" : "No stream"}</span>
+                <span>{broker.active_worker_sessions} workers</span>
+              </div>
             </div>
           ))}
           {!sortedBrokers.length ? (
@@ -466,18 +470,17 @@ function ActionRail() {
   ];
 
   return (
-    <section className="border border-border bg-card p-5">
+    <section className="min-w-0 border border-border bg-card p-4">
       <p className="type-step-eyebrow">Shortcuts</p>
-      <div className="mt-4 grid gap-2">
+      <div className="mt-3 grid gap-2">
         {actions.map((action) => {
           const Icon = action.icon;
           return (
-            <Link className="flex items-center justify-between gap-3 border border-border bg-background px-3 py-3 font-semibold transition-colors duration-100 hover:border-primary/70 hover:text-primary" href={action.href} key={action.href}>
-              <span className="flex items-center gap-3">
+            <Link className="flex min-w-0 items-center gap-3 border border-border bg-background px-3 py-3 font-semibold transition-colors duration-100 hover:border-primary/70 hover:text-primary" href={action.href} key={action.href}>
+              <span className="flex min-w-0 items-center gap-3">
                 <Icon className="size-4" stroke={1.8} />
-                {action.label}
+                <span className="truncate">{action.label}</span>
               </span>
-              <span className="font-mono text-xs text-muted-foreground">OPEN</span>
             </Link>
           );
         })}
@@ -508,12 +511,12 @@ async function AlertsOverviewContent() {
         streamStatus={streamStatus}
         unreadCount={unread.unread_count}
       />
-      <div className="grid gap-6 min-[1180px]:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="grid gap-6">
+      <div className="grid min-w-0 gap-5 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
+        <div className="grid min-w-0 gap-5">
           <WorkflowCoverage workflows={activeWorkflows} runs={runs} />
           <AlertHistoryList notifications={notifications} runs={runs} />
         </div>
-        <div className="grid content-start gap-6">
+        <div className="grid min-w-0 content-start gap-5">
           <StreamReadiness streamStatus={streamStatus} />
           <ActionRail />
         </div>
@@ -526,7 +529,7 @@ function OverviewFallback() {
   return (
     <div className="grid gap-8">
       <StatGridSkeleton count={4} />
-      <div className="grid gap-6 min-[1180px]:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid min-w-0 gap-5 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
         <div className="grid gap-6">
           <FeedSkeleton rows={4} />
           <FeedSkeleton rows={6} />
