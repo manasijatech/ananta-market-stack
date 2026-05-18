@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { betterAuth } from "better-auth";
+import { getPublicAppUrl } from "@/lib/runtime-config";
 
 const databasePath = process.env.AUTH_DATABASE_PATH ?? resolve(process.cwd(), "../backend/data/app.db");
 mkdirSync(dirname(databasePath), { recursive: true });
@@ -64,13 +65,23 @@ database.exec(`
   CREATE INDEX IF NOT EXISTS "verification_identifier_idx" ON "verification" ("identifier");
 `);
 
+const authBaseURL = process.env.BETTER_AUTH_URL ?? getPublicAppUrl();
+const trustedOrigins = Array.from(
+  new Set([
+    authBaseURL,
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+    ...String(process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  ])
+);
+
 export const auth = betterAuth({
   appName: "Market Stack",
-  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
-  trustedOrigins: [
-    "http://127.0.0.1:3000",
-    "http://localhost:3000"
-  ],
+  baseURL: authBaseURL,
+  trustedOrigins,
   secret: process.env.BETTER_AUTH_SECRET,
   database,
   emailAndPassword: {
