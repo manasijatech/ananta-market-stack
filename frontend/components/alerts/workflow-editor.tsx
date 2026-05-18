@@ -885,13 +885,18 @@ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(nul
  const [previewMode, setPreviewMode] = useState<"summary" | "raw">("summary");
  const [showSuggestions, setShowSuggestions] = useState(false);
  const [messageFieldQuery, setMessageFieldQuery] = useState("");
+ const [messageFieldPosition, setMessageFieldPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+ const [messageFieldIndex, setMessageFieldIndex] = useState(0);
  const [showMessageFieldSuggestions, setShowMessageFieldSuggestions] = useState(false);
  const symbolWrapRef = useRef<HTMLDivElement | null>(null);
+ const messageTemplateWrapRef = useRef<HTMLDivElement | null>(null);
  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
+ const messageFieldListRef = useRef<HTMLDivElement | null>(null);
  const llmPromptWrapRef = useRef<HTMLDivElement | null>(null);
  const llmPromptInputRef = useRef<HTMLTextAreaElement | null>(null);
  const llmSuggestionListRef = useRef<HTMLDivElement | null>(null);
  const suppressLlmAutocompleteRef = useRef(false);
+ const suppressMessageAutocompleteRef = useRef(false);
 
 const selectedAccount = accounts.find((item) => item.id === accountId);
 const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId) ?? null;
@@ -1432,20 +1437,41 @@ const activeInstrument = useMemo<InstrumentRef>(
  };
  }
 
- function updateMessageTemplate(nextValue: string, caretPosition?: number) {
+ function updateMessageTemplate(nextValue: string, caretPosition?: number, force = false, textarea?: HTMLTextAreaElement) {
+ if (suppressMessageAutocompleteRef.current) {
+ suppressMessageAutocompleteRef.current = false;
+ return;
+ }
  setMessageTemplate(nextValue);
  const scanUntil = typeof caretPosition === "number" ? caretPosition : nextValue.length;
  const beforeCursor = nextValue.slice(0, scanUntil);
  const openIndex = beforeCursor.lastIndexOf("{");
  const closeIndex = beforeCursor.lastIndexOf("}");
+ const input = textarea ?? messageInputRef.current;
+ if (input && (force || openIndex >= 0 && openIndex > closeIndex)) {
+ const position = textareaCaretDropdownPosition(input, scanUntil);
+ const wrapWidth = messageTemplateWrapRef.current?.clientWidth ?? input.clientWidth;
+ const width = Math.min(520, Math.max(260, wrapWidth - 16));
+ const maxLeft = Math.max(8, wrapWidth - width - 8);
+ setMessageFieldPosition({
+ top: Math.max(8, position.top),
+ left: Math.min(Math.max(8, position.left), maxLeft),
+ width
+ });
+ }
  if (openIndex >= 0 && openIndex > closeIndex) {
  const query = beforeCursor.slice(openIndex + 1).trim().toLowerCase();
+ if (query !== messageFieldQuery) {
+ setMessageFieldIndex(0);
+ }
  setMessageFieldQuery(query);
  setShowMessageFieldSuggestions(true);
  return;
  }
- setShowMessageFieldSuggestions(false);
+ setShowMessageFieldSuggestions(force);
  setMessageFieldQuery("");
+ setMessageFieldIndex(0);
+ if (!force) setMessageFieldPosition(null);
  }
 
  function applyMessageField(field: string) {
@@ -1458,22 +1484,74 @@ const activeInstrument = useMemo<InstrumentRef>(
  const closeIndex = beforeCursor.lastIndexOf("}");
  if (openIndex >= 0 && openIndex > closeIndex) {
  const nextValue = `${beforeCursor.slice(0, openIndex)}{${field}}${afterCursor}`;
+ const nextCaret = openIndex + field.length + 2;
  setMessageTemplate(nextValue);
  setShowMessageFieldSuggestions(false);
  setMessageFieldQuery("");
+ setMessageFieldIndex(0);
+ setMessageFieldPosition(null);
+ suppressMessageAutocompleteRef.current = true;
  requestAnimationFrame(() => {
  input?.focus();
- const nextCaret = openIndex + field.length + 2;
  input?.setSelectionRange(nextCaret, nextCaret);
  });
  return;
  }
- setMessageTemplate(`${current}{${field}}`);
+ const nextValue = `${current.slice(0, caret)}{${field}}${afterCursor}`;
+ const nextCaret = caret + field.length + 2;
+ setMessageTemplate(nextValue);
  setShowMessageFieldSuggestions(false);
  setMessageFieldQuery("");
+ setMessageFieldIndex(0);
+ setMessageFieldPosition(null);
+ suppressMessageAutocompleteRef.current = true;
+ requestAnimationFrame(() => {
+ input?.focus();
+ input?.setSelectionRange(nextCaret, nextCaret);
+ });
  }
 
  const filteredMessageFields = messageTemplateFields.filter((item) => item.includes(messageFieldQuery));
+
+ useEffect(() => {
+ setMessageFieldIndex((current) => Math.min(current, Math.max(filteredMessageFields.length - 1, 0)));
+ }, [filteredMessageFields.length]);
+
+ useEffect(() => {
+ if (!showMessageFieldSuggestions) return;
+ const active = messageFieldListRef.current?.querySelector<HTMLElement>("[data-active='true']");
+ active?.scrollIntoView({ block: "nearest" });
+ }, [messageFieldIndex, showMessageFieldSuggestions]);
+
+ function handleMessageTemplateKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+ if (showMessageFieldSuggestions && filteredMessageFields.length) {
+ if (event.key === "ArrowDown") {
+ event.preventDefault();
+ setMessageFieldIndex((current) => (current + 1) % filteredMessageFields.length);
+ return;
+ }
+ if (event.key === "ArrowUp") {
+ event.preventDefault();
+ setMessageFieldIndex((current) => (current - 1 + filteredMessageFields.length) % filteredMessageFields.length);
+ return;
+ }
+ if (event.key === "Enter" || event.key === "Tab") {
+ event.preventDefault();
+ applyMessageField(filteredMessageFields[messageFieldIndex] ?? filteredMessageFields[0]);
+ return;
+ }
+ if (event.key === "Escape") {
+ event.preventDefault();
+ setShowMessageFieldSuggestions(false);
+ setMessageFieldPosition(null);
+ return;
+ }
+ }
+ if ((event.ctrlKey || event.metaKey) && event.key === " ") {
+ event.preventDefault();
+ updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, true, event.currentTarget);
+ }
+ }
 
  function updateLlmPromptAutocomplete(nextValue: string, caretPosition: number, force = false, textarea?: HTMLTextAreaElement) {
  if (suppressLlmAutocompleteRef.current) {
@@ -2613,9 +2691,18 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  conditions={conditions}
  cooldownSeconds={cooldownSeconds}
  filteredMessageFields={filteredMessageFields}
+ handleMessageTemplateKeyDown={handleMessageTemplateKeyDown}
  level={level}
+ messageFieldIndex={messageFieldIndex}
+ messageFieldListRef={messageFieldListRef}
+ messageFieldPosition={messageFieldPosition}
  messageTemplate={messageTemplate}
  messageInputRef={messageInputRef}
+ messageTemplateWrapRef={messageTemplateWrapRef}
+ onMessageTemplateBlur={() => window.setTimeout(() => {
+ setShowMessageFieldSuggestions(false);
+ setMessageFieldPosition(null);
+ }, 120)}
  removeCondition={removeCondition}
  setCombine={updateCombine}
  setCooldownSeconds={setCooldownSeconds}
@@ -3150,9 +3237,15 @@ function RuleEditor({
  conditions,
  cooldownSeconds,
  filteredMessageFields,
+ handleMessageTemplateKeyDown,
  level,
+ messageFieldIndex,
+ messageFieldListRef,
+ messageFieldPosition,
  messageTemplate,
  messageInputRef,
+ messageTemplateWrapRef,
+ onMessageTemplateBlur,
  removeCondition,
  setCombine,
  setCooldownSeconds,
@@ -3169,9 +3262,15 @@ function RuleEditor({
  conditions: AlertCondition[];
  cooldownSeconds: string;
  filteredMessageFields: string[];
+ handleMessageTemplateKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
  level: string;
+ messageFieldIndex: number;
+ messageFieldListRef: RefObject<HTMLDivElement | null>;
+ messageFieldPosition: { top: number; left: number; width: number } | null;
  messageTemplate: string;
  messageInputRef: RefObject<HTMLTextAreaElement | null>;
+ messageTemplateWrapRef: RefObject<HTMLDivElement | null>;
+ onMessageTemplateBlur: () => void;
  removeCondition: (index: number) => void;
  setCombine: (value: "all" | "any") => void;
  setCooldownSeconds: (value: string) => void;
@@ -3179,7 +3278,7 @@ function RuleEditor({
  setTitleTemplate: (value: string) => void;
  showMessageFieldSuggestions: boolean;
  titleTemplate: string;
- updateMessageTemplate: (nextValue: string, caretPosition?: number) => void;
+ updateMessageTemplate: (nextValue: string, caretPosition?: number, force?: boolean, textarea?: HTMLTextAreaElement) => void;
  updateCondition: (index: number, patch: Partial<AlertCondition>) => void;
 }) {
  return (
@@ -3225,29 +3324,54 @@ function RuleEditor({
  </div>
  <div className="grid gap-2">
  <FieldLabel>Message template</FieldLabel>
- <div className="relative max-w-[720px]">
+ <div className="relative max-w-[720px]" ref={messageTemplateWrapRef}>
  <Textarea
  className="min-h-[84px] w-full border border-input bg-background px-3 py-2 text-sm outline-none"
- onChange={(event) => updateMessageTemplate(event.target.value, event.target.selectionStart ?? undefined)}
- onClick={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined)}
- onKeyUp={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined)}
+ onBlur={onMessageTemplateBlur}
+ onChange={(event) => updateMessageTemplate(event.target.value, event.target.selectionStart ?? undefined, false, event.currentTarget)}
+ onClick={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined, false, event.currentTarget)}
+ onKeyDown={handleMessageTemplateKeyDown}
+ onKeyUp={(event) => {
+ if ((event.ctrlKey || event.metaKey) && event.key === " ") return;
+ if (["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(event.key)) return;
+ updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined, false, event.currentTarget);
+ }}
+ onScroll={(event) => {
+ if (showMessageFieldSuggestions) {
+ updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined, true, event.currentTarget);
+ }
+ }}
+ onSelect={(event) => updateMessageTemplate(event.currentTarget.value, event.currentTarget.selectionStart ?? undefined, false, event.currentTarget)}
  placeholder="Message template"
  ref={messageInputRef}
  value={messageTemplate}
  />
  {showMessageFieldSuggestions && filteredMessageFields.length ? (
- <div className="absolute left-0 top-[calc(100%+4px)] z-20 max-h-[220px] w-full overflow-y-auto border border-border bg-background ">
- {filteredMessageFields.map((field) => (
+ <div
+ className="absolute z-30 max-h-[220px] overflow-y-auto border border-border bg-background shadow-sm"
+ style={{
+ left: messageFieldPosition?.left ?? 0,
+ top: messageFieldPosition?.top ?? "calc(100% + 4px)",
+ width: messageFieldPosition?.width ?? "100%"
+ }}
+ >
+ <div ref={messageFieldListRef}>
+ {filteredMessageFields.map((field, index) => (
  <Button
- className="block w-full border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--accent-glow)]"
+ className={`block w-full border-b border-border px-3 py-2 text-left text-sm last:border-b-0 ${index === messageFieldIndex ? "bg-secondary text-foreground" : "hover:bg-[var(--accent-glow)]"}`}
+ data-active={index === messageFieldIndex}
  key={field}
- onClick={() => applyMessageField(field)}
+ onMouseDown={(event) => {
+ event.preventDefault();
+ applyMessageField(field);
+ }}
  variant="ghost"
  type="button"
  >
  {`{${field}}`}
  </Button>
  ))}
+ </div>
  </div>
  ) : null}
  </div>
