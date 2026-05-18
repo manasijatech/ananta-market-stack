@@ -148,6 +148,914 @@
   }
 }
 
+.landing-page {
+  --landing-section-spacing: 4rem;
+  --landing-bg: #f7f1e6;
+  --landing-section-bg: #f2ead9;
+  --landing-section-raised: #fff8ec;
+  --landing-panel: #fffaf0;
+  --landing-panel-strong: #eadcc4;
+  --landing-panel-translucent: rgba(255, 250, 240, 0.78);
+  --landing-border: rgba(52, 42, 28, 0.22);
+  --landing-border-strong: rgba(52, 42, 28, 0.34);
+  --landing-text: #17130d;
+  --landing-heading: #120f09;
+  --landing-muted: #706656;
+  --landing-dim: #948875;
+  --landing-accent: #a86f08;
+  --landing-accent-bright: #8a5a08;
+  --landing-accent-soft: rgba(168, 111, 8, 0.12);
+  --landing-on-accent: #fff8ea;
+  --landing-positive: #087f5b;
+  --landing-positive-soft: rgba(8, 127, 91, 0.42);
+  --landing-positive-band-start: rgba(8, 127, 91, 0.18);
+  --landing-positive-band-end: rgba(8, 127, 91, 0.82);
+  --landing-danger: #c2413f;
+  --landing-danger-soft: rgba(194, 65, 63, 0.44);
+  --landing-danger-band-start: rgba(194, 65, 63, 0.78);
+  --landing-danger-band-end: rgba(194, 65, 63, 0.16);
+  --landing-nav-bg: rgba(247, 241, 230, 0.84);
+  --landing-scene-bg: #f7f1e6;
+  --landing-grid-line: rgba(52, 42, 28, 0.075);
+  min-height: 100vh;
+  background: var(--landing-bg);
+  color: var(--landing-text);
+}
+
+.dark .landing-page {
+  --landing-bg: #050604;
+  --landing-section-bg: #070807;
+  --landing-section-raised: #0c0d0b;
+  --landing-panel: #11130f;
+  --landing-panel-strong: #14120c;
+  --landing-panel-translucent: rgba(5, 6, 4, 0.74);
+  --landing-border: #28302a;
+  --landing-border-strong: #4f5b4c;
+  --landing-text: #efe6d2;
+  --landing-heading: #fff7e8;
+  --landing-muted: #a99d88;
+  --landing-dim: #8f8474;
+  --landing-accent: #d99a2b;
+  --landing-accent-bright: #f1b54b;
+  --landing-accent-soft: rgba(217, 154, 43, 0.12);
+  --landing-on-accent: #050604;
+  --landing-positive: #64e99a;
+  --landing-positive-soft: rgba(100, 233, 154, 0.4);
+  --landing-positive-band-start: rgba(100, 233, 154, 0.16);
+  --landing-positive-band-end: rgba(100, 233, 154, 0.76);
+  --landing-danger: #ff7373;
+  --landing-danger-soft: rgba(255, 115, 115, 0.42);
+  --landing-danger-band-start: rgba(255, 115, 115, 0.72);
+  --landing-danger-band-end: rgba(255, 115, 115, 0.14);
+  --landing-nav-bg: rgba(5, 6, 4, 0.82);
+  --landing-scene-bg: #050604;
+  --landing-grid-line: rgba(255, 255, 255, 0.052);
+}
+
+.landing-nav,
+.landing-footer {
+  border-color: var(--landing-border);
+  background: var(--landing-nav-bg);
+  color: var(--landing-text);
+}
+
+.landing-footer {
+  color: var(--landing-dim);
+}
+
+.landing-logo {
+  filter: none;
+}
+
+.dark .landing-logo {
+  filter: brightness(0) invert(1);
+}
+
+.landing-nav-link,
+.landing-secondary-button {
+  border: 1px solid var(--landing-border);
+  background: color-mix(in srgb, var(--landing-panel-translucent) 74%, transparent);
+  color: var(--landing-muted);
+}
+
+.landing-nav-link:hover,
+.landing-secondary-button:hover {
+  border-color: var(--landing-accent);
+  color: var(--landing-text);
+}
+
+.landing-primary-button {
+  background: var(--landing-accent);
+  color: var(--landing-on-accent);
+}
+
+.landing-primary-button:hover {
+  background: var(--landing-accent-bright);
+}
+
+.landing-contrast-button {
+  background: var(--landing-heading);
+  color: var(--landing-bg);
+}
+
+.landing-contrast-button:hover {
+  background: var(--landing-text);
+}
+
+.landing-source-button {
+  border: 1px solid var(--landing-accent);
+  color: var(--landing-accent-bright);
+}
+
+.landing-source-button:hover {
+  background: var(--landing-accent);
+  color: var(--landing-on-accent);
+}
+
+.landing-theme-toggle button {
+  border-color: var(--landing-border);
+  background: color-mix(in srgb, var(--landing-panel-translucent) 72%, transparent);
+  color: var(--landing-text);
+}
+
+.landing-theme-toggle button:hover {
+  border-color: var(--landing-accent);
+  color: var(--landing-accent-bright);
+}
+
+.landing-chip {
+  border: 1px solid color-mix(in srgb, var(--landing-accent) 58%, transparent);
+  background: color-mix(in srgb, var(--landing-panel-translucent) 46%, transparent);
+  color: var(--landing-accent-bright);
+}
+
+.landing-hero-copy-zone {
+  position: relative;
+  isolation: isolate;
+}
+
+.landing-hero-copy-zone::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -44px -96px -40px -30px;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 32% 28%, color-mix(in srgb, var(--landing-bg) 96%, transparent) 0 34%, color-mix(in srgb, var(--landing-bg) 76%, transparent) 52%, transparent 76%),
+    radial-gradient(ellipse at 38% 68%, color-mix(in srgb, var(--landing-bg) 90%, transparent) 0 26%, color-mix(in srgb, var(--landing-bg) 58%, transparent) 48%, transparent 74%),
+    linear-gradient(90deg, color-mix(in srgb, var(--landing-bg) 82%, transparent), color-mix(in srgb, var(--landing-bg) 46%, transparent) 58%, transparent);
+  filter: blur(20px);
+}
+
+.landing-hero-title {
+  position: relative;
+  color: var(--landing-heading);
+}
+
+.hero-text-scrim,
+.hero-copy-scrim {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-text-scrim {
+  background: transparent;
+  padding: 0;
+}
+
+.hero-copy-scrim {
+  background: transparent;
+  padding: 0;
+}
+
+.dark .hero-text-scrim {
+  background: transparent;
+}
+
+.dark .hero-copy-scrim {
+  background: transparent;
+}
+
+.landing-page .landing-hero-title {
+  text-shadow:
+    0 1px 0 color-mix(in srgb, var(--landing-bg) 90%, transparent),
+    0 10px 32px color-mix(in srgb, var(--landing-bg) 84%, transparent);
+}
+
+.landing-hero-copy,
+.landing-copy {
+  color: var(--landing-muted);
+}
+
+.landing-page .landing-hero-copy {
+  position: relative;
+  color: color-mix(in srgb, var(--landing-heading) 66%, var(--landing-muted));
+  text-shadow:
+    0 1px 0 color-mix(in srgb, var(--landing-bg) 94%, transparent),
+    0 7px 22px color-mix(in srgb, var(--landing-bg) 80%, transparent);
+}
+
+.dark .landing-page .landing-hero-title {
+  text-shadow: 0 10px 32px color-mix(in srgb, var(--landing-bg) 88%, transparent);
+}
+
+.dark .landing-page .landing-hero-copy {
+  color: var(--landing-muted);
+  text-shadow: 0 7px 22px color-mix(in srgb, var(--landing-bg) 84%, transparent);
+}
+
+.landing-proof,
+.landing-overline,
+.landing-dim {
+  color: var(--landing-dim);
+}
+
+.landing-page .landing-proof {
+  color: color-mix(in srgb, var(--landing-heading) 52%, var(--landing-muted));
+}
+
+.dark .landing-page .landing-proof {
+  color: var(--landing-dim);
+}
+
+.landing-overline {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.landing-proof svg,
+.landing-list svg,
+.landing-positive,
+.landing-status-dot {
+  color: var(--landing-positive);
+}
+
+.landing-status-dot {
+  background: var(--landing-positive);
+  box-shadow: 0 0 0 3px var(--landing-positive-soft) !important;
+}
+
+.landing-section {
+  background: var(--landing-section-bg);
+  color: var(--landing-text);
+  padding: var(--landing-section-spacing) 1.25rem;
+}
+
+.landing-section--tight {
+  padding-top: var(--landing-section-spacing);
+  padding-bottom: var(--landing-section-spacing);
+}
+
+.landing-section--raised {
+  background: var(--landing-section-bg);
+}
+
+.landing-eyebrow {
+  color: var(--landing-accent-bright);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.landing-list {
+  color: color-mix(in srgb, var(--landing-text) 72%, var(--landing-muted));
+}
+
+.landing-list svg,
+.landing-proof svg {
+  stroke-width: 2.4;
+}
+
+.landing-icon {
+  color: var(--landing-accent-bright);
+}
+
+.landing-scene-label {
+  color: color-mix(in srgb, var(--landing-muted) 72%, transparent);
+}
+
+.landing-tile-label {
+  color: color-mix(in srgb, #ffffff 58%, transparent);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+}
+
+.symbol-logo,
+.symbol-logo-fallback {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.symbol-logo {
+  border: 0;
+  background: transparent;
+  object-fit: contain;
+}
+
+.symbol-logo-fallback {
+  border: 1px solid color-mix(in srgb, var(--landing-text) 18%, transparent);
+  background: color-mix(in srgb, var(--landing-panel) 82%, #ffffff);
+  color: color-mix(in srgb, var(--landing-heading) 82%, transparent);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-weight: 700;
+}
+
+.broker-logo-frame {
+  border: 1px solid var(--landing-border-strong);
+  background: var(--landing-bg);
+}
+
+.liquidity-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--landing-scene-bg);
+}
+
+.liquidity-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.42;
+  background-image:
+    linear-gradient(var(--landing-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--landing-grid-line) 1px, transparent 1px);
+  background-size: 64px 42px;
+  animation: market-grid-drift 18s linear infinite;
+}
+
+.liquidity-book {
+  position: absolute;
+  inset: 10% 0 8% 3%;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  opacity: 0.94;
+}
+
+.liquidity-row {
+  position: relative;
+  display: grid;
+  min-height: 36px;
+  grid-template-columns: 98px minmax(0, 1fr) 76px;
+  align-items: center;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--landing-muted) 62%, transparent);
+}
+
+.liquidity-row::before {
+  content: "";
+  position: absolute;
+  inset: 0 4% 0 108px;
+  border-top: 1px solid var(--landing-border);
+}
+
+.liquidity-price,
+.liquidity-volume {
+  position: relative;
+  z-index: 2;
+}
+
+.liquidity-volume {
+  color: color-mix(in srgb, var(--landing-muted) 46%, transparent);
+  text-align: right;
+}
+
+.liquidity-depth {
+  position: absolute;
+  top: 7px;
+  z-index: 1;
+  height: 22px;
+  opacity: 0.88;
+  animation: liquidity-depth-pulse 3.4s ease-in-out infinite;
+}
+
+.liquidity-depth--bid {
+  left: 108px;
+  background: linear-gradient(90deg, var(--landing-positive-band-start), var(--landing-positive-band-end));
+}
+
+.liquidity-depth--ask {
+  right: 84px;
+  background: linear-gradient(90deg, var(--landing-danger-band-start), var(--landing-danger-band-end));
+}
+
+.liquidity-row--bid .liquidity-price {
+  color: color-mix(in srgb, var(--landing-positive) 86%, var(--landing-text));
+}
+
+.liquidity-row--ask .liquidity-price {
+  color: color-mix(in srgb, var(--landing-danger) 86%, var(--landing-text));
+}
+
+.liquidity-price-line {
+  position: absolute;
+  inset: 12% 0 12% 0;
+  z-index: 4;
+  width: 100%;
+  height: 76%;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.liquidity-price-line path {
+  fill: none;
+  stroke: var(--landing-accent-bright);
+  stroke-dasharray: 12 12;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  animation: price-line-flow 18s linear infinite;
+}
+
+.trade-bubble {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  background: var(--landing-panel-translucent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent) !important;
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  opacity: 0;
+  transform: scale(0.35);
+  animation: trade-print 6.2s ease-out infinite;
+}
+
+.trade-bubble span {
+  position: absolute;
+  left: calc(100% + 7px);
+  min-width: max-content;
+  color: color-mix(in srgb, var(--landing-text) 78%, transparent);
+  font-size: 10px;
+  transform: translateY(-1px);
+}
+
+.trade-bubble__logo {
+  width: 58%;
+  height: 58%;
+  border: 0;
+  background: transparent;
+  clip-path: none;
+  font-size: 9px;
+}
+
+.trade-bubble--buy {
+  color: var(--landing-positive);
+}
+
+.trade-bubble--sell {
+  color: var(--landing-danger);
+}
+
+.market-ticker {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  overflow: hidden;
+  border-top: 1px solid var(--landing-border);
+  border-bottom: 1px solid var(--landing-border);
+  background: color-mix(in srgb, var(--landing-panel-translucent) 62%, transparent);
+  color: var(--landing-text);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.market-ticker__track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll 42s linear infinite;
+}
+
+.market-ticker__item {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  border-right: 1px solid var(--landing-border);
+  padding: 0 22px;
+  white-space: nowrap;
+}
+
+.market-ticker__logo {
+  width: 22px;
+  height: 22px;
+  font-size: 8px;
+}
+
+.signal-map {
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+  min-height: 430px;
+  padding: 18px;
+}
+
+.broker-flow {
+  position: relative;
+  z-index: 2;
+  min-height: 330px;
+}
+
+.broker-flow::before {
+  content: "";
+  position: absolute;
+  inset: 12px 8% 16px 10%;
+  background:
+    linear-gradient(112deg, transparent 0 13%, color-mix(in srgb, var(--landing-accent) 42%, transparent) 13.2% 13.7%, transparent 14%),
+    linear-gradient(112deg, transparent 0 47%, color-mix(in srgb, var(--landing-border) 58%, transparent) 47.2% 47.6%, transparent 47.8%),
+    linear-gradient(64deg, transparent 0 76%, color-mix(in srgb, var(--landing-positive) 34%, transparent) 76.2% 76.6%, transparent 76.8%),
+    linear-gradient(180deg, transparent 0 31%, color-mix(in srgb, var(--landing-border) 42%, transparent) 31.2% 31.6%, transparent 31.8%),
+    linear-gradient(180deg, transparent 0 86%, color-mix(in srgb, var(--landing-positive) 30%, transparent) 86.2% 86.7%, transparent 87%),
+    linear-gradient(90deg, transparent 0 22%, color-mix(in srgb, var(--landing-accent) 32%, transparent) 22.2% 22.6%, transparent 22.8% 66%, color-mix(in srgb, var(--landing-positive) 28%, transparent) 66.2% 66.6%, transparent 66.8%);
+  transform: skewX(-10deg);
+  pointer-events: none;
+}
+
+.broker-flow::after {
+  content: "";
+  position: absolute;
+  left: 15%;
+  right: 12%;
+  top: 48%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--landing-accent), var(--landing-positive), transparent);
+  opacity: 0.56;
+  pointer-events: none;
+}
+
+.broker-node {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  min-height: 62px;
+  width: min(290px, 54%);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--landing-border);
+  background: color-mix(in srgb, var(--landing-panel-translucent) 88%, transparent);
+  padding: 12px;
+  box-shadow: 0 18px 42px color-mix(in srgb, #000000 18%, transparent);
+  animation: broker-node-pulse 4.6s ease-in-out infinite;
+  backdrop-filter: blur(12px);
+}
+
+.broker-node:nth-child(1) {
+  left: 2%;
+  top: 3%;
+}
+
+.broker-node:nth-child(2) {
+  right: 1%;
+  top: 2%;
+}
+
+.broker-node:nth-child(3) {
+  left: 11%;
+  top: 31%;
+}
+
+.broker-node:nth-child(4) {
+  right: 8%;
+  top: 27%;
+}
+
+.broker-node:nth-child(5) {
+  left: 2%;
+  top: 61%;
+}
+
+.broker-node:nth-child(6) {
+  right: 2%;
+  top: 58%;
+}
+
+.broker-node:nth-child(7) {
+  left: 31%;
+  top: 80%;
+}
+
+@media (max-width: 720px) {
+  .signal-map {
+    min-height: auto;
+  }
+
+  .broker-flow {
+    display: flex;
+    min-height: auto;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .broker-flow::before {
+    inset: 0 0 0 22px;
+    width: 1px;
+    background: color-mix(in srgb, var(--landing-border) 68%, transparent);
+    transform: none;
+  }
+
+  .broker-flow::after {
+    left: 22px;
+    right: auto;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    height: auto;
+    background: color-mix(in srgb, var(--landing-border) 68%, transparent);
+  }
+
+  .broker-node,
+  .broker-node:nth-child(n) {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    width: min(100%, 380px);
+  }
+
+  .broker-node:nth-child(even) {
+    margin-left: auto;
+  }
+}
+
+.workflow-machine-section {
+  background: var(--landing-section-bg);
+  color: var(--landing-text);
+  padding: var(--landing-section-spacing) 0;
+}
+
+.workflow-machine-section .landing-eyebrow {
+  color: var(--landing-accent-bright);
+}
+
+.workflow-machine-section .landing-copy {
+  color: var(--landing-muted);
+}
+
+.workflow-machine-layout {
+  display: grid;
+  gap: 42px;
+}
+
+.workflow-machine-heading {
+  display: grid;
+  align-content: start;
+  gap: 0;
+}
+
+.market-heatmap {
+  display: grid;
+  min-height: 520px;
+  grid-auto-rows: minmax(104px, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.market-tile {
+  display: flex;
+  min-height: 104px;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--landing-text) 12%, transparent);
+  padding: 14px;
+  color: color-mix(in srgb, var(--landing-heading) 88%, #ffffff);
+  animation: market-tile-shift 5.8s ease-in-out infinite;
+}
+
+.market-tile__logo {
+  width: 38px;
+  height: 38px;
+  font-size: 11px;
+}
+
+.market-tile--up {
+  background: color-mix(in srgb, var(--landing-positive) 54%, var(--landing-panel));
+}
+
+.market-tile--down {
+  background: color-mix(in srgb, var(--landing-danger) 56%, var(--landing-panel));
+}
+
+.market-tile--hot {
+  background: color-mix(in srgb, var(--landing-accent) 56%, var(--landing-panel));
+}
+
+.market-tile--flat {
+  background: color-mix(in srgb, var(--landing-panel-strong) 64%, transparent);
+}
+
+.feature-tile {
+  border: 1px solid var(--landing-border);
+  background: var(--landing-panel);
+  padding: 22px;
+}
+
+.self-host-section {
+  position: relative;
+  overflow: hidden;
+  background: var(--landing-section-bg);
+}
+
+.self-host-shell {
+  position: relative;
+  z-index: 1;
+}
+
+.self-host-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.self-host-proof span {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--landing-border) 82%, transparent);
+  background: color-mix(in srgb, var(--landing-panel-translucent) 72%, transparent);
+  padding: 0 12px;
+  color: color-mix(in srgb, var(--landing-text) 80%, var(--landing-muted));
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.self-host-proof svg {
+  color: var(--landing-accent-bright);
+}
+
+.deploy-command-panel {
+  border: 1px solid var(--landing-border);
+  background: var(--landing-panel);
+  overflow: hidden;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--landing-text) 6%, transparent);
+}
+
+.deploy-command-head {
+  display: grid;
+  min-height: 40px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  border-bottom: 1px solid var(--landing-border);
+  background: color-mix(in srgb, var(--landing-panel) 92%, var(--landing-section-bg));
+  padding: 0 10px 0 14px;
+  color: var(--landing-dim);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.deploy-command-label {
+  line-height: 1;
+}
+
+.deploy-copy-button {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  justify-self: end;
+  gap: 7px;
+  border: 1px solid var(--landing-border);
+  background: color-mix(in srgb, var(--landing-section-bg) 80%, transparent);
+  padding: 0 9px;
+  color: var(--landing-muted);
+  line-height: 1;
+  text-transform: uppercase;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.deploy-copy-button:hover {
+  border-color: var(--landing-accent);
+  background: color-mix(in srgb, var(--landing-accent-soft) 72%, transparent);
+  color: var(--landing-text);
+}
+
+.deploy-command {
+  margin: 0;
+  background: color-mix(in srgb, var(--landing-section-bg) 90%, transparent);
+  color: color-mix(in srgb, var(--landing-text) 84%, var(--landing-muted));
+  padding: 18px 20px 20px;
+  tab-size: 2;
+}
+
+@media (min-width: 760px) {
+  .workflow-machine-layout {
+    max-width: 52rem;
+  }
+
+  .market-heatmap {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 759px) {
+  .landing-page {
+    --landing-section-spacing: 3rem;
+  }
+}
+
+@keyframes market-grid-drift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 128px 84px, 128px 84px;
+  }
+}
+
+@keyframes liquidity-depth-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scaleX(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes price-line-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -240;
+  }
+}
+
+@keyframes trade-print {
+  0% {
+    opacity: 0;
+    transform: scale(0.25);
+  }
+  8% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  32% {
+    opacity: 0.78;
+    transform: scale(0.82);
+  }
+  62%,
+  100% {
+    opacity: 0;
+    transform: scale(0.35) translateX(24px);
+  }
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-33.333%);
+  }
+}
+
+@keyframes broker-node-pulse {
+  0%,
+  100% {
+    border-color: var(--landing-border);
+  }
+  40% {
+    border-color: color-mix(in srgb, var(--landing-accent) 68%, transparent);
+  }
+}
+
+@keyframes market-tile-shift {
+  0%,
+  100% {
+    filter: brightness(0.96) saturate(1.05);
+  }
+  45% {
+    filter: brightness(1.14) saturate(1.22);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquidity-grid,
+  .liquidity-depth,
+  .liquidity-price-line path,
+  .trade-bubble,
+  .market-ticker__track,
+  .broker-node,
+  .market-tile {
+    animation: none;
+  }
+}
+
 @layer components {
   .type-page-eyebrow {
     @apply font-mono text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary;
