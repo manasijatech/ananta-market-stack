@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap");
 @import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -151,8 +152,8 @@
 .landing-page {
   --landing-section-spacing: 4rem;
   --landing-bg: #f7f1e6;
-  --landing-section-bg: #f2ead9;
-  --landing-section-raised: #fff8ec;
+  --landing-section-bg: var(--landing-bg);
+  --landing-section-raised: var(--landing-bg);
   --landing-panel: #fffaf0;
   --landing-panel-strong: #eadcc4;
   --landing-panel-translucent: rgba(255, 250, 240, 0.78);
@@ -177,15 +178,36 @@
   --landing-nav-bg: rgba(247, 241, 230, 0.84);
   --landing-scene-bg: #f7f1e6;
   --landing-grid-line: rgba(52, 42, 28, 0.075);
+  position: relative;
+  isolation: isolate;
   min-height: 100vh;
   background: var(--landing-bg);
   color: var(--landing-text);
 }
 
+.landing-page::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--landing-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--landing-grid-line) 1px, transparent 1px);
+  background-size: 64px 42px;
+  opacity: 0.42;
+  animation: market-grid-drift 18s linear infinite;
+}
+
+.landing-page > :not(.landing-nav) {
+  position: relative;
+  z-index: 1;
+}
+
 .dark .landing-page {
   --landing-bg: #050604;
-  --landing-section-bg: #070807;
-  --landing-section-raised: #0c0d0b;
+  --landing-section-bg: var(--landing-bg);
+  --landing-section-raised: var(--landing-bg);
   --landing-panel: #11130f;
   --landing-panel-strong: #14120c;
   --landing-panel-translucent: rgba(5, 6, 4, 0.74);
@@ -253,6 +275,17 @@
   background: var(--landing-accent-bright);
 }
 
+.landing-hero-section {
+  min-height: 100svh;
+  padding-top: 64px;
+}
+
+.landing-hero-inner {
+  min-height: calc(100svh - 64px);
+  padding-top: clamp(2rem, 7svh, 5rem);
+  padding-bottom: clamp(5.75rem, 11svh, 8rem);
+}
+
 .landing-contrast-button {
   background: var(--landing-heading);
   color: var(--landing-bg);
@@ -310,6 +343,7 @@
 .landing-hero-title {
   position: relative;
   color: var(--landing-heading);
+  font-size: clamp(3rem, 4.7vw, 4.75rem);
 }
 
 .hero-text-scrim,
@@ -351,6 +385,8 @@
 
 .landing-page .landing-hero-copy {
   position: relative;
+  margin-top: clamp(1rem, 2.4svh, 1.75rem);
+  font-size: clamp(1rem, 1.08vw, 1.125rem);
   color: color-mix(in srgb, var(--landing-heading) 66%, var(--landing-muted));
   text-shadow:
     0 1px 0 color-mix(in srgb, var(--landing-bg) 94%, transparent),
@@ -364,6 +400,18 @@
 .dark .landing-page .landing-hero-copy {
   color: var(--landing-muted);
   text-shadow: 0 7px 22px color-mix(in srgb, var(--landing-bg) 84%, transparent);
+}
+
+.landing-hero-chip {
+  margin-bottom: clamp(1rem, 2.6svh, 1.75rem);
+}
+
+.landing-hero-actions {
+  margin-top: clamp(1.25rem, 3.4svh, 2.25rem);
+}
+
+.landing-hero-proof {
+  margin-top: clamp(1.25rem, 3.8svh, 2.5rem);
 }
 
 .landing-proof,
@@ -399,7 +447,7 @@
 }
 
 .landing-section {
-  background: var(--landing-section-bg);
+  background: transparent;
   color: var(--landing-text);
   padding: var(--landing-section-spacing) 1.25rem;
 }
@@ -410,7 +458,7 @@
 }
 
 .landing-section--raised {
-  background: var(--landing-section-bg);
+  background: transparent;
 }
 
 .landing-eyebrow {
@@ -650,6 +698,57 @@
   font-size: 8px;
 }
 
+@media (max-height: 780px) and (min-width: 760px) {
+  .landing-hero-inner {
+    padding-top: clamp(1.25rem, 4svh, 2.75rem);
+    padding-bottom: clamp(4.75rem, 9svh, 6rem);
+  }
+
+  .landing-hero-title {
+    font-size: clamp(2.75rem, 4.1vw, 4rem);
+  }
+
+  .landing-page .landing-hero-copy {
+    margin-top: 0.875rem;
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+
+  .landing-hero-chip {
+    margin-bottom: 0.875rem;
+  }
+
+  .landing-hero-actions {
+    margin-top: 1.125rem;
+  }
+
+  .landing-hero-proof {
+    margin-top: 1.25rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .landing-hero-section {
+    padding-top: 64px;
+  }
+
+  .landing-hero-inner {
+    align-items: center;
+    min-height: calc(100svh - 64px);
+    padding-top: 2rem;
+    padding-bottom: 5.5rem;
+  }
+
+  .landing-hero-title {
+    font-size: clamp(2.55rem, 13vw, 3.5rem);
+  }
+
+  .landing-page .landing-hero-copy {
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+}
+
 .signal-map {
   position: relative;
   overflow: hidden;
@@ -786,7 +885,7 @@
 }
 
 .workflow-machine-section {
-  background: var(--landing-section-bg);
+  background: transparent;
   color: var(--landing-text);
   padding: var(--landing-section-spacing) 0;
 }
@@ -802,12 +901,122 @@
 .workflow-machine-layout {
   display: grid;
   gap: 42px;
+  align-items: center;
 }
 
 .workflow-machine-heading {
   display: grid;
   align-content: start;
   gap: 0;
+}
+
+.workflow-flow-canvas {
+  height: 440px;
+  min-height: 440px;
+}
+
+.workflow-flow-canvas .react-flow {
+  background: transparent;
+}
+
+.workflow-flow-canvas .react-flow__pane {
+  cursor: default;
+}
+
+.workflow-flow-canvas .react-flow__node {
+  cursor: default;
+}
+
+.workflow-flow-canvas .react-flow__node-workflow {
+  width: 190px;
+}
+
+.workflow-flow-node {
+  position: relative;
+  min-height: 112px;
+  border: 1px solid color-mix(in srgb, var(--landing-text) 20%, transparent);
+  background: color-mix(in srgb, var(--landing-panel-translucent) 88%, transparent);
+  padding: 16px 18px 15px;
+  color: var(--landing-heading);
+  backdrop-filter: blur(10px);
+}
+
+.workflow-flow-node::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: -1px;
+  height: 2px;
+  background: var(--workflow-node-accent, var(--landing-accent));
+  opacity: 0.78;
+}
+
+.workflow-flow-canvas .react-flow__node-workflow.selected .workflow-flow-node,
+.workflow-flow-canvas .react-flow__node-workflow:focus .workflow-flow-node,
+.workflow-flow-canvas .react-flow__node-workflow:focus-visible .workflow-flow-node {
+  border-color: var(--landing-accent);
+  outline: none;
+}
+
+.workflow-flow-node__label {
+  color: var(--landing-heading);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.workflow-flow-node__detail {
+  margin-top: 9px;
+  color: var(--landing-muted);
+  font-size: 14px;
+  line-height: 1.42;
+}
+
+.workflow-flow-node__meta {
+  margin-top: 12px;
+  color: var(--landing-dim);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.workflow-flow-node--positive {
+  --workflow-node-accent: var(--landing-positive);
+}
+
+.workflow-flow-node--accent {
+  --workflow-node-accent: var(--landing-accent-bright);
+}
+
+.workflow-flow-node--muted {
+  --workflow-node-accent: color-mix(in srgb, var(--landing-muted) 86%, var(--landing-accent));
+}
+
+.workflow-flow-canvas .workflow-flow-handle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--landing-border);
+  background: var(--landing-bg);
+}
+
+.workflow-flow-canvas .workflow-flow-handle--target {
+  left: -5px;
+}
+
+.workflow-flow-canvas .workflow-flow-handle--source {
+  right: -5px;
+}
+
+.workflow-flow-canvas .workflow-flow-edge path {
+  stroke: color-mix(in srgb, var(--landing-text) 34%, transparent);
+  stroke-width: 1.8;
+}
+
+.workflow-flow-canvas .react-flow__arrowhead polyline {
+  stroke: color-mix(in srgb, var(--landing-text) 34%, transparent);
+  fill: color-mix(in srgb, var(--landing-text) 34%, transparent);
 }
 
 .market-heatmap {
@@ -859,7 +1068,7 @@
 .self-host-section {
   position: relative;
   overflow: hidden;
-  background: var(--landing-section-bg);
+  background: transparent;
 }
 
 .self-host-shell {
@@ -951,7 +1160,7 @@
 
 @media (min-width: 760px) {
   .workflow-machine-layout {
-    max-width: 52rem;
+    max-width: 80rem;
   }
 
   .market-heatmap {
@@ -959,9 +1168,29 @@
   }
 }
 
+@media (min-width: 980px) {
+  .workflow-machine-layout {
+    grid-template-columns: minmax(0, 0.82fr) minmax(460px, 1.18fr);
+  }
+}
+
 @media (max-width: 759px) {
   .landing-page {
     --landing-section-spacing: 3rem;
+  }
+
+  .workflow-flow-canvas {
+    height: 420px;
+    min-height: 420px;
+  }
+
+  .workflow-flow-canvas .react-flow__node-workflow {
+    width: 170px;
+  }
+
+  .workflow-flow-node {
+    min-height: 104px;
+    padding: 14px 16px;
   }
 }
 
@@ -1046,6 +1275,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .liquidity-grid,
+  .landing-page::before,
   .liquidity-depth,
   .liquidity-price-line path,
   .trade-bubble,

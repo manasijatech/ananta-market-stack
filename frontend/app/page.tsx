@@ -3,6 +3,15 @@
 import Image from "next/image";
 import Link from "next/link";
 import { IconBrandGithub } from "@tabler/icons-react";
+import {
+  Handle,
+  MarkerType,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeProps
+} from "@xyflow/react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -78,6 +87,64 @@ const heatmapTiles = [
   { symbol: "LT", label: "Announcement", tone: "hot", span: "" }
 ];
 
+type WorkflowNodeData = {
+  detail: string;
+  hasSource?: boolean;
+  hasTarget?: boolean;
+  label: string;
+  meta: string;
+  tone?: "accent" | "positive" | "muted";
+};
+
+const workflowNodes: Node<WorkflowNodeData>[] = [
+  {
+    id: "feed",
+    type: "workflow",
+    data: { detail: "Broker tick", hasSource: true, label: "Feed", meta: "NIFTY 22,647", tone: "positive" },
+    position: { x: 54, y: 20 }
+  },
+  {
+    id: "stream",
+    type: "workflow",
+    data: { detail: "Live subscription", hasSource: true, hasTarget: true, label: "Stream", meta: "42ms websocket" },
+    position: { x: 360, y: 20 }
+  },
+  {
+    id: "rule",
+    type: "workflow",
+    data: { detail: "Guard matched", hasSource: true, hasTarget: true, label: "Rule", meta: "volume + price" },
+    position: { x: 54, y: 210 }
+  },
+  {
+    id: "context",
+    type: "workflow",
+    data: { detail: "Optional model note", hasSource: true, hasTarget: true, label: "Context", meta: "risk summary", tone: "muted" },
+    position: { x: 360, y: 210 }
+  },
+  {
+    id: "channel",
+    type: "workflow",
+    data: { detail: "Telegram ack", hasTarget: true, label: "Channel", meta: "delivered 189ms", tone: "positive" },
+    position: { x: 666, y: 210 }
+  }
+];
+
+const workflowEdges: Edge[] = [
+  { id: "feed-stream", source: "feed", target: "stream" },
+  { id: "stream-rule", source: "stream", target: "rule" },
+  { id: "rule-context", source: "rule", target: "context" },
+  { id: "context-channel", source: "context", target: "channel" }
+].map((edge) => ({
+  ...edge,
+  type: "smoothstep",
+  markerEnd: { type: MarkerType.ArrowClosed },
+  className: "workflow-flow-edge"
+}));
+
+const workflowNodeTypes = {
+  workflow: WorkflowFlowNode
+};
+
 const landingSymbols = Array.from(new Set([
   ...trades.map((trade) => trade.symbol),
   ...tickerItems.flatMap((item) => item.symbol ? [item.symbol] : []),
@@ -86,6 +153,18 @@ const landingSymbols = Array.from(new Set([
 
 function symbolInitials(symbol: string) {
   return symbol.slice(0, 2).toUpperCase();
+}
+
+function WorkflowFlowNode({ data }: NodeProps<Node<WorkflowNodeData>>) {
+  return (
+    <div className={`workflow-flow-node workflow-flow-node--${data.tone ?? "accent"}`}>
+      {data.hasTarget ? <Handle className="workflow-flow-handle workflow-flow-handle--target" position={Position.Left} type="target" /> : null}
+      <div className="workflow-flow-node__label">{data.label}</div>
+      <div className="workflow-flow-node__detail">{data.detail}</div>
+      <div className="workflow-flow-node__meta">{data.meta}</div>
+      {data.hasSource ? <Handle className="workflow-flow-handle workflow-flow-handle--source" position={Position.Right} type="source" /> : null}
+    </div>
+  );
 }
 
 function SymbolLogo({
@@ -227,6 +306,25 @@ function WorkflowTimeline() {
             stream, rule, optional model context, and channel acknowledgement.
           </p>
         </div>
+        <div className="workflow-flow-canvas" aria-label="Alert workflow from feed to channel acknowledgement">
+          <ReactFlow
+            nodes={workflowNodes}
+            edges={workflowEdges}
+            nodeTypes={workflowNodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.16 }}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            panOnDrag={false}
+            panOnScroll={false}
+            zoomOnDoubleClick={false}
+            zoomOnPinch={false}
+            zoomOnScroll={false}
+            preventScrolling={false}
+            proOptions={{ hideAttribution: true }}
+          />
+        </div>
       </div>
     </section>
   );
@@ -276,7 +374,6 @@ export default function HomePage() {
   const [metadataRows, setMetadataRows] = useState<AlphaSymbolMetadata[]>([]);
   const [copiedDeployCommand, setCopiedDeployCommand] = useState(false);
   const appHref = user ? "/dashboard" : "/auth/sign-in";
-  const navCtaLabel = !isLoading && user ? "Open Console" : "Launch Workspace";
   const heroCtaLabel = !isLoading && user ? "Enter Console" : "Start Self-Hosted";
   const symbolMetadata = useMemo(
     () => metadataRows.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
@@ -309,7 +406,7 @@ export default function HomePage() {
   return (
     <main className="landing-page">
       <nav className="landing-nav fixed left-0 top-0 z-50 w-full backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5">
+        <div className="flex h-16 w-full items-center justify-between px-5">
           <BrandLogo imageClassName="landing-logo h-8 w-auto" />
           <div className="flex items-center gap-3">
             <div className="landing-theme-toggle">
@@ -324,35 +421,53 @@ export default function HomePage() {
               <IconBrandGithub className="size-4" />
               GitHub
             </Link>
-            <Link
-              href={appHref}
-              className="landing-primary-button flex items-center gap-2 px-4 py-2 font-mono text-xs font-semibold transition"
-            >
-              {navCtaLabel}
-              <ArrowRight className="size-4" />
-            </Link>
+            {user ? (
+              <Link
+                href="/dashboard"
+                className="landing-primary-button flex items-center gap-2 px-4 py-2 font-mono text-xs font-semibold transition"
+              >
+                Open Console
+                <ArrowRight className="size-4" />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/auth/sign-in"
+                  className="landing-nav-link flex items-center gap-2 px-3 py-2 font-mono text-xs transition"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/auth/sign-up"
+                  className="landing-primary-button flex items-center gap-2 px-4 py-2 font-mono text-xs font-semibold transition"
+                >
+                  Sign up
+                  <ArrowRight className="size-4" />
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </nav>
 
-      <section className="relative min-h-[92vh] overflow-hidden pt-16">
+      <section className="landing-hero-section relative overflow-hidden">
         <LiquidityHeroScene symbolMetadata={symbolMetadata} />
-        <div className="relative z-10 mx-auto flex min-h-[calc(92vh-64px)] max-w-7xl items-center px-5 py-20">
+        <div className="landing-hero-inner relative z-10 mx-auto flex max-w-7xl items-center px-5">
           <div className="landing-hero-copy-zone max-w-3xl">
-            <div className="landing-chip mb-7 inline-flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase backdrop-blur">
+            <div className="landing-chip landing-hero-chip inline-flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase backdrop-blur">
               <Zap className="size-4" />
               Self-hosted trading control plane
             </div>
-            <h1 className="landing-hero-title max-w-4xl text-5xl font-semibold leading-[1.04] md:text-7xl">
+            <h1 className="landing-hero-title max-w-4xl font-semibold leading-[1.04]">
               <span className="hero-text-scrim">Market workflows that run where your edge lives.</span>
             </h1>
-            <p className="landing-hero-copy mt-7 max-w-2xl text-base leading-7 md:text-lg">
+            <p className="landing-hero-copy max-w-2xl leading-7">
               <span className="hero-copy-scrim">
                 Connect Indian broker accounts, stream market data, build alert workflows, and add LLM analysis inside
                 a private open-source workspace you control.
               </span>
             </p>
-            <div className="mt-9 flex flex-wrap items-center gap-3">
+            <div className="landing-hero-actions flex flex-wrap items-center gap-3">
               <Link
                 href={appHref}
                 className="landing-primary-button flex min-h-12 items-center gap-2 px-5 font-mono text-sm font-semibold transition"
@@ -368,7 +483,7 @@ export default function HomePage() {
                 See The Stack
               </Link>
             </div>
-            <div className="landing-proof mt-10 grid max-w-2xl gap-3 font-mono text-xs sm:grid-cols-3">
+            <div className="landing-proof landing-hero-proof grid max-w-2xl gap-3 font-mono text-xs sm:grid-cols-3">
               <span className="flex items-center gap-2"><Lock className="size-4" /> encrypted secrets</span>
               <span className="flex items-center gap-2"><Activity className="size-4" /> live alert workers</span>
               <span className="flex items-center gap-2"><Server className="size-4" /> Docker deployable</span>
