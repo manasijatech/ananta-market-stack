@@ -360,7 +360,11 @@ export function SystemConfigPanel({
           </div>
           <div className="mt-4 flex flex-col gap-2 min-[760px]:flex-row">
             <Input
+              autoComplete="off"
               className="h-9 text-sm min-[760px]:max-w-md"
+              data-1p-ignore="true"
+              data-form-type="other"
+              data-lpignore="true"
               onChange={(event) => setAlphaApiKey(event.target.value)}
               placeholder={config.alpha_api.has_api_key ? "Replace saved Manasija Alpha API key" : "Add Manasija Alpha API key"}
               type={alphaReplacingApiKey || !config.alpha_api.has_api_key ? "password" : "text"}
@@ -404,7 +408,7 @@ export function SystemConfigPanel({
                 {alphaWsConfig.status} · {alphaWsConfig.effective_products.length} products · {alphaWsConfig.scope_mode === "full_market" ? "full market" : `${alphaWsConfig.effective_symbol_count ?? alphaWsConfig.effective_symbols.length}${typeof alphaWsConfig.live_symbol_limit === "number" ? ` / ${alphaWsConfig.live_symbol_limit}` : ""} symbols`}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                Pulse plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"}
+                Market Stack plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"}
                 {typeof alphaWsConfig.monthly_unique_symbol_limit === "number" ? ` · ${alphaWsConfig.monthly_unique_symbol_limit} unique/month` : ""}
               </div>
             </div>
@@ -469,7 +473,11 @@ export function SystemConfigPanel({
 
             <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(220px,1fr)_auto_auto_auto]">
               <Input
+                autoComplete="off"
                 className="h-9 text-sm"
+                data-1p-ignore="true"
+                data-form-type="other"
+                data-lpignore="true"
                 onChange={(event) => updateDraft(provider.provider, { apiKey: event.target.value })}
                 placeholder={provider.has_api_key ? "Replace saved API key" : `Add ${provider.label} API key`}
                 type="password"

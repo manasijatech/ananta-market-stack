@@ -48,7 +48,7 @@ export default async function BrokerDocsPage({ params }: BrokerDocsPageProps) {
  </div>
  </div>
  <Button asChild variant="outline">
- <Link href="/brokers/new">
+ <Link href="/broker-connections/new">
  <ArrowLeft className="size-4" aria-hidden="true" />
  Back to add broker
  </Link>

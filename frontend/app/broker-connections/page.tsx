@@ -21,9 +21,9 @@ export default async function BrokersPage() {
  <Shell>
  <PageHeader
  eyebrow="Broker accounts"
- title="Connected brokers"
+ title="Broker Connections"
  description="Manage broker credentials, session status, quotes, and portfolio data for your trading workspace."
- action={<PrimaryLink href="/brokers/new">+ Add broker</PrimaryLink>}
+ action={<PrimaryLink href="/broker-connections/new">+ Add broker</PrimaryLink>}
  />
 
  <div className="mb-6">
@@ -50,7 +50,7 @@ export default async function BrokersPage() {
  Add your first broker account to start setting up sessions, quotes, and portfolio views.
  </p>
  <div className="mt-6">
- <PrimaryLink href="/brokers/new">Add broker</PrimaryLink>
+ <PrimaryLink href="/broker-connections/new">Add broker</PrimaryLink>
  </div>
  </CardContent>
  </Card>

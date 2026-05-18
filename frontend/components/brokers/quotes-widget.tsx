@@ -107,7 +107,14 @@ export function QuotesWidget({ account }: { account: BrokerAccount }) {
  <form className="mt-5 grid gap-3 min-[720px]:grid-cols-4" onSubmit={submit}>
  <Input name="symbol" placeholder="Symbol" />
  <Input name="exchange" placeholder="Exchange/segment" />
- <Input name="token" placeholder={quoteIdentifierLabels[account.broker_code] ?? `${account.broker_code} identifier`} />
+ <Input
+ autoComplete="off"
+ data-1p-ignore="true"
+ data-form-type="other"
+ data-lpignore="true"
+ name="token"
+ placeholder={quoteIdentifierLabels[account.broker_code] ?? `${account.broker_code} identifier`}
+ />
  <Button disabled={isPending} type="submit">
  {isPending ? "Fetching..." : "Fetch quote"}
  </Button>

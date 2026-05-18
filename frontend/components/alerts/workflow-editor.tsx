@@ -1443,7 +1443,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  const workflow = initialWorkflow?.id
  ? await updateAlertWorkflow(initialWorkflow.id, payload)
  : await createAlertWorkflow(payload);
- router.push(`/alerts/workflows/${workflow.id}`);
+ router.push(`/alerts-workspace/workflows/${workflow.id}`);
  router.refresh();
  } catch (caught) {
  setError(caught instanceof Error ? caught.message : "Could not save workflow.");
@@ -1670,7 +1670,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  startTransition(async () => {
  try {
  await deleteAlertWorkflow(initialWorkflow.id);
- router.push("/alerts/workflows");
+ router.push("/alerts-workspace/workflows");
  router.refresh();
  } catch (caught) {
  setError(caught instanceof Error ? caught.message : "Could not delete workflow.");
@@ -1824,11 +1824,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <FieldLabel>Workflow type</FieldLabel>
  <Select className="h-9 max-w-full border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
  <option value="market_data">Broker market data trigger</option>
- <option value="alpha_feed">Manasija websocket feed trigger</option>
+ <option value="alpha_feed">Market Stack websocket feed trigger</option>
  </Select>
  <HelpText>
  {workflowType === "alpha_feed"
- ? "This workflow analyzes stored Manasija websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
+ ? "This workflow analyzes stored Market Stack websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
  : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
  </HelpText>
  </Label>
@@ -1958,7 +1958,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <option value="preset_lists">Preset lists</option>
  <option value="full_market">Full market feed</option>
  </Select>
- <HelpText>Events are only available for symbols currently subscribed by the background Manasija websocket worker unless full-market is enabled for the chosen products.</HelpText>
+ <HelpText>Events are only available for symbols currently subscribed by the background Market Stack websocket worker unless full-market is enabled for the chosen products.</HelpText>
  </div>
  {announcementsEnabled ? (
  <div>

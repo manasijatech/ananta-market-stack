@@ -22,68 +22,68 @@ type HeaderOverrideState = {
 const HeaderOverrideContext = createContext<((header: HeaderOverride) => void) | null>(null);
 
 function headerForRoute(pathname: string, status: string | null): HeaderConfig {
- if (pathname === "/alerts") {
+ if (pathname === "/alerts-workspace") {
   return {
-   eyebrow: "Alerts workspace",
-   title: "Trading workflows",
+   eyebrow: "Alerts Workspace",
+   title: "Alerts Workspace",
    description: "Create, run, and review live market workflows, user alerts, and outbound channels from one workspace.",
-   action: <PrimaryLink href="/alerts/workflows/new">+ New workflow</PrimaryLink>
+   action: <PrimaryLink href="/alerts-workspace/workflows/new">+ New workflow</PrimaryLink>
   };
  }
 
- if (pathname === "/alerts/templates") {
+ if (pathname === "/alerts-workspace/templates") {
   return {
-   eyebrow: "Alerts workspace",
+   eyebrow: "Alerts Workspace",
    title: "Templates",
    description: "Immutable system templates that you can instantiate into editable user workflows."
   };
  }
 
- if (pathname === "/alerts/subscriptions") {
+ if (pathname === "/alerts-workspace/subscriptions") {
   return {
-   eyebrow: "Alerts workspace",
-   title: "Subscribed symbols",
+   eyebrow: "Alerts Workspace",
+   title: "Subscriptions",
    description: "Manage reusable symbol subscriptions that feed workflows and live data consumers."
   };
  }
 
- if (pathname === "/alerts/stream-manager") {
+ if (pathname === "/alerts-workspace/stream-manager") {
   return {
-   eyebrow: "Alerts workspace",
-   title: "Stream manager",
+   eyebrow: "Alerts Workspace",
+   title: "Stream Manager",
    description: "Inspect live worker health, desired symbol subscriptions, and broker stream session state."
   };
  }
 
- if (pathname === "/alerts/workflows/new") {
+ if (pathname === "/alerts-workspace/workflows/new") {
   return {
-   eyebrow: "Alerts workspace",
-   title: "Create workflow",
+   eyebrow: "Alerts Workspace",
+   title: "Create Workflow",
    description: "Build a live alert workflow with either the rule form or the graph editor over the same workflow model."
   };
  }
 
- if (pathname === "/alerts/workflows") {
+ if (pathname === "/alerts-workspace/workflows") {
   const inactive = status === "inactive";
   return {
-   eyebrow: "Alerts workspace",
-   title: inactive ? "Inactive workflows" : "Active workflows",
+   eyebrow: "Alerts Workspace",
+   title: inactive ? "Inactive Workflows" : "Active Workflows",
    description: "Review configured workflows, including shared multi-symbol rule sets, then jump into editing or switch between active and inactive tracking.",
-   action: <PrimaryLink href="/alerts/workflows/new">+ New workflow</PrimaryLink>
+   action: <PrimaryLink href="/alerts-workspace/workflows/new">+ New workflow</PrimaryLink>
   };
  }
 
- if (pathname.startsWith("/alerts/workflows/")) {
+ if (pathname.startsWith("/alerts-workspace/workflows/")) {
   return {
-   eyebrow: "Alerts workspace",
-   title: "Workflow editor",
+   eyebrow: "Alerts Workspace",
+   title: "Workflow Editor",
    description: "Edit workflow target sets, conditions, notification channels, and inspect the latest live evaluation history."
   };
  }
 
  return {
-  eyebrow: "Alerts workspace",
-  title: "Alerts workspace",
+  eyebrow: "Alerts Workspace",
+  title: "Alerts Workspace",
   description: "Create, run, and review live market workflows, user alerts, and outbound channels from one workspace."
  };
 }
@@ -100,7 +100,7 @@ export function AlertsWorkspaceChrome({ children }: { children: React.ReactNode 
   ...routeHeader,
   ...(override?.pathname === pathname ? override.header : null)
  };
- const compactAlertsHeader = pathname.startsWith("/alerts");
+ const compactAlertsHeader = pathname.startsWith("/alerts-workspace");
 
  return (
   <HeaderOverrideContext.Provider value={setHeaderOverride}>

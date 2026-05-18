@@ -28,7 +28,7 @@ export default async function BrokerDataTestPage({ params }: BrokerDataTestPageP
  description="Exercise the uniform read-only broker data layer, inspect raw payloads, and test the websocket inspection flow."
  action={
  <Button asChild variant="outline">
- <Link href={`/brokers/${account.id}`}>
+ <Link href={`/broker-connections/${account.id}`}>
  <ArrowLeft className="size-4" aria-hidden="true" />
  Back to broker
  </Link>

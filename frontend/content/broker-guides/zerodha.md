@@ -31,7 +31,7 @@ Do not use **Zerodha partner ID**. That is a different optional field on the dev
 | --- | --- |
 | App name | `Market Stack` or any name you recognize |
 | Zerodha Client ID | Your Kite login/client ID, for example `AB1234` |
-| Redirect URL | `http://localhost:3000/brokers` |
+| Redirect URL | `http://localhost:3000/broker-connections` |
 | Postback URL | Leave empty unless Zerodha forces it for your app type |
 | Description | Anything short, for example `Personal trading dashboard` |
 
@@ -70,7 +70,7 @@ Zerodha access tokens are short-lived. You usually need to authorize once per tr
 4. Zerodha redirects back to Market Stack at a URL like:
 
 ```text
-http://localhost:3000/brokers?status=success&request_token=...&action=login&type=login
+http://localhost:3000/broker-connections?status=success&request_token=...&action=login&type=login
 ```
 
 5. Market Stack reads the `request_token` automatically, exchanges it with FastAPI, verifies the account, and opens the broker detail page.
@@ -80,6 +80,6 @@ If the automatic flow does not complete, copy only the `request_token` value fro
 ## Important
 
 - Use `http://localhost:3000` from start to finish while developing locally.
-- The redirect URL in Zerodha must exactly match `http://localhost:3000/brokers`.
+- The redirect URL in Zerodha must exactly match `http://localhost:3000/broker-connections`.
 - API key and API secret are saved in Market Stack; the Zerodha Client ID is only needed while creating the Kite app.
 - Re-authorize when Zerodha expires the session.

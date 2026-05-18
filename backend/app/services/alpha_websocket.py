@@ -537,7 +537,7 @@ def update_alpha_ws_config(db: Session, user_id: str, payload: Any) -> dict[str,
         if bool(item.get("enabled", True)) and item.get("tier") == "full_market"
     )
     if payload.scope_mode == "full_market" and not full_market_products:
-        raise ValueError("Full market feed is not enabled for the current Pulse plan.")
+        raise ValueError("Full market feed is not enabled for the current Market Stack plan.")
     live_symbol_limit = _int_or_none(entitlement.get("active_symbol_limit"))
     if payload.scope_mode != "full_market" and live_symbol_limit is not None:
         scoped_symbols: list[str] = []
@@ -555,7 +555,7 @@ def update_alpha_ws_config(db: Session, user_id: str, payload: Any) -> dict[str,
         scoped_symbol_count = len(set(scoped_symbols))
         if scoped_symbol_count > live_symbol_limit:
             raise ValueError(
-                f"This Pulse plan allows {live_symbol_limit} live symbols. "
+                f"This Market Stack plan allows {live_symbol_limit} live symbols. "
                 f"The selected scope resolves to {scoped_symbol_count}."
             )
     products = [

@@ -118,7 +118,7 @@ export function AlertNotificationsTray() {
  Read all
  </Button>
  <Button asChild size="sm" type="button">
- <Link href="/alerts">Open</Link>
+ <Link href="/alerts-workspace">Open</Link>
  </Button>
  </div>
  </div>

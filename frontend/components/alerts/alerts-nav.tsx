@@ -4,13 +4,13 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
 const items = [
- { href: "/alerts", label: "Overview" },
- { href: "/alerts/workflows", label: "Active Workflows" },
- { href: "/alerts/workflows?status=inactive", label: "Inactive Workflows" },
- { href: "/alerts/workflows/new", label: "Create Workflow" },
- { href: "/alerts/templates", label: "Templates" },
- { href: "/alerts/subscriptions", label: "Subscriptions" },
- { href: "/alerts/stream-manager", label: "Stream Manager" }
+ { href: "/alerts-workspace", label: "Overview" },
+ { href: "/alerts-workspace/workflows", label: "Active Workflows" },
+ { href: "/alerts-workspace/workflows?status=inactive", label: "Inactive Workflows" },
+ { href: "/alerts-workspace/workflows/new", label: "Create Workflow" },
+ { href: "/alerts-workspace/templates", label: "Templates" },
+ { href: "/alerts-workspace/subscriptions", label: "Subscriptions" },
+ { href: "/alerts-workspace/stream-manager", label: "Stream Manager" }
 ];
 
 export function AlertsNav() {
@@ -26,8 +26,8 @@ export function AlertsNav() {
  const status = new URLSearchParams(itemQuery).get("status");
  return pathname === itemPath && (searchParams.get("status") ?? "active") === (status ?? "active");
  }
- if (itemPath === "/alerts") return pathname === "/alerts";
- if (itemPath === "/alerts/workflows") return pathname === "/alerts/workflows" && !searchParams.get("status");
+ if (itemPath === "/alerts-workspace") return pathname === "/alerts-workspace";
+ if (itemPath === "/alerts-workspace/workflows") return pathname === "/alerts-workspace/workflows" && !searchParams.get("status");
  return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
  })();
  return (

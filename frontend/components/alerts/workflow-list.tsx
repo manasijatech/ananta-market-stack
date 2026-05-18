@@ -73,13 +73,13 @@ export function WorkflowList({
  <div
  className=" border border-border p-5 transition hover:border-primary/40"
  key={workflow.id}
- onClick={() => router.push(`/alerts/workflows/${workflow.id}`)}
+ onClick={() => router.push(`/alerts-workspace/workflows/${workflow.id}`)}
  role="button"
  tabIndex={0}
  onKeyDown={(event) => {
  if (event.key === "Enter" || event.key === " ") {
  event.preventDefault();
- router.push(`/alerts/workflows/${workflow.id}`);
+ router.push(`/alerts-workspace/workflows/${workflow.id}`);
  }
  }}
  >
@@ -113,7 +113,7 @@ export function WorkflowList({
  disabled={isPending && pendingId === workflow.id}
  onClick={(event) => {
  event.stopPropagation();
- router.push(`/alerts/workflows/${workflow.id}`);
+ router.push(`/alerts-workspace/workflows/${workflow.id}`);
  }}
  size="sm"
  type="button"

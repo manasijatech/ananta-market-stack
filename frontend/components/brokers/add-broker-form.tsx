@@ -18,10 +18,14 @@ import type { BrokerCode, CreateBrokerAccountPayload, FieldErrors } from "@/serv
 
 type GrowwMode = "approval" | "totp" | "token";
 
-const fallbackBrokerRedirectUrl = "http://localhost:3000/brokers";
+const fallbackBrokerRedirectUrl = "http://localhost:3000/broker-connections";
+
+function brokerCredentialInputName(key: string): string {
+ return `market_stack_broker_credential_${key}`;
+}
 
 function stringField(formData: FormData, key: string): string {
- return String(formData.get(key) ?? "").trim();
+ return String(formData.get(brokerCredentialInputName(key)) ?? formData.get(key) ?? "").trim();
 }
 
 function nullableField(formData: FormData, key: string): string | null {
@@ -117,17 +121,24 @@ function Field({
  description?: string;
  type?: string;
 }) {
+ const inputName = brokerCredentialInputName(name);
+ const autocomplete = name.includes("totp") ? "one-time-code" : type === "password" ? "new-password" : "off";
+
  return (
  <div className="grid gap-2">
- <Label htmlFor={name}>
+ <Label htmlFor={inputName}>
  {label}
  {optional ? <span className="font-normal text-muted-foreground">(optional)</span> : null}
  </Label>
  <Input
+ autoComplete={autocomplete}
  aria-invalid={Boolean(error)}
+ data-1p-ignore="true"
+ data-form-type="other"
+ data-lpignore="true"
  defaultValue={defaultValue}
- id={name}
- name={name}
+ id={inputName}
+ name={inputName}
  required={!optional}
  type={type}
  />
@@ -171,7 +182,7 @@ function BrokerGuidePanel({ broker }: { broker: BrokerCode }) {
  </div>
  </div>
  <Button asChild size="sm" variant="outline">
- <Link href={`/brokers/docs/${broker}`} target="_blank" rel="noreferrer">
+ <Link href={`/docs/${broker}`} target="_blank" rel="noreferrer">
  Docs
  <BookOpen className="size-3.5" />
  </Link>
@@ -193,7 +204,7 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
  const selectedName = useMemo(() => brokerNames[broker], [broker]);
 
  useEffect(() => {
- setDefaultBrokerRedirectUrl(`${window.location.origin}/brokers`);
+ setDefaultBrokerRedirectUrl(`${window.location.origin}/broker-connections`);
  }, []);
 
  function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -206,7 +217,7 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
  startTransition(async () => {
  try {
  const created = await createBrokerAccount(payload);
- router.push(`/brokers/${created.id}`);
+ router.push(`/broker-connections/${created.id}`);
  } catch (error) {
  const parsed = parseActionError(error);
  setMessage(parsed.message);
@@ -252,7 +263,7 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
  </CardHeader>
 
  <CardContent>
- <form className="grid gap-4" onSubmit={onSubmit}>
+ <form autoComplete="off" className="grid gap-4" data-form-type="other" onSubmit={onSubmit}>
  <BrokerGuidePanel broker={broker} />
  <Field error={fieldErrors.label} label="Account label" name="label" />
 

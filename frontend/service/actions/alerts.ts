@@ -80,8 +80,8 @@ export async function instantiateAlertTemplate(payload: {
     method: "POST",
     body: JSON.stringify(payload)
   });
-  revalidatePath("/alerts");
-  revalidatePath("/alerts/workflows");
+  revalidatePath("/alerts-workspace");
+  revalidatePath("/alerts-workspace/workflows");
   return result;
 }
 
@@ -112,8 +112,8 @@ export async function createAlertWorkflow(payload: {
     method: "POST",
     body: JSON.stringify(payload)
   });
-  revalidatePath("/alerts");
-  revalidatePath("/alerts/workflows");
+  revalidatePath("/alerts-workspace");
+  revalidatePath("/alerts-workspace/workflows");
   return result;
 }
 
@@ -122,9 +122,9 @@ export async function updateAlertWorkflow(id: string, payload: JsonObject): Prom
     method: "PUT",
     body: JSON.stringify(payload)
   });
-  revalidatePath("/alerts");
-  revalidatePath("/alerts/workflows");
-  revalidatePath(`/alerts/workflows/${id}`);
+  revalidatePath("/alerts-workspace");
+  revalidatePath("/alerts-workspace/workflows");
+  revalidatePath(`/alerts-workspace/workflows/${id}`);
   return result;
 }
 
@@ -132,9 +132,9 @@ export async function setAlertWorkflowStatus(id: string, status: "active" | "ina
   const result = await request<AlertWorkflow>(`/alert-workflows/${id}/${status === "active" ? "enable" : "disable"}`, {
     method: "POST"
   });
-  revalidatePath("/alerts");
-  revalidatePath("/alerts/workflows");
-  revalidatePath(`/alerts/workflows/${id}`);
+  revalidatePath("/alerts-workspace");
+  revalidatePath("/alerts-workspace/workflows");
+  revalidatePath(`/alerts-workspace/workflows/${id}`);
   return result;
 }
 
@@ -142,14 +142,14 @@ export async function duplicateAlertWorkflow(id: string): Promise<AlertWorkflow>
   const result = await request<AlertWorkflow>(`/alert-workflows/${id}/duplicate`, {
     method: "POST"
   });
-  revalidatePath("/alerts/workflows");
+  revalidatePath("/alerts-workspace/workflows");
   return result;
 }
 
 export async function deleteAlertWorkflow(id: string): Promise<void> {
   await request<{ ok: boolean }>(`/alert-workflows/${id}`, { method: "DELETE" });
-  revalidatePath("/alerts");
-  revalidatePath("/alerts/workflows");
+  revalidatePath("/alerts-workspace");
+  revalidatePath("/alerts-workspace/workflows");
 }
 
 export async function testAlertWorkflow(id: string, tick: Record<string, unknown>): Promise<{ matched: boolean; reason: string }> {
@@ -208,9 +208,9 @@ export async function getWorkflowSampleAlerts(id: string): Promise<Record<string
 
 export async function deployAlertWorkflow(id: string): Promise<AlertWorkflow> {
   const result = await request<AlertWorkflow>(`/alert-workflows/${id}/deploy`, { method: "POST" });
-  revalidatePath("/alerts");
-  revalidatePath("/alerts/workflows");
-  revalidatePath(`/alerts/workflows/${id}`);
+  revalidatePath("/alerts-workspace");
+  revalidatePath("/alerts-workspace/workflows");
+  revalidatePath(`/alerts-workspace/workflows/${id}`);
   return result;
 }
 
@@ -284,8 +284,8 @@ export async function getLiveStreamsStatus(): Promise<LiveStreamsStatus> {
 
 export async function reconcileLiveSubscriptions(): Promise<AlertReconcileReport> {
   const result = await request<AlertReconcileReport>("/live-streams/subscriptions/reconcile", { method: "POST" });
-  revalidatePath("/alerts/subscriptions");
-  revalidatePath("/alerts/stream-manager");
+  revalidatePath("/alerts-workspace/subscriptions");
+  revalidatePath("/alerts-workspace/stream-manager");
   return result;
 }
 
@@ -321,8 +321,8 @@ export async function addLiveSubscription(payload: {
     method: "POST",
     body: JSON.stringify(payload)
   });
-  revalidatePath("/alerts/subscriptions");
-  revalidatePath("/alerts/stream-manager");
+  revalidatePath("/alerts-workspace/subscriptions");
+  revalidatePath("/alerts-workspace/stream-manager");
   return result;
 }
 
@@ -341,8 +341,8 @@ export async function addLiveSubscriptionsBulk(payload: {
     method: "POST",
     body: JSON.stringify(payload)
   });
-  revalidatePath("/alerts/subscriptions");
-  revalidatePath("/alerts/stream-manager");
+  revalidatePath("/alerts-workspace/subscriptions");
+  revalidatePath("/alerts-workspace/stream-manager");
   return result;
 }
 
@@ -351,21 +351,21 @@ export async function replaceLiveSubscriptions(payload: { subscriptions: Array<R
     method: "PUT",
     body: JSON.stringify(payload)
   });
-  revalidatePath("/alerts/subscriptions");
-  revalidatePath("/alerts/stream-manager");
+  revalidatePath("/alerts-workspace/subscriptions");
+  revalidatePath("/alerts-workspace/stream-manager");
   return result;
 }
 
 export async function deleteLiveSubscription(id: string): Promise<void> {
   await request<{ ok: boolean }>(`/live-streams/subscriptions/${id}`, { method: "DELETE" });
-  revalidatePath("/alerts/subscriptions");
-  revalidatePath("/alerts/stream-manager");
+  revalidatePath("/alerts-workspace/subscriptions");
+  revalidatePath("/alerts-workspace/stream-manager");
 }
 
 export async function deleteLiveSubscriptions(ids: string[]): Promise<{ deleted: number }> {
   const query = new URLSearchParams({ subscription_ids: ids.join(",") });
   const result = await request<{ deleted: number }>(`/live-streams/subscriptions?${query.toString()}`, { method: "DELETE" });
-  revalidatePath("/alerts/subscriptions");
-  revalidatePath("/alerts/stream-manager");
+  revalidatePath("/alerts-workspace/subscriptions");
+  revalidatePath("/alerts-workspace/stream-manager");
   return result;
 }

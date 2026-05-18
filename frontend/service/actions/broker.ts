@@ -236,10 +236,10 @@ export async function updateBrokerDataSearchConfig(preferredSearchAccountId: str
     method: "PUT",
     body: JSON.stringify({ preferred_search_account_id: preferredSearchAccountId })
   });
-  revalidatePath("/brokers");
+  revalidatePath("/broker-connections");
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 
@@ -259,7 +259,7 @@ export async function upsertAlphaApiCredential(payload: {
     })
   });
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/system-config");
+  revalidatePath("/system-config");
   revalidatePath("/market-intelligence");
   return result;
 }
@@ -269,7 +269,7 @@ export async function deleteAlphaApiCredential(): Promise<AlphaApiConfig> {
     method: "DELETE"
   });
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/system-config");
+  revalidatePath("/system-config");
   revalidatePath("/market-intelligence");
   return result;
 }
@@ -293,8 +293,8 @@ export async function updateAlphaWebSocketConfig(payload: {
       full_market: payload.full_market ?? false
     })
   });
-  revalidatePath("/alerts/subscriptions");
-  revalidatePath("/dashboard/system-config");
+  revalidatePath("/alerts-workspace/subscriptions");
+  revalidatePath("/system-config");
   revalidatePath("/market-intelligence");
   return result;
 }
@@ -303,8 +303,8 @@ export async function refreshAlphaWebSocketAccount(): Promise<AlphaWebSocketConf
   const result = await request<AlphaWebSocketConfig>("/system-config/alpha/websocket/refresh", {
     method: "POST"
   });
-  revalidatePath("/alerts/subscriptions");
-  revalidatePath("/dashboard/system-config");
+  revalidatePath("/alerts-workspace/subscriptions");
+  revalidatePath("/system-config");
   revalidatePath("/market-intelligence");
   return result;
 }
@@ -321,8 +321,8 @@ export async function upsertLlmProviderCredential(
     })
   });
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 
@@ -331,8 +331,8 @@ export async function deleteLlmProviderCredential(provider: LlmProvider): Promis
     method: "DELETE"
   });
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 
@@ -351,8 +351,8 @@ export async function addLlmProviderModel(payload: {
       is_enabled: payload.is_enabled ?? true
     })
   });
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 
@@ -360,8 +360,8 @@ export async function deleteLlmProviderModel(modelRowId: string): Promise<LlmPro
   const result = await request<LlmProviderConfig[]>(`/system-config/llm/models/${modelRowId}`, {
     method: "DELETE"
   });
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 
@@ -411,29 +411,29 @@ export async function createBrokerAccount(
     method: "POST",
     body: JSON.stringify(payload)
   });
-  revalidatePath("/brokers");
+  revalidatePath("/broker-connections");
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 
 export async function deleteBrokerAccount(id: string): Promise<void> {
   await request<null>(`/broker-accounts/${id}`, { method: "DELETE" });
-  revalidatePath("/brokers");
+  revalidatePath("/broker-connections");
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
 }
 
 export async function verifyBrokerAccount(id: string): Promise<VerifyResponse> {
   const result = await request<VerifyResponse>(`/broker-accounts/${id}/verify`, {
     method: "POST"
   });
-  revalidatePath(`/brokers/${id}`);
-  revalidatePath("/brokers");
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath(`/broker-connections/${id}`);
+  revalidatePath("/broker-connections");
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 
@@ -452,9 +452,9 @@ export async function createSession(
     method: "POST",
     body
   });
-  revalidatePath(`/brokers/${id}`);
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath(`/broker-connections/${id}`);
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 
@@ -477,9 +477,9 @@ export async function refreshSession(
     }));
   }
   const result = await request<SessionMutationResponse>(path, { method: "POST" });
-  revalidatePath(`/brokers/${id}`);
-  revalidatePath("/dashboard/system-config");
-  revalidatePath("/dashboard/broker-data");
+  revalidatePath(`/broker-connections/${id}`);
+  revalidatePath("/system-config");
+  revalidatePath("/system-config");
   return result;
 }
 

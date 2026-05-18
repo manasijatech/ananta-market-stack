@@ -416,7 +416,7 @@ Frontend environment:
 - Frontend FastAPI bridge: `frontend/lib/fastapi.ts`.
 - Frontend broker server actions: `frontend/service/actions/broker.ts`.
 - Frontend alert actions and types: `frontend/service/actions/alerts.ts` and `frontend/service/types/alerts.ts`.
-- Frontend broker pages: `frontend/app/brokers/`.
-- Frontend alerts workspace: `frontend/app/alerts/` and `frontend/app/alert-channels/`.
+- Frontend broker pages: `frontend/app/broker-connections/`.
+- Frontend alerts workspace: `frontend/app/alerts-workspace/` and `frontend/app/alert-channels/`.
 
 For deeper backend architecture and broker-extension guidance, see `backend/AGENTS.md`.

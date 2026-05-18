@@ -909,9 +909,9 @@ function refreshSelectedPreset() {
  >
  <span className="flex min-w-0 items-center gap-4">
  {metadata?.logo ? (
- <img alt="" className="size-10 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
+ <img alt="" className="size-10 shrink-0 object-contain" src={metadata.logo} />
  ) : (
- <span className="flex size-10 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ <span className="flex size-10 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
  {row.symbol.slice(0, 2)}
  </span>
  )}
@@ -962,9 +962,9 @@ function refreshSelectedPreset() {
  <div className="flex items-start justify-between gap-4 px-4 py-3" key={createInstrumentKey(row)}>
  <span className="flex min-w-0 items-center gap-3">
  {metadata?.logo ? (
- <img alt="" className="size-9 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
+ <img alt="" className="size-9 shrink-0 object-contain" src={metadata.logo} />
  ) : (
- <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ <span className="flex size-9 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
  {displayName.slice(0, 2)}
  </span>
  )}
@@ -979,7 +979,7 @@ function refreshSelectedPreset() {
  {parseSymbols(createSymbols).map((symbol) => (
  <div className="flex items-center justify-between gap-4 px-4 py-3" key={`csv:${symbol}`}>
  <span className="flex min-w-0 items-center gap-3">
- <span className="flex size-9 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ <span className="flex size-9 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
  {symbol.slice(0, 2)}
  </span>
  <span className="block truncate text-sm font-semibold text-foreground">{symbol}</span>
@@ -1260,9 +1260,9 @@ function refreshSelectedPreset() {
  >
  <span className="flex min-w-0 items-center gap-3">
  {metadata?.logo ? (
- <img alt="" className="size-8 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
+ <img alt="" className="size-8 shrink-0 object-contain" src={metadata.logo} />
  ) : (
- <span className="flex size-8 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ <span className="flex size-8 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
  {row.symbol.slice(0, 2)}
  </span>
  )}
@@ -1325,9 +1325,9 @@ function refreshSelectedPreset() {
  <TableCell className="py-3 pr-4">
  <div className="flex items-center gap-3">
  {metadata?.logo ? (
- <img alt="" className="size-8 shrink-0 rounded border border-border bg-background object-contain" src={metadata.logo} />
+ <img alt="" className="size-8 shrink-0 object-contain" src={metadata.logo} />
  ) : (
- <span className="flex size-8 shrink-0 items-center justify-center border border-border bg-background font-mono text-[10px] font-semibold text-muted-foreground">
+ <span className="flex size-8 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
  {item.symbol.slice(0, 2)}
  </span>
  )}

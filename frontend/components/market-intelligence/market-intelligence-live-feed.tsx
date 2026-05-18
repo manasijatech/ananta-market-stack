@@ -619,11 +619,11 @@ function SymbolLogo({ symbol, metadata, small = false }: { symbol: string; metad
  const sizeClassName = small ? "size-5 text-[9px]" : "size-8 text-[10px]";
 
  if (metadata?.logo) {
- return <img alt="" className={`${sizeClassName} shrink-0 bg-background object-contain`} src={metadata.logo} />;
+ return <img alt="" className={`${sizeClassName} shrink-0 object-contain`} src={metadata.logo} />;
  }
 
  return (
- <span className={`flex ${sizeClassName} shrink-0 items-center justify-center bg-muted font-mono font-semibold text-muted-foreground`}>
+ <span className={`flex ${sizeClassName} shrink-0 items-center justify-center font-mono font-semibold text-muted-foreground`}>
  {symbol.slice(0, 2)}
  </span>
  );
