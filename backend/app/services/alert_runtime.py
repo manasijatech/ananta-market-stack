@@ -813,6 +813,25 @@ def _workflow_symbol_filter(db, workflow, trigger) -> set[str] | None:
     return symbols
 
 
+def _deterministic_feed_trigger_result(
+    event: AlphaWebSocketEvent,
+    category_details: dict[str, Any],
+) -> dict[str, Any]:
+    matched_categories = category_details.get("matched_categories") or []
+    if matched_categories:
+        reason = f"Feed item matched category filter: {', '.join(str(item) for item in matched_categories)}"
+    else:
+        reason = f"Feed item matched configured {event.product} scope"
+    return {
+        "matches": True,
+        "status": "matched_without_llm",
+        "reason": reason,
+        "confidence": None,
+        "matched_terms": list(matched_categories),
+        "batch": {"alpha_event_id": event.id, "event_key": event.event_key, "llm_used": False},
+    }
+
+
 def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
     payload = json.loads(event.payload_json or "{}")
     event_symbols: set[str] = set()
@@ -832,8 +851,6 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
         trigger = workflow.workflow_dsl.feed_trigger
         if not trigger.enabled or event.product not in trigger.products:
             continue
-        if not trigger.condition_prompt.strip():
-            continue
         category_match, category_details = _event_matches_category_filter(event, trigger, payload)
         if not category_match:
             continue
@@ -844,6 +861,29 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             continue
         cooldown = workflow.workflow_dsl.cooldown_seconds
         if row.last_triggered_at and (_utc_now() - row.last_triggered_at).total_seconds() < cooldown:
+            continue
+        trigger_uses_llm = bool(trigger.condition_prompt.strip() or trigger.provider or trigger.model_id)
+        if not trigger_uses_llm:
+            tick = {
+                **payload,
+                "symbol": event.symbol or next(iter(event_symbols), ""),
+                "alpha_product": event.product,
+                "alpha_event_id": event.id,
+                "received_at": event.received_at.isoformat() if event.received_at else None,
+                "alpha_category_filter": category_details,
+            }
+            trigger_result = _deterministic_feed_trigger_result(event, category_details)
+            eligible.append(
+                {
+                    "row": row,
+                    "workflow": workflow,
+                    "category_details": category_details,
+                    "case": None,
+                    "trigger_result": trigger_result,
+                    "reason": str(trigger_result.get("reason") or "Feed item matched configured filters"),
+                    "tick": tick,
+                }
+            )
             continue
         case_index = len(cases)
         try:
@@ -888,6 +928,9 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
         row = item["row"]
         workflow = item["workflow"]
         category_details = item["category_details"]
+        if item.get("case") is None:
+            matched_items.append(item)
+            continue
         trigger_result = trigger_results.get(workflow.id) or {
             "matches": False,
             "status": "error",
