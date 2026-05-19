@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 COPY docker-entrypoint.sh /usr/local/bin/market-stack-backend-entrypoint
-RUN chmod +x /usr/local/bin/market-stack-backend-entrypoint \
+RUN sed -i 's/\r$//' /usr/local/bin/market-stack-backend-entrypoint \
+    && chmod +x /usr/local/bin/market-stack-backend-entrypoint \
     && rm -rf /app/data \
     && ln -s /data /app/data
 

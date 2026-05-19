@@ -100,6 +100,7 @@ Useful Docker commands:
 docker compose up -d --build
 docker compose logs -f backend
 docker compose logs -f frontend
+docker compose ps
 docker compose down
 ```
 
@@ -146,6 +147,153 @@ APP_PUBLIC_BASE_URL=https://your-backend-domain.example
 Most HTTP API calls are made by the Next.js server, so a private backend works for normal pages. The backend still needs a browser-reachable URL for the current websocket features: broker data websocket testing and market-intelligence live feed. If you do not use those features, you can keep backend access private behind your deployment. If you do use them, expose the backend through a reverse proxy/subdomain and point `MARKET_STACK_PUBLIC_API_BASE_URL` at that public backend URL.
 
 If you use an external Redis, set `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, and `REDIS_PASSWORD`, and remove or ignore the bundled Redis service as part of your deployment-specific Compose override.
+
+## Docker Startup Sequence
+
+When you run:
+
+```bash
+docker compose up --build
+```
+
+Compose performs this sequence:
+
+1. Reads `docker-compose.yml` and optional root `.env` overrides.
+2. Builds the backend image from `backend/Dockerfile`.
+   - Installs Python dependencies from `backend/requirements.txt`.
+   - Copies backend source into `/app`.
+   - Normalizes the backend entrypoint to Linux line endings.
+   - Starts FastAPI with `uvicorn` on container port `8000`.
+3. Builds the frontend image from `frontend/Dockerfile`.
+   - Installs Node dependencies with `npm ci`.
+   - Copies frontend source into `/app`.
+   - Normalizes the frontend entrypoint to Linux line endings.
+   - Builds Next.js with a build-time placeholder auth secret.
+   - Starts Next.js on container port `3000`.
+4. Creates the Docker network and named volumes.
+5. Runs the one-shot `bootstrap` service.
+   - Creates `/config/market-stack.env` in the `market-stack_market_stack_config` volume.
+   - Generates `CREDENTIAL_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, and `REDIS_PASSWORD` only if they do not already exist.
+6. Starts Redis.
+   - Reads only `REDIS_PASSWORD` from `/config/market-stack.env`.
+   - Stores Redis append-only data in `market-stack_redis_data`.
+7. Starts the backend after Redis is healthy.
+   - Loads generated secrets from `/config/market-stack.env`.
+   - Uses SQLite at `/data/app.db` in the `market-stack_backend_data` volume.
+   - Runs database initialization/migrations during FastAPI startup.
+8. Starts the frontend after backend is healthy.
+   - Loads `BETTER_AUTH_SECRET` from `/config/market-stack.env`.
+   - Uses `/data/app.db` for Better Auth so frontend auth users and backend users share the same SQLite database.
+
+Image rebuilds do not rotate secrets because the secrets live in the named config volume, not inside the image.
+
+## Inspecting Docker State
+
+Show service status:
+
+```bash
+docker compose ps
+```
+
+Show logs:
+
+```bash
+docker compose logs -f bootstrap
+docker compose logs -f redis
+docker compose logs -f backend
+docker compose logs -f frontend
+```
+
+Inspect generated secret names without printing secret values:
+
+```bash
+docker compose exec backend sh -c "cut -d= -f1 /config/market-stack.env"
+```
+
+Inspect generated secrets directly on your own machine:
+
+```bash
+docker compose exec backend sh -c "cat /config/market-stack.env"
+```
+
+Treat that output like production credentials. Anyone with `CREDENTIAL_ENCRYPTION_KEY` and the SQLite database can decrypt stored broker secrets.
+
+Check the SQLite database file exists:
+
+```bash
+docker compose exec backend sh -c "ls -lh /data/app.db"
+```
+
+Check Redis auth:
+
+```bash
+docker compose exec redis sh -c "REDIS_PASSWORD=\"$(awk -F= '$1 == \"REDIS_PASSWORD\" {sub(/^[^=]*=/, \"\"); print; exit}' /config/market-stack.env)\"; redis-cli -a \"$REDIS_PASSWORD\" ping"
+```
+
+List named volumes:
+
+```bash
+docker volume ls | grep market-stack
+```
+
+On PowerShell, use:
+
+```powershell
+docker volume ls | Select-String market-stack
+```
+
+## Docker Troubleshooting
+
+If a container keeps restarting, start with:
+
+```bash
+docker compose ps
+docker compose logs -f backend
+docker compose logs -f frontend
+```
+
+On Windows, this error means a shell entrypoint was checked out with Windows CRLF line endings:
+
+```text
+exec /usr/local/bin/market-stack-backend-entrypoint: no such file or directory
+```
+
+The Dockerfiles normalize entrypoint line endings during build. If you still see the error after updating the repo, force a clean rebuild:
+
+```powershell
+docker compose down
+docker compose build --no-cache backend frontend
+docker compose up
+```
+
+If port `8000` is already used locally, set these in root `.env`:
+
+```env
+BACKEND_PORT=8004
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
+MARKET_STACK_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
+APP_PUBLIC_BASE_URL=http://localhost:8004
+```
+
+Then rebuild and start:
+
+```powershell
+docker compose up --build
+```
+
+If you want to preserve data and secrets, use:
+
+```bash
+docker compose down
+```
+
+If you want a complete reset, including SQLite, Redis data, and generated secrets:
+
+```bash
+docker compose down -v
+```
+
+Do not run `docker compose down -v` on a real self-hosted instance unless you have backed up the data and config volumes.
 
 ## Manual Backend Setup
 

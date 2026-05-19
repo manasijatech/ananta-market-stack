@@ -14,7 +14,8 @@ RUN npm ci
 
 COPY . .
 COPY docker-entrypoint.sh /usr/local/bin/market-stack-frontend-entrypoint
-RUN chmod +x /usr/local/bin/market-stack-frontend-entrypoint \
+RUN sed -i 's/\r$//' /usr/local/bin/market-stack-frontend-entrypoint \
+    && chmod +x /usr/local/bin/market-stack-frontend-entrypoint \
     && BETTER_AUTH_SECRET=market-stack-build-time-placeholder AUTH_DATABASE_PATH=/tmp/market-stack-build-auth.db npm run build
 
 ENV NODE_ENV=production
