@@ -66,6 +66,26 @@ from db.models import (
     UserAlertNotification,
 )
 ALERT_NOTIFICATION_STREAM_MAXLEN = 2000
+_LEGACY_MARKET_ACTIVE_PERIOD = {
+    "enabled": True,
+    "timezone": "Asia/Kolkata",
+    "days": ["mon", "tue", "wed", "thu", "fri"],
+    "sessions": [{"label": "Regular market", "start": "09:15", "end": "15:30"}],
+    "exchanges": [],
+    "exchange_types": [],
+    "segments": [],
+    "instrument_types": [],
+}
+_DEFAULT_ALPHA_FEED_ACTIVE_PERIOD = {
+    "enabled": True,
+    "timezone": "Asia/Kolkata",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "sessions": [{"label": "Always active", "start": "00:00", "end": "23:59"}],
+    "exchanges": [],
+    "exchange_types": [],
+    "segments": [],
+    "instrument_types": [],
+}
 
 
 def _json_dumps(value: Any) -> str:
@@ -110,8 +130,19 @@ def _instrument_ref(ref: dict[str, Any] | None) -> InstrumentRef:
     return InstrumentRef(**(ref or {}))
 
 
+def _normalize_active_period_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    raw = dict(payload or {})
+    if str(raw.get("workflow_type") or "market_data") != "alpha_feed":
+        return raw
+    current_active_period = raw.get("active_period")
+    if current_active_period is None or current_active_period == _LEGACY_MARKET_ACTIVE_PERIOD:
+        raw["active_period"] = dict(_DEFAULT_ALPHA_FEED_ACTIVE_PERIOD)
+    return raw
+
+
 def _workflow_dsl(payload: dict[str, Any] | None) -> AlertWorkflowDsl:
-    dsl = AlertWorkflowDsl(**(payload or {}))
+    normalized_payload = _normalize_active_period_payload(payload)
+    dsl = AlertWorkflowDsl(**normalized_payload)
     if dsl.workflow_ast is None:
         dsl.workflow_ast = ast_to_dict(ensure_workflow_ast(dsl))
     if not dsl.compiled_summary:
@@ -739,7 +770,7 @@ def ensure_system_templates(db: Session) -> None:
     changed = False
     for payload in SYSTEM_TEMPLATES:
         row = existing.get(payload["slug"])
-        workflow_dsl = AlertWorkflowDsl(**payload["workflow_dsl"])
+        workflow_dsl = _workflow_dsl(payload["workflow_dsl"])
         compiled = compile_workflow_dsl(workflow_dsl)
         _apply_compiled_ast_to_legacy_dsl(workflow_dsl, compiled.get("workflow_ast"))
         workflow_dsl.workflow_ast = compiled.get("workflow_ast")
