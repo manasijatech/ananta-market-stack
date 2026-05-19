@@ -40,7 +40,12 @@ from app.schemas.alert import (
 )
 from app.services.alerts_engine.ast import AlertUniverseNode, ast_to_dict, ensure_workflow_ast
 from app.services.alerts_engine.compiler import compile_workflow_dsl
-from app.services.alerts_engine.conditions import ConditionEvaluation, condition_registry_payload, evaluate_logic
+from app.services.alerts_engine.conditions import (
+    ConditionEvaluation,
+    ConditionRuntimeContext,
+    condition_registry_payload,
+    evaluate_logic,
+)
 from app.services.alerts_engine.explain import explain_ast
 from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
 from app.services.alerts_engine.samples import sample_alerts_for_ast
@@ -1242,9 +1247,10 @@ def evaluate_workflow_payload_detail(
     workflow: AlertWorkflowOut,
     tick: dict[str, Any],
     previous_tick: dict[str, Any] | None = None,
+    runtime_context: ConditionRuntimeContext | None = None,
 ) -> ConditionEvaluation:
     workflow_ast = ensure_workflow_ast(workflow.workflow_dsl)
-    return evaluate_logic(workflow_ast.logic, tick, previous_tick or {})
+    return evaluate_logic(workflow_ast.logic, tick, previous_tick or {}, runtime_context)
 
 
 def list_workflow_runs(

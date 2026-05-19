@@ -5,7 +5,7 @@ from app.services import alerts as alert_svc
 from app.schemas.alert import AlertWorkflowActivePeriod
 from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services.alerts_engine.ast import ensure_workflow_ast
-from app.services.alerts_engine.conditions import evaluate_logic
+from app.services.alerts_engine.conditions import ConditionRuntimeContext, evaluate_logic, rolling_reference_key
 from app.services.alerts_engine.dsl import validate_dsl_text
 from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
 from db.models import BrokerAccount, LiveSymbolSubscription, User, UserWatchlist, UserWatchlistSymbol
@@ -92,6 +92,107 @@ def test_condition_registry_evaluates_practical_operator_families():
 
     assert result.matched is True
     assert "breaks_day_high" in result.reason
+
+
+def test_cross_requires_prior_tick_to_avoid_startup_false_positive():
+    ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {"kind": "condition", "field": "ltp", "operator": "crosses_above", "value": 100},
+            }
+        }
+    )
+
+    assert evaluate_logic(ast.logic, {"ltp": 101}, {}).matched is False
+    assert evaluate_logic(ast.logic, {"ltp": 101}, {"ltp": 99}).matched is True
+
+
+def test_downside_change_operators_treat_positive_threshold_as_decrease():
+    ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "all",
+                    "children": [
+                        {"kind": "condition", "field": "ltp", "operator": "abs_change_lte", "value": 5},
+                        {"kind": "condition", "field": "open_interest", "operator": "oi_change_lte", "value": 1000},
+                    ],
+                },
+            }
+        }
+    )
+
+    result = evaluate_logic(ast.logic, {"ltp": 94, "open_interest": 19000}, {"ltp": 100, "open_interest": 20500})
+
+    assert result.matched is True
+
+
+def test_rolling_operator_uses_runtime_reference_window():
+    ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "condition",
+                    "field": "ltp",
+                    "operator": "rolling_pct_change_gte",
+                    "value": 3,
+                    "window_seconds": 300,
+                },
+            }
+        }
+    )
+    context = ConditionRuntimeContext(
+        rolling_references={
+            rolling_reference_key(ast.logic): {
+                "reference": 100,
+                "window_seconds": 300,
+                "age_seconds": 301,
+                "status": "ready",
+            }
+        }
+    )
+
+    result = evaluate_logic(ast.logic, {"ltp": 104}, {"ltp": 103}, context)
+
+    assert result.matched is True
+    assert result.details["reference"] == 100
+    assert result.details["rolling"]["status"] == "ready"
+
+
+def test_rolling_operator_does_not_fallback_to_last_tick_while_window_warms():
+    ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "condition",
+                    "field": "ltp",
+                    "operator": "rolling_pct_change_gte",
+                    "value": 1,
+                    "window_seconds": 300,
+                },
+            }
+        }
+    )
+    context = ConditionRuntimeContext(
+        rolling_references={
+            rolling_reference_key(ast.logic): {
+                "reference": None,
+                "window_seconds": 300,
+                "age_seconds": 20,
+                "status": "warming_up",
+            }
+        }
+    )
+
+    result = evaluate_logic(ast.logic, {"ltp": 104}, {"ltp": 100}, context)
+
+    assert result.matched is False
+    assert result.details["reference"] is None
+    assert result.details["rolling"]["status"] == "warming_up"
 
 
 def test_dsl_validation_rejects_unknown_field():
