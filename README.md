@@ -119,6 +119,39 @@ docker compose down -v
 
 Do not use `down -v` on a real self-hosted instance unless you have backups.
 
+## Safe Updates
+
+Normal updates do not delete application data or rotate secrets.
+
+Use this flow for regular self-hosted users:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+This rebuilds images and recreates containers if needed. It does not delete Docker named volumes, so these survive:
+
+- SQLite app database and backend data in `market-stack_backend_data`
+- generated secrets in `market-stack_market_stack_config`
+- Redis append-only data in `market-stack_redis_data`
+
+Use this flow for developers who want the latest code but want to keep local data:
+
+```bash
+git pull
+docker compose up --build
+```
+
+Use this only when you explicitly want a clean local development reset:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+`docker compose build`, `docker compose up --build`, and `docker compose down` are data-preserving. `docker compose down -v` is the destructive command because it removes the volumes that hold SQLite, Redis data, and generated secrets.
+
 ## Docker Data And Secrets
 
 Docker Compose creates these named volumes:
@@ -128,6 +161,29 @@ Docker Compose creates these named volumes:
 - `market-stack_redis_data` - Redis append-only data.
 
 The `bootstrap` service generates missing secrets once and keeps them stable across restarts and image rebuilds. Back up `market-stack_backend_data` and `market-stack_market_stack_config` together. If `CREDENTIAL_ENCRYPTION_KEY` is lost, existing encrypted broker credentials in SQLite cannot be decrypted.
+
+Secret behavior:
+
+- If `market-stack_market_stack_config` does not exist, `bootstrap` creates `/config/market-stack.env`.
+- If root `.env` provides `CREDENTIAL_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, or `REDIS_PASSWORD` on first run, those values seed `/config/market-stack.env`.
+- If root `.env` leaves them empty on first run, `bootstrap` generates secure random values.
+- If `/config/market-stack.env` already exists, its existing values are preserved and are not replaced by a later rebuild.
+- Changing root `.env` after first run does not rotate these secrets. Rotate secrets only with a deliberate migration plan and backups.
+
+Impact of each secret:
+
+- `CREDENTIAL_ENCRYPTION_KEY` decrypts broker credentials stored in SQLite. Losing or changing it makes existing encrypted broker secrets unreadable.
+- `BETTER_AUTH_SECRET` signs Better Auth state. Changing it can invalidate existing auth sessions.
+- `REDIS_PASSWORD` protects the bundled Redis instance. Changing it requires Redis and app services to agree on the same value.
+
+Back up the two critical volumes together:
+
+```bash
+docker run --rm -v market-stack_backend_data:/data -v "%cd%":/backup alpine tar czf /backup/market-stack-backend-data.tgz -C /data .
+docker run --rm -v market-stack_market_stack_config:/config -v "%cd%":/backup alpine tar czf /backup/market-stack-config.tgz -C /config .
+```
+
+On Linux/macOS, replace `"%cd%"` with `"$(pwd)"`.
 
 For production domains, override these values before starting Compose:
 
