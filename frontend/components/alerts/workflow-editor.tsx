@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type KeyboardEvent, type RefObject } from "react";
 import {
  getDataOhlc,
  getDataQuotes,
@@ -49,6 +49,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 function buildGraph(dsl: AlertWorkflowDsl): AlertGraphDsl {
  const nodes: AlertGraphDsl["nodes"] = [
@@ -257,6 +258,8 @@ type PreviewState = {
  error: string;
 };
 
+type PreviewSnapshot = Pick<PreviewState, "quote" | "ohlc">;
+
 type UniverseSymbolPreview = {
  symbol: string;
  exchange?: string | null;
@@ -300,6 +303,53 @@ function serializeInstrumentRef(value: InstrumentRef): Record<string, unknown> {
  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null && item !== undefined));
 }
 
+function stringValue(value: unknown): string | null {
+ return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberValue(value: unknown): number | null {
+ return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatMarketCap(value?: number | null): string {
+ if (typeof value !== "number" || Number.isNaN(value)) return "-";
+ return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
+}
+
+function displayValue(value: unknown, fallback = "-"): string {
+ if (value === null || value === undefined || value === "") return fallback;
+ return String(value);
+}
+
+function formatSignedNumber(value: unknown, maximumFractionDigits = 2): string | null {
+ const next = numeric(value);
+ if (next === null) return null;
+ const formatted = new Intl.NumberFormat("en-IN", {
+ maximumFractionDigits,
+ minimumFractionDigits: next % 1 === 0 ? 0 : Math.min(2, maximumFractionDigits)
+ }).format(Math.abs(next));
+ return `${next >= 0 ? "+" : "-"}${formatted}`;
+}
+
+function formatDailyMove(change: unknown, changePct: unknown): string {
+ const amount = formatSignedNumber(change);
+ const percent = formatSignedNumber(changePct);
+ if (!amount && !percent) return "-";
+ const direction = (numeric(changePct) ?? numeric(change) ?? 0) >= 0 ? "↑" : "↓";
+ if (amount && percent) return `${amount} (${percent.replace(/^[+]/, "")}%) ${direction} today`;
+ if (amount) return `${amount} ${direction} today`;
+ return `${percent}% ${direction} today`;
+}
+
+function isPositiveMove(change: unknown, changePct: unknown): boolean | null {
+ const next = numeric(changePct) ?? numeric(change);
+ return next === null ? null : next >= 0;
+}
+
+function previewKey(symbol?: string | null, exchange?: string | null): string {
+ return `${(symbol ?? "").trim().toUpperCase()}:${(exchange ?? "").trim().toUpperCase()}`;
+}
+
 function buildTargetEntry(symbol: string, exchange: string, instrumentRef: InstrumentRef): AlertTargetEntry | null {
  const normalizedSymbol = symbol.trim().toUpperCase();
  if (!normalizedSymbol) return null;
@@ -318,6 +368,33 @@ function buildTargetEntry(symbol: string, exchange: string, instrumentRef: Instr
  };
 }
 
+function metadataFromSearch(row: InstrumentSearchRow, metadata?: AlphaSymbolMetadata): Record<string, unknown> {
+ return {
+ company_name: metadata?.company_name ?? row.name ?? null,
+ logo: metadata?.logo ?? null,
+ sector: metadata?.sector ?? null,
+ basic_industry: metadata?.basic_industry ?? null,
+ industry: metadata?.industry ?? null,
+ theme: metadata?.theme ?? null,
+ market_cap: metadata?.market_cap ?? null,
+ scrip_code: metadata?.scrip_code ?? null,
+ trading_symbol: row.trading_symbol ?? null,
+ instrument_type: row.instrument_type ?? null,
+ segment: row.segment ?? null,
+ account_label: row.account_label ?? null
+ };
+}
+
+function targetEntryFromSearch(row: InstrumentSearchRow, exchange: string, metadata?: AlphaSymbolMetadata): AlertTargetEntry | null {
+ const entry = buildTargetEntry(row.symbol, exchange, instrumentFromSearch(row));
+ if (!entry) return null;
+ return {
+ ...entry,
+ label: metadata?.company_name ?? row.name ?? null,
+ metadata: metadataFromSearch(row, metadata)
+ };
+}
+
 function normalizeTargets(entries: AlertTargetEntry[]): AlertTargetEntry[] {
  const seen = new Set<string>();
  const next: AlertTargetEntry[] = [];
@@ -327,7 +404,12 @@ function normalizeTargets(entries: AlertTargetEntry[]): AlertTargetEntry[] {
  const key = `${normalized.symbol}:${normalized.exchange ?? ""}`;
  if (seen.has(key)) continue;
  seen.add(key);
- next.push(normalized);
+ next.push({
+ ...normalized,
+ label: entry.label ?? normalized.label,
+ tags: entry.tags ?? normalized.tags,
+ metadata: entry.metadata ?? normalized.metadata
+ });
  }
  return next;
 }
@@ -629,6 +711,58 @@ function numeric(value: unknown): number | null {
  return Number.isFinite(next) ? next : null;
 }
 
+function hasPositiveNumber(...values: unknown[]): boolean {
+ return values.some((value) => {
+ const next = numeric(value);
+ return next !== null && next > 0;
+ });
+}
+
+function isUsableQuote(quote: QuoteResponse | null): quote is QuoteResponse {
+ if (!quote) return false;
+ const detail = (quote.detail as JsonObject | undefined) ?? {};
+ const raw = (detail.raw as JsonObject | undefined) ?? {};
+ const rawOhlc = (raw.ohlc as JsonObject | undefined) ?? {};
+ const depth = (raw.depth as JsonObject | undefined) ?? {};
+ const hasDepth = (Array.isArray(depth.buy) && depth.buy.length > 0) || (Array.isArray(depth.sell) && depth.sell.length > 0);
+ return hasDepth || hasPositiveNumber(
+ quote.ltp,
+ raw.last_price,
+ raw.volume,
+ raw.total_buy_quantity,
+ raw.total_sell_quantity,
+ raw.open,
+ raw.high,
+ raw.low,
+ raw.close,
+ rawOhlc.open,
+ rawOhlc.high,
+ rawOhlc.low,
+ rawOhlc.close
+ );
+}
+
+function isUsableOhlc(row: JsonObject | null): row is JsonObject {
+ if (!row) return false;
+ const raw = (row.raw as JsonObject | undefined) ?? {};
+ const rawOhlc = (raw.ohlc as JsonObject | undefined) ?? {};
+ return hasPositiveNumber(
+ row.open,
+ row.high,
+ row.low,
+ row.close,
+ raw.open,
+ raw.high,
+ raw.low,
+ raw.close,
+ rawOhlc.open,
+ rawOhlc.high,
+ rawOhlc.low,
+ rawOhlc.close,
+ raw.volume
+ );
+}
+
 function csvList(value: string): string[] {
  return value
  .split(",")
@@ -755,6 +889,8 @@ initialWorkflow,
  const [accountId, setAccountId] = useState(initialWorkflow?.account_id ?? accounts[0]?.id ?? "");
  const [brokerCode, setBrokerCode] = useState(initialWorkflow?.broker_code ?? "");
  const [symbol, setSymbol] = useState(initialWorkflow?.symbol ?? "");
+ const [symbolSearch, setSymbolSearch] = useState(initialWorkflow?.symbol ?? "");
+ const [committedSymbolSearch, setCommittedSymbolSearch] = useState(initialWorkflow?.symbol ?? "");
  const [exchange, setExchange] = useState(initialWorkflow?.exchange ?? "NSE");
  const [instrumentRef, setInstrumentRef] = useState<InstrumentRef>(initialWorkflow?.instrument_ref ?? {});
  const initialTargeting = initialWorkflow?.workflow_dsl.targeting ?? {
@@ -879,9 +1015,14 @@ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(nul
  const [channelTelegram, setChannelTelegram] = useState(initialWorkflow?.workflow_dsl.channels.enabled.includes("telegram") ?? false);
  const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
  const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
+ const [selectedSymbolMetadata, setSelectedSymbolMetadata] = useState<AlphaSymbolMetadata | null>(null);
+ const [targetMetadata, setTargetMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
+ const [universeMetadata, setUniverseMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
+ const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
  const [searchLoading, setSearchLoading] = useState(false);
  const [selectedSearchLabel, setSelectedSearchLabel] = useState("");
  const [preview, setPreview] = useState<PreviewState>({ quote: null, ohlc: null, loading: false, error: "" });
+ const [previewDataKey, setPreviewDataKey] = useState("");
  const [previewMode, setPreviewMode] = useState<"summary" | "raw">("summary");
  const [showSuggestions, setShowSuggestions] = useState(false);
  const [messageFieldQuery, setMessageFieldQuery] = useState("");
@@ -889,6 +1030,7 @@ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(nul
  const [messageFieldIndex, setMessageFieldIndex] = useState(0);
  const [showMessageFieldSuggestions, setShowMessageFieldSuggestions] = useState(false);
  const symbolWrapRef = useRef<HTMLDivElement | null>(null);
+ const previewCacheRef = useRef<Record<string, PreviewSnapshot>>({});
  const messageTemplateWrapRef = useRef<HTMLDivElement | null>(null);
  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
  const messageFieldListRef = useRef<HTMLDivElement | null>(null);
@@ -1034,6 +1176,12 @@ const activeInstrument = useMemo<InstrumentRef>(
  source_type: typeof item.source_type === "string" ? item.source_type : dynamicUniverseKind
  })).filter((item) => item.symbol);
  }, [activeInstrument, dynamicUniverseKind, exchange, selectedWatchlist, symbol, targetEntries, targetMode, universePreview?.sample]);
+ const universeSymbolKey = useMemo(
+ () => universeSymbols.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean).sort().join("|"),
+ [universeSymbols]
+ );
+ const previewTargetKey = previewKey(symbol, exchange);
+ const hasCurrentPreview = Boolean(activeInstrument.symbol && previewDataKey === previewTargetKey && (preview.quote || preview.ohlc));
 
  useEffect(() => {
  if (selectedAccount?.broker_code) {
@@ -1126,9 +1274,10 @@ const activeInstrument = useMemo<InstrumentRef>(
  }, []);
 
  useEffect(() => {
- if (symbol.trim().length < 1) {
+ if (symbolSearch.trim().length < 1 || symbolSearch.trim().toUpperCase() === committedSymbolSearch.trim().toUpperCase()) {
  setSuggestions([]);
  setSuggestionMetadata({});
+ setActiveSuggestionIndex(-1);
  return;
  }
  let cancelled = false;
@@ -1137,12 +1286,13 @@ const activeInstrument = useMemo<InstrumentRef>(
  startTransition(async () => {
  try {
  const result = await searchDefaultBrokerInstruments({
- q: symbol.trim(),
+ q: symbolSearch.trim(),
  exchange: exchange.trim() || undefined,
  limit: 20
  });
  if (cancelled) return;
  setSuggestions(result);
+ setActiveSuggestionIndex(result.length ? 0 : -1);
  setShowSuggestions(true);
  const symbols = Array.from(new Set(result.map((row) => row.symbol.trim().toUpperCase()).filter(Boolean))).slice(0, 20);
  if (!symbols.length) {
@@ -1165,6 +1315,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  if (cancelled) return;
  setSuggestions([]);
  setSuggestionMetadata({});
+ setActiveSuggestionIndex(-1);
  } finally {
  if (!cancelled) setSearchLoading(false);
  }
@@ -1174,12 +1325,90 @@ const activeInstrument = useMemo<InstrumentRef>(
  cancelled = true;
  window.clearTimeout(handle);
  };
- }, [exchange, startTransition, symbol]);
+ }, [committedSymbolSearch, exchange, startTransition, symbolSearch]);
+
+ useEffect(() => {
+ const symbols = Array.from(new Set(targetEntries.map((entry) => entry.symbol.trim().toUpperCase()).filter(Boolean)));
+ if (!symbols.length) {
+ setTargetMetadata({});
+ return;
+ }
+ let cancelled = false;
+ startTransition(async () => {
+ try {
+ const metadata = await getAlphaSymbolMetadata(symbols);
+ if (cancelled) return;
+ setTargetMetadata(
+ metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
+ acc[item.symbol.trim().toUpperCase()] = item;
+ return acc;
+ }, {})
+ );
+ } catch {
+ if (!cancelled) setTargetMetadata({});
+ }
+ });
+ return () => {
+ cancelled = true;
+ };
+ }, [startTransition, targetEntries]);
+
+ useEffect(() => {
+ const symbols = universeSymbolKey ? universeSymbolKey.split("|") : [];
+ if (!symbols.length) {
+ setUniverseMetadata({});
+ return;
+ }
+ let cancelled = false;
+ startTransition(async () => {
+ try {
+ const metadata = await getAlphaSymbolMetadata(symbols.slice(0, 80));
+ if (cancelled) return;
+ setUniverseMetadata(
+ metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
+ acc[item.symbol.trim().toUpperCase()] = item;
+ return acc;
+ }, {})
+ );
+ } catch {
+ if (!cancelled) setUniverseMetadata({});
+ }
+ });
+ return () => {
+ cancelled = true;
+ };
+ }, [startTransition, universeSymbolKey]);
+
+ useEffect(() => {
+ const selectedSymbol = symbol.trim().toUpperCase();
+ if (!selectedSymbol) {
+ setSelectedSymbolMetadata(null);
+ return;
+ }
+ const suggestedMetadata = suggestionMetadata[selectedSymbol];
+ if (suggestedMetadata) {
+ setSelectedSymbolMetadata(suggestedMetadata);
+ return;
+ }
+ let cancelled = false;
+ startTransition(async () => {
+ try {
+ const [metadata] = await getAlphaSymbolMetadata([selectedSymbol]);
+ if (!cancelled) setSelectedSymbolMetadata(metadata ?? null);
+ } catch {
+ if (!cancelled) setSelectedSymbolMetadata(null);
+ }
+ });
+ return () => {
+ cancelled = true;
+ };
+ }, [startTransition, suggestionMetadata, symbol]);
 
  useEffect(() => {
  const account = selectedAccount;
  if (!account || !activeInstrument.symbol) {
  setPreview({ quote: null, ohlc: null, loading: false, error: "" });
+ setPreviewDataKey("");
  return;
  }
  if (!livePreviewAllowed) {
@@ -1189,49 +1418,229 @@ const activeInstrument = useMemo<InstrumentRef>(
  loading: false,
  error: "Live broker preview is paused outside this workflow's active market period."
  });
+ setPreviewDataKey("");
  return;
  }
  const accountIdForFetch = account.id;
+ const requestedKey = previewKey(activeInstrument.symbol, activeInstrument.exchange ?? exchange);
  let cancelled = false;
- async function load() {
- setPreview((current) => ({ ...current, loading: true, error: "" }));
+ async function load(replace = false) {
+ const cached = previewCacheRef.current[requestedKey];
+ if (replace && cached) {
+ setPreview({ ...cached, loading: true, error: "" });
+ setPreviewDataKey(requestedKey);
+ } else if (replace && !cached) {
+ setPreview({ quote: null, ohlc: null, loading: true, error: "" });
+ } else {
+ setPreview((current) => ({ ...current, loading: false, error: "" }));
+ }
  try {
  const [quotes, ohlcRows] = await Promise.all([
  getDataQuotes(accountIdForFetch, { instruments: [activeInstrument] }),
  getDataOhlc(accountIdForFetch, { instruments: [activeInstrument] })
  ]);
  if (cancelled) return;
+ const nextQuote = quotes[0] ?? null;
+ const nextOhlc = (ohlcRows[0] as JsonObject | undefined) ?? null;
+ const usableQuote = isUsableQuote(nextQuote);
+ const usableOhlc = isUsableOhlc(nextOhlc);
+ const nextSnapshot = {
+ quote: usableQuote ? nextQuote : null,
+ ohlc: usableOhlc ? nextOhlc : null
+ };
+ if (nextSnapshot.quote || nextSnapshot.ohlc) {
+ previewCacheRef.current = { ...previewCacheRef.current, [requestedKey]: nextSnapshot };
+ setPreviewDataKey(requestedKey);
  setPreview({
- quote: quotes[0] ?? null,
- ohlc: (ohlcRows[0] as JsonObject | undefined) ?? null,
+ ...nextSnapshot,
  loading: false,
  error: ""
  });
+ } else {
+ setPreview((current) => ({
+ ...current,
+ loading: false,
+ error: ""
+ }));
+ }
  } catch (caught) {
  if (cancelled) return;
- setPreview({
- quote: null,
- ohlc: null,
+ setPreview((current) => ({
+ ...current,
  loading: false,
  error: caught instanceof Error ? caught.message : "Could not fetch live preview."
- });
+ }));
  }
  }
- void load();
- const timer = window.setInterval(() => void load(), 4000);
+ void load(true);
+ const timer = window.setInterval(() => void load(false), 2000);
  return () => {
  cancelled = true;
  window.clearInterval(timer);
  };
- }, [activeInstrument, livePreviewAllowed, selectedAccount]);
+ }, [activeInstrument, exchange, livePreviewAllowed, selectedAccount]);
+
+ function loadPreviewNow(instrument: InstrumentRef) {
+ const account = selectedAccount;
+ if (!account || !instrument.symbol || !livePreviewAllowed) {
+ setPreview({ quote: null, ohlc: null, loading: false, error: "" });
+ setPreviewDataKey("");
+ return;
+ }
+ const requestedInstrument = {
+ ...instrument,
+ symbol: instrument.symbol,
+ exchange: instrument.exchange ?? exchange
+ };
+ const requestedKey = previewKey(requestedInstrument.symbol, requestedInstrument.exchange);
+ const cached = previewCacheRef.current[requestedKey];
+ if (cached) {
+ setPreview({ ...cached, loading: true, error: "" });
+ setPreviewDataKey(requestedKey);
+ } else {
+ setPreview({ quote: null, ohlc: null, loading: true, error: "" });
+ }
+ startTransition(async () => {
+ try {
+ const [quotes, ohlcRows] = await Promise.all([
+ getDataQuotes(account.id, { instruments: [requestedInstrument] }),
+ getDataOhlc(account.id, { instruments: [requestedInstrument] })
+ ]);
+ const nextQuote = quotes[0] ?? null;
+ const nextOhlc = (ohlcRows[0] as JsonObject | undefined) ?? null;
+ const nextSnapshot = {
+ quote: isUsableQuote(nextQuote) ? nextQuote : null,
+ ohlc: isUsableOhlc(nextOhlc) ? nextOhlc : null
+ };
+ if (nextSnapshot.quote || nextSnapshot.ohlc) {
+ previewCacheRef.current = { ...previewCacheRef.current, [requestedKey]: nextSnapshot };
+ setPreviewDataKey(requestedKey);
+ setPreview({
+ ...nextSnapshot,
+ loading: false,
+ error: ""
+ });
+ } else {
+ setPreview((current) => ({ ...current, loading: false, error: "" }));
+ }
+ } catch (caught) {
+ setPreview((current) => ({
+ ...current,
+ loading: false,
+ error: caught instanceof Error ? caught.message : "Could not fetch live preview."
+ }));
+ }
+ });
+ }
+
+ useEffect(() => {
+ if (targetMode === "symbol_list") {
+ if (!targetEntries.length) {
+ if (symbol || Object.keys(instrumentRef).length) {
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }
+ return;
+ }
+ const selectedStillExists = targetEntries.some((entry) => `${entry.symbol}:${entry.exchange ?? ""}` === previewTargetKey);
+ if (!selectedStillExists) {
+ const [firstTarget] = targetEntries;
+ setSymbol(firstTarget.symbol);
+ setExchange(firstTarget.exchange ?? "NSE");
+ setInstrumentRef(firstTarget.instrument_ref);
+ setSelectedSearchLabel(targetDisplay(firstTarget));
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }
+ return;
+ }
+
+ if (targetMode === "preset_universe") {
+ if (!universeSymbols.length) {
+ if (symbol || Object.keys(instrumentRef).length) {
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }
+ return;
+ }
+ const selectedStillExists = universeSymbols.some((item) => `${item.symbol}:${item.exchange ?? ""}` === previewTargetKey);
+ if (!selectedStillExists) {
+ const [firstSymbol] = universeSymbols;
+ setSymbol(firstSymbol.symbol);
+ setExchange(firstSymbol.exchange ?? "NSE");
+ setInstrumentRef({
+ ...(firstSymbol.instrument_ref ?? {}),
+ symbol: firstSymbol.symbol,
+ exchange: firstSymbol.exchange ?? "NSE"
+ });
+ setSelectedSearchLabel([firstSymbol.symbol, firstSymbol.exchange].filter(Boolean).join(" · "));
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }
+ }
+ }, [instrumentRef, previewTargetKey, symbol, targetEntries, targetMode, universeSymbols]);
 
  function selectSuggestion(row: InstrumentSearchRow) {
+ const nextExchange = row.exchange ?? exchange;
+ const nextInstrument = instrumentFromSearch(row);
+ const metadata = suggestionMetadata[row.symbol.trim().toUpperCase()];
+ if (targetMode === "symbol_list") {
+ const entry = targetEntryFromSearch(row, nextExchange, metadata);
+ if (entry) {
+ setTargetEntries((current) => normalizeTargets([...current, entry]));
+ setSymbol(entry.symbol);
+ setInstrumentRef(entry.instrument_ref);
+ setSelectedSearchLabel(targetDisplay(entry));
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ loadPreviewNow(entry.instrument_ref);
+ }
+ } else {
  setSymbol(row.symbol);
- setExchange(row.exchange ?? exchange);
- setInstrumentRef(instrumentFromSearch(row));
- setSelectedSearchLabel([row.symbol, row.exchange, row.instrument_type].filter(Boolean).join(" · "));
+ setSymbolSearch(row.symbol);
+ setCommittedSymbolSearch(row.symbol);
+ setInstrumentRef(nextInstrument);
+ setSelectedSearchLabel([row.symbol, metadata?.company_name ?? row.name, row.exchange, row.instrument_type].filter(Boolean).join(" · "));
+ loadPreviewNow({ ...nextInstrument, symbol: row.symbol, exchange: nextExchange });
+ }
+ setExchange(nextExchange);
  setSuggestions([]);
+ setActiveSuggestionIndex(-1);
  setShowSuggestions(false);
+ }
+
+ function handleSymbolSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+ if (event.key === "Escape") {
+ setShowSuggestions(false);
+ return;
+ }
+ if (!suggestions.length) {
+ return;
+ }
+ if (event.key === "ArrowDown") {
+ event.preventDefault();
+ setShowSuggestions(true);
+ setActiveSuggestionIndex((current) => (current + 1) % suggestions.length);
+ return;
+ }
+ if (event.key === "ArrowUp") {
+ event.preventDefault();
+ setShowSuggestions(true);
+ setActiveSuggestionIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+ return;
+ }
+ if (event.key === "Enter") {
+ event.preventDefault();
+ const row = suggestions[Math.max(activeSuggestionIndex, 0)];
+ if (row) selectSuggestion(row);
+ }
  }
 
  function clearScriptIfVisualLogicChanged(nextCombine: "all" | "any", nextConditions: AlertCondition[]) {
@@ -1927,14 +2336,27 @@ const activeInstrument = useMemo<InstrumentRef>(
  });
  }
 
- function addCurrentTarget() {
- const entry = buildTargetEntry(symbol, exchange, activeInstrument);
- if (!entry) return;
- setTargetEntries((current) => normalizeTargets([...current, entry]));
- }
-
  function removeTarget(index: number) {
- setTargetEntries((current) => current.filter((_, currentIndex) => currentIndex !== index));
+ const removed = targetEntries[index];
+ const next = targetEntries.filter((_, currentIndex) => currentIndex !== index);
+ setTargetEntries(next);
+ if (removed && removed.symbol === symbol && (removed.exchange ?? "") === (exchange || "")) {
+ const fallback = next[index] ?? next[index - 1] ?? next[0];
+ if (fallback) {
+ setSymbol(fallback.symbol);
+ setExchange(fallback.exchange ?? "NSE");
+ setInstrumentRef(fallback.instrument_ref);
+ setSelectedSearchLabel(targetDisplay(fallback));
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ } else {
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }
+ }
  }
 
  function loadTarget(entry: AlertTargetEntry) {
@@ -1942,6 +2364,27 @@ const activeInstrument = useMemo<InstrumentRef>(
  setExchange(entry.exchange ?? "NSE");
  setInstrumentRef(entry.instrument_ref);
  setSelectedSearchLabel(targetDisplay(entry));
+ setSymbolSearch(targetMode === "single_symbol" ? entry.symbol : "");
+ setCommittedSymbolSearch(targetMode === "single_symbol" ? entry.symbol : "");
+ loadPreviewNow(entry.instrument_ref);
+ }
+
+ function loadUniverseTarget(item: UniverseSymbolPreview) {
+ setSymbol(item.symbol);
+ setExchange(item.exchange ?? "NSE");
+ setInstrumentRef({
+ ...(item.instrument_ref ?? {}),
+ symbol: item.symbol,
+ exchange: item.exchange ?? "NSE"
+ });
+ setSelectedSearchLabel([item.symbol, item.exchange].filter(Boolean).join(" · "));
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ loadPreviewNow({
+ ...(item.instrument_ref ?? {}),
+ symbol: item.symbol,
+ exchange: item.exchange ?? "NSE"
+ });
  }
 
  function importBulkTargets() {
@@ -1950,11 +2393,23 @@ const activeInstrument = useMemo<InstrumentRef>(
  return;
  }
  setTargetEntries((current) => normalizeTargets([...current, ...imported]));
+ const [firstImported] = imported;
+ setSymbol(firstImported.symbol);
+ setExchange(firstImported.exchange ?? "NSE");
+ setInstrumentRef(firstImported.instrument_ref);
+ setSelectedSearchLabel(targetDisplay(firstImported));
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
  setBulkTargets("");
  }
 
  function clearTargets() {
  setTargetEntries([]);
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
  }
 
  function runEngineAction(action: "validate" | "compile" | "explain" | "samples" | "deploy") {
@@ -2007,12 +2462,23 @@ const activeInstrument = useMemo<InstrumentRef>(
  const marketWindowStep = workflowType === "market_data" ? nextStep() : "";
  const feedTriggerStep = workflowType === "alpha_feed" ? nextStep() : "";
  const targetStep = workflowType === "market_data" ? nextStep() : "";
- const validateTargetStep = workflowType === "market_data" ? nextStep() : "";
  const buildTriggerStep = nextStep();
  const optionalAnalysisStep = nextStep();
  const reviewCopyStep = !currentTemplatesMatchSuggestion ? nextStep() : "";
  const advancedDeploymentStep = nextStep();
  const deliveryLifecycleStep = nextStep();
+ const cachedPreview = previewCacheRef.current[previewTargetKey];
+ const displayedPreview: PreviewState = hasCurrentPreview
+ ? preview
+ : cachedPreview
+ ? { ...cachedPreview, loading: false, error: preview.error }
+ : previewDataKey === previewTargetKey
+ ? preview
+ : { quote: null, ohlc: null, loading: preview.loading, error: preview.error };
+ const hasSelectedPreviewTarget = Boolean(
+ activeInstrument.symbol && (targetMode !== "single_symbol" || selectedSearchLabel || hasCurrentPreview || cachedPreview)
+ );
+ const hasPreviewTarget = workflowType === "market_data" && hasSelectedPreviewTarget;
 
 function toggleFeedProduct(product: string, checked: boolean) {
  setFeedProducts((current) => checked ? Array.from(new Set([...current, product])) : current.filter((item) => item !== product));
@@ -2049,15 +2515,15 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  }
 
  return (
- <div className="grid max-w-5xl gap-4">
- {error ? <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
- {notice ? <div className="border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">{notice}</div> : null}
- {isTemplateDraft ? <div className="border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">Template loaded as a new workflow draft. Saving creates your own workflow and leaves the system template unchanged.</div> : null}
-{matchPreview ? <div className="type-body border border-border px-4 py-3 text-muted-foreground">{matchPreview}</div> : null}
+ <div className="grid max-w-[1500px] gap-4">
+ {error ? <div className="max-w-5xl border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
+ {notice ? <div className="max-w-5xl border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">{notice}</div> : null}
+ {isTemplateDraft ? <div className="max-w-5xl border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">Template loaded as a new workflow draft. Saving creates your own workflow and leaves the system template unchanged.</div> : null}
+	{matchPreview ? <div className="type-body max-w-5xl border border-border px-4 py-3 text-muted-foreground">{matchPreview}</div> : null}
 
  <div className="grid gap-4">
  <div className="grid gap-4">
- <div className="border border-border p-3">
+ <div className="max-w-5xl border border-border p-3">
  <StepHeader
  step={workflowBasicsStep}
  title="Workflow basics"
@@ -2092,7 +2558,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
 
 {workflowType === "market_data" ? (
- <div className="border border-border p-3">
+ <div className="max-w-5xl border border-border p-3">
  <StepHeader
  step={marketWindowStep}
  title="Market window"
@@ -2182,7 +2648,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 ) : null}
 
  {workflowType === "alpha_feed" ? (
- <div className="border border-border p-3">
+ <div className="max-w-5xl border border-border p-3">
  <StepHeader
  step={feedTriggerStep}
  title="Feed trigger"
@@ -2250,38 +2716,47 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  ) : null}
  </div>
  {feedSourceScope === "watchlists" ? (
- <div className="grid gap-2">
- <Label className="flex items-center gap-2 text-sm">
+ <div className="mt-5 grid max-w-md gap-3">
+ <div>
+ <FieldLabel>Watchlists</FieldLabel>
+ <HelpText className="mt-1">Choose which watchlists can feed this workflow.</HelpText>
+ </div>
+ <Label className="flex w-fit items-center gap-2 text-sm">
  <Checkbox checked={feedIncludeAllWatchlists} onCheckedChange={(checked) => setFeedIncludeAllWatchlists(Boolean(checked))} />
  All watchlists
  </Label>
- <div className="max-h-44 overflow-auto border border-border">
+ <div className="grid max-h-44 gap-2 overflow-auto">
  {watchlists.map((watchlist) => (
- <Label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={watchlist.id}>
- <span>{watchlist.name}</span>
+ <Label className="flex min-w-0 items-center gap-2 text-sm" key={watchlist.id}>
  <Checkbox checked={feedWatchlistIds.includes(watchlist.id)} disabled={feedIncludeAllWatchlists} onCheckedChange={(checked) => toggleFeedWatchlist(watchlist.id, Boolean(checked))} />
+ <span className="min-w-0 truncate">{watchlist.name}</span>
  </Label>
  ))}
+ {!watchlists.length ? <HelpText>No watchlists are available yet.</HelpText> : null}
  </div>
  </div>
  ) : null}
  {feedSourceScope === "preset_lists" ? (
- <div className="grid gap-2">
+ <div className="mt-5 grid max-w-md gap-3">
+ <div>
  <FieldLabel>Preset lists</FieldLabel>
- <div className="max-h-44 overflow-auto border border-border">
+ <HelpText className="mt-1">Choose saved preset lists for the feed trigger scope.</HelpText>
+ </div>
+ <div className="grid max-h-44 gap-2 overflow-auto">
  {presets.map((preset) => {
  const id = String(preset.id ?? "");
  return (
- <Label className="flex items-center justify-between gap-3 border-b border-border px-3 py-2 text-sm" key={id}>
- <span>{String(preset.label ?? id)}</span>
+ <Label className="flex min-w-0 items-center gap-2 text-sm" key={id}>
  <Checkbox checked={feedPresetIds.includes(id)} onCheckedChange={(checked) => toggleFeedPreset(id, Boolean(checked))} />
+ <span className="min-w-0 truncate">{String(preset.label ?? id)}</span>
  </Label>
  );
  })}
+ {!presets.length ? <HelpText>No preset lists are available yet.</HelpText> : null}
  </div>
  </div>
  ) : null}
- <div className="grid gap-2">
+ <div className="mt-5 grid gap-2">
  <div className="flex items-center justify-between gap-3">
  <FieldLabel>Trigger LLM</FieldLabel>
  <Label className="flex items-center gap-2 text-sm">
@@ -2315,7 +2790,8 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
  ) : (
- <div className=" border border-border p-3">
+ <div className={cn("grid gap-4", hasPreviewTarget ? "min-[1280px]:grid-cols-[minmax(560px,0.95fr)_minmax(520px,0.9fr)] min-[1280px]:items-start" : "max-w-5xl")}>
+ <div className="border border-border p-3">
  <StepHeader
  step={targetStep}
  title="Target"
@@ -2327,11 +2803,33 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  onChange={(event) => {
  const nextMode = event.target.value as AlertWorkflowTargeting["mode"];
  setTargetMode(nextMode);
- if (nextMode === "symbol_list" && !targetEntries.length) {
+ if (nextMode === "symbol_list" && targetEntries.length) {
+ const [firstTarget] = targetEntries;
+ setSymbol(firstTarget.symbol);
+ setExchange(firstTarget.exchange ?? "NSE");
+ setInstrumentRef(firstTarget.instrument_ref);
+ setSelectedSearchLabel(targetDisplay(firstTarget));
+ setSymbolSearch("");
+ } else if (nextMode === "symbol_list" && !targetEntries.length) {
  const currentTarget = buildTargetEntry(symbol, exchange, activeInstrument);
  if (currentTarget) {
  setTargetEntries([currentTarget]);
+ setSymbol(currentTarget.symbol);
+ setExchange(currentTarget.exchange ?? "NSE");
+ setInstrumentRef(currentTarget.instrument_ref);
+ setSelectedSearchLabel(targetDisplay(currentTarget));
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
  }
+ } else if (nextMode === "preset_universe") {
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ } else {
+ setSymbolSearch(symbol);
+ setCommittedSymbolSearch(symbol);
  }
  }}
  value={targetMode}
@@ -2358,15 +2856,25 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Select>
  <HelpText>The broker account decides which instrument universe and quote API will be used.</HelpText>
  </Label>
+ {targetMode !== "preset_universe" ? (
  <div className="grid max-w-3xl items-start gap-x-3 gap-y-2 min-[760px]:grid-cols-[minmax(0,1fr)_120px]">
  <div className="relative grid content-start gap-2" ref={symbolWrapRef}>
  <Label className="grid content-start gap-2 text-sm">
  <FieldLabel>Search symbol</FieldLabel>
  <Input
+ aria-activedescendant={activeSuggestionIndex >= 0 ? `workflow-symbol-suggestion-${activeSuggestionIndex}` : undefined}
+ aria-autocomplete="list"
+ aria-controls="workflow-symbol-suggestions"
+ aria-expanded={showSuggestions && suggestions.length ? "true" : "false"}
  className="h-10"
  onChange={(event) => {
- setSymbol(event.target.value.toUpperCase());
- setInstrumentRef({ symbol: event.target.value.toUpperCase(), exchange });
+ const nextValue = event.target.value.toUpperCase();
+ setSymbolSearch(nextValue);
+ setCommittedSymbolSearch("");
+ if (targetMode === "single_symbol") {
+ setSymbol(nextValue);
+ setInstrumentRef({ symbol: nextValue, exchange });
+ }
  setSelectedSearchLabel("");
  setShowSuggestions(true);
  }}
@@ -2375,21 +2883,30 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  setShowSuggestions(true);
  }
  }}
+ onKeyDown={handleSymbolSearchKeyDown}
  placeholder="Search symbol"
+ role="combobox"
  title="Start typing to search the synced broker instrument master for live suggestions."
- value={symbol}
+ value={symbolSearch}
  />
  </Label>
  {showSuggestions && suggestions.length ? (
- <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto border border-border bg-background">
+ <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto border border-border bg-background" id="workflow-symbol-suggestions" role="listbox">
  {suggestions.map((row, index) => {
  const metadata = suggestionMetadata[row.symbol.trim().toUpperCase()];
  const detail = [metadata?.company_name ?? row.name, row.trading_symbol, row.account_label].filter(Boolean).join(" / ");
  return (
  <button
- className="flex min-h-[58px] w-full items-center justify-between gap-3 border-b border-border px-3 py-2 text-left text-sm normal-case tracking-normal text-foreground transition-colors last:border-b-0 hover:bg-[var(--accent-glow)] focus-visible:border-ring focus-visible:outline-none"
+ aria-selected={index === activeSuggestionIndex}
+ className={cn(
+ "flex min-h-[58px] w-full items-center justify-between gap-3 border-b border-l-2 border-border px-3 py-2 text-left text-sm normal-case tracking-normal text-foreground transition-colors last:border-b-0 hover:bg-[var(--accent-glow)] focus-visible:border-ring focus-visible:outline-none",
+ index === activeSuggestionIndex && "border-l-primary bg-[var(--accent-glow)]"
+ )}
+ id={`workflow-symbol-suggestion-${index}`}
  key={[row.symbol, row.exchange, row.trading_symbol, index].join(":")}
  onClick={() => selectSuggestion(row)}
+ onMouseEnter={() => setActiveSuggestionIndex(index)}
+ role="option"
  type="button"
  >
  <span className="flex min-w-0 items-center gap-3">
@@ -2415,46 +2932,6 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  })}
  </div>
  ) : null}
- {targetMode === "preset_universe" && String(workflowType) === "alpha_feed" ? (
- <div className="mt-3 grid gap-3 border border-border p-3">
- <div className="flex flex-wrap items-center justify-between gap-3">
- <div>
- <SectionTitle>Resolved symbols</SectionTitle>
- <HelpText>
- {dynamicUniverseKind === "watchlist"
- ? `${universeSymbols.length} symbol${universeSymbols.length === 1 ? "" : "s"} from ${selectedWatchlist?.name ?? "watchlist"}.`
- : universePreviewLoading
- ? "Resolving universe..."
- : `${universePreview?.count ?? universeSymbols.length} matching symbol${(universePreview?.count ?? universeSymbols.length) === 1 ? "" : "s"}.`}
- </HelpText>
- </div>
- </div>
- <div className="flex max-h-56 flex-wrap gap-2 overflow-auto">
- {universeSymbols.map((item) => {
- const key = `${item.symbol}:${item.exchange ?? ""}`;
- return (
- <div className="relative" key={key}>
- <Button
- className="border border-border px-2 py-1 font-mono text-xs hover:border-primary"
- onFocus={() => loadSymbolQuote(item)}
- onMouseEnter={() => loadSymbolQuote(item)}
- onMouseLeave={() => setHoveredSymbolKey("")}
- size="sm"
- type="button"
- variant="ghost"
- >
- {[item.symbol, item.exchange].filter(Boolean).join(" · ")}
- </Button>
- {hoveredSymbolKey === key ? (
- <SymbolQuoteTooltip loading={hoverQuoteLoading} quote={hoverQuote} />
- ) : null}
- </div>
- );
- })}
-{!universeSymbols.length ? <div className="type-help text-muted-foreground">No symbols resolved for this universe yet.</div> : null}
- </div>
- </div>
- ) : null}
  </div>
  <Label className="grid content-start gap-2 text-sm">
  <FieldLabel>Exchange</FieldLabel>
@@ -2475,19 +2952,80 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  : selectedSearchLabel || "Type a symbol name or trading symbol and choose a suggestion. Exchange is used with the selected instrument identifiers for market data requests."}
  </HelpText>
  </div>
+ ) : null}
  {targetMode === "symbol_list" ? (
- <div className="mt-3 grid gap-3 border border-border p-3">
- <div className="flex flex-wrap items-center justify-between gap-3">
+ <div className="mt-4 overflow-hidden border border-border">
+ <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
  <div>
  <SectionTitle>Target list</SectionTitle>
- <HelpText>Add one symbol at a time from the search box above or bulk import many symbols. These all share the same workflow conditions and notification rules.</HelpText>
+ <HelpText>Search adds symbols directly. Bulk import is available for paste-heavy edits.</HelpText>
  </div>
- <div className="flex flex-wrap gap-2">
- <Button onClick={addCurrentTarget} type="button">Add current symbol</Button>
- <Button onClick={clearTargets} type="button" variant="destructive">Clear list</Button>
+ {targetEntries.length ? <Button onClick={clearTargets} size="sm" type="button" variant="destructive">Clear list</Button> : null}
+ </div>
+ <div className="grid gap-4 p-4 min-[920px]:grid-cols-[minmax(0,1.08fr)_minmax(300px,0.92fr)]">
+ <div className="grid content-start gap-3">
+ <div className="flex flex-wrap items-center justify-between gap-2">
+ <div>
+ <div className="type-step-eyebrow">Current targets · {targetEntries.length}</div>
+ <HelpText className="mt-1">Selected symbols keep their broker identifiers and available company metadata.</HelpText>
  </div>
  </div>
- <div className="grid gap-2">
+ <div className="grid max-h-[360px] gap-2 overflow-auto pr-1">
+ {targetEntries.map((entry, index) => {
+ const fetchedMetadata = targetMetadata[entry.symbol.toUpperCase()];
+ const metadata: Record<string, unknown> = { ...entry.metadata, ...(fetchedMetadata ?? {}) };
+ const logo = stringValue(metadata.logo);
+ const companyName = stringValue(metadata.company_name) ?? entry.label ?? "Company metadata unavailable";
+ const industry = stringValue(metadata.basic_industry) ?? stringValue(metadata.industry) ?? stringValue(metadata.theme);
+ const sector = stringValue(metadata.sector) ?? stringValue(metadata.macro_economic_indicator);
+ const tradingSymbol = stringValue(metadata.trading_symbol);
+ const instrumentType = stringValue(metadata.instrument_type);
+ const segment = stringValue(metadata.segment);
+ const marketCap = formatMarketCap(numberValue(metadata.market_cap));
+ const isActiveTarget = `${entry.symbol}:${entry.exchange ?? ""}` === previewTargetKey;
+ return (
+ <div className={cn(
+ "group grid gap-3 border bg-background px-3 py-3 min-[640px]:grid-cols-[minmax(0,1fr)_auto]",
+ isActiveTarget ? "border-primary bg-[var(--accent-glow)]" : "border-border"
+ )} key={`${entry.symbol}:${entry.exchange ?? ""}:${index}`}>
+ <button className="grid min-w-0 grid-cols-[40px_minmax(0,1fr)] items-center gap-3 text-left" onClick={() => loadTarget(entry)} type="button">
+ {logo ? (
+ <img alt="" className="size-10 shrink-0 object-contain" src={logo} />
+ ) : (
+ <span className="flex size-10 shrink-0 items-center justify-center font-mono text-[11px] font-semibold uppercase text-muted-foreground">
+ {entry.symbol.slice(0, 2)}
+ </span>
+ )}
+ <span className="min-w-0">
+ <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+ <span className="font-mono text-[15px] font-semibold leading-5 text-foreground">{entry.symbol}</span>
+ <span className="font-mono text-[11px] uppercase leading-4 text-primary">{entry.exchange ?? "-"}</span>
+ {instrumentType ? <span className="font-mono text-[11px] uppercase leading-4 text-muted-foreground">{instrumentType}</span> : null}
+ </span>
+ <span className="block truncate text-sm font-medium leading-5 text-foreground">{companyName}</span>
+ <span className="block truncate text-[12px] leading-4 text-muted-foreground">
+ {[industry, sector].filter(Boolean).join(" · ") || "No sector metadata"}
+ </span>
+ </span>
+ </button>
+ <div className="flex flex-wrap items-center justify-between gap-3 min-[640px]:justify-end">
+ <div className="grid gap-1 text-left min-[640px]:text-right">
+ <div className="font-mono text-[11px] uppercase leading-4 text-muted-foreground">{[tradingSymbol, segment].filter(Boolean).join(" · ") || "Broker ref stored"}</div>
+ <div className="font-mono text-[11px] uppercase leading-4 text-muted-foreground">MCap {marketCap}</div>
+ </div>
+ <Button onClick={() => removeTarget(index)} size="sm" type="button" variant="destructive">Remove</Button>
+ </div>
+ </div>
+ );
+ })}
+ {!targetEntries.length ? (
+ <div className="border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+ Search above and select a suggestion to add the first target.
+ </div>
+ ) : null}
+ </div>
+ </div>
+ <div className="grid content-start gap-2 border-t border-border pt-4 min-[920px]:border-l min-[920px]:border-t-0 min-[920px]:pl-4 min-[920px]:pt-0">
  <FieldLabel>Bulk import</FieldLabel>
  <Textarea
  className="min-h-[108px] w-full border border-input bg-background px-3 py-2 text-sm outline-none"
@@ -2500,58 +3038,96 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <Button onClick={importBulkTargets} type="button">Import symbols</Button>
  </div>
  </div>
- <div className="grid gap-2">
- <div className="type-step-eyebrow">Current targets · {targetEntries.length}</div>
- {targetEntries.map((entry, index) => (
- <div className="flex flex-wrap items-center justify-between gap-3 border border-border px-3 py-2" key={`${entry.symbol}:${entry.exchange ?? ""}:${index}`}>
- <Button className="h-auto px-0 text-left" onClick={() => loadTarget(entry)} type="button" variant="ghost">
- <div className="font-semibold">{entry.symbol}</div>
- <div className="type-meta">{entry.exchange ?? "-"} · shared rule target</div>
- </Button>
- <Button onClick={() => removeTarget(index)} size="sm" type="button" variant="destructive">Remove</Button>
- </div>
- ))}
-{!targetEntries.length ? <div className="type-help text-muted-foreground">No targets added yet.</div> : null}
  </div>
  </div>
  ) : null}
 {targetMode === "preset_universe" ? (
-<div className="mt-3 grid gap-3 border border-border p-3">
- <div className="flex flex-wrap items-center justify-between gap-3">
+ <div className="mt-4 overflow-hidden border border-border">
+ <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
  <div>
- <SectionTitle>Dynamic universe</SectionTitle>
- <HelpText>Use a live watchlist or a backend preset as the workflow target. The subscription reconciler keeps the resolved symbols current.</HelpText>
+ <SectionTitle>Preset universe</SectionTitle>
+ <HelpText>Choose a reusable symbol source. The resolved symbols stay synced as watchlists, presets, or metadata rules change.</HelpText>
  </div>
- <Select
- className="h-10 min-w-[220px] border border-input bg-background px-3 text-sm"
- onChange={(event) => setDynamicUniverseKind(event.target.value)}
- value={dynamicUniverseKind}
+ <div className="type-step-eyebrow">{universePreviewLoading ? "Resolving" : `${universeSymbols.length} resolved`}</div>
+ </div>
+ <div className="grid gap-4 p-4 min-[980px]:grid-cols-[minmax(280px,0.86fr)_minmax(0,1.14fr)]">
+ <div className="grid content-start gap-4">
+ <div className="grid gap-2">
+ <FieldLabel>Universe source</FieldLabel>
+ <div className="grid gap-2 min-[520px]:grid-cols-3 min-[980px]:grid-cols-1">
+ {([
+ ["watchlist", "Watchlist"],
+ ["curated_preset", "Curated preset"],
+ ["metadata_filter", "Metadata filter"]
+ ] as const).map(([value, label]) => (
+ <Button
+ className={cn("justify-start", dynamicUniverseKind === value && "border-primary bg-[var(--accent-glow)] text-primary")}
+ key={value}
+ onClick={() => {
+ setDynamicUniverseKind(value);
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }}
+ type="button"
+ variant="outline"
  >
- <option value="watchlist">Watchlist</option>
- <option value="curated_preset">Curated preset</option>
- <option value="metadata_filter">Metadata filter</option>
- </Select>
+ {label}
+ </Button>
+ ))}
+ </div>
  </div>
  {dynamicUniverseKind === "watchlist" ? (
- <div className="grid max-w-[420px] gap-2">
+ <div className="grid gap-2">
+ <FieldLabel>Watchlist</FieldLabel>
  <Select
- className="h-10 border border-input bg-background px-3 text-sm"
- onChange={(event) => setSelectedWatchlistId(event.target.value)}
- value={selectedWatchlistId}
- >
+	 className="h-10 border border-input bg-background px-3 text-sm"
+	 onChange={(event) => {
+	 const nextWatchlistId = event.target.value;
+	 const nextWatchlist = watchlists.find((watchlist) => watchlist.id === nextWatchlistId);
+	 const firstItem = nextWatchlist?.items[0];
+	 setSelectedWatchlistId(nextWatchlistId);
+	 if (firstItem) {
+	 loadUniverseTarget({
+	 symbol: firstItem.symbol,
+	 exchange: firstItem.exchange,
+	 instrument_ref: firstItem.instrument_ref,
+	 source_label: nextWatchlist?.name,
+	 source_type: "watchlist"
+	 });
+	 } else {
+	 setSymbol("");
+	 setInstrumentRef({});
+	 setSelectedSearchLabel("");
+	 setSymbolSearch("");
+	 setCommittedSymbolSearch("");
+	 }
+	 }}
+	 value={selectedWatchlistId}
+	 >
  {watchlists.map((watchlist) => (
  <option key={watchlist.id} value={watchlist.id}>
  {watchlist.name} · {watchlist.items.length} symbols
  </option>
  ))}
  </Select>
- {!watchlists.length ? <HelpText>Create a watchlist first, then return here to link it to this workflow.</HelpText> : <HelpText>Symbols added to or removed from this watchlist are reconciled into live subscriptions automatically.</HelpText>}
+ {!watchlists.length ? <HelpText>Create a watchlist first, then return here to link it to this workflow.</HelpText> : <HelpText>Live subscriptions follow additions and removals in this watchlist.</HelpText>}
  </div>
  ) : dynamicUniverseKind === "curated_preset" ? (
- <div className="grid max-w-[420px] gap-2">
+ <div className="grid gap-2">
+ <FieldLabel>Preset</FieldLabel>
  <Select
  className="h-10 border border-input bg-background px-3 text-sm"
- onChange={(event) => setSelectedPresetId(event.target.value)}
+ onChange={(event) => {
+ setSelectedPresetId(event.target.value);
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }}
  value={selectedPresetId}
  >
  {presets.map((preset) => (
@@ -2560,76 +3136,126 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </option>
  ))}
  </Select>
- <HelpText>Presets are resolved from backend registry rules and broker instrument metadata.</HelpText>
+ <HelpText>Backend presets resolve from registry rules and broker instrument metadata.</HelpText>
  </div>
- ) : dynamicUniverseKind === "metadata_filter" ? (
- <div className="grid gap-3 min-[980px]:grid-cols-3">
+ ) : (
+ <div className="grid gap-3">
  <Label className="grid gap-2 text-sm">
  <FieldLabel>Exchange filter</FieldLabel>
- <Input className="font-mono uppercase" onChange={(event) => setMetadataExchange(event.target.value.toUpperCase())} placeholder="NSE" value={metadataExchange} />
- <HelpText>Exchange filter.</HelpText>
+ <Input className="font-mono uppercase" onChange={(event) => {
+ setMetadataExchange(event.target.value.toUpperCase());
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }} placeholder="NSE" value={metadataExchange} />
  </Label>
  <Label className="grid gap-2 text-sm">
  <FieldLabel>Instrument type</FieldLabel>
- <Input className="font-mono uppercase" onChange={(event) => setMetadataInstrumentType(event.target.value.toUpperCase())} placeholder="EQ" value={metadataInstrumentType} />
- <HelpText>Instrument type filter.</HelpText>
+ <Input className="font-mono uppercase" onChange={(event) => {
+ setMetadataInstrumentType(event.target.value.toUpperCase());
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }} placeholder="EQ" value={metadataInstrumentType} />
  </Label>
  <Label className="grid gap-2 text-sm">
  <FieldLabel>Segment contains</FieldLabel>
- <Input className="font-mono uppercase" onChange={(event) => setMetadataSegmentContains(event.target.value.toUpperCase())} placeholder="FO" value={metadataSegmentContains} />
- <HelpText>Optional segment contains filter.</HelpText>
+ <Input className="font-mono uppercase" onChange={(event) => {
+ setMetadataSegmentContains(event.target.value.toUpperCase());
+ setSymbol("");
+ setInstrumentRef({});
+ setSelectedSearchLabel("");
+ setSymbolSearch("");
+ setCommittedSymbolSearch("");
+ }} placeholder="FO" value={metadataSegmentContains} />
  </Label>
+ <HelpText>Use one or more filters. Empty filters are ignored.</HelpText>
  </div>
- ) : null}
- <div className="grid gap-3 border border-border p-4">
- <SectionTitle>Resolved symbols</SectionTitle>
- <HelpText>
+ )}
+ </div>
+ <div className="grid content-start gap-3 border-t border-border pt-4 min-[980px]:border-l min-[980px]:border-t-0 min-[980px]:pl-4 min-[980px]:pt-0">
+ <div>
+ <div className="type-step-eyebrow">Resolved symbols · {universeSymbols.length}</div>
+ <HelpText className="mt-1">
  {dynamicUniverseKind === "watchlist"
  ? `${universeSymbols.length} symbol${universeSymbols.length === 1 ? "" : "s"} from ${selectedWatchlist?.name ?? "watchlist"}.`
  : universePreviewLoading
  ? "Resolving universe..."
  : `${universePreview?.count ?? universeSymbols.length} matching symbol${(universePreview?.count ?? universeSymbols.length) === 1 ? "" : "s"}.`}
  </HelpText>
- <div className="flex max-h-56 flex-wrap gap-2 overflow-auto">
+ </div>
+ <div className="grid max-h-[420px] gap-2 overflow-auto pr-1">
  {universeSymbols.map((item) => {
  const key = `${item.symbol}:${item.exchange ?? ""}`;
+ const metadata = universeMetadata[item.symbol.trim().toUpperCase()];
+ const logo = metadata?.logo ?? null;
+ const companyName = metadata?.company_name ?? item.source_label ?? "Company metadata unavailable";
+ const industry = metadata?.basic_industry ?? metadata?.industry ?? metadata?.theme;
+ const sector = metadata?.sector ?? metadata?.macro_economic_indicator;
+ const isQuoteActive = hoveredSymbolKey === key;
+ const isActiveTarget = key === previewTargetKey;
  return (
- <div className="relative" key={key}>
- <Button
- className="border border-border px-2 py-1 font-mono text-xs hover:border-primary"
+ <button
+ className={cn(
+ "grid min-h-[64px] grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 border bg-background px-3 py-2 text-left transition-colors hover:border-primary hover:bg-[var(--accent-glow)] focus-visible:border-primary focus-visible:outline-none",
+ isActiveTarget ? "border-primary bg-[var(--accent-glow)]" : "border-border"
+ )}
+ key={key}
  onFocus={() => loadSymbolQuote(item)}
+ onClick={() => loadUniverseTarget(item)}
  onMouseEnter={() => loadSymbolQuote(item)}
  onMouseLeave={() => setHoveredSymbolKey("")}
- size="sm"
  type="button"
- variant="ghost"
  >
- {[item.symbol, item.exchange].filter(Boolean).join(" - ")}
- </Button>
- {hoveredSymbolKey === key ? (
- <SymbolQuoteTooltip loading={hoverQuoteLoading} quote={hoverQuote} />
- ) : null}
- </div>
+ {logo ? (
+ <img alt="" className="size-10 shrink-0 object-contain" src={logo} />
+ ) : (
+ <span className="flex size-10 shrink-0 items-center justify-center font-mono text-[11px] font-semibold uppercase text-muted-foreground">
+ {item.symbol.slice(0, 2)}
+ </span>
+ )}
+ <span className="min-w-0">
+ <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+ <span className="font-mono text-[15px] font-semibold leading-5 text-foreground">{item.symbol}</span>
+ <span className="font-mono text-[11px] uppercase leading-4 text-primary">{item.exchange ?? "-"}</span>
+ </span>
+ <span className="block truncate text-sm font-medium leading-5 text-foreground">{companyName}</span>
+ <span className="block truncate text-[12px] leading-4 text-muted-foreground">
+ {[industry, sector].filter(Boolean).join(" · ") || item.source_type || "Universe symbol"}
+ </span>
+ </span>
+ <span className="grid min-w-[88px] justify-items-end gap-1">
+ <span className="font-mono text-[11px] uppercase leading-4 text-muted-foreground">{item.source_type ?? dynamicUniverseKind}</span>
+ <span className="font-mono text-[12px] leading-4 text-primary">
+ {isQuoteActive ? (hoverQuoteLoading ? "Loading" : hoverQuote?.ltp ?? "No quote") : formatMarketCap(metadata?.market_cap ?? null)}
+ </span>
+ </span>
+ </button>
  );
  })}
-{!universeSymbols.length ? <div className="type-help text-muted-foreground">No symbols resolved for this universe yet.</div> : null}
+ {!universeSymbols.length ? (
+ <div className="border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+ No symbols resolved for this universe yet.
+ </div>
+ ) : null}
+ </div>
  </div>
  </div>
  </div>
  ) : null}
  </div>
  </div>
- )}
-
+ {hasPreviewTarget ? (
+ <div className="border border-border p-4 min-[1280px]:sticky min-[1280px]:top-4">
+ <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+ <div className="max-w-[760px]">
+ <h2 className="text-xl font-semibold leading-6 text-foreground">Validate target</h2>
+ <HelpText className="mt-1.5">Preview the selected symbol, broker mapping, and latest market snapshot before building alert rules.</HelpText>
  </div>
-{workflowType === "market_data" ? (
- <div className="border border-border p-3">
- <StepHeader
- step={validateTargetStep}
- title="Validate target"
- description="Use the live preview to confirm the selected symbol and market data before you move on to rule building."
- action={<div className="flex flex-wrap items-center gap-2">
- <div className="type-meta">{preview.loading ? "Refreshing..." : preview.quote ? "Live preview active" : "No symbol selected"}</div>
  <div className="inline-flex border border-border p-1">
  <Button
  className={previewMode === "summary" ? "bg-secondary text-foreground" : "text-muted-foreground"}
@@ -2650,23 +3276,21 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  Raw
  </Button>
  </div>
- </div>}
- />
- <div className="type-meta mb-3 max-w-2xl border border-border px-3 py-2">
- <div className="font-semibold text-foreground">{symbol || "No symbol selected"}</div>
- <div className="mt-1">{selectedAccount ? `${selectedAccount.label} - ${selectedAccount.broker_code}` : "No broker account selected"}{exchange ? ` - ${exchange}` : ""}</div>
  </div>
- {preview.error ? <div className="mb-3 border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">{preview.error}</div> : null}
+ {displayedPreview.error ? <div className="mb-3 border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">{displayedPreview.error}</div> : null}
  {previewMode === "summary" ? (
- <LivePreviewSummary exchange={exchange} preview={preview} symbol={symbol} />
+ <LivePreviewSummary exchange={exchange} metadata={selectedSymbolMetadata} preview={displayedPreview} symbol={symbol} />
  ) : (
  <div className=" border border-border p-3">
  <div className="type-step-eyebrow">Raw payload</div>
- <pre className="type-meta mt-2 max-h-[320px] overflow-auto">{compactPreview({ quote: preview.quote, ohlc: preview.ohlc })}</pre>
+ <pre className="type-meta mt-2 max-h-[320px] overflow-auto">{compactPreview({ quote: displayedPreview.quote, ohlc: displayedPreview.ohlc })}</pre>
  </div>
  )}
  </div>
-) : null}
+ ) : null}
+ </div>
+ )}
+ </div>
  </div>
 
  <div className="max-w-5xl">
@@ -2715,18 +3339,20 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  />
  </TabsContent>
  <TabsContent className="mt-0" value="graph">
- <div className="grid gap-3 min-[960px]:grid-cols-[150px_1fr_1fr]">
+ <div className="grid gap-3">
  <div className="border border-border p-3">
  <SectionTitle className="mb-2">Trigger</SectionTitle>
  <HelpText>The graph starts from the live quote stream for the selected symbol and account.</HelpText>
  </div>
+ <div className="grid w-fit max-w-full gap-3">
  {conditions.map((condition, index) => (
  <div className="border border-border p-3" key={`${condition.field}-${index}`}>
  <SectionTitle className="mb-2">Condition node {index + 1}</SectionTitle>
  <ConditionEditor condition={condition} index={index} removeCondition={removeCondition} updateCondition={updateCondition} />
  </div>
  ))}
- <div className="border border-border p-3 min-[960px]:col-span-3">
+ </div>
+ <div className="border border-border p-3">
  <SectionTitle className="mb-2">Notification node</SectionTitle>
  <HelpText>These templates render the alert title and body when the conditions match.</HelpText>
  <div className="mt-3 grid max-w-[820px] gap-3 min-[960px]:grid-cols-[200px_minmax(0,1fr)_120px]">
@@ -3116,116 +3742,169 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 function LivePreviewSummary({
  symbol,
  exchange,
+ metadata,
  preview
 }: {
  symbol: string;
  exchange: string;
+ metadata: AlphaSymbolMetadata | null;
  preview: PreviewState;
 }) {
  const quoteRaw = ((preview.quote?.detail as JsonObject | undefined)?.raw as JsonObject | undefined) ?? {};
  const depth = (quoteRaw.depth as JsonObject | undefined) ?? {};
  const buyDepth = Array.isArray(depth.buy) ? depth.buy.slice(0, 3) : [];
  const sellDepth = Array.isArray(depth.sell) ? depth.sell.slice(0, 3) : [];
+ const ltp = displayValue(preview.quote?.ltp);
+ const dailyMove = formatDailyMove(quoteRaw.day_change, quoteRaw.day_change_perc);
+ const positiveMove = isPositiveMove(quoteRaw.day_change, quoteRaw.day_change_perc);
+ const volume = displayValue(quoteRaw.volume);
+ const openInterest = displayValue(quoteRaw.open_interest);
+ const companyContext = metadata?.company_name
+ ? [metadata.company_name, metadata.basic_industry ?? metadata.industry ?? metadata.sector].filter(Boolean).join(" · ")
+ : "";
  return (
- <div className="grid max-w-4xl gap-2 min-[720px]:grid-cols-4">
- <div className=" border border-border p-3">
- <div className="type-step-eyebrow">Quote</div>
- <div className="mt-2 text-xl font-bold">{preview.quote?.ltp ?? "-"}</div>
- <div className="type-meta mt-1">{symbol || "-"} - {exchange || "-"}</div>
- <div className="type-meta mt-3 grid gap-1">
- <div>Change: {String(quoteRaw.day_change ?? "-")}</div>
- <div>Change %: {String(quoteRaw.day_change_perc ?? "-")}</div>
- <div>Volume: {String(quoteRaw.volume ?? "-")}</div>
- <div>Open interest: {String(quoteRaw.open_interest ?? "-")}</div>
+ <div className="grid max-w-5xl gap-3">
+ <div className="grid gap-3 min-[760px]:grid-cols-[minmax(220px,0.9fr)_minmax(0,1.1fr)]">
+ <div className="border border-border bg-background p-4">
+ <div className="type-step-eyebrow">Last traded price</div>
+ <div className="mt-3 grid gap-3 min-[520px]:grid-cols-[40px_minmax(0,1fr)]">
+ {metadata?.logo ? (
+ <img alt="" className="mt-1 size-10 shrink-0 object-contain" src={metadata.logo} />
+ ) : (
+ <span className="mt-1 flex size-10 shrink-0 items-center justify-center font-mono text-[11px] font-semibold uppercase text-muted-foreground">
+ {(symbol || "--").slice(0, 2)}
+ </span>
+ )}
+ <div className="min-w-0">
+ <div className="flex flex-wrap items-end gap-2">
+ <div className="font-mono text-4xl font-bold leading-none text-foreground">{ltp}</div>
+ <div className="pb-1 font-mono text-sm uppercase text-muted-foreground">INR</div>
+ </div>
+ <div className={cn("mt-2 font-mono text-sm font-semibold", positiveMove === false ? "text-[var(--danger)]" : "text-[var(--success)]")}>{dailyMove}</div>
+ <div className="mt-2 font-mono text-xs uppercase text-muted-foreground">{[symbol, exchange].filter(Boolean).join(" · ") || "-"}</div>
+ {companyContext ? <div className="mt-1 truncate text-xs text-muted-foreground">{companyContext}</div> : null}
  </div>
  </div>
- <div className=" border border-border p-3">
+ <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3 text-sm">
+ <PreviewMetric label="Volume" value={volume} />
+ <PreviewMetric label="Open interest" value={openInterest} />
+ </div>
+ </div>
+ <div className="grid gap-3 min-[620px]:grid-cols-2">
+ <div className="border border-border bg-background p-4">
  <div className="type-step-eyebrow">OHLC</div>
- <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
- <span>Open: {String(preview.ohlc?.open ?? "-")}</span>
- <span>High: {String(preview.ohlc?.high ?? "-")}</span>
- <span>Low: {String(preview.ohlc?.low ?? "-")}</span>
- <span>Close: {String(preview.ohlc?.close ?? "-")}</span>
- </div>
- <div className="type-meta mt-3 grid gap-1">
- <div>52w high: {String(quoteRaw.week_52_high ?? "-")}</div>
- <div>52w low: {String(quoteRaw.week_52_low ?? "-")}</div>
+ <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
+ <PreviewMetric label="Open" value={displayValue(preview.ohlc?.open)} />
+ <PreviewMetric label="High" value={displayValue(preview.ohlc?.high)} />
+ <PreviewMetric label="Low" value={displayValue(preview.ohlc?.low)} />
+ <PreviewMetric label="Close" value={displayValue(preview.ohlc?.close)} />
+ <PreviewMetric label="52w high" value={displayValue(quoteRaw.week_52_high)} />
+ <PreviewMetric label="52w low" value={displayValue(quoteRaw.week_52_low)} />
  </div>
  </div>
- <div className=" border border-border p-3">
+ <div className="border border-border bg-background p-4">
  <div className="type-step-eyebrow">Market internals</div>
- <div className="type-meta mt-3 grid gap-1">
- <div>Total buy qty: {String(quoteRaw.total_buy_quantity ?? "-")}</div>
- <div>Total sell qty: {String(quoteRaw.total_sell_quantity ?? "-")}</div>
- <div>Last trade qty: {String(quoteRaw.last_trade_quantity ?? "-")}</div>
- <div>Last trade time: {String(quoteRaw.last_trade_time ?? "-")}</div>
- <div>Upper circuit: {String(quoteRaw.upper_circuit_limit ?? "-")}</div>
- <div>Lower circuit: {String(quoteRaw.lower_circuit_limit ?? "-")}</div>
+ <div className="mt-3 grid gap-3 text-sm">
+ <PreviewMetric label="Total buy qty" value={displayValue(quoteRaw.total_buy_quantity)} />
+ <PreviewMetric label="Total sell qty" value={displayValue(quoteRaw.total_sell_quantity)} />
+ <PreviewMetric label="Last trade qty" value={displayValue(quoteRaw.last_trade_quantity)} />
+ <PreviewMetric label="Last trade time" value={displayValue(quoteRaw.last_trade_time)} />
+ <PreviewMetric label="Upper circuit" value={displayValue(quoteRaw.upper_circuit_limit)} />
+ <PreviewMetric label="Lower circuit" value={displayValue(quoteRaw.lower_circuit_limit)} />
  </div>
  </div>
- <div className=" border border-border p-3 min-[720px]:col-span-4">
- <div className="grid gap-3 min-[720px]:grid-cols-2">
- <div>
- <div className="type-step-eyebrow">Top bids</div>
- <div className="mt-2 grid gap-2">
- {buyDepth.map((row, index) => {
- const item = row as JsonObject;
- return (
- <div className="type-meta border border-border px-2 py-2" key={`buy-${index}`}>
- <div>Price: {String(item.price ?? "-")}</div>
- <div>Qty: {String(item.quantity ?? "-")}</div>
- <div>Orders: {String(item.orderCount ?? "-")}</div>
+ </div>
+ </div>
+ <MarketDepth buyRows={buyDepth} sellRows={sellDepth} />
  </div>
  );
- })}
- {!buyDepth.length ? <div className="type-meta">No bid depth available.</div> : null}
- </div>
- </div>
- <div>
- <div className="type-step-eyebrow">Top asks</div>
- <div className="mt-2 grid gap-2">
- {sellDepth.map((row, index) => {
- const item = row as JsonObject;
+}
+
+function PreviewMetric({ label, value }: { label: string; value: string }) {
  return (
- <div className="type-meta border border-border px-2 py-2" key={`sell-${index}`}>
- <div>Price: {String(item.price ?? "-")}</div>
- <div>Qty: {String(item.quantity ?? "-")}</div>
- <div>Orders: {String(item.orderCount ?? "-")}</div>
+ <div className="min-w-0">
+ <div className="text-[12px] leading-4 text-muted-foreground">{label}</div>
+ <div className="truncate font-mono text-sm font-semibold leading-5 text-foreground">{value}</div>
  </div>
  );
- })}
- {!sellDepth.length ? <div className="type-meta">No ask depth available.</div> : null}
+}
+
+function depthQuantity(row: unknown): number {
+ const item = row as JsonObject;
+ return numeric(item.quantity ?? item.qty) ?? 0;
+}
+
+function formatDepthTotal(value: number): string {
+ return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(value);
+}
+
+function MarketDepth({ buyRows, sellRows }: { buyRows: unknown[]; sellRows: unknown[] }) {
+ const buyTotal = buyRows.reduce<number>((sum, row) => sum + depthQuantity(row), 0);
+ const sellTotal = sellRows.reduce<number>((sum, row) => sum + depthQuantity(row), 0);
+ const total = buyTotal + sellTotal;
+ const buyPct = total ? (buyTotal / total) * 100 : 50;
+ const sellPct = total ? 100 - buyPct : 50;
+ const maxQty = Math.max(1, ...buyRows.map(depthQuantity), ...sellRows.map(depthQuantity));
+ return (
+ <div className="border border-border bg-background p-4">
+ <div className="grid gap-3">
+ <div className="grid grid-cols-2 gap-4 text-sm">
+ <div>
+ <div className="text-muted-foreground">Buy orders</div>
+ <div className="font-mono font-semibold text-foreground">{total ? `${buyPct.toFixed(2)}%` : "-"}</div>
+ </div>
+ <div className="text-right">
+ <div className="text-muted-foreground">Sell orders</div>
+ <div className="font-mono font-semibold text-foreground">{total ? `${sellPct.toFixed(2)}%` : "-"}</div>
  </div>
  </div>
+ <div className="flex h-1 overflow-hidden bg-border">
+ <div className="bg-[var(--success)]" style={{ width: `${buyPct}%` }} />
+ <div className="bg-[var(--danger)]" style={{ width: `${sellPct}%` }} />
+ </div>
+ <div className="grid gap-6 min-[760px]:grid-cols-2">
+ <DepthColumn maxQty={maxQty} rows={buyRows} side="bid" title="Bid Price" total={buyTotal} />
+ <DepthColumn maxQty={maxQty} rows={sellRows} side="ask" title="Ask Price" total={sellTotal} />
  </div>
  </div>
  </div>
  );
 }
 
-function SymbolQuoteTooltip({ loading, quote }: { loading: boolean; quote: QuoteResponse | null }) {
- const detail = (quote?.detail as JsonObject | undefined) ?? {};
- const raw = (detail.raw as JsonObject | undefined) ?? {};
+function DepthColumn({ maxQty, rows, side, title, total }: { maxQty: number; rows: unknown[]; side: "bid" | "ask"; title: string; total: number }) {
+ const isBid = side === "bid";
  return (
- <div className="absolute left-0 top-[calc(100%+6px)] z-30 min-w-64 border border-border bg-popover p-3 shadow-lg">
- {loading ? (
- <div className="type-meta">Loading live quote...</div>
- ) : quote ? (
- <div className="type-meta grid gap-2">
- <div className="flex items-center justify-between gap-4">
- <span className="font-mono font-bold">{quote.symbol ?? "Symbol"}</span>
- <span className="font-mono text-primary">{quote.ltp}</span>
+ <div className="grid content-start gap-2">
+ <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3 text-[13px] text-muted-foreground">
+ <div>{title}</div>
+ <div className="text-right">Qty</div>
  </div>
- <div className="grid grid-cols-2 gap-2 text-muted-foreground">
- <div>Change {String(raw.day_change_perc ?? raw.change_pct ?? "-")}</div>
- <div>Volume {String(raw.volume ?? "-")}</div>
- <div>OI {String(raw.open_interest ?? "-")}</div>
- <div>Last {String(raw.last_trade_time ?? "-")}</div>
+ <div className="grid gap-1">
+ {rows.map((row, index) => {
+ const item = row as JsonObject;
+ const quantity = depthQuantity(item);
+ const width = Math.max(4, (quantity / maxQty) * 100);
+ return (
+ <div className="grid min-h-7 grid-cols-[minmax(0,1fr)_112px] items-center gap-3 font-mono text-[13px] leading-4" key={`${title}-${index}`}>
+ <div className="text-foreground">{displayValue(item.price)}</div>
+ <div className={cn("relative overflow-hidden px-1 py-1 text-right font-semibold", isBid ? "text-[var(--success)]" : "text-[var(--danger)]")}>
+ <span
+ className={cn("absolute inset-y-0 opacity-15", isBid ? "right-0 bg-[var(--success)]" : "right-0 bg-[var(--danger)]")}
+ style={{ width: `${width}%` }}
+ />
+ <span className="relative">{formatDepthTotal(quantity)}</span>
  </div>
  </div>
- ) : (
- <div className="type-meta">No live quote available.</div>
- )}
+ );
+ })}
+ {!rows.length ? <div className="border border-dashed border-border px-3 py-5 text-sm text-muted-foreground">No depth available.</div> : null}
+ {rows.length ? (
+ <div className="mt-2 grid grid-cols-[minmax(0,1fr)_112px] gap-3 border-t border-border pt-2 text-sm">
+ <div className="font-semibold text-foreground">{isBid ? "Bid Total" : "Ask Total"}</div>
+ <div className="text-right font-mono font-semibold text-foreground">{formatDepthTotal(total)}</div>
+ </div>
+ ) : null}
+ </div>
  </div>
  );
 }
@@ -3400,7 +4079,7 @@ function ConditionEditor({
 
  return (
  <div className="grid gap-3">
- <div className="grid max-w-4xl gap-3 min-[900px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_88px_minmax(0,0.9fr)_96px]">
+ <div className="grid max-w-4xl gap-3 [grid-template-columns:repeat(auto-fit,minmax(132px,1fr))]">
  <div className="grid min-w-0 gap-2">
  <FieldLabel>Field</FieldLabel>
  <Select className="h-9 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { field: event.target.value })} value={condition.field}>
@@ -3423,12 +4102,12 @@ function ConditionEditor({
  {compareOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
  </div>
- <div className="grid min-w-0 gap-2">
+ <div className="grid min-w-[112px] gap-2">
  <FieldLabel>Action</FieldLabel>
  <Button className="w-full min-w-0" onClick={() => removeCondition(index)} type="button" variant="destructive">Remove</Button>
  </div>
  </div>
- <div className="grid gap-2 text-[13px] leading-5 text-muted-foreground min-[900px]:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_88px_minmax(0,0.9fr)_96px]">
+ <div className="grid gap-2 text-[13px] leading-5 text-muted-foreground [grid-template-columns:repeat(auto-fit,minmax(132px,1fr))]">
  <div>{fieldMeta?.help}</div>
  <div>{operatorMeta?.help}</div>
  <div />
