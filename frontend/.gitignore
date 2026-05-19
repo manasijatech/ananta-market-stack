@@ -5,3 +5,4 @@ out/
 *.tsbuildinfo
 data/
 .env
+ALPHA_API_REFERENCE.md
