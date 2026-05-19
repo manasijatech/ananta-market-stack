@@ -170,11 +170,11 @@ def delete_broker_account(
     """
     **Remove a broker account.**
 
-    Performs a cascade delete of the account and its associated credentials.
+    Removes the broker account without deleting workflows, notifications, or
+    subscription intent that previously referenced it.
     """
     acc = _get_owned_account(db, user.id, account_id)
-    db.delete(acc)
-    db.commit()
+    ba_svc.delete_broker_account_safely(db, acc)
 
 
 @router.post("/{account_id}/verify", response_model=VerifyOut)

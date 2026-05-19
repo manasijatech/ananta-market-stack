@@ -251,6 +251,7 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
             {
                 "user_id": "VARCHAR(36)",
                 "preferred_search_account_id": "VARCHAR(36)",
+                "preferred_default_account_id": "VARCHAR(36)",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
             },

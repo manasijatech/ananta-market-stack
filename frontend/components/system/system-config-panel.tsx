@@ -7,6 +7,7 @@ import {
   deleteAlphaApiCredential,
   deleteLlmProviderCredential,
   deleteLlmProviderModel,
+  updateBrokerDataDefaultConfig,
   updateBrokerDataSearchConfig,
   updateAlphaWebSocketConfig,
   upsertAlphaApiCredential,
@@ -63,7 +64,9 @@ export function SystemConfigPanel({
   initialConfig: SystemConfig;
 }) {
   const [config, setConfig] = useState(initialConfig);
+  const [selectedDefaultAccountId, setSelectedDefaultAccountId] = useState(initialConfig.broker_data_default.preferred_default_account_id ?? "");
   const [selectedAccountId, setSelectedAccountId] = useState(initialConfig.broker_data_search.preferred_search_account_id ?? "");
+  const [defaultBrokerError, setDefaultBrokerError] = useState("");
   const [brokerError, setBrokerError] = useState("");
   const [alphaApiKey, setAlphaApiKey] = useState("");
   const [alphaWsConfig, setAlphaWsConfig] = useState(initialConfig.alpha_websocket);
@@ -120,6 +123,18 @@ export function SystemConfigPanel({
         setConfig((current) => ({ ...current, broker_data_search: next }));
       } catch (caught) {
         setBrokerError(parseActionError(caught).message);
+      }
+    });
+  }
+
+  function saveDefaultBrokerPreference() {
+    setDefaultBrokerError("");
+    startTransition(async () => {
+      try {
+        const next = await updateBrokerDataDefaultConfig(selectedDefaultAccountId || null);
+        setConfig((current) => ({ ...current, broker_data_default: next }));
+      } catch (caught) {
+        setDefaultBrokerError(parseActionError(caught).message);
       }
     });
   }
@@ -247,6 +262,40 @@ export function SystemConfigPanel({
   return (
     <div className="grid gap-5">
       <section className="border border-border p-4">
+        <div className="text-sm font-bold">Default broker for broker data</div>
+        <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
+          Background subscriptions and broker-backed market data use this broker first. If the selected broker is not verified or its session is inactive, the backend falls back to the next verified active session.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Select
+            className="h-9 min-w-[240px] max-w-sm border border-input bg-background px-3 text-sm"
+            onChange={(event) => setSelectedDefaultAccountId(event.target.value)}
+            value={selectedDefaultAccountId}
+          >
+            {config.broker_data_default.accounts.map((account) => (
+              <option key={account.account_id} value={account.account_id}>
+                {account.label} · {account.broker_code}
+              </option>
+            ))}
+          </Select>
+          <Button disabled={isPending || !config.broker_data_default.accounts.length} onClick={saveDefaultBrokerPreference} type="button">
+            {isPending ? "Saving..." : "Save"}
+          </Button>
+        </div>
+        {config.broker_data_default.effective_default_account_id ? (
+          <div className="mt-3 text-xs text-muted-foreground">
+            Effective broker data account: {config.broker_data_default.accounts.find((item) => item.account_id === config.broker_data_default.effective_default_account_id)?.label ?? config.broker_data_default.effective_default_account_id}
+            {config.broker_data_default.fallback_used ? " · fallback active right now" : ""}
+          </div>
+        ) : config.broker_data_default.accounts.length ? (
+          <div className="mt-3 text-xs text-amber-700 dark:text-amber-300">
+            No verified active broker session is currently available for default broker data.
+          </div>
+        ) : null}
+        {defaultBrokerError ? <div className="mt-3 text-sm text-destructive">{defaultBrokerError}</div> : null}
+      </section>
+
+      <section className="border border-border p-4">
         <div className="text-sm font-bold">Default symbol-search broker</div>
         <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
           The selected broker cache is used first for symbol search. If it is unavailable, search falls back to the next available synced broker without blocking the UI.
@@ -290,7 +339,7 @@ export function SystemConfigPanel({
                 </div>
               </div>
               <div className="text-xs text-muted-foreground">
-                {account.is_preferred ? "preferred" : account.is_effective ? "effective fallback" : "standby"}
+                {account.is_preferred ? "search preferred" : account.is_effective ? "search fallback" : "standby"}
               </div>
             </div>
             <div className="mt-3 grid gap-1 text-xs text-muted-foreground">

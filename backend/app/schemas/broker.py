@@ -427,5 +427,29 @@ class BrokerDataSearchConfigUpdateIn(BaseModel):
     preferred_search_account_id: str | None = None
 
 
+class BrokerDataDefaultAccountOut(BaseModel):
+    account_id: str
+    broker_code: str
+    label: str
+    is_verified: bool
+    session_status: str | None = None
+    session_active: bool = False
+    is_preferred: bool = False
+    is_effective: bool = False
+    last_verified_at: datetime | None = None
+    last_error: str | None = None
+
+
+class BrokerDataDefaultConfigOut(BaseModel):
+    preferred_default_account_id: str | None = None
+    effective_default_account_id: str | None = None
+    fallback_used: bool = False
+    accounts: list[BrokerDataDefaultAccountOut] = Field(default_factory=list)
+
+
+class BrokerDataDefaultConfigUpdateIn(BaseModel):
+    preferred_default_account_id: str | None = None
+
+
 def supported_brokers() -> list[str]:
     return [b.value for b in BrokerCode]

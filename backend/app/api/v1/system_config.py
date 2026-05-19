@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
-from app.schemas.broker import BrokerDataSearchConfigUpdateIn, InstrumentSearchRow
+from app.schemas.broker import (
+    BrokerDataDefaultConfigUpdateIn,
+    BrokerDataSearchConfigUpdateIn,
+    InstrumentSearchRow,
+)
 from app.schemas.system_config import (
     AlphaApiConfigOut,
     AlphaApiCredentialUpsertIn,
@@ -35,6 +39,7 @@ def get_system_config(
     user: User = Depends(get_current_user),
 ) -> SystemConfigOut:
     return SystemConfigOut(
+        broker_data_default=broker_data_preferences.get_broker_data_default_config(db, user.id),
         broker_data_search=broker_data_preferences.get_broker_data_search_config(db, user.id),
         llm_providers=llm_config.list_provider_configs(db, user.id),
         alpha_api=alpha_config.get_alpha_api_config(db, user.id),
@@ -48,6 +53,26 @@ def get_broker_search_config(
     user: User = Depends(get_current_user),
 ):
     return broker_data_preferences.get_broker_data_search_config(db, user.id)
+
+
+@router.get("/broker-default")
+def get_broker_default_config(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return broker_data_preferences.get_broker_data_default_config(db, user.id)
+
+
+@router.put("/broker-default")
+def update_broker_default_config(
+    body: BrokerDataDefaultConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        return broker_data_preferences.update_broker_data_default_config(db, user.id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/broker-search")

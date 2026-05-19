@@ -169,6 +169,9 @@ class UserBrokerDataPreference(Base):
     preferred_search_account_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    preferred_default_account_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -544,7 +547,7 @@ class BrokerNotification(Base):
         String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     account_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), index=True, nullable=True
+        String(36), ForeignKey("broker_accounts.id", ondelete="SET NULL"), index=True, nullable=True
     )
     broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     level: Mapped[str] = mapped_column(String(16), default="info")
@@ -783,7 +786,7 @@ class AlertWorkflow(Base):
         String(36), ForeignKey("alert_workflow_templates.id", ondelete="SET NULL"), nullable=True, index=True
     )
     account_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), nullable=True, index=True
+        String(36), ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(128))
@@ -840,7 +843,7 @@ class LiveSymbolSubscription(Base):
         String(36), ForeignKey("alert_workflows.id", ondelete="CASCADE"), nullable=True, index=True
     )
     account_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), nullable=True, index=True
+        String(36), ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(128), index=True)
@@ -878,7 +881,7 @@ class UserAlertNotification(Base):
         String(36), ForeignKey("alert_workflow_templates.id", ondelete="SET NULL"), nullable=True, index=True
     )
     account_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), nullable=True, index=True
+        String(36), ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     symbol: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)

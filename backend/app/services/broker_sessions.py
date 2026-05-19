@@ -814,6 +814,16 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
             broker_data_preferences.run_holdings_refresh_cycle(force=initial_cycle)
         except Exception:
             pass
+        try:
+            from app.services.alerts_engine.reconcile import reconcile_all_users
+
+            db = SessionLocal()
+            try:
+                reconcile_all_users(db)
+            finally:
+                db.close()
+        except Exception:
+            pass
         initial_cycle = False
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=300)
