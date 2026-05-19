@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.alert import AlertMarketCapFilterConfig
+
 
 AST_VERSION = 2
 
@@ -38,6 +40,7 @@ class AlertWorkflowAst(BaseModel):
     cooldown_seconds: int = 300
     notification: dict[str, Any] = Field(default_factory=dict)
     channels: dict[str, Any] = Field(default_factory=dict)
+    market_cap_filter: AlertMarketCapFilterConfig = Field(default_factory=AlertMarketCapFilterConfig)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -118,6 +121,6 @@ def ensure_workflow_ast(dsl: Any) -> AlertWorkflowAst:
         cooldown_seconds=int(payload.get("cooldown_seconds") or 300),
         notification=notification.model_dump() if hasattr(notification, "model_dump") else dict(notification or {}),
         channels=channels.model_dump() if hasattr(channels, "model_dump") else dict(channels or {}),
+        market_cap_filter=payload.get("market_cap_filter") or {},
         metadata={"migrated_from": "legacy_rule"},
     )
-

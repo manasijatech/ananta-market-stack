@@ -51,6 +51,12 @@ export interface AlertFeedTriggerConfig {
   timeout_seconds: number;
 }
 
+export interface AlertMarketCapFilterConfig {
+  mode: "all" | "custom";
+  min_value?: number | null;
+  max_value?: number | null;
+}
+
 export interface AlertMarketSessionWindow {
   label: string;
   start: string;
@@ -96,6 +102,7 @@ export interface AlertWorkflowDsl {
   channels: AlertChannelSelection;
   llm_analysis: AlertLlmAnalysisConfig;
   feed_trigger: AlertFeedTriggerConfig;
+  market_cap_filter: AlertMarketCapFilterConfig;
   active_period: AlertWorkflowActivePeriod;
   workflow_ast?: Record<string, unknown> | null;
   dsl_text?: string | null;

@@ -64,6 +64,7 @@ def _add_workflow(
     products: list[str] | None = None,
     last_triggered_at: datetime | None = None,
     llm_analysis: bool = False,
+    market_cap_filter: dict[str, object] | None = None,
 ) -> AlertWorkflow:
     dsl = AlertWorkflowDsl(
         workflow_type="alpha_feed",
@@ -86,6 +87,7 @@ def _add_workflow(
             model_id=model_id,
             prompt_template="Analyze @trigger.reason for {symbol}. Details @trigger.details",
         ),
+        market_cap_filter=market_cap_filter or {"mode": "all"},
     )
     row = AlertWorkflow(
         id=workflow_id,
@@ -254,6 +256,39 @@ def test_alpha_feed_prefilters_product_and_cooldown_before_batch(monkeypatch):
     assert len(calls) == 1
     cases = json.loads(calls[0]["user_text"])["workflow_cases"]
     assert [case["workflow_id"] for case in cases] == ["wf-ok"]
+    db.close()
+
+
+def test_alpha_feed_market_cap_filter_rejects_event_before_trigger_llm(monkeypatch):
+    db = _db()
+    calls = []
+
+    def fake_generate_text(*args, **kwargs):
+        calls.append(kwargs)
+        return _Response(json.dumps({"results": []}))
+
+    monkeypatch.setattr("app.services.alert_feed_batch.llm_gateway.generate_text", fake_generate_text)
+    monkeypatch.setattr(
+        "app.services.alert_market_cap.alpha_symbols.get_symbol_metadata",
+        lambda db, user_id, symbols: [],
+    )
+    db.add(User(id="u1", display_name="User"))
+    _add_user_model(db, "openai", "gpt-test")
+    _add_workflow(
+        db,
+        "wf-market-cap",
+        "Order wins",
+        market_cap_filter={"mode": "custom", "min_value": 1000, "max_value": 5000},
+    )
+    event = _add_event(db)
+    db.commit()
+
+    alert_runtime._process_alpha_feed_event(db, event)
+
+    assert calls == []
+    assert db.query(AlertWorkflowRun).count() == 0
+    db.refresh(event)
+    assert event.processed_at is not None
     db.close()
 
 

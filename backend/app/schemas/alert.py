@@ -66,6 +66,12 @@ class AlertFeedTriggerConfig(BaseModel):
     timeout_seconds: int = Field(default=25, ge=1, le=120)
 
 
+class AlertMarketCapFilterConfig(BaseModel):
+    mode: Literal["all", "custom"] = "all"
+    min_value: float | None = Field(default=None, ge=0)
+    max_value: float | None = Field(default=None, ge=0)
+
+
 class AlertMarketSessionWindow(BaseModel):
     label: str = "Regular market"
     start: str = Field(default="09:15", pattern=r"^\d{2}:\d{2}$")
@@ -111,6 +117,7 @@ class AlertWorkflowDsl(BaseModel):
     channels: AlertChannelSelection = Field(default_factory=AlertChannelSelection)
     llm_analysis: AlertLlmAnalysisConfig = Field(default_factory=AlertLlmAnalysisConfig)
     feed_trigger: AlertFeedTriggerConfig = Field(default_factory=AlertFeedTriggerConfig)
+    market_cap_filter: AlertMarketCapFilterConfig = Field(default_factory=AlertMarketCapFilterConfig)
     active_period: AlertWorkflowActivePeriod = Field(default_factory=AlertWorkflowActivePeriod)
     workflow_ast: dict[str, Any] | None = None
     dsl_text: str | None = None

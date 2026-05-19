@@ -20,6 +20,7 @@ def test_legacy_rule_payload_migrates_to_ast():
             "combine": "all",
             "cooldown_seconds": 120,
             "conditions": [{"field": "ltp", "operator": "gte", "value": 100}],
+            "market_cap_filter": {"mode": "custom", "min_value": 1000, "max_value": 5000},
             "targeting": {
                 "mode": "symbol_list",
                 "entries": [{"symbol": "RELIANCE", "exchange": "NSE", "instrument_ref": {}}],
@@ -31,6 +32,9 @@ def test_legacy_rule_payload_migrates_to_ast():
     assert ast.cooldown_seconds == 120
     assert ast.target_universe.kind == "static_symbols"
     assert ast.target_universe.symbols[0]["symbol"] == "RELIANCE"
+    assert ast.market_cap_filter.mode == "custom"
+    assert ast.market_cap_filter.min_value == 1000
+    assert ast.market_cap_filter.max_value == 5000
     assert ast.logic.children[0].operator == "gte"
 
 

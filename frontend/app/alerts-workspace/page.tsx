@@ -58,11 +58,18 @@ function percent(numerator: number, denominator: number) {
 
 function targetSummary(workflow: AlertWorkflow) {
   const targeting = workflow.workflow_dsl.targeting;
+  const ast = workflow.workflow_dsl.workflow_ast as Record<string, unknown> | null | undefined;
+  const targetUniverse = ast && typeof ast.target_universe === "object" && ast.target_universe !== null
+    ? ast.target_universe as Record<string, unknown>
+    : null;
   if (targeting.mode === "symbol_list") {
     return `${targeting.entries.length} symbols`;
   }
   if (targeting.mode === "preset_universe") {
-    return targeting.preset_label || targeting.preset_id || "Preset universe";
+    if (targetUniverse?.kind === "watchlist") {
+      return String(targetUniverse.label ?? targetUniverse.watchlist_id ?? "Watchlist universe");
+    }
+    return targeting.preset_label || targeting.preset_id || "Watchlist universe";
   }
   const entry = targeting.entries[0];
   return [entry?.symbol || workflow.symbol || "No target", entry?.exchange || workflow.exchange].filter(Boolean).join(" · ");
