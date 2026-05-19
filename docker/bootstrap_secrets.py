@@ -32,21 +32,9 @@ def _read_existing() -> dict[str, str]:
 
 def main() -> None:
     values = _read_existing()
-    values["CREDENTIAL_ENCRYPTION_KEY"] = (
-        os.environ.get("CREDENTIAL_ENCRYPTION_KEY")
-        or values.get("CREDENTIAL_ENCRYPTION_KEY")
-        or _fernet_key()
-    )
-    values["BETTER_AUTH_SECRET"] = (
-        os.environ.get("BETTER_AUTH_SECRET")
-        or values.get("BETTER_AUTH_SECRET")
-        or _token()
-    )
-    values["REDIS_PASSWORD"] = (
-        os.environ.get("REDIS_PASSWORD")
-        or values.get("REDIS_PASSWORD")
-        or _token()
-    )
+    values["CREDENTIAL_ENCRYPTION_KEY"] = values.get("CREDENTIAL_ENCRYPTION_KEY") or os.environ.get("CREDENTIAL_ENCRYPTION_KEY") or _fernet_key()
+    values["BETTER_AUTH_SECRET"] = values.get("BETTER_AUTH_SECRET") or os.environ.get("BETTER_AUTH_SECRET") or _token()
+    values["REDIS_PASSWORD"] = values.get("REDIS_PASSWORD") or os.environ.get("REDIS_PASSWORD") or _token()
 
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(
