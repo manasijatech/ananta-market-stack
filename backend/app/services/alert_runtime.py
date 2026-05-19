@@ -175,6 +175,17 @@ def _workflow_active_for_tick(db, workflow, tick: dict[str, Any]) -> tuple[bool,
     return result.active, {"active": result.active, "reason": result.reason, **result.details}
 
 
+def _workflow_active_for_feed(workflow) -> tuple[bool, dict[str, Any]]:
+    if workflow.workflow_dsl.workflow_type != "alpha_feed":
+        return True, {"active": True, "reason": "not an alpha feed workflow"}
+    result = evaluate_active_period(
+        workflow.workflow_dsl.active_period,
+        {},
+        now=_utc_now().replace(tzinfo=UTC),
+    )
+    return result.active, {"active": result.active, "reason": result.reason, **result.details}
+
+
 def _normalize_tick_payload(
     *,
     user_id: str,
@@ -947,6 +958,9 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             continue
         trigger = workflow.workflow_dsl.feed_trigger
         if not trigger.enabled or event.product not in trigger.products:
+            continue
+        active, _active_period_details = _workflow_active_for_feed(workflow)
+        if not active:
             continue
         market_cap_match, market_cap_details = _alpha_feed_market_cap_passes(
             db,

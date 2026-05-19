@@ -215,11 +215,21 @@ const messageTemplateFields = [
  "capacity"
 ];
 const alphaFeedProducts = ["news", "announcements", "earnings", "concalls", "alerts"] as const;
-const defaultActivePeriod = {
+const defaultMarketDataActivePeriod = {
  enabled: true,
  timezone: "Asia/Kolkata",
  days: ["mon", "tue", "wed", "thu", "fri"],
  sessions: [{ label: "Regular market", start: "09:15", end: "15:30" }],
+ exchanges: [],
+ exchange_types: [],
+ segments: [],
+ instrument_types: []
+};
+const defaultAlphaFeedActivePeriod = {
+ enabled: true,
+ timezone: "Asia/Kolkata",
+ days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+ sessions: [{ label: "Always active", start: "00:00", end: "23:59" }],
  exchanges: [],
  exchange_types: [],
  segments: [],
@@ -236,6 +246,10 @@ const dayOptions = [
 ] as const;
 
 const targetListExample = "RELIANCE,NSE\nTCS,NSE\nINFY,NSE";
+
+function activePeriodDefaults(workflowType: "market_data" | "alpha_feed") {
+ return workflowType === "alpha_feed" ? defaultAlphaFeedActivePeriod : defaultMarketDataActivePeriod;
+}
 
 const fallbackLlmPrompt = `Analyze why this alert triggered for {symbol}.
 
@@ -912,10 +926,11 @@ initialWorkflow,
  const [status, setStatus] = useState<"active" | "inactive">(initialEditableStatus);
  const [combine, setCombine] = useState<"all" | "any">(initialWorkflow?.workflow_dsl.combine ?? "all");
  const [cooldownSeconds, setCooldownSeconds] = useState(String(initialWorkflow?.workflow_dsl.cooldown_seconds ?? 300));
- const initialActivePeriod = { ...defaultActivePeriod, ...(initialWorkflow?.workflow_dsl.active_period ?? {}) };
+ const initialActivePeriodDefaults = activePeriodDefaults(initialWorkflowType);
+ const initialActivePeriod = { ...initialActivePeriodDefaults, ...(initialWorkflow?.workflow_dsl.active_period ?? {}) };
  const [activePeriodEnabled, setActivePeriodEnabled] = useState(initialActivePeriod.enabled);
  const [activeTimezone, setActiveTimezone] = useState(initialActivePeriod.timezone);
- const [activeDays, setActiveDays] = useState<string[]>(initialActivePeriod.days.length ? initialActivePeriod.days : defaultActivePeriod.days);
+ const [activeDays, setActiveDays] = useState<string[]>(initialActivePeriod.days.length ? initialActivePeriod.days : initialActivePeriodDefaults.days);
  const [activeSessionLabel, setActiveSessionLabel] = useState(initialActivePeriod.sessions[0]?.label ?? "Regular market");
  const [activeSessionStart, setActiveSessionStart] = useState(initialActivePeriod.sessions[0]?.start ?? "09:15");
 const [activeSessionEnd, setActiveSessionEnd] = useState(initialActivePeriod.sessions[0]?.end ?? "15:30");
@@ -1629,6 +1644,21 @@ const activeInstrument = useMemo<InstrumentRef>(
  setActiveDays((current) => checked ? Array.from(new Set([...current, day])) : current.filter((item) => item !== day));
  }
 
+ function applyActivePeriodDefaults(nextType: "market_data" | "alpha_feed") {
+ const defaults = activePeriodDefaults(nextType);
+ setActivePeriodEnabled(defaults.enabled);
+ setActiveTimezone(defaults.timezone);
+ setActiveDays(defaults.days);
+ setActiveSessionLabel(defaults.sessions[0]?.label ?? "Regular market");
+ setActiveSessionStart(defaults.sessions[0]?.start ?? "09:15");
+ setActiveSessionEnd(defaults.sessions[0]?.end ?? "15:30");
+ setActiveExchanges(listCsv(defaults.exchanges));
+ setActiveExchangeTypes(listCsv(defaults.exchange_types));
+ setActiveSegments(listCsv(defaults.segments));
+ setActiveInstrumentTypes(listCsv(defaults.instrument_types));
+ setShowAdvancedMarketScope(false);
+ }
+
  function marketCapFilterPayload() {
  const minValue = numeric(marketCapMin);
  const maxValue = numeric(marketCapMax);
@@ -1769,7 +1799,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  active_period: {
  enabled: activePeriodEnabled,
  timezone: activeTimezone.trim() || "Asia/Kolkata",
- days: activeDays.length ? activeDays : defaultActivePeriod.days,
+ days: activeDays.length ? activeDays : activePeriodDefaults(workflowType).days,
  sessions: [
  {
  label: activeSessionLabel.trim() || "Regular market",
@@ -2431,6 +2461,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  const nextStep = () => `Step ${visibleStepIndex++}`;
  const workflowBasicsStep = nextStep();
  const marketWindowStep = workflowType === "market_data" ? nextStep() : "";
+ const feedWindowStep = workflowType === "alpha_feed" ? nextStep() : "";
  const feedTriggerStep = workflowType === "alpha_feed" ? nextStep() : "";
  const targetStep = workflowType === "market_data" ? nextStep() : "";
  const marketCapStep = nextStep();
@@ -2506,7 +2537,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="grid max-w-3xl items-start gap-3 min-[760px]:grid-cols-[220px_minmax(0,360px)]">
  <Label className="grid content-start self-start gap-2 text-sm">
  <FieldLabel>Workflow type</FieldLabel>
- <Select className="h-9 max-w-full border border-input bg-background px-3 text-sm" onChange={(event) => setWorkflowType(event.target.value as "market_data" | "alpha_feed")} value={workflowType}>
+ <Select className="h-9 max-w-full border border-input bg-background px-3 text-sm" onChange={(event) => {
+ const nextType = event.target.value as "market_data" | "alpha_feed";
+ setWorkflowType(nextType);
+ applyActivePeriodDefaults(nextType);
+ }} value={workflowType}>
  <option value="market_data">Broker market data trigger</option>
  <option value="alpha_feed">Market Stack websocket feed trigger</option>
  </Select>
@@ -2615,6 +2650,56 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Label>
  </div>
  ) : null}
+ </div>
+ </div>
+) : null}
+
+{workflowType === "alpha_feed" ? (
+ <div className="max-w-5xl border border-border p-3">
+ <StepHeader
+ step={feedWindowStep}
+ title="Feed window"
+ description="Websocket feed workflows only evaluate items inside this window, so category filters, trigger LLM usage, and notifications are skipped outside your chosen times."
+ action={<Label className="flex items-center gap-2 text-sm">
+ <Checkbox checked={activePeriodEnabled} onCheckedChange={(checked) => setActivePeriodEnabled(Boolean(checked))} />
+ Enforce active period
+ </Label>}
+ />
+ <div className="grid max-w-2xl items-start gap-3 min-[760px]:grid-cols-[minmax(0,280px)_100px_100px]">
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>Timezone</FieldLabel>
+ <Input onChange={(event) => setActiveTimezone(event.target.value)} placeholder="Asia/Kolkata" value={activeTimezone} />
+ <HelpText>Feed workflows default to always-on timing in `Asia/Kolkata`, but you can narrow the window if needed.</HelpText>
+ </Label>
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>Start</FieldLabel>
+ <Input onChange={(event) => setActiveSessionStart(event.target.value)} placeholder="00:00" value={activeSessionStart} />
+ <HelpText>Window start time.</HelpText>
+ </Label>
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>End</FieldLabel>
+ <Input onChange={(event) => setActiveSessionEnd(event.target.value)} placeholder="23:59" value={activeSessionEnd} />
+ <HelpText>Window end time.</HelpText>
+ </Label>
+ </div>
+ <div className="mt-3 grid max-w-3xl items-start gap-3 min-[760px]:grid-cols-[minmax(0,280px)_1fr]">
+ <Label className="grid content-start self-start gap-2 text-sm">
+ <FieldLabel>Session label</FieldLabel>
+ <Input onChange={(event) => setActiveSessionLabel(event.target.value)} placeholder="Always active" value={activeSessionLabel} />
+ <HelpText>Saved with runtime evaluation metadata.</HelpText>
+ </Label>
+ <div className="grid content-start self-start gap-2">
+ <FieldLabel>Days</FieldLabel>
+ <div className="flex flex-wrap gap-3">
+ {dayOptions.map(([day, label]) => (
+ <Label className="flex items-center gap-1.5 text-sm" key={day}>
+ <Checkbox checked={activeDays.includes(day)} onCheckedChange={(checked) => toggleActiveDay(day, Boolean(checked))} />
+ {label}
+ </Label>
+ ))}
+ </div>
+ <HelpText>Feed workflows default to all seven days, but you can restrict them to any custom schedule.</HelpText>
+ </div>
  </div>
  </div>
 ) : null}
