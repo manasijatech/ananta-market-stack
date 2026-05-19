@@ -126,6 +126,8 @@ const operatorOptions = [
  { value: "rolling_pct_change_lte", label: "Rolling percent move down", help: "Trigger when percent change over a rolling window falls below the value." },
  { value: "abs_change_gte", label: "Absolute move up", help: "Trigger when absolute change versus a reference reaches the value." },
  { value: "abs_change_lte", label: "Absolute move down", help: "Trigger when absolute change versus a reference falls below the value." },
+ { value: "rolling_abs_change_gte", label: "Rolling absolute move up", help: "Trigger when absolute change over a rolling window reaches the value." },
+ { value: "rolling_abs_change_lte", label: "Rolling absolute move down", help: "Trigger when absolute change over a rolling window falls below the value." },
  { value: "field_gt", label: "Field greater than field", help: "Compare the selected field to another same-tick field." },
  { value: "field_gte", label: "Field greater/equal field", help: "Compare the selected field to another same-tick field." },
  { value: "field_lt", label: "Field less than field", help: "Compare the selected field to another same-tick field." },
@@ -4077,6 +4079,7 @@ function ConditionEditor({
  const fieldMeta = fieldOptions.find((item) => item.value === condition.field);
  const operatorMeta = operatorOptions.find((item) => item.value === condition.operator);
  const compareMeta = compareOptions.find((item) => item.value === (condition.compare_to ?? ""));
+ const isRollingOperator = condition.operator.startsWith("rolling_");
 
  return (
  <div className="grid gap-3">
@@ -4089,7 +4092,14 @@ function ConditionEditor({
  </div>
  <div className="grid min-w-0 gap-2">
  <FieldLabel>Operator</FieldLabel>
- <Select className="h-9 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { operator: event.target.value })} value={condition.operator}>
+ <Select
+ className="h-9 border border-input bg-background px-3 text-sm"
+ onChange={(event) => {
+ const nextOperator = event.target.value;
+ updateCondition(index, nextOperator.startsWith("rolling_") ? { operator: nextOperator, compare_to: null, window_seconds: condition.window_seconds ?? 300 } : { operator: nextOperator });
+ }}
+ value={condition.operator}
+ >
  {operatorOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
  </div>
@@ -4099,10 +4109,23 @@ function ConditionEditor({
  </div>
  <div className="grid min-w-0 gap-2">
  <FieldLabel>Compare to</FieldLabel>
- <Select className="h-9 border border-input bg-background px-3 text-sm" onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })} value={condition.compare_to ?? ""}>
+ <Select className="h-9 border border-input bg-background px-3 text-sm" disabled={isRollingOperator} onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })} value={condition.compare_to ?? ""}>
  {compareOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
  </Select>
  </div>
+ {isRollingOperator ? (
+ <div className="grid min-w-0 gap-2">
+ <FieldLabel>Window seconds</FieldLabel>
+ <Input
+ className="h-9 text-sm"
+ min={5}
+ onChange={(event) => updateCondition(index, { compare_to: null, window_seconds: Number(event.target.value || 300) })}
+ placeholder="300"
+ type="number"
+ value={String(condition.window_seconds ?? 300)}
+ />
+ </div>
+ ) : null}
  <div className="grid min-w-[112px] gap-2">
  <FieldLabel>Action</FieldLabel>
  <Button className="w-full min-w-0" onClick={() => removeCondition(index)} type="button" variant="destructive">Remove</Button>
@@ -4112,7 +4135,8 @@ function ConditionEditor({
  <div>{fieldMeta?.help}</div>
  <div>{operatorMeta?.help}</div>
  <div />
- <div>{compareMeta?.help}</div>
+ <div>{isRollingOperator ? "Rolling operators use Redis samples for this field over the configured window." : compareMeta?.help}</div>
+ {isRollingOperator ? <div>Default is 300 seconds. The backend waits for enough window coverage before matching.</div> : null}
  <div />
  </div>
  </div>

@@ -27,6 +27,13 @@ from app.services.alert_market_cap import (
 )
 from app.services.alerts_engine.reconcile import reconcile_all_users
 from app.services.alerts_engine.active_period import evaluate_active_period
+from app.services.alerts_engine.ast import ensure_workflow_ast
+from app.services.alerts_engine.rolling_state import (
+    build_runtime_context,
+    collect_rolling_fields,
+    max_rolling_window_seconds,
+    record_tick_samples,
+)
 from app.services import broker_data
 from app.services.broker_sessions import _create_notification_once_per_day
 from app.services.alerts_engine.universes import resolve_universe
@@ -676,6 +683,28 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
         AlertWorkflow.id.in_(workflow_ids),
     )
     workflows = db.scalars(stmt).all()
+    workflow_asts: dict[str, Any] = {}
+    rolling_fields: set[str] = set()
+    retention_seconds = 0
+    for row in workflows:
+        try:
+            workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
+            ast = ensure_workflow_ast(workflow.workflow_dsl)
+            workflow_asts[row.id] = ast
+            rolling_fields.update(collect_rolling_fields(ast.logic))
+            retention_seconds = max(retention_seconds, max_rolling_window_seconds(ast.logic))
+        except Exception as exc:
+            logger.debug("rolling state planning skipped for workflow %s: %s", row.id, exc)
+    if rolling_fields:
+        try:
+            record_tick_samples(
+                redis_client,
+                tick,
+                fields=rolling_fields,
+                retention_seconds=max(retention_seconds, 60),
+            )
+        except redis.RedisError as exc:
+            logger.warning("rolling tick sample cache failed for %s: %s", tick.get("symbol"), exc)
     market_cap_cache: dict[str, tuple[float | None, str, str | None]] = {}
     for row in workflows:
         try:
@@ -684,7 +713,14 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
             if not active:
                 continue
             previous_tick = _previous_tick_for_workflow(db, redis_client, workflow.id)
-            evaluation = alert_svc.evaluate_workflow_payload_detail(workflow, tick, previous_tick)
+            ast = workflow_asts.get(row.id) or ensure_workflow_ast(workflow.workflow_dsl)
+            runtime_context = build_runtime_context(redis_client, tick, ast.logic)
+            evaluation = alert_svc.evaluate_workflow_payload_detail(
+                workflow,
+                tick,
+                previous_tick,
+                runtime_context=runtime_context,
+            )
             matched, reason = evaluation.matched, evaluation.reason
             evaluation_tick = tick
             notification_id = None

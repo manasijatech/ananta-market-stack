@@ -14,13 +14,33 @@ class ConditionEvaluation:
 
 
 @dataclass(frozen=True)
+class ConditionRuntimeContext:
+    rolling_references: dict[str, dict[str, Any]]
+
+
+@dataclass(frozen=True)
 class ConditionDefinition:
     operator: str
     label: str
     description: str
     family: str
     fields: list[str]
-    evaluator: Callable[[AlertLogicNode, dict[str, Any], dict[str, Any]], ConditionEvaluation]
+    evaluator: Callable[
+        [AlertLogicNode, dict[str, Any], dict[str, Any], ConditionRuntimeContext | None],
+        ConditionEvaluation,
+    ]
+
+
+ROLLING_OPERATORS = {
+    "rolling_pct_change_gte",
+    "rolling_pct_change_lte",
+    "rolling_abs_change_gte",
+    "rolling_abs_change_lte",
+}
+
+DEFAULT_ROLLING_WINDOW_SECONDS = 300
+MIN_ROLLING_WINDOW_SECONDS = 5
+MAX_ROLLING_WINDOW_SECONDS = 6 * 60 * 60
 
 
 def _as_float(value: Any) -> float | None:
@@ -32,17 +52,59 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def _values(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> tuple[float | None, float | None]:
+def rolling_window_seconds(node: AlertLogicNode) -> int:
+    try:
+        raw = int(node.window_seconds or DEFAULT_ROLLING_WINDOW_SECONDS)
+    except (TypeError, ValueError):
+        raw = DEFAULT_ROLLING_WINDOW_SECONDS
+    return max(MIN_ROLLING_WINDOW_SECONDS, min(raw, MAX_ROLLING_WINDOW_SECONDS))
+
+
+def rolling_reference_key(node: AlertLogicNode) -> str:
+    return f"{node.operator or ''}:{node.field or ''}:{rolling_window_seconds(node)}"
+
+
+def iter_rolling_conditions(node: AlertLogicNode):
+    if node.kind == "condition" and (node.operator or "") in ROLLING_OPERATORS:
+        yield node
+    for child in node.children:
+        yield from iter_rolling_conditions(child)
+
+
+def _rolling_reference(node: AlertLogicNode, context: ConditionRuntimeContext | None) -> tuple[float | None, dict[str, Any]]:
+    if context is None:
+        return None, {}
+    payload = context.rolling_references.get(rolling_reference_key(node)) or {}
+    return _as_float(payload.get("reference")), payload
+
+
+def _values(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> tuple[float | None, float | None, dict[str, Any]]:
     current = _as_float(tick.get(node.field or ""))
-    if node.compare_to:
+    rolling_payload: dict[str, Any] = {}
+    if (node.operator or "") in ROLLING_OPERATORS:
+        reference, rolling_payload = _rolling_reference(node, context)
+        if reference is None and not rolling_payload:
+            reference = _as_float(previous.get(node.field or ""))
+    elif node.compare_to:
         reference = _as_float(tick.get(node.compare_to))
     else:
         reference = _as_float(previous.get(node.field or ""))
-    return current, reference
+    return current, reference, rolling_payload
 
 
-def _threshold(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
+def _threshold(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
     _ = previous
+    _ = context
     current = _as_float(tick.get(node.field or ""))
     threshold = _as_float(node.value) or 0.0
     op = node.operator or ""
@@ -59,22 +121,33 @@ def _threshold(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, A
     return ConditionEvaluation(matched, f"{node.field} {op} {threshold}", {"current": current, "threshold": threshold})
 
 
-def _cross(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
+def _cross(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
+    _ = context
     current = _as_float(tick.get(node.field or ""))
     prior = _as_float(previous.get(node.field or ""))
     threshold = _as_float(node.value) or 0.0
     op = node.operator or ""
     matched = False
-    if current is not None:
+    if current is not None and prior is not None:
         if op == "crosses_above":
-            matched = current >= threshold if prior is None else prior < threshold <= current
+            matched = prior < threshold <= current
         elif op == "crosses_below":
-            matched = current <= threshold if prior is None else prior > threshold >= current
+            matched = prior > threshold >= current
     return ConditionEvaluation(matched, f"{node.field} {op} {threshold}", {"current": current, "previous": prior, "threshold": threshold})
 
 
-def _pct_change(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
-    current, reference = _values(node, tick, previous)
+def _pct_change(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
+    current, reference, rolling_payload = _values(node, tick, previous, context)
     threshold = _as_float(node.value) or 0.0
     pct = None
     if current is not None and reference not in (None, 0):
@@ -83,22 +156,41 @@ def _pct_change(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, 
     matched = False
     if pct is not None:
         matched = pct >= threshold if op in {"pct_change_gte", "rolling_pct_change_gte"} else pct <= -abs(threshold)
-    return ConditionEvaluation(matched, f"{node.field} {op} {threshold}%", {"current": current, "reference": reference, "change_pct": pct})
+    return ConditionEvaluation(
+        matched,
+        f"{node.field} {op} {threshold}%",
+        {"current": current, "reference": reference, "change_pct": pct, "rolling": rolling_payload},
+    )
 
 
-def _abs_change(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
-    current, reference = _values(node, tick, previous)
+def _abs_change(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
+    current, reference, rolling_payload = _values(node, tick, previous, context)
     threshold = _as_float(node.value) or 0.0
     change = None if current is None or reference is None else current - reference
     op = node.operator or ""
     matched = False
     if change is not None:
-        matched = change >= threshold if op in {"abs_change_gte", "rolling_abs_change_gte"} else change <= threshold
-    return ConditionEvaluation(matched, f"{node.field} {op} {threshold}", {"current": current, "reference": reference, "change": change})
+        matched = change >= threshold if op in {"abs_change_gte", "rolling_abs_change_gte"} else change <= -abs(threshold)
+    return ConditionEvaluation(
+        matched,
+        f"{node.field} {op} {threshold}",
+        {"current": current, "reference": reference, "change": change, "rolling": rolling_payload},
+    )
 
 
-def _field_compare(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
+def _field_compare(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
     _ = previous
+    _ = context
     current = _as_float(tick.get(node.field or ""))
     reference = _as_float(tick.get(str(node.compare_to or "")))
     op = node.operator or ""
@@ -115,25 +207,37 @@ def _field_compare(node: AlertLogicNode, tick: dict[str, Any], previous: dict[st
     return ConditionEvaluation(matched, f"{node.field} {op} {node.compare_to}", {"current": current, "reference": reference})
 
 
-def _range_breakout(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
-    _ = previous
+def _range_breakout(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
+    _ = context
     ltp = _as_float(tick.get(node.field or "ltp"))
-    high = _as_float(tick.get(node.compare_to or "high"))
-    low = _as_float(tick.get(node.compare_to or "low"))
+    previous_ltp = _as_float(previous.get(node.field or "ltp"))
     op = node.operator or ""
     matched = False
     reference = None
     if op == "breaks_day_high":
+        high = _as_float(tick.get(node.compare_to or "high"))
         reference = high
-        matched = bool(ltp is not None and high is not None and ltp >= high)
+        matched = bool(ltp is not None and high is not None and (previous_ltp is None or previous_ltp < high) and ltp >= high)
     elif op == "breaks_day_low":
+        low = _as_float(tick.get(node.compare_to or "low"))
         reference = low
-        matched = bool(ltp is not None and low is not None and ltp <= low)
-    return ConditionEvaluation(matched, f"{node.field or 'ltp'} {op}", {"ltp": ltp, "reference": reference})
+        matched = bool(ltp is not None and low is not None and (previous_ltp is None or previous_ltp > low) and ltp <= low)
+    return ConditionEvaluation(matched, f"{node.field or 'ltp'} {op}", {"ltp": ltp, "previous": previous_ltp, "reference": reference})
 
 
-def _gap(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
+def _gap(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
     _ = previous
+    _ = context
     open_price = _as_float(tick.get(node.field or "open"))
     close = _as_float(tick.get(node.compare_to or "close"))
     threshold = _as_float(node.value) or 0.0
@@ -147,7 +251,13 @@ def _gap(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -
     return ConditionEvaluation(matched, f"{op} {threshold}%", {"open": open_price, "close": close, "gap_pct": pct})
 
 
-def _volume_spike(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
+def _volume_spike(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
+    _ = context
     current = _as_float(tick.get(node.field or "volume"))
     reference = _as_float(tick.get(node.compare_to or "avg_volume")) or _as_float(previous.get(node.field or "volume"))
     multiplier = _as_float(node.value) or 2.0
@@ -155,7 +265,13 @@ def _volume_spike(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str
     return ConditionEvaluation(matched, f"{node.field or 'volume'} volume_spike {multiplier}x", {"current": current, "reference": reference, "multiplier": multiplier})
 
 
-def _oi_change(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
+def _oi_change(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
+    _ = context
     field = node.field or "open_interest"
     current = _as_float(tick.get(field))
     prior = _as_float(previous.get(field))
@@ -164,14 +280,20 @@ def _oi_change(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, A
     op = node.operator or ""
     matched = False
     if change is not None:
-        matched = change >= threshold if op == "oi_change_gte" else change <= threshold
+        matched = change >= threshold if op == "oi_change_gte" else change <= -abs(threshold)
     return ConditionEvaluation(matched, f"{field} {op} {threshold}", {"current": current, "previous": prior, "change": change})
 
 
-def _always(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any]) -> ConditionEvaluation:
+def _always(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any],
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
     _ = node
     _ = tick
     _ = previous
+    _ = context
     return ConditionEvaluation(True, "always", {})
 
 
@@ -273,19 +395,24 @@ def condition_registry_payload() -> dict[str, Any]:
     }
 
 
-def evaluate_logic(node: AlertLogicNode, tick: dict[str, Any], previous: dict[str, Any] | None = None) -> ConditionEvaluation:
+def evaluate_logic(
+    node: AlertLogicNode,
+    tick: dict[str, Any],
+    previous: dict[str, Any] | None = None,
+    context: ConditionRuntimeContext | None = None,
+) -> ConditionEvaluation:
     previous = previous or {}
     kind = node.kind
     if kind in {"all", "any"}:
-        child_results = [evaluate_logic(child, tick, previous) for child in node.children]
+        child_results = [evaluate_logic(child, tick, previous, context) for child in node.children]
         matched = all(item.matched for item in child_results) if kind == "all" else any(item.matched for item in child_results)
         reasons = [item.reason for item in child_results if item.matched]
         return ConditionEvaluation(matched, ", ".join(reasons) or "no conditions matched", {"children": [item.details for item in child_results]})
     if kind == "not":
-        child = evaluate_logic(node.children[0], tick, previous) if node.children else ConditionEvaluation(False, "empty not", {})
+        child = evaluate_logic(node.children[0], tick, previous, context) if node.children else ConditionEvaluation(False, "empty not", {})
         return ConditionEvaluation(not child.matched, f"not ({child.reason})", {"child": child.details})
     operator = node.operator or "always"
     definition = CONDITION_REGISTRY.get(operator)
     if definition is None:
         return ConditionEvaluation(False, f"unsupported operator {operator}", {"operator": operator})
-    return definition.evaluator(node, tick, previous)
+    return definition.evaluator(node, tick, previous, context)
