@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 import json
 import logging
@@ -13,7 +14,7 @@ from typing import Any
 from common.datetime_compat import UTC
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from db.models import SystemWatchlistPreset, SystemWatchlistPresetSymbol, UserWatchlist
@@ -21,9 +22,18 @@ from db.models import SystemWatchlistPreset, SystemWatchlistPresetSymbol, UserWa
 logger = logging.getLogger(__name__)
 
 INDEX_MAPPING_URL = "https://iislliveblob.niftyindices.com/assets/json/IndexMapping.json"
+EQUITY_INDEX_PAGE_URL = "https://www.niftyindices.com/indices/equity"
 INDEX_CONSTITUENT_URL_TEMPLATE = "https://www.niftyindices.com/IndexConstituent/{code}.csv"
 DEFAULT_SYNC_INTERVAL = timedelta(days=1)
 DEFAULT_FETCH_TIMEOUT_SECONDS = 20.0
+ALLOWED_EQUITY_SECTION_SLUGS = (
+    "broad-based-indices",
+    "sectoral-indices",
+    "thematic-indices",
+    "strategy-indices",
+    "strategic-indices",
+)
+BLACKLISTED_SYNC_STATUS = "blacklisted"
 POPULAR_PRESET_CODES = {
     "nifty50",
     "niftynext50",
@@ -127,7 +137,28 @@ def _fetch_text(url: str) -> str:
         return response.text
 
 
-def _mapping_entries(payload: Any) -> list[PresetCatalogEntry]:
+def _allowed_equity_index_codes(page_html: str) -> set[str]:
+    cleaned = re.sub(r"<!--.*?-->", "", page_html, flags=re.DOTALL)
+    pattern = re.compile(
+        r'<a\s+href="/indices/equity/(?P<section>[^"/]+)/(?P<slug>[^"#?]+)"[^>]*>(?P<label>.*?)</a>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    allowed: set[str] = set()
+    for match in pattern.finditer(cleaned):
+        section = _slugify(match.group("section"))
+        if section not in ALLOWED_EQUITY_SECTION_SLUGS:
+            continue
+        label = _normalize_text(re.sub(r"<[^>]+>", " ", html.unescape(match.group("label") or "")))
+        slug = _normalize_text(match.group("slug").replace("-", " "))
+        for candidate in _candidate_codes(label, slug):
+            if candidate:
+                allowed.add(candidate)
+    if not allowed:
+        raise HTTPException(status_code=502, detail="Could not determine allowed Nifty equity index groups")
+    return allowed
+
+
+def _mapping_entries(payload: Any, *, allowed_codes: set[str]) -> list[PresetCatalogEntry]:
     if not isinstance(payload, list):
         raise HTTPException(status_code=502, detail="Unexpected Nifty index mapping payload")
     entries: list[PresetCatalogEntry] = []
@@ -140,6 +171,8 @@ def _mapping_entries(payload: Any) -> list[PresetCatalogEntry]:
         if not trading_index_name or not name:
             continue
         codes = _candidate_codes(trading_index_name, name)
+        if allowed_codes and not any(code in allowed_codes for code in codes):
+            continue
         slug = _slugify(name)
         if slug in seen_slugs:
             continue
@@ -166,12 +199,14 @@ def sync_preset_catalog(db: Session, *, force: bool = False) -> int:
         return 0
 
     payload = _fetch_json(INDEX_MAPPING_URL)
-    entries = _mapping_entries(payload)
+    allowed_codes = _allowed_equity_index_codes(_fetch_text(EQUITY_INDEX_PAGE_URL))
+    entries = _mapping_entries(payload, allowed_codes=allowed_codes)
     now = _utc_now()
     existing = {
         row.slug: row
         for row in db.scalars(select(SystemWatchlistPreset)).all()
     }
+    allowed_slugs = {entry.slug for entry in entries}
     updated = 0
     for entry in entries:
         row = existing.get(entry.slug)
@@ -199,10 +234,24 @@ def sync_preset_catalog(db: Session, *, force: bool = False) -> int:
         row.search_text = _search_text(entry.trading_index_name, entry.name, entry.slug)
         row.is_popular = entry.is_popular
         row.auto_sync_enabled = bool(row.auto_sync_enabled or entry.is_popular)
+        if row.sync_status == BLACKLISTED_SYNC_STATUS and row.constituent_count == 0:
+            row.sync_status = "pending"
+            row.sync_error = None
         row.last_catalog_sync_at = now
         row.updated_at = now
         db.add(row)
         updated += 1
+    for slug, row in existing.items():
+        if slug in allowed_slugs:
+            continue
+        if row.sync_status == BLACKLISTED_SYNC_STATUS:
+            continue
+        row.sync_status = BLACKLISTED_SYNC_STATUS
+        row.sync_error = "Ignored because the index is outside the supported Nifty equity groups."
+        row.auto_sync_enabled = False
+        row.last_catalog_sync_at = now
+        row.updated_at = now
+        db.add(row)
     db.commit()
     return updated
 
@@ -265,9 +314,18 @@ def _extract_preset_rows(csv_text: str) -> list[dict[str, str]]:
     return rows
 
 
+def _is_blacklistable_constituent_exception(exc: Exception) -> bool:
+    if isinstance(exc, HTTPException):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 404
+    return False
+
+
 def refresh_preset_constituents(db: Session, preset: SystemWatchlistPreset) -> int:
     codes = _candidate_codes(preset.trading_index_name, preset.name)
     errors: list[str] = []
+    only_blacklistable_failures = True
     rows: list[dict[str, str]] = []
     selected_url: str | None = None
     for code in codes:
@@ -278,12 +336,24 @@ def refresh_preset_constituents(db: Session, preset: SystemWatchlistPreset) -> i
             break
         except Exception as exc:
             errors.append(f"{candidate_url}: {exc}")
+            only_blacklistable_failures = only_blacklistable_failures and _is_blacklistable_constituent_exception(exc)
             continue
 
     now = _utc_now()
     if not rows:
-        preset.sync_status = "unavailable"
-        preset.sync_error = "; ".join(errors)[:4000] if errors else "No constituent CSV available"
+        should_blacklist = (
+            preset.sync_status == "pending"
+            and int(preset.constituent_count or 0) == 0
+            and bool(errors)
+            and only_blacklistable_failures
+        )
+        preset.sync_status = BLACKLISTED_SYNC_STATUS if should_blacklist else "unavailable"
+        preset.sync_error = (
+            "Ignored because the source index has no valid constituents."
+            if should_blacklist
+            else ("; ".join(errors)[:4000] if errors else "No constituent CSV available")
+        )
+        preset.auto_sync_enabled = False if should_blacklist else preset.auto_sync_enabled
         preset.last_constituents_sync_at = now
         preset.updated_at = now
         db.add(preset)
@@ -329,6 +399,10 @@ def refresh_due_presets(db: Session) -> int:
             or_(
                 SystemWatchlistPreset.is_popular.is_(True),
                 SystemWatchlistPreset.auto_sync_enabled.is_(True),
+                and_(
+                    SystemWatchlistPreset.sync_status == "pending",
+                    SystemWatchlistPreset.sync_status != BLACKLISTED_SYNC_STATUS,
+                ),
             )
         )
     ).all()
@@ -359,6 +433,7 @@ def list_preset_catalog(
     page_size = max(1, min(limit, 100))
     page_offset = max(0, offset)
     stmt = select(SystemWatchlistPreset)
+    stmt = stmt.where(SystemWatchlistPreset.sync_status != BLACKLISTED_SYNC_STATUS)
     if normalized_query:
         stmt = stmt.where(SystemWatchlistPreset.search_text.contains(normalized_query))
     rows = db.scalars(
@@ -405,6 +480,8 @@ def add_preset_to_user_watchlists(db: Session, user_id: str, preset_id: str) -> 
     ensure_preset_catalog(db)
     preset = db.get(SystemWatchlistPreset, preset_id)
     if preset is None:
+        raise HTTPException(status_code=404, detail="Preset index not found")
+    if preset.sync_status == BLACKLISTED_SYNC_STATUS:
         raise HTTPException(status_code=404, detail="Preset index not found")
     existing = db.scalar(
         select(UserWatchlist).where(
