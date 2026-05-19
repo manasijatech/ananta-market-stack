@@ -23,13 +23,13 @@ from app.schemas.watchlist import (
     WatchlistUpdateIn,
 )
 from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
+from app.services import broker_data_preferences
 from app.services import watchlist_presets as preset_svc
 from db.models import (
     BrokerAccount,
     LiveSymbolSubscription,
     SystemWatchlistPreset,
     SystemWatchlistPresetSymbol,
-    UserBrokerDataPreference,
     UserWatchlist,
     UserWatchlistSymbol,
 )
@@ -182,26 +182,7 @@ def _dedupe_subscription_items(
 
 
 def _default_broker_account(db: Session, user_id: str, broker_code: str | None = None) -> BrokerAccount | None:
-    stmt = (
-        select(BrokerAccount)
-        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-    )
-    if broker_code:
-        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
-    accounts = list(db.scalars(stmt).all())
-    if not accounts:
-        return None
-
-    pref = db.get(UserBrokerDataPreference, user_id)
-    preferred_account_id = pref.preferred_search_account_id if pref else None
-    if preferred_account_id:
-        for account in accounts:
-            if account.id == preferred_account_id:
-                return account
-
-    verified = [account for account in accounts if account.last_verified_at]
-    return (verified or accounts)[0]
+    return broker_data_preferences.get_effective_default_broker_account(db, user_id, broker_code)
 
 
 def _resolve_subscription_account(

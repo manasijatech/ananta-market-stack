@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.schemas.broker import InstrumentRef
+from app.services import broker_data_preferences
 from app.schemas.alert import AlertWorkflowDsl
 from app.services.alerts_engine.ast import ensure_workflow_ast
 from app.services.alerts_engine.universes import ResolvedSymbol, resolve_universe
@@ -19,7 +20,6 @@ from db.models import (
     BrokerAccount,
     LiveSymbolSubscription,
     SystemWatchlistPresetSymbol,
-    UserBrokerDataPreference,
     UserWatchlist,
     UserWatchlistSymbol,
 )
@@ -60,24 +60,7 @@ def _json_loads(value: str | None) -> dict[str, Any]:
 
 
 def _default_broker_account(db: Session, user_id: str, broker_code: str | None = None) -> BrokerAccount | None:
-    stmt = (
-        select(BrokerAccount)
-        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-    )
-    if broker_code:
-        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
-    accounts = list(db.scalars(stmt).all())
-    if not accounts:
-        return None
-    pref = db.get(UserBrokerDataPreference, user_id)
-    preferred_account_id = pref.preferred_search_account_id if pref else None
-    if preferred_account_id:
-        for account in accounts:
-            if account.id == preferred_account_id:
-                return account
-    verified = [account for account in accounts if account.last_verified_at]
-    return (verified or accounts)[0]
+    return broker_data_preferences.get_effective_default_broker_account(db, user_id, broker_code)
 
 
 def _resolve_account(
@@ -151,6 +134,18 @@ def _workflow_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
             db.add(workflow)
             continue
         account_id, broker_code = _resolve_account(db, user_id, workflow.account_id, workflow.broker_code)
+        if account_id and (workflow.account_id != account_id or workflow.broker_code != broker_code):
+            workflow.account_id = account_id
+            workflow.broker_code = broker_code
+            workflow.deployment_status = "healed"
+            workflow.last_runtime_error = None
+            workflow.updated_at = _now()
+            db.add(workflow)
+        elif not account_id:
+            workflow.deployment_status = "action_required"
+            workflow.last_runtime_error = "No verified active broker account is available for this workflow."
+            workflow.updated_at = _now()
+            db.add(workflow)
         for symbol in symbols:
             ref = symbol.instrument_ref or InstrumentRef(symbol=symbol.symbol, exchange=symbol.exchange)
             desired.append(

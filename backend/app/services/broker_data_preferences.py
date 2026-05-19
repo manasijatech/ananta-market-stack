@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.schemas.broker import (
     BrokerAccountOut,
+    BrokerDataDefaultAccountOut,
+    BrokerDataDefaultConfigOut,
+    BrokerDataDefaultConfigUpdateIn,
     BrokerDataSearchAccountOut,
     BrokerDataSearchConfigOut,
     BrokerDataSearchConfigUpdateIn,
@@ -48,6 +51,13 @@ def _default_preferred_account_id(accounts: list[BrokerAccount]) -> str | None:
     return ordered[0].id if ordered else None
 
 
+def _default_data_preferred_account_id(accounts: list[BrokerAccount]) -> str | None:
+    verified = [row for row in accounts if row.last_verified_at]
+    verified.sort(key=lambda row: (row.last_verified_at or row.created_at, row.created_at), reverse=True)
+    ordered = verified or accounts
+    return ordered[0].id if ordered else None
+
+
 def _candidate_order(
     accounts: list[BrokerAccount],
     preferred_account_id: str | None,
@@ -60,6 +70,55 @@ def _candidate_order(
     remaining.sort(key=lambda row: (0 if row.last_verified_at else 1, row.created_at, row.id))
     ordered.extend(remaining)
     return ordered
+
+
+def _default_account_summaries(
+    db: Session,
+    user_id: str,
+) -> tuple[list[BrokerDataDefaultAccountOut], str | None, str | None]:
+    accounts = list(
+        db.scalars(
+            select(BrokerAccount)
+            .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+            .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+        ).all()
+    )
+    pref = _get_preference(db, user_id)
+    preferred_account_id = pref.preferred_default_account_id if pref else None
+    if preferred_account_id and not any(row.id == preferred_account_id for row in accounts):
+        preferred_account_id = None
+    if preferred_account_id is None:
+        preferred_account_id = _default_data_preferred_account_id(accounts)
+
+    ordered = _candidate_order(accounts, preferred_account_id)
+    session_active: dict[str, bool] = {}
+    effective_account_id: str | None = None
+    for acc in ordered:
+        session_active[acc.id] = _account_session_active(acc)
+        if acc.last_verified_at and session_active[acc.id]:
+            effective_account_id = acc.id
+            break
+
+    summaries: list[BrokerDataDefaultAccountOut] = []
+    for acc in ordered:
+        active = session_active.get(acc.id)
+        if active is None:
+            active = _account_session_active(acc)
+        summaries.append(
+            BrokerDataDefaultAccountOut(
+                account_id=acc.id,
+                broker_code=acc.broker_code,
+                label=acc.label,
+                is_verified=bool(acc.last_verified_at),
+                session_status=acc.session_status,
+                session_active=active,
+                is_preferred=acc.id == preferred_account_id,
+                is_effective=acc.id == effective_account_id,
+                last_verified_at=acc.last_verified_at,
+                last_error=acc.last_error,
+            )
+        )
+    return summaries, preferred_account_id, effective_account_id
 
 
 def _search_account_summaries(
@@ -201,6 +260,68 @@ def update_broker_data_search_config(
     db.add(pref)
     db.commit()
     return get_broker_data_search_config(db, user_id)
+
+
+def get_broker_data_default_config(db: Session, user_id: str) -> BrokerDataDefaultConfigOut:
+    accounts, preferred_account_id, effective_account_id = _default_account_summaries(db, user_id)
+    return BrokerDataDefaultConfigOut(
+        preferred_default_account_id=preferred_account_id,
+        effective_default_account_id=effective_account_id,
+        fallback_used=bool(
+            preferred_account_id and effective_account_id and preferred_account_id != effective_account_id
+        ),
+        accounts=accounts,
+    )
+
+
+def update_broker_data_default_config(
+    db: Session,
+    user_id: str,
+    payload: BrokerDataDefaultConfigUpdateIn,
+) -> BrokerDataDefaultConfigOut:
+    preferred_account_id = payload.preferred_default_account_id
+    if preferred_account_id:
+        acc = db.get(BrokerAccount, preferred_account_id)
+        if not acc or acc.user_id != user_id or not acc.is_active:
+            raise ValueError("preferred default broker account not found")
+    pref = _get_preference(db, user_id)
+    if pref is None:
+        pref = UserBrokerDataPreference(
+            user_id=user_id,
+            preferred_default_account_id=preferred_account_id,
+        )
+    else:
+        pref.preferred_default_account_id = preferred_account_id
+    db.add(pref)
+    db.commit()
+    return get_broker_data_default_config(db, user_id)
+
+
+def get_effective_default_broker_account(
+    db: Session,
+    user_id: str,
+    broker_code: str | None = None,
+) -> BrokerAccount | None:
+    stmt = (
+        select(BrokerAccount)
+        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+    )
+    if broker_code:
+        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
+    accounts = list(db.scalars(stmt).all())
+    if not accounts:
+        return None
+
+    pref = _get_preference(db, user_id)
+    preferred_account_id = pref.preferred_default_account_id if pref else None
+    if preferred_account_id is None and not broker_code:
+        preferred_account_id = _default_data_preferred_account_id(accounts)
+    ordered = _candidate_order(accounts, preferred_account_id)
+    for account in ordered:
+        if account.last_verified_at and _account_session_active(account):
+            return account
+    return None
 
 
 def _run_instrument_recovery(account_id: str) -> None:

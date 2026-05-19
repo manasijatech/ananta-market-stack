@@ -4,6 +4,7 @@ import json
 import logging
 import sqlite3
 import time
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -45,6 +46,7 @@ REDIS_FULL_REBUILD_PATTERNS = (
 
 _last_periodic_run_monotonic: float | None = None
 _last_sqlite_vacuum_monotonic: float | None = None
+_maintenance_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,9 @@ def run_system_maintenance(
     full_redis_rebuild: bool,
     force_vacuum: bool,
 ) -> None:
+    if not _maintenance_lock.acquire(blocking=False):
+        logger.info("system maintenance skipped because another cycle is already running")
+        return
     started_at = _utc_now()
     log_id = _create_maintenance_log(trigger=trigger, started_at=started_at)
     deleted_rows_total = 0
@@ -152,6 +157,7 @@ def run_system_maintenance(
             error=error_message,
             finished_at=_utc_now(),
         )
+        _maintenance_lock.release()
 
 
 def _create_maintenance_log(*, trigger: str, started_at: datetime) -> str:

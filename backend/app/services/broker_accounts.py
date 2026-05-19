@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from common.datetime_compat import UTC
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.schemas.broker import (
@@ -31,13 +32,18 @@ from broker.upstox import auth as upstox_auth
 from broker.zerodha import auth as zerodha_auth
 from db.models import (
     AngelCredentials,
+    AlertWorkflow,
     BrokerAccount,
+    BrokerNotification,
     DhanCredentials,
     GrowwCredentials,
     IndmoneyCredentials,
     KotakCredentials,
+    LiveSymbolSubscription,
     UpstoxCredentials,
     User,
+    UserAlertNotification,
+    UserBrokerDataPreference,
     ZerodhaCredentials,
 )
 
@@ -264,6 +270,42 @@ def verify_account(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
             # Verify should remain successful even if the one-time sync fails.
             pass
     return ok, msg
+
+
+def delete_broker_account_safely(db: Session, acc: BrokerAccount) -> None:
+    """Delete a broker connection without deleting user alert intent/history."""
+    account_id = acc.id
+    user_id = acc.user_id
+
+    for model in (AlertWorkflow, LiveSymbolSubscription, UserAlertNotification, BrokerNotification):
+        db.execute(
+            update(model)
+            .where(model.account_id == account_id)
+            .values(account_id=None)
+        )
+
+    pref = db.get(UserBrokerDataPreference, user_id)
+    if pref:
+        changed = False
+        if pref.preferred_search_account_id == account_id:
+            pref.preferred_search_account_id = None
+            changed = True
+        if pref.preferred_default_account_id == account_id:
+            pref.preferred_default_account_id = None
+            changed = True
+        if changed:
+            db.add(pref)
+
+    db.delete(acc)
+    db.commit()
+
+    try:
+        from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
+
+        reconcile_user_subscriptions(db, user_id)
+    except Exception:
+        # Account removal should not fail if background reconciliation needs a later pass.
+        pass
 
 
 def fetch_quotes_for_account(

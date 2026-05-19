@@ -332,6 +332,26 @@ export interface BrokerDataSearchConfig {
   accounts: BrokerDataSearchAccount[];
 }
 
+export interface BrokerDataDefaultAccount {
+  account_id: string;
+  broker_code: BrokerCode | string;
+  label: string;
+  is_verified: boolean;
+  session_status?: string | null;
+  session_active: boolean;
+  is_preferred: boolean;
+  is_effective: boolean;
+  last_verified_at?: string | null;
+  last_error?: string | null;
+}
+
+export interface BrokerDataDefaultConfig {
+  preferred_default_account_id?: string | null;
+  effective_default_account_id?: string | null;
+  fallback_used: boolean;
+  accounts: BrokerDataDefaultAccount[];
+}
+
 export type LlmProvider = "openai" | "openrouter" | "gemini";
 
 export interface LlmModelConfig {
@@ -400,6 +420,7 @@ export interface AlphaWebSocketConfig {
 }
 
 export interface SystemConfig {
+  broker_data_default: BrokerDataDefaultConfig;
   broker_data_search: BrokerDataSearchConfig;
   llm_providers: LlmProviderConfig[];
   alpha_api: AlphaApiConfig;

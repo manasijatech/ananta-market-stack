@@ -19,6 +19,13 @@ logger = logging.getLogger(__name__)
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 
 
+def _run_startup_maintenance_background() -> None:
+    try:
+        run_startup_maintenance()
+    except Exception:
+        logger.exception("startup system maintenance failed")
+
+
 async def _wait_for_stop(stop_event: asyncio.Event, timeout: float) -> bool:
     try:
         await asyncio.wait_for(stop_event.wait(), timeout=timeout)
@@ -92,10 +99,11 @@ class BackgroundAsyncLoopThread:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    try:
-        run_startup_maintenance()
-    except Exception:
-        logger.exception("startup system maintenance failed")
+    Thread(
+        target=_run_startup_maintenance_background,
+        name="startup-system-maintenance",
+        daemon=True,
+    ).start()
     maintenance_service = _start_background_service("maintenance-loop", maintenance_loop)
     alert_worker_service = None
     if settings.enable_in_process_alert_workers:

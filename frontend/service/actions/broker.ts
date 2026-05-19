@@ -7,6 +7,7 @@ import type {
   BrokerAccountDetail,
   AlphaApiConfig,
   AlphaWebSocketConfig,
+  BrokerDataDefaultConfig,
   BrokerDataSearchConfig,
   BrokerCode,
   CreateBrokerAccountPayload,
@@ -231,6 +232,21 @@ export async function getBrokerDataSearchConfig(): Promise<BrokerDataSearchConfi
   return request<BrokerDataSearchConfig>("/system-config/broker-search");
 }
 
+export async function getBrokerDataDefaultConfig(): Promise<BrokerDataDefaultConfig> {
+  return request<BrokerDataDefaultConfig>("/system-config/broker-default");
+}
+
+export async function updateBrokerDataDefaultConfig(preferredDefaultAccountId: string | null): Promise<BrokerDataDefaultConfig> {
+  const result = await request<BrokerDataDefaultConfig>("/system-config/broker-default", {
+    method: "PUT",
+    body: JSON.stringify({ preferred_default_account_id: preferredDefaultAccountId })
+  });
+  revalidatePath("/broker-connections");
+  revalidatePath("/alerts-workspace");
+  revalidatePath("/system-config");
+  return result;
+}
+
 export async function updateBrokerDataSearchConfig(preferredSearchAccountId: string | null): Promise<BrokerDataSearchConfig> {
   const result = await request<BrokerDataSearchConfig>("/system-config/broker-search", {
     method: "PUT",
@@ -238,7 +254,6 @@ export async function updateBrokerDataSearchConfig(preferredSearchAccountId: str
   });
   revalidatePath("/broker-connections");
   revalidatePath("/dashboard");
-  revalidatePath("/system-config");
   revalidatePath("/system-config");
   return result;
 }

@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.broker import BrokerDataSearchConfigOut
+from app.schemas.broker import BrokerDataDefaultConfigOut, BrokerDataSearchConfigOut
 
 LlmProvider = Literal["openai", "openrouter", "gemini"]
 
@@ -112,6 +112,7 @@ class AlphaWebSocketConfigUpdateIn(BaseModel):
 
 
 class SystemConfigOut(BaseModel):
+    broker_data_default: BrokerDataDefaultConfigOut
     broker_data_search: BrokerDataSearchConfigOut
     llm_providers: list[LlmProviderConfigOut] = Field(default_factory=list)
     alpha_api: AlphaApiConfigOut
