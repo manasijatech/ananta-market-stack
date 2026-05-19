@@ -20,6 +20,11 @@ from app.services.alert_feed_batch import (
     run_followup_analysis_batches,
 )
 from app.services.alert_llm_analysis import run_workflow_llm_analysis
+from app.services.alert_market_cap import (
+    load_symbol_market_cap,
+    market_cap_filter_enabled,
+    market_cap_in_range,
+)
 from app.services.alerts_engine.reconcile import reconcile_all_users
 from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services import broker_data
@@ -558,6 +563,83 @@ def _enrich_tick_for_match(db, workflow: AlertWorkflow, tick: dict[str, Any]) ->
     }
 
 
+def _market_data_market_cap_passes(
+    db,
+    workflow,
+    tick: dict[str, Any],
+    *,
+    cache: dict[str, tuple[float | None, str, str | None]] | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    config = workflow.workflow_dsl.market_cap_filter
+    if not market_cap_filter_enabled(config):
+        return True, {"skipped": True, "reason": "all market caps allowed"}
+    symbol = str(tick.get("symbol") or workflow.symbol or "").strip().upper()
+    market_cap, source, error = load_symbol_market_cap(
+        db,
+        workflow.user_id,
+        symbol,
+        tick_market_cap=tick.get("market_cap"),
+        cache=cache,
+    )
+    matched = market_cap_in_range(market_cap, config)
+    return matched, {
+        "symbol": symbol,
+        "market_cap": market_cap,
+        "source": source,
+        "error": error,
+        "min_value": config.min_value,
+        "max_value": config.max_value,
+        "matched": matched,
+    }
+
+
+def _alpha_feed_market_cap_passes(
+    db,
+    workflow,
+    event_symbols: set[str],
+    *,
+    cache: dict[str, tuple[float | None, str, str | None]],
+) -> tuple[bool, dict[str, Any]]:
+    config = workflow.workflow_dsl.market_cap_filter
+    if not market_cap_filter_enabled(config):
+        return True, {"skipped": True, "reason": "all market caps allowed"}
+    normalized_symbols = sorted({str(item or "").strip().upper() for item in event_symbols if str(item or "").strip()})
+    if not normalized_symbols:
+        return False, {
+            "matched": False,
+            "symbols": [],
+            "reason": "No event symbol was available for market cap filtering.",
+            "min_value": config.min_value,
+            "max_value": config.max_value,
+        }
+    checks: list[dict[str, Any]] = []
+    for symbol in normalized_symbols:
+        market_cap, source, error = load_symbol_market_cap(db, workflow.user_id, symbol, cache=cache)
+        matched = market_cap_in_range(market_cap, config)
+        checks.append(
+            {
+                "symbol": symbol,
+                "market_cap": market_cap,
+                "source": source,
+                "error": error,
+                "matched": matched,
+            }
+        )
+        if matched:
+            return True, {
+                "matched": True,
+                "symbols": checks,
+                "min_value": config.min_value,
+                "max_value": config.max_value,
+            }
+    return False, {
+        "matched": False,
+        "symbols": checks,
+        "min_value": config.min_value,
+        "max_value": config.max_value,
+    }
+
+
 def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, Any]) -> None:
     if not tick.get("user_id") or not tick.get("account_id") or not tick.get("broker_code") or not tick.get("symbol"):
         return
@@ -583,6 +665,7 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
         AlertWorkflow.id.in_(workflow_ids),
     )
     workflows = db.scalars(stmt).all()
+    market_cap_cache: dict[str, tuple[float | None, str, str | None]] = {}
     for row in workflows:
         try:
             workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
@@ -596,7 +679,17 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
             notification_id = None
             should_record_run = False
             llm_analysis: dict[str, Any] = {"enabled": False, "status": "disabled", "output": ""}
+            market_cap_details: dict[str, Any] = {"skipped": True, "reason": "condition did not match"}
             if matched:
+                market_cap_match, market_cap_details = _market_data_market_cap_passes(
+                    db,
+                    workflow,
+                    tick,
+                    cache=market_cap_cache,
+                )
+                if not market_cap_match:
+                    _store_previous_tick_for_workflow(redis_client, workflow.id, tick)
+                    continue
                 cooldown = workflow.workflow_dsl.cooldown_seconds
                 can_trigger = True
                 if row.last_triggered_at:
@@ -678,6 +771,7 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                                 "previous_tick": previous_tick,
                                 "event_driven": True,
                                 "active_period": active_period_details,
+                                "market_cap_filter": market_cap_details,
                                 "evaluation_details": evaluation.details,
                                 "llm_analysis": llm_analysis,
                             },
@@ -836,6 +930,8 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
     payload = json.loads(event.payload_json or "{}")
     event_symbols: set[str] = set()
     _collect_event_symbols(payload, event_symbols)
+    if event.symbol:
+        event_symbols.add(str(event.symbol).strip().upper())
     rows = db.scalars(
         select(AlertWorkflow).where(
             AlertWorkflow.user_id == event.user_id,
@@ -844,12 +940,21 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
     ).all()
     eligible: list[dict[str, Any]] = []
     cases = []
+    market_cap_cache: dict[str, tuple[float | None, str, str | None]] = {}
     for row in rows:
         workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
         if workflow.workflow_dsl.workflow_type != "alpha_feed":
             continue
         trigger = workflow.workflow_dsl.feed_trigger
         if not trigger.enabled or event.product not in trigger.products:
+            continue
+        market_cap_match, market_cap_details = _alpha_feed_market_cap_passes(
+            db,
+            workflow,
+            event_symbols,
+            cache=market_cap_cache,
+        )
+        if not market_cap_match:
             continue
         category_match, category_details = _event_matches_category_filter(event, trigger, payload)
         if not category_match:
@@ -871,6 +976,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
                 "alpha_event_id": event.id,
                 "received_at": event.received_at.isoformat() if event.received_at else None,
                 "alpha_category_filter": category_details,
+                "market_cap_filter": market_cap_details,
             }
             trigger_result = _deterministic_feed_trigger_result(event, category_details)
             eligible.append(
@@ -878,6 +984,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
                     "row": row,
                     "workflow": workflow,
                     "category_details": category_details,
+                    "market_cap_details": market_cap_details,
                     "case": None,
                     "trigger_result": trigger_result,
                     "reason": str(trigger_result.get("reason") or "Feed item matched configured filters"),
@@ -890,7 +997,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             case = feed_case_from_workflow(
                 workflow,
                 batch_index=case_index,
-                metadata={"category_filter": category_details},
+                metadata={"category_filter": category_details, "market_cap_filter": market_cap_details},
             )
         except Exception as exc:
             db.add(
@@ -912,7 +1019,15 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             )
             continue
         cases.append(case)
-        eligible.append({"row": row, "workflow": workflow, "category_details": category_details, "case": case})
+        eligible.append(
+            {
+                "row": row,
+                "workflow": workflow,
+                "category_details": category_details,
+                "market_cap_details": market_cap_details,
+                "case": case,
+            }
+        )
 
     trigger_results = run_feed_trigger_batches(
         db,
@@ -928,6 +1043,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
         row = item["row"]
         workflow = item["workflow"]
         category_details = item["category_details"]
+        market_cap_details = item.get("market_cap_details") or {}
         if item.get("case") is None:
             matched_items.append(item)
             continue
@@ -956,6 +1072,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
                             "event_key": event.event_key,
                             "feed_trigger": trigger_result,
                             "category_filter": category_details,
+                            "market_cap_filter": market_cap_details,
                             "batch": trigger_result.get("batch") or {},
                             "error": error,
                         },
@@ -974,12 +1091,14 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             "alpha_event_id": event.id,
             "received_at": event.received_at.isoformat() if event.received_at else None,
             "alpha_category_filter": category_details,
+            "market_cap_filter": market_cap_details,
         }
         matched_items.append(
             {
                 "row": row,
                 "workflow": workflow,
                 "category_details": category_details,
+                "market_cap_details": market_cap_details,
                 "trigger_result": trigger_result,
                 "reason": reason,
                 "tick": tick,
@@ -1000,6 +1119,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
                 evaluation_details={
                     "feed_trigger": item["trigger_result"],
                     "category_filter": item["category_details"],
+                    "market_cap_filter": item.get("market_cap_details") or {},
                 },
             )
             for item in matched_items
@@ -1009,6 +1129,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
         row = item["row"]
         workflow = item["workflow"]
         category_details = item["category_details"]
+        market_cap_details = item.get("market_cap_details") or {}
         trigger_result = item["trigger_result"]
         reason = item["reason"]
         tick = item["tick"]
@@ -1018,7 +1139,11 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
             tick=tick,
             previous_tick={},
             reason=reason,
-            evaluation_details={"feed_trigger": trigger_result, "category_filter": category_details},
+            evaluation_details={
+                "feed_trigger": trigger_result,
+                "category_filter": category_details,
+                "market_cap_filter": market_cap_details,
+            },
             request_kind="workflow_followup_analysis",
         )
         render_context = alert_svc._notification_context(workflow, tick, None, llm_analysis)  # type: ignore[attr-defined]
@@ -1058,6 +1183,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
                         "event_key": event.event_key,
                         "feed_trigger": trigger_result,
                         "category_filter": category_details,
+                        "market_cap_filter": market_cap_details,
                         "llm_analysis": llm_analysis,
                         "batch": trigger_result.get("batch") or {},
                     },

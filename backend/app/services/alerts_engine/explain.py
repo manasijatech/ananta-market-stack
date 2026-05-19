@@ -34,10 +34,18 @@ def explain_ast(workflow_ast: AlertWorkflowAst) -> dict[str, Any]:
         target = f"symbols from a {universe.op or 'set'} expression"
     else:
         target = f"{len(universe.symbols)} static symbol(s)"
+    market_cap_filter = workflow_ast.market_cap_filter
+    market_cap_summary = "all market caps"
+    if market_cap_filter.mode == "custom" and (
+        market_cap_filter.min_value is not None or market_cap_filter.max_value is not None
+    ):
+        lower = f">= {market_cap_filter.min_value:g}" if market_cap_filter.min_value is not None else "no lower bound"
+        upper = f"<= {market_cap_filter.max_value:g}" if market_cap_filter.max_value is not None else "no upper bound"
+        market_cap_summary = f"market cap {lower}, {upper}"
     return {
-        "summary": f"Evaluate {target}; trigger when {_logic_sentence(workflow_ast.logic)}.",
+        "summary": f"Evaluate {target} with {market_cap_summary}; trigger when {_logic_sentence(workflow_ast.logic)}.",
         "target": target,
         "logic": _logic_sentence(workflow_ast.logic),
         "cooldown_seconds": workflow_ast.cooldown_seconds,
+        "market_cap_filter": workflow_ast.market_cap_filter.model_dump(exclude_none=True),
     }
-

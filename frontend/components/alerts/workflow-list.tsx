@@ -9,8 +9,15 @@ import { Button } from "@/components/ui/button";
 function workflowScope(workflow: AlertWorkflow) {
  const targeting = workflow.workflow_dsl.targeting;
  const entries = targeting.entries ?? [];
+ const ast = workflow.workflow_dsl.workflow_ast as Record<string, unknown> | null | undefined;
+ const targetUniverse = ast && typeof ast.target_universe === "object" && ast.target_universe !== null
+ ? ast.target_universe as Record<string, unknown>
+ : null;
  if (targeting.mode === "preset_universe") {
- return targeting.preset_label || targeting.preset_id || "Preset universe";
+ if (targetUniverse?.kind === "watchlist") {
+ return String(targetUniverse.label ?? targetUniverse.watchlist_id ?? "Watchlist universe");
+ }
+ return targeting.preset_label || targeting.preset_id || "Watchlist universe";
  }
  if (entries.length === 1) {
  return [entries[0].symbol, entries[0].exchange ?? workflow.exchange].filter(Boolean).join(" · ");

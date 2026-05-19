@@ -17,7 +17,6 @@ import {
  getWorkflowSampleAlerts,
  getAlertConditionRegistry,
  getAlertLlmPlaceholders,
- previewAlertUniverse,
  previewAlertWorkflowLlmContext,
  sendWorkflowTestNotification,
  testAlertWorkflow,
@@ -31,8 +30,7 @@ import type {
  AlertCondition,
  AlertConditionRegistry,
  AlertGraphDsl,
- AlertTargetEntry,
- AlertUniversePreview,
+  AlertTargetEntry,
  AlertWorkflow,
  AlertWorkflowDsl,
  EditorMode,
@@ -809,7 +807,7 @@ function isWithinSession(nowMinutes: number, start: number, end: number): boolea
 
 function targetScopeSummary(targeting: AlertWorkflowTargeting): string {
  if (targeting.mode === "preset_universe") {
- return targeting.preset_label || targeting.preset_id || "Preset universe";
+ return targeting.preset_label || targeting.preset_id || "Watchlist universe";
  }
  const entries = normalizeTargets(targeting.entries);
  if (!entries.length) {
@@ -907,17 +905,7 @@ initialWorkflow,
  ? "preset_universe"
  : initialTargeting.mode;
  const [targetMode, setTargetMode] = useState<AlertWorkflowTargeting["mode"]>(initialTargetMode as AlertWorkflowTargeting["mode"]);
- const initialDynamicUniverseKind =
- initialUniverse.kind === "curated_preset" || initialUniverse.kind === "metadata_filter"
- ? initialUniverse.kind
- : "watchlist";
- const [dynamicUniverseKind, setDynamicUniverseKind] = useState(initialDynamicUniverseKind);
  const [selectedWatchlistId, setSelectedWatchlistId] = useState(String(initialUniverse.watchlist_id ?? watchlists[0]?.id ?? ""));
- const [selectedPresetId, setSelectedPresetId] = useState(String(initialUniverse.preset_id ?? presets[0]?.id ?? "nse-equity"));
- const initialUniverseFilters = (initialUniverse.filters as JsonObject | undefined) ?? {};
- const [metadataExchange, setMetadataExchange] = useState(String(initialUniverseFilters.exchange ?? "NSE"));
- const [metadataInstrumentType, setMetadataInstrumentType] = useState(String(initialUniverseFilters.instrument_type ?? "EQ"));
- const [metadataSegmentContains, setMetadataSegmentContains] = useState(String(initialUniverseFilters.segment_contains ?? ""));
  const [targetEntries, setTargetEntries] = useState<AlertTargetEntry[]>(normalizeTargets(initialTargeting.entries));
  const [bulkTargets, setBulkTargets] = useState("");
  const initialEditableStatus = initialWorkflow?.status === "inactive" ? "inactive" : "active";
@@ -979,6 +967,10 @@ const [activeInstrumentTypes, setActiveInstrumentTypes] = useState(listCsv(initi
 const [feedTemperature, setFeedTemperature] = useState(String(initialFeedTrigger?.temperature ?? 0.1));
 const [feedMaxTokens, setFeedMaxTokens] = useState(String(initialFeedTrigger?.max_completion_tokens ?? 400));
 const [feedTimeout, setFeedTimeout] = useState(String(initialFeedTrigger?.timeout_seconds ?? 25));
+ const initialMarketCapFilter = initialWorkflow?.workflow_dsl.market_cap_filter;
+ const [marketCapMode, setMarketCapMode] = useState<"all" | "custom">(initialMarketCapFilter?.mode ?? "all");
+ const [marketCapMin, setMarketCapMin] = useState(initialMarketCapFilter?.min_value != null ? String(initialMarketCapFilter.min_value) : "");
+ const [marketCapMax, setMarketCapMax] = useState(initialMarketCapFilter?.max_value != null ? String(initialMarketCapFilter.max_value) : "");
 const [llmPromptTab, setLlmPromptTab] = useState<"prompt" | "preview">("prompt");
 const [llmFeedback, setLlmFeedback] = useState("");
 const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(null);
@@ -1000,8 +992,6 @@ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(nul
  const [dslText, setDslText] = useState(initialWorkflow?.workflow_dsl.dsl_text ?? "");
  const [engineFeedback, setEngineFeedback] = useState("");
  const [engineDetails, setEngineDetails] = useState<Record<string, unknown> | null>(null);
- const [universePreview, setUniversePreview] = useState<AlertUniversePreview | null>(null);
- const [universePreviewLoading, setUniversePreviewLoading] = useState(false);
  const [hoveredSymbolKey, setHoveredSymbolKey] = useState("");
  const [hoverQuote, setHoverQuote] = useState<QuoteResponse | null>(null);
  const [hoverQuoteLoading, setHoverQuoteLoading] = useState(false);
@@ -1042,7 +1032,6 @@ const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(nul
 
 const selectedAccount = accounts.find((item) => item.id === accountId);
 const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId) ?? null;
-const selectedPreset = presets.find((item) => String(item.id ?? "") === selectedPresetId) ?? null;
 const isTemplateDraft = Boolean(initialWorkflow?.template_id && !initialWorkflow?.id);
  const advancedMarketScopeCount = [
  activeExchanges,
@@ -1122,31 +1111,12 @@ const activeInstrument = useMemo<InstrumentRef>(
  }, [availableAnnouncementCategories, feedCategoryQuery]);
  const announcementsEnabled = feedProducts.includes("announcements");
  const dynamicTargetUniverse = useMemo(() => {
- if (dynamicUniverseKind === "curated_preset") {
- return {
- kind: "curated_preset",
- preset_id: selectedPresetId,
- label: String(selectedPreset?.label ?? selectedPresetId)
- };
- }
- if (dynamicUniverseKind === "metadata_filter") {
- return {
- kind: "metadata_filter",
- label: "Metadata filter",
- filters: {
- exchange: metadataExchange.trim().toUpperCase() || undefined,
- instrument_type: metadataInstrumentType.trim().toUpperCase() || undefined,
- segment_contains: metadataSegmentContains.trim() || undefined
- }
- };
- }
  return {
  kind: "watchlist",
  watchlist_id: selectedWatchlistId,
  label: selectedWatchlist?.name ?? selectedWatchlistId
  };
- }, [dynamicUniverseKind, metadataExchange, metadataInstrumentType, metadataSegmentContains, selectedPreset?.label, selectedPresetId, selectedWatchlist?.name, selectedWatchlistId]);
- const dynamicTargetUniverseKey = JSON.stringify(dynamicTargetUniverse);
+ }, [selectedWatchlist?.name, selectedWatchlistId]);
  const universeSymbols = useMemo<UniverseSymbolPreview[]>(() => {
  if (targetMode === "symbol_list") {
  return targetEntries.map((entry) => ({
@@ -1160,7 +1130,6 @@ const activeInstrument = useMemo<InstrumentRef>(
  return [{ symbol: symbol.trim().toUpperCase(), exchange, instrument_ref: activeInstrument, source_type: "single_symbol" }];
  }
  if (targetMode !== "preset_universe") return [];
- if (dynamicUniverseKind === "watchlist") {
  return (selectedWatchlist?.items ?? []).map((item) => ({
  symbol: item.symbol,
  exchange: item.exchange,
@@ -1168,14 +1137,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  source_label: selectedWatchlist?.name,
  source_type: "watchlist"
  }));
- }
- return (universePreview?.sample ?? []).map((item) => ({
- symbol: String(item.symbol ?? ""),
- exchange: typeof item.exchange === "string" ? item.exchange : null,
- source_label: typeof item.source_label === "string" ? item.source_label : null,
- source_type: typeof item.source_type === "string" ? item.source_type : dynamicUniverseKind
- })).filter((item) => item.symbol);
- }, [activeInstrument, dynamicUniverseKind, exchange, selectedWatchlist, symbol, targetEntries, targetMode, universePreview?.sample]);
+ }, [activeInstrument, exchange, selectedWatchlist, symbol, targetEntries, targetMode]);
  const universeSymbolKey = useMemo(
  () => universeSymbols.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean).sort().join("|"),
  [universeSymbols]
@@ -1239,29 +1201,6 @@ const activeInstrument = useMemo<InstrumentRef>(
  const nextModel = provider.models.find((model) => model.is_enabled);
  setFeedModelId(nextModel?.model_id ?? "");
  }, [feedModelId, feedProvider, llmProviders]);
-
- useEffect(() => {
- if (targetMode !== "preset_universe" || dynamicUniverseKind === "watchlist") {
- setUniversePreview(null);
- setUniversePreviewLoading(false);
- return;
- }
- let cancelled = false;
- setUniversePreviewLoading(true);
- startTransition(async () => {
- try {
- const result = await previewAlertUniverse(dynamicTargetUniverse, 5000);
- if (!cancelled) setUniversePreview(result);
- } catch {
- if (!cancelled) setUniversePreview({ count: 0, sample: [] });
- } finally {
- if (!cancelled) setUniversePreviewLoading(false);
- }
- });
- return () => {
- cancelled = true;
- };
- }, [dynamicTargetUniverseKey, dynamicUniverseKind, startTransition, targetMode]);
 
  useEffect(() => {
  function handlePointerDown(event: MouseEvent) {
@@ -1690,6 +1629,23 @@ const activeInstrument = useMemo<InstrumentRef>(
  setActiveDays((current) => checked ? Array.from(new Set([...current, day])) : current.filter((item) => item !== day));
  }
 
+ function marketCapFilterPayload() {
+ const minValue = numeric(marketCapMin);
+ const maxValue = numeric(marketCapMax);
+ if (marketCapMode !== "custom") {
+ return {
+ mode: "all" as const,
+ min_value: null,
+ max_value: null
+ };
+ }
+ return {
+ mode: "custom" as const,
+ min_value: minValue,
+ max_value: maxValue
+ };
+ }
+
  function workflowTargetingPayload(): AlertWorkflowTargeting {
  const currentTarget = buildTargetEntry(symbol, exchange, activeInstrument);
  if (targetMode === "single_symbol") {
@@ -1744,7 +1700,8 @@ const activeInstrument = useMemo<InstrumentRef>(
  title_template: titleTemplate,
  message_template: messageTemplate
  },
- channels: channelSelection()
+ channels: channelSelection(),
+ market_cap_filter: marketCapFilterPayload()
  };
  }
  return {
@@ -1760,7 +1717,8 @@ const activeInstrument = useMemo<InstrumentRef>(
  title_template: titleTemplate,
  message_template: messageTemplate
  },
- channels: channelSelection()
+ channels: channelSelection(),
+ market_cap_filter: marketCapFilterPayload()
  };
  }
 
@@ -1807,6 +1765,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  max_completion_tokens: Number(feedMaxTokens || 400),
  timeout_seconds: Number(feedTimeout || 25)
  },
+ market_cap_filter: marketCapFilterPayload(),
  active_period: {
  enabled: activePeriodEnabled,
  timezone: activeTimezone.trim() || "Asia/Kolkata",
@@ -2129,6 +2088,16 @@ const activeInstrument = useMemo<InstrumentRef>(
  if (announcementsEnabled && feedCategoryFilterEnabled && !feedAnnouncementCategories.length) {
  return "Select at least one announcement category, or switch back to all categories.";
  }
+ const minValue = numeric(marketCapMin);
+ const maxValue = numeric(marketCapMax);
+ if (marketCapMode === "custom") {
+ if (minValue === null && maxValue === null) {
+ return "Enter at least one market cap boundary, or switch the filter back to all market caps.";
+ }
+ if (minValue !== null && maxValue !== null && minValue > maxValue) {
+ return "Market cap `from` cannot be greater than `to`.";
+ }
+ }
  return null;
  }
  if (targetMode === "single_symbol") {
@@ -2137,13 +2106,15 @@ const activeInstrument = useMemo<InstrumentRef>(
  if (targetMode === "symbol_list") {
  return targetEntries.length > 0 ? null : "Add at least one symbol to the target list before creating this workflow.";
  }
- if (dynamicUniverseKind === "curated_preset") {
- return selectedPresetId ? null : "Select a preset universe before creating this workflow.";
+ const minValue = numeric(marketCapMin);
+ const maxValue = numeric(marketCapMax);
+ if (marketCapMode === "custom") {
+ if (minValue === null && maxValue === null) {
+ return "Enter at least one market cap boundary, or switch the filter back to all market caps.";
  }
- if (dynamicUniverseKind === "metadata_filter") {
- return metadataExchange.trim() || metadataInstrumentType.trim() || metadataSegmentContains.trim()
- ? null
- : "Add at least one metadata filter before creating this workflow.";
+ if (minValue !== null && maxValue !== null && minValue > maxValue) {
+ return "Market cap `from` cannot be greater than `to`.";
+ }
  }
  return selectedWatchlistId ? null : "Select a watchlist before creating this workflow.";
  }
@@ -2462,6 +2433,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  const marketWindowStep = workflowType === "market_data" ? nextStep() : "";
  const feedTriggerStep = workflowType === "alpha_feed" ? nextStep() : "";
  const targetStep = workflowType === "market_data" ? nextStep() : "";
+ const marketCapStep = nextStep();
  const buildTriggerStep = nextStep();
  const optionalAnalysisStep = nextStep();
  const reviewCopyStep = !currentTemplatesMatchSuggestion ? nextStep() : "";
@@ -2795,7 +2767,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <StepHeader
  step={targetStep}
  title="Target"
- description="The workflow can target one symbol today or a shared symbol list under the same rules. Preset universes are reserved for the next layer."
+ description="The workflow can target one symbol, a shared symbol list, or a watchlist-backed universe under the same rules."
  action={<Label className="grid max-w-[280px] gap-2 text-sm">
  <FieldLabel>Target mode</FieldLabel>
  <Select
@@ -2836,7 +2808,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  >
  <option value="single_symbol">Single symbol</option>
  <option value="symbol_list">Symbol list</option>
- <option value="preset_universe">Preset universe</option>
+ <option value="preset_universe">Watchlist universe</option>
  </Select>
  </Label>}
  />
@@ -3045,68 +3017,40 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="mt-4 overflow-hidden border border-border">
  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
  <div>
- <SectionTitle>Preset universe</SectionTitle>
- <HelpText>Choose a reusable symbol source. The resolved symbols stay synced as watchlists, presets, or metadata rules change.</HelpText>
+ <SectionTitle>Watchlist universe</SectionTitle>
+ <HelpText>Choose a watchlist-backed symbol source. The resolved symbols stay synced as that watchlist changes.</HelpText>
  </div>
- <div className="type-step-eyebrow">{universePreviewLoading ? "Resolving" : `${universeSymbols.length} resolved`}</div>
+ <div className="type-step-eyebrow">{`${universeSymbols.length} resolved`}</div>
  </div>
  <div className="grid gap-4 p-4 min-[980px]:grid-cols-[minmax(280px,0.86fr)_minmax(0,1.14fr)]">
  <div className="grid content-start gap-4">
  <div className="grid gap-2">
- <FieldLabel>Universe source</FieldLabel>
- <div className="grid gap-2 min-[520px]:grid-cols-3 min-[980px]:grid-cols-1">
- {([
- ["watchlist", "Watchlist"],
- ["curated_preset", "Curated preset"],
- ["metadata_filter", "Metadata filter"]
- ] as const).map(([value, label]) => (
- <Button
- className={cn("justify-start", dynamicUniverseKind === value && "border-primary bg-[var(--accent-glow)] text-primary")}
- key={value}
- onClick={() => {
- setDynamicUniverseKind(value);
+ <FieldLabel>Watchlist</FieldLabel>
+ <Select
+ className="h-10 border border-input bg-background px-3 text-sm"
+ onChange={(event) => {
+ const nextWatchlistId = event.target.value;
+ const nextWatchlist = watchlists.find((watchlist) => watchlist.id === nextWatchlistId);
+ const firstItem = nextWatchlist?.items[0];
+ setSelectedWatchlistId(nextWatchlistId);
+ if (firstItem) {
+ loadUniverseTarget({
+ symbol: firstItem.symbol,
+ exchange: firstItem.exchange,
+ instrument_ref: firstItem.instrument_ref,
+ source_label: nextWatchlist?.name,
+ source_type: "watchlist"
+ });
+ } else {
  setSymbol("");
  setInstrumentRef({});
  setSelectedSearchLabel("");
  setSymbolSearch("");
  setCommittedSymbolSearch("");
+ }
  }}
- type="button"
- variant="outline"
+ value={selectedWatchlistId}
  >
- {label}
- </Button>
- ))}
- </div>
- </div>
- {dynamicUniverseKind === "watchlist" ? (
- <div className="grid gap-2">
- <FieldLabel>Watchlist</FieldLabel>
- <Select
-	 className="h-10 border border-input bg-background px-3 text-sm"
-	 onChange={(event) => {
-	 const nextWatchlistId = event.target.value;
-	 const nextWatchlist = watchlists.find((watchlist) => watchlist.id === nextWatchlistId);
-	 const firstItem = nextWatchlist?.items[0];
-	 setSelectedWatchlistId(nextWatchlistId);
-	 if (firstItem) {
-	 loadUniverseTarget({
-	 symbol: firstItem.symbol,
-	 exchange: firstItem.exchange,
-	 instrument_ref: firstItem.instrument_ref,
-	 source_label: nextWatchlist?.name,
-	 source_type: "watchlist"
-	 });
-	 } else {
-	 setSymbol("");
-	 setInstrumentRef({});
-	 setSelectedSearchLabel("");
-	 setSymbolSearch("");
-	 setCommittedSymbolSearch("");
-	 }
-	 }}
-	 value={selectedWatchlistId}
-	 >
  {watchlists.map((watchlist) => (
  <option key={watchlist.id} value={watchlist.id}>
  {watchlist.name} · {watchlist.items.length} symbols
@@ -3115,77 +3059,12 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Select>
  {!watchlists.length ? <HelpText>Create a watchlist first, then return here to link it to this workflow.</HelpText> : <HelpText>Live subscriptions follow additions and removals in this watchlist.</HelpText>}
  </div>
- ) : dynamicUniverseKind === "curated_preset" ? (
- <div className="grid gap-2">
- <FieldLabel>Preset</FieldLabel>
- <Select
- className="h-10 border border-input bg-background px-3 text-sm"
- onChange={(event) => {
- setSelectedPresetId(event.target.value);
- setSymbol("");
- setInstrumentRef({});
- setSelectedSearchLabel("");
- setSymbolSearch("");
- setCommittedSymbolSearch("");
- }}
- value={selectedPresetId}
- >
- {presets.map((preset) => (
- <option key={String(preset.id)} value={String(preset.id)}>
- {String(preset.label ?? preset.id)}
- </option>
- ))}
- </Select>
- <HelpText>Backend presets resolve from registry rules and broker instrument metadata.</HelpText>
- </div>
- ) : (
- <div className="grid gap-3">
- <Label className="grid gap-2 text-sm">
- <FieldLabel>Exchange filter</FieldLabel>
- <Input className="font-mono uppercase" onChange={(event) => {
- setMetadataExchange(event.target.value.toUpperCase());
- setSymbol("");
- setInstrumentRef({});
- setSelectedSearchLabel("");
- setSymbolSearch("");
- setCommittedSymbolSearch("");
- }} placeholder="NSE" value={metadataExchange} />
- </Label>
- <Label className="grid gap-2 text-sm">
- <FieldLabel>Instrument type</FieldLabel>
- <Input className="font-mono uppercase" onChange={(event) => {
- setMetadataInstrumentType(event.target.value.toUpperCase());
- setSymbol("");
- setInstrumentRef({});
- setSelectedSearchLabel("");
- setSymbolSearch("");
- setCommittedSymbolSearch("");
- }} placeholder="EQ" value={metadataInstrumentType} />
- </Label>
- <Label className="grid gap-2 text-sm">
- <FieldLabel>Segment contains</FieldLabel>
- <Input className="font-mono uppercase" onChange={(event) => {
- setMetadataSegmentContains(event.target.value.toUpperCase());
- setSymbol("");
- setInstrumentRef({});
- setSelectedSearchLabel("");
- setSymbolSearch("");
- setCommittedSymbolSearch("");
- }} placeholder="FO" value={metadataSegmentContains} />
- </Label>
- <HelpText>Use one or more filters. Empty filters are ignored.</HelpText>
- </div>
- )}
  </div>
  <div className="grid content-start gap-3 border-t border-border pt-4 min-[980px]:border-l min-[980px]:border-t-0 min-[980px]:pl-4 min-[980px]:pt-0">
  <div>
  <div className="type-step-eyebrow">Resolved symbols · {universeSymbols.length}</div>
  <HelpText className="mt-1">
- {dynamicUniverseKind === "watchlist"
- ? `${universeSymbols.length} symbol${universeSymbols.length === 1 ? "" : "s"} from ${selectedWatchlist?.name ?? "watchlist"}.`
- : universePreviewLoading
- ? "Resolving universe..."
- : `${universePreview?.count ?? universeSymbols.length} matching symbol${(universePreview?.count ?? universeSymbols.length) === 1 ? "" : "s"}.`}
+ {`${universeSymbols.length} symbol${universeSymbols.length === 1 ? "" : "s"} from ${selectedWatchlist?.name ?? "watchlist"}.`}
  </HelpText>
  </div>
  <div className="grid max-h-[420px] gap-2 overflow-auto pr-1">
@@ -3229,7 +3108,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </span>
  </span>
  <span className="grid min-w-[88px] justify-items-end gap-1">
- <span className="font-mono text-[11px] uppercase leading-4 text-muted-foreground">{item.source_type ?? dynamicUniverseKind}</span>
+ <span className="font-mono text-[11px] uppercase leading-4 text-muted-foreground">{item.source_type ?? "watchlist"}</span>
  <span className="font-mono text-[12px] leading-4 text-primary">
  {isQuoteActive ? (hoverQuoteLoading ? "Loading" : hoverQuote?.ltp ?? "No quote") : formatMarketCap(metadata?.market_cap ?? null)}
  </span>
@@ -3290,6 +3169,43 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  ) : null}
  </div>
  )}
+ </div>
+ </div>
+
+ <div className="grid max-w-5xl gap-4 border border-border p-3">
+ <StepHeader
+ step={marketCapStep}
+ title="Market cap filter"
+ description={
+ workflowType === "alpha_feed"
+ ? "Custom ranges reject feed items before category checks or trigger-LLM classification. Leave it on all market caps to skip the check entirely."
+ : "Custom ranges are checked only after the rule conditions match. Leave it on all market caps to avoid any extra market cap lookup."
+ }
+ />
+ <div className="grid gap-4 min-[860px]:grid-cols-[220px_minmax(0,1fr)]">
+ <div className="grid gap-2">
+ <FieldLabel>Range mode</FieldLabel>
+ <div className="inline-flex w-fit border border-border p-1">
+ <Button className="h-8 px-3 text-sm" onClick={() => setMarketCapMode("all")} size="sm" type="button" variant={marketCapMode === "all" ? "secondary" : "ghost"}>All market caps</Button>
+ <Button className="h-8 px-3 text-sm" onClick={() => setMarketCapMode("custom")} size="sm" type="button" variant={marketCapMode === "custom" ? "secondary" : "ghost"}>Custom range</Button>
+ </div>
+ <HelpText>Custom mode uses cached Alpha symbol metadata first and falls back to the developer API only when market cap is missing locally.</HelpText>
+ </div>
+ <div className="grid gap-3 min-[640px]:grid-cols-2">
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>From</FieldLabel>
+ <Input disabled={marketCapMode !== "custom"} inputMode="decimal" onChange={(event) => setMarketCapMin(event.target.value)} placeholder="No lower bound" value={marketCapMin} />
+ </Label>
+ <Label className="grid gap-2 text-sm">
+ <FieldLabel>To</FieldLabel>
+ <Input disabled={marketCapMode !== "custom"} inputMode="decimal" onChange={(event) => setMarketCapMax(event.target.value)} placeholder="No upper bound" value={marketCapMax} />
+ </Label>
+ <HelpText className="min-[640px]:col-span-2">
+ {marketCapMode === "custom"
+ ? "Symbols outside this range are skipped. If both bounds are empty the workflow cannot be saved."
+ : "No market cap check runs in the backend when all market caps are allowed."}
+ </HelpText>
+ </div>
  </div>
  </div>
 
