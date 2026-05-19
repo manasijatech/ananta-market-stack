@@ -30,6 +30,21 @@ function brokerSessionInputName(key: string): string {
  return `market_stack_broker_session_${key}`;
 }
 
+function isExpiredTokenStatus(sessionStatus: SessionStatus, expiresAt?: string | null): boolean {
+ if (sessionStatus.session_active || !sessionStatus.has_access_token) {
+ return false;
+ }
+
+ if (expiresAt) {
+ const expiryTime = Date.parse(expiresAt);
+ if (Number.isFinite(expiryTime) && expiryTime <= Date.now()) {
+ return true;
+ }
+ }
+
+ return /\bexpired\b/i.test(sessionStatus.guidance);
+}
+
 function payloadFromForm(broker: BrokerCode, formData: FormData): SessionLoginPayload {
  const value = (key: string) => String(formData.get(brokerSessionInputName(key)) ?? formData.get(key) ?? "").trim();
  switch (broker) {
@@ -95,6 +110,7 @@ export function SessionPanel({
  : sessionStatus.token_expires_at;
  const shouldHighlightLogin =
  !sessionStatus.session_active && "login_url" in sessionStatus && Boolean(sessionStatus.login_url);
+ const shouldPulseLogin = shouldHighlightLogin && isExpiredTokenStatus(sessionStatus, expiresAt);
  const hasManualSessionForm =
  !sessionStatus.session_active &&
  (broker === "zerodha" ||
@@ -201,7 +217,8 @@ export function SessionPanel({
  className={cn(
  "mt-5",
  shouldHighlightLogin &&
- "border-primary bg-[var(--accent-glow)] text-primary hover:bg-[var(--accent-subtle)]"
+ "border-primary bg-[var(--accent-glow)] text-primary hover:bg-[var(--accent-subtle)]",
+ shouldPulseLogin && "broker-login-attention"
  )}
  >
  <a href={sessionStatus.login_url} onClick={rememberPendingBrokerLogin} rel="noreferrer" target="_blank">

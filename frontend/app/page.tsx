@@ -65,14 +65,14 @@ const trades = [
 ];
 
 const tickerItems = [
-  { symbol: "RELIANCE", text: "RELIANCE +1.82%" },
-  { symbol: "NIFTY", text: "NIFTY 22,647.40" },
-  { symbol: "BANKNIFTY", text: "BANKNIFTY -0.34%" },
-  { symbol: "INFY", text: "INFY +0.71%" },
-  { symbol: "BEL", text: "52W HIGH: BEL" },
-  { symbol: "KEC", text: "ORDER WIN: KEC" },
-  { symbol: "CDSL", text: "CONCALL: CDSL" },
-  { symbol: null, text: "ALERT DELIVERED: TELEGRAM" }
+  { symbol: "RELIANCE", label: "RELIANCE", changePercent: 1.82 },
+  { symbol: "NIFTY", label: "NIFTY 22,647.40" },
+  { symbol: "BANKNIFTY", label: "BANKNIFTY", changePercent: -0.34 },
+  { symbol: "INFY", label: "INFY", changePercent: 0.71 },
+  { symbol: "BEL", label: "52W HIGH: BEL" },
+  { symbol: "KEC", label: "ORDER WIN: KEC" },
+  { symbol: "CDSL", label: "CONCALL: CDSL" },
+  { symbol: null, label: "ALERT DELIVERED: TELEGRAM" }
 ];
 
 const heatmapTiles = [
@@ -192,7 +192,7 @@ function TickerTape({ symbolMetadata }: { symbolMetadata: Record<string, AlphaSy
     <div className="market-ticker text-[11px]">
       <div className="market-ticker__track">
         {[...tickerItems, ...tickerItems, ...tickerItems].map((item, index) => (
-          <span className="market-ticker__item" key={`${item.text}-${index}`}>
+          <span className="market-ticker__item" key={`${item.label}-${index}`}>
             {item.symbol ? (
               <SymbolLogo
                 className="market-ticker__logo"
@@ -200,7 +200,16 @@ function TickerTape({ symbolMetadata }: { symbolMetadata: Record<string, AlphaSy
                 symbol={item.symbol}
               />
             ) : null}
-            {item.text}
+            <span>{item.label}</span>
+            {typeof item.changePercent === "number" ? (
+              <span
+                className="market-ticker__change"
+                style={{ color: item.changePercent >= 0 ? "var(--landing-positive)" : "var(--landing-danger)" }}
+              >
+                {item.changePercent > 0 ? "+" : ""}
+                {item.changePercent.toFixed(2)}%
+              </span>
+            ) : null}
           </span>
         ))}
       </div>

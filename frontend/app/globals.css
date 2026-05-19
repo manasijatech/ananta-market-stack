@@ -127,6 +127,12 @@
   animation: ripple-button-wave 650ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.broker-login-attention {
+  position: relative;
+  animation: broker-login-attention 1.85s ease-in-out infinite;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
 @keyframes ripple-button-wave {
   0% {
     opacity: 0.42;
@@ -143,8 +149,35 @@
   }
 }
 
+@keyframes broker-login-attention {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 28%, transparent);
+    transform: translateY(0) scale(1);
+  }
+
+  18% {
+    transform: translateY(-5px) scale(1.02);
+  }
+
+  36% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent);
+    transform: translateY(0) scale(1);
+  }
+
+  52% {
+    transform: translateY(-3px) scale(1.01);
+  }
+
+  70% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ripple-button__wave {
+  .ripple-button__wave,
+  .broker-login-attention {
     animation: none;
   }
 }
@@ -706,6 +739,10 @@
   width: 22px;
   height: 22px;
   font-size: 8px;
+}
+
+.market-ticker__change {
+  font-weight: 700;
 }
 
 @media (max-height: 780px) and (min-width: 760px) {
