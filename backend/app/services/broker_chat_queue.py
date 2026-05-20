@@ -13,7 +13,7 @@ def redis_connection() -> redis.Redis:
         port=settings.redis_port,
         password=settings.redis_password or None,
         db=settings.redis_db,
-        decode_responses=True,
+        decode_responses=False,
         socket_connect_timeout=2,
         socket_timeout=2,
     )
