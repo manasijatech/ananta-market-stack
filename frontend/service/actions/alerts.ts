@@ -165,21 +165,23 @@ export async function getAlertLlmPlaceholders(): Promise<AlertLlmPlaceholderCata
 
 export async function previewAlertWorkflowLlmContext(
   id: string,
-  tick: Record<string, unknown>
+  tick: Record<string, unknown>,
+  llmAnalysis?: AlertWorkflowDsl["llm_analysis"]
 ): Promise<AlertLlmContextPreview> {
   return request<AlertLlmContextPreview>(`/alert-workflows/${id}/llm/preview-context`, {
     method: "POST",
-    body: JSON.stringify({ tick })
+    body: JSON.stringify({ tick, llm_analysis: llmAnalysis })
   });
 }
 
 export async function testAlertWorkflowLlm(
   id: string,
-  tick: Record<string, unknown>
+  tick: Record<string, unknown>,
+  llmAnalysis?: AlertWorkflowDsl["llm_analysis"]
 ): Promise<AlertLlmTestResult> {
   return request<AlertLlmTestResult>(`/alert-workflows/${id}/llm/test`, {
     method: "POST",
-    body: JSON.stringify({ tick })
+    body: JSON.stringify({ tick, llm_analysis: llmAnalysis })
   });
 }
 

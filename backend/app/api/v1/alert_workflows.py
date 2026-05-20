@@ -62,6 +62,7 @@ def preview_llm_context(
         body.tick,
         previous_tick=body.previous_tick,
         reason=body.reason,
+        llm_analysis=body.llm_analysis,
     )
     if result is None:
         raise HTTPException(status_code=404, detail="workflow not found")
@@ -82,6 +83,7 @@ def test_llm_analysis(
         body.tick,
         previous_tick=body.previous_tick,
         reason=body.reason,
+        llm_analysis=body.llm_analysis,
     )
     if result is None:
         raise HTTPException(status_code=404, detail="workflow not found")

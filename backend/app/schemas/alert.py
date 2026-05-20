@@ -233,6 +233,7 @@ class AlertWorkflowLlmPreviewIn(BaseModel):
     tick: dict[str, Any] = Field(default_factory=dict)
     previous_tick: dict[str, Any] = Field(default_factory=dict)
     reason: str | None = None
+    llm_analysis: AlertLlmAnalysisConfig | None = None
 
 
 class AlertWorkflowLlmContextPreviewOut(BaseModel):
