@@ -28,6 +28,20 @@ class Settings(BaseSettings):
     redis_password: str | None = None
     redis_db: int = 0
     redis_quote_ttl_seconds: int = 30
+    broker_chat_queue_name: str = Field(default="broker-chat", validation_alias="BROKER_CHAT_QUEUE_NAME")
+    broker_chat_job_timeout_seconds: int = Field(
+        default=600,
+        validation_alias="BROKER_CHAT_JOB_TIMEOUT_SECONDS",
+    )
+    broker_chat_result_ttl_seconds: int = Field(
+        default=24 * 60 * 60,
+        validation_alias="BROKER_CHAT_RESULT_TTL_SECONDS",
+    )
+    broker_chat_stream_maxlen: int = Field(default=5000, validation_alias="BROKER_CHAT_STREAM_MAXLEN")
+    broker_chat_history_turn_limit: int = Field(
+        default=20,
+        validation_alias="BROKER_CHAT_HISTORY_TURN_LIMIT",
+    )
     system_maintenance_interval_seconds: int = Field(
         default=6 * 60 * 60,
         validation_alias="SYSTEM_MAINTENANCE_INTERVAL_SECONDS",

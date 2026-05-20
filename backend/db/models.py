@@ -68,6 +68,13 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    broker_chat_preference: Mapped[UserBrokerChatPreference | None] = relationship(
+        "UserBrokerChatPreference",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class BrokerAccount(Base):
@@ -178,6 +185,90 @@ class UserBrokerDataPreference(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="broker_data_preference")
+
+
+class UserBrokerChatPreference(Base):
+    __tablename__ = "user_broker_chat_preferences"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    default_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    default_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    event_visibility: Mapped[str] = mapped_column(String(32), default="minimal")
+    include_tool_outputs: Mapped[bool] = mapped_column(Boolean, default=False)
+    include_reasoning: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="broker_chat_preference")
+
+
+class BrokerChatSession(Base):
+    __tablename__ = "broker_chat_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(256), default="Broker chat")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
+    )
+
+
+class BrokerChatRun(Base):
+    __tablename__ = "broker_chat_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    job_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="")
+    model_id: Mapped[str] = mapped_column(String(256), default="")
+    message: Mapped[str] = mapped_column(Text)
+    response_text: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_visibility: Mapped[str] = mapped_column(String(32), default="minimal")
+    include_tool_outputs: Mapped[bool] = mapped_column(Boolean, default=False)
+    include_reasoning: Mapped[bool] = mapped_column(Boolean, default=False)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    queued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
+    )
+
+
+class BrokerChatEvent(Base):
+    __tablename__ = "broker_chat_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_chat_runs.id", ondelete="CASCADE"), index=True
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    public_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    full_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    redis_stream_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class BrokerHoldingsSnapshot(Base):

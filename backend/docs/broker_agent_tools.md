@@ -2,6 +2,8 @@
 
 `app.agent_tools.broker_tools` exposes OpenAI Agents SDK `function_tool` wrappers around the existing Market-Stack broker services. These tools are intended for a future chat runner; they are not wired into an agent yet.
 
+The chat runner is now implemented separately in `docs/broker_chat.md`; this file documents the reusable tool surface.
+
 ## Context
 
 Pass `BrokerAgentContext` as the agent context:
