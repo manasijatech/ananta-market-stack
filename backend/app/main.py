@@ -5,6 +5,7 @@ import threading
 from threading import Thread
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
 from app.config import get_settings
@@ -168,6 +169,20 @@ Refer to `AGENTS.md` in the repository for architectural details and implementat
     contact={
         "name": "Market-Stack Support",
     },
+)
+
+cors_origins = [origin.strip() for origin in settings.cors_allowed_origins.split(",") if origin.strip()]
+if settings.app_public_base_url and settings.app_public_base_url not in cors_origins:
+    cors_origins.append(settings.app_public_base_url)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_origin_regex=settings.cors_allow_origin_regex,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Last-Event-ID"],
 )
 
 app.include_router(api_router, prefix="/api/v1")

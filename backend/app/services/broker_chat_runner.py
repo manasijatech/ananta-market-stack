@@ -127,6 +127,7 @@ async def _run_broker_chat(run_id: str) -> None:
     db = SessionLocal()
     final_text = ""
     tool_names_by_call_id: dict[str, str] = {}
+    pending_tool_names: list[str] = []
     try:
         run = db.get(BrokerChatRun, run_id)
         if run is None:
@@ -182,6 +183,22 @@ async def _run_broker_chat(run_id: str) -> None:
                             public_payload={"text": delta},
                             full_payload={"text": delta, "raw_type": raw_type, "raw": _safe_data(data)},
                         )
+                elif raw_type == "response.created":
+                    broker_chat.append_event(
+                        db,
+                        run,
+                        event_type="response_started",
+                        public_payload={"response_id": getattr(data, "response_id", None)},
+                        full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
+                    )
+                elif raw_type == "response.completed":
+                    broker_chat.append_event(
+                        db,
+                        run,
+                        event_type="response_completed",
+                        public_payload={"response_id": getattr(data, "response_id", None)},
+                        full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
+                    )
                 elif "reasoning" in str(raw_type):
                     broker_chat.append_event(
                         db,
@@ -199,6 +216,7 @@ async def _run_broker_chat(run_id: str) -> None:
                     tool_name, arguments, call_id = _extract_tool_call_start(item)
                     if call_id:
                         tool_names_by_call_id[call_id] = tool_name
+                    pending_tool_names.append(tool_name)
                     broker_chat.append_event(
                         db,
                         run,
@@ -218,6 +236,8 @@ async def _run_broker_chat(run_id: str) -> None:
                 elif item_type == "tool_call_output_item":
                     call_id, output = _extract_tool_call_output(item)
                     tool_name = tool_names_by_call_id.get(call_id or "", "unknown")
+                    if tool_name == "unknown" and pending_tool_names:
+                        tool_name = pending_tool_names.pop(0)
                     broker_chat.append_event(
                         db,
                         run,
@@ -249,12 +269,13 @@ async def _run_broker_chat(run_id: str) -> None:
                 continue
 
             if event_type == "agent_updated_stream_event":
+                agent_name = getattr(getattr(event, "new_agent", None), "name", None)
                 broker_chat.append_event(
                     db,
                     run,
                     event_type="agent_updated",
-                    public_payload={"agent": getattr(getattr(event, "new_agent", None), "name", None)},
-                    full_payload=_safe_data(event),
+                    public_payload={"agent": agent_name},
+                    full_payload={"agent": agent_name},
                 )
 
         if not final_text and getattr(stream, "final_output", None):
