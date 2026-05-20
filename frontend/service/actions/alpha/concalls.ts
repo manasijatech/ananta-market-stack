@@ -6,10 +6,14 @@ import type {
     AlphaPresignedUrlResponse
 } from "@/service/types/alpha/common";
 import type { AlphaConcall } from "@/service/types/alpha/concalls";
-import { appendList, feedQuery, request, withQuery, type AlphaFeedParams } from "@/service/actions/alpha/shared";
+import { appendList, feedQuery, queryParamsToObject, request, withQuery, withAlphaSdk, type AlphaFeedParams } from "@/service/actions/alpha/shared";
 
 export async function getAlphaConcalls(params: AlphaFeedParams = {}): Promise<AlphaPaginatedResponse<AlphaConcall>> {
-    const response = await request<AlphaPaginatedResponse<AlphaConcall>>(withQuery("/v1/concalls", feedQuery(params)));
+    const response = await withAlphaSdk<AlphaPaginatedResponse<AlphaConcall>>((client) =>
+        client.getConcalls({
+            query: queryParamsToObject(feedQuery(params))
+        })
+    );
     console.log("[Alpha concalls raw API response]", JSON.stringify(response, null, 2));
     return response;
 }

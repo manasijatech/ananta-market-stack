@@ -1,4 +1,4 @@
-import type { JsonValue } from "@/service/types/broker";
+import type { Concall, JsonValue } from "@manasija/market-stack-sdk";
 
 export interface AlphaConcallAnalysisSections {
     [section: string]: string | null;
@@ -21,24 +21,18 @@ export interface AlphaConcallSentimentAnalysis {
     [key: string]: JsonValue | AlphaConcallSentiment | undefined;
 }
 
-export interface AlphaConcall {
-    id: string;
-    symbol: string;
+export interface AlphaConcall extends Concall {
     summary?: string | null;
     completion_response?: string | null;
     analysis?: JsonValue;
     expanded_analysis?: AlphaConcallAnalysisSections | JsonValue;
     short_analysis?: AlphaConcallAnalysisSections | JsonValue;
-    sentiment_analysis?: AlphaConcallSentimentAnalysis | JsonValue;
-    quarter?: string | null;
+    sentiment_analysis?: JsonValue;
     month?: string | null;
     filename?: string | null;
     type?: string | null;
     uploaded_file_type?: string | null;
-    date?: string | null;
     concall_type?: string | null;
-    transcript_url?: string | null;
-    audio_url?: string | null;
     transcript_pdf_links?: string[];
     recording_links?: string[];
     pdf_r2_key?: string | null;
