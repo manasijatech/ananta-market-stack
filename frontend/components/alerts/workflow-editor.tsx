@@ -341,18 +341,83 @@ function formatMarketCap(value?: number | null): string {
  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
 }
 
-const MARKET_CAP_RANGE_MIN = 0;
-const MARKET_CAP_RANGE_MAX = 3000000;
-const MARKET_CAP_RANGE_STEP = 100;
+type MarketCapPresetId = "all" | "small" | "mid" | "large" | "mega";
+
+type MarketCapPreset = {
+ id: MarketCapPresetId;
+ label: string;
+ min?: number;
+ max?: number;
+};
+
+const MARKET_CAP_RANGE_MIN = 500;
+const MARKET_CAP_RANGE_MAX = 2000000;
+const MARKET_CAP_SLIDER_MIN = 0;
+const MARKET_CAP_SLIDER_MAX = 10000;
+const MARKET_CAP_SLIDER_STEP = 1;
+const MARKET_CAP_PRESETS: MarketCapPreset[] = [
+ { id: "all", label: "All" },
+ { id: "small", label: "Small Cap", min: 500, max: 50000 },
+ { id: "mid", label: "Mid Cap", min: 50000, max: 200000 },
+ { id: "large", label: "Large Cap", min: 200000, max: 500000 },
+ { id: "mega", label: "Mega Cap", min: 500000, max: 2000000 }
+];
+const MARKET_CAP_SLIDER_LABELS = ["500 Cr", "3K", "20K", "1L", "5L", "20L Cr"];
 
 function clampMarketCapValue(value: number): number {
  return Math.max(MARKET_CAP_RANGE_MIN, Math.min(MARKET_CAP_RANGE_MAX, value));
 }
 
 function formatMarketCapRangeValue(value: number): string {
- if (value >= 100000) return `${(value / 100000).toFixed(1)}L Cr`;
- if (value >= 1000) return `${(value / 1000).toFixed(1)}k Cr`;
+ if (value >= 100000) return `${trimTrailingNumber(value / 100000)}L Cr`;
+ if (value >= 1000) return `${trimTrailingNumber(value / 1000)}K Cr`;
  return `${value.toFixed(0)} Cr`;
+}
+
+function trimTrailingNumber(value: number): string {
+ return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+function marketCapValueToPosition(value: number): number {
+ const clamped = clampMarketCapValue(value);
+ const logMin = Math.log(MARKET_CAP_RANGE_MIN);
+ const logMax = Math.log(MARKET_CAP_RANGE_MAX);
+ return (Math.log(clamped) - logMin) / (logMax - logMin);
+}
+
+function marketCapPositionToValue(position: number): number {
+ const clampedPosition = Math.max(0, Math.min(1, position));
+ const logMin = Math.log(MARKET_CAP_RANGE_MIN);
+ const logMax = Math.log(MARKET_CAP_RANGE_MAX);
+ const raw = Math.exp(logMin + clampedPosition * (logMax - logMin));
+ return snapMarketCapValue(raw);
+}
+
+function snapMarketCapValue(value: number): number {
+ const clamped = clampMarketCapValue(value);
+ if (clamped < 12000) return Math.round(clamped / 10) * 10;
+ if (clamped < 50000) return Math.round(clamped / 100) * 100;
+ if (clamped < 200000) return Math.round(clamped / 500) * 500;
+ if (clamped < 500000) return Math.round(clamped / 2000) * 2000;
+ if (clamped < 1000000) return Math.round(clamped / 10000) * 10000;
+ return Math.round(clamped / 20000) * 20000;
+}
+
+function marketCapValueToSliderValue(value: number): number {
+ return Math.round(marketCapValueToPosition(value) * MARKET_CAP_SLIDER_MAX);
+}
+
+function marketCapSliderValueToValue(value: string): number {
+ const parsedValue = Number(value);
+ const sliderValue = Number.isFinite(parsedValue)
+ ? Math.max(MARKET_CAP_SLIDER_MIN, Math.min(MARKET_CAP_SLIDER_MAX, parsedValue))
+ : MARKET_CAP_SLIDER_MIN;
+ return marketCapPositionToValue(sliderValue / MARKET_CAP_SLIDER_MAX);
+}
+
+function matchMarketCapPreset(minValue: number, maxValue: number): MarketCapPresetId | null {
+ const preset = MARKET_CAP_PRESETS.find((item) => item.id !== "all" && item.min === minValue && item.max === maxValue);
+ return preset?.id ?? null;
 }
 
 function displayValue(value: unknown, fallback = "-"): string {
@@ -901,15 +966,17 @@ function StepHeader({
  step,
  title,
  description,
- action
+ action,
+ className = "mb-4"
 }: {
  step: string;
  title: string;
  description: React.ReactNode;
  action?: React.ReactNode;
+ className?: string;
 }) {
  return (
- <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+ <div className={cn("flex flex-wrap items-start justify-between gap-3", className)}>
  <div className="max-w-[760px]">
  <div className="type-step-eyebrow">{step}</div>
  <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">{title}</h2>
@@ -2601,29 +2668,36 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
 
  const marketCapMinNumber = numeric(marketCapMin);
  const marketCapMaxNumber = numeric(marketCapMax);
- const marketCapSliderLower = clampMarketCapValue(marketCapMinNumber ?? MARKET_CAP_RANGE_MIN);
- const marketCapSliderUpper = clampMarketCapValue(marketCapMaxNumber ?? MARKET_CAP_RANGE_MAX);
+ const displayedMarketCapMin = marketCapMode === "custom" ? marketCapMinNumber : MARKET_CAP_RANGE_MIN;
+ const displayedMarketCapMax = marketCapMode === "custom" ? marketCapMaxNumber : MARKET_CAP_RANGE_MAX;
+ const marketCapSliderLower = clampMarketCapValue(displayedMarketCapMin ?? MARKET_CAP_RANGE_MIN);
+ const marketCapSliderUpper = clampMarketCapValue(displayedMarketCapMax ?? MARKET_CAP_RANGE_MAX);
  const marketCapRangeStart = Math.min(marketCapSliderLower, marketCapSliderUpper);
  const marketCapRangeEnd = Math.max(marketCapSliderLower, marketCapSliderUpper);
- const marketCapRangeStartPercent = ((marketCapRangeStart - MARKET_CAP_RANGE_MIN) / (MARKET_CAP_RANGE_MAX - MARKET_CAP_RANGE_MIN)) * 100;
- const marketCapRangeEndPercent = ((marketCapRangeEnd - MARKET_CAP_RANGE_MIN) / (MARKET_CAP_RANGE_MAX - MARKET_CAP_RANGE_MIN)) * 100;
+ const marketCapRangeStartSliderValue = marketCapValueToSliderValue(marketCapRangeStart);
+ const marketCapRangeEndSliderValue = marketCapValueToSliderValue(marketCapRangeEnd);
+ const marketCapRangeStartPercent = marketCapValueToPosition(marketCapRangeStart) * 100;
+ const marketCapRangeEndPercent = marketCapValueToPosition(marketCapRangeEnd) * 100;
  const marketCapRangeSummary = marketCapMode === "custom"
  ? `${formatMarketCapRangeValue(marketCapRangeStart)} to ${formatMarketCapRangeValue(marketCapRangeEnd)}`
  : "All market caps";
+ const activeMarketCapPreset = marketCapMode === "custom" ? matchMarketCapPreset(marketCapRangeStart, marketCapRangeEnd) : "all";
  const marketCapRangeTrackStyle = {
  background: `linear-gradient(to right, var(--border) 0%, var(--border) ${marketCapRangeStartPercent}%, var(--primary) ${marketCapRangeStartPercent}%, var(--primary) ${marketCapRangeEndPercent}%, var(--border) ${marketCapRangeEndPercent}%, var(--border) 100%)`
  };
 
- function chooseMarketCapMode(nextMode: "all" | "custom") {
- setMarketCapMode(nextMode);
- if (nextMode === "custom" && marketCapMinNumber === null && marketCapMaxNumber === null) {
- setMarketCapMin(String(MARKET_CAP_RANGE_MIN));
- setMarketCapMax(String(MARKET_CAP_RANGE_MAX));
+ function chooseMarketCapPreset(preset: MarketCapPreset) {
+ if (preset.id === "all") {
+ setMarketCapMode("all");
+ return;
  }
+ setMarketCapMode("custom");
+ setMarketCapMin(String(preset.min ?? MARKET_CAP_RANGE_MIN));
+ setMarketCapMax(String(preset.max ?? MARKET_CAP_RANGE_MAX));
  }
 
  function updateMarketCapSlider(boundary: "min" | "max", value: string) {
- const nextValue = clampMarketCapValue(Number(value));
+ const nextValue = marketCapSliderValueToValue(value);
  if (boundary === "min") {
  const upper = marketCapMaxNumber ?? MARKET_CAP_RANGE_MAX;
  setMarketCapMin(String(Math.min(nextValue, upper)));
@@ -3429,8 +3503,9 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </div>
  </div>
 
- <div className="grid max-w-5xl gap-4 border border-border p-3">
+ <div className="grid max-w-5xl gap-2 border border-border p-3">
  <StepHeader
+ className="mb-0"
  step={marketCapStep}
  title="Market cap filter"
  description={
@@ -3439,22 +3514,33 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  : "Custom ranges are checked only after the rule conditions match. Leave it on all market caps to avoid any extra market cap lookup."
  }
  />
- <div className="grid gap-4">
+ <div className="grid gap-3">
  <div>
  <div className="min-w-0">
- <FieldLabel>Range mode</FieldLabel>
- <div className="mt-1 text-sm font-semibold text-foreground">{marketCapRangeSummary}</div>
+ <div className="text-sm font-semibold text-foreground">{marketCapRangeSummary}</div>
  </div>
- <div className="grid w-[220px] grid-cols-2 border border-border p-0.5">
- <Button className="h-7 min-w-0 px-2 text-xs" onClick={() => chooseMarketCapMode("all")} size="sm" type="button" variant={marketCapMode === "all" ? "secondary" : "ghost"}>All</Button>
- <Button className="h-7 min-w-0 px-2 text-xs" onClick={() => chooseMarketCapMode("custom")} size="sm" type="button" variant={marketCapMode === "custom" ? "secondary" : "ghost"}>Range</Button>
+ <div className="mt-2 flex flex-wrap gap-2">
+ {MARKET_CAP_PRESETS.map((preset) => {
+ const isActive = activeMarketCapPreset === preset.id;
+ return (
+ <Button
+ className={cn("h-8 min-w-0 rounded-full px-3 text-[11px]", isActive && "border-primary")}
+ key={preset.id}
+ onClick={() => chooseMarketCapPreset(preset)}
+ size="sm"
+ type="button"
+ variant={isActive ? "default" : "secondary"}
+ >
+ {preset.label}
+ </Button>
+ );
+ })}
  </div>
  </div>
  <div className={cn("grid gap-4 border border-border bg-secondary/20 p-4 transition-opacity", marketCapMode !== "custom" && "opacity-55")}>
  <div className="grid gap-3">
  <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
- <span>{formatMarketCapRangeValue(MARKET_CAP_RANGE_MIN)}</span>
- <span>{formatMarketCapRangeValue(MARKET_CAP_RANGE_MAX)}</span>
+ {MARKET_CAP_SLIDER_LABELS.map((label) => <span key={label}>{label}</span>)}
  </div>
  <div className="relative h-8">
  <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full" style={marketCapRangeTrackStyle} />
@@ -3462,35 +3548,35 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  aria-label="Minimum market cap"
  className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-1 w-full -translate-y-1/2 appearance-none bg-transparent accent-primary disabled:cursor-not-allowed [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-runnable-track]:appearance-none [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-background [&::-moz-range-track]:bg-transparent"
  disabled={marketCapMode !== "custom"}
- max={MARKET_CAP_RANGE_MAX}
- min={MARKET_CAP_RANGE_MIN}
+ max={MARKET_CAP_SLIDER_MAX}
+ min={MARKET_CAP_SLIDER_MIN}
  onChange={(event) => updateMarketCapSlider("min", event.target.value)}
- step={MARKET_CAP_RANGE_STEP}
+ step={MARKET_CAP_SLIDER_STEP}
  type="range"
- value={marketCapRangeStart}
+ value={marketCapRangeStartSliderValue}
  />
  <input
  aria-label="Maximum market cap"
  className="pointer-events-none absolute inset-x-0 top-1/2 z-20 h-1 w-full -translate-y-1/2 appearance-none bg-transparent accent-primary disabled:cursor-not-allowed [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-runnable-track]:appearance-none [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-background [&::-moz-range-track]:bg-transparent"
  disabled={marketCapMode !== "custom"}
- max={MARKET_CAP_RANGE_MAX}
- min={MARKET_CAP_RANGE_MIN}
+ max={MARKET_CAP_SLIDER_MAX}
+ min={MARKET_CAP_SLIDER_MIN}
  onChange={(event) => updateMarketCapSlider("max", event.target.value)}
- step={MARKET_CAP_RANGE_STEP}
+ step={MARKET_CAP_SLIDER_STEP}
  type="range"
- value={marketCapRangeEnd}
+ value={marketCapRangeEndSliderValue}
  />
  </div>
  </div>
  <div className="grid min-w-0 gap-3 min-[640px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[640px]:items-end">
  <Label className="grid gap-2 text-sm">
  <FieldLabel>From</FieldLabel>
- <Input className="h-9 text-sm" disabled={marketCapMode !== "custom"} inputMode="decimal" max={MARKET_CAP_RANGE_MAX} min={MARKET_CAP_RANGE_MIN} onBlur={() => normalizeMarketCapInput("min")} onChange={(event) => updateMarketCapInput("min", event.target.value)} placeholder="0 Cr" step={MARKET_CAP_RANGE_STEP} type="number" value={marketCapMin} />
+ <Input className="h-9 text-sm" disabled={marketCapMode !== "custom"} inputMode="decimal" max={MARKET_CAP_RANGE_MAX} min={MARKET_CAP_RANGE_MIN} onBlur={() => normalizeMarketCapInput("min")} onChange={(event) => updateMarketCapInput("min", event.target.value)} placeholder="500 Cr" step={100} type="number" value={marketCapMin} />
  </Label>
  <span className="hidden pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground min-[640px]:block">to</span>
  <Label className="grid gap-2 text-sm">
  <FieldLabel>To</FieldLabel>
- <Input className="h-9 text-sm" disabled={marketCapMode !== "custom"} inputMode="decimal" max={MARKET_CAP_RANGE_MAX} min={MARKET_CAP_RANGE_MIN} onBlur={() => normalizeMarketCapInput("max")} onChange={(event) => updateMarketCapInput("max", event.target.value)} placeholder="30.0L Cr" step={MARKET_CAP_RANGE_STEP} type="number" value={marketCapMax} />
+ <Input className="h-9 text-sm" disabled={marketCapMode !== "custom"} inputMode="decimal" max={MARKET_CAP_RANGE_MAX} min={MARKET_CAP_RANGE_MIN} onBlur={() => normalizeMarketCapInput("max")} onChange={(event) => updateMarketCapInput("max", event.target.value)} placeholder="20L Cr" step={100} type="number" value={marketCapMax} />
  </Label>
  </div>
  </div>
