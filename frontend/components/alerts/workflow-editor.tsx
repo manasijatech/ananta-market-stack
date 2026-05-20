@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { AlertTriangle, CheckCircle2, FileJson } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useTransition, type KeyboardEvent, type RefObject } from "react";
 import {
  getDataOhlc,
@@ -56,6 +57,8 @@ import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+
+type EngineAction = "validate" | "compile" | "explain" | "samples" | "deploy";
 
 function buildGraph(dsl: AlertWorkflowDsl): AlertGraphDsl {
  const nodes: AlertGraphDsl["nodes"] = [
@@ -1052,6 +1055,8 @@ const [llmCreditAction, setLlmCreditAction] = useState<"preview" | "test" | null
  const [dslText, setDslText] = useState(initialWorkflow?.workflow_dsl.dsl_text ?? "");
  const [engineFeedback, setEngineFeedback] = useState("");
  const [engineDetails, setEngineDetails] = useState<Record<string, unknown> | null>(null);
+ const [runningEngineAction, setRunningEngineAction] = useState<EngineAction | null>(null);
+ const [lastEngineAction, setLastEngineAction] = useState<EngineAction | null>(null);
  const [hoveredSymbolKey, setHoveredSymbolKey] = useState("");
  const [hoverQuote, setHoverQuote] = useState<QuoteResponse | null>(null);
  const [hoverQuoteLoading, setHoverQuoteLoading] = useState(false);
@@ -1797,6 +1802,19 @@ const activeInstrument = useMemo<InstrumentRef>(
  };
  }
 
+ function llmAnalysisPayload(): AlertWorkflowDsl["llm_analysis"] {
+ return {
+ enabled: llmEnabled,
+ provider: llmProvider || null,
+ model_id: llmModelId || null,
+ prompt_template: llmPromptTemplate,
+ context_placeholders: parseLlmPromptPlaceholders(llmPromptTemplate),
+ temperature: Number(llmTemperature || 0.2),
+ max_completion_tokens: Number(llmMaxTokens || 500),
+ timeout_seconds: Number(llmTimeout || 25)
+ };
+ }
+
  function workflowPayload() {
  const targeting = workflowTargetingPayload();
  const primaryTarget = targeting.entries[0];
@@ -1814,16 +1832,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  message_template: messageTemplate
  },
  channels: channelSelection(),
- llm_analysis: {
- enabled: llmEnabled,
- provider: llmProvider || null,
- model_id: llmModelId || null,
- prompt_template: llmPromptTemplate,
- context_placeholders: parseLlmPromptPlaceholders(llmPromptTemplate),
- temperature: Number(llmTemperature || 0.2),
- max_completion_tokens: Number(llmMaxTokens || 500),
- timeout_seconds: Number(llmTimeout || 25)
- },
+ llm_analysis: llmAnalysisPayload(),
  feed_trigger: {
  enabled: workflowType === "alpha_feed",
  products: feedProducts as AlertWorkflowDsl["feed_trigger"]["products"],
@@ -2316,7 +2325,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  setLlmDetails(null);
  startTransition(async () => {
  try {
- const result = await previewAlertWorkflowLlmContext(initialWorkflow.id, buildPreviewTick());
+ const result = await previewAlertWorkflowLlmContext(initialWorkflow.id, buildPreviewTick(), llmAnalysisPayload());
  setLlmFeedback(`Resolved ${Object.keys(result.placeholders ?? {}).length} placeholder context block${Object.keys(result.placeholders ?? {}).length === 1 ? "" : "s"} for ${result.symbol}.`);
  setLlmDetails(result as unknown as Record<string, unknown>);
  setLlmPromptTab("preview");
@@ -2333,7 +2342,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  setLlmDetails(null);
  startTransition(async () => {
  try {
- const result = await testAlertWorkflowLlm(initialWorkflow.id, buildPreviewTick());
+ const result = await testAlertWorkflowLlm(initialWorkflow.id, buildPreviewTick(), llmAnalysisPayload());
  const analysis = result.llm_analysis ?? {};
  setLlmFeedback(String(analysis.output || analysis.error || analysis.status || "LLM test completed."));
  setLlmDetails(result as unknown as Record<string, unknown>);
@@ -2470,11 +2479,13 @@ const activeInstrument = useMemo<InstrumentRef>(
  setCommittedSymbolSearch("");
  }
 
- function runEngineAction(action: "validate" | "compile" | "explain" | "samples" | "deploy") {
+ function runEngineAction(action: EngineAction) {
  if (!initialWorkflow?.id) return;
  setError("");
  setEngineFeedback("");
  setEngineDetails(null);
+ setRunningEngineAction(action);
+ setLastEngineAction(action);
  startTransition(async () => {
  try {
  let result: Record<string, unknown>;
@@ -2505,9 +2516,21 @@ const activeInstrument = useMemo<InstrumentRef>(
  setEngineDetails(result);
  } catch (caught) {
  setError(caught instanceof Error ? caught.message : "Workflow engine action failed.");
+ } finally {
+ setRunningEngineAction(null);
  }
  });
  }
+
+ const engineActions: Array<{ action: EngineAction; label: string; variant: "default" | "secondary" }> = [
+ { action: "validate", label: "Validate", variant: "secondary" },
+ { action: "compile", label: "Compile", variant: "secondary" },
+ { action: "explain", label: "Explain", variant: "secondary" },
+ { action: "samples", label: "Samples", variant: "secondary" },
+ { action: "deploy", label: "Deploy", variant: "default" }
+ ];
+ const engineFeedbackTone = engineFeedback.toLowerCase().includes("fail") || engineFeedback.toLowerCase().includes("error") ? "error" : "success";
+ const engineDetailsLabel = lastEngineAction ? `${engineActions.find((item) => item.action === lastEngineAction)?.label ?? "Engine"} output` : "Engine output";
 
  const currentTemplatesMatchSuggestion = titleTemplate === suggestedCopy.title && messageTemplate === suggestedCopy.message;
  const selectedLlmProvider = llmProviders.find((item) => item.provider === llmProvider);
@@ -2660,7 +2683,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  This will also call the selected LLM{llmProviderCreditLabel ? ` (${llmProviderCreditLabel})` : ""}, which may consume provider credits.
  </p>
  ) : null}
- <p className="leading-6">Review the prompt before continuing. Save the workflow first if you changed the prompt.</p>
+ <p className="leading-6">Review the prompt before continuing. This run uses the current draft prompt and LLM settings without saving the workflow.</p>
  </div>
  <DialogFooter className="border-t border-border px-5 py-4">
  <Button onClick={() => setLlmCreditAction(null)} type="button" variant="secondary">Cancel</Button>
@@ -3417,7 +3440,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  }
  />
  <div className="grid gap-4">
- <div className="flex flex-wrap items-start justify-between gap-3">
+ <div>
  <div className="min-w-0">
  <FieldLabel>Range mode</FieldLabel>
  <div className="mt-1 text-sm font-semibold text-foreground">{marketCapRangeSummary}</div>
@@ -3483,7 +3506,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="max-w-5xl">
  <Tabs onValueChange={(value) => setEditorMode(value as EditorMode)} value={editorMode}>
  <div className="grid gap-3 border border-border p-3">
- <div className="flex flex-wrap items-start justify-between gap-3">
+ <div>
  <div className="max-w-[760px]">
  <div className="type-step-eyebrow">{buildTriggerStep}</div>
  <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Build trigger</h2>
@@ -3751,15 +3774,6 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Advanced script and deployment</h2>
  <HelpText className="mt-1.5">The script is optional. When present, it is validated by the sandboxed expression compiler and overrides the visual logic in the compiled workflow AST.</HelpText>
  </div>
- <div className="flex flex-wrap items-center gap-2">
- <div className="flex flex-wrap gap-2">
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("validate")} size="sm" type="button" variant="secondary">Validate</Button>
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("compile")} size="sm" type="button" variant="secondary">Compile</Button>
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("explain")} size="sm" type="button" variant="secondary">Explain</Button>
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("samples")} size="sm" type="button" variant="secondary">Samples</Button>
- <Button disabled={isPending || !initialWorkflow?.id} onClick={() => runEngineAction("deploy")} size="sm" type="button">Deploy</Button>
- </div>
- </div>
  </div>
  <>
  <div className="relative">
@@ -3821,6 +3835,36 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <Button onClick={() => setDslText(suggestedDsl)} size="sm" type="button" variant="secondary">Use generated script</Button>
  </div>
  <HelpText>Use Ctrl+Space for suggestions. Tab accepts the highlighted suggestion; when empty, Tab inserts the generated script from the visual rule builder.</HelpText>
+ <div className="flex max-w-[820px] flex-wrap items-center justify-between gap-3 border border-border bg-secondary/20 px-3 py-3">
+ <div>
+ <div className="type-step-eyebrow">Engine actions</div>
+ <HelpText className="mt-1">Run checks against the script and review the resulting state below.</HelpText>
+ </div>
+ <div className="flex flex-wrap gap-2">
+ {engineActions.map((item) => {
+ const isRunning = runningEngineAction === item.action;
+ const isLastAction = lastEngineAction === item.action;
+ return (
+ <Button
+ aria-pressed={isLastAction}
+ className={cn(
+ isLastAction && item.variant === "secondary" && "border-primary bg-[var(--accent-subtle)] text-primary",
+ isLastAction && item.variant === "default" && "bg-primary/90",
+ isRunning && "cursor-wait"
+ )}
+ disabled={isPending || !initialWorkflow?.id}
+ key={item.action}
+ onClick={() => runEngineAction(item.action)}
+ size="sm"
+ type="button"
+ variant={item.variant}
+ >
+ {isRunning ? "Running..." : item.label}
+ </Button>
+ );
+ })}
+ </div>
+ </div>
  <div className="grid max-w-[820px] gap-3 min-[900px]:grid-cols-3">
  <div className="border border-border p-3">
  <div className="type-step-eyebrow">Deployment</div>
@@ -3837,8 +3881,25 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  <div className="type-body mt-2 text-muted-foreground">{initialWorkflow?.last_runtime_error || "-"}</div>
  </div>
  </div>
- {engineFeedback ? <div className="type-body border border-border px-3 py-2 text-muted-foreground">{engineFeedback}</div> : null}
- {engineDetails ? <pre className="type-meta max-h-[260px] overflow-auto border border-border p-3">{compactPreview(engineDetails)}</pre> : null}
+ {engineFeedback || engineDetails ? (
+ <div className="grid max-w-[820px] min-w-0 gap-2">
+ {engineFeedback ? (
+ <div className={cn("flex items-start gap-2", engineFeedbackTone === "success" ? "text-[var(--success)]" : "text-destructive")}>
+ {engineFeedbackTone === "success" ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0" />}
+ <p className="type-body text-current">{engineFeedback}</p>
+ </div>
+ ) : null}
+ {engineDetails ? (
+ <div className="min-w-0">
+ <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+ <FileJson className="size-4 shrink-0" />
+ <span className="type-step-eyebrow">{engineDetailsLabel}</span>
+ </div>
+ <pre className="type-meta max-h-[220px] max-w-full overflow-auto border border-border p-3">{compactPreview(engineDetails)}</pre>
+ </div>
+ ) : null}
+ </div>
+ ) : null}
  </>
  </div>
 

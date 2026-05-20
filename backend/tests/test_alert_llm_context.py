@@ -8,6 +8,7 @@ from app.schemas.alert import (
     AlertWorkflowOut,
     AlertWorkflowTargeting,
 )
+from app.services import alerts as alert_svc
 from app.services.alert_llm_context import parse_placeholder_calls, resolve_llm_context
 
 
@@ -80,3 +81,29 @@ def test_resolve_llm_context_uses_tick_symbol_not_workflow_universe_symbol():
     assert "TCS" in context["rendered_prompt"]
     assert context["context_errors"] == []
     assert context["placeholders"]["@price.full"]["symbol"] == "TCS"
+
+
+def test_preview_workflow_llm_context_uses_draft_llm_without_persisting(monkeypatch):
+    workflow = _workflow()
+
+    def fake_get_workflow(_db, _user_id, _workflow_id):
+        return workflow
+
+    monkeypatch.setattr(alert_svc, "get_workflow", fake_get_workflow)
+    context = alert_svc.preview_workflow_llm_context(
+        None,
+        "u1",
+        "w1",
+        {"symbol": "INFY", "ltp": 1500},
+        reason="draft reason",
+        llm_analysis=AlertLlmAnalysisConfig(
+            enabled=True,
+            provider="openai",
+            model_id="gpt-test",
+            prompt_template="Draft prompt for {symbol}: @trigger.reason",
+        ),
+    )
+
+    assert context is not None
+    assert context["rendered_prompt"] == "Draft prompt for INFY: draft reason"
+    assert workflow.workflow_dsl.llm_analysis.prompt_template.startswith("Trigger @trigger.reason")

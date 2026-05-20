@@ -20,6 +20,7 @@ from app.schemas.alert import (
     AlertChannelSelection,
     AlertCondition,
     AlertGraphDsl,
+    AlertLlmAnalysisConfig,
     AlertNotificationOut,
     AlertTargetEntry,
     AlertNotificationTestIn,
@@ -1333,6 +1334,17 @@ def llm_placeholder_catalog() -> dict[str, Any]:
     return placeholder_catalog()
 
 
+def _workflow_with_draft_llm_analysis(
+    workflow: AlertWorkflowOut,
+    llm_analysis: AlertLlmAnalysisConfig | None,
+) -> AlertWorkflowOut:
+    if llm_analysis is None:
+        return workflow
+    workflow_copy = workflow.model_copy(deep=True)
+    workflow_copy.workflow_dsl.llm_analysis = llm_analysis
+    return workflow_copy
+
+
 def preview_workflow_llm_context(
     db: Session,
     user_id: str,
@@ -1340,10 +1352,12 @@ def preview_workflow_llm_context(
     tick: dict[str, Any],
     previous_tick: dict[str, Any] | None = None,
     reason: str | None = None,
+    llm_analysis: AlertLlmAnalysisConfig | None = None,
 ) -> dict[str, Any] | None:
     workflow = get_workflow(db, user_id, workflow_id)
     if workflow is None:
         return None
+    workflow = _workflow_with_draft_llm_analysis(workflow, llm_analysis)
     evaluation = evaluate_workflow_payload_detail(workflow, tick, previous_tick)
     return resolve_llm_context(
         db,
@@ -1362,10 +1376,12 @@ def test_workflow_llm_analysis(
     tick: dict[str, Any],
     previous_tick: dict[str, Any] | None = None,
     reason: str | None = None,
+    llm_analysis: AlertLlmAnalysisConfig | None = None,
 ) -> dict[str, Any] | None:
     workflow = get_workflow(db, user_id, workflow_id)
     if workflow is None:
         return None
+    workflow = _workflow_with_draft_llm_analysis(workflow, llm_analysis)
     if not workflow.workflow_dsl.llm_analysis.prompt_template:
         workflow.workflow_dsl.llm_analysis.prompt_template = default_prompt_template()
     evaluation = evaluate_workflow_payload_detail(workflow, tick, previous_tick)
