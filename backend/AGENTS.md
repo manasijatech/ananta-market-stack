@@ -9,6 +9,7 @@ Modular trading/data platform: self-hosted core plus future managed offerings. T
 See `idea.md` for product narrative and roadmap.
 See `docs/broker_auth_flows.md` for broker session/auth behavior and `docs/migrations.md` for the Alembic workflow.
 See `docs/windows_runtime_compat.md` for Python 3.10 / Windows-safe runtime conventions.
+See `docs/broker_agent_tools.md` for the OpenAI Agents SDK broker-data tool surface.
 
 ## Current phase (roadmap)
 
@@ -26,6 +27,7 @@ Also implemented now:
 - Separate **alerts workspace** domain for user-owned trading alerts and workflows.
 - Redis-backed **live data workers** for symbol subscription polling/fanout, workflow evaluation, and outbound alert delivery.
 - Dedicated **alert notifications** domain and channel settings for in-app, Discord webhook, and Telegram bot delivery.
+- Read-only OpenAI Agents SDK broker-data tools under `app/agent_tools/` for future chat integrations.
 
 Next roadmap items (not implemented here): production-grade native broker websocket adapters for every broker, richer workflow graph primitives, billing, MCP tools, RBAC.
 

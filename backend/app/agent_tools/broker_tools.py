@@ -1,0 +1,1074 @@
+"""Read-only broker data tools for future AI chat agents.
+
+The functions in this module intentionally wrap the same service/client paths
+used by the HTTP APIs. They do not accept broker secrets and they do not bypass
+stored account ownership, session expiry, encryption, instrument hydration, or
+broker-specific client construction.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+from datetime import date, datetime
+from typing import Any, Literal
+
+import redis
+from agents import RunContextWrapper, function_tool
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.schemas.broker import (
+    HistoricalRequest,
+    InstrumentRef,
+    OptionChainRequest,
+    OhlcRequest,
+    QuoteRequest,
+)
+from app.services import broker_accounts, broker_data, broker_data_preferences, broker_sessions
+from broker.core.instrument_store import SQLiteInstrumentResolver
+from broker.core.redis_cache import cache_quotes
+from broker.core.registry import get_client_for_account
+from db.models import BrokerAccount, User
+from db.session import SessionLocal
+
+DEFAULT_AGENT_USER_ID = "local-dev-user"
+
+PortfolioSection = Literal["orders", "trades", "positions", "holdings", "funds"]
+InstrumentStorageTarget = Literal["csv", "db"]
+
+
+class BrokerAgentContext(BaseModel):
+    """Runtime context passed to broker tools by the future chat runner."""
+
+    user_id: str | None = Field(
+        default=None,
+        description="Market-Stack user id whose broker accounts should be used.",
+    )
+    default_account_id: str | None = Field(
+        default=None,
+        description="Optional broker account id to prefer for portfolio and market-data tools.",
+    )
+    search_account_id: str | None = Field(
+        default=None,
+        description="Optional broker account id to prefer for instrument search tools.",
+    )
+
+
+class BrokerToolActionRequired(Exception):
+    def __init__(self, message: str, *, detail: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.detail = detail or {}
+
+
+def _context_value(ctx: RunContextWrapper[BrokerAgentContext], field: str) -> str | None:
+    context = getattr(ctx, "context", None)
+    if isinstance(context, dict):
+        value = context.get(field)
+    else:
+        value = getattr(context, field, None)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _user_id(ctx: RunContextWrapper[BrokerAgentContext]) -> str:
+    return _context_value(ctx, "user_id") or DEFAULT_AGENT_USER_ID
+
+
+def _db() -> Session:
+    return SessionLocal()
+
+
+def _ensure_user(db: Session, user_id: str) -> User:
+    user = db.get(User, user_id)
+    if user:
+        return user
+    user = User(id=user_id, display_name=None)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def _serialize(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [_serialize(item) for item in value]
+    if isinstance(value, tuple):
+        return [_serialize(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _serialize(item) for key, item in value.items()}
+    return value
+
+
+def _ok(**payload: Any) -> dict[str, Any]:
+    return {"ok": True, **_serialize(payload)}
+
+
+def _error(message: str, *, code: str = "broker_tool_error", **payload: Any) -> dict[str, Any]:
+    return {"ok": False, "code": code, "message": message, **_serialize(payload)}
+
+
+def _tool_call(fn):
+    try:
+        return fn()
+    except BrokerToolActionRequired as exc:
+        return _error(str(exc), code="action_required", **exc.detail)
+    except ValueError as exc:
+        return _error(str(exc), code="invalid_request")
+    except Exception as exc:
+        return _error(str(exc), code=exc.__class__.__name__)
+
+
+def _account_summary(acc: BrokerAccount) -> dict[str, Any]:
+    return {
+        "account_id": acc.id,
+        "broker_code": acc.broker_code,
+        "label": acc.label,
+        "is_active": acc.is_active,
+        "last_verified_at": acc.last_verified_at,
+        "last_error": acc.last_error,
+        "session_status": acc.session_status,
+        "session_expires_at": acc.session_expires_at,
+        "automation_enabled": acc.automation_enabled,
+        "automation_mode": acc.automation_mode,
+    }
+
+
+def _session_status(acc: BrokerAccount) -> dict[str, Any]:
+    return broker_sessions.get_broker_session_status(acc).model_dump(mode="json")
+
+
+def _owned_account(db: Session, user_id: str, account_id: str) -> BrokerAccount:
+    acc = db.get(BrokerAccount, account_id)
+    if not acc or acc.user_id != user_id:
+        raise BrokerToolActionRequired(
+            "Broker account not found for this user.",
+            detail={"account_id": account_id},
+        )
+    if not acc.is_active:
+        raise BrokerToolActionRequired(
+            "Broker account is inactive.",
+            detail={"account": _account_summary(acc)},
+        )
+    return acc
+
+
+def _first_active_account(
+    db: Session,
+    user_id: str,
+    *,
+    broker_code: str | None = None,
+) -> BrokerAccount | None:
+    stmt = (
+        select(BrokerAccount)
+        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+    )
+    if broker_code:
+        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
+    return db.scalars(stmt.limit(1)).first()
+
+
+def _context_account_id(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    *,
+    purpose: Literal["default", "search"],
+) -> str | None:
+    return _context_value(ctx, "search_account_id" if purpose == "search" else "default_account_id")
+
+
+def _configured_account_id(
+    db: Session,
+    user_id: str,
+    *,
+    purpose: Literal["default", "search"],
+) -> str | None:
+    if purpose == "search":
+        config = broker_data_preferences.get_broker_data_search_config(db, user_id)
+        return config.effective_search_account_id or config.preferred_search_account_id
+    config = broker_data_preferences.get_broker_data_default_config(db, user_id)
+    return config.effective_default_account_id or config.preferred_default_account_id
+
+
+def _resolve_account(
+    db: Session,
+    ctx: RunContextWrapper[BrokerAgentContext],
+    *,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    purpose: Literal["default", "search"] = "default",
+    require_session: bool = True,
+    auto_refresh_session: bool = True,
+) -> BrokerAccount:
+    user_id = _user_id(ctx)
+    _ensure_user(db, user_id)
+
+    selected_id = account_id or _context_account_id(ctx, purpose=purpose)
+    if not selected_id:
+        selected_id = _configured_account_id(db, user_id, purpose=purpose)
+
+    acc = _owned_account(db, user_id, selected_id) if selected_id else None
+    if acc and broker_code and acc.broker_code != broker_code:
+        acc = None
+    if acc is None:
+        acc = _first_active_account(db, user_id, broker_code=broker_code)
+
+    if acc is None:
+        raise BrokerToolActionRequired(
+            "No active broker account is connected for this user.",
+            detail={"user_id": user_id, "broker_code": broker_code},
+        )
+
+    if not require_session:
+        return acc
+
+    status = _session_status(acc)
+    if not status.get("session_active") and auto_refresh_session and acc.automation_enabled:
+        broker_sessions.process_account_maintenance(db, acc)
+        db.refresh(acc)
+        status = _session_status(acc)
+
+    if not status.get("session_active"):
+        raise BrokerToolActionRequired(
+            "Broker session is not active. Refresh or reconnect the broker account before requesting live broker data.",
+            detail={
+                "account": _account_summary(acc),
+                "session": status,
+            },
+        )
+    return acc
+
+
+def _client(db: Session, acc: BrokerAccount):
+    return get_client_for_account(acc, resolver=SQLiteInstrumentResolver(db, acc.broker_code))
+
+
+def _filter_rows_payload(
+    payload: dict[str, Any],
+    *,
+    symbol: str | None = None,
+    exchange: str | None = None,
+) -> dict[str, Any]:
+    if not symbol and not exchange:
+        return payload
+    symbol_upper = symbol.upper() if symbol else None
+    exchange_upper = exchange.upper() if exchange else None
+
+    def row_matches(row: dict[str, Any]) -> bool:
+        row_symbol = str(
+            row.get("tradingsymbol")
+            or row.get("trading_symbol")
+            or row.get("symbol")
+            or row.get("securityId")
+            or ""
+        ).upper()
+        row_exchange = str(row.get("exchange") or row.get("exchange_segment") or "").upper()
+        if symbol_upper and symbol_upper not in row_symbol:
+            return False
+        if exchange_upper and exchange_upper != row_exchange:
+            return False
+        return True
+
+    out = dict(payload)
+    for key in ("data", "payload", "positions", "holdings", "orders", "trades", "net"):
+        value = out.get(key)
+        if isinstance(value, list):
+            out[key] = [row for row in value if isinstance(row, dict) and row_matches(row)]
+            return out
+        if isinstance(value, dict):
+            nested = dict(value)
+            for nested_key in ("positions", "holdings", "orders", "trades", "net"):
+                nested_value = nested.get(nested_key)
+                if isinstance(nested_value, list):
+                    nested[nested_key] = [
+                        row for row in nested_value if isinstance(row, dict) and row_matches(row)
+                    ]
+                    out[key] = nested
+                    return out
+    return out
+
+
+def _normalize_instruments(instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    QuoteRequest(instruments=[InstrumentRef.model_validate(item) for item in instruments])
+    return [dict(item) for item in instruments]
+
+
+def _redis_client() -> redis.Redis | None:
+    settings = get_settings()
+    try:
+        return redis.Redis(
+            host=settings.redis_host,
+            port=settings.redis_port,
+            password=settings.redis_password or None,
+            db=settings.redis_db,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+    except redis.RedisError:
+        return None
+
+
+def _read_cached_quotes(
+    *,
+    user_id: str,
+    account_id: str,
+    broker_code: str,
+    symbols: list[str] | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    client = _redis_client()
+    if client is None:
+        return []
+    prefix = f"quote:{user_id}:{account_id}:{broker_code}:"
+    keys: list[str] = []
+    if symbols:
+        keys = [prefix + symbol for symbol in symbols]
+    else:
+        pattern = prefix + "*"
+        for key in client.scan_iter(match=pattern, count=100):
+            keys.append(key)
+            if len(keys) >= limit:
+                break
+    rows: list[dict[str, Any]] = []
+    for key in keys[:limit]:
+        raw = client.get(key)
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            payload.setdefault("redis_key", key)
+            rows.append(payload)
+    return rows
+
+
+@function_tool(strict_mode=False)
+def broker_list_accounts(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """List broker accounts connected to the current user.
+
+    Use this first when the agent needs to know which broker accounts exist,
+    their account ids, labels, verification state, session state, and default
+    data/search preferences. The result never includes API keys, tokens, PINs,
+    TOTP secrets, passwords, or decrypted credential values.
+    """
+
+    def call() -> dict[str, Any]:
+        user_id = _user_id(ctx)
+        db = _db()
+        try:
+            _ensure_user(db, user_id)
+            accounts = list(
+                db.scalars(
+                    select(BrokerAccount)
+                    .where(BrokerAccount.user_id == user_id)
+                    .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+                ).all()
+            )
+            return _ok(
+                user_id=user_id,
+                accounts=[_account_summary(acc) for acc in accounts],
+                default_config=broker_data_preferences.get_broker_data_default_config(db, user_id),
+                search_config=broker_data_preferences.get_broker_data_search_config(db, user_id),
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_session_status(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Return broker session status and login/refresh guidance.
+
+    Use this when a data tool reports an inactive session or when the agent
+    needs to explain what the user must do next. If stored automation
+    credentials are enabled and ``auto_refresh_session`` is true, the tool runs
+    the existing session maintenance helper before returning status. It does
+    not expose stored secrets.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=False,
+            )
+            if auto_refresh_session and acc.automation_enabled:
+                broker_sessions.process_account_maintenance(db, acc)
+                db.refresh(acc)
+            return _ok(account=_account_summary(acc), session=_session_status(acc))
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_verify_connection(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+) -> dict[str, Any]:
+    """Verify connectivity for the selected broker account.
+
+    Use this when the agent needs to confirm that stored credentials and the
+    current broker session can make a lightweight broker request. This calls the
+    same verification service as the HTTP API and may update last_verified_at,
+    session error metadata, and the one-time instrument sync side effect used by
+    the existing backend.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=False,
+            )
+            ok, message = broker_accounts.verify_account(db, acc)
+            db.refresh(acc)
+            return _ok(account=_account_summary(acc), verified=ok, message=message or "")
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_run_session_maintenance(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """Run session maintenance for all active broker accounts of the current user.
+
+    Use this before a multi-account analysis or when several accounts report
+    inactive sessions. The helper attempts broker-supported automated refreshes,
+    updates session status, and records action-required guidance for manual
+    flows without exposing any stored secrets.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            count = broker_sessions.run_user_maintenance(db, user_id)
+            accounts = list(
+                db.scalars(
+                    select(BrokerAccount)
+                    .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+                    .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+                ).all()
+            )
+            return _ok(
+                user_id=user_id,
+                processed_count=count,
+                accounts=[
+                    {
+                        "account": _account_summary(acc),
+                        "session": _session_status(acc),
+                    }
+                    for acc in accounts
+                ],
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_data_capabilities(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+) -> dict[str, Any]:
+    """Return the broker data feature matrix for an account.
+
+    Use this before requesting optional capabilities such as historical candles,
+    option chain, greeks, instrument cache, or stream inspection. Capability
+    guidance reflects the existing Market-Stack uniform API support for the
+    selected broker.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=False,
+            )
+            return _ok(
+                account=_account_summary(acc),
+                capabilities=broker_data.get_capabilities(db, acc),
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_search_instruments(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    query: str = "",
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    exchange: str | None = None,
+    segment: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Search cached broker instruments by symbol, trading symbol, name, or identifiers.
+
+    Use this to resolve an equity, future, option, or broker-native instrument
+    before fetching quotes, OHLC, historical data, option chain, or greeks. When
+    ``account_id`` is omitted, the user's preferred instrument-search account
+    and cache fallback rules are used. The returned rows include broker-specific
+    identifiers that can be passed directly to other broker tools.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            safe_limit = max(1, min(int(limit), 200))
+            if account_id or broker_code:
+                acc = _resolve_account(
+                    db,
+                    ctx,
+                    account_id=account_id,
+                    broker_code=broker_code,
+                    purpose="search",
+                    require_session=False,
+                )
+                rows = broker_data.search_instruments(
+                    db,
+                    acc,
+                    query=query,
+                    exchange=exchange,
+                    segment=segment,
+                    limit=safe_limit,
+                )
+                return _ok(account=_account_summary(acc), rows=rows)
+            rows = broker_data_preferences.search_instruments_for_user(
+                db,
+                user_id,
+                query=query,
+                exchange=exchange,
+                segment=segment,
+                limit=safe_limit,
+            )
+            return _ok(user_id=user_id, rows=rows)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_sync_instruments(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    storage_target: InstrumentStorageTarget = "csv",
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Refresh the local instrument cache for a broker account.
+
+    Use this when instrument search has no results or broker-specific
+    identifiers need to be refreshed. The default target is the CSV cache, which
+    is the same default used by the service layer; choose ``db`` only when
+    indexed SQLite search state is specifically needed.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            if storage_target == "db":
+                result = broker_data.sync_instruments_to_db(db, acc)
+            else:
+                result = broker_data.sync_instruments_to_csv(db, acc)
+            return _ok(account=_account_summary(acc), sync=result)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_cached_quotes(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    symbols: list[str] | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Read the best-effort Redis quote cache for an account.
+
+    Use this when a low-latency recent snapshot is acceptable or before making
+    a live broker call. Cache keys follow
+    ``quote:{user_id}:{account_id}:{broker_code}:{symbol}`` and expire quickly;
+    an empty result means there is no fresh cached quote.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=False,
+            )
+            rows = _read_cached_quotes(
+                user_id=user_id,
+                account_id=acc.id,
+                broker_code=acc.broker_code,
+                symbols=symbols,
+                limit=max(1, min(int(limit), 200)),
+            )
+            return _ok(account=_account_summary(acc), rows=rows)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_quotes(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    instruments: list[dict[str, Any]],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    write_through_cache: bool = True,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Fetch live quotes for one or more instruments through the uniform broker layer.
+
+    Pass instruments as dictionaries with ``symbol``/``exchange`` or the
+    broker-specific identifiers returned by ``broker_search_instruments``.
+    Symbol-first requests are hydrated from the local instrument cache where
+    possible. The returned rows are normalized quote rows with broker-native
+    detail preserved under ``detail``.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            normalized = _normalize_instruments(instruments)
+            rows = broker_data.fetch_quotes(db, acc, normalized)
+            dumped_rows = [row.model_dump(mode="json") for row in rows]
+            if write_through_cache and dumped_rows:
+                cache_quotes(
+                    user_id=acc.user_id,
+                    account_id=acc.id,
+                    broker_code=acc.broker_code,
+                    quotes=dumped_rows,
+                )
+            return _ok(account=_account_summary(acc), rows=dumped_rows)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_ohlc(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    instruments: list[dict[str, Any]],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Fetch OHLC snapshots for instruments through the uniform broker layer.
+
+    Use this for latest open/high/low/close style snapshots. For full candle
+    history over a date range, use ``broker_get_historical`` instead.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            request = OhlcRequest(instruments=[InstrumentRef.model_validate(item) for item in instruments])
+            rows = broker_data.fetch_ohlc(
+                db,
+                acc,
+                [item.model_dump(exclude_none=True) for item in request.instruments],
+            )
+            return _ok(account=_account_summary(acc), rows=rows)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_historical(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    instrument: dict[str, Any],
+    interval: str,
+    from_date: str,
+    to_date: str,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Fetch historical candles for one instrument.
+
+    ``interval`` is broker-native, for example ``minute``, ``5minute``, or
+    ``day`` depending on the broker. ``from_date`` and ``to_date`` should be ISO
+    timestamps or dates. Check ``broker_get_data_capabilities`` first because
+    historical support varies across brokers.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            request = HistoricalRequest.model_validate(
+                {
+                    "instrument": InstrumentRef.model_validate(instrument),
+                    "interval": interval,
+                    "from_date": from_date,
+                    "to_date": to_date,
+                }
+            )
+            payload = request.model_dump(mode="json")
+            return _ok(account=_account_summary(acc), data=broker_data.fetch_historical(db, acc, payload))
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_option_chain(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    symbol: str,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    exchange: str = "NSE",
+    expiry: str | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Fetch option-chain data where the selected broker supports it.
+
+    Use this for derivative-chain inspection. The payload is broker-native
+    because strikes, expiries, and chain metadata vary by broker.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            request = OptionChainRequest(symbol=symbol, exchange=exchange, expiry=expiry)
+            return _ok(
+                account=_account_summary(acc),
+                data=broker_data.fetch_option_chain(db, acc, request.model_dump(exclude_none=True)),
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_greeks(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    symbol: str,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    exchange: str = "NSE",
+    expiry: str | None = None,
+    strike: str | None = None,
+    option_type: str | None = None,
+    price: float | None = None,
+    underlying_price: float | None = None,
+    volatility: float | None = None,
+    interest_rate: float | None = None,
+    days_to_expiry: int | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Fetch or calculate option greeks where the selected broker supports it.
+
+    Provide ``symbol`` and optionally expiry/strike/option_type. For theoretical
+    calculations, the price/underlying/volatility/rate/day fields can be passed
+    through to the existing broker implementation.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            payload = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "expiry": expiry,
+                "strike": strike,
+                "option_type": option_type,
+                "price": price,
+                "underlying_price": underlying_price,
+                "volatility": volatility,
+                "interest_rate": interest_rate,
+                "days_to_expiry": days_to_expiry,
+            }
+            return _ok(
+                account=_account_summary(acc),
+                data=broker_data.fetch_greeks(
+                    db,
+                    acc,
+                    {key: value for key, value in payload.items() if value is not None},
+                ),
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_portfolio(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    sections: list[PortfolioSection] | None = None,
+    symbol: str | None = None,
+    exchange: str | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Fetch portfolio/account data: orders, trades, positions, holdings, and funds.
+
+    Use ``sections`` to limit work. Supported values are ``orders``, ``trades``,
+    ``positions``, ``holdings``, and ``funds``. Symbol/exchange filters apply to
+    row-based portfolio payloads such as holdings and positions.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            client = _client(db, acc)
+            selected = sections or ["positions", "holdings", "funds"]
+            data: dict[str, Any] = {}
+            for section in selected:
+                if section == "orders":
+                    data[section] = _filter_rows_payload(client.order_book(), symbol=symbol, exchange=exchange)
+                elif section == "trades":
+                    data[section] = _filter_rows_payload(client.trade_book(), symbol=symbol, exchange=exchange)
+                elif section == "positions":
+                    data[section] = _filter_rows_payload(client.positions(), symbol=symbol, exchange=exchange)
+                elif section == "holdings":
+                    data[section] = _filter_rows_payload(client.holdings(), symbol=symbol, exchange=exchange)
+                elif section == "funds":
+                    data[section] = client.funds()
+            return _ok(account=_account_summary(acc), data=data)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_profile(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Fetch broker profile/user information for the selected account.
+
+    Use this when the agent needs broker-side account metadata. The shape is
+    broker-native and does not include stored credentials from Market-Stack.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            return _ok(account=_account_summary(acc), profile=_client(db, acc).user_profile())
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_calculate_margin(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    positions: list[dict[str, Any]],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Calculate broker margin for a list of hypothetical order legs.
+
+    This is read-only estimation through the broker's margin endpoint where
+    supported. Each leg should include symbol, exchange, action, product,
+    quantity, pricetype, price, and trigger_price where relevant.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            return _ok(account=_account_summary(acc), margin=_client(db, acc).calculate_margin(positions))
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_stream_status(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    account_id: str | None = None,
+    broker_code: str | None = None,
+    auto_refresh_session: bool = True,
+) -> dict[str, Any]:
+    """Inspect broker stream/websocket capability status for an account.
+
+    This mirrors the uniform API's stream status capability. It does not open a
+    websocket; use quote polling tools for on-demand agent data until a chat
+    integration owns streaming lifecycle.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            acc = _resolve_account(
+                db,
+                ctx,
+                account_id=account_id,
+                broker_code=broker_code,
+                require_session=True,
+                auto_refresh_session=auto_refresh_session,
+            )
+            return _ok(account=_account_summary(acc), stream=broker_data.stream_status(db, acc))
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+BROKER_DATA_TOOLS = [
+    broker_list_accounts,
+    broker_get_session_status,
+    broker_verify_connection,
+    broker_run_session_maintenance,
+    broker_get_data_capabilities,
+    broker_search_instruments,
+    broker_sync_instruments,
+    broker_get_cached_quotes,
+    broker_get_quotes,
+    broker_get_ohlc,
+    broker_get_historical,
+    broker_get_option_chain,
+    broker_get_greeks,
+    broker_get_portfolio,
+    broker_get_profile,
+    broker_calculate_margin,
+    broker_get_stream_status,
+]
+
+
+def find_broker_tool(name: str):
+    """Return a broker tool by exact name or shell-style pattern for tests/examples."""
+
+    matches = [
+        tool
+        for tool in BROKER_DATA_TOOLS
+        if getattr(tool, "name", None) == name or fnmatch.fnmatch(getattr(tool, "name", ""), name)
+    ]
+    return matches[0] if matches else None
