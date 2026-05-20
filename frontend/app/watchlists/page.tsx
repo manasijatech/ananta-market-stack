@@ -1,17 +1,28 @@
 import { WatchlistsManager } from "@/components/watchlists/watchlists-manager";
 import { Shell } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getSystemConfig } from "@/service/actions/broker";
 import { getWatchlists } from "@/service/actions/watchlist";
 import type { Watchlist } from "@/service/types/watchlist";
 
 export default async function WatchlistsPage() {
     let watchlists: Watchlist[] = [];
+    let hasAlphaApiKey = false;
     let error = "";
 
-    try {
-        watchlists = await getWatchlists();
-    } catch (caught) {
-        error = caught instanceof Error ? caught.message : "Could not load watchlists.";
+    const [watchlistResult, systemConfigResult] = await Promise.allSettled([getWatchlists(), getSystemConfig()]);
+    if (watchlistResult.status === "fulfilled") {
+        watchlists = watchlistResult.value;
+    } else {
+        error = watchlistResult.reason instanceof Error ? watchlistResult.reason.message : "Could not load watchlists.";
+    }
+    if (systemConfigResult.status === "fulfilled") {
+        hasAlphaApiKey = systemConfigResult.value.alpha_api.has_api_key;
+    } else if (!error) {
+        error =
+            systemConfigResult.reason instanceof Error
+                ? systemConfigResult.reason.message
+                : "Could not load System Config.";
     }
 
     return (
@@ -24,7 +35,7 @@ export default async function WatchlistsPage() {
                 </div>
             ) : null}
 
-            <WatchlistsManager initialWatchlists={watchlists} />
+            <WatchlistsManager hasAlphaApiKey={hasAlphaApiKey} initialWatchlists={watchlists} />
         </Shell>
     );
 }

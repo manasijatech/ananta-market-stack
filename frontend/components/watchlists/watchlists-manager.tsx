@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
-import { Check, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
 import {
@@ -19,7 +20,14 @@ import type { InstrumentSearchRow } from "@/service/types/broker";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist, WatchlistPresetCatalogEntry } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -145,7 +153,14 @@ const inputBase =
     " border-0 border-b border-input bg-transparent px-0 text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-0";
 const PRESET_PAGE_SIZE = 24;
 
-export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Watchlist[] }) {
+export function WatchlistsManager({
+    hasAlphaApiKey,
+    initialWatchlists
+}: {
+    hasAlphaApiKey: boolean;
+    initialWatchlists: Watchlist[];
+}) {
+    const router = useRouter();
     const [watchlists, setWatchlists] = useState(() => sortWatchlists(initialWatchlists));
     const [selectedId, setSelectedId] = useState(initialWatchlists[0]?.id ?? "");
     const [createName, setCreateName] = useState("");
@@ -175,6 +190,7 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
     const [editingName, setEditingName] = useState(false);
     const [draftName, setDraftName] = useState("");
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [showAlphaConfigPrompt, setShowAlphaConfigPrompt] = useState(false);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [isPending, startTransition] = useTransition();
@@ -546,7 +562,22 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
         setShowCreateForm(false);
     }
 
+    function requestCreateWatchlist() {
+        setError("");
+        setNotice("");
+        if (!hasAlphaApiKey) {
+            setShowAlphaConfigPrompt(true);
+            return;
+        }
+        setShowCreateForm(true);
+    }
+
     function create() {
+        if (!hasAlphaApiKey) {
+            setShowCreateForm(false);
+            setShowAlphaConfigPrompt(true);
+            return;
+        }
         const name = createName.trim();
         if (!name) {
             setError("Enter a watchlist name.");
@@ -754,6 +785,10 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
     }
 
     function addPreset(entry: WatchlistPresetCatalogEntry) {
+        if (!hasAlphaApiKey) {
+            setShowAlphaConfigPrompt(true);
+            return;
+        }
         setError("");
         setNotice("");
         startTransition(async () => {
@@ -874,11 +909,97 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
                     </p>
                 </header>
 
+                <Dialog open={showAlphaConfigPrompt} onOpenChange={setShowAlphaConfigPrompt}>
+                    <DialogContent className="w-[calc(100vw-2rem)] max-w-[425px] gap-4 p-6">
+                        <DialogHeader className="pr-8">
+                            <DialogTitle>Manasija Alpha API required</DialogTitle>
+                            <DialogDescription>
+                                Add a Manasija Alpha API key in System Config before creating watchlists.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button
+                                className="normal-case tracking-normal"
+                                onClick={() => setShowAlphaConfigPrompt(false)}
+                                type="button"
+                                variant="outline"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                className="normal-case tracking-normal"
+                                onClick={() => {
+                                    setShowAlphaConfigPrompt(false);
+                                    router.push("/system-config");
+                                }}
+                                type="button"
+                            >
+                                Go to System Config
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                <Dialog
+                    open={confirmDelete}
+                    onOpenChange={(open) => {
+                        if (!isPending) setConfirmDelete(open);
+                    }}
+                >
+                    <DialogContent
+                        className="w-[calc(100vw-2rem)] max-w-[425px] gap-4 p-6"
+                        showCloseButton={!isPending}
+                    >
+                        <DialogHeader className="pr-8">
+                            <div className="flex items-start gap-3">
+                                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center border border-destructive/40 bg-destructive/10 text-destructive">
+                                    <AlertTriangle className="size-5" />
+                                </span>
+                                <div className="min-w-0">
+                                    <DialogTitle>Delete watchlist?</DialogTitle>
+                                    <DialogDescription className="mt-2 leading-6">
+                                        This will permanently delete{" "}
+                                        <span className="font-semibold text-foreground">
+                                            {selected?.name ?? "this watchlist"}
+                                        </span>
+                                        {selected ? ` and its ${selected.items.length} saved symbols` : ""}. This
+                                        action cannot be undone.
+                                    </DialogDescription>
+                                </div>
+                            </div>
+                        </DialogHeader>
+                        <div className="border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                            Any alert workflows using this watchlist may lose that source after deletion.
+                        </div>
+                        <DialogFooter>
+                            <Button
+                                className="normal-case tracking-normal"
+                                disabled={isPending}
+                                onClick={() => setConfirmDelete(false)}
+                                type="button"
+                                variant="outline"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                className="normal-case tracking-normal"
+                                disabled={isPending}
+                                onClick={removeWatchlist}
+                                type="button"
+                                variant="destructive"
+                            >
+                                {isPending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                                Delete watchlist
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
                 <Dialog
                     open={showCreateForm}
                     onOpenChange={(open) => {
                         if (open) {
-                            setShowCreateForm(true);
+                            requestCreateWatchlist();
                         } else {
                             resetCreateModal();
                         }
@@ -1178,7 +1299,7 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
                                 aria-label="Create watchlist"
                                 className="size-8 border-transparent text-primary hover:border-primary"
                                 disabled={isPending}
-                                onClick={() => setShowCreateForm(true)}
+                                onClick={requestCreateWatchlist}
                                 size="icon"
                                 type="button"
                                 variant="ghost"
@@ -1407,42 +1528,17 @@ export function WatchlistsManager({ initialWatchlists }: { initialWatchlists: Wa
                                                 <Pencil className="size-4" />
                                             </Button>
                                         ) : null}
-                                        {confirmDelete ? (
-                                            <>
-                                                <Button
-                                                    className="h-auto border-b border-destructive px-0 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-destructive"
-                                                    disabled={isPending}
-                                                    onClick={removeWatchlist}
-                                                    size="sm"
-                                                    type="button"
-                                                    variant="ghost"
-                                                >
-                                                    Confirm
-                                                </Button>
-                                                <Button
-                                                    className="h-auto border-b border-border px-0 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-                                                    disabled={isPending}
-                                                    onClick={() => setConfirmDelete(false)}
-                                                    size="sm"
-                                                    type="button"
-                                                    variant="ghost"
-                                                >
-                                                    Cancel
-                                                </Button>
-                                            </>
-                                        ) : (
-                                            <Button
-                                                aria-label="Delete watchlist"
-                                                className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-destructive"
-                                                disabled={isPending}
-                                                onClick={() => setConfirmDelete(true)}
-                                                size="icon"
-                                                type="button"
-                                                variant="ghost"
-                                            >
-                                                <Trash2 className="size-4" />
-                                            </Button>
-                                        )}
+                                        <Button
+                                            aria-label="Delete watchlist"
+                                            className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-destructive"
+                                            disabled={isPending}
+                                            onClick={() => setConfirmDelete(true)}
+                                            size="icon"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            <Trash2 className="size-4" />
+                                        </Button>
                                     </div>
                                 </div>
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AlertWorkflowRun } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 
 const PAGE_SIZE = 20;
 
@@ -76,9 +77,9 @@ export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
                                 {run.rendered_message || run.reason}
                             </div>
                             {llmOutput(run.evaluation_payload) ? (
-                                <div className="type-help mt-3 border-l-2 border-primary pl-3 text-muted-foreground">
+                                <AlertLlmMarkdown className="mt-3 border-l-2 border-primary pl-3 text-xs text-muted-foreground">
                                     {llmOutput(run.evaluation_payload)}
-                                </div>
+                                </AlertLlmMarkdown>
                             ) : null}
                             <div className="type-meta mt-3 grid gap-2 text-muted-foreground min-[900px]:grid-cols-4">
                                 <span>Matched: {run.matched ? "Yes" : "No"}</span>

@@ -9,7 +9,9 @@ import type { AlphaConcall } from "@/service/types/alpha/concalls";
 import { appendList, feedQuery, request, withQuery, type AlphaFeedParams } from "@/service/actions/alpha/shared";
 
 export async function getAlphaConcalls(params: AlphaFeedParams = {}): Promise<AlphaPaginatedResponse<AlphaConcall>> {
-    return request<AlphaPaginatedResponse<AlphaConcall>>(withQuery("/v1/concalls", feedQuery(params)));
+    const response = await request<AlphaPaginatedResponse<AlphaConcall>>(withQuery("/v1/concalls", feedQuery(params)));
+    console.log("[Alpha concalls raw API response]", JSON.stringify(response, null, 2));
+    return response;
 }
 
 export async function getAlphaConcall(concallId: string): Promise<AlphaConcall> {
