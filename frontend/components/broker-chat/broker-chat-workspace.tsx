@@ -7,12 +7,14 @@ import {
     IconAlertTriangle,
     IconArrowRight,
     IconCircleCheck,
+    IconPlayerStop,
     IconLoader2,
     IconMessagePlus,
     IconRefresh,
     IconSettings,
     IconTerminal2,
     IconTool,
+    IconTrash,
     IconUser
 } from "@tabler/icons-react";
 import { formatDate, StatusBadge } from "@/components/brokers/ui";
@@ -25,7 +27,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { cn } from "@/lib/utils";
 import {
+    cancelBrokerChatRun,
     createBrokerChatSession,
+    deleteBrokerChatSession,
     getBrokerChatEvents,
     getBrokerChatRun,
     getBrokerChatRuns,
@@ -53,6 +57,14 @@ type ParsedSseEvent = {
     id?: string;
     event?: string;
     data?: string;
+};
+
+type ToolStep = {
+    key: string;
+    toolName: string;
+    callId?: string | null;
+    start?: BrokerChatEvent;
+    output?: BrokerChatEvent;
 };
 
 const liveStatuses = new Set(["queued", "running"]);
@@ -159,44 +171,102 @@ function parseSseBlock(block: string): ParsedSseEvent | null {
     return event;
 }
 
-function eventLabel(eventType: string) {
-    if (eventType === "tool_call_started") return "Tool call";
-    if (eventType === "tool_call_completed") return "Tool output";
-    if (eventType === "reasoning") return "Reasoning";
-    if (eventType === "agent_updated") return "Agent";
-    if (eventType === "response_started") return "Response";
-    if (eventType === "response_completed") return "Response";
-    return eventType.replaceAll("_", " ");
+function toolOutputPreview(event?: BrokerChatEvent) {
+    const outputMetadata = event?.payload.output_metadata;
+    if (typeof outputMetadata === "object" && outputMetadata !== null && "preview" in outputMetadata) {
+        return String((outputMetadata as { preview?: unknown }).preview ?? "");
+    }
+    return event ? textPayload(event.payload, "message") : "";
 }
 
-function ToolEventRow({ event }: { event: BrokerChatEvent }) {
-    const toolName = textPayload(event.payload, "tool_name") || textPayload(event.payload, "agent");
-    const outputMetadata = event.payload.output_metadata;
-    const details = event.payload.output ?? event.payload.arguments ?? event.payload.raw ?? null;
-    const preview =
-        typeof outputMetadata === "object" && outputMetadata !== null && "preview" in outputMetadata
-            ? String((outputMetadata as { preview?: unknown }).preview ?? "")
-            : textPayload(event.payload, "message");
+function groupToolSteps(events: BrokerChatEvent[]): ToolStep[] {
+    const steps: ToolStep[] = [];
+    const pending: ToolStep[] = [];
+    for (const event of events) {
+        if (event.event_type === "tool_call_started") {
+            const callId = textPayload(event.payload, "tool_call_id") || null;
+            const step = {
+                key: callId || `${event.run_id}:${event.sequence}`,
+                toolName: textPayload(event.payload, "tool_name") || "tool",
+                callId,
+                start: event
+            };
+            steps.push(step);
+            pending.push(step);
+            continue;
+        }
+        if (event.event_type === "tool_call_completed") {
+            const callId = textPayload(event.payload, "tool_call_id") || null;
+            const outputName = textPayload(event.payload, "tool_name");
+            const byCall = callId ? pending.find((item) => item.callId === callId && !item.output) : null;
+            const byName = pending.find(
+                (item) => !item.output && outputName !== "unknown" && item.toolName === outputName
+            );
+            const step = byCall ?? byName ?? pending.find((item) => !item.output);
+            if (step) {
+                step.output = event;
+                step.toolName = outputName && outputName !== "unknown" ? outputName : step.toolName;
+                continue;
+            }
+            steps.push({
+                key: `${event.run_id}:${event.sequence}`,
+                toolName: outputName && outputName !== "unknown" ? outputName : "tool",
+                callId,
+                output: event
+            });
+        }
+    }
+    return steps;
+}
+
+function ToolStepRow({ step }: { step: ToolStep }) {
+    const argumentsPayload = step.start?.payload.arguments ?? null;
+    const outputPayload = step.output?.payload.output ?? null;
+    const preview = toolOutputPreview(step.output);
+    const status = step.output ? "completed" : "running";
 
     return (
         <div className="border-l-2 border-border bg-secondary/35 px-3 py-2">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <IconTool className="size-4 text-muted-foreground" stroke={1.8} />
                 <span className="font-mono text-[11px] font-bold uppercase text-muted-foreground">
-                    {eventLabel(event.event_type)}
+                    Tool
                 </span>
-                {toolName ? <span className="truncate text-sm font-semibold">{toolName}</span> : null}
-                <span className="ml-auto font-mono text-[10px] text-muted-foreground">#{event.sequence}</span>
+                <span className="truncate text-sm font-semibold">{step.toolName}</span>
+                <StatusBadge className={status === "completed" ? statusClass("completed") : statusClass("running")}>
+                    {status}
+                </StatusBadge>
+                <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                    #{step.start?.sequence ?? step.output?.sequence}
+                    {step.output ? `-${step.output.sequence}` : ""}
+                </span>
             </div>
             {preview ? <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground">{preview}</p> : null}
-            {details ? (
+            {argumentsPayload || outputPayload ? (
                 <details className="mt-2">
                     <summary className="cursor-pointer font-mono text-[10px] font-bold uppercase text-primary">
                         Details
                     </summary>
-                    <pre className="mt-2 max-h-64 overflow-auto border border-border bg-background p-3 text-xs leading-5 text-muted-foreground">
-                        {jsonPreview(details)}
-                    </pre>
+                    {argumentsPayload ? (
+                        <>
+                            <div className="mt-2 font-mono text-[10px] font-bold uppercase text-muted-foreground">
+                                Arguments
+                            </div>
+                            <pre className="mt-1 max-h-52 overflow-auto border border-border bg-background p-3 text-xs leading-5 text-muted-foreground">
+                                {jsonPreview(argumentsPayload)}
+                            </pre>
+                        </>
+                    ) : null}
+                    {outputPayload ? (
+                        <>
+                            <div className="mt-2 font-mono text-[10px] font-bold uppercase text-muted-foreground">
+                                Output
+                            </div>
+                            <pre className="mt-1 max-h-72 overflow-auto border border-border bg-background p-3 text-xs leading-5 text-muted-foreground">
+                                {jsonPreview(outputPayload)}
+                            </pre>
+                        </>
+                    ) : null}
                 </details>
             ) : null}
         </div>
@@ -311,6 +381,8 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     }, [runs]);
 
     const hasConfiguredLlm = Boolean(provider && model);
+    const activeRun = runsForActiveSession.find((run) => liveStatuses.has(run.status)) ?? null;
+    const sendDisabled = Boolean(activeRun) || !message.trim() || !hasConfiguredLlm || isSubmitting;
     const streamRun = useCallback(
         async (runId: string, afterSequence = 0) => {
             if (!user?.id || streamControllersRef.current[runId]) {
@@ -378,13 +450,22 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                     )
                                 );
                             }
-                            if (parsed.event === "run_completed" || parsed.event === "run_failed") {
+                            if (
+                                parsed.event === "run_completed" ||
+                                parsed.event === "run_failed" ||
+                                parsed.event === "run_cancelled"
+                            ) {
                                 setRuns((current) =>
                                     current.map((run) =>
                                         run.id === runId
                                             ? {
                                                   ...run,
-                                                  status: parsed.event === "run_completed" ? "completed" : "failed",
+                                                  status:
+                                                      parsed.event === "run_completed"
+                                                          ? "completed"
+                                                          : parsed.event === "run_cancelled"
+                                                            ? "cancelled"
+                                                            : "failed",
                                                   response_text: textPayload(payload, "response_text") || run.response_text,
                                                   error: textPayload(payload, "message") || run.error,
                                                   updated_at: new Date().toISOString()
@@ -475,6 +556,40 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         await Promise.all(runsForActiveSession.map((run) => loadRunEvents(run.id)));
     }
 
+    async function stopActiveRun() {
+        if (!activeRun) return;
+        setError(null);
+        try {
+            const nextRun = await cancelBrokerChatRun(activeRun.id);
+            streamControllersRef.current[activeRun.id]?.abort();
+            setRuns((current) => mergeRuns(current, [nextRun]));
+            await loadRunEvents(activeRun.id);
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function deleteActiveSession() {
+        if (!activeSessionId) return;
+        setError(null);
+        try {
+            const deleteId = activeSessionId;
+            runs
+                .filter((run) => run.session_id === deleteId)
+                .forEach((run) => streamControllersRef.current[run.id]?.abort());
+            await deleteBrokerChatSession(deleteId);
+            const [nextSessions, nextRuns] = await Promise.all([
+                getBrokerChatSessions(80),
+                getBrokerChatRuns({ limit: 160 })
+            ]);
+            setSessions(sortSessions(nextSessions));
+            setRuns(mergeRuns([], nextRuns));
+            setActiveSessionId(nextSessions[0]?.id ?? "");
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
     async function saveConfig() {
         if (!provider || !model) {
             setError("Select an enabled provider and model before saving broker chat defaults.");
@@ -514,7 +629,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
 
     async function sendMessage() {
         const trimmed = message.trim();
-        if (!trimmed || !provider || !model || isSubmitting) {
+        if (!trimmed || !provider || !model || isSubmitting || activeRun) {
             return;
         }
         setIsSubmitting(true);
@@ -583,36 +698,53 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             const active = session.id === activeSessionId;
                             const live = latestRun ? liveStatuses.has(latestRun.status) : false;
                             return (
-                                <button
+                                <div
                                     className={cn(
-                                        "min-w-0 border px-3 py-3 text-left transition hover:border-primary/50",
+                                        "min-w-0 border px-3 py-3 transition hover:border-primary/50",
                                         active
                                             ? "border-primary bg-[var(--accent-subtle)]"
                                             : "border-border bg-card hover:bg-secondary/50"
                                     )}
                                     key={session.id}
-                                    onClick={() => setActiveSessionId(session.id)}
-                                    type="button"
                                 >
-                                    <div className="flex min-w-0 items-center gap-2">
-                                        <span className="truncate text-sm font-semibold">{session.title}</span>
-                                        {live ? (
-                                            <IconLoader2 className="ml-auto size-4 animate-spin text-primary" stroke={1.8} />
-                                        ) : null}
-                                    </div>
-                                    <div className="mt-2 flex min-w-0 items-center gap-2">
-                                        {latestRun ? (
-                                            <StatusBadge className={statusClass(latestRun.status)}>
-                                                {latestRun.status}
-                                            </StatusBadge>
-                                        ) : (
-                                            <StatusBadge>empty</StatusBadge>
-                                        )}
-                                        <span className="truncate text-xs text-muted-foreground">
-                                            {formatDate(session.updated_at)}
-                                        </span>
-                                    </div>
-                                </button>
+                                    <button
+                                        className="w-full min-w-0 text-left"
+                                        onClick={() => setActiveSessionId(session.id)}
+                                        type="button"
+                                    >
+                                        <div className="flex min-w-0 items-center gap-2">
+                                            <span className="truncate text-sm font-semibold">{session.title}</span>
+                                            {live ? (
+                                                <IconLoader2
+                                                    className="ml-auto size-4 animate-spin text-primary"
+                                                    stroke={1.8}
+                                                />
+                                            ) : null}
+                                        </div>
+                                        <div className="mt-2 flex min-w-0 items-center gap-2">
+                                            {latestRun ? (
+                                                <StatusBadge className={statusClass(latestRun.status)}>
+                                                    {latestRun.status}
+                                                </StatusBadge>
+                                            ) : (
+                                                <StatusBadge>empty</StatusBadge>
+                                            )}
+                                            <span className="truncate text-xs text-muted-foreground">
+                                                {formatDate(session.updated_at)}
+                                            </span>
+                                        </div>
+                                    </button>
+                                    {active ? (
+                                        <button
+                                            className="mt-3 inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase text-muted-foreground hover:text-destructive"
+                                            onClick={deleteActiveSession}
+                                            type="button"
+                                        >
+                                            <IconTrash className="size-3.5" stroke={1.8} />
+                                            Delete
+                                        </button>
+                                    ) : null}
+                                </div>
                             );
                         })}
                     </div>
@@ -632,6 +764,18 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
+                            {activeRun ? (
+                                <Button onClick={stopActiveRun} size="sm" type="button" variant="destructive">
+                                    <IconPlayerStop className="size-4" stroke={1.8} />
+                                    Stop
+                                </Button>
+                            ) : null}
+                            {activeSessionId ? (
+                                <Button onClick={deleteActiveSession} size="sm" type="button" variant="outline">
+                                    <IconTrash className="size-4" stroke={1.8} />
+                                    Delete
+                                </Button>
+                            ) : null}
                             <Button onClick={refreshAll} size="sm" type="button" variant="outline">
                                 <IconRefresh className="size-4" stroke={1.8} />
                                 Refresh
@@ -728,12 +872,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             {runsForActiveSession.map((run) => {
                                 const events = eventsByRun[run.id] ?? [];
                                 const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
-                                const toolEvents = events.filter(
-                                    (event) =>
-                                        event.event_type.startsWith("tool_") ||
-                                        event.event_type === "reasoning" ||
-                                        event.event_type === "agent_updated"
-                                );
+                                const toolSteps = groupToolSteps(events);
                                 const text = assistantText(events, run);
                                 return (
                                     <article className="grid gap-3" key={run.id}>
@@ -747,10 +886,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                             </span>
                                         </div>
                                         <UserMessage text={run.message} />
-                                        {toolEvents.length ? (
+                                        {toolSteps.length ? (
                                             <div className="ml-11 grid gap-2">
-                                                {toolEvents.map((event) => (
-                                                    <ToolEventRow event={event} key={`${event.run_id}:${event.sequence}`} />
+                                                {toolSteps.map((step) => (
+                                                    <ToolStepRow step={step} key={step.key} />
                                                 ))}
                                             </div>
                                         ) : null}
@@ -778,7 +917,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                     <div className="grid gap-3 min-[760px]:grid-cols-[minmax(0,1fr)_auto]">
                         <Textarea
                             className="min-h-24 resize-none"
-                            disabled={!hasConfiguredLlm || isSubmitting}
+                            disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
                             onChange={(event) => setMessage(event.target.value)}
                             onKeyDown={(event) => {
                                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -791,7 +930,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         />
                         <Button
                             className="h-full min-h-12 min-[760px]:w-36"
-                            disabled={!message.trim() || !hasConfiguredLlm || isSubmitting}
+                            disabled={sendDisabled}
                             type="submit"
                         >
                             {isSubmitting ? (
@@ -815,6 +954,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                   ? "Tool call visibility"
                                   : "Full event visibility"}
                         </span>
+                        {activeRun ? <span>Stop the active run before sending another message.</span> : null}
                     </div>
                 </form>
             </div>

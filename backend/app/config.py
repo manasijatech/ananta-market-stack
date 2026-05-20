@@ -50,6 +50,14 @@ class Settings(BaseSettings):
         default=20,
         validation_alias="BROKER_CHAT_HISTORY_TURN_LIMIT",
     )
+    enable_in_process_broker_chat_worker: bool = Field(
+        default=False,
+        validation_alias="ENABLE_IN_PROCESS_BROKER_CHAT_WORKER",
+    )
+    broker_chat_worker_poll_seconds: float = Field(
+        default=1.0,
+        validation_alias="BROKER_CHAT_WORKER_POLL_SECONDS",
+    )
     system_maintenance_interval_seconds: int = Field(
         default=6 * 60 * 60,
         validation_alias="SYSTEM_MAINTENANCE_INTERVAL_SECONDS",

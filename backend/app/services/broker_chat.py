@@ -19,8 +19,12 @@ from app.schemas.broker_chat import (
 )
 from app.services import llm_config
 from app.services.broker_chat_queue import (
+    cancel_broker_chat_job,
+    clear_broker_chat_cancel,
     broker_chat_stream_key,
     enqueue_broker_chat_run,
+    ensure_broker_chat_job_queued,
+    request_broker_chat_cancel,
     redis_connection,
 )
 from app.config import get_settings
@@ -34,6 +38,7 @@ from db.models import (
 )
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+ACTIVE_STATUSES = {"queued", "running"}
 
 
 def utc_now() -> datetime:
@@ -186,6 +191,18 @@ def create_run(
         session = get_owned_session(db, user_id, payload.session_id)
     else:
         session = create_session(db, user_id, payload.session_title or _default_title(payload.message))
+    active_run = db.scalars(
+        select(BrokerChatRun)
+        .where(
+            BrokerChatRun.session_id == session.id,
+            BrokerChatRun.user_id == user_id,
+            BrokerChatRun.status.in_(ACTIVE_STATUSES),
+        )
+        .order_by(BrokerChatRun.created_at.desc(), BrokerChatRun.id.desc())
+        .limit(1)
+    ).first()
+    if active_run is not None:
+        raise ValueError("A broker chat run is already active in this session. Stop it or wait for it to finish.")
     provider, model = _resolve_provider_model(db, user_id, payload, pref)
     now = utc_now()
     run = BrokerChatRun(
@@ -239,7 +256,22 @@ def get_owned_run(db: Session, user_id: str, run_id: str) -> BrokerChatRun:
     row = db.get(BrokerChatRun, run_id)
     if not row or row.user_id != user_id:
         raise ValueError("broker chat run not found")
+    reconcile_run_queue_state(db, row)
     return row
+
+
+def reconcile_run_queue_state(db: Session, run: BrokerChatRun) -> BrokerChatRun:
+    if run.status != "queued":
+        return run
+    try:
+        run.job_id = ensure_broker_chat_job_queued(run.id)
+        run.updated_at = utc_now()
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+    except Exception:
+        pass
+    return run
 
 
 def list_runs(
@@ -257,7 +289,51 @@ def list_runs(
             stmt.order_by(BrokerChatRun.created_at.desc(), BrokerChatRun.id.desc()).limit(max(1, min(limit, 200)))
         ).all()
     )
+    for row in rows:
+        reconcile_run_queue_state(db, row)
     return [BrokerChatRunOut.model_validate(row) for row in rows]
+
+
+def delete_session(db: Session, user_id: str, session_id: str) -> None:
+    session = get_owned_session(db, user_id, session_id)
+    runs = list(
+        db.scalars(select(BrokerChatRun).where(BrokerChatRun.session_id == session.id, BrokerChatRun.user_id == user_id))
+    )
+    for run in runs:
+        if run.status in ACTIVE_STATUSES:
+            request_broker_chat_cancel(run.id)
+            cancel_broker_chat_job(run.id)
+        try:
+            redis_connection().delete(broker_chat_stream_key(run.id))
+        except Exception:
+            pass
+    db.query(BrokerChatEvent).filter(
+        BrokerChatEvent.session_id == session.id,
+        BrokerChatEvent.user_id == user_id,
+    ).delete(synchronize_session=False)
+    db.query(BrokerChatRun).filter(
+        BrokerChatRun.session_id == session.id,
+        BrokerChatRun.user_id == user_id,
+    ).delete(synchronize_session=False)
+    db.delete(session)
+    db.commit()
+
+
+def cancel_run(db: Session, user_id: str, run_id: str) -> BrokerChatRun:
+    run = get_owned_run(db, user_id, run_id)
+    if run.status in TERMINAL_STATUSES:
+        return run
+    request_broker_chat_cancel(run.id)
+    cancel_broker_chat_job(run.id)
+    mark_run_terminal(db, run, status="cancelled", response_text=run.response_text, error=None)
+    db.refresh(run)
+    append_event(
+        db,
+        run,
+        event_type="run_cancelled",
+        public_payload={"status": "cancelled"},
+    )
+    return run
 
 
 def run_to_schema(run: BrokerChatRun) -> BrokerChatRunOut:
@@ -425,6 +501,11 @@ def mark_run_terminal(
     db.add(run)
     db.commit()
     db.refresh(run)
+    if status in TERMINAL_STATUSES:
+        try:
+            clear_broker_chat_cancel(run.id)
+        except Exception:
+            pass
     return run
 
 
