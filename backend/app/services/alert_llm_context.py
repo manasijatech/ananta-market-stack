@@ -5,10 +5,9 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
 
-import httpx
 from common.datetime_compat import UTC
+from market_stack_sdk import MarketStackClient
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -208,7 +207,7 @@ def _fetch_alpha_placeholder(
     limit_default = min(max_items, 20 if name == "news" else 50)
     limit_max = 100 if name == "news" else 200 if name == "concalls" else 500
     limit = _int_arg(args, "limit", limit_default, 1, limit_max)
-    base_url = get_settings().alpha_api_base_url.rstrip("/")
+    settings = get_settings()
     params: dict[str, Any] = {"symbols": symbol, "page": 1, "limit": limit, **_date_params(args)}
     if name == "news" and args.get("sentiment"):
         params["sentiment"] = args["sentiment"]
@@ -221,19 +220,17 @@ def _fetch_alpha_placeholder(
     items: list[dict[str, Any]] = []
     pages_fetched = 0
     has_next = False
-    for page in range(1, max_pages + 1):
-        params["page"] = page
-        url = f"{base_url}{_endpoint_for(name)}?{urlencode(params)}"
-        response = httpx.get(url, headers={"X-API-Key": api_key}, timeout=15)
-        response.raise_for_status()
-        payload = response.json()
-        page_items = payload.get("data") if isinstance(payload, dict) else []
-        if isinstance(page_items, list):
-            items.extend([item for item in page_items if isinstance(item, dict)])
-        pages_fetched = page
-        has_next = bool(payload.get("has_next")) if isinstance(payload, dict) else False
-        if not has_next or len(items) >= max_items:
-            break
+    with MarketStackClient(api_key=api_key, base_url=settings.alpha_api_base_url.rstrip("/"), timeout=15) as client:
+        for page in range(1, max_pages + 1):
+            params["page"] = page
+            payload = client.get(_endpoint_for(name), params=params)
+            page_items = payload.get("data") if isinstance(payload, dict) else []
+            if isinstance(page_items, list):
+                items.extend([item for item in page_items if isinstance(item, dict)])
+            pages_fetched = page
+            has_next = bool(payload.get("has_next")) if isinstance(payload, dict) else False
+            if not has_next or len(items) >= max_items:
+                break
     return {
         "items": items[:max_items],
         "count": min(len(items), max_items),
