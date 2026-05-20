@@ -4,14 +4,14 @@ Market Stack connects Kotak Neo with UCC and portal access token, then uses mobi
 
 ## What You Need
 
-| Market Stack field | Backend payload field | Required | Notes |
-| --- | --- | --- | --- |
-| Account label | `label` | Yes | A friendly name for this Kotak account. |
-| UCC | `ucc` | Yes | Unique Client Code for Kotak. |
-| Portal access token | `portal_access_token` | Yes | Bearer token from Kotak Neo developer portal. |
-| Mobile number | `mobile_number` | Optional at creation | Required during session login. |
-| MPIN | `mpin` | Optional at creation | Used during session login or automation. |
-| TOTP secret | `totp_secret` | Optional | Used for automation. |
+| Market Stack field  | Backend payload field | Required             | Notes                                         |
+| ------------------- | --------------------- | -------------------- | --------------------------------------------- |
+| Account label       | `label`               | Yes                  | A friendly name for this Kotak account.       |
+| UCC                 | `ucc`                 | Yes                  | Unique Client Code for Kotak.                 |
+| Portal access token | `portal_access_token` | Yes                  | Bearer token from Kotak Neo developer portal. |
+| Mobile number       | `mobile_number`       | Optional at creation | Required during session login.                |
+| MPIN                | `mpin`                | Optional at creation | Used during session login or automation.      |
+| TOTP secret         | `totp_secret`         | Optional             | Used for automation.                          |
 
 ## Setup Steps
 

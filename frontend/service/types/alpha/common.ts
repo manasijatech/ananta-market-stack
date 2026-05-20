@@ -1,25 +1,25 @@
 export interface AlphaPaginatedResponse<T> {
-  data: T[];
-  has_next?: boolean;
+    data: T[];
+    has_next?: boolean;
 }
 
 export interface AlphaStringListResponse {
-  data: string[];
+    data: string[];
 }
 
 export interface AlphaAttachmentLookupItem {
-  id: string;
-  status: string;
-  url?: string | null;
-  expires_in?: number | null;
-  message?: string | null;
+    id: string;
+    status: string;
+    url?: string | null;
+    expires_in?: number | null;
+    message?: string | null;
 }
 
 export interface AlphaAttachmentLookupResponse {
-  data: AlphaAttachmentLookupItem[];
+    data: AlphaAttachmentLookupItem[];
 }
 
 export interface AlphaPresignedUrlResponse {
-  url: string;
-  expires_in?: number | null;
+    url: string;
+    expires_in?: number | null;
 }

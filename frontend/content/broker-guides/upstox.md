@@ -4,12 +4,12 @@ Market Stack connects Upstox through OAuth using API key, API secret, and an exa
 
 ## What You Need
 
-| Market Stack field | Backend payload field | Required | Notes |
-| --- | --- | --- | --- |
-| Account label | `label` | Yes | A friendly name for this Upstox account. |
-| API key | `api_key` | Yes | Upstox client ID or API key. |
-| API secret | `api_secret` | Yes | Upstox API secret. |
-| Redirect URI | `redirect_uri` | Yes | Must match the Upstox developer portal exactly. |
+| Market Stack field | Backend payload field | Required | Notes                                           |
+| ------------------ | --------------------- | -------- | ----------------------------------------------- |
+| Account label      | `label`               | Yes      | A friendly name for this Upstox account.        |
+| API key            | `api_key`             | Yes      | Upstox client ID or API key.                    |
+| API secret         | `api_secret`          | Yes      | Upstox API secret.                              |
+| Redirect URI       | `redirect_uri`        | Yes      | Must match the Upstox developer portal exactly. |
 
 ## Setup Steps
 

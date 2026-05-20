@@ -4,14 +4,14 @@ Market Stack connects Dhan with API key, API secret, and your Dhan client ID.
 
 ## What You Need
 
-| Market Stack field | Backend payload field | Required | Notes |
-| --- | --- | --- | --- |
-| Account label | `label` | Yes | A friendly name for this Dhan account. |
-| API key | `app_id` | Yes | Stored as `app_id` because that is the current backend field. |
-| API secret | `app_secret` | Yes | Stored as `app_secret` because that is the current backend field. |
-| Client ID | `client_id` | Yes | Your Dhan client ID. |
-| PIN | `pin` | Optional | Used for automation when supported. |
-| TOTP secret | `totp_secret` | Optional | Used for automated token generation when supported. |
+| Market Stack field | Backend payload field | Required | Notes                                                             |
+| ------------------ | --------------------- | -------- | ----------------------------------------------------------------- |
+| Account label      | `label`               | Yes      | A friendly name for this Dhan account.                            |
+| API key            | `app_id`              | Yes      | Stored as `app_id` because that is the current backend field.     |
+| API secret         | `app_secret`          | Yes      | Stored as `app_secret` because that is the current backend field. |
+| Client ID          | `client_id`           | Yes      | Your Dhan client ID.                                              |
+| PIN                | `pin`                 | Optional | Used for automation when supported.                               |
+| TOTP secret        | `totp_secret`         | Optional | Used for automated token generation when supported.               |
 
 ## Setup Steps
 

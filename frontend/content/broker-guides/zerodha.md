@@ -27,13 +27,13 @@ Do not use **Zerodha partner ID**. That is a different optional field on the dev
 
 ![Zerodha Kite Connect create app form](/docs/zerodha-create-app.svg)
 
-| Kite app field | Enter this |
-| --- | --- |
-| App name | `Market Stack` or any name you recognize |
-| Zerodha Client ID | Your Kite login/client ID, for example `AB1234` |
-| Redirect URL | `http://localhost:3000/broker-connections` |
-| Postback URL | Leave empty unless Zerodha forces it for your app type |
-| Description | Anything short, for example `Personal trading dashboard` |
+| Kite app field    | Enter this                                               |
+| ----------------- | -------------------------------------------------------- |
+| App name          | `Market Stack` or any name you recognize                 |
+| Zerodha Client ID | Your Kite login/client ID, for example `AB1234`          |
+| Redirect URL      | `http://localhost:3000/broker-connections`               |
+| Postback URL      | Leave empty unless Zerodha forces it for your app type   |
+| Description       | Anything short, for example `Personal trading dashboard` |
 
 ## 3. Copy API Key And Secret
 
@@ -52,11 +52,11 @@ After the app is created:
 4. Select **Zerodha**.
 5. Enter:
 
-| Market Stack field | Paste this |
-| --- | --- |
-| Account label | Any friendly name, for example `Main Zerodha` |
-| API key | Kite Connect API key |
-| API secret | Kite Connect API secret |
+| Market Stack field | Paste this                                    |
+| ------------------ | --------------------------------------------- |
+| Account label      | Any friendly name, for example `Main Zerodha` |
+| API key            | Kite Connect API key                          |
+| API secret         | Kite Connect API secret                       |
 
 6. Save the broker account.
 
