@@ -4,9 +4,9 @@ Market Stack connects INDmoney with a manual access token. There is no automated
 
 ## What You Need
 
-| Market Stack field | Paste this |
-| --- | --- |
-| Access token | Current INDmoney bearer access token |
+| Market Stack field | Paste this                           |
+| ------------------ | ------------------------------------ |
+| Access token       | Current INDmoney bearer access token |
 
 ## Before You Start
 

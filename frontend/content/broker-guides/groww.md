@@ -14,10 +14,10 @@ Static IP setup is required for Groww API access.
 
 Use this when you have a Groww API key and API secret.
 
-| Market Stack field | Paste this |
-| --- | --- |
-| API key | Groww API key |
-| API secret | Groww API secret |
+| Market Stack field | Paste this       |
+| ------------------ | ---------------- |
+| API key            | Groww API key    |
+| API secret         | Groww API secret |
 
 Advantages:
 
@@ -35,10 +35,10 @@ Disadvantages:
 
 Use this when you want Market Stack to generate Groww sessions with your TOTP setup.
 
-| Market Stack field | Paste this |
-| --- | --- |
-| TOTP API key | Groww user API key for TOTP auth |
-| TOTP secret | Authenticator or QR secret |
+| Market Stack field | Paste this                       |
+| ------------------ | -------------------------------- |
+| TOTP API key       | Groww user API key for TOTP auth |
+| TOTP secret        | Authenticator or QR secret       |
 
 Advantages:
 
@@ -56,9 +56,9 @@ Disadvantages:
 
 Use this when you already have a fresh Groww access token and want the fastest manual setup.
 
-| Market Stack field | Paste this |
-| --- | --- |
-| Access token | Current Groww access token |
+| Market Stack field | Paste this                 |
+| ------------------ | -------------------------- |
+| Access token       | Current Groww access token |
 
 Advantages:
 

@@ -67,37 +67,37 @@ database.exec(`
 
 const authBaseURL = process.env.BETTER_AUTH_URL ?? getPublicAppUrl();
 const trustedOrigins = Array.from(
-  new Set([
-    authBaseURL,
-    "http://127.0.0.1:3000",
-    "http://localhost:3000",
-    ...String(process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
-      .split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean)
-  ])
+    new Set([
+        authBaseURL,
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        ...String(process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+            .split(",")
+            .map((origin) => origin.trim())
+            .filter(Boolean)
+    ])
 );
 
 export const auth = betterAuth({
-  appName: "Market Stack",
-  baseURL: authBaseURL,
-  trustedOrigins,
-  secret: process.env.BETTER_AUTH_SECRET,
-  database,
-  emailAndPassword: {
-    enabled: true,
-    minPasswordLength: 8,
-    maxPasswordLength: 128,
-    autoSignIn: true
-  },
-  session: {
-    expiresIn: 60 * 60 * 24 * 7,
-    updateAge: 60 * 60 * 24
-  },
-  advanced: {
-    cookiePrefix: "market-stack",
-    database: {
-      generateId: "uuid"
+    appName: "Market Stack",
+    baseURL: authBaseURL,
+    trustedOrigins,
+    secret: process.env.BETTER_AUTH_SECRET,
+    database,
+    emailAndPassword: {
+        enabled: true,
+        minPasswordLength: 8,
+        maxPasswordLength: 128,
+        autoSignIn: true
+    },
+    session: {
+        expiresIn: 60 * 60 * 24 * 7,
+        updateAge: 60 * 60 * 24
+    },
+    advanced: {
+        cookiePrefix: "market-stack",
+        database: {
+            generateId: "uuid"
+        }
     }
-  }
 });
