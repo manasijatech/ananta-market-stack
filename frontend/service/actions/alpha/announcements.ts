@@ -10,20 +10,27 @@ import {
     appendList,
     appendParam,
     feedQuery,
+    queryParamsToObject,
     request,
-    withQuery,
+    withAlphaSdk,
     type AlphaFeedParams
 } from "@/service/actions/alpha/shared";
 
 export async function getAlphaAnnouncementCategories(): Promise<string[]> {
-    const result = await request<AlphaStringListResponse>("/v1/announcements/categories");
+    const result = await withAlphaSdk<AlphaStringListResponse>((client) =>
+        client.getAnnouncementsCategories()
+    );
     return result.data ?? [];
 }
 
 export async function getAlphaAnnouncements(
     params: AlphaFeedParams = {}
 ): Promise<AlphaPaginatedResponse<AlphaAnnouncementDetail>> {
-    return request<AlphaPaginatedResponse<AlphaAnnouncementDetail>>(withQuery("/v1/announcements", feedQuery(params)));
+    return withAlphaSdk<AlphaPaginatedResponse<AlphaAnnouncementDetail>>((client) =>
+        client.getAnnouncements({
+            query: queryParamsToObject(feedQuery(params))
+        })
+    );
 }
 
 export async function getAlphaAnnouncementsByIds(
@@ -33,11 +40,19 @@ export async function getAlphaAnnouncementsByIds(
     const query = new URLSearchParams();
     appendList(query, "ids", ids);
     appendParam(query, "detailed", detailed);
-    return request<AlphaAnnouncementBatchResponse>(withQuery("/v1/announcements/items", query));
+    return withAlphaSdk<AlphaAnnouncementBatchResponse>((client) =>
+        client.getAnnouncementsItems({
+            query: queryParamsToObject(query)
+        })
+    );
 }
 
 export async function getAlphaAnnouncementAttachments(ids: string[]): Promise<AlphaAttachmentLookupResponse> {
     const query = new URLSearchParams();
     appendList(query, "ids", ids);
-    return request<AlphaAttachmentLookupResponse>(withQuery("/v1/announcements/attachments", query));
+    return withAlphaSdk<AlphaAttachmentLookupResponse>((client) =>
+        client.getAnnouncementsAttachments({
+            query: queryParamsToObject(query)
+        })
+    );
 }

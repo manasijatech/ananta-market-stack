@@ -1,5 +1,6 @@
 import "server-only";
 
+import { MarketStackApiError, MarketStackClient, type QueryParams } from "@manasija/market-stack-sdk";
 import { fetchFastApi } from "@/lib/fastapi";
 
 type AlphaQueryValue = string | number | boolean | null | undefined;
@@ -132,6 +133,39 @@ export async function getAlphaApiKey() {
     return payload.api_key;
 }
 
+export async function getAlphaSdkClient() {
+    const apiKey = await getAlphaApiKey();
+    return new MarketStackClient({
+        apiKey,
+        baseUrl: alphaBaseUrl()
+    });
+}
+
+function parseSdkError(error: unknown): never {
+    if (error instanceof MarketStackApiError) {
+        const fallback =
+            error.statusCode >= 500
+                ? "The Manasija Alpha API is unavailable. Please try again."
+                : "Alpha API request failed.";
+        throw new Error(
+            JSON.stringify({
+                status: error.statusCode,
+                message: extractMessage(error.body, fallback),
+                fieldErrors: {}
+            })
+        );
+    }
+    throw error;
+}
+
+export function queryParamsToObject(query: URLSearchParams): QueryParams {
+    const out: QueryParams = {};
+    for (const [key, value] of query.entries()) {
+        out[key] = value;
+    }
+    return out;
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     let response: Response;
     const apiKey = await getAlphaApiKey();
@@ -155,6 +189,15 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
         );
     }
     return readResponse<T>(response);
+}
+
+export async function withAlphaSdk<T>(fn: (client: MarketStackClient) => Promise<T>): Promise<T> {
+    const client = await getAlphaSdkClient();
+    try {
+        return await fn(client);
+    } catch (error) {
+        return parseSdkError(error);
+    }
 }
 
 export function withQuery(path: string, query: URLSearchParams) {
