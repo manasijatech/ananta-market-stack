@@ -64,14 +64,14 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
   groww: {
     broker: "groww",
     title: "Groww Trade API Setup",
-    summary: "Add static IP in Groww, generate API key and secret, then connect with API approval mode.",
-    required: ["Account label", "API key", "API secret"],
+    summary: "Add Groww with API approval, TOTP automation, or a manual access token.",
+    required: ["Account label", "One Groww credential mode"],
     setupSteps: [
       "Open the Groww Trade API key dashboard.",
-      "Add or update the mandatory static IP first.",
-      "Generate an API key.",
-      "Copy the API key and API secret.",
-      "In Market Stack, choose API approval mode."
+      "Add or update the mandatory static IP.",
+      "Choose API approval, TOTP, or access token mode.",
+      "Enter only the fields required for that mode.",
+      "Save the broker account."
     ],
     formMapping: [
       { label: "API key", field: "api_key", note: "Used with API secret in approval mode." },
@@ -85,26 +85,33 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
       "Use the broker detail page to refresh or submit the session depending on the configured mode.",
       "For manual token mode, paste a fresh access token when the old one expires."
     ],
-    notes: ["Static IP is mandatory for Groww API access.", "Use API approval mode for API key plus API secret."]
+    notes: [
+      "Static IP is mandatory for Groww API access.",
+      "API approval is the normal official setup, TOTP is best for automation, and access token is best for quick manual testing."
+    ]
   },
   indmoney: {
     broker: "indmoney",
     title: "INDmoney Token Setup",
-    summary: "Connect INDmoney by generating a bearer access token and saving it as the account credential.",
+    summary: "Connect INDmoney with a manually generated bearer access token.",
     required: ["Account label", "Access token"],
     setupSteps: [
-      "Generate or capture a current INDmoney bearer access token from your broker web session or portal flow.",
-      "Confirm your account has the required static IP setup if INDmoney requires it.",
-      "Paste the access token into the Market Stack form."
+      "Open the INDstocks API trading page.",
+      "Generate or copy a fresh INDmoney bearer access token.",
+      "Set up static IP allowlisting if INDmoney requires it.",
+      "Paste the access token into Market Stack."
     ],
     formMapping: [
-      { label: "Access token", field: "access_token", note: "Bearer token used for account/session access." }
+      { label: "Access token", field: "access_token", note: "Paste only the token value, not the word Bearer." }
     ],
     sessionSteps: [
       "Save the account with an access token.",
       "If the token expires, open the broker detail page and paste a fresh token into the INDmoney session form."
     ],
-    notes: ["Treat access tokens like passwords.", "INDmoney tokens can be short-lived, so refresh may be needed often."]
+    notes: [
+      "Treat access tokens like passwords.",
+      "INDmoney is manual-token only in Market Stack right now; there is no automated login or TOTP flow."
+    ]
   },
   kotak: {
     broker: "kotak",

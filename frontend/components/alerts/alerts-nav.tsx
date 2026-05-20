@@ -18,7 +18,7 @@ export function AlertsNav() {
  const searchParams = useSearchParams();
 
  return (
- <nav className="mb-4 flex min-w-0 flex-wrap gap-1.5" aria-label="Alerts workspace">
+ <nav className="-mx-4 mb-4 flex min-w-0 gap-1.5 overflow-x-auto px-4 pb-1 min-[760px]:mx-0 min-[760px]:flex-wrap min-[760px]:overflow-visible min-[760px]:px-0 min-[760px]:pb-0" aria-label="Alerts workspace">
  {items.map((item) => {
  const [itemPath, itemQuery] = item.href.split("?");
  const active = (() => {
@@ -32,7 +32,7 @@ export function AlertsNav() {
  })();
  return (
  <Link
- className={active ? "border border-primary bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground min-[760px]:text-sm" : "border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground min-[760px]:text-sm"}
+ className={active ? "shrink-0 whitespace-nowrap border border-primary bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground min-[760px]:text-sm" : "shrink-0 whitespace-nowrap border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground min-[760px]:text-sm"}
  href={item.href}
  key={item.href}
  >
