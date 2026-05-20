@@ -361,6 +361,16 @@ def broker_list_accounts(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str
     their account ids, labels, verification state, session state, and default
     data/search preferences. The result never includes API keys, tokens, PINs,
     TOTP secrets, passwords, or decrypted credential values.
+
+    Selection guidance for agents:
+    - Prefer ``default_config.effective_default_account_id`` for portfolio,
+      quotes, OHLC, historical, funds, orders, and positions.
+    - Prefer ``search_config.effective_search_account_id`` for instrument
+      search and symbol resolution.
+    - If exactly one active account is returned, use it without asking the user
+      to choose an account.
+    - If a session is inactive, use the session-status or maintenance tools
+      instead of asking for secrets in chat.
     """
 
     def call() -> dict[str, Any]:
@@ -509,6 +519,13 @@ def broker_get_data_capabilities(
     option chain, greeks, instrument cache, or stream inspection. Capability
     guidance reflects the existing Market-Stack uniform API support for the
     selected broker.
+
+    Use this when the user asks whether something is possible, when a previous
+    market-data call failed because a broker/subscription may not support it, or
+    before planning a broad multi-tool analysis. A positive capability means the
+    uniform API knows how to call that broker feature; the broker can still
+    reject a specific request because of account permissions, subscription tier,
+    symbol coverage, or session state.
     """
 
     def call() -> dict[str, Any]:
@@ -548,6 +565,16 @@ def broker_search_instruments(
     ``account_id`` is omitted, the user's preferred instrument-search account
     and cache fallback rules are used. The returned rows include broker-specific
     identifiers that can be passed directly to other broker tools.
+
+    Agent routing guidance:
+    - Use this when the user gives a plain symbol/name such as ``SILVERCASE`` or
+      refers to an instrument found in holdings.
+    - For Indian equities and ETFs with both NSE and BSE rows, choose NSE by
+      default unless the user asks for BSE or only a BSE row exists.
+    - Pass the chosen returned row, or at minimum its ``symbol`` and
+      ``exchange``, to quote/OHLC/historical tools.
+    - If no rows are found, consider broker_sync_instruments once, then retry
+      the search before saying the instrument is unavailable.
     """
 
     def call() -> dict[str, Any]:
@@ -684,6 +711,15 @@ def broker_get_quotes(
     Symbol-first requests are hydrated from the local instrument cache where
     possible. The returned rows are normalized quote rows with broker-native
     detail preserved under ``detail``.
+
+    Use this for latest market snapshots: LTP/current price, day change,
+    bid/ask, volume, market depth fields, or current valuation of holdings.
+    This is not a historical-performance tool; combine it with
+    broker_get_historical when the user asks for 1-month/6-month returns.
+
+    When historical candles are blocked by broker permissions, this is the best
+    fallback for a current snapshot. Use one array of instruments in a single
+    call; do not call it once per symbol unless the broker requires that.
     """
 
     def call() -> dict[str, Any]:
@@ -726,6 +762,12 @@ def broker_get_ohlc(
 
     Use this for latest open/high/low/close style snapshots. For full candle
     history over a date range, use ``broker_get_historical`` instead.
+
+    Use this when the user asks for "OHLC", today's open/high/low/close, or a
+    fallback snapshot after historical access is denied. This returns latest
+    broker snapshot data, not a list of candles across a month or six months.
+    Pass instruments as dictionaries with ``symbol``/``exchange`` or the
+    broker-specific identifiers from broker_search_instruments.
     """
 
     def call() -> dict[str, Any]:
@@ -769,6 +811,24 @@ def broker_get_historical(
     ``day`` depending on the broker. ``from_date`` and ``to_date`` should be ISO
     timestamps or dates. Check ``broker_get_data_capabilities`` first because
     historical support varies across brokers.
+
+    Critical tool-call rules for agents:
+    - This tool accepts exactly one instrument, one interval, and one date
+      range per call.
+    - The arguments must be one valid JSON object. Never concatenate two calls
+      like ``{...}{...}``; make two separate tool calls instead.
+    - For daily performance analysis, use ``interval: "day"``.
+    - For hourly/intraday detail, make a separate call with ``interval:
+      "hour"`` only after the daily call or when the user specifically asks.
+    - Use ISO dates such as ``2026-05-20``. For relative requests, calculate the
+      dates from the current day provided in the agent instructions.
+    - For Indian equities/ETFs with both NSE and BSE rows, prefer
+      ``{"symbol": "...", "exchange": "NSE"}`` unless the user chose BSE.
+
+    If the broker returns an access/subscription error such as 403, explain
+    that this connected broker account cannot provide historical candles for
+    that request. Then use broker_get_quotes and/or broker_get_ohlc for the best
+    available current snapshot instead of claiming no market data is available.
     """
 
     def call() -> dict[str, Any]:
@@ -912,6 +972,18 @@ def broker_get_portfolio(
     Use ``sections`` to limit work. Supported values are ``orders``, ``trades``,
     ``positions``, ``holdings``, and ``funds``. Symbol/exchange filters apply to
     row-based portfolio payloads such as holdings and positions.
+
+    Agent routing guidance:
+    - For "my holdings", call this with ``sections: ["holdings"]``.
+    - For "my positions", call this with ``sections: ["positions"]``.
+    - For "portfolio overview", use the default sections or explicitly request
+      holdings, positions, and funds.
+    - For "performance of my holding" or follow-ups like "check its
+      performance", fetch holdings first to identify the instrument, quantity,
+      average price, and exchange/tradable exchanges, then use
+      broker_search_instruments and broker_get_historical/quotes as needed.
+    - Do not treat holdings as historical price data. Holdings gives quantity
+      and average price; use market-data tools for latest or historical prices.
     """
 
     def call() -> dict[str, Any]:
