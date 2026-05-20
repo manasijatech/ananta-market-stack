@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, FileJson } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileJson, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useTransition, type KeyboardEvent, type RefObject } from "react";
 import {
  getDataOhlc,
@@ -4312,7 +4312,7 @@ function RuleEditor({
  </div>
  ))}
  </div>
- <Button className="max-w-[180px]" onClick={addCondition} type="button">Add condition</Button>
+ <Button className="max-w-[180px]" onClick={addCondition} type="button"><Plus />Add condition</Button>
  <div className="max-w-4xl border border-border p-3">
  <SectionTitle className="mb-3">Alert content</SectionTitle>
  <div className="grid max-w-3xl gap-3">
