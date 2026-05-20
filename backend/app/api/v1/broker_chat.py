@@ -85,6 +85,18 @@ def get_broker_chat_session(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_broker_chat_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    try:
+        chat_svc.delete_session(db, user.id, session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/sessions/{session_id}/runs", response_model=list[BrokerChatRunOut])
 def list_broker_chat_session_runs(
     session_id: str,
@@ -136,6 +148,18 @@ def get_broker_chat_run(
 ) -> BrokerChatRunOut:
     try:
         return BrokerChatRunOut.model_validate(chat_svc.get_owned_run(db, user.id, run_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/runs/{run_id}/cancel", response_model=BrokerChatRunOut)
+def cancel_broker_chat_run(
+    run_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> BrokerChatRunOut:
+    try:
+        return BrokerChatRunOut.model_validate(chat_svc.cancel_run(db, user.id, run_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

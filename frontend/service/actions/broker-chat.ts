@@ -109,6 +109,13 @@ export async function createBrokerChatSession(title?: string | null): Promise<Br
     return result;
 }
 
+export async function deleteBrokerChatSession(sessionId: string): Promise<void> {
+    await request<null>(`/broker-chat/sessions/${sessionId}`, {
+        method: "DELETE"
+    });
+    revalidatePath("/broker-chat");
+}
+
 export async function getBrokerChatRuns(params: {
     sessionId?: string | null;
     limit?: number;
@@ -158,6 +165,14 @@ export async function getBrokerChatEvents(
 
 export async function getBrokerChatRun(runId: string): Promise<BrokerChatRun> {
     return request<BrokerChatRun>(`/broker-chat/runs/${runId}`);
+}
+
+export async function cancelBrokerChatRun(runId: string): Promise<BrokerChatRun> {
+    const result = await request<BrokerChatRun>(`/broker-chat/runs/${runId}/cancel`, {
+        method: "POST"
+    });
+    revalidatePath("/broker-chat");
+    return result;
 }
 
 export async function getBrokerChatRunEvents(runId: string): Promise<BrokerChatEvent[]> {

@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 
 from app.agent_tools import BROKER_DATA_TOOLS, BrokerAgentContext
 from app.services import broker_chat, llm_config
+from app.services.broker_chat_queue import broker_chat_cancel_requested
 from db.models import BrokerChatRun
 from db.session import SessionLocal
 
@@ -32,6 +33,10 @@ Important operating rules:
 - Keep answers concise and cite the broker/account label when tool data includes it.
 - Do not place, modify, cancel, or suggest that a trade has been executed.
 """
+
+
+class BrokerChatCancelled(Exception):
+    pass
 
 
 def _safe_data(value: Any) -> Any:
@@ -132,6 +137,10 @@ async def _run_broker_chat(run_id: str) -> None:
         run = db.get(BrokerChatRun, run_id)
         if run is None:
             return
+        if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
+            broker_chat.mark_run_terminal(db, run, status="cancelled", response_text=run.response_text)
+            broker_chat.append_event(db, run, event_type="run_cancelled", public_payload={"status": "cancelled"})
+            return
         broker_chat.mark_run_running(db, run)
         db.refresh(run)
         broker_chat.append_event(
@@ -168,6 +177,9 @@ async def _run_broker_chat(run_id: str) -> None:
         )
 
         async for event in stream.stream_events():
+            db.refresh(run)
+            if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
+                raise BrokerChatCancelled()
             event_type = getattr(event, "type", "")
             if event_type == "raw_response_event":
                 data = getattr(event, "data", None)
@@ -280,6 +292,9 @@ async def _run_broker_chat(run_id: str) -> None:
 
         if not final_text and getattr(stream, "final_output", None):
             final_text = str(stream.final_output)
+        db.refresh(run)
+        if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
+            raise BrokerChatCancelled()
         broker_chat.mark_run_terminal(db, run, status="completed", response_text=final_text)
         db.refresh(run)
         broker_chat.append_event(
@@ -288,9 +303,21 @@ async def _run_broker_chat(run_id: str) -> None:
             event_type="run_completed",
             public_payload={"status": "completed", "response_text": final_text},
         )
-    except Exception as exc:
+    except BrokerChatCancelled:
         run = db.get(BrokerChatRun, run_id)
         if run is not None:
+            broker_chat.mark_run_terminal(db, run, status="cancelled", response_text=final_text, error=None)
+            db.refresh(run)
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="run_cancelled",
+                public_payload={"status": "cancelled"},
+            )
+        return
+    except Exception as exc:
+        run = db.get(BrokerChatRun, run_id)
+        if run is not None and run.status != "cancelled":
             broker_chat.mark_run_terminal(db, run, status="failed", response_text=final_text, error=str(exc))
             db.refresh(run)
             broker_chat.append_event(
