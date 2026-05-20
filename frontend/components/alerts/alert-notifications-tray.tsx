@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Bell } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
     getAlertNotifications,
     getAlertUnreadCount,
@@ -10,6 +10,7 @@ import {
     readAllAlertNotifications
 } from "@/service/actions/alerts";
 import { Button } from "@/components/ui/button";
+import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 import { subscribeToAlertNotificationStream } from "@/lib/alert-notification-stream";
 import type { AlertNotification } from "@/service/types/alerts";
 
@@ -28,6 +29,7 @@ export function AlertNotificationsTray() {
     const [items, setItems] = useState<AlertNotification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [open, setOpen] = useState(false);
+    const trayRef = useRef<HTMLDivElement | null>(null);
     const [isPending, startTransition] = useTransition();
 
     useEffect(() => {
@@ -79,6 +81,27 @@ export function AlertNotificationsTray() {
         };
     }, []);
 
+    useEffect(() => {
+        if (!open) return;
+
+        function handlePointerDown(event: PointerEvent) {
+            const target = event.target;
+            if (!(target instanceof Node) || trayRef.current?.contains(target)) return;
+            setOpen(false);
+        }
+
+        function handleKeyDown(event: KeyboardEvent) {
+            if (event.key === "Escape") setOpen(false);
+        }
+
+        document.addEventListener("pointerdown", handlePointerDown);
+        document.addEventListener("keydown", handleKeyDown);
+        return () => {
+            document.removeEventListener("pointerdown", handlePointerDown);
+            document.removeEventListener("keydown", handleKeyDown);
+        };
+    }, [open]);
+
     function markRead(id: string) {
         startTransition(async () => {
             await markAlertNotificationRead(id);
@@ -96,7 +119,7 @@ export function AlertNotificationsTray() {
     }
 
     return (
-        <div className="relative">
+        <div className="relative" ref={trayRef}>
             <Button onClick={() => setOpen((current) => !current)} type="button" variant="outline">
                 <Bell className="size-4" />
                 Alerts
@@ -134,9 +157,9 @@ export function AlertNotificationsTray() {
                                         <div className="type-section-title">{item.title}</div>
                                         <div className="type-help mt-1 text-muted-foreground">{item.message}</div>
                                         {llmOutput(item.payload) ? (
-                                            <div className="type-help mt-2 border-l-2 border-primary pl-2 text-muted-foreground">
+                                            <AlertLlmMarkdown className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">
                                                 {llmOutput(item.payload)}
-                                            </div>
+                                            </AlertLlmMarkdown>
                                         ) : null}
                                     </div>
                                     <Button onClick={() => markRead(item.id)} size="sm" type="button" variant="ghost">

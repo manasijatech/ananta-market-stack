@@ -23,6 +23,7 @@ from app.schemas.watchlist import (
     WatchlistUpdateIn,
 )
 from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
+from app.services import alpha_config
 from app.services import broker_data_preferences
 from app.services import watchlist_presets as preset_svc
 from db.models import (
@@ -134,6 +135,15 @@ def _watchlist_name_exists(db: Session, user_id: str, name: str, exclude_id: str
 def _ensure_manual_watchlist(watchlist: UserWatchlist) -> None:
     if watchlist.kind != "manual":
         raise HTTPException(status_code=400, detail="Preset watchlists cannot be modified")
+
+
+def _ensure_alpha_api_configured(db: Session, user_id: str) -> None:
+    config = alpha_config.get_alpha_api_config(db, user_id)
+    if not config.has_api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Manasija Alpha API key is required. Add it in System Config before creating watchlists.",
+        )
 
 
 def _dedupe_symbol_strings(symbols: list[str], exchange: str = "") -> list[tuple[str, str]]:
@@ -257,6 +267,7 @@ def list_watchlists(db: Session, user_id: str) -> list[WatchlistOut]:
 
 
 def create_watchlist(db: Session, user_id: str, payload: WatchlistCreateIn) -> WatchlistOut:
+    _ensure_alpha_api_configured(db, user_id)
     name = _normalize_name(payload.name)
     if _watchlist_name_exists(db, user_id, name):
         raise HTTPException(status_code=400, detail="A watchlist with this name already exists")
@@ -499,6 +510,7 @@ def list_preset_catalog(
 
 
 def add_preset_watchlist(db: Session, user_id: str, preset_id: str) -> WatchlistOut:
+    _ensure_alpha_api_configured(db, user_id)
     watchlist = preset_svc.add_preset_to_user_watchlists(db, user_id, preset_id)
     reconcile_user_subscriptions(db, user_id)
     updated = _get_owned_watchlist(db, user_id, watchlist.id)

@@ -11,13 +11,16 @@ import {
     Megaphone,
     MessageSquare,
     Newspaper,
+    Pause,
     Phone,
     Play,
+    RotateCcw,
     TrendingDown,
     TrendingUp,
+    X,
     type LucideIcon
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getAlphaWebSocketConfig } from "@/service/actions/alpha/websocket";
@@ -33,6 +36,7 @@ import {
     type MarketIntelligenceFeeds,
     type MarketIntelligenceProduct
 } from "@/components/market-intelligence/market-intelligence-data";
+import { Button } from "@/components/ui/button";
 
 const MAX_FEED_ITEMS = 50;
 
@@ -235,6 +239,13 @@ function getAlertTypeConfig(type?: string | null) {
     );
 }
 
+function formatAudioTime(value: number): string {
+    if (!Number.isFinite(value) || value <= 0) return "0:00";
+    const minutes = Math.floor(value / 60);
+    const seconds = Math.floor(value % 60);
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 function normalizeIncomingData(value: unknown): unknown {
     if (!isRecord(value)) return value;
     if (isRecord(value.payload)) return value.payload;
@@ -342,6 +353,12 @@ export function MarketIntelligenceLiveFeed({
                     if (!isMarketProduct(parsed.channel)) return;
 
                     const item = normalizeIncomingData(parsed.data);
+                    if (parsed.channel === "concalls") {
+                        console.log("[Alpha concalls raw websocket message]", {
+                            raw: parsed,
+                            normalized: item
+                        });
+                    }
                     if (!itemMatchesWatchlist(item, watchlistSymbols)) return;
                     const section = sectionFromProduct(parsed.channel);
 
@@ -666,44 +683,86 @@ function ConcallList({
     items: AlphaConcall[];
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
 }) {
+    const [activeAudio, setActiveAudio] = useState<{ src: string; symbol: string; detail: string } | null>(null);
+
     if (!items.length) return <EmptyFeed section="concalls" />;
     return (
-        <div className="grid min-w-0 gap-4">
-            {items.map((item) => {
-                const transcriptHref = item.transcript_pdf_links?.[0] ?? null;
-                const audioHref = item.recording_links?.[0] ?? null;
-                const markdown =
-                    insightToMarkdown(
-                        item.short_analysis ?? item.analysis ?? item.summary ?? item.completion_response
-                    ) || "No analysis provided.";
-                return (
-                    <article className="min-w-0 max-w-full border-l-2 border-border pl-4" key={itemKey(item)}>
-                        <div className="flex flex-col items-start justify-between gap-3 min-[720px]:flex-row min-[720px]:gap-4">
-                            <div className="min-w-0">
-                                <SymbolMetadataHeader
-                                    metadata={symbolMetadata[item.symbol.trim().toUpperCase()]}
-                                    symbol={item.symbol}
-                                />
-                                <p className="mt-1 max-w-full whitespace-normal break-words text-xs text-muted-foreground">
-                                    {[item.quarter, item.month, item.concall_type, formatDate(item.date)]
-                                        .filter(Boolean)
-                                        .join(" / ")}
-                                </p>
-                            </div>
-                            {transcriptHref || audioHref ? (
-                                <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                                    {transcriptHref ? (
-                                        <InlineActionLink href={transcriptHref} icon={FileText} label="PDF" />
-                                    ) : null}
-                                    {audioHref ? <InlineActionLink href={audioHref} icon={Play} label="Audio" /> : null}
+        <>
+            {activeAudio ? (
+                <div className="fixed right-4 top-4 z-50 w-[calc(100vw-2rem)] max-w-md border border-border bg-background p-5 shadow-xl min-[720px]:right-6 min-[720px]:top-6">
+                    <Button
+                        aria-label="Close audio player"
+                        className="absolute right-3 top-3 size-8 text-muted-foreground"
+                        onClick={() => setActiveAudio(null)}
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                    >
+                        <X className="size-4" />
+                    </Button>
+                    <div className="pr-10">
+                        <h2 className="font-mono text-base font-semibold text-foreground">{activeAudio.symbol} audio</h2>
+                        {activeAudio.detail ? (
+                            <p className="mt-1 text-sm text-muted-foreground">{activeAudio.detail}</p>
+                        ) : null}
+                    </div>
+                    <ConcallAudioPlayer autoPlay className="mt-4" src={activeAudio.src} symbol={activeAudio.symbol} />
+                </div>
+            ) : null}
+            <div className="grid min-w-0 gap-4">
+                {items.map((item) => {
+                    const transcriptHref = item.transcript_pdf_links?.[0] ?? item.transcript_url ?? null;
+                    const audioHref = item.recording_links?.[0] ?? item.audio_url ?? null;
+                    const detail = [item.quarter, item.month, item.concall_type, formatDate(item.date)]
+                        .filter(Boolean)
+                        .join(" / ");
+                    const markdown =
+                        insightToMarkdown(
+                            item.short_analysis ??
+                                item.expanded_analysis ??
+                                item.analysis ??
+                                item.summary ??
+                                item.completion_response
+                        ) || "No analysis provided.";
+                    return (
+                        <article className="min-w-0 max-w-full border-l-2 border-border pl-4" key={itemKey(item)}>
+                            <div className="flex flex-col items-start justify-between gap-3 min-[720px]:flex-row min-[720px]:gap-4">
+                                <div className="min-w-0">
+                                    <SymbolMetadataHeader
+                                        metadata={symbolMetadata[item.symbol.trim().toUpperCase()]}
+                                        symbol={item.symbol}
+                                    />
+                                    <p className="mt-1 max-w-full whitespace-normal break-words text-xs text-muted-foreground">
+                                        {detail}
+                                    </p>
                                 </div>
-                            ) : null}
-                        </div>
-                        <ConcallMarkdown>{markdown}</ConcallMarkdown>
-                    </article>
-                );
-            })}
-        </div>
+                                {transcriptHref || audioHref ? (
+                                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                                        {transcriptHref ? (
+                                            <InlineActionLink href={transcriptHref} icon={FileText} label="PDF" />
+                                        ) : null}
+                                        {audioHref ? (
+                                            <InlineActionButton
+                                                icon={Play}
+                                                label="Audio"
+                                                onClick={() =>
+                                                    setActiveAudio({
+                                                        src: audioHref,
+                                                        symbol: item.symbol,
+                                                        detail
+                                                    })
+                                                }
+                                            />
+                                        ) : null}
+                                    </div>
+                                ) : null}
+                            </div>
+                            <ConcallMarkdown>{markdown}</ConcallMarkdown>
+                        </article>
+                    );
+                })}
+            </div>
+        </>
     );
 }
 
@@ -812,6 +871,118 @@ function ConcallMarkdown({ children }: { children: string }) {
     );
 }
 
+function ConcallAudioPlayer({
+    autoPlay = false,
+    className = "mt-4",
+    src,
+    symbol
+}: {
+    autoPlay?: boolean;
+    className?: string;
+    src: string;
+    symbol: string;
+}) {
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const [duration, setDuration] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const progress = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+
+    useEffect(() => {
+        setDuration(0);
+        setCurrentTime(0);
+        setIsPlaying(false);
+        if (autoPlay) {
+            audioRef.current?.play().catch(() => setIsPlaying(false));
+        }
+    }, [autoPlay, src]);
+
+    function togglePlayback() {
+        const audio = audioRef.current;
+        if (!audio) return;
+
+        if (audio.paused) {
+            audio.play().catch(() => setIsPlaying(false));
+        } else {
+            audio.pause();
+        }
+    }
+
+    function restart() {
+        const audio = audioRef.current;
+        if (!audio) return;
+        audio.currentTime = 0;
+        setCurrentTime(0);
+    }
+
+    function seek(value: string) {
+        const audio = audioRef.current;
+        if (!audio || duration <= 0) return;
+        const nextTime = (Number(value) / 100) * duration;
+        audio.currentTime = nextTime;
+        setCurrentTime(nextTime);
+    }
+
+    return (
+        <div className={`${className} border border-border bg-[var(--bg-surface)] px-3 py-3`}>
+            <audio
+                aria-label={`${symbol} concall audio`}
+                onDurationChange={(event) => setDuration(event.currentTarget.duration || 0)}
+                onEnded={() => setIsPlaying(false)}
+                onPause={() => setIsPlaying(false)}
+                onPlay={() => setIsPlaying(true)}
+                onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                preload="metadata"
+                ref={audioRef}
+                src={src}
+            />
+            <div className="flex min-w-0 flex-col gap-3 min-[640px]:flex-row min-[640px]:items-center">
+                <div className="flex shrink-0 items-center gap-1.5">
+                    <Button
+                        aria-label={isPlaying ? `Pause ${symbol} concall audio` : `Play ${symbol} concall audio`}
+                        className="size-9"
+                        onClick={togglePlayback}
+                        size="icon"
+                        type="button"
+                        variant="outline"
+                    >
+                        {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
+                    </Button>
+                    <Button
+                        aria-label={`Restart ${symbol} concall audio`}
+                        className="size-9"
+                        onClick={restart}
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                    >
+                        <RotateCcw className="size-4" />
+                    </Button>
+                </div>
+                <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center justify-between gap-3 font-mono text-[11px] text-muted-foreground">
+                        <span>{formatAudioTime(currentTime)}</span>
+                        <span>{formatAudioTime(duration)}</span>
+                    </div>
+                    <input
+                        aria-label={`Seek ${symbol} concall audio`}
+                        className="h-2 w-full cursor-pointer appearance-none bg-transparent accent-primary [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary [&::-moz-range-track]:h-1 [&::-moz-range-track]:bg-border [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:bg-border [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:bg-primary"
+                        disabled={duration <= 0}
+                        max={100}
+                        min={0}
+                        onChange={(event) => seek(event.target.value)}
+                        style={{
+                            background: `linear-gradient(to right, var(--primary) ${progress}%, var(--border) ${progress}%)`
+                        }}
+                        type="range"
+                        value={progress}
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function InlineActionLink({ href, icon: Icon, label }: { href: string; icon: LucideIcon; label: string }) {
     return (
         <a
@@ -823,6 +994,29 @@ function InlineActionLink({ href, icon: Icon, label }: { href: string; icon: Luc
             <Icon className="size-3.5" />
             {label}
         </a>
+    );
+}
+
+function InlineActionButton({
+    icon: Icon,
+    label,
+    onClick
+}: {
+    icon: LucideIcon;
+    label: string;
+    onClick: () => void;
+}) {
+    return (
+        <Button
+            className="h-8 px-2.5 text-xs"
+            onClick={onClick}
+            size="sm"
+            type="button"
+            variant="outline"
+        >
+            <Icon className="size-3.5" />
+            {label}
+        </Button>
     );
 }
 

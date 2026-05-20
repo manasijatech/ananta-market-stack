@@ -59,6 +59,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 import { cn } from "@/lib/utils";
 
 type EngineAction = "validate" | "compile" | "explain" | "samples" | "deploy";
@@ -4851,9 +4852,9 @@ export function WorkflowEditor({
                     ) : (
                         <div className="grid gap-3">
                             {llmFeedback ? (
-                                <div className="type-body border border-border px-3 py-2 text-muted-foreground">
+                                <AlertLlmMarkdown className="border border-border px-3 py-2 text-muted-foreground">
                                     {llmFeedback}
-                                </div>
+                                </AlertLlmMarkdown>
                             ) : null}
                             <pre className="type-meta max-h-[420px] overflow-auto border border-border bg-secondary/20 p-3">
                                 {llmDetails ? compactPreview(llmDetails) : "No context preview yet."}
