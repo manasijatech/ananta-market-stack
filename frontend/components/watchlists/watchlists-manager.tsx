@@ -810,7 +810,7 @@ function refreshSelectedPreset() {
 
  return (
  <section
- className="-mx-5 -my-8 h-[calc(100vh-73px)] overflow-hidden bg-background text-foreground min-[760px]:-mx-8 min-[980px]:-mx-10 min-[980px]:-my-10 min-[980px]:h-[calc(100vh-80px)]"
+ className="-mx-4 -my-6 min-h-[calc(100dvh-67px)] bg-background text-foreground min-[760px]:-mx-8 min-[760px]:-my-8 min-[980px]:-mx-10 min-[980px]:-my-10 min-[980px]:h-[calc(100vh-80px)] min-[980px]:overflow-hidden"
  style={{ fontFamily: '"DM Sans", "Suisse Intl", Inter, ui-sans-serif, system-ui, sans-serif' }}
  >
  <style>{`
@@ -820,12 +820,12 @@ function refreshSelectedPreset() {
  }
  .watchlist-data-row { animation: watchlist-row-fade 120ms ease-out both; }
  `}</style>
- <div className="flex h-full min-h-0 flex-col px-5 py-5 min-[760px]:px-8 min-[980px]:px-10">
+ <div className="flex min-h-0 flex-col px-4 py-5 min-[760px]:h-full min-[760px]:px-8 min-[980px]:px-10">
  {error ? <div className="mb-3 border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">{error}</div> : null}
  {notice ? <div className="mb-3 border-l-2 border-primary bg-[var(--accent-glow)] px-3 py-2 text-sm text-primary">{notice}</div> : null}
 
- <header className="mb-7 flex flex-col gap-3 border-b border-border pb-5 min-[760px]:flex-row min-[760px]:items-end min-[760px]:justify-between">
- <div>
+ <header className="mb-6 flex min-w-0 flex-col gap-3 border-b border-border pb-5 min-[760px]:mb-7 min-[760px]:flex-row min-[760px]:items-end min-[760px]:justify-between">
+ <div className="min-w-0">
  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Market Workspace</div>
  <h1 className="mt-2 text-3xl font-semibold text-foreground min-[760px]:text-5xl">Watchlists</h1>
  </div>
@@ -844,13 +844,13 @@ function refreshSelectedPreset() {
  }
  }}
  >
- <DialogContent className="max-h-[calc(100vh-2.5rem)] max-w-6xl overflow-y-auto p-0">
- <DialogHeader className="border-b border-border px-6 py-5 pr-16 min-[760px]:px-8">
+ <DialogContent className="max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1rem)] max-w-6xl overflow-y-auto p-0 min-[760px]:w-full min-[760px]:max-h-[calc(100vh-2.5rem)]">
+ <DialogHeader className="border-b border-border px-4 py-5 pr-16 min-[760px]:px-8">
  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">New Watchlist</div>
  <DialogTitle className="mt-1 text-2xl font-semibold">Create Watchlist</DialogTitle>
  </DialogHeader>
 
- <div className="space-y-7 px-6 py-6 min-[760px]:px-8">
+ <div className="space-y-7 px-4 py-5 min-[760px]:px-8 min-[760px]:py-6">
  <div>
  <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Watchlist Name</Label>
  <Input
@@ -995,9 +995,9 @@ function refreshSelectedPreset() {
  </div>
  </div>
 
- <DialogFooter className="flex-row items-center justify-between gap-4 border-t border-border px-6 py-5 min-[760px]:px-8">
+ <DialogFooter className="items-stretch justify-between gap-4 border-t border-border px-4 py-5 min-[760px]:flex-row min-[760px]:items-center min-[760px]:px-8">
  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{createParsedSymbols.length} symbols selected</span>
- <div className="flex items-center gap-3">
+ <div className="flex items-center justify-end gap-3">
  <Button className="h-auto border-b border-border px-0 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70" disabled={isPending} onClick={resetCreateModal} size="sm" type="button" variant="ghost">
  Cancel
  </Button>
@@ -1016,7 +1016,7 @@ function refreshSelectedPreset() {
  </DialogContent>
  </Dialog>
 
- <div className="flex min-h-0 flex-1 flex-col gap-8 min-[980px]:grid min-[980px]:grid-cols-[320px_260px_minmax(0,1fr)] min-[980px]:gap-8">
+ <div className="flex min-h-0 flex-1 flex-col gap-6 min-[760px]:gap-8 min-[980px]:grid min-[980px]:grid-cols-[320px_260px_minmax(0,1fr)] min-[980px]:gap-8">
  <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:order-2 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
  <div className="mb-4 flex items-center justify-between gap-3 shrink-0">
  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your Watchlists</div>
@@ -1033,7 +1033,7 @@ function refreshSelectedPreset() {
  </Button>
  </div>
 
- <nav aria-label="Watchlists" className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+ <nav aria-label="Watchlists" className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto pr-1 min-[760px]:max-h-80 min-[980px]:max-h-none">
  {watchlists.map((item) => {
  const active = item.id === selected?.id;
  return (
@@ -1083,7 +1083,7 @@ function refreshSelectedPreset() {
  placeholder="Search Nifty indices"
  value={presetQuery}
  />
- <div className="mt-3 min-h-0 overflow-y-auto pr-1" onScroll={handlePresetScroll} ref={presetListRef}>
+ <div className="mt-3 max-h-64 min-h-0 overflow-y-auto pr-1 min-[760px]:max-h-80 min-[980px]:max-h-none" onScroll={handlePresetScroll} ref={presetListRef}>
  <div className="space-y-2">
  {presetResults.map((item) => (
  <div className="border-l-2 border-transparent px-3 py-2 transition-colors duration-100 ease-out hover:border-primary hover:bg-[var(--accent-glow)]" key={item.id}>
@@ -1128,7 +1128,7 @@ function refreshSelectedPreset() {
  <main className="flex min-h-0 min-w-0 flex-1 flex-col min-[980px]:order-3">
  {selected ? (
  <>
- <div className="mb-7 flex shrink-0 flex-col gap-4 pb-5 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
+ <div className="mb-6 flex shrink-0 flex-col gap-4 border-b border-border pb-5 min-[760px]:mb-7 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between min-[760px]:border-b-0">
  <div className="min-w-0 flex-1">
  {editingName ? (
  <div className="flex max-w-2xl items-end gap-3">
@@ -1153,8 +1153,8 @@ function refreshSelectedPreset() {
  </div>
  ) : (
  <>
- <div className="flex items-center gap-3">
- <h2 className="truncate text-2xl font-semibold text-foreground min-[760px]:text-4xl">{selected.name}</h2>
+ <div className="flex min-w-0 flex-wrap items-center gap-3">
+ <h2 className="min-w-0 break-words text-2xl font-semibold text-foreground min-[760px]:truncate min-[760px]:text-4xl">{selected.name}</h2>
  {selected.kind === "preset" ? <span className="border border-primary/30 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">Preset</span> : null}
  </div>
  <div className="mt-2 font-mono text-xs uppercase text-muted-foreground">
@@ -1168,7 +1168,7 @@ function refreshSelectedPreset() {
  </>
  )}
  </div>
- <div className="flex items-center gap-2">
+ <div className="flex flex-wrap items-center gap-2">
  {selected.kind === "preset" ? (
  <Button
  aria-label="Refresh preset watchlist"
@@ -1303,7 +1303,7 @@ function refreshSelectedPreset() {
  </div>
  ) : null}
 
- <div className="min-h-0 flex-1 overflow-auto">
+ <div className="hidden min-h-0 flex-1 overflow-auto min-[760px]:block">
  <Table className="min-w-[1040px] border-collapse text-left text-sm">
  <TableHeader>
  <TableRow className="border-y border-border text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -1361,6 +1361,49 @@ function refreshSelectedPreset() {
  })}
  </TableBody>
  </Table>
+ </div>
+ <div className="grid gap-3 min-[760px]:hidden">
+ {selected.items.map((item, index) => {
+ const metadata = watchlistMetadata[item.symbol.trim().toUpperCase()];
+ const company = metadata?.company_name ?? "-";
+ return (
+ <article className="watchlist-data-row border border-border bg-card p-3" key={item.id} style={{ animationDelay: `${Math.min(index * 18, 120)}ms` }}>
+ <div className="flex min-w-0 items-start justify-between gap-3">
+ <div className="flex min-w-0 items-start gap-3">
+ {metadata?.logo ? (
+ <img alt="" className="size-9 shrink-0 object-contain" src={metadata.logo} />
+ ) : (
+ <span className="flex size-9 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
+ {item.symbol.slice(0, 2)}
+ </span>
+ )}
+ <div className="min-w-0">
+ <div className="font-mono text-base font-semibold text-foreground">{item.symbol}</div>
+ <div className="mt-1 line-clamp-2 text-sm font-medium leading-5 text-foreground">{company}</div>
+ <div className="mt-1 font-mono text-[11px] uppercase text-muted-foreground">
+ {[item.exchange ?? "-", metadata?.sector ?? metadata?.industry].filter(Boolean).join(" / ")}
+ </div>
+ </div>
+ </div>
+ {canEditSelected ? (
+ <Button aria-label={`Remove ${item.symbol}`} className="size-8 shrink-0 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-destructive" disabled={isPending} onClick={() => removeSymbol(item.symbol, item.exchange)} size="icon" type="button" variant="ghost">
+ <Trash2 className="size-4" />
+ </Button>
+ ) : null}
+ </div>
+ <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs">
+ <div>
+ <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">Market cap</dt>
+ <dd className="mt-1 font-mono font-semibold text-foreground">{formatMarketCap(metadata?.market_cap ?? null)}</dd>
+ </div>
+ <div>
+ <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">Added</dt>
+ <dd className="mt-1 font-mono font-semibold text-foreground">{formatDate(item.created_at).split(",")[0]}</dd>
+ </div>
+ </dl>
+ </article>
+ );
+ })}
  </div>
  {!selected.items.length ? <div className="border-b border-border py-10 text-center text-sm text-muted-foreground">Search above to add the first symbol.</div> : null}
  </>

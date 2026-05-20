@@ -1,35 +1,53 @@
 # INDmoney Token Setup
 
-Market Stack connects INDmoney by storing a current bearer access token.
+Market Stack connects INDmoney with a manual access token. There is no automated login or TOTP flow for INDmoney in Market Stack right now.
 
 ## What You Need
 
-| Market Stack field | Backend payload field | Required | Notes |
-| --- | --- | --- | --- |
-| Account label | `label` | Yes | A friendly name for this INDmoney account. |
-| Access token | `access_token` | Yes | Bearer token used for account and session access. |
+| Market Stack field | Paste this |
+| --- | --- |
+| Access token | Current INDmoney bearer access token |
 
-## Setup Steps
+## Before You Start
 
-1. Generate or capture a current INDmoney bearer access token from your broker web session or portal flow.
-2. Confirm your account has static IP setup if INDmoney requires it.
-3. Paste the access token into Market Stack.
-4. Save the broker account.
+1. Open the [INDstocks API trading page](https://www.indstocks.com/features/api-trading).
+2. Sign in with your INDmoney or INDstocks account.
+3. Generate or copy a fresh access token.
+4. Set up static IP allowlisting if INDmoney requires it for your account.
 
-## Quick Links
+## Add INDmoney In Market Stack
 
-- [INDstocks API trading page](https://www.indstocks.com/features/api-trading)
-- [INDmoney website](https://www.indmoney.com/)
-- [INDstocks API token flow](https://www.indstocks.com/app/api-trading)
+1. Go to **Brokers**.
+2. Click **Add broker**.
+3. Select **INDmoney**.
+4. Paste the access token.
+5. Save the broker account.
 
-## Session Flow In Market Stack
+## Refresh The Token
 
-1. Open the saved INDmoney broker account.
-2. If the token expires, paste a fresh token into the INDmoney session form.
-3. Submit the session form to update stored access.
+INDmoney access tokens can expire. When that happens:
 
-## Important Notes
+1. Generate or copy a fresh token from INDmoney.
+2. Open the saved INDmoney broker account in Market Stack.
+3. Paste the new token in the session form.
+4. Submit to update the stored token.
+
+## Advantages
+
+- Simple setup with only one required credential.
+- No API secret, password, or TOTP secret is stored.
+- Useful when you want quick broker access with a manually generated token.
+
+## Disadvantages
+
+- Manual refresh is required when the token expires.
+- Not ideal for unattended alerts or scheduled jobs.
+- Static IP allowlisting may still be required by INDmoney.
+
+**Recommendation:** Use INDmoney only if manual token refresh works for your workflow. For unattended automation, prefer a broker connection that supports automated refresh.
+
+## Notes
 
 - Treat access tokens like passwords.
-- INDmoney tokens may be short-lived, so refresh may be needed often.
-- Static IP whitelisting may be required by the broker.
+- Keep the token private.
+- Paste only the token value, not the word `Bearer`.

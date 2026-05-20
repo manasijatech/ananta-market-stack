@@ -129,20 +129,20 @@ export function PageHeader({
  action?: React.ReactNode;
 }) {
  return (
- <header className="mb-8 flex flex-col justify-between gap-5 border-b border-border pb-6 min-[860px]:flex-row min-[860px]:items-end">
- <div>
+ <header className="mb-6 flex min-w-0 flex-col justify-between gap-5 border-b border-border pb-5 min-[760px]:mb-8 min-[860px]:flex-row min-[860px]:items-end min-[860px]:pb-6">
+ <div className="min-w-0">
  <p className="type-page-eyebrow mb-3">{eyebrow}</p>
- <h1 className="text-[clamp(34px,5vw,58px)] font-semibold leading-none tracking-normal">{title}</h1>
+ <h1 className="break-words text-[clamp(30px,10vw,58px)] font-semibold leading-none tracking-normal">{title}</h1>
  <p className="type-body mt-4 max-w-2xl text-muted-foreground">{description}</p>
  </div>
- {action}
+ {action ? <div className="flex w-full flex-col min-[520px]:w-auto">{action}</div> : null}
  </header>
  );
 }
 
 export function PrimaryLink({ href, children }: { href: string; children: React.ReactNode }) {
  return (
- <Button asChild className="min-h-11 font-extrabold">
+ <Button asChild className="min-h-11 w-full font-extrabold min-[520px]:w-auto">
  <Link href={href}>{children}</Link>
  </Button>
  );

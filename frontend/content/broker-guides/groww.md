@@ -1,65 +1,90 @@
 # Groww Trade API Setup
 
-Use this guide when connecting Groww to Market Stack with **API approval** mode.
+Market Stack supports three Groww connection modes. Pick one mode and enter only the fields for that mode.
 
-## 1. Open Groww API Keys
+## Before You Start
 
 1. Open the [Groww Trade API portal](https://groww.in/trade-api).
 2. Sign in with your Groww account.
-3. Go to **API keys**.
+3. Add or update the static IP that will call Groww APIs.
 
-You should see the API key dashboard with **Update static IP** and **Generate API key** actions.
+Static IP setup is required for Groww API access.
 
-## 2. Add Static IP First
+## Option 1: API Approval
 
-Groww requires a static IP for API access.
-
-1. Click **Update static IP**.
-2. Add the static IP that will call Groww APIs.
-3. Save the IP.
-4. Return to the API key dashboard.
-
-Do this before generating or using the API key, otherwise live API calls can fail even if the credentials are correct.
-
-## 3. Generate API Key
-
-1. Click **Generate API key**.
-2. Enter a clear name, for example `Market Stack`.
-3. Continue and confirm the generation flow.
-4. Copy the generated **API key**.
-5. Copy the generated **API secret**.
-
-Keep the API secret private. Groww may not show it again after you leave the page.
-
-## 4. Add Groww In Market Stack
-
-1. Open Market Stack at `http://localhost:3000`.
-2. Go to **Brokers**.
-3. Click **Add broker**.
-4. Select **Groww**.
-5. Choose **API approval** mode.
-6. Enter:
+Use this when you have a Groww API key and API secret.
 
 | Market Stack field | Paste this |
 | --- | --- |
-| Account label | Any friendly name, for example `Main Groww` |
 | API key | Groww API key |
 | API secret | Groww API secret |
 
-7. Save the broker account.
+Advantages:
 
-## 5. Connect Session
+- Good default option for normal setup.
+- Uses Groww's official API approval flow.
+- Can refresh the session from Market Stack after approval.
 
-After saving the account:
+Disadvantages:
 
-1. Open the Groww broker detail page.
-2. Use the session action shown there to refresh or create the Groww session.
-3. If Groww asks for approval, complete it in the Groww app or portal.
+- Requires both API key and API secret.
+- You may need to approve the session in Groww when refreshing.
+- Static IP must be correct before API calls work.
 
-## Important
+## Option 2: TOTP
 
-- Static IP is mandatory for Groww API access.
-- Use **API approval** in Market Stack when you have API key and API secret.
-- Do not paste API key and API secret into the TOTP or access-token modes.
-- Keep the API secret private.
+Use this when you want Market Stack to generate Groww sessions with your TOTP setup.
+
+| Market Stack field | Paste this |
+| --- | --- |
+| TOTP API key | Groww user API key for TOTP auth |
+| TOTP secret | Authenticator or QR secret |
+
+Advantages:
+
+- Best option for automation.
+- No need to paste a new access token manually.
+- Market Stack can generate the current OTP from the saved TOTP secret.
+
+Disadvantages:
+
+- Requires storing the TOTP secret.
+- Setup is stricter because the TOTP API key and secret must match Groww's TOTP flow.
+- Static IP is still required.
+
+## Option 3: Access Token
+
+Use this when you already have a fresh Groww access token and want the fastest manual setup.
+
+| Market Stack field | Paste this |
+| --- | --- |
+| Access token | Current Groww access token |
+
+Advantages:
+
+- Fastest one-time setup.
+- No API secret or TOTP secret is stored.
+- Useful for testing whether Groww data access is working.
+
+Disadvantages:
+
+- Manual mode only.
+- You must paste a new token when it expires.
+- Not ideal for unattended alerts or scheduled jobs.
+
+**Recommendation:** Use **TOTP** for regular automated use. Use **API approval** if you do not want to store the TOTP secret. Use **Access token** only for quick testing or manual sessions.
+
+## Add Groww In Market Stack
+
+1. Go to **Brokers**.
+2. Click **Add broker**.
+3. Select **Groww**.
+4. Choose **API approval**, **TOTP**, or **Access token**.
+5. Fill only the fields for that option.
+6. Save the broker account.
+
+## Notes
+
+- Do not mix fields from different options.
+- Keep API secrets, TOTP secrets, and access tokens private.
 - Market Stack does not need a redirect URL for Groww.

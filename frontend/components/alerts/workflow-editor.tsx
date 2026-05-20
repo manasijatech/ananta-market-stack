@@ -42,6 +42,14 @@ import type { BrokerAccount, InstrumentSearchRow, JsonObject, LlmProvider, LlmPr
 import type { Watchlist } from "@/service/types/watchlist";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+ Dialog,
+ DialogContent,
+ DialogDescription,
+ DialogFooter,
+ DialogHeader,
+ DialogTitle
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -328,6 +336,20 @@ function numberValue(value: unknown): number | null {
 function formatMarketCap(value?: number | null): string {
  if (typeof value !== "number" || Number.isNaN(value)) return "-";
  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
+}
+
+const MARKET_CAP_RANGE_MIN = 0;
+const MARKET_CAP_RANGE_MAX = 3000000;
+const MARKET_CAP_RANGE_STEP = 100;
+
+function clampMarketCapValue(value: number): number {
+ return Math.max(MARKET_CAP_RANGE_MIN, Math.min(MARKET_CAP_RANGE_MAX, value));
+}
+
+function formatMarketCapRangeValue(value: number): string {
+ if (value >= 100000) return `${(value / 100000).toFixed(1)}L Cr`;
+ if (value >= 1000) return `${(value / 1000).toFixed(1)}k Cr`;
+ return `${value.toFixed(0)} Cr`;
 }
 
 function displayValue(value: unknown, fallback = "-"): string {
@@ -713,6 +735,26 @@ function parseLlmPromptPlaceholders(prompt: string): Record<string, unknown>[] {
  }));
 }
 
+const apiCreditPlaceholderNames = new Set(["news", "announcements", "earnings", "concalls"]);
+
+function buildContextCreditReason(prompt: string) {
+ const placeholders = parseLlmPromptPlaceholders(prompt);
+ const apiPlaceholders = Array.from(
+ new Set(
+ placeholders
+ .filter((placeholder) => typeof placeholder.name === "string" && apiCreditPlaceholderNames.has(placeholder.name))
+ .map((placeholder) => String(placeholder.raw))
+ )
+ );
+ if (apiPlaceholders.length) {
+ return `Reason: this prompt includes API-backed context placeholders (${apiPlaceholders.join(", ")}), so previewing has to fetch that context.`;
+ }
+ if (placeholders.length) {
+ return `Reason: this prompt only shows local/runtime placeholders (${placeholders.map((placeholder) => String(placeholder.raw)).join(", ")}), so it should not spend Alpha API credits unless the saved workflow prompt is different.`;
+ }
+ return "Reason: this prompt does not include context placeholders, so it should not spend Alpha API credits unless the saved workflow prompt is different.";
+}
+
 function compileLocalDslToAst(text: string, baseAst: Record<string, unknown>): Record<string, unknown> | null {
  const logic = parseLocalDslExpression(text);
  if (!logic) return null;
@@ -991,6 +1033,7 @@ const [feedTimeout, setFeedTimeout] = useState(String(initialFeedTrigger?.timeou
 const [llmPromptTab, setLlmPromptTab] = useState<"prompt" | "preview">("prompt");
 const [llmFeedback, setLlmFeedback] = useState("");
 const [llmDetails, setLlmDetails] = useState<Record<string, unknown> | null>(null);
+const [llmCreditAction, setLlmCreditAction] = useState<"preview" | "test" | null>(null);
  const [llmSuggestionQuery, setLlmSuggestionQuery] = useState("");
  const [llmSuggestionRange, setLlmSuggestionRange] = useState<{ start: number; end: number } | null>(null);
  const [llmSuggestionPosition, setLlmSuggestionPosition] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -2261,7 +2304,12 @@ const activeInstrument = useMemo<InstrumentRef>(
  });
  }
 
- function previewLlmContext() {
+ function requestLlmCreditConfirmation(action: "preview" | "test") {
+  if (!initialWorkflow?.id) return;
+ setLlmCreditAction(action);
+ }
+
+ function runPreviewLlmContext() {
  if (!initialWorkflow?.id) return;
  setError("");
  setLlmFeedback("");
@@ -2278,7 +2326,7 @@ const activeInstrument = useMemo<InstrumentRef>(
  });
  }
 
- function testLlmAnalysis() {
+ function runTestLlmAnalysis() {
  if (!initialWorkflow?.id) return;
  setError("");
  setLlmFeedback("");
@@ -2294,6 +2342,13 @@ const activeInstrument = useMemo<InstrumentRef>(
  setError(caught instanceof Error ? caught.message : "Could not run LLM test.");
  }
  });
+ }
+
+ function confirmLlmCreditAction() {
+ const action = llmCreditAction;
+ setLlmCreditAction(null);
+ if (action === "preview") runPreviewLlmContext();
+ if (action === "test") runTestLlmAnalysis();
  }
 
  function loadSymbolQuote(item: UniverseSymbolPreview) {
@@ -2457,6 +2512,9 @@ const activeInstrument = useMemo<InstrumentRef>(
  const currentTemplatesMatchSuggestion = titleTemplate === suggestedCopy.title && messageTemplate === suggestedCopy.message;
  const selectedLlmProvider = llmProviders.find((item) => item.provider === llmProvider);
  const selectedLlmModels = selectedLlmProvider?.models.filter((model) => model.is_enabled) ?? [];
+ const llmCreditActionLabel = llmCreditAction === "test" ? "Test LLM" : "Preview context";
+ const llmCreditReason = buildContextCreditReason(llmPromptTemplate);
+ const llmProviderCreditLabel = [llmProvider, llmModelId].filter(Boolean).join(" / ");
  const selectedFeedProvider = llmProviders.find((item) => item.provider === feedProvider);
  const selectedFeedModels = selectedFeedProvider?.models.filter((model) => model.is_enabled) ?? [];
  let visibleStepIndex = 1;
@@ -2469,7 +2527,6 @@ const activeInstrument = useMemo<InstrumentRef>(
  const marketCapStep = nextStep();
  const buildTriggerStep = nextStep();
  const optionalAnalysisStep = nextStep();
- const reviewCopyStep = !currentTemplatesMatchSuggestion ? nextStep() : "";
  const advancedDeploymentStep = nextStep();
  const deliveryLifecycleStep = nextStep();
  const cachedPreview = previewCacheRef.current[previewTargetKey];
@@ -2519,8 +2576,98 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  setFeedPresetIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
  }
 
+ const marketCapMinNumber = numeric(marketCapMin);
+ const marketCapMaxNumber = numeric(marketCapMax);
+ const marketCapSliderLower = clampMarketCapValue(marketCapMinNumber ?? MARKET_CAP_RANGE_MIN);
+ const marketCapSliderUpper = clampMarketCapValue(marketCapMaxNumber ?? MARKET_CAP_RANGE_MAX);
+ const marketCapRangeStart = Math.min(marketCapSliderLower, marketCapSliderUpper);
+ const marketCapRangeEnd = Math.max(marketCapSliderLower, marketCapSliderUpper);
+ const marketCapRangeStartPercent = ((marketCapRangeStart - MARKET_CAP_RANGE_MIN) / (MARKET_CAP_RANGE_MAX - MARKET_CAP_RANGE_MIN)) * 100;
+ const marketCapRangeEndPercent = ((marketCapRangeEnd - MARKET_CAP_RANGE_MIN) / (MARKET_CAP_RANGE_MAX - MARKET_CAP_RANGE_MIN)) * 100;
+ const marketCapRangeSummary = marketCapMode === "custom"
+ ? `${formatMarketCapRangeValue(marketCapRangeStart)} to ${formatMarketCapRangeValue(marketCapRangeEnd)}`
+ : "All market caps";
+ const marketCapRangeTrackStyle = {
+ background: `linear-gradient(to right, var(--border) 0%, var(--border) ${marketCapRangeStartPercent}%, var(--primary) ${marketCapRangeStartPercent}%, var(--primary) ${marketCapRangeEndPercent}%, var(--border) ${marketCapRangeEndPercent}%, var(--border) 100%)`
+ };
+
+ function chooseMarketCapMode(nextMode: "all" | "custom") {
+ setMarketCapMode(nextMode);
+ if (nextMode === "custom" && marketCapMinNumber === null && marketCapMaxNumber === null) {
+ setMarketCapMin(String(MARKET_CAP_RANGE_MIN));
+ setMarketCapMax(String(MARKET_CAP_RANGE_MAX));
+ }
+ }
+
+ function updateMarketCapSlider(boundary: "min" | "max", value: string) {
+ const nextValue = clampMarketCapValue(Number(value));
+ if (boundary === "min") {
+ const upper = marketCapMaxNumber ?? MARKET_CAP_RANGE_MAX;
+ setMarketCapMin(String(Math.min(nextValue, upper)));
+ return;
+ }
+ const lower = marketCapMinNumber ?? MARKET_CAP_RANGE_MIN;
+ setMarketCapMax(String(Math.max(nextValue, lower)));
+ }
+
+ function updateMarketCapInput(boundary: "min" | "max", value: string) {
+ if (value === "") {
+ if (boundary === "min") setMarketCapMin("");
+ else setMarketCapMax("");
+ return;
+ }
+ const nextValue = numeric(value);
+ if (nextValue === null) return;
+ const cleanValue = String(Math.max(0, nextValue));
+ if (boundary === "min") setMarketCapMin(cleanValue);
+ else setMarketCapMax(cleanValue);
+ }
+
+ function normalizeMarketCapInput(boundary: "min" | "max") {
+ const lower = numeric(marketCapMin);
+ const upper = numeric(marketCapMax);
+ if (boundary === "min" && lower !== null) {
+ const nextLower = clampMarketCapValue(lower);
+ setMarketCapMin(String(upper !== null ? Math.min(nextLower, upper) : nextLower));
+ }
+ if (boundary === "max" && upper !== null) {
+ const nextUpper = clampMarketCapValue(upper);
+ setMarketCapMax(String(lower !== null ? Math.max(nextUpper, lower) : nextUpper));
+ }
+ }
+
  return (
  <div className="grid max-w-[1500px] gap-4">
+ <Dialog open={llmCreditAction !== null} onOpenChange={(open) => {
+ if (!open) setLlmCreditAction(null);
+ }}>
+ <DialogContent className="w-[min(92vw,520px)] gap-0 overflow-hidden p-0">
+ <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+ <DialogTitle>API credits may be used</DialogTitle>
+ <DialogDescription>
+ <span className="mt-1 block">
+ {llmCreditActionLabel} resolves the saved workflow prompt context before showing the preview.
+ </span>
+ </DialogDescription>
+ </DialogHeader>
+ <div className="grid gap-3 px-5 py-4 text-sm text-muted-foreground">
+ <div className="border border-border bg-secondary/20 p-3 text-foreground">
+ <div className="type-step-eyebrow mb-2">Prompt check</div>
+ <p className="break-words leading-6">{llmCreditReason}</p>
+ </div>
+ {llmCreditAction === "test" ? (
+ <p className="leading-6">
+ This will also call the selected LLM{llmProviderCreditLabel ? ` (${llmProviderCreditLabel})` : ""}, which may consume provider credits.
+ </p>
+ ) : null}
+ <p className="leading-6">Review the prompt before continuing. Save the workflow first if you changed the prompt.</p>
+ </div>
+ <DialogFooter className="border-t border-border px-5 py-4">
+ <Button onClick={() => setLlmCreditAction(null)} type="button" variant="secondary">Cancel</Button>
+ <Button onClick={confirmLlmCreditAction} type="button">Continue</Button>
+ </DialogFooter>
+ </DialogContent>
+ </Dialog>
  {error ? <div className="max-w-5xl border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">{error}</div> : null}
  {notice ? <div className="max-w-5xl border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">{notice}</div> : null}
  {isTemplateDraft ? <div className="max-w-5xl border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">Template loaded as a new workflow draft. Saving creates your own workflow and leaves the system template unchanged.</div> : null}
@@ -3269,30 +3416,67 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  : "Custom ranges are checked only after the rule conditions match. Leave it on all market caps to avoid any extra market cap lookup."
  }
  />
- <div className="grid gap-4 min-[860px]:grid-cols-[220px_minmax(0,1fr)]">
- <div className="grid gap-2">
+ <div className="grid gap-4">
+ <div className="flex flex-wrap items-start justify-between gap-3">
+ <div className="min-w-0">
  <FieldLabel>Range mode</FieldLabel>
- <div className="inline-flex w-fit border border-border p-1">
- <Button className="h-8 px-3 text-sm" onClick={() => setMarketCapMode("all")} size="sm" type="button" variant={marketCapMode === "all" ? "secondary" : "ghost"}>All market caps</Button>
- <Button className="h-8 px-3 text-sm" onClick={() => setMarketCapMode("custom")} size="sm" type="button" variant={marketCapMode === "custom" ? "secondary" : "ghost"}>Custom range</Button>
+ <div className="mt-1 text-sm font-semibold text-foreground">{marketCapRangeSummary}</div>
  </div>
- <HelpText>Custom mode uses cached Alpha symbol metadata first and falls back to the developer API only when market cap is missing locally.</HelpText>
+ <div className="grid w-[220px] grid-cols-2 border border-border p-0.5">
+ <Button className="h-7 min-w-0 px-2 text-xs" onClick={() => chooseMarketCapMode("all")} size="sm" type="button" variant={marketCapMode === "all" ? "secondary" : "ghost"}>All</Button>
+ <Button className="h-7 min-w-0 px-2 text-xs" onClick={() => chooseMarketCapMode("custom")} size="sm" type="button" variant={marketCapMode === "custom" ? "secondary" : "ghost"}>Range</Button>
  </div>
- <div className="grid gap-3 min-[640px]:grid-cols-2">
+ </div>
+ <div className={cn("grid gap-4 border border-border bg-secondary/20 p-4 transition-opacity", marketCapMode !== "custom" && "opacity-55")}>
+ <div className="grid gap-3">
+ <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+ <span>{formatMarketCapRangeValue(MARKET_CAP_RANGE_MIN)}</span>
+ <span>{formatMarketCapRangeValue(MARKET_CAP_RANGE_MAX)}</span>
+ </div>
+ <div className="relative h-8">
+ <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full" style={marketCapRangeTrackStyle} />
+ <input
+ aria-label="Minimum market cap"
+ className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-1 w-full -translate-y-1/2 appearance-none bg-transparent accent-primary disabled:cursor-not-allowed [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-runnable-track]:appearance-none [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-background [&::-moz-range-track]:bg-transparent"
+ disabled={marketCapMode !== "custom"}
+ max={MARKET_CAP_RANGE_MAX}
+ min={MARKET_CAP_RANGE_MIN}
+ onChange={(event) => updateMarketCapSlider("min", event.target.value)}
+ step={MARKET_CAP_RANGE_STEP}
+ type="range"
+ value={marketCapRangeStart}
+ />
+ <input
+ aria-label="Maximum market cap"
+ className="pointer-events-none absolute inset-x-0 top-1/2 z-20 h-1 w-full -translate-y-1/2 appearance-none bg-transparent accent-primary disabled:cursor-not-allowed [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-runnable-track]:appearance-none [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-background [&::-moz-range-track]:bg-transparent"
+ disabled={marketCapMode !== "custom"}
+ max={MARKET_CAP_RANGE_MAX}
+ min={MARKET_CAP_RANGE_MIN}
+ onChange={(event) => updateMarketCapSlider("max", event.target.value)}
+ step={MARKET_CAP_RANGE_STEP}
+ type="range"
+ value={marketCapRangeEnd}
+ />
+ </div>
+ </div>
+ <div className="grid min-w-0 gap-3 min-[640px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[640px]:items-end">
  <Label className="grid gap-2 text-sm">
  <FieldLabel>From</FieldLabel>
- <Input disabled={marketCapMode !== "custom"} inputMode="decimal" onChange={(event) => setMarketCapMin(event.target.value)} placeholder="No lower bound" value={marketCapMin} />
+ <Input className="h-9 text-sm" disabled={marketCapMode !== "custom"} inputMode="decimal" max={MARKET_CAP_RANGE_MAX} min={MARKET_CAP_RANGE_MIN} onBlur={() => normalizeMarketCapInput("min")} onChange={(event) => updateMarketCapInput("min", event.target.value)} placeholder="0 Cr" step={MARKET_CAP_RANGE_STEP} type="number" value={marketCapMin} />
  </Label>
+ <span className="hidden pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground min-[640px]:block">to</span>
  <Label className="grid gap-2 text-sm">
  <FieldLabel>To</FieldLabel>
- <Input disabled={marketCapMode !== "custom"} inputMode="decimal" onChange={(event) => setMarketCapMax(event.target.value)} placeholder="No upper bound" value={marketCapMax} />
+ <Input className="h-9 text-sm" disabled={marketCapMode !== "custom"} inputMode="decimal" max={MARKET_CAP_RANGE_MAX} min={MARKET_CAP_RANGE_MIN} onBlur={() => normalizeMarketCapInput("max")} onChange={(event) => updateMarketCapInput("max", event.target.value)} placeholder="30.0L Cr" step={MARKET_CAP_RANGE_STEP} type="number" value={marketCapMax} />
  </Label>
- <HelpText className="min-[640px]:col-span-2">
+ </div>
+ </div>
+ <HelpText>
  {marketCapMode === "custom"
- ? "Symbols outside this range are skipped. If both bounds are empty the workflow cannot be saved."
+ ? "Drag the range or type exact values in crores. Symbols outside this range are skipped."
  : "No market cap check runs in the backend when all market caps are allowed."}
  </HelpText>
- </div>
+ <HelpText>Custom mode uses cached Alpha symbol metadata first and falls back to the developer API only when market cap is missing locally.</HelpText>
  </div>
  </div>
 
@@ -3320,6 +3504,11 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  filteredMessageFields={filteredMessageFields}
  handleMessageTemplateKeyDown={handleMessageTemplateKeyDown}
  level={level}
+ applySuggestedCopy={() => {
+ setTitleTemplate(suggestedCopy.title);
+ setMessageTemplate(suggestedCopy.message);
+ }}
+ currentTemplatesMatchSuggestion={currentTemplatesMatchSuggestion}
  messageFieldIndex={messageFieldIndex}
  messageFieldListRef={messageFieldListRef}
  messageFieldPosition={messageFieldPosition}
@@ -3336,6 +3525,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  setLevel={setLevel}
  setTitleTemplate={setTitleTemplate}
  showMessageFieldSuggestions={showMessageFieldSuggestions}
+ suggestedCopy={suggestedCopy}
  titleTemplate={titleTemplate}
  updateMessageTemplate={updateMessageTemplate}
  updateCondition={updateCondition}
@@ -3444,7 +3634,8 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Button>
  <Button
  className={llmPromptTab === "preview" ? "bg-secondary text-foreground" : "text-muted-foreground"}
- onClick={() => setLlmPromptTab("preview")}
+ disabled={isPending || !initialWorkflow?.id || !llmEnabled}
+ onClick={() => requestLlmCreditConfirmation("preview")}
  size="sm"
  type="button"
  variant="ghost"
@@ -3453,8 +3644,7 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  </Button>
  </div>
  <div className="flex flex-wrap gap-2">
- <Button disabled={isPending || !initialWorkflow?.id || !llmEnabled} onClick={previewLlmContext} size="sm" type="button" variant="secondary">Preview Context</Button>
- <Button disabled={isPending || !initialWorkflow?.id || !llmEnabled} onClick={testLlmAnalysis} size="sm" type="button" variant="secondary">Test LLM</Button>
+ <Button disabled={isPending || !initialWorkflow?.id || !llmEnabled} onClick={() => requestLlmCreditConfirmation("test")} size="sm" type="button" variant="secondary">Test LLM</Button>
  </div>
  </div>
  {llmPromptTab === "prompt" ? (
@@ -3553,32 +3743,6 @@ function toggleFeedWatchlist(id: string, checked: boolean) {
  )}
  </>
  </div>
-
- {!currentTemplatesMatchSuggestion ? (
- <div className="grid max-w-5xl gap-3 border border-border bg-secondary/20 p-3">
- <div className="flex flex-wrap items-start justify-between gap-3">
- <div className="max-w-[760px]">
- <div className="type-step-eyebrow">{reviewCopyStep}</div>
- <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Review alert copy</h2>
- <HelpText className="mt-1.5">The conditions changed or the copy was manually edited. You can keep your current text, or replace it with a generated version that includes the active fields.</HelpText>
- </div>
- <Button
- onClick={() => {
- setTitleTemplate(suggestedCopy.title);
- setMessageTemplate(suggestedCopy.message);
- }}
- size="sm"
- type="button"
- >
- Use suggested copy
- </Button>
- </div>
- <div className="type-body grid gap-2 text-muted-foreground">
- <div><span className="font-semibold text-foreground">Title:</span> {suggestedCopy.title}</div>
- <div><span className="font-semibold text-foreground">Message:</span> {suggestedCopy.message}</div>
- </div>
- </div>
- ) : null}
 
  <div className="grid max-w-5xl gap-3 border border-border p-3">
  <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3921,6 +4085,8 @@ function RuleEditor({
  filteredMessageFields,
  handleMessageTemplateKeyDown,
  level,
+ applySuggestedCopy,
+ currentTemplatesMatchSuggestion,
  messageFieldIndex,
  messageFieldListRef,
  messageFieldPosition,
@@ -3934,6 +4100,7 @@ function RuleEditor({
  setLevel,
  setTitleTemplate,
  showMessageFieldSuggestions,
+ suggestedCopy,
  titleTemplate,
  updateMessageTemplate,
  updateCondition
@@ -3946,6 +4113,8 @@ function RuleEditor({
  filteredMessageFields: string[];
  handleMessageTemplateKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
  level: string;
+ applySuggestedCopy: () => void;
+ currentTemplatesMatchSuggestion: boolean;
  messageFieldIndex: number;
  messageFieldListRef: RefObject<HTMLDivElement | null>;
  messageFieldPosition: { top: number; left: number; width: number } | null;
@@ -3959,6 +4128,7 @@ function RuleEditor({
  setLevel: (value: string) => void;
  setTitleTemplate: (value: string) => void;
  showMessageFieldSuggestions: boolean;
+ suggestedCopy: { title: string; message: string };
  titleTemplate: string;
  updateMessageTemplate: (nextValue: string, caretPosition?: number, force?: boolean, textarea?: HTMLTextAreaElement) => void;
  updateCondition: (index: number, patch: Partial<AlertCondition>) => void;
@@ -4058,6 +4228,18 @@ function RuleEditor({
  ) : null}
  </div>
  <HelpText>Type {"{"} to insert any supported live-data or computed field, including price, volume, open-interest, account, connection, and derived change fields.</HelpText>
+ {!currentTemplatesMatchSuggestion ? (
+ <div className="grid max-w-[720px] gap-2 border border-border bg-secondary/20 p-3">
+ <div className="flex flex-wrap items-center justify-between gap-3">
+ <HelpText>Suggested copy based on the current conditions.</HelpText>
+ <Button onClick={applySuggestedCopy} size="sm" type="button">Use suggested copy</Button>
+ </div>
+ <div className="type-body grid gap-1 text-muted-foreground">
+ <div><span className="font-semibold text-foreground">Title:</span> {suggestedCopy.title}</div>
+ <div><span className="font-semibold text-foreground">Message:</span> {suggestedCopy.message}</div>
+ </div>
+ </div>
+ ) : null}
  </div>
  </div>
  </div>

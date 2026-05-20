@@ -5,7 +5,6 @@ import type { ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { BrokerLogo, brokerNames, Shell } from "@/components/brokers/ui";
-import { Button } from "@/components/ui/button";
 import {
  Table,
  TableBody,
@@ -38,7 +37,14 @@ export default async function BrokerDocsPage({ params }: BrokerDocsPageProps) {
  return (
  <Shell>
  <article className="mx-auto max-w-4xl">
- <header className="mb-10 flex flex-col gap-6 border-b pb-8 min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between">
+ <Link
+ className="mb-8 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground"
+ href="/broker-connections/new"
+ >
+ <ArrowLeft className="size-4" aria-hidden="true" />
+ Back to add broker
+ </Link>
+ <header className="mb-10 border-b pb-8">
  <div className="flex gap-4">
  <BrokerLogo broker={guide.broker} className="mt-1 h-12 w-20" />
  <div>
@@ -47,12 +53,6 @@ export default async function BrokerDocsPage({ params }: BrokerDocsPageProps) {
  <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{guide.summary}</p>
  </div>
  </div>
- <Button asChild variant="outline">
- <Link href="/broker-connections/new">
- <ArrowLeft className="size-4" aria-hidden="true" />
- Back to add broker
- </Link>
- </Button>
  </header>
 
  <ReactMarkdown

@@ -108,10 +108,10 @@ export function AlertsWorkspaceChrome({ children }: { children: React.ReactNode 
     <header className="mb-4 flex min-w-0 flex-col justify-between gap-4 border-b border-border pb-4 min-[860px]:flex-row min-[860px]:items-end">
      <div className="min-w-0">
       <p className="type-page-eyebrow mb-2">{header.eyebrow}</p>
-      <h1 className="text-[clamp(28px,3vw,38px)] font-semibold leading-none tracking-normal">{header.title}</h1>
+      <h1 className="break-words text-[clamp(26px,9vw,38px)] font-semibold leading-none tracking-normal">{header.title}</h1>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{header.description}</p>
      </div>
-     {header.action}
+     {header.action ? <div className="flex w-full flex-col min-[520px]:w-auto">{header.action}</div> : null}
     </header>
    ) : (
     <PageHeader

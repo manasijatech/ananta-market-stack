@@ -26,31 +26,44 @@ import {
 
 const sectionChrome = {
  news: {
-  icon: Newspaper,
-  helpTitle: "Understanding News",
-  helpBody: "Market news and company-specific coverage from media sources. Use it for external context around price action, sentiment, and public market narratives."
+  icon: Newspaper
  },
  announcements: {
-  icon: Megaphone,
-  helpTitle: "Understanding Announcements",
-  helpBody: "Official exchange and company disclosures, including board updates, corporate actions, regulatory filings, and other company-published events."
+  icon: Megaphone
  },
  earnings: {
-  icon: IndianRupee,
-  helpTitle: "Understanding Earnings",
-  helpBody: "Earnings-related disclosures and management guidance. These records highlight result updates and material financial context."
+  icon: IndianRupee
  },
  concalls: {
-  icon: MessageSquare,
-  helpTitle: "Understanding Concalls",
-  helpBody: "Conference call summaries, transcripts, and management commentary from investor calls. Transcript and audio actions appear when the feed includes those links."
+  icon: MessageSquare
  },
  alerts: {
-  icon: Bell,
-  helpTitle: "Understanding Alerts",
-  helpBody: "Signal-style market alerts for price moves, volume spikes, 52-week levels, earnings, announcements, and other notable events."
+  icon: Bell
  }
-} satisfies Record<AlphaSection, { icon: LucideIcon; helpTitle: string; helpBody: string }>;
+} satisfies Record<AlphaSection, { icon: LucideIcon }>;
+
+const intelligenceHelpItems = [
+ {
+  title: "News",
+  body: "Market news and company-specific coverage from media sources. Use it for external context around price action, sentiment, and public market narratives."
+ },
+ {
+  title: "Announcements",
+  body: "Official exchange and company disclosures, including board updates, corporate actions, regulatory filings, and other company-published events."
+ },
+ {
+  title: "Earnings",
+  body: "Earnings-related disclosures and management guidance. These records highlight result updates and material financial context."
+ },
+ {
+  title: "Concalls",
+  body: "Conference call summaries, transcripts, and management commentary from investor calls. Transcript and audio actions appear when the feed includes those links."
+ },
+ {
+  title: "Alerts",
+  body: "Signal-style market alerts for price moves, volume spikes, 52-week levels, earnings, announcements, and other notable events."
+ }
+];
 
 const ALL_WATCHLISTS_ID = "__all_watchlists__";
 
@@ -172,15 +185,15 @@ export function MarketIntelligenceChrome({
  description={activeSection.description}
  />
 
- <div className="mb-5 flex flex-col gap-3 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
- <nav className="flex flex-wrap gap-1.5" aria-label="Market intelligence sections">
+ <div className="mb-5 flex min-w-0 flex-col gap-3 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
+ <nav className="-mx-4 flex min-w-0 gap-1.5 overflow-x-auto px-4 pb-1 min-[760px]:mx-0 min-[760px]:flex-wrap min-[760px]:overflow-visible min-[760px]:px-0 min-[760px]:pb-0" aria-label="Market intelligence sections">
  {marketIntelligenceSections.map((item) => {
  const active = item.id === activeSection.id;
  const Icon = sectionChrome[item.id].icon;
  return (
  <Button
  className={[
- "px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em]",
+ "shrink-0 whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em]",
  active ? "" : "text-muted-foreground hover:text-foreground"
  ].join(" ")}
  key={item.id}
@@ -199,18 +212,25 @@ export function MarketIntelligenceChrome({
  <Dialog>
  <DialogTrigger asChild>
  <button
- aria-label={`Learn about ${activeSection.label}`}
+ aria-label="Learn about market intelligence"
  className="flex size-8 items-center justify-center text-muted-foreground transition-colors hover:text-primary"
  type="button"
  >
  <Info className="size-4" />
  </button>
  </DialogTrigger>
- <DialogContent className="max-w-md p-6">
+ <DialogContent className="max-w-xl p-6">
  <DialogHeader>
- <DialogTitle>{sectionChrome[activeSection.id].helpTitle}</DialogTitle>
+ <DialogTitle>Understanding Market Intelligence</DialogTitle>
  </DialogHeader>
- <p className="text-sm leading-6 text-muted-foreground">{sectionChrome[activeSection.id].helpBody}</p>
+ <div className="grid gap-4 text-sm leading-6 text-muted-foreground">
+ {intelligenceHelpItems.map((item) => (
+ <section className="grid gap-1" key={item.title}>
+ <h3 className="text-sm font-semibold leading-5 text-foreground">{item.title}</h3>
+ <p>{item.body}</p>
+ </section>
+ ))}
+ </div>
  </DialogContent>
  </Dialog>
  </div>
