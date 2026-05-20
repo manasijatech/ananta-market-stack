@@ -155,8 +155,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
     return (
         <main className="min-h-screen overflow-x-hidden bg-background text-foreground">
-            <div className="fixed inset-x-0 top-0 z-50 h-[3px] bg-primary" />
-            <header className="sticky top-0 z-40 border-b border-border bg-background pt-[3px] min-[980px]:hidden">
+            <div className="fixed inset-x-0 top-0 z-[80] h-[3px] bg-primary" />
+            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background pt-[3px] min-[980px]:hidden">
                 <div className="flex min-h-16 items-center justify-between gap-3 px-4">
                     <div className="flex min-w-0 items-center gap-3">
                         <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -247,7 +247,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             </aside>
 
             <div className="min-[980px]:pl-[252px]">
-                <header className="hidden border-b border-border px-5 py-4 min-[760px]:px-8 min-[980px]:flex min-[980px]:h-20 min-[980px]:items-center min-[980px]:px-10 min-[980px]:py-0">
+                <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-[252px] min-[980px]:flex min-[980px]:h-20 min-[980px]:items-center min-[980px]:px-10 min-[980px]:py-0">
                     <div className="flex w-full flex-col gap-4 min-[860px]:flex-row min-[860px]:items-center min-[860px]:justify-between">
                         <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 min-[860px]:flex">
                             {navItems.map((item) => {
@@ -273,7 +273,9 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                         </div>
                     </div>
                 </header>
-                <div className="min-w-0 px-4 py-6 min-[760px]:px-8 min-[980px]:px-10 min-[980px]:py-10">{children}</div>
+                <div className="min-w-0 px-4 pb-6 pt-[calc(4rem+1.5rem+3px)] min-[760px]:px-8 min-[980px]:px-10 min-[980px]:pb-10 min-[980px]:pt-[7.5rem]">
+                    {children}
+                </div>
             </div>
         </main>
     );

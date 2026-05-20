@@ -1,8 +1,12 @@
 from datetime import datetime
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.schemas.watchlist import WatchlistCreateIn
+from app.services import watchlists as watchlist_svc
 from app.services import watchlist_presets as preset_svc
 from db.models import SystemWatchlistPreset
 from db.session import Base
@@ -66,5 +70,20 @@ def test_list_preset_catalog_hides_blacklisted_rows():
         rows = preset_svc.list_preset_catalog(db, "u1", limit=20, offset=0)
 
         assert [row["id"] for row in rows] == ["visible"]
+    finally:
+        db.close()
+
+
+def test_create_watchlist_requires_alpha_api_key():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            watchlist_svc.create_watchlist(db, "u1", WatchlistCreateIn(name="Momentum"))
+
+        assert exc_info.value.status_code == 400
+        assert "Manasija Alpha API key is required" in str(exc_info.value.detail)
     finally:
         db.close()

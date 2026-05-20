@@ -1,6 +1,7 @@
 export interface AlphaPaginatedResponse<T> {
     data: T[];
     has_next?: boolean;
+    missing_ids?: string[];
 }
 
 export interface AlphaStringListResponse {
