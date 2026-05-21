@@ -813,7 +813,7 @@ function ConcallList({
     return (
         <>
             {activeAudio ? (
-                <div className="fixed right-4 top-4 z-50 w-[calc(100vw-2rem)] max-w-md border border-border bg-background p-5 shadow-xl min-[720px]:right-6 min-[720px]:top-6">
+                <div className="fixed right-4 top-20 z-[85] w-[calc(100vw-2rem)] max-w-md border border-border bg-background p-5 shadow-xl min-[720px]:right-6 min-[980px]:top-24">
                     <Button
                         aria-label="Close audio player"
                         className="absolute right-3 top-3 size-8 text-muted-foreground"
@@ -835,7 +835,7 @@ function ConcallList({
                     <ConcallAudioPlayer autoPlay className="mt-4" src={activeAudio.src} symbol={activeAudio.symbol} />
                 </div>
             ) : null}
-            <div className="grid min-w-0 gap-4">
+            <div className="grid min-w-0">
                 {items.map((item) => {
                     const transcriptHref = item.transcript_url ?? null;
                     const audioHref = item.audio_url ?? null;
@@ -843,7 +843,10 @@ function ConcallList({
                     const markdown =
                         insightToMarkdown(item.short_analysis ?? item.expanded_analysis) || "No analysis provided.";
                     return (
-                        <article className="min-w-0 max-w-full border-l-2 border-border pl-4" key={itemKey(item)}>
+                        <article
+                            className="min-w-0 max-w-full border-l-2 border-t border-border pb-4 pl-4 pt-4 first:border-t-0 first:pt-0 last:pb-0"
+                            key={itemKey(item)}
+                        >
                             <div className="flex flex-col items-start justify-between gap-3 min-[720px]:flex-row min-[720px]:gap-4">
                                 <div className="min-w-0">
                                     <SymbolMetadataHeader
@@ -1082,19 +1085,28 @@ function ConcallAudioPlayer({
                         <span>{formatAudioTime(currentTime)}</span>
                         <span>{formatAudioTime(duration)}</span>
                     </div>
-                    <input
-                        aria-label={`Seek ${symbol} concall audio`}
-                        className="h-2 w-full cursor-pointer appearance-none bg-transparent accent-primary [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary [&::-moz-range-track]:h-1 [&::-moz-range-track]:bg-border [&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:bg-border [&::-webkit-slider-thumb]:-mt-1 [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:bg-primary"
-                        disabled={duration <= 0}
-                        max={100}
-                        min={0}
-                        onChange={(event) => seek(event.target.value)}
-                        style={{
-                            background: `linear-gradient(to right, var(--primary) ${progress}%, var(--border) ${progress}%)`
-                        }}
-                        type="range"
-                        value={progress}
-                    />
+                    <div className="relative h-5">
+                        <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 bg-border">
+                            <div className="h-full bg-primary" style={{ width: `${progress}%` }} />
+                        </div>
+                        {duration > 0 ? (
+                            <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 bg-primary shadow-[0_0_0_2px_var(--bg-surface)]"
+                                style={{ left: `${progress}%` }}
+                            />
+                        ) : null}
+                        <input
+                            aria-label={`Seek ${symbol} concall audio`}
+                            className="absolute inset-0 h-5 w-full cursor-pointer appearance-none bg-transparent opacity-0 disabled:cursor-not-allowed"
+                            disabled={duration <= 0}
+                            max={100}
+                            min={0}
+                            onChange={(event) => seek(event.target.value)}
+                            type="range"
+                            value={progress}
+                        />
+                    </div>
                 </div>
             </div>
         </div>
