@@ -20,17 +20,14 @@ _PROVIDER_DEFINITIONS: dict[LlmProvider, dict[str, str]] = {
     "openai": {
         "label": "OpenAI",
         "base_url": "https://api.openai.com/v1",
-        "documentation_url": "https://developers.openai.com/api/docs/quickstart?language=python",
     },
     "openrouter": {
         "label": "OpenRouter",
         "base_url": "https://openrouter.ai/api/v1",
-        "documentation_url": "https://openrouter.ai/docs/quickstart",
     },
     "gemini": {
         "label": "Gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "documentation_url": "https://ai.google.dev/gemini-api/docs/openai",
     },
 }
 

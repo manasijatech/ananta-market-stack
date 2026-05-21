@@ -20,7 +20,7 @@ import {
     X,
     type LucideIcon
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getAlphaWebSocketConfig } from "@/service/actions/alpha/websocket";
@@ -37,6 +37,7 @@ import {
     type MarketIntelligenceProduct
 } from "@/components/market-intelligence/market-intelligence-data";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const MAX_FEED_ITEMS = 50;
 
@@ -237,6 +238,10 @@ function getAlertTypeConfig(type?: string | null) {
             name: labelFromInsightKey(type)
         }
     );
+}
+
+function alertTypeKey(item: AlphaAlert): string {
+    return typeof item.type === "string" && item.type.trim() ? item.type : "alert";
 }
 
 function formatAudioTime(value: number): string {
@@ -581,10 +586,127 @@ function AlertsList({
     items: AlphaAlert[];
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
 }) {
+    const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+    const alertTypeOptions = useMemo(() => {
+        const counts = items.reduce<Record<string, number>>((acc, item) => {
+            const type = alertTypeKey(item);
+            acc[type] = (acc[type] ?? 0) + 1;
+            return acc;
+        }, {});
+        const knownOrder = Object.keys(alertTypeConfig);
+
+        return Object.keys(counts)
+            .sort((first, second) => {
+                const firstIndex = knownOrder.indexOf(first);
+                const secondIndex = knownOrder.indexOf(second);
+                if (firstIndex !== -1 && secondIndex !== -1) return firstIndex - secondIndex;
+                if (firstIndex !== -1) return -1;
+                if (secondIndex !== -1) return 1;
+                return getAlertTypeConfig(first).name.localeCompare(getAlertTypeConfig(second).name);
+            })
+            .map((type) => ({
+                type,
+                count: counts[type] ?? 0,
+                config: getAlertTypeConfig(type)
+            }));
+    }, [items]);
+    const availableTypes = useMemo(() => new Set(alertTypeOptions.map((option) => option.type)), [alertTypeOptions]);
+
+    useEffect(() => {
+        setSelectedTypes((current) => current.filter((type) => availableTypes.has(type)));
+    }, [availableTypes]);
+
+    const filteredItems = useMemo(() => {
+        if (!selectedTypes.length) return items;
+        const selected = new Set(selectedTypes);
+        return items.filter((item) => selected.has(alertTypeKey(item)));
+    }, [items, selectedTypes]);
+
+    function toggleAlertType(type: string) {
+        setSelectedTypes((current) =>
+            current.includes(type) ? current.filter((item) => item !== type) : [...current, type]
+        );
+    }
+
     if (!items.length) return <EmptyFeed section="alerts" />;
     return (
         <div className="grid min-w-0 gap-4">
-            {items.map((item) => {
+            {alertTypeOptions.length > 1 ? (
+                <div
+                    className="-mx-4 flex min-w-0 gap-2 overflow-x-auto border-b border-border/70 px-4 pb-3 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+                    aria-label="Filter alerts by signal type"
+                >
+                    <button
+                        aria-pressed={!selectedTypes.length}
+                        className={cn(
+                            "group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+                            !selectedTypes.length
+                                ? "border-primary/30 bg-[var(--accent-subtle)] text-primary"
+                                : "border-border/70 bg-transparent text-muted-foreground hover:border-primary/40 hover:bg-[var(--accent-glow)] hover:text-foreground"
+                        )}
+                        onClick={() => setSelectedTypes([])}
+                        type="button"
+                    >
+                        <Bell className="size-3.5" strokeWidth={2.1} />
+                        All
+                        <span className="rounded-full bg-background/70 px-1.5 font-mono text-[10px] leading-4 text-muted-foreground">
+                            {items.length}
+                        </span>
+                    </button>
+                    {alertTypeOptions.map(({ config, count, type }) => {
+                        const selected = selectedTypes.includes(type);
+                        const Icon = config.icon;
+
+                        return (
+                            <button
+                                aria-pressed={selected}
+                                className={cn(
+                                    "group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+                                    selected
+                                        ? "border-primary/30 bg-[var(--accent-subtle)] text-primary"
+                                        : "border-border/70 bg-transparent text-muted-foreground hover:border-primary/40 hover:bg-[var(--accent-glow)] hover:text-foreground"
+                                )}
+                                key={type}
+                                onClick={() => toggleAlertType(type)}
+                                style={selected ? undefined : ({ "--alert-chip-color": config.color } as CSSProperties)}
+                                type="button"
+                            >
+                                <Icon
+                                    className={cn(
+                                        "size-3.5 transition-colors",
+                                        selected ? "text-primary" : "text-[var(--alert-chip-color)]"
+                                    )}
+                                    strokeWidth={2.1}
+                                />
+                                {config.name}
+                                <span className="rounded-full bg-background/70 px-1.5 font-mono text-[10px] leading-4 text-muted-foreground">
+                                    {count}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            ) : null}
+
+            {filteredItems.length ? null : (
+                <div className="border-l-2 border-border px-4 py-8">
+                    <h2 className="text-sm font-semibold text-foreground">No alerts match these filters</h2>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        Clear the selected alert types to return to the full feed.
+                    </p>
+                    <Button
+                        className="mt-4 h-8"
+                        onClick={() => setSelectedTypes([])}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                    >
+                        Reset filters
+                    </Button>
+                </div>
+            )}
+
+            {filteredItems.map((item) => {
                 const typeConfig = getAlertTypeConfig(item.type);
                 const Icon = typeConfig.icon;
                 return (
@@ -646,8 +768,7 @@ function AnnouncementList({
                     earning?.earnings_significant ? "significant" : announcement?.category,
                     formatDate(item.date)
                 ].filter(Boolean);
-                const body =
-                    announcement?.management_guidance ?? item.summary ?? "No summary provided.";
+                const body = announcement?.management_guidance ?? item.summary ?? "No summary provided.";
                 return (
                     <article className="min-w-0 max-w-full border-l-2 border-border pl-4" key={itemKey(item)}>
                         <div className="flex items-start justify-between gap-4">
@@ -704,7 +825,9 @@ function ConcallList({
                         <X className="size-4" />
                     </Button>
                     <div className="pr-10">
-                        <h2 className="font-mono text-base font-semibold text-foreground">{activeAudio.symbol} audio</h2>
+                        <h2 className="font-mono text-base font-semibold text-foreground">
+                            {activeAudio.symbol} audio
+                        </h2>
                         {activeAudio.detail ? (
                             <p className="mt-1 text-sm text-muted-foreground">{activeAudio.detail}</p>
                         ) : null}
@@ -717,7 +840,8 @@ function ConcallList({
                     const transcriptHref = item.transcript_url ?? null;
                     const audioHref = item.audio_url ?? null;
                     const detail = [item.quarter, formatDate(item.date)].filter(Boolean).join(" / ");
-                    const markdown = insightToMarkdown(item.short_analysis ?? item.expanded_analysis) || "No analysis provided.";
+                    const markdown =
+                        insightToMarkdown(item.short_analysis ?? item.expanded_analysis) || "No analysis provided.";
                     return (
                         <article className="min-w-0 max-w-full border-l-2 border-border pl-4" key={itemKey(item)}>
                             <div className="flex flex-col items-start justify-between gap-3 min-[720px]:flex-row min-[720px]:gap-4">
@@ -991,23 +1115,9 @@ function InlineActionLink({ href, icon: Icon, label }: { href: string; icon: Luc
     );
 }
 
-function InlineActionButton({
-    icon: Icon,
-    label,
-    onClick
-}: {
-    icon: LucideIcon;
-    label: string;
-    onClick: () => void;
-}) {
+function InlineActionButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
     return (
-        <Button
-            className="h-8 px-2.5 text-xs"
-            onClick={onClick}
-            size="sm"
-            type="button"
-            variant="outline"
-        >
+        <Button className="h-8 px-2.5 text-xs" onClick={onClick} size="sm" type="button" variant="outline">
             <Icon className="size-3.5" />
             {label}
         </Button>
