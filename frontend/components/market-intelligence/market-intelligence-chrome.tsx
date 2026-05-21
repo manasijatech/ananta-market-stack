@@ -84,7 +84,8 @@ function todayIsoDate(): string {
 
 function metadataBySymbol(items: AlphaSymbolMetadata[]) {
     return items.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
-        acc[item.symbol.trim().toUpperCase()] = item;
+        const symbol = item.symbol?.trim().toUpperCase();
+        if (symbol) acc[symbol] = item;
         return acc;
     }, {});
 }
@@ -168,22 +169,25 @@ export function MarketIntelligenceChrome({
         setFilterError("");
         setIsLoadingFilter(true);
         void (async () => {
-            try {
-                const [nextMetadata, nextFeeds] = await Promise.all([
-                    getAlphaSymbolMetadata(activeSymbols),
-                    loadFeeds(activeSymbols)
-                ]);
-                if (cancelled) return;
-                setActiveMetadata(metadataBySymbol(nextMetadata));
-                setFeeds(nextFeeds);
-            } catch (caught) {
-                if (!cancelled) {
-                    notifyAlphaCreditWarning(caught);
-                    setFilterError(parseActionError(caught).message);
-                }
-            } finally {
-                if (!cancelled) setIsLoadingFilter(false);
+            const [nextMetadata, nextFeeds] = await Promise.allSettled([
+                getAlphaSymbolMetadata(activeSymbols),
+                loadFeeds(activeSymbols)
+            ]);
+            if (cancelled) return;
+            if (nextMetadata.status === "fulfilled") {
+                setActiveMetadata(metadataBySymbol(nextMetadata.value));
+            } else {
+                notifyAlphaCreditWarning(nextMetadata.reason);
+                setActiveMetadata({});
             }
+            if (nextFeeds.status === "fulfilled") {
+                setFeeds(nextFeeds.value);
+            } else {
+                notifyAlphaCreditWarning(nextFeeds.reason);
+                setFeeds(emptyMarketIntelligenceFeeds());
+                setFilterError(parseActionError(nextFeeds.reason).message);
+            }
+            setIsLoadingFilter(false);
         })();
 
         return () => {

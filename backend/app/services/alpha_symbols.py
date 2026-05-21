@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
-from market_stack_sdk import MarketStackClient
+import httpx
+from market_stack_sdk import MarketStackApiError, MarketStackClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from app.services import alpha_config
 from db.models import AlphaSymbolMetadataCache
 
 _ALPHA_SYMBOL_BATCH_SIZE = 20
+logger = logging.getLogger(__name__)
 
 
 def _now_utc_naive() -> datetime:
@@ -66,6 +69,21 @@ def _payload_to_schema(payload: dict[str, Any], symbol: str) -> AlphaSymbolMetad
         macro_economic_indicator=_optional_str(payload.get("macro_economic_indicator")),
         theme=_optional_str(payload.get("theme")),
         scrip_code=_optional_str(payload.get("scrip_code")),
+    )
+
+
+def _fallback_schema(symbol: str) -> AlphaSymbolMetadata:
+    return AlphaSymbolMetadata(
+        symbol=symbol,
+        company_name=None,
+        logo=None,
+        market_cap=None,
+        sector=None,
+        basic_industry=None,
+        industry=None,
+        macro_economic_indicator=None,
+        theme=None,
+        scrip_code=None,
     )
 
 
@@ -143,7 +161,21 @@ def get_symbol_metadata(
         api_key = alpha_config.get_alpha_api_key(db, user_id)
         for index in range(0, len(missing), _ALPHA_SYMBOL_BATCH_SIZE):
             batch = missing[index:index + _ALPHA_SYMBOL_BATCH_SIZE]
-            fetched = _fetch_alpha_symbol_metadata(api_key, batch)
+            try:
+                fetched = _fetch_alpha_symbol_metadata(api_key, batch)
+            except (MarketStackApiError, httpx.HTTPError) as exc:
+                logger.warning("Alpha symbol metadata fetch failed for %s: %s", ",".join(batch), exc)
+                fetched = []
+                for symbol in batch:
+                    _upsert_metadata(
+                        db,
+                        _fallback_schema(symbol),
+                        {
+                            "symbol": symbol,
+                            "metadata_status": "unavailable",
+                            "metadata_error": str(exc),
+                        },
+                    )
             for item in fetched:
                 if item.symbol in batch:
                     _upsert_metadata(db, item, item.model_dump())
@@ -151,4 +183,4 @@ def get_symbol_metadata(
         cached = _cached_rows(db, requested)
 
     by_symbol = {symbol: _row_to_schema(row) for symbol, row in cached.items()}
-    return [by_symbol[symbol] for symbol in requested if symbol in by_symbol]
+    return [by_symbol.get(symbol) or _fallback_schema(symbol) for symbol in requested]

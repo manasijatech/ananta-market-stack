@@ -1,6 +1,11 @@
 from datetime import datetime
 
+from market_stack_sdk import MarketStackApiError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from app.services import alpha_symbols
+from db.session import Base
 from db.models import AlphaSymbolMetadataCache
 
 
@@ -45,3 +50,27 @@ def test_cached_symbol_rows_do_not_expire_by_age():
 
     assert schema.symbol == "RELIANCE"
     assert schema.company_name == "Reliance Industries"
+
+
+def test_missing_symbol_metadata_falls_back_when_alpha_lookup_is_unavailable(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+
+    def fail_fetch(_api_key, _symbols):
+        raise MarketStackApiError(403, {"error": {"code": "forbidden"}})
+
+    monkeypatch.setattr(alpha_symbols.alpha_config, "get_alpha_api_key", lambda _db, _user_id: "test-key")
+    monkeypatch.setattr(alpha_symbols, "_fetch_alpha_symbol_metadata", fail_fetch)
+
+    try:
+        rows = alpha_symbols.get_symbol_metadata(db, "u1", ["HALDYNGL"])
+        cached = db.get(AlphaSymbolMetadataCache, "HALDYNGL")
+    finally:
+        db.close()
+
+    assert [row.symbol for row in rows] == ["HALDYNGL"]
+    assert rows[0].company_name is None
+    assert cached is not None
+    assert "metadata_status" in cached.raw_payload_json
