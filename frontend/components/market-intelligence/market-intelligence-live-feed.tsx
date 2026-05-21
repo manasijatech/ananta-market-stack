@@ -20,7 +20,7 @@ import {
     X,
     type LucideIcon
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getAlphaWebSocketConfig } from "@/service/actions/alpha/websocket";
@@ -37,6 +37,8 @@ import {
     type MarketIntelligenceProduct
 } from "@/components/market-intelligence/market-intelligence-data";
 import { Button } from "@/components/ui/button";
+import { LiveWaveform } from "@/components/ui/live-waveform";
+import { formatIstDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 const MAX_FEED_ITEMS = 50;
@@ -158,13 +160,7 @@ function sectionFromProduct(product: MarketIntelligenceProduct): AlphaSection {
 }
 
 function formatDate(value?: string | null): string {
-    if (!value) return "-";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return new Intl.DateTimeFormat("en-IN", {
-        dateStyle: "medium",
-        timeStyle: "short"
-    }).format(date);
+    return formatIstDateTime(value, "-");
 }
 
 function labelFromInsightKey(key: string): string {
@@ -249,6 +245,10 @@ function formatAudioTime(value: number): string {
     const minutes = Math.floor(value / 60);
     const seconds = Math.floor(value % 60);
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function proxiedConcallAudioSrc(src: string): string {
+    return `/api/market-intelligence/concall-audio?src=${encodeURIComponent(src)}`;
 }
 
 function normalizeIncomingData(value: unknown): unknown {
@@ -808,31 +808,87 @@ function ConcallList({
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
 }) {
     const [activeAudio, setActiveAudio] = useState<{ src: string; symbol: string; detail: string } | null>(null);
+    const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+    const [activeAudioPlaying, setActiveAudioPlaying] = useState(false);
+    const [activeAudioLevel, setActiveAudioLevel] = useState(0);
+    const activePlaybackSrc = activeAudio ? proxiedConcallAudioSrc(activeAudio.src) : "";
+    const audioGlowLevel = activeAudioPlaying ? activeAudioLevel : 0;
+    const audioGlowStyle = {
+        background: `radial-gradient(ellipse at center, color-mix(in srgb, var(--primary) ${Math.round(16 + audioGlowLevel * 18)}%, transparent) 0%, color-mix(in srgb, var(--primary) ${Math.round(7 + audioGlowLevel * 12)}%, transparent) 45%, transparent 82%)`,
+        opacity: 0.55 + audioGlowLevel * 0.35,
+        transform: `translateY(-50%) scaleX(${0.82 + audioGlowLevel * 0.62}) scaleY(${0.72 + audioGlowLevel * 0.42})`
+    } satisfies CSSProperties;
+
+    useEffect(() => {
+        setActiveAudioPlaying(false);
+        setActiveAudioLevel(0);
+    }, [activeAudio?.src]);
+
+    const updateActiveAudioLevel = useCallback((level: number) => {
+        setActiveAudioLevel((previousLevel) => previousLevel * 0.62 + Math.max(0, Math.min(1, level)) * 0.38);
+    }, []);
 
     if (!items.length) return <EmptyFeed section="concalls" />;
     return (
         <>
             {activeAudio ? (
                 <div className="fixed right-4 top-20 z-[85] w-[calc(100vw-2rem)] max-w-md border border-border bg-background p-5 shadow-xl min-[720px]:right-6 min-[980px]:top-24">
-                    <Button
-                        aria-label="Close audio player"
-                        className="absolute right-3 top-3 size-8 text-muted-foreground"
-                        onClick={() => setActiveAudio(null)}
-                        size="icon"
-                        type="button"
-                        variant="ghost"
-                    >
-                        <X className="size-4" />
-                    </Button>
-                    <div className="pr-10">
-                        <h2 className="font-mono text-base font-semibold text-foreground">
-                            {activeAudio.symbol} audio
-                        </h2>
-                        {activeAudio.detail ? (
-                            <p className="mt-1 text-sm text-muted-foreground">{activeAudio.detail}</p>
-                        ) : null}
+                    <div className="grid min-w-0 grid-cols-[minmax(0,max-content)_minmax(7rem,1fr)_2rem] items-start gap-2 min-[420px]:gap-3">
+                        <div className="min-w-0 max-w-full">
+                            <h2 className="truncate font-mono text-base font-semibold text-foreground">
+                                {activeAudio.symbol} audio
+                            </h2>
+                            {activeAudio.detail ? (
+                                <p className="mt-1 text-sm text-muted-foreground">{activeAudio.detail}</p>
+                            ) : null}
+                        </div>
+                        <div
+                            className="relative h-9 w-[120px] overflow-hidden text-primary"
+                        >
+                            <div
+                                aria-hidden="true"
+                                className="absolute left-0 right-0 top-1/2 h-7 origin-center blur-[1.5px] transition-[opacity,transform] duration-75"
+                                style={audioGlowStyle}
+                            />
+                            <div className="absolute inset-x-1 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+                            <LiveWaveform
+                                active={activeAudioPlaying}
+                                barGap={1}
+                                barRadius={4}
+                                barWidth={2}
+                                fadeEdges
+                                fadeWidth={16}
+                                height={36}
+                                key={activePlaybackSrc}
+                                mediaElementRef={activeAudioRef}
+                                mode="static"
+                                onLevelChange={updateActiveAudioLevel}
+                                sensitivity={1.8}
+                                smoothingTimeConstant={0.85}
+                                className="absolute inset-0 h-full w-full"
+                            />
+                        </div>
+                        <div className="flex justify-end">
+                            <Button
+                                aria-label="Close audio player"
+                                className="size-8 text-muted-foreground"
+                                onClick={() => setActiveAudio(null)}
+                                size="icon"
+                                type="button"
+                                variant="ghost"
+                            >
+                                <X className="size-4" />
+                            </Button>
+                        </div>
                     </div>
-                    <ConcallAudioPlayer autoPlay className="mt-4" src={activeAudio.src} symbol={activeAudio.symbol} />
+                    <ConcallAudioPlayer
+                        audioRef={activeAudioRef}
+                        autoPlay
+                        className="mt-4"
+                        onPlayingChange={setActiveAudioPlaying}
+                        src={activeAudio.src}
+                        symbol={activeAudio.symbol}
+                    />
                 </div>
             ) : null}
             <div className="grid min-w-0">
@@ -993,37 +1049,48 @@ function ConcallMarkdown({ children }: { children: string }) {
 }
 
 function ConcallAudioPlayer({
+    audioRef: externalAudioRef,
     autoPlay = false,
     className = "mt-4",
+    onPlayingChange,
     src,
     symbol
 }: {
+    audioRef?: RefObject<HTMLAudioElement | null>;
     autoPlay?: boolean;
     className?: string;
+    onPlayingChange?: (playing: boolean) => void;
     src: string;
     symbol: string;
 }) {
-    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const internalAudioRef = useRef<HTMLAudioElement | null>(null);
+    const audioRef = externalAudioRef ?? internalAudioRef;
     const [duration, setDuration] = useState(0);
     const [currentTime, setCurrentTime] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
+    const playbackSrc = useMemo(() => proxiedConcallAudioSrc(src), [src]);
     const progress = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
+
+    const updatePlayingState = useCallback((playing: boolean) => {
+        setIsPlaying(playing);
+        onPlayingChange?.(playing);
+    }, [onPlayingChange]);
 
     useEffect(() => {
         setDuration(0);
         setCurrentTime(0);
-        setIsPlaying(false);
+        updatePlayingState(false);
         if (autoPlay) {
-            audioRef.current?.play().catch(() => setIsPlaying(false));
+            audioRef.current?.play().catch(() => updatePlayingState(false));
         }
-    }, [autoPlay, src]);
+    }, [audioRef, autoPlay, playbackSrc, updatePlayingState]);
 
     function togglePlayback() {
         const audio = audioRef.current;
         if (!audio) return;
 
         if (audio.paused) {
-            audio.play().catch(() => setIsPlaying(false));
+            audio.play().catch(() => updatePlayingState(false));
         } else {
             audio.pause();
         }
@@ -1045,17 +1112,18 @@ function ConcallAudioPlayer({
     }
 
     return (
-        <div className={`${className} border border-border bg-[var(--bg-surface)] px-3 py-3`}>
+        <div className={`${className} relative border border-border bg-[var(--bg-surface)] px-3 py-3`}>
             <audio
                 aria-label={`${symbol} concall audio`}
+                crossOrigin="anonymous"
                 onDurationChange={(event) => setDuration(event.currentTarget.duration || 0)}
-                onEnded={() => setIsPlaying(false)}
-                onPause={() => setIsPlaying(false)}
-                onPlay={() => setIsPlaying(true)}
+                onEnded={() => updatePlayingState(false)}
+                onPause={() => updatePlayingState(false)}
+                onPlay={() => updatePlayingState(true)}
                 onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
                 preload="metadata"
                 ref={audioRef}
-                src={src}
+                src={playbackSrc}
             />
             <div className="flex min-w-0 flex-col gap-3 min-[640px]:flex-row min-[640px]:items-center">
                 <div className="flex shrink-0 items-center gap-1.5">

@@ -1,5 +1,5 @@
 import { BrokerChatWorkspace } from "@/components/broker-chat/broker-chat-workspace";
-import { PageHeader, Shell } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/ui";
 import { getSystemConfig } from "@/service/actions/broker";
 import { getBrokerChatConfig, getBrokerChatRuns, getBrokerChatSessions } from "@/service/actions/broker-chat";
 
@@ -13,18 +13,15 @@ export default async function BrokerChatPage() {
 
     return (
         <Shell>
-            <PageHeader
-                eyebrow="Intelligence"
-                title="Broker Chat"
-                description="Ask the broker data assistant for account, portfolio, quote, instrument, option-chain, margin, and stream status answers using your saved broker and LLM configuration."
-            />
-            <BrokerChatWorkspace
-                initialConfig={config}
-                initialRuns={runs}
-                initialSessions={sessions}
-                llmProviders={systemConfig.llm_providers}
-                mcpServer={systemConfig.mcp_server}
-            />
+            <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col min-[980px]:h-[calc(100dvh-10rem)]">
+                <BrokerChatWorkspace
+                    initialConfig={config}
+                    initialRuns={runs}
+                    initialSessions={sessions}
+                    llmProviders={systemConfig.llm_providers}
+                    mcpServer={systemConfig.mcp_server}
+                />
+            </div>
         </Shell>
     );
 }

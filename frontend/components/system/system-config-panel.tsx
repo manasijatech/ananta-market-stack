@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { formatIstDateTime } from "@/lib/datetime";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
 
 type ProviderDraftState = {
@@ -155,7 +156,7 @@ const PROVIDER_SETUP_GUIDES: Record<
 };
 
 function formatConfigDate(value?: string | null) {
-    return value ? new Date(value).toLocaleString("en-IN") : null;
+    return value ? formatIstDateTime(value) : null;
 }
 
 function providerKey(provider: LlmProvider) {
@@ -507,14 +508,14 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                             <div>
                                 Instrument sync: {account.latest_instrument_sync_status ?? "not run"}
                                 {account.latest_instrument_sync_finished_at
-                                    ? ` · ${new Date(account.latest_instrument_sync_finished_at).toLocaleString("en-IN")}`
+                                    ? ` · ${formatIstDateTime(account.latest_instrument_sync_finished_at)}`
                                     : ""}
                             </div>
                             <div>
                                 Holdings refresh: {account.holdings_status ?? "not run"} · {account.holdings_count}{" "}
                                 items
                                 {account.holdings_fetched_at
-                                    ? ` · ${new Date(account.holdings_fetched_at).toLocaleString("en-IN")}`
+                                    ? ` · ${formatIstDateTime(account.holdings_fetched_at)}`
                                     : ""}
                             </div>
                             {account.last_error ? (
@@ -694,9 +695,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                             <div className="mt-1 text-xs text-muted-foreground">
                                 {mcpConfig.is_enabled ? "Enabled" : "Disabled"} · API key{" "}
                                 {mcpConfig.has_api_key ? "configured" : "not configured"}
-                                {mcpConfig.updated_at
-                                    ? ` · updated ${new Date(mcpConfig.updated_at).toLocaleString("en-IN")}`
-                                    : ""}
+                                {mcpConfig.updated_at ? ` · updated ${formatIstDateTime(mcpConfig.updated_at)}` : ""}
                             </div>
                             {mcpConfig.api_key_hint ? (
                                 <div className="mt-1 text-xs text-muted-foreground">
@@ -1017,8 +1016,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                                     <div>
                                         <div className="text-sm font-semibold">{model.model_id}</div>
                                         <div className="text-xs text-muted-foreground">
-                                            {model.label || "No custom label"} · saved{" "}
-                                            {new Date(model.created_at).toLocaleString("en-IN")}
+                                            {model.label || "No custom label"} · saved {formatIstDateTime(model.created_at)}
                                         </div>
                                     </div>
                                     <Button

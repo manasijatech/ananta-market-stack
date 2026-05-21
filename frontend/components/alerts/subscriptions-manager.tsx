@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { INDIA_TIME_ZONE, formatIstDateTime, parseApiDate } from "@/lib/datetime";
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
     return {
@@ -296,7 +297,7 @@ export function SubscriptionsManager({
                         <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
                             Backend worker status: {alphaWsConfig.status}
                             {alphaWsConfig.last_event_at
-                                ? ` · last event ${new Date(alphaWsConfig.last_event_at).toLocaleTimeString("en-IN")}`
+                                ? ` · last event ${formatIstDateTime(alphaWsConfig.last_event_at)}`
                                 : ""}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
@@ -627,7 +628,9 @@ export function SubscriptionsManager({
                             </div>
                             <div className="text-[12px] leading-5 text-muted-foreground">
                                 {item.last_received_at
-                                    ? `Last tick ${new Date(item.last_received_at).toLocaleTimeString()}`
+                                    ? `Last tick ${parseApiDate(item.last_received_at).toLocaleTimeString("en-IN", {
+                                          timeZone: INDIA_TIME_ZONE
+                                      })}`
                                     : "Awaiting tick"}
                             </div>
                         </Label>

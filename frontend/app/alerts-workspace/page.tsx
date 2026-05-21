@@ -15,6 +15,7 @@ import {
 import { AlertHistoryList } from "@/components/alerts/alert-history-list";
 import { Button } from "@/components/ui/button";
 import { FeedSkeleton, StatGridSkeleton } from "@/components/ui/loading-skeletons";
+import { formatIstDateTime } from "@/lib/datetime";
 import {
     getAlertChannels,
     getAlertHistory,
@@ -45,11 +46,7 @@ function toneClasses(tone: Tone) {
 }
 
 function formatDateTime(value?: string | null) {
-    if (!value) return "Not yet";
-    return new Intl.DateTimeFormat("en-IN", {
-        dateStyle: "medium",
-        timeStyle: "short"
-    }).format(new Date(value));
+    return formatIstDateTime(value, "Not yet");
 }
 
 function percent(numerator: number, denominator: number) {

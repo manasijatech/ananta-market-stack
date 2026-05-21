@@ -3,6 +3,7 @@ import type { BrokerAccount, BrokerCode } from "@/service/types/broker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { formatIstDateTime } from "@/lib/datetime";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { cn } from "@/lib/utils";
 
@@ -48,13 +49,7 @@ export function BrokerLogo({
 }
 
 export function formatDate(value?: string | null): string {
-    if (!value) {
-        return "Not available";
-    }
-    return new Intl.DateTimeFormat("en-IN", {
-        dateStyle: "medium",
-        timeStyle: "short"
-    }).format(new Date(value));
+    return formatIstDateTime(value);
 }
 
 export function statusTone(value?: string | null): string {

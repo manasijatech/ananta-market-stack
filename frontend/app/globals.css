@@ -133,6 +133,24 @@
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
+.broker-chat-row-shimmer::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(
+            110deg,
+            transparent 0%,
+            color-mix(in srgb, var(--accent) 0%, transparent) 24%,
+            color-mix(in srgb, var(--accent) 18%, transparent) 45%,
+            color-mix(in srgb, var(--accent) 7%, transparent) 56%,
+            transparent 78%
+        );
+    background-size: 220% 100%;
+    animation: broker-chat-row-shimmer 1.55s ease-in-out infinite;
+}
+
 @keyframes ripple-button-wave {
     0% {
         opacity: 0.42;
@@ -175,9 +193,20 @@
     }
 }
 
+@keyframes broker-chat-row-shimmer {
+    0% {
+        background-position: 130% 0;
+    }
+
+    100% {
+        background-position: -130% 0;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .ripple-button__wave,
-    .broker-login-attention {
+    .broker-login-attention,
+    .broker-chat-row-shimmer::before {
         animation: none;
     }
 }

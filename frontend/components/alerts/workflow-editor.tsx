@@ -60,6 +60,7 @@ import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
+import { formatIstDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 type EngineAction = "validate" | "compile" | "explain" | "samples" | "deploy";
@@ -5007,7 +5008,7 @@ export function WorkflowEditor({
                             <div className="type-step-eyebrow">Last validation</div>
                             <div className="type-body mt-2 text-muted-foreground">
                                 {initialWorkflow?.last_validated_at
-                                    ? new Date(initialWorkflow.last_validated_at).toLocaleString()
+                                    ? formatIstDateTime(initialWorkflow.last_validated_at)
                                     : "-"}
                             </div>
                         </div>
