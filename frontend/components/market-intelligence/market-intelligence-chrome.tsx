@@ -2,6 +2,7 @@
 
 import { Bell, Filter, IndianRupee, Info, Megaphone, MessageSquare, Newspaper, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warning-modal";
 import { parseActionError } from "@/components/brokers/action-error";
 import { PageHeader } from "@/components/brokers/ui";
 import {
@@ -18,6 +19,7 @@ import { getAlphaEarnings } from "@/service/actions/alpha/earnings";
 import { getAlphaNews } from "@/service/actions/alpha/news";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
+import { getAlphaCreditWarningMessage, notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import {
     ALPHA_SYMBOL_LIMIT,
     emptyMarketIntelligenceFeeds,
@@ -105,6 +107,9 @@ async function loadFeeds(symbols: string[]): Promise<MarketIntelligenceFeeds> {
         getAlphaAlerts(params)
     ]);
 
+    const creditWarningMessage = getAlphaCreditWarningMessage(news, announcements, earnings, concalls, alerts);
+    if (creditWarningMessage) notifyAlphaCreditWarning(creditWarningMessage);
+
     return {
         news: news.status === "fulfilled" ? (news.value.data ?? []) : [],
         announcements: announcements.status === "fulfilled" ? (announcements.value.data ?? []) : [],
@@ -117,6 +122,7 @@ async function loadFeeds(symbols: string[]): Promise<MarketIntelligenceFeeds> {
 export function MarketIntelligenceChrome({
     allSymbolsCount,
     children,
+    creditWarningMessage,
     error,
     initialFeeds,
     symbolMetadata,
@@ -126,6 +132,7 @@ export function MarketIntelligenceChrome({
 }: {
     allSymbolsCount: number;
     children: React.ReactNode;
+    creditWarningMessage?: string | null;
     error?: string;
     initialFeeds: MarketIntelligenceFeeds;
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
@@ -170,7 +177,10 @@ export function MarketIntelligenceChrome({
                 setActiveMetadata(metadataBySymbol(nextMetadata));
                 setFeeds(nextFeeds);
             } catch (caught) {
-                if (!cancelled) setFilterError(parseActionError(caught).message);
+                if (!cancelled) {
+                    notifyAlphaCreditWarning(caught);
+                    setFilterError(parseActionError(caught).message);
+                }
             } finally {
                 if (!cancelled) setIsLoadingFilter(false);
             }
@@ -183,6 +193,7 @@ export function MarketIntelligenceChrome({
 
     return (
         <>
+            <AlphaCreditWarningTrigger message={creditWarningMessage} />
             <PageHeader
                 eyebrow="Alpha intelligence"
                 title="Market Intelligence"

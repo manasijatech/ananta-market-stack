@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AlphaCreditWarningModal } from "@/components/alpha/alpha-credit-warning-modal";
 import { SessionProvider } from "@/components/session-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
@@ -13,7 +14,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <html lang="en" suppressHydrationWarning>
             <body suppressHydrationWarning>
                 <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-                    <SessionProvider>{children}</SessionProvider>
+                    <SessionProvider>
+                        {children}
+                        <AlphaCreditWarningModal />
+                    </SessionProvider>
                 </ThemeProvider>
             </body>
         </html>
