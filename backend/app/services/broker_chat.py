@@ -20,6 +20,7 @@ from app.schemas.broker_chat import (
 from app.services import llm_config
 from app.services.broker_chat_queue import (
     cancel_broker_chat_job,
+    broker_chat_job_status,
     clear_broker_chat_cancel,
     broker_chat_stream_key,
     enqueue_broker_chat_run,
@@ -296,10 +297,15 @@ def reconcile_incomplete_runs(db: Session, *, limit: int = 200) -> dict[str, int
     )
     requeued = 0
     running_reset = 0
+    running_kept = 0
     failed = 0
     for run in rows:
         try:
             if run.status == "running":
+                status = broker_chat_job_status(run.id)
+                if status in {"queued", "started"}:
+                    running_kept += 1
+                    continue
                 run.status = "queued"
                 run.error = None
                 run.updated_at = utc_now()
@@ -315,7 +321,13 @@ def reconcile_incomplete_runs(db: Session, *, limit: int = 200) -> dict[str, int
         except Exception:
             db.rollback()
             failed += 1
-    return {"checked": len(rows), "requeued": requeued, "running_reset": running_reset, "failed": failed}
+    return {
+        "checked": len(rows),
+        "requeued": requeued,
+        "running_reset": running_reset,
+        "running_kept": running_kept,
+        "failed": failed,
+    }
 
 
 def list_runs(

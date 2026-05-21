@@ -23,6 +23,7 @@ Current deployment options:
 - Local/single-process: start only the FastAPI server. The backend starts a lightweight in-process `SimpleWorker` loop and processes queued broker-chat jobs.
 - Higher throughput: run one or more dedicated RQ workers with `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat`. These workers subscribe to the same automatically scoped queue as the API process.
 - Shared Redis safety: the effective queue name includes a local database fingerprint. Two local SQLite installs can share one Redis server without consuming each other's chat jobs.
+- Restart repair: backend and dedicated-worker startup reconcile incomplete chat runs. Queued runs are re-enqueued on the scoped queue; running runs are requeued only when no active scoped RQ job exists.
 
 Scaling guidance:
 
