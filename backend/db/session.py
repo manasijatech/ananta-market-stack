@@ -258,6 +258,40 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "user_broker_chat_preferences",
+            {
+                "user_id": "VARCHAR(36)",
+                "default_provider": "VARCHAR(32)",
+                "default_model": "VARCHAR(256)",
+                "event_visibility": "VARCHAR(32) DEFAULT 'minimal'",
+                "include_tool_outputs": "BOOLEAN DEFAULT 0",
+                "include_reasoning": "BOOLEAN DEFAULT 0",
+                "use_mcp": "BOOLEAN DEFAULT 0",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "user_mcp_server_configs",
+            {
+                "user_id": "VARCHAR(36)",
+                "is_enabled": "BOOLEAN DEFAULT 0",
+                "name": "VARCHAR(128)",
+                "url": "TEXT DEFAULT ''",
+                "transport": "VARCHAR(32) DEFAULT 'streamable_http'",
+                "api_key_cipher": "TEXT DEFAULT ''",
+                "api_key_header_name": "VARCHAR(128) DEFAULT 'Authorization'",
+                "api_key_prefix": "VARCHAR(64) DEFAULT 'Bearer'",
+                "extra_headers_json": "TEXT DEFAULT '{}'",
+                "timeout_seconds": "INTEGER DEFAULT 15",
+                "tool_cache_enabled": "BOOLEAN DEFAULT 1",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "broker_holdings_snapshots",
             {
                 "account_id": "VARCHAR(36)",
@@ -543,6 +577,8 @@ def _ensure_table_columns(
             primary_key = ", PRIMARY KEY (id)"
         elif table_name in {
             "user_broker_data_preferences",
+            "user_broker_chat_preferences",
+            "user_mcp_server_configs",
             "user_alpha_api_credentials",
             "user_alpha_websocket_configs",
         }:

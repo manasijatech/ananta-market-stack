@@ -21,12 +21,15 @@ from app.schemas.system_config import (
     LlmProvider,
     LlmProviderConfigOut,
     LlmProviderCredentialUpsertIn,
+    McpServerConfigOut,
+    McpServerConfigUpdateIn,
     SystemConfigOut,
 )
 from app.services import alpha_config
 from app.services import alpha_websocket
 from app.services import broker_data_preferences
 from app.services import llm_config
+from app.services import mcp_config
 from db.models import User
 from db.session import get_db
 
@@ -44,6 +47,7 @@ def get_system_config(
         llm_providers=llm_config.list_provider_configs(db, user.id),
         alpha_api=alpha_config.get_alpha_api_config(db, user.id),
         alpha_websocket=alpha_websocket.alpha_ws_config_out(db, user.id),
+        mcp_server=mcp_config.get_mcp_server_config(db, user.id),
     )
 
 
@@ -223,3 +227,31 @@ def delete_llm_model(
     user: User = Depends(get_current_user),
 ) -> list[LlmProviderConfigOut]:
     return llm_config.delete_provider_model(db, user.id, model_row_id)
+
+
+@router.get("/mcp", response_model=McpServerConfigOut)
+def get_mcp_server_config(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    return mcp_config.get_mcp_server_config(db, user.id)
+
+
+@router.put("/mcp", response_model=McpServerConfigOut)
+def update_mcp_server_config(
+    body: McpServerConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    try:
+        return mcp_config.upsert_mcp_server_config(db, user.id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/mcp/key", response_model=McpServerConfigOut)
+def clear_mcp_server_api_key(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    return mcp_config.clear_mcp_api_key(db, user.id)

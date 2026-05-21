@@ -23,6 +23,7 @@ export default async function BrokerChatPage() {
                 initialRuns={runs}
                 initialSessions={sessions}
                 llmProviders={systemConfig.llm_providers}
+                mcpServer={systemConfig.mcp_server}
             />
         </Shell>
     );

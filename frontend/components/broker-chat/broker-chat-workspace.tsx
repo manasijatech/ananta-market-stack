@@ -31,16 +31,18 @@ import {
     createBrokerChatSession,
     deleteBrokerChatSession,
     getBrokerChatEvents,
+    getBrokerChatQueueHealth,
     getBrokerChatRun,
     getBrokerChatRuns,
     getBrokerChatSessions,
     submitBrokerChatRun,
     updateBrokerChatConfig
 } from "@/service/actions/broker-chat";
-import type { LlmProvider, LlmProviderConfig } from "@/service/types/broker";
+import type { LlmProvider, LlmProviderConfig, McpServerConfig } from "@/service/types/broker";
 import type {
     BrokerChatEvent,
     BrokerChatPreference,
+    BrokerChatQueueHealth,
     BrokerChatRun,
     BrokerChatSession,
     BrokerChatVisibility
@@ -51,6 +53,7 @@ type Props = {
     initialSessions: BrokerChatSession[];
     initialRuns: BrokerChatRun[];
     llmProviders: LlmProviderConfig[];
+    mcpServer: McpServerConfig;
 };
 
 type ParsedSseEvent = {
@@ -322,7 +325,7 @@ function UserMessage({ text }: { text: string }) {
     );
 }
 
-export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSessions, llmProviders }: Props) {
+export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSessions, llmProviders, mcpServer }: Props) {
     const { user } = useSession();
     const [sessions, setSessions] = useState(() => sortSessions(initialSessions));
     const [runs, setRuns] = useState(() => mergeRuns([], initialRuns));
@@ -334,11 +337,13 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const [visibility, setVisibility] = useState<BrokerChatVisibility>(initialConfig.event_visibility);
     const [includeToolOutputs, setIncludeToolOutputs] = useState(initialConfig.include_tool_outputs);
     const [includeReasoning, setIncludeReasoning] = useState(initialConfig.include_reasoning);
+    const [useMcp, setUseMcp] = useState(initialConfig.use_mcp && mcpServer.is_enabled);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSavingConfig, setIsSavingConfig] = useState(false);
     const [isCreatingSession, setIsCreatingSession] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [streamingIds, setStreamingIds] = useState<string[]>([]);
+    const [queueHealth, setQueueHealth] = useState<BrokerChatQueueHealth | null>(null);
     const streamControllersRef = useRef<Record<string, AbortController>>({});
 
     const configuredProviders = useMemo(
@@ -548,11 +553,24 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         };
     }, []);
 
+    useEffect(() => {
+        void getBrokerChatQueueHealth()
+            .then(setQueueHealth)
+            .catch(() => setQueueHealth(null));
+    }, []);
+
     async function refreshAll() {
         setError(null);
-        const [nextSessions, nextRuns] = await Promise.all([getBrokerChatSessions(80), getBrokerChatRuns({ limit: 160 })]);
+        const [nextSessions, nextRuns, nextQueueHealth] = await Promise.all([
+            getBrokerChatSessions(80),
+            getBrokerChatRuns({ limit: 160 }),
+            getBrokerChatQueueHealth().catch(() => null)
+        ]);
         setSessions(sortSessions(nextSessions));
         setRuns((current) => mergeRuns(current, nextRuns));
+        if (nextQueueHealth) {
+            setQueueHealth(nextQueueHealth);
+        }
         await Promise.all(runsForActiveSession.map((run) => loadRunEvents(run.id)));
     }
 
@@ -603,7 +621,8 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 default_model: model,
                 event_visibility: visibility,
                 include_tool_outputs: includeToolOutputs,
-                include_reasoning: includeReasoning
+                include_reasoning: includeReasoning,
+                use_mcp: useMcp
             });
         } catch (err) {
             setError((err as Error).message);
@@ -642,7 +661,8 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 model,
                 event_visibility: visibility,
                 include_tool_outputs: includeToolOutputs,
-                include_reasoning: includeReasoning
+                include_reasoning: includeReasoning,
+                use_mcp: useMcp
             });
             setMessage("");
             setRuns((current) => mergeRuns(current, [result.run]));
@@ -787,7 +807,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         </div>
                     </div>
 
-                    <div className="mt-4 grid gap-3 min-[780px]:grid-cols-2 min-[1280px]:grid-cols-[1fr_1fr_180px_auto_auto]">
+                    <div className="mt-4 grid gap-3 min-[780px]:grid-cols-2 min-[1280px]:grid-cols-[1fr_1fr_180px_auto_auto_auto]">
                         <Label className="grid gap-1 text-xs uppercase text-muted-foreground">
                             Provider
                             <Select
@@ -839,6 +859,14 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             />
                             Reasoning
                         </Label>
+                        <Label className="flex items-center gap-2 self-end text-xs font-semibold uppercase text-muted-foreground">
+                            <Checkbox
+                                checked={useMcp}
+                                disabled={!mcpServer.is_enabled}
+                                onCheckedChange={(value) => setUseMcp(Boolean(value))}
+                            />
+                            MCP
+                        </Label>
                     </div>
 
                     {!configuredProviders.length ? (
@@ -851,6 +879,17 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         <div className="mt-4 flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                             <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
                             {error}
+                        </div>
+                    ) : null}
+                    {!mcpServer.is_enabled ? (
+                        <div className="mt-3 text-xs text-muted-foreground">
+                            MCP tools are disabled in System Config.
+                        </div>
+                    ) : null}
+                    {queueHealth && !queueHealth.has_processing_path ? (
+                        <div className="mt-3 flex items-start gap-2 border border-[var(--accent)] bg-[var(--accent-subtle)] p-3 text-sm text-[var(--accent-dim)] dark:text-[var(--accent)]">
+                            <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
+                            Broker chat jobs are queued, but no RQ worker or in-process worker is currently available.
                         </div>
                     ) : null}
                 </div>
@@ -954,6 +993,17 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                   ? "Tool call visibility"
                                   : "Full event visibility"}
                         </span>
+                        <span>{useMcp ? "MCP enabled for this chat" : "MCP disabled"}</span>
+                        {queueHealth ? (
+                            <span>
+                                Queue {queueHealth.queue_name}: {queueHealth.queued_count} queued ·{" "}
+                                {queueHealth.has_active_worker
+                                    ? `${queueHealth.active_worker_count} RQ worker${queueHealth.active_worker_count === 1 ? "" : "s"}`
+                                    : queueHealth.in_process_worker_enabled
+                                      ? "backend worker enabled"
+                                      : "no worker"}
+                            </span>
+                        ) : null}
                         {activeRun ? <span>Stop the active run before sending another message.</span> : null}
                     </div>
                 </form>

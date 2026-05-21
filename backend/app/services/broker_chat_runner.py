@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import AsyncExitStack
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from agents import Agent, ModelSettings, Runner
 from agents.items import ItemHelpers
+from agents.mcp import MCPServerSse, MCPServerStreamableHttp
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
 from app.agent_tools import BROKER_DATA_TOOLS, BrokerAgentContext
-from app.services import broker_chat, llm_config
+from app.services import broker_chat, llm_config, mcp_config
 from app.services.broker_chat_queue import broker_chat_cancel_requested
 from db.models import BrokerChatRun
 from db.session import SessionLocal
@@ -29,10 +31,18 @@ Current calendar context:
 Use the broker tools whenever the user asks about connected broker accounts,
 portfolio state, positions, holdings, funds, live quotes, OHLC, historical data,
 option chains, greeks, margin estimates, stream status, or broker sessions.
+When MCP is enabled for this run and the configured hosted MCP server connects,
+you may also use MCP tools for broader market-intelligence, document, news, or
+research capabilities exposed by that server.
 
 Important operating rules:
 - Treat all broker data as user-owned private data.
 - Never ask for broker API keys, tokens, PINs, passwords, or TOTP secrets in chat.
+- Never ask for the MCP API key in chat. The backend attaches it from the user's
+  encrypted MCP configuration when MCP is enabled.
+- Prefer local broker tools for connected-account data. Use MCP tools only for
+  capabilities not already covered by the local broker tool surface or when the
+  user explicitly asks for MCP-backed intelligence.
 - If a tool returns action_required, explain the session/account action needed
   and do not invent market data.
 - Prefer instrument search before quote, OHLC, or historical requests when the
@@ -188,8 +198,88 @@ def _build_model(db, run) -> OpenAIChatCompletionsModel:
     )
 
 
+def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
+    params = {
+        "url": connection.url,
+        "headers": connection.headers,
+        "timeout": float(connection.timeout_seconds),
+        "sse_read_timeout": float(max(connection.timeout_seconds, 30)),
+    }
+    kwargs = {
+        "cache_tools_list": connection.tool_cache_enabled,
+        "name": connection.name or "Market-Stack hosted MCP",
+        "client_session_timeout_seconds": float(connection.timeout_seconds),
+        "max_retry_attempts": 1,
+        "require_approval": "never",
+    }
+    if connection.transport == "sse":
+        return MCPServerSse(params, **kwargs)
+    return MCPServerStreamableHttp(params, **kwargs)
+
+
+async def _connect_mcp_servers(
+    db,
+    run: BrokerChatRun,
+    metadata: dict[str, Any],
+    stack: AsyncExitStack,
+) -> list[Any]:
+    if not metadata.get("use_mcp"):
+        return []
+    try:
+        connection = mcp_config.get_enabled_mcp_connection(db, run.user_id)
+    except Exception as exc:
+        broker_chat.append_event(
+            db,
+            run,
+            event_type="mcp_unavailable",
+            public_payload={"status": "unavailable", "message": "MCP configuration is invalid."},
+            full_payload={"status": "unavailable", "message": str(exc), "error_type": exc.__class__.__name__},
+        )
+        return []
+    if connection is None:
+        broker_chat.append_event(
+            db,
+            run,
+            event_type="mcp_unavailable",
+            public_payload={"status": "disabled", "message": "MCP is not enabled in System Config."},
+        )
+        return []
+    server = _build_mcp_server(connection)
+    try:
+        await stack.enter_async_context(server)
+    except Exception as exc:
+        broker_chat.append_event(
+            db,
+            run,
+            event_type="mcp_connection_failed",
+            public_payload={"status": "failed", "message": "Could not connect to the configured MCP server."},
+            full_payload={
+                "status": "failed",
+                "message": str(exc),
+                "error_type": exc.__class__.__name__,
+                "url": connection.url,
+                "transport": connection.transport,
+            },
+        )
+        return []
+    broker_chat.append_event(
+        db,
+        run,
+        event_type="mcp_connected",
+        public_payload={"status": "connected", "name": connection.name, "transport": connection.transport},
+        full_payload={
+            "status": "connected",
+            "name": connection.name,
+            "url": connection.url,
+            "transport": connection.transport,
+        },
+    )
+    return [server]
+
+
 async def _run_broker_chat(run_id: str) -> None:
     db = SessionLocal()
+    mcp_stack = AsyncExitStack()
     final_text = ""
     tool_names_by_call_id: dict[str, str] = {}
     pending_tool_names: list[str] = []
@@ -216,6 +306,7 @@ async def _run_broker_chat(run_id: str) -> None:
             default_account_id=metadata.get("default_account_id"),
             search_account_id=metadata.get("search_account_id"),
         )
+        mcp_servers = await _connect_mcp_servers(db, run, metadata, mcp_stack)
         agent = Agent[BrokerAgentContext](
             name="Market-Stack Broker Data Agent",
             instructions=_broker_chat_instructions(),
@@ -226,6 +317,7 @@ async def _run_broker_chat(run_id: str) -> None:
                 include_usage=True,
             ),
             tools=BROKER_DATA_TOOLS,
+            mcp_servers=mcp_servers,
         )
         messages = broker_chat.conversation_history_for_run(db, run)
         messages.append({"role": "user", "content": run.message})
@@ -389,6 +481,10 @@ async def _run_broker_chat(run_id: str) -> None:
             )
         raise
     finally:
+        try:
+            await mcp_stack.aclose()
+        except Exception:
+            pass
         db.close()
 
 
