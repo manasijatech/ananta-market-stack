@@ -77,10 +77,13 @@ type BrokerChatConfigPayload = {
     include_reasoning: boolean;
     use_mcp: boolean;
 };
+type BrokerChatConfigKeyPayload = Omit<BrokerChatConfigPayload, "default_provider"> & {
+    default_provider: LlmProvider | "";
+};
 
 const liveStatuses = new Set(["queued", "running"]);
 
-function brokerChatConfigKey(config: BrokerChatConfigPayload) {
+function brokerChatConfigKey(config: BrokerChatConfigKeyPayload) {
     return JSON.stringify(config);
 }
 
@@ -367,7 +370,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             include_tool_outputs: initialConfig.include_tool_outputs,
             include_reasoning: initialConfig.include_reasoning,
             use_mcp: initialConfig.use_mcp && mcpServer.is_enabled
-        } as BrokerChatConfigPayload)
+        })
     );
 
     const configuredProviders = useMemo(
