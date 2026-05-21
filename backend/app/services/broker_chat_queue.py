@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import redis
 from rq import Queue
 from rq.job import Job
@@ -111,6 +113,22 @@ def ensure_broker_chat_job_queued(run_id: str) -> str:
 def broker_chat_queue_health() -> dict[str, object]:
     connection = redis_connection()
     queue = broker_chat_queue()
+    oldest_queued_seconds: float | None = None
+    oldest_job_id: str | None = None
+    try:
+        job_ids = queue.get_job_ids(offset=0, length=1)
+        if job_ids:
+            oldest_job_id = str(job_ids[0])
+            job = Job.fetch(oldest_job_id, connection=connection)
+            enqueued_at = getattr(job, "enqueued_at", None) or getattr(job, "created_at", None)
+            if enqueued_at:
+                now = datetime.now(timezone.utc)
+                if enqueued_at.tzinfo is None:
+                    enqueued_at = enqueued_at.replace(tzinfo=timezone.utc)
+                oldest_queued_seconds = max(0.0, (now - enqueued_at).total_seconds())
+    except Exception:
+        oldest_queued_seconds = None
+        oldest_job_id = None
     workers = []
     try:
         for worker in Worker.all(connection=connection, queue=queue):
@@ -126,6 +144,8 @@ def broker_chat_queue_health() -> dict[str, object]:
     return {
         "queue_name": queue.name,
         "queued_count": queue.count,
+        "oldest_job_id": oldest_job_id,
+        "oldest_queued_seconds": oldest_queued_seconds,
         "workers": workers,
         "active_worker_count": len(workers),
         "has_active_worker": bool(workers),

@@ -93,6 +93,8 @@ export interface BrokerChatEventsPage {
 export interface BrokerChatQueueHealth {
     queue_name: string;
     queued_count: number;
+    oldest_job_id?: string | null;
+    oldest_queued_seconds?: number | null;
     active_worker_count: number;
     has_active_worker: boolean;
     in_process_worker_enabled: boolean;

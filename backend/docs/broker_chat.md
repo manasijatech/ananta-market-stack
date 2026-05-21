@@ -14,6 +14,24 @@ The broker chat backend provides a durable, asynchronous chat surface for the br
 
 The API process submits RQ jobs and returns immediately. The RQ worker runs the OpenAI Agents SDK agent, writes every streamed event to SQLite, and publishes lightweight markers to Redis so connected SSE clients can resume and tail the run.
 
+## Worker Model
+
+RQ workers are process based. One normal worker process handles one broker chat run at a time. Concurrency comes from running more worker processes against the same queue, not from one worker processing several jobs in parallel.
+
+Current deployment options:
+
+- Local/single-process: keep `ENABLE_IN_PROCESS_BROKER_CHAT_WORKER=true` and start only the FastAPI server. The backend starts a lightweight in-process `SimpleWorker` loop and processes one queued broker-chat job at a time.
+- Production/dedicated workers: set `ENABLE_IN_PROCESS_BROKER_CHAT_WORKER=false` on API servers and run one or more dedicated RQ workers with `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat`.
+- Mixed mode is valid for development but should be avoided in production unless intentionally adding capacity, because every API process with the in-process worker enabled can consume jobs.
+
+Scaling guidance:
+
+- Worker count is the number of running worker processes subscribed to `BROKER_CHAT_QUEUE_NAME`.
+- Autoscaling is controlled outside RQ by the process manager or platform. Scale up when queue depth or oldest queued age rises; scale down when queue depth remains zero.
+- The queue health endpoint reports `queued_count`, `oldest_queued_seconds`, active RQ workers, and whether the in-process worker is enabled.
+- A practical autoscaling policy is: desired workers = clamp(ceil(`queued_count` / target_jobs_per_worker), min_workers, max_workers), with an override to scale up immediately when `oldest_queued_seconds` crosses the acceptable chat startup latency.
+- Broker chat jobs use live LLM and broker/MCP network calls, so keep worker counts within provider rate limits and broker session constraints.
+
 ## Configuration
 
 Environment variables:
@@ -42,6 +60,18 @@ Hosted MCP configuration is managed through System Config:
 - `DELETE /api/v1/system-config/mcp/key`
 
 MCP requires both the System Config MCP connection to be enabled and the broker-chat `use_mcp` run/config flag to be enabled. The MCP API key is stored encrypted and attached by the backend; users should not paste MCP secrets into chat messages.
+
+## MCP Integration
+
+Broker chat uses the OpenAI Agents SDK local MCP server integration. For hosted HTTP MCP services, prefer Streamable HTTP. SSE is supported only for legacy MCP servers.
+
+Implementation notes:
+
+- MCP connection setup lives in `app/services/broker_chat_mcp.py`.
+- The runner passes connected servers through `Agent(..., mcp_servers=...)`.
+- Agent-level MCP config enables strict-schema conversion and server-prefixed MCP tool names to reduce tool-name collisions with local broker tools.
+- MCP connection failures are persisted as `mcp_connection_failed` events and do not fail the run; the agent continues with local broker tools.
+- The current database shape supports one hosted MCP server per user. The helper uses `MCPServerManager`, so extending to multiple configured MCP servers later is a service-layer change rather than a runner rewrite.
 
 Visibility modes:
 
