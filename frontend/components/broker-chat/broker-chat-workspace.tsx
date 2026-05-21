@@ -7,6 +7,7 @@ import {
     IconAlertTriangle,
     IconArrowDown,
     IconArrowRight,
+    IconChevronDown,
     IconCircleCheck,
     IconPlayerStop,
     IconLoader2,
@@ -71,6 +72,11 @@ type ToolStep = {
     output?: BrokerChatEvent;
 };
 
+type ReasoningStep = {
+    key: string;
+    event: BrokerChatEvent;
+};
+
 type BrokerChatConfigPayload = {
     default_provider: LlmProvider;
     default_model: string;
@@ -120,6 +126,30 @@ function enabledModels(provider?: LlmProviderConfig) {
 function textPayload(payload: Record<string, unknown>, key: string) {
     const value = payload[key];
     return typeof value === "string" ? value : "";
+}
+
+function payloadValue(payload: Record<string, unknown> | undefined, key: string) {
+    return payload && Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : undefined;
+}
+
+function formatPayload(value: unknown) {
+    if (value === undefined) {
+        return "";
+    }
+    if (typeof value === "string") {
+        return value;
+    }
+    return JSON.stringify(value, null, 2);
+}
+
+function detailModeLabel(visibility: BrokerChatVisibility) {
+    if (visibility === "tool_calls") {
+        return "Tool calls";
+    }
+    if (visibility === "full") {
+        return "Full";
+    }
+    return "Minimal";
 }
 
 function assistantText(events: BrokerChatEvent[], run: BrokerChatRun) {
@@ -204,20 +234,177 @@ function groupToolSteps(events: BrokerChatEvent[]): ToolStep[] {
     return steps;
 }
 
-function ToolStepRow({ step }: { step: ToolStep }) {
+function groupReasoningSteps(events: BrokerChatEvent[]): ReasoningStep[] {
+    return events
+        .filter((event) => event.event_type === "reasoning")
+        .map((event) => ({
+            key: `${event.run_id}:reasoning:${event.sequence}`,
+            event
+        }));
+}
+
+function ToolDetailBlock({ label, value }: { label: string; value: unknown }) {
+    if (value === undefined) {
+        return null;
+    }
+    const formatted = formatPayload(value);
+    if (!formatted) {
+        return null;
+    }
+    return (
+        <div className="grid gap-1">
+            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                {label}
+            </div>
+            <pre className="max-h-72 overflow-auto border border-border bg-secondary/50 p-3 font-mono text-[11px] leading-5 text-foreground">
+                {formatted}
+            </pre>
+        </div>
+    );
+}
+
+function ToolStepDetails({ step, visibility }: { step: ToolStep; visibility: BrokerChatVisibility }) {
+    const startPayload = step.start?.payload;
+    const outputPayload = step.output?.payload;
+    const argumentsPayload = payloadValue(startPayload, "arguments");
+    const output = payloadValue(outputPayload, "output");
+    const outputMetadata = payloadValue(outputPayload, "output_metadata");
+    const startRawItem = payloadValue(startPayload, "raw_item");
+    const outputRawItem = payloadValue(outputPayload, "raw_item");
+    const outputFallback = output === undefined ? outputMetadata : output;
+
+    return (
+        <div className="ml-5 mt-1 grid max-w-5xl gap-3 border-l border-border px-3 py-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <span>{detailModeLabel(visibility)} backend payload</span>
+                {step.callId ? <span>Call {step.callId}</span> : null}
+            </div>
+            <ToolDetailBlock label="Arguments" value={argumentsPayload} />
+            <ToolDetailBlock label={output === undefined ? "Output metadata" : "Output"} value={outputFallback} />
+            <ToolDetailBlock label="Started event payload" value={startPayload} />
+            <ToolDetailBlock label="Completed event payload" value={outputPayload} />
+            <ToolDetailBlock label="Started raw item" value={startRawItem} />
+            <ToolDetailBlock label="Completed raw item" value={outputRawItem} />
+        </div>
+    );
+}
+
+function ToolStepRow({
+    isRunActive,
+    step,
+    visibility
+}: {
+    isRunActive: boolean;
+    step: ToolStep;
+    visibility: BrokerChatVisibility;
+}) {
+    const [open, setOpen] = useState(false);
     const action = step.output ? "Checked" : "Calling";
     const toolName = step.toolName.replace(/^broker_/, "").replace(/_/g, " ");
     const text = `${action} ${toolName}`;
+    const showShimmer = isRunActive && !step.output;
 
     return (
-        <div className="flex items-center gap-2 px-1 py-1.5 text-sm">
-            <span className="size-1.5 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
-            <ShimmeringText
-                className="font-medium"
-                color="var(--text-muted)"
-                shimmerColor="var(--accent)"
-                text={text}
-            />
+        <div className="grid gap-1 px-1 py-1.5 text-sm">
+            <div className="flex min-w-0 items-center gap-2">
+                <span className="size-1.5 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
+                {showShimmer ? (
+                    <ShimmeringText
+                        className="min-w-0 font-medium"
+                        color="var(--text-muted)"
+                        shimmerColor="var(--accent)"
+                        text={text}
+                    />
+                ) : (
+                    <span className="min-w-0 font-medium text-muted-foreground">{text}</span>
+                )}
+                <button
+                    aria-expanded={open}
+                    aria-label={`${open ? "Hide" : "Show"} ${toolName} tool details`}
+                    className="flex size-7 shrink-0 items-center justify-center text-muted-foreground transition hover:bg-[var(--accent-glow)] hover:text-primary"
+                    onClick={() => setOpen((current) => !current)}
+                    title={`${open ? "Hide" : "Show"} tool details`}
+                    type="button"
+                >
+                    <IconChevronDown
+                        className={cn("size-4 transition-transform", open ? "rotate-180" : null)}
+                        stroke={1.8}
+                    />
+                </button>
+            </div>
+            {open ? <ToolStepDetails step={step} visibility={visibility} /> : null}
+        </div>
+    );
+}
+
+function ReasoningStepDetails({ step, visibility }: { step: ReasoningStep; visibility: BrokerChatVisibility }) {
+    const payload = step.event.payload;
+    const rawType = payloadValue(payload, "raw_type");
+    const raw = payloadValue(payload, "raw");
+    const message = payloadValue(payload, "message");
+
+    return (
+        <div className="ml-5 mt-1 grid max-w-5xl gap-3 border-l border-border px-3 py-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <span>{detailModeLabel(visibility)} backend payload</span>
+                {typeof rawType === "string" ? <span>{rawType}</span> : null}
+            </div>
+            <ToolDetailBlock label="Reasoning raw" value={raw} />
+            <ToolDetailBlock label="Reasoning message" value={message} />
+            <ToolDetailBlock label="Reasoning event payload" value={payload} />
+        </div>
+    );
+}
+
+function ReasoningStepRow({
+    includeReasoning,
+    isRunActive,
+    step,
+    visibility
+}: {
+    includeReasoning: boolean;
+    isRunActive: boolean;
+    step: ReasoningStep;
+    visibility: BrokerChatVisibility;
+}) {
+    const [open, setOpen] = useState(false);
+    const rawType = textPayload(step.event.payload, "raw_type");
+    const label = rawType ? `Reasoning ${rawType}` : "Reasoning event received";
+
+    return (
+        <div className="grid gap-1 px-1 py-1.5 text-sm">
+            <div className="flex min-w-0 items-center gap-2">
+                <span className="size-1.5 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
+                {isRunActive ? (
+                    <ShimmeringText
+                        className="min-w-0 font-medium"
+                        color="var(--text-muted)"
+                        shimmerColor="var(--accent)"
+                        text={label}
+                    />
+                ) : (
+                    <span className="min-w-0 font-medium text-muted-foreground">{label}</span>
+                )}
+                <button
+                    aria-expanded={open}
+                    aria-label={`${open ? "Hide" : "Show"} reasoning details`}
+                    className="flex size-7 shrink-0 items-center justify-center text-muted-foreground transition hover:bg-[var(--accent-glow)] hover:text-primary"
+                    onClick={() => setOpen((current) => !current)}
+                    title={`${open ? "Hide" : "Show"} reasoning details`}
+                    type="button"
+                >
+                    <IconChevronDown
+                        className={cn("size-4 transition-transform", open ? "rotate-180" : null)}
+                        stroke={1.8}
+                    />
+                </button>
+                {!includeReasoning ? (
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        Hidden
+                    </span>
+                ) : null}
+            </div>
+            {open ? <ReasoningStepDetails step={step} visibility={visibility} /> : null}
         </div>
     );
 }
@@ -787,9 +974,11 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                                         : null
                                                 )}
                                             />
-                                            <span className="truncate">{latestRun?.status ?? "empty"}</span>
+                                            <span className="min-w-0 truncate">{latestRun?.status ?? "empty"}</span>
                                             <span aria-hidden="true">·</span>
-                                            <span className="truncate">{formatDate(session.updated_at)}</span>
+                                            <span className="shrink-0 whitespace-nowrap">
+                                                {formatDate(session.updated_at)}
+                                            </span>
                                         </div>
                                     </button>
                                     <button
@@ -898,20 +1087,37 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                         const events = eventsByRun[run.id] ?? [];
                                         const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
                                         const toolSteps = groupToolSteps(events);
+                                        const reasoningSteps = groupReasoningSteps(events);
                                         const text = assistantText(events, run);
-                                        const showToolSteps = running && !text && toolSteps.length > 0;
-                                        const showThinking = running && !text && !showToolSteps;
+                                        const showToolSteps = toolSteps.length > 0;
+                                        const showReasoningSteps = reasoningSteps.length > 0;
+                                        const showThinking = running && !text && !showToolSteps && !showReasoningSteps;
                                         const showAssistant = Boolean(text) || showThinking || !running;
+                                        const eventStepRows = showToolSteps || showReasoningSteps ? (
+                                            <div className="grid gap-2">
+                                                {toolSteps.map((step) => (
+                                                    <ToolStepRow
+                                                        isRunActive={running}
+                                                        step={step}
+                                                        key={step.key}
+                                                        visibility={visibility}
+                                                    />
+                                                ))}
+                                                {reasoningSteps.map((step) => (
+                                                    <ReasoningStepRow
+                                                        includeReasoning={includeReasoning}
+                                                        isRunActive={running}
+                                                        step={step}
+                                                        key={step.key}
+                                                        visibility={visibility}
+                                                    />
+                                                ))}
+                                            </div>
+                                        ) : null;
                                         return (
                                             <article className="grid gap-3" key={run.id}>
                                                 <UserMessage text={run.message} />
-                                                {showToolSteps ? (
-                                                    <div className="grid gap-2">
-                                                        {toolSteps.map((step) => (
-                                                            <ToolStepRow step={step} key={step.key} />
-                                                        ))}
-                                                    </div>
-                                                ) : null}
+                                                {eventStepRows}
                                                 {showAssistant ? (
                                                     <AssistantMessage running={showThinking} text={text} />
                                                 ) : null}
