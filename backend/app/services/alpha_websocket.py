@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from common.datetime_compat import UTC
-import httpx
+from market_stack_sdk import MarketStackClient
 import redis
 import websockets
 from sqlalchemy import select
@@ -259,11 +259,13 @@ def _int_or_none(value: Any) -> int | None:
 
 async def fetch_alpha_account(api_key: str) -> dict[str, Any]:
     settings = get_settings()
-    url = f"{settings.alpha_api_base_url.rstrip('/')}/v1/account"
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.get(url, headers={"X-API-Key": api_key})
-        response.raise_for_status()
-        payload = response.json()
+    payload = await asyncio.to_thread(
+        lambda: MarketStackClient(
+            api_key=api_key,
+            base_url=settings.alpha_api_base_url.rstrip("/"),
+            timeout=15,
+        ).get_account()
+    )
     data = payload.get("data") if isinstance(payload, dict) else None
     return data if isinstance(data, dict) else {}
 

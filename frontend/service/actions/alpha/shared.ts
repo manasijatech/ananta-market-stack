@@ -1,5 +1,16 @@
 import "server-only";
 
+import {
+    MarketStackApiError,
+    MarketStackClient,
+    type AlertsQueryParams,
+    type AnnouncementsListQueryParams,
+    type ConcallsQueryParams,
+    type EarningsQueryParams,
+    type NewsQueryParams,
+    type NewsSentiment,
+    type QueryParams
+} from "@manasija/market-stack-sdk";
 import { fetchFastApi } from "@/lib/fastapi";
 
 type AlphaQueryValue = string | number | boolean | null | undefined;
@@ -23,7 +34,7 @@ export function alphaBaseUrl() {
     return (process.env.MANASIJA_API_BASE_URL || ALPHA_DEFAULT_BASE_URL).replace(/\/+$/, "");
 }
 
-function normalizeList(values: string[] | undefined, limit = ALPHA_BATCH_LIMIT) {
+export function normalizeList(values: string[] | undefined, limit = ALPHA_BATCH_LIMIT) {
     const seen = new Set<string>();
     const normalized: string[] = [];
     for (const value of values ?? []) {
@@ -60,6 +71,71 @@ export function feedQuery(params: AlphaFeedParams = {}) {
     appendParam(query, "page", params.page);
     appendParam(query, "limit", params.limit);
     return query;
+}
+
+function parseAlertTypes(type: string | undefined): string[] | undefined {
+    if (!type?.trim()) return undefined;
+    const values = type
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    return values.length ? values : undefined;
+}
+
+function toNewsSentiment(value: string | undefined): NewsSentiment | undefined {
+    if (value === "positive" || value === "negative" || value === "neutral") {
+        return value;
+    }
+    return undefined;
+}
+
+export function toNewsQueryParams(params: AlphaFeedParams = {}): NewsQueryParams {
+    return {
+        symbols: normalizeList(params.symbols),
+        sentiment: toNewsSentiment(params.sentiment),
+        from: params.from,
+        to: params.to,
+        page: params.page,
+        limit: params.limit
+    };
+}
+
+export function toAnnouncementsListQueryParams(params: AlphaFeedParams = {}): AnnouncementsListQueryParams {
+    return {
+        symbols: normalizeList(params.symbols),
+        categories: normalizeList(params.categories),
+        from: params.from,
+        to: params.to,
+        detailed: params.detailed,
+        page: params.page,
+        limit: params.limit
+    };
+}
+
+export function toEarningsQueryParams(params: AlphaFeedParams = {}): EarningsQueryParams {
+    return {
+        symbols: normalizeList(params.symbols),
+        from: params.from,
+        to: params.to,
+        detailed: params.detailed,
+        page: params.page,
+        limit: params.limit
+    };
+}
+
+export function toConcallsQueryParams(params: AlphaFeedParams = {}): ConcallsQueryParams {
+    return toEarningsQueryParams(params);
+}
+
+export function toAlertsQueryParams(params: AlphaFeedParams = {}): AlertsQueryParams {
+    return {
+        symbols: normalizeList(params.symbols),
+        type: parseAlertTypes(params.type),
+        from: params.from,
+        to: params.to,
+        page: params.page,
+        limit: params.limit
+    };
 }
 
 async function parseJson(response: Response): Promise<unknown> {
@@ -132,6 +208,39 @@ export async function getAlphaApiKey() {
     return payload.api_key;
 }
 
+export async function getAlphaSdkClient() {
+    const apiKey = await getAlphaApiKey();
+    return new MarketStackClient({
+        apiKey,
+        baseUrl: alphaBaseUrl()
+    });
+}
+
+function parseSdkError(error: unknown): never {
+    if (error instanceof MarketStackApiError) {
+        const fallback =
+            error.statusCode >= 500
+                ? "The Manasija Alpha API is unavailable. Please try again."
+                : "Alpha API request failed.";
+        throw new Error(
+            JSON.stringify({
+                status: error.statusCode,
+                message: extractMessage(error.body, fallback),
+                fieldErrors: {}
+            })
+        );
+    }
+    throw error;
+}
+
+export function queryParamsToObject(query: URLSearchParams): QueryParams {
+    const out: QueryParams = {};
+    for (const [key, value] of query.entries()) {
+        out[key] = value;
+    }
+    return out;
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     let response: Response;
     const apiKey = await getAlphaApiKey();
@@ -155,6 +264,15 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
         );
     }
     return readResponse<T>(response);
+}
+
+export async function withAlphaSdk<T>(fn: (client: MarketStackClient) => Promise<T>): Promise<T> {
+    const client = await getAlphaSdkClient();
+    try {
+        return await fn(client);
+    } catch (error) {
+        return parseSdkError(error);
+    }
 }
 
 export function withQuery(path: string, query: URLSearchParams) {

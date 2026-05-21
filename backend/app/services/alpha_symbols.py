@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-import httpx
+from market_stack_sdk import MarketStackClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -110,16 +110,9 @@ def _fetch_alpha_symbol_metadata(api_key: str, symbols: list[str]) -> list[Alpha
     if not symbols:
         return []
     settings = get_settings()
-    base_url = settings.alpha_api_base_url.rstrip("/")
     query = ",".join(symbols)
-    response = httpx.get(
-        f"{base_url}/v1/symbols/metadata",
-        params={"symbols": query},
-        headers={"X-API-Key": api_key},
-        timeout=15,
-    )
-    response.raise_for_status()
-    payload = response.json()
+    with MarketStackClient(api_key=api_key, base_url=settings.alpha_api_base_url.rstrip("/"), timeout=15) as client:
+        payload = client.get_symbols_metadata({"symbols": query})
     data = payload.get("data") if isinstance(payload, dict) else []
     if not isinstance(data, list):
         return []
