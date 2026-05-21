@@ -217,8 +217,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 </div>
             </header>
 
-            <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-[252px] min-[980px]:border-r">
-                <div className="flex h-full flex-col">
+            <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-[252px] min-[980px]:overflow-hidden">
+                <div className="flex h-full w-full flex-col border-r border-border">
                     <div className="flex h-18 items-center border-b border-border px-5 min-[980px]:h-20">
                         <BrandLogo imageClassName="h-10 w-48" />
                     </div>
