@@ -124,9 +124,7 @@ async def lifespan(_app: FastAPI):
             "watchlist-preset-worker",
             run_watchlist_preset_worker,
         )
-    broker_chat_worker_service = None
-    if settings.enable_in_process_broker_chat_worker:
-        broker_chat_worker_service = _start_background_service("broker-chat-worker", run_broker_chat_worker)
+    broker_chat_worker_service = _start_background_service("broker-chat-worker", run_broker_chat_worker)
     yield
     if maintenance_service:
         maintenance_service.stop()

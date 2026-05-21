@@ -92,6 +92,8 @@ export interface BrokerChatEventsPage {
 
 export interface BrokerChatQueueHealth {
     queue_name: string;
+    base_queue_name?: string;
+    queue_fingerprint?: string;
     queued_count: number;
     oldest_job_id?: string | null;
     oldest_queued_seconds?: number | null;

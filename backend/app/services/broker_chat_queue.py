@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from hashlib import sha1
+from pathlib import Path
+import socket
 
 import redis
 from rq import Queue
@@ -9,6 +12,39 @@ from rq.registry import FailedJobRegistry, StartedJobRegistry
 from rq.worker import Worker
 
 from app.config import get_settings
+
+
+def _queue_instance_fingerprint() -> str:
+    """Return a stable local queue fingerprint for shared-Redis safety.
+
+    RQ job data is stored only in Redis while broker-chat run state is stored in
+    the app database. Two local SQLite installs sharing one Redis must not
+    consume each other's jobs, because the worker that grabs a foreign job will
+    not have the matching run row. For network databases, the database URL is
+    already the shared execution boundary.
+    """
+
+    settings = get_settings()
+    database_url = settings.database_url
+    if database_url.startswith("sqlite:///"):
+        raw_path = database_url.replace("sqlite:///", "", 1)
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        identity = f"sqlite:{socket.gethostname()}:{path.resolve()}"
+    else:
+        identity = f"db:{database_url}"
+    return sha1(identity.encode("utf-8")).hexdigest()[:12]
+
+
+def broker_chat_queue_name() -> str:
+    settings = get_settings()
+    base = settings.broker_chat_queue_name.strip() or "broker-chat"
+    return f"{base}:{_queue_instance_fingerprint()}"
+
+
+def broker_chat_job_id(run_id: str) -> str:
+    return f"{broker_chat_queue_name()}:{run_id}"
 
 
 def redis_connection() -> redis.Redis:
@@ -25,8 +61,7 @@ def redis_connection() -> redis.Redis:
 
 
 def broker_chat_queue() -> Queue:
-    settings = get_settings()
-    return Queue(settings.broker_chat_queue_name, connection=redis_connection())
+    return Queue(broker_chat_queue_name(), connection=redis_connection())
 
 
 def broker_chat_stream_key(run_id: str) -> str:
@@ -43,7 +78,7 @@ def enqueue_broker_chat_run(run_id: str) -> str:
     job = queue.enqueue(
         "app.services.broker_chat_runner.run_broker_chat_job",
         run_id,
-        job_id=f"broker-chat-{run_id}",
+        job_id=broker_chat_job_id(run_id),
         job_timeout=settings.broker_chat_job_timeout_seconds,
         result_ttl=settings.broker_chat_result_ttl_seconds,
         failure_ttl=settings.broker_chat_result_ttl_seconds,
@@ -74,7 +109,7 @@ def cancel_broker_chat_job(run_id: str) -> bool:
 
     connection = redis_connection()
     queue = broker_chat_queue()
-    job_id = f"broker-chat-{run_id}"
+    job_id = broker_chat_job_id(run_id)
     removed = False
     try:
         queue.remove(job_id)
@@ -97,7 +132,7 @@ def cancel_broker_chat_job(run_id: str) -> bool:
 def ensure_broker_chat_job_queued(run_id: str) -> str:
     connection = redis_connection()
     queue = broker_chat_queue()
-    job_id = f"broker-chat-{run_id}"
+    job_id = broker_chat_job_id(run_id)
     queued_ids = {item.decode() if isinstance(item, bytes) else str(item) for item in connection.lrange(queue.key, 0, -1)}
     try:
         job = Job.fetch(job_id, connection=connection)
@@ -143,12 +178,14 @@ def broker_chat_queue_health() -> dict[str, object]:
         workers = []
     return {
         "queue_name": queue.name,
+        "base_queue_name": get_settings().broker_chat_queue_name,
+        "queue_fingerprint": _queue_instance_fingerprint(),
         "queued_count": queue.count,
         "oldest_job_id": oldest_job_id,
         "oldest_queued_seconds": oldest_queued_seconds,
         "workers": workers,
         "active_worker_count": len(workers),
         "has_active_worker": bool(workers),
-        "in_process_worker_enabled": get_settings().enable_in_process_broker_chat_worker,
-        "has_processing_path": bool(workers) or get_settings().enable_in_process_broker_chat_worker,
+        "in_process_worker_enabled": True,
+        "has_processing_path": True,
     }
