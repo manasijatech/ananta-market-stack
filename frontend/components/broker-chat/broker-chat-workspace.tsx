@@ -11,7 +11,6 @@ import {
     IconLoader2,
     IconMessagePlus,
     IconRefresh,
-    IconSettings,
     IconTerminal2,
     IconTool,
     IconTrash,
@@ -70,7 +69,20 @@ type ToolStep = {
     output?: BrokerChatEvent;
 };
 
+type BrokerChatConfigPayload = {
+    default_provider: LlmProvider;
+    default_model: string;
+    event_visibility: BrokerChatVisibility;
+    include_tool_outputs: boolean;
+    include_reasoning: boolean;
+    use_mcp: boolean;
+};
+
 const liveStatuses = new Set(["queued", "running"]);
+
+function brokerChatConfigKey(config: BrokerChatConfigPayload) {
+    return JSON.stringify(config);
+}
 
 function sortSessions(sessions: BrokerChatSession[]) {
     return [...sessions].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
@@ -342,9 +354,21 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const [isSavingConfig, setIsSavingConfig] = useState(false);
     const [isCreatingSession, setIsCreatingSession] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [configError, setConfigError] = useState<string | null>(null);
     const [streamingIds, setStreamingIds] = useState<string[]>([]);
     const [queueHealth, setQueueHealth] = useState<BrokerChatQueueHealth | null>(null);
     const streamControllersRef = useRef<Record<string, AbortController>>({});
+    const configSaveRequestRef = useRef(0);
+    const savedConfigKeyRef = useRef(
+        brokerChatConfigKey({
+            default_provider: initialConfig.default_provider ?? "",
+            default_model: initialConfig.default_model ?? "",
+            event_visibility: initialConfig.event_visibility,
+            include_tool_outputs: initialConfig.include_tool_outputs,
+            include_reasoning: initialConfig.include_reasoning,
+            use_mcp: initialConfig.use_mcp && mcpServer.is_enabled
+        } as BrokerChatConfigPayload)
+    );
 
     const configuredProviders = useMemo(
         () => llmProviders.filter((item) => item.is_enabled && item.has_api_key),
@@ -388,6 +412,54 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const hasConfiguredLlm = Boolean(provider && model);
     const activeRun = runsForActiveSession.find((run) => liveStatuses.has(run.status)) ?? null;
     const sendDisabled = Boolean(activeRun) || !message.trim() || !hasConfiguredLlm || isSubmitting;
+    const configPayload = useMemo<BrokerChatConfigPayload | null>(() => {
+        if (!provider || !model) {
+            return null;
+        }
+        return {
+            default_provider: provider,
+            default_model: model,
+            event_visibility: visibility,
+            include_tool_outputs: includeToolOutputs,
+            include_reasoning: includeReasoning,
+            use_mcp: useMcp
+        };
+    }, [includeReasoning, includeToolOutputs, model, provider, useMcp, visibility]);
+
+    useEffect(() => {
+        const requestId = ++configSaveRequestRef.current;
+        if (!configPayload) {
+            setIsSavingConfig(false);
+            return;
+        }
+        const nextConfigKey = brokerChatConfigKey(configPayload);
+        if (nextConfigKey === savedConfigKeyRef.current) {
+            setIsSavingConfig(false);
+            return;
+        }
+        setIsSavingConfig(true);
+        const timeout = window.setTimeout(async () => {
+            try {
+                await updateBrokerChatConfig(configPayload);
+                if (requestId === configSaveRequestRef.current) {
+                    savedConfigKeyRef.current = nextConfigKey;
+                    setConfigError(null);
+                }
+            } catch (err) {
+                if (requestId === configSaveRequestRef.current) {
+                    setConfigError((err as Error).message);
+                }
+            } finally {
+                if (requestId === configSaveRequestRef.current) {
+                    setIsSavingConfig(false);
+                }
+            }
+        }, 600);
+        return () => {
+            window.clearTimeout(timeout);
+        };
+    }, [configPayload]);
+
     const streamRun = useCallback(
         async (runId: string, afterSequence = 0) => {
             if (!user?.id || streamControllersRef.current[runId]) {
@@ -608,29 +680,6 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         }
     }
 
-    async function saveConfig() {
-        if (!provider || !model) {
-            setError("Select an enabled provider and model before saving broker chat defaults.");
-            return;
-        }
-        setIsSavingConfig(true);
-        setError(null);
-        try {
-            await updateBrokerChatConfig({
-                default_provider: provider,
-                default_model: model,
-                event_visibility: visibility,
-                include_tool_outputs: includeToolOutputs,
-                include_reasoning: includeReasoning,
-                use_mcp: useMcp
-            });
-        } catch (err) {
-            setError((err as Error).message);
-        } finally {
-            setIsSavingConfig(false);
-        }
-    }
-
     async function createNewChat() {
         setIsCreatingSession(true);
         setError(null);
@@ -800,10 +849,15 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                 <IconRefresh className="size-4" stroke={1.8} />
                                 Refresh
                             </Button>
-                            <Button disabled={isSavingConfig} onClick={saveConfig} size="sm" type="button" variant="secondary">
-                                <IconSettings className="size-4" stroke={1.8} />
-                                {isSavingConfig ? "Saving..." : "Save defaults"}
-                            </Button>
+                            {isSavingConfig ? (
+                                <span
+                                    aria-live="polite"
+                                    className="inline-flex h-8 items-center gap-2 border border-border bg-secondary px-3 font-mono text-[10px] font-bold uppercase text-muted-foreground"
+                                >
+                                    <IconLoader2 className="size-3.5 animate-spin" stroke={1.8} />
+                                    Autosaving
+                                </span>
+                            ) : null}
                         </div>
                     </div>
 
@@ -879,6 +933,12 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         <div className="mt-4 flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                             <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
                             {error}
+                        </div>
+                    ) : null}
+                    {configError ? (
+                        <div className="mt-4 flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                            <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
+                            {configError}
                         </div>
                     ) : null}
                     {!mcpServer.is_enabled ? (
