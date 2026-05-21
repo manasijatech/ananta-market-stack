@@ -94,7 +94,8 @@ export default async function MarketIntelligenceLayout({ children }: { children:
         if (metadataResult.status === "fulfilled") {
             const metadata = metadataResult.value;
             symbolMetadata = metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
-                acc[item.symbol.trim().toUpperCase()] = item;
+                const symbol = item.symbol?.trim().toUpperCase();
+                if (symbol) acc[symbol] = item;
                 return acc;
             }, {});
         }
