@@ -278,6 +278,46 @@ def reconcile_run_queue_state(db: Session, run: BrokerChatRun) -> BrokerChatRun:
     return run
 
 
+def reconcile_incomplete_runs(db: Session, *, limit: int = 200) -> dict[str, int]:
+    """Repair queued/running broker-chat runs after process restarts.
+
+    Queued runs are re-enqueued onto this app instance's scoped RQ queue. Runs
+    that were marked running before a restart are moved back to queued so the
+    local in-process worker or any dedicated worker can pick them up again.
+    """
+
+    rows = list(
+        db.scalars(
+            select(BrokerChatRun)
+            .where(BrokerChatRun.status.in_(ACTIVE_STATUSES))
+            .order_by(BrokerChatRun.created_at.asc(), BrokerChatRun.id.asc())
+            .limit(max(1, min(limit, 1000)))
+        ).all()
+    )
+    requeued = 0
+    running_reset = 0
+    failed = 0
+    for run in rows:
+        try:
+            if run.status == "running":
+                run.status = "queued"
+                run.error = None
+                run.updated_at = utc_now()
+                db.add(run)
+                db.commit()
+                db.refresh(run)
+                running_reset += 1
+            run.job_id = ensure_broker_chat_job_queued(run.id)
+            run.updated_at = utc_now()
+            db.add(run)
+            db.commit()
+            requeued += 1
+        except Exception:
+            db.rollback()
+            failed += 1
+    return {"checked": len(rows), "requeued": requeued, "running_reset": running_reset, "failed": failed}
+
+
 def list_runs(
     db: Session,
     user_id: str,
