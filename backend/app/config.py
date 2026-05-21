@@ -51,7 +51,7 @@ class Settings(BaseSettings):
         validation_alias="BROKER_CHAT_HISTORY_TURN_LIMIT",
     )
     enable_in_process_broker_chat_worker: bool = Field(
-        default=False,
+        default=True,
         validation_alias="ENABLE_IN_PROCESS_BROKER_CHAT_WORKER",
     )
     broker_chat_worker_poll_seconds: float = Field(

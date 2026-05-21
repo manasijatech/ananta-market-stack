@@ -4,12 +4,14 @@ import { useState, useTransition } from "react";
 import { CircleHelpIcon } from "lucide-react";
 import {
     addLlmProviderModel,
+    clearMcpServerApiKey,
     deleteAlphaApiCredential,
     deleteLlmProviderCredential,
     deleteLlmProviderModel,
     updateBrokerDataDefaultConfig,
     updateBrokerDataSearchConfig,
     updateAlphaWebSocketConfig,
+    updateMcpServerConfig,
     upsertAlphaApiCredential,
     upsertLlmProviderCredential
 } from "@/service/actions/broker";
@@ -173,6 +175,12 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
     const [alphaApiKey, setAlphaApiKey] = useState("");
     const [alphaWsConfig, setAlphaWsConfig] = useState(initialConfig.alpha_websocket);
     const [alphaError, setAlphaError] = useState("");
+    const [mcpConfig, setMcpConfig] = useState(initialConfig.mcp_server);
+    const [mcpApiKey, setMcpApiKey] = useState("");
+    const [mcpExtraHeadersText, setMcpExtraHeadersText] = useState(
+        JSON.stringify(initialConfig.mcp_server.extra_headers ?? {}, null, 2)
+    );
+    const [mcpError, setMcpError] = useState("");
     const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
     const [drafts, setDrafts] = useState<Record<string, ProviderDraftState>>(
         Object.fromEntries(
@@ -282,6 +290,54 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                 setAlphaWsConfig(next);
             } catch (caught) {
                 setAlphaError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function saveMcpConfig() {
+        setMcpError("");
+        startTransition(async () => {
+            try {
+                let extraHeaders: Record<string, string> = {};
+                if (mcpExtraHeadersText.trim()) {
+                    const parsed = JSON.parse(mcpExtraHeadersText) as unknown;
+                    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                        throw new Error("MCP extra headers must be a JSON object.");
+                    }
+                    extraHeaders = Object.fromEntries(
+                        Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [key, String(value)])
+                    );
+                }
+                const next = await updateMcpServerConfig({
+                    is_enabled: mcpConfig.is_enabled,
+                    name: mcpConfig.name ?? null,
+                    url: mcpConfig.url,
+                    transport: mcpConfig.transport,
+                    api_key: mcpApiKey || null,
+                    api_key_header_name: mcpConfig.api_key_header_name,
+                    api_key_prefix: mcpConfig.api_key_prefix,
+                    extra_headers: extraHeaders,
+                    timeout_seconds: mcpConfig.timeout_seconds,
+                    tool_cache_enabled: mcpConfig.tool_cache_enabled
+                });
+                setMcpConfig(next);
+                setMcpApiKey("");
+                setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
+            } catch (caught) {
+                setMcpError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function clearMcpKey() {
+        setMcpError("");
+        startTransition(async () => {
+            try {
+                const next = await clearMcpServerApiKey();
+                setMcpConfig(next);
+                setMcpApiKey("");
+            } catch (caught) {
+                setMcpError(parseActionError(caught).message);
             }
         });
     }
@@ -620,6 +676,155 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     {alphaWsConfig.last_error ? (
                         <div className="mt-3 text-sm text-destructive">{alphaWsConfig.last_error}</div>
                     ) : null}
+                </div>
+            </section>
+
+            <section className="grid gap-4">
+                <div>
+                    <div className="text-base font-bold tracking-tight">Hosted MCP server</div>
+                    <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
+                        Configure the hosted MCP endpoint that broker chat can attach when MCP is enabled for a chat
+                        run. The API key is stored server-side and only sent from the backend to the MCP server.
+                    </p>
+                </div>
+                <div className="border border-border p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div className="text-sm font-bold">MCP connection</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                                {mcpConfig.is_enabled ? "Enabled" : "Disabled"} · API key{" "}
+                                {mcpConfig.has_api_key ? "configured" : "not configured"}
+                                {mcpConfig.updated_at
+                                    ? ` · updated ${new Date(mcpConfig.updated_at).toLocaleString("en-IN")}`
+                                    : ""}
+                            </div>
+                            {mcpConfig.api_key_hint ? (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                    Saved key: {mcpConfig.api_key_hint}
+                                </div>
+                            ) : null}
+                        </div>
+                        <Label className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                                checked={mcpConfig.is_enabled}
+                                onCheckedChange={(checked) =>
+                                    setMcpConfig((current) => ({ ...current, is_enabled: Boolean(checked) }))
+                                }
+                            />
+                            Enable MCP globally
+                        </Label>
+                    </div>
+
+                    <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_180px]">
+                        <Input
+                            className="h-9 text-sm"
+                            onChange={(event) => setMcpConfig((current) => ({ ...current, name: event.target.value }))}
+                            placeholder="Display name"
+                            value={mcpConfig.name ?? ""}
+                        />
+                        <Input
+                            className="h-9 text-sm"
+                            onChange={(event) => setMcpConfig((current) => ({ ...current, url: event.target.value }))}
+                            placeholder="https://mcp.example.com/mcp"
+                            value={mcpConfig.url}
+                        />
+                        <Select
+                            className="h-9"
+                            onChange={(event) =>
+                                setMcpConfig((current) => ({
+                                    ...current,
+                                    transport: event.target.value as "streamable_http" | "sse"
+                                }))
+                            }
+                            value={mcpConfig.transport}
+                        >
+                            <option value="streamable_http">Streamable HTTP</option>
+                            <option value="sse">SSE</option>
+                        </Select>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[minmax(220px,1fr)_180px_140px]">
+                        <Input
+                            autoComplete="off"
+                            className="h-9 text-sm"
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            onChange={(event) => setMcpApiKey(event.target.value)}
+                            placeholder={mcpConfig.has_api_key ? "Replace MCP API key" : "Add MCP API key"}
+                            type="password"
+                            value={mcpApiKey}
+                        />
+                        <Input
+                            className="h-9 text-sm"
+                            onChange={(event) =>
+                                setMcpConfig((current) => ({
+                                    ...current,
+                                    api_key_header_name: event.target.value
+                                }))
+                            }
+                            placeholder="Authorization"
+                            value={mcpConfig.api_key_header_name}
+                        />
+                        <Input
+                            className="h-9 text-sm"
+                            onChange={(event) =>
+                                setMcpConfig((current) => ({ ...current, api_key_prefix: event.target.value }))
+                            }
+                            placeholder="Bearer"
+                            value={mcpConfig.api_key_prefix}
+                        />
+                    </div>
+
+                    <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[140px_minmax(260px,1fr)]">
+                        <Input
+                            className="h-9 text-sm"
+                            min={1}
+                            max={120}
+                            onChange={(event) =>
+                                setMcpConfig((current) => ({
+                                    ...current,
+                                    timeout_seconds: Number(event.target.value || 15)
+                                }))
+                            }
+                            type="number"
+                            value={mcpConfig.timeout_seconds}
+                        />
+                        <Label className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                                checked={mcpConfig.tool_cache_enabled}
+                                onCheckedChange={(checked) =>
+                                    setMcpConfig((current) => ({
+                                        ...current,
+                                        tool_cache_enabled: Boolean(checked)
+                                    }))
+                                }
+                            />
+                            Cache MCP tool list between calls
+                        </Label>
+                    </div>
+
+                    <textarea
+                        className="mt-3 min-h-24 w-full border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-primary"
+                        onChange={(event) => setMcpExtraHeadersText(event.target.value)}
+                        placeholder='{"X-Workspace": "market-stack"}'
+                        value={mcpExtraHeadersText}
+                    />
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <Button disabled={isPending} onClick={saveMcpConfig} type="button">
+                            {isPending ? "Saving..." : "Save MCP config"}
+                        </Button>
+                        <Button
+                            disabled={isPending || !mcpConfig.has_api_key}
+                            onClick={clearMcpKey}
+                            type="button"
+                            variant="outline"
+                        >
+                            Clear MCP key
+                        </Button>
+                    </div>
+                    {mcpError ? <div className="mt-3 text-sm text-destructive">{mcpError}</div> : null}
                 </div>
             </section>
 

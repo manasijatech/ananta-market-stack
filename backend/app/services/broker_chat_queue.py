@@ -4,6 +4,7 @@ import redis
 from rq import Queue
 from rq.job import Job
 from rq.registry import FailedJobRegistry, StartedJobRegistry
+from rq.worker import Worker
 
 from app.config import get_settings
 
@@ -105,3 +106,29 @@ def ensure_broker_chat_job_queued(run_id: str) -> str:
     if status_value == "queued" and job_id not in queued_ids:
         queue.enqueue_job(job)
     return str(job.id)
+
+
+def broker_chat_queue_health() -> dict[str, object]:
+    connection = redis_connection()
+    queue = broker_chat_queue()
+    workers = []
+    try:
+        for worker in Worker.all(connection=connection, queue=queue):
+            workers.append(
+                {
+                    "name": worker.name,
+                    "state": str(getattr(worker, "state", "")),
+                    "queues": worker.queue_names(),
+                }
+            )
+    except Exception:
+        workers = []
+    return {
+        "queue_name": queue.name,
+        "queued_count": queue.count,
+        "workers": workers,
+        "active_worker_count": len(workers),
+        "has_active_worker": bool(workers),
+        "in_process_worker_enabled": get_settings().enable_in_process_broker_chat_worker,
+        "has_processing_path": bool(workers) or get_settings().enable_in_process_broker_chat_worker,
+    }
