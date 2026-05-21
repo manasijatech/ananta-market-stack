@@ -1,5 +1,5 @@
 import type { AlphaAlert } from "@/service/types/alpha/alerts";
-import type { AlphaAnnouncementDetail } from "@/service/types/alpha/announcements";
+import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/types/alpha/announcements";
 import type { AlphaConcall } from "@/service/types/alpha/concalls";
 import type { AlphaNewsItem } from "@/service/types/alpha/news";
 import type { Watchlist } from "@/service/types/watchlist";
@@ -26,7 +26,7 @@ export type WatchlistCoverageGroup = {
 export type MarketIntelligenceFeeds = {
     news: AlphaNewsItem[];
     announcements: AlphaAnnouncementDetail[];
-    earnings: AlphaAnnouncementDetail[];
+    earnings: AlphaEarningsDetail[];
     concalls: AlphaConcall[];
     alerts: AlphaAlert[];
 };
