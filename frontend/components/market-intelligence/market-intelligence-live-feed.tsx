@@ -25,7 +25,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getAlphaWebSocketConfig } from "@/service/actions/alpha/websocket";
 import type { AlphaAlert } from "@/service/types/alpha/alerts";
-import type { AlphaAnnouncementDetail } from "@/service/types/alpha/announcements";
+import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/types/alpha/announcements";
 import type { AlphaConcall } from "@/service/types/alpha/concalls";
 import type { AlphaNewsItem } from "@/service/types/alpha/news";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
@@ -376,7 +376,7 @@ export function MarketIntelligenceLiveFeed({
                         if (parsed.channel === "earnings") {
                             return {
                                 ...current,
-                                earnings: mergeItem(current.earnings, item as AlphaAnnouncementDetail)
+                                earnings: mergeItem(current.earnings, item as AlphaEarningsDetail)
                             };
                         }
                         return {
@@ -628,7 +628,7 @@ function AnnouncementList({
     symbolMetadata,
     earnings = false
 }: {
-    items: AlphaAnnouncementDetail[];
+    items: AlphaAnnouncementDetail[] | AlphaEarningsDetail[];
     fallbackTitle: string;
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
     earnings?: boolean;
@@ -638,12 +638,22 @@ function AnnouncementList({
         <div className="grid min-w-0 gap-4">
             {items.map((item) => {
                 const symbol = item.symbol ?? "";
+                const announcement = earnings ? null : (item as AlphaAnnouncementDetail);
+                const earning = earnings ? (item as AlphaEarningsDetail) : null;
+                const title =
+                    announcement?.headline ?? announcement?.title ?? earning?.summary?.slice(0, 120) ?? fallbackTitle;
+                const metaParts = [
+                    earning?.earnings_significant ? "significant" : announcement?.category,
+                    formatDate(item.date)
+                ].filter(Boolean);
+                const body =
+                    announcement?.management_guidance ?? item.summary ?? "No summary provided.";
                 return (
                     <article className="min-w-0 max-w-full border-l-2 border-border pl-4" key={itemKey(item)}>
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
                                 <h2 className="max-w-full whitespace-normal break-words text-lg font-semibold text-foreground">
-                                    {item.headline ?? item.title ?? fallbackTitle}
+                                    {title}
                                 </h2>
                                 {symbol ? (
                                     <SymbolMetadataLine
@@ -652,12 +662,7 @@ function AnnouncementList({
                                     />
                                 ) : null}
                                 <p className="mt-1 max-w-full whitespace-normal break-words text-xs text-muted-foreground">
-                                    {[
-                                        earnings && item.earnings_significant ? "significant" : item.category,
-                                        formatDate(item.date)
-                                    ]
-                                        .filter(Boolean)
-                                        .join(" / ")}
+                                    {metaParts.join(" / ")}
                                 </p>
                             </div>
                             {item.attachment_url ? (
@@ -665,9 +670,7 @@ function AnnouncementList({
                             ) : null}
                         </div>
                         <p className="mt-3 max-w-full whitespace-normal break-words text-sm leading-6 text-muted-foreground">
-                            {earnings
-                                ? (item.management_guidance ?? item.summary ?? "No summary provided.")
-                                : (item.summary ?? "No summary provided.")}
+                            {body}
                         </p>
                     </article>
                 );
@@ -711,19 +714,10 @@ function ConcallList({
             ) : null}
             <div className="grid min-w-0 gap-4">
                 {items.map((item) => {
-                    const transcriptHref = item.transcript_pdf_links?.[0] ?? item.transcript_url ?? null;
-                    const audioHref = item.recording_links?.[0] ?? item.audio_url ?? null;
-                    const detail = [item.quarter, item.month, item.concall_type, formatDate(item.date)]
-                        .filter(Boolean)
-                        .join(" / ");
-                    const markdown =
-                        insightToMarkdown(
-                            item.short_analysis ??
-                                item.expanded_analysis ??
-                                item.analysis ??
-                                item.summary ??
-                                item.completion_response
-                        ) || "No analysis provided.";
+                    const transcriptHref = item.transcript_url ?? null;
+                    const audioHref = item.audio_url ?? null;
+                    const detail = [item.quarter, formatDate(item.date)].filter(Boolean).join(" / ");
+                    const markdown = insightToMarkdown(item.short_analysis ?? item.expanded_analysis) || "No analysis provided.";
                     return (
                         <article className="min-w-0 max-w-full border-l-2 border-border pl-4" key={itemKey(item)}>
                             <div className="flex flex-col items-start justify-between gap-3 min-[720px]:flex-row min-[720px]:gap-4">

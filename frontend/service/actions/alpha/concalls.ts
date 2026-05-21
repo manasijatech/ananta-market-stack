@@ -1,33 +1,50 @@
 "use server";
 
 import type {
-    AlphaAttachmentLookupResponse,
+    AlphaConcallArtifactUrlsResponse,
+    AlphaConcallTranscriptBatchResponse,
     AlphaPaginatedResponse,
-    AlphaPresignedUrlResponse
+    AlphaSymbolQuarterKey
 } from "@/service/types/alpha/common";
 import type { AlphaConcall } from "@/service/types/alpha/concalls";
-import { appendList, feedQuery, queryParamsToObject, request, withQuery, withAlphaSdk, type AlphaFeedParams } from "@/service/actions/alpha/shared";
+import { toConcallsQueryParams, withAlphaSdk, type AlphaFeedParams } from "@/service/actions/alpha/shared";
+
+export type AlphaConcallDetailParams = {
+    symbol: string;
+    quarter: string;
+    detailed?: boolean;
+};
 
 export async function getAlphaConcalls(params: AlphaFeedParams = {}): Promise<AlphaPaginatedResponse<AlphaConcall>> {
-    const response = await withAlphaSdk<AlphaPaginatedResponse<AlphaConcall>>((client) =>
-        client.getConcalls({
-            query: queryParamsToObject(feedQuery(params))
-        })
+    return withAlphaSdk<AlphaPaginatedResponse<AlphaConcall>>((client) =>
+        client.getConcalls(toConcallsQueryParams(params))
     );
-    console.log("[Alpha concalls raw API response]", JSON.stringify(response, null, 2));
-    return response;
 }
 
-export async function getAlphaConcall(concallId: string): Promise<AlphaConcall> {
-    return request<AlphaConcall>(`/v1/concalls/${encodeURIComponent(concallId)}`);
+export async function getAlphaConcallDetail(params: AlphaConcallDetailParams): Promise<AlphaConcall> {
+    const symbol = params.symbol.trim().toUpperCase();
+    const quarter = params.quarter.trim();
+    const detailParams = params.detailed === undefined ? {} : { detailed: params.detailed };
+    return withAlphaSdk<AlphaConcall>((client) => client.getConcallsDetail(symbol, quarter, detailParams));
 }
 
-export async function getAlphaConcallTranscripts(ids: string[]): Promise<AlphaAttachmentLookupResponse> {
-    const query = new URLSearchParams();
-    appendList(query, "ids", ids);
-    return request<AlphaAttachmentLookupResponse>(withQuery("/v1/concalls/transcripts", query));
+export async function getAlphaConcallTranscripts(
+    items: AlphaSymbolQuarterKey[]
+): Promise<AlphaConcallTranscriptBatchResponse> {
+    const normalized = items
+        .map((item) => ({
+            symbol: item.symbol.trim().toUpperCase(),
+            quarter: item.quarter.trim()
+        }))
+        .filter((item) => item.symbol && item.quarter);
+    return withAlphaSdk<AlphaConcallTranscriptBatchResponse>((client) => client.postConcallsTranscripts(normalized));
 }
 
-export async function getAlphaConcallTranscript(concallId: string): Promise<AlphaPresignedUrlResponse> {
-    return request<AlphaPresignedUrlResponse>(`/v1/concalls/${encodeURIComponent(concallId)}/transcript`);
+export async function getAlphaConcallArtifactUrls(
+    symbol: string,
+    quarter: string
+): Promise<AlphaConcallArtifactUrlsResponse> {
+    return withAlphaSdk<AlphaConcallArtifactUrlsResponse>((client) =>
+        client.getConcallsTranscript(symbol.trim().toUpperCase(), quarter.trim())
+    );
 }
