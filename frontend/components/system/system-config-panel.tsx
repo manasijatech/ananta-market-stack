@@ -15,6 +15,7 @@ import {
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
     Dialog,
@@ -150,6 +151,10 @@ const PROVIDER_SETUP_GUIDES: Record<
         ]
     }
 };
+
+function formatConfigDate(value?: string | null) {
+    return value ? new Date(value).toLocaleString("en-IN") : null;
+}
 
 function providerKey(provider: LlmProvider) {
     return provider;
@@ -517,17 +522,28 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
                             <div className="text-sm font-bold">{config.alpha_api.label}</div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                                API key {config.alpha_api.has_api_key ? "configured" : "not configured"}
-                                {config.alpha_api.api_key_updated_at
-                                    ? ` · updated ${new Date(config.alpha_api.api_key_updated_at).toLocaleString("en-IN")}`
-                                    : ""}
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <Badge
+                                    className={
+                                        config.alpha_api.has_api_key
+                                            ? "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]"
+                                            : "border-destructive bg-destructive/10 text-destructive"
+                                    }
+                                    variant="outline"
+                                >
+                                    {config.alpha_api.has_api_key ? "Key saved" : "Key missing"}
+                                </Badge>
+                                {config.alpha_api.api_key_hint ? (
+                                    <span className="font-mono text-xs font-semibold text-foreground">
+                                        {config.alpha_api.api_key_hint}
+                                    </span>
+                                ) : null}
+                                {config.alpha_api.api_key_updated_at ? (
+                                    <span className="text-xs text-muted-foreground">
+                                        Updated {formatConfigDate(config.alpha_api.api_key_updated_at)}
+                                    </span>
+                                ) : null}
                             </div>
-                            {config.alpha_api.api_key_hint ? (
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    Saved key: {config.alpha_api.api_key_hint}
-                                </div>
-                            ) : null}
                         </div>
                     </div>
                     <div className="mt-4 flex flex-col gap-2 min-[760px]:flex-row">
@@ -634,17 +650,28 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                                     </div>
                                 </div>
                                 <div className="mt-1 text-xs text-muted-foreground">{provider.base_url}</div>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    API key {provider.has_api_key ? "configured" : "not configured"}
-                                    {provider.api_key_updated_at
-                                        ? ` · updated ${new Date(provider.api_key_updated_at).toLocaleString("en-IN")}`
-                                        : ""}
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <Badge
+                                        className={
+                                            provider.has_api_key
+                                                ? "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]"
+                                                : "border-destructive bg-destructive/10 text-destructive"
+                                        }
+                                        variant="outline"
+                                    >
+                                        {provider.has_api_key ? "Key saved" : "Key missing"}
+                                    </Badge>
+                                    {provider.api_key_hint ? (
+                                        <span className="font-mono text-xs font-semibold text-foreground">
+                                            {provider.api_key_hint}
+                                        </span>
+                                    ) : null}
+                                    {provider.api_key_updated_at ? (
+                                        <span className="text-xs text-muted-foreground">
+                                            Updated {formatConfigDate(provider.api_key_updated_at)}
+                                        </span>
+                                    ) : null}
                                 </div>
-                                {provider.api_key_hint ? (
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                        Saved key: {provider.api_key_hint}
-                                    </div>
-                                ) : null}
                             </div>
                             <Dialog>
                                 <DialogTrigger asChild>
@@ -790,10 +817,11 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                                         </div>
                                     </div>
                                     <Button
+                                        className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
                                         onClick={() => removeModel(provider.provider, model.id)}
                                         size="sm"
                                         type="button"
-                                        variant="ghost"
+                                        variant="outline"
                                     >
                                         Remove
                                     </Button>
