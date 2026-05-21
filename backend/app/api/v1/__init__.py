@@ -9,6 +9,7 @@ from app.api.v1 import (
     alert_universes,
     alert_workflows,
     alpha_ws,
+    broker_chat,
     broker_accounts,
     broker_data_config,
     broker_ops,
@@ -64,6 +65,9 @@ api_router.include_router(
 )
 api_router.include_router(
     broker_data_config.router, prefix="/broker-data", tags=["broker-data"]
+)
+api_router.include_router(
+    broker_chat.router, prefix="/broker-chat", tags=["broker-chat"]
 )
 api_router.include_router(
     system_config.router, prefix="/system-config", tags=["system-config"]

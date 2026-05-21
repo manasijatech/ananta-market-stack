@@ -10,6 +10,7 @@ import {
     IconListCheck,
     IconLogout,
     IconMenu2,
+    IconMessageCircle,
     IconNews,
     IconRoute,
     IconSettings2,
@@ -45,6 +46,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         label: "INTELLIGENCE",
         items: [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
+            { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
             { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging },
             { href: "/alert-channels", label: "Alert Channels", icon: IconRoute }
         ]

@@ -5,11 +5,13 @@ import threading
 from threading import Thread
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
 from app.config import get_settings
 from app.services.alert_runtime import create_alert_worker_service
 from app.services.alpha_websocket import run_alpha_websocket_worker
+from app.services.broker_chat_worker_service import run_broker_chat_worker
 from app.services.broker_sessions import maintenance_loop
 from app.services.system_maintenance import run_startup_maintenance
 from app.services.watchlist_preset_worker import run_watchlist_preset_worker
@@ -122,6 +124,9 @@ async def lifespan(_app: FastAPI):
             "watchlist-preset-worker",
             run_watchlist_preset_worker,
         )
+    broker_chat_worker_service = None
+    if settings.enable_in_process_broker_chat_worker:
+        broker_chat_worker_service = _start_background_service("broker-chat-worker", run_broker_chat_worker)
     yield
     if maintenance_service:
         maintenance_service.stop()
@@ -131,6 +136,8 @@ async def lifespan(_app: FastAPI):
         alpha_ws_worker_service.stop()
     if watchlist_preset_worker_service:
         watchlist_preset_worker_service.stop()
+    if broker_chat_worker_service:
+        broker_chat_worker_service.stop()
 
 
 def _start_background_service(name: str, target) -> BackgroundAsyncLoopThread | None:
@@ -168,6 +175,20 @@ Refer to `AGENTS.md` in the repository for architectural details and implementat
     contact={
         "name": "Market-Stack Support",
     },
+)
+
+cors_origins = [origin.strip() for origin in settings.cors_allowed_origins.split(",") if origin.strip()]
+if settings.app_public_base_url and settings.app_public_base_url not in cors_origins:
+    cors_origins.append(settings.app_public_base_url)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_origin_regex=settings.cors_allow_origin_regex,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Last-Event-ID"],
 )
 
 app.include_router(api_router, prefix="/api/v1")
