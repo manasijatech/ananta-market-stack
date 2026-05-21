@@ -5,24 +5,26 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
     IconAlertTriangle,
+    IconArrowDown,
     IconArrowRight,
     IconCircleCheck,
     IconPlayerStop,
     IconLoader2,
     IconMessagePlus,
-    IconRefresh,
+    IconSearch,
     IconTerminal2,
-    IconTool,
-    IconTrash,
-    IconUser
+    IconTrash
 } from "@tabler/icons-react";
-import { formatDate, StatusBadge } from "@/components/brokers/ui";
+import { formatDate } from "@/components/brokers/ui";
 import { useSession } from "@/components/session-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { ShimmeringText } from "@/components/ui/shimmering-text";
 import { Textarea } from "@/components/ui/textarea";
+import { useChatAutoScroll } from "@/hooks/use-chat-auto-scroll";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { cn } from "@/lib/utils";
 import {
@@ -107,19 +109,6 @@ function mergeEvents(existing: BrokerChatEvent[], incoming: BrokerChatEvent[]) {
     return Array.from(bySequence.values()).sort((a, b) => a.sequence - b.sequence);
 }
 
-function statusClass(status: string) {
-    if (status === "completed") {
-        return "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]";
-    }
-    if (status === "failed" || status === "cancelled") {
-        return "border-destructive/50 bg-destructive/10 text-destructive";
-    }
-    if (status === "running" || status === "queued") {
-        return "border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent-dim)] dark:text-[var(--accent)]";
-    }
-    return "border-border bg-card text-muted-foreground";
-}
-
 function providerName(provider: LlmProviderConfig | undefined, providerId?: string | null) {
     return provider?.label || providerId || "Provider";
 }
@@ -131,20 +120,6 @@ function enabledModels(provider?: LlmProviderConfig) {
 function textPayload(payload: Record<string, unknown>, key: string) {
     const value = payload[key];
     return typeof value === "string" ? value : "";
-}
-
-function jsonPreview(value: unknown) {
-    if (value === undefined || value === null) {
-        return "";
-    }
-    if (typeof value === "string") {
-        return value;
-    }
-    try {
-        return JSON.stringify(value, null, 2);
-    } catch {
-        return String(value);
-    }
 }
 
 function assistantText(events: BrokerChatEvent[], run: BrokerChatRun) {
@@ -189,14 +164,6 @@ function parseSseBlock(block: string): ParsedSseEvent | null {
     return event;
 }
 
-function toolOutputPreview(event?: BrokerChatEvent) {
-    const outputMetadata = event?.payload.output_metadata;
-    if (typeof outputMetadata === "object" && outputMetadata !== null && "preview" in outputMetadata) {
-        return String((outputMetadata as { preview?: unknown }).preview ?? "");
-    }
-    return event ? textPayload(event.payload, "message") : "";
-}
-
 function groupToolSteps(events: BrokerChatEvent[]): ToolStep[] {
     const steps: ToolStep[] = [];
     const pending: ToolStep[] = [];
@@ -238,103 +205,64 @@ function groupToolSteps(events: BrokerChatEvent[]): ToolStep[] {
 }
 
 function ToolStepRow({ step }: { step: ToolStep }) {
-    const argumentsPayload = step.start?.payload.arguments ?? null;
-    const outputPayload = step.output?.payload.output ?? null;
-    const preview = toolOutputPreview(step.output);
-    const status = step.output ? "completed" : "running";
+    const action = step.output ? "Checked" : "Calling";
+    const toolName = step.toolName.replace(/^broker_/, "").replace(/_/g, " ");
+    const text = `${action} ${toolName}`;
 
     return (
-        <div className="border-l-2 border-border bg-secondary/35 px-3 py-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <IconTool className="size-4 text-muted-foreground" stroke={1.8} />
-                <span className="font-mono text-[11px] font-bold uppercase text-muted-foreground">
-                    Tool
-                </span>
-                <span className="truncate text-sm font-semibold">{step.toolName}</span>
-                <StatusBadge className={status === "completed" ? statusClass("completed") : statusClass("running")}>
-                    {status}
-                </StatusBadge>
-                <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                    #{step.start?.sequence ?? step.output?.sequence}
-                    {step.output ? `-${step.output.sequence}` : ""}
-                </span>
-            </div>
-            {preview ? <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted-foreground">{preview}</p> : null}
-            {argumentsPayload || outputPayload ? (
-                <details className="mt-2">
-                    <summary className="cursor-pointer font-mono text-[10px] font-bold uppercase text-primary">
-                        Details
-                    </summary>
-                    {argumentsPayload ? (
-                        <>
-                            <div className="mt-2 font-mono text-[10px] font-bold uppercase text-muted-foreground">
-                                Arguments
-                            </div>
-                            <pre className="mt-1 max-h-52 overflow-auto border border-border bg-background p-3 text-xs leading-5 text-muted-foreground">
-                                {jsonPreview(argumentsPayload)}
-                            </pre>
-                        </>
-                    ) : null}
-                    {outputPayload ? (
-                        <>
-                            <div className="mt-2 font-mono text-[10px] font-bold uppercase text-muted-foreground">
-                                Output
-                            </div>
-                            <pre className="mt-1 max-h-72 overflow-auto border border-border bg-background p-3 text-xs leading-5 text-muted-foreground">
-                                {jsonPreview(outputPayload)}
-                            </pre>
-                        </>
-                    ) : null}
-                </details>
-            ) : null}
+        <div className="flex items-center gap-2 px-1 py-1.5 text-sm">
+            <span className="size-1.5 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
+            <ShimmeringText
+                className="font-medium"
+                color="var(--text-muted)"
+                shimmerColor="var(--accent)"
+                text={text}
+            />
         </div>
     );
 }
 
 function AssistantMessage({ text, running }: { text: string; running: boolean }) {
     return (
-        <div className="flex gap-3">
-            <span className="mt-1 flex size-8 shrink-0 items-center justify-center border border-primary/50 bg-[var(--accent-subtle)] text-primary">
-                <IconTerminal2 className="size-4" stroke={1.8} />
-            </span>
-            <div className="min-w-0 flex-1 border border-border bg-card px-4 py-3">
-                {text ? (
-                    <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                            p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-                            ul: ({ children }) => <ul className="mb-3 list-disc pl-5 last:mb-0">{children}</ul>,
-                            ol: ({ children }) => <ol className="mb-3 list-decimal pl-5 last:mb-0">{children}</ol>,
-                            code: ({ children }) => (
-                                <code className="bg-secondary px-1 py-0.5 font-mono text-[0.92em]">{children}</code>
-                            ),
-                            pre: ({ children }) => (
-                                <pre className="mb-3 overflow-auto border border-border bg-secondary p-3 text-xs">
-                                    {children}
-                                </pre>
-                            )
-                        }}
-                    >
-                        {text}
-                    </ReactMarkdown>
-                ) : (
-                    <p className="text-sm text-muted-foreground">
-                        {running ? "Waiting for the assistant..." : "No assistant response was stored for this run."}
-                    </p>
-                )}
-            </div>
+        <div className="max-w-4xl px-1 text-sm leading-6 text-foreground">
+            {text ? (
+                <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                        p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                        ul: ({ children }) => <ul className="mb-3 list-disc pl-5 last:mb-0">{children}</ul>,
+                        ol: ({ children }) => <ol className="mb-3 list-decimal pl-5 last:mb-0">{children}</ol>,
+                        code: ({ children }) => (
+                            <code className="bg-secondary px-1 py-0.5 font-mono text-[0.92em]">{children}</code>
+                        ),
+                        pre: ({ children }) => (
+                            <pre className="mb-3 overflow-auto border border-border bg-secondary/60 p-3 text-xs">
+                                {children}
+                            </pre>
+                        )
+                    }}
+                >
+                    {text}
+                </ReactMarkdown>
+            ) : running ? (
+                <ShimmeringText
+                    className="text-sm font-medium"
+                    color="var(--text-muted)"
+                    shimmerColor="var(--accent)"
+                    text="Thinking..."
+                />
+            ) : (
+                <p className="text-sm text-muted-foreground">No assistant response was stored for this run.</p>
+            )}
         </div>
     );
 }
 
 function UserMessage({ text }: { text: string }) {
     return (
-        <div className="flex gap-3">
-            <span className="mt-1 flex size-8 shrink-0 items-center justify-center border border-border bg-secondary text-muted-foreground">
-                <IconUser className="size-4" stroke={1.8} />
-            </span>
-            <div className="min-w-0 flex-1 border border-border bg-background px-4 py-3">
-                <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>
+        <div className="flex justify-end">
+            <div className="max-w-[min(720px,82%)] border border-border bg-secondary px-4 py-3">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{text}</p>
             </div>
         </div>
     );
@@ -347,6 +275,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const [eventsByRun, setEventsByRun] = useState<Record<string, BrokerChatEvent[]>>({});
     const [activeSessionId, setActiveSessionId] = useState(initialSessions[0]?.id ?? initialRuns[0]?.session_id ?? "");
     const [message, setMessage] = useState("");
+    const [sessionSearch, setSessionSearch] = useState("");
+    const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
+    const previousRunCountRef = useRef(0);
+    const previousActiveSessionIdRef = useRef<string | null>(null);
     const [provider, setProvider] = useState<LlmProvider | "">(initialConfig.default_provider ?? "");
     const [model, setModel] = useState(initialConfig.default_model ?? "");
     const [visibility, setVisibility] = useState<BrokerChatVisibility>(initialConfig.event_visibility);
@@ -354,7 +286,6 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const [includeReasoning, setIncludeReasoning] = useState(initialConfig.include_reasoning);
     const [useMcp, setUseMcp] = useState(initialConfig.use_mcp && mcpServer.is_enabled);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [isSavingConfig, setIsSavingConfig] = useState(false);
     const [isCreatingSession, setIsCreatingSession] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [configError, setConfigError] = useState<string | null>(null);
@@ -401,6 +332,22 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         () => sortRuns(runs.filter((run) => run.session_id === activeSessionId)),
         [activeSessionId, runs]
     );
+    const activeRunCount = runsForActiveSession.length;
+    const {
+        contentRef: chatContentRef,
+        hasUnreadContent,
+        isAutoScrollEnabled,
+        isNearBottom,
+        onContentChange,
+        scrollRef: chatScrollRef,
+        scrollToBottom,
+        showScrollButton,
+        unreadCount
+    } = useChatAutoScroll({
+        enabled: true,
+        nearBottomThreshold: 120
+    });
+    const activeSession = sessions.find((session) => session.id === activeSessionId);
 
     const latestRunBySession = useMemo(() => {
         const map = new Map<string, BrokerChatRun>();
@@ -411,6 +358,19 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         }
         return map;
     }, [runs]);
+
+    const filteredSessions = useMemo(() => {
+        const normalizedSearch = sessionSearch.trim().toLowerCase();
+        if (!normalizedSearch) {
+            return sessions;
+        }
+        return sessions.filter((session) => {
+            const latestRun = latestRunBySession.get(session.id);
+            return [session.title, latestRun?.message, latestRun?.status]
+                .filter(Boolean)
+                .some((value) => value?.toLowerCase().includes(normalizedSearch));
+        });
+    }, [latestRunBySession, sessionSearch, sessions]);
 
     const hasConfiguredLlm = Boolean(provider && model);
     const activeRun = runsForActiveSession.find((run) => liveStatuses.has(run.status)) ?? null;
@@ -432,15 +392,12 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     useEffect(() => {
         const requestId = ++configSaveRequestRef.current;
         if (!configPayload) {
-            setIsSavingConfig(false);
             return;
         }
         const nextConfigKey = brokerChatConfigKey(configPayload);
         if (nextConfigKey === savedConfigKeyRef.current) {
-            setIsSavingConfig(false);
             return;
         }
-        setIsSavingConfig(true);
         const timeout = window.setTimeout(async () => {
             try {
                 await updateBrokerChatConfig(configPayload);
@@ -451,10 +408,6 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             } catch (err) {
                 if (requestId === configSaveRequestRef.current) {
                     setConfigError((err as Error).message);
-                }
-            } finally {
-                if (requestId === configSaveRequestRef.current) {
-                    setIsSavingConfig(false);
                 }
             }
         }, 600);
@@ -634,20 +587,30 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             .catch(() => setQueueHealth(null));
     }, []);
 
-    async function refreshAll() {
-        setError(null);
-        const [nextSessions, nextRuns, nextQueueHealth] = await Promise.all([
-            getBrokerChatSessions(80),
-            getBrokerChatRuns({ limit: 160 }),
-            getBrokerChatQueueHealth().catch(() => null)
-        ]);
-        setSessions(sortSessions(nextSessions));
-        setRuns((current) => mergeRuns(current, nextRuns));
-        if (nextQueueHealth) {
-            setQueueHealth(nextQueueHealth);
+    useEffect(() => {
+        const input = messageInputRef.current;
+        if (!input) return;
+        input.style.height = "auto";
+        input.style.height = `${Math.min(input.scrollHeight, 260)}px`;
+        onContentChange();
+    }, [message, onContentChange]);
+
+    useEffect(() => {
+        const nextRunCount = activeRunCount;
+        onContentChange({
+            unreadIncrement: nextRunCount > previousRunCountRef.current
+        });
+        previousRunCountRef.current = nextRunCount;
+    }, [activeRunCount, eventsByRun, onContentChange, runsForActiveSession, streamingIds]);
+
+    useEffect(() => {
+        if (previousActiveSessionIdRef.current === activeSessionId) {
+            return;
         }
-        await Promise.all(runsForActiveSession.map((run) => loadRunEvents(run.id)));
-    }
+        previousActiveSessionIdRef.current = activeSessionId;
+        previousRunCountRef.current = activeRunCount;
+        scrollToBottom({ behavior: "auto", force: true });
+    }, [activeRunCount, activeSessionId, scrollToBottom]);
 
     async function stopActiveRun() {
         if (!activeRun) return;
@@ -662,22 +625,23 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         }
     }
 
-    async function deleteActiveSession() {
-        if (!activeSessionId) return;
+    async function deleteSession(sessionId: string) {
+        if (!sessionId) return;
         setError(null);
         try {
-            const deleteId = activeSessionId;
             runs
-                .filter((run) => run.session_id === deleteId)
+                .filter((run) => run.session_id === sessionId)
                 .forEach((run) => streamControllersRef.current[run.id]?.abort());
-            await deleteBrokerChatSession(deleteId);
+            await deleteBrokerChatSession(sessionId);
             const [nextSessions, nextRuns] = await Promise.all([
                 getBrokerChatSessions(80),
                 getBrokerChatRuns({ limit: 160 })
             ]);
             setSessions(sortSessions(nextSessions));
             setRuns(mergeRuns([], nextRuns));
-            setActiveSessionId(nextSessions[0]?.id ?? "");
+            if (sessionId === activeSessionId) {
+                setActiveSessionId(nextSessions[0]?.id ?? "");
+            }
         } catch (err) {
             setError((err as Error).message);
         }
@@ -698,8 +662,8 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         }
     }
 
-    async function sendMessage() {
-        const trimmed = message.trim();
+    async function sendMessage(nextMessage = message) {
+        const trimmed = nextMessage.trim();
         if (!trimmed || !provider || !model || isSubmitting || activeRun) {
             return;
         }
@@ -721,6 +685,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             if (!activeSessionId) {
                 setActiveSessionId(result.run.session_id);
             }
+            scrollToBottom({ behavior: "auto", force: true });
             const nextSessions = await getBrokerChatSessions(80).catch(() => sessions);
             setSessions(sortSessions(nextSessions));
             void streamRun(result.run.id, 0);
@@ -732,21 +697,21 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     }
 
     const emptyState = !sessions.length && !runs.length;
+    const starterPrompts = [
+        "Summarize today's portfolio risk",
+        "Show my available funds and margin",
+        "Check broker connection health",
+        "Get latest quotes for my watchlist"
+    ];
 
     return (
-        <section className="grid min-h-[650px] gap-4 min-[1080px]:grid-cols-[312px_minmax(0,1fr)]">
-            <aside className="min-h-0 border border-border bg-background">
-                <div className="flex items-center justify-between gap-3 border-b border-border p-4">
-                    <div>
-                        <h2 className="text-sm font-bold uppercase">Chats</h2>
-                        <p className="mt-1 text-xs text-muted-foreground">{sessions.length} saved sessions</p>
-                    </div>
+        <section className="grid min-h-0 flex-1 gap-4 min-[1080px]:grid-cols-[284px_minmax(0,1fr)]">
+            <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-border bg-background">
+                <div className="border-b border-border p-3">
                     <Button
-                        aria-label="New chat"
-                        className="size-9"
+                        className="h-10 w-full justify-start gap-2"
                         disabled={isCreatingSession}
                         onClick={createNewChat}
-                        size="icon"
                         type="button"
                         variant="outline"
                     >
@@ -755,67 +720,89 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         ) : (
                             <IconMessagePlus className="size-4" stroke={1.8} />
                         )}
+                        New chat
                     </Button>
+                    <Label className="relative mt-3 block">
+                        <span className="sr-only">Search chats</span>
+                        <IconSearch
+                            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                            stroke={1.8}
+                        />
+                        <Input
+                            className="h-10 pl-9 text-sm"
+                            onChange={(event) => setSessionSearch(event.target.value)}
+                            placeholder="Search chats"
+                            value={sessionSearch}
+                        />
+                    </Label>
                 </div>
 
-                <div className="max-h-[calc(100dvh-250px)] min-h-[520px] overflow-y-auto p-2">
+                <div className="min-h-0 overflow-y-auto p-2">
+                    <div className="px-2 pb-2 pt-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                        Recents
+                    </div>
                     {emptyState ? (
                         <div className="border border-dashed border-border p-4 text-sm text-muted-foreground">
                             Start a chat to create the first broker data session.
                         </div>
                     ) : null}
-                    <div className="grid gap-2">
-                        {sessions.map((session) => {
+                    {!emptyState && !filteredSessions.length ? (
+                        <div className="border border-dashed border-border p-4 text-sm text-muted-foreground">
+                            No chats match your search.
+                        </div>
+                    ) : null}
+                    <div className="grid gap-1">
+                        {filteredSessions.map((session) => {
                             const latestRun = latestRunBySession.get(session.id);
                             const active = session.id === activeSessionId;
                             const live = latestRun ? liveStatuses.has(latestRun.status) : false;
                             return (
                                 <div
                                     className={cn(
-                                        "min-w-0 border px-3 py-3 transition hover:border-primary/50",
+                                        "group relative flex min-w-0 items-center gap-1 overflow-hidden border border-transparent transition",
                                         active
-                                            ? "border-primary bg-[var(--accent-subtle)]"
-                                            : "border-border bg-card hover:bg-secondary/50"
+                                            ? "border-border bg-secondary"
+                                            : "hover:border-border hover:bg-secondary/55",
+                                        live ? "broker-chat-row-shimmer" : null
                                     )}
                                     key={session.id}
                                 >
                                     <button
-                                        className="w-full min-w-0 text-left"
+                                        className="relative z-10 min-w-0 flex-1 px-3 py-2 text-left"
                                         onClick={() => setActiveSessionId(session.id)}
                                         type="button"
                                     >
                                         <div className="flex min-w-0 items-center gap-2">
                                             <span className="truncate text-sm font-semibold">{session.title}</span>
-                                            {live ? (
-                                                <IconLoader2
-                                                    className="ml-auto size-4 animate-spin text-primary"
-                                                    stroke={1.8}
-                                                />
-                                            ) : null}
                                         </div>
-                                        <div className="mt-2 flex min-w-0 items-center gap-2">
-                                            {latestRun ? (
-                                                <StatusBadge className={statusClass(latestRun.status)}>
-                                                    {latestRun.status}
-                                                </StatusBadge>
-                                            ) : (
-                                                <StatusBadge>empty</StatusBadge>
-                                            )}
-                                            <span className="truncate text-xs text-muted-foreground">
-                                                {formatDate(session.updated_at)}
-                                            </span>
+                                        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                                            <span
+                                                className={cn(
+                                                    "size-1.5 shrink-0 rounded-full bg-muted-foreground/45",
+                                                    live ? "bg-primary" : null,
+                                                    latestRun?.status === "completed" ? "bg-[var(--success)]" : null,
+                                                    latestRun?.status === "failed" ||
+                                                        latestRun?.status === "cancelled"
+                                                        ? "bg-destructive"
+                                                        : null
+                                                )}
+                                            />
+                                            <span className="truncate">{latestRun?.status ?? "empty"}</span>
+                                            <span aria-hidden="true">·</span>
+                                            <span className="truncate">{formatDate(session.updated_at)}</span>
                                         </div>
                                     </button>
-                                    {active ? (
-                                        <button
-                                            className="mt-3 inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase text-muted-foreground hover:text-destructive"
-                                            onClick={deleteActiveSession}
-                                            type="button"
-                                        >
-                                            <IconTrash className="size-3.5" stroke={1.8} />
-                                            Delete
-                                        </button>
-                                    ) : null}
+                                    <button
+                                        aria-label={`Delete ${session.title}`}
+                                        className="relative z-10 mr-1 flex size-8 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            void deleteSession(session.id);
+                                        }}
+                                        type="button"
+                                    >
+                                        <IconTrash className="size-3.5" stroke={1.8} />
+                                    </button>
                                 </div>
                             );
                         })}
@@ -824,106 +811,17 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             </aside>
 
             <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border border-border bg-background">
-                <div className="border-b border-border p-4">
+                <div className="border-b border-border p-3">
                     <div className="flex flex-col gap-4 min-[900px]:flex-row min-[900px]:items-end min-[900px]:justify-between">
                         <div className="min-w-0">
                             <h2 className="truncate text-xl font-semibold">
-                                {sessions.find((session) => session.id === activeSessionId)?.title ?? "New broker chat"}
+                                {activeSession?.title ?? "New broker chat"}
                             </h2>
                             <p className="mt-1 text-sm text-muted-foreground">
                                 {runsForActiveSession.length} message run
                                 {runsForActiveSession.length === 1 ? "" : "s"} in this chat
                             </p>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            {activeRun ? (
-                                <Button onClick={stopActiveRun} size="sm" type="button" variant="destructive">
-                                    <IconPlayerStop className="size-4" stroke={1.8} />
-                                    Stop
-                                </Button>
-                            ) : null}
-                            {activeSessionId ? (
-                                <Button onClick={deleteActiveSession} size="sm" type="button" variant="outline">
-                                    <IconTrash className="size-4" stroke={1.8} />
-                                    Delete
-                                </Button>
-                            ) : null}
-                            <Button onClick={refreshAll} size="sm" type="button" variant="outline">
-                                <IconRefresh className="size-4" stroke={1.8} />
-                                Refresh
-                            </Button>
-                            {isSavingConfig ? (
-                                <span
-                                    aria-live="polite"
-                                    className="inline-flex h-8 items-center gap-2 border border-border bg-secondary px-3 font-mono text-[10px] font-bold uppercase text-muted-foreground"
-                                >
-                                    <IconLoader2 className="size-3.5 animate-spin" stroke={1.8} />
-                                    Autosaving
-                                </span>
-                            ) : null}
-                        </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 min-[780px]:grid-cols-2 min-[1280px]:grid-cols-[1fr_1fr_180px_auto_auto_auto]">
-                        <Label className="grid gap-1 text-xs uppercase text-muted-foreground">
-                            Provider
-                            <Select
-                                disabled={!configuredProviders.length}
-                                onChange={(event) => setProvider(event.target.value as LlmProvider)}
-                                value={provider}
-                            >
-                                <option value="">Select provider</option>
-                                {configuredProviders.map((item) => (
-                                    <option key={item.provider} value={item.provider}>
-                                        {providerName(item)}
-                                    </option>
-                                ))}
-                            </Select>
-                        </Label>
-                        <Label className="grid gap-1 text-xs uppercase text-muted-foreground">
-                            Model
-                            <Select disabled={!selectedModels.length} onChange={(event) => setModel(event.target.value)} value={model}>
-                                <option value="">Select model</option>
-                                {selectedModels.map((item) => (
-                                    <option key={item.id} value={item.model_id}>
-                                        {item.label || item.model_id}
-                                    </option>
-                                ))}
-                            </Select>
-                        </Label>
-                        <Label className="grid gap-1 text-xs uppercase text-muted-foreground">
-                            Detail
-                            <Select
-                                onChange={(event) => setVisibility(event.target.value as BrokerChatVisibility)}
-                                value={visibility}
-                            >
-                                <option value="minimal">Minimal</option>
-                                <option value="tool_calls">Tool calls</option>
-                                <option value="full">Full</option>
-                            </Select>
-                        </Label>
-                        <Label className="flex items-center gap-2 self-end text-xs font-semibold uppercase text-muted-foreground">
-                            <Checkbox
-                                checked={includeToolOutputs}
-                                onCheckedChange={(value) => setIncludeToolOutputs(Boolean(value))}
-                            />
-                            Tool output
-                        </Label>
-                        <Label className="flex items-center gap-2 self-end text-xs font-semibold uppercase text-muted-foreground">
-                            <Checkbox
-                                checked={includeReasoning}
-                                onCheckedChange={(value) => setIncludeReasoning(Boolean(value))}
-                            />
-                            Reasoning
-                        </Label>
-                        <Label className="flex items-center gap-2 self-end text-xs font-semibold uppercase text-muted-foreground">
-                            <Checkbox
-                                checked={useMcp}
-                                disabled={!mcpServer.is_enabled}
-                                onCheckedChange={(value) => setUseMcp(Boolean(value))}
-                            />
-                            MCP
-                        </Label>
                     </div>
 
                     {!configuredProviders.length ? (
@@ -944,11 +842,6 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             {configError}
                         </div>
                     ) : null}
-                    {!mcpServer.is_enabled ? (
-                        <div className="mt-3 text-xs text-muted-foreground">
-                            MCP tools are disabled in System Config.
-                        </div>
-                    ) : null}
                     {queueHealth && !queueHealth.has_processing_path ? (
                         <div className="mt-3 flex items-start gap-2 border border-[var(--accent)] bg-[var(--accent-subtle)] p-3 text-sm text-[var(--accent-dim)] dark:text-[var(--accent)]">
                             <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
@@ -957,98 +850,237 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                     ) : null}
                 </div>
 
-                <div className="min-h-0 overflow-y-auto p-4">
-                    {!runsForActiveSession.length ? (
-                        <div className="flex min-h-[360px] items-center justify-center border border-dashed border-border p-8 text-center">
-                            <div>
-                                <IconMessagePlus className="mx-auto size-8 text-muted-foreground" stroke={1.6} />
-                                <h3 className="mt-3 text-lg font-semibold">Ask about broker data</h3>
-                                <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                                    The assistant can call the broker data tools for connected accounts, quotes, history,
-                                    instruments, option chains, greeks, funds, positions, holdings, and stream state.
-                                </p>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="grid gap-6">
-                            {runsForActiveSession.map((run) => {
-                                const events = eventsByRun[run.id] ?? [];
-                                const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
-                                const toolSteps = groupToolSteps(events);
-                                const text = assistantText(events, run);
-                                return (
-                                    <article className="grid gap-3" key={run.id}>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <StatusBadge className={statusClass(run.status)}>{run.status}</StatusBadge>
-                                            <span className="text-xs text-muted-foreground">
-                                                {run.provider} / {run.model_id}
-                                            </span>
-                                            <span className="ml-auto text-xs text-muted-foreground">
-                                                {formatDate(run.created_at)}
-                                            </span>
+                <div className="relative min-h-0 overflow-hidden">
+                    <div
+                        aria-label="Broker chat messages"
+                        className="h-full min-h-0 overflow-y-auto px-8 py-5 [overflow-anchor:none] min-[900px]:px-10 min-[1400px]:px-14"
+                        ref={chatScrollRef}
+                        tabIndex={0}
+                    >
+                        <div className="min-h-full" ref={chatContentRef}>
+                            {!runsForActiveSession.length ? (
+                                <div className="flex min-h-full items-center justify-center px-4 py-10 text-center">
+                                    <div className="w-full max-w-2xl">
+                                        <span className="mx-auto flex size-11 items-center justify-center border border-border bg-secondary text-muted-foreground">
+                                            <IconTerminal2 className="size-5" stroke={1.8} />
+                                        </span>
+                                        <p className="mt-5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
+                                            Broker data assistant
+                                        </p>
+                                        <h3 className="mt-2 text-2xl font-semibold tracking-normal">
+                                            Start with a portfolio or market question
+                                        </h3>
+                                        <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
+                                            Ask about connected accounts, funds, positions, holdings, quotes, option
+                                            chains, instruments, or stream health. Tool calls stay scoped to your saved
+                                            broker setup.
+                                        </p>
+                                        <div className="mx-auto mt-6 grid max-w-xl gap-2 min-[640px]:grid-cols-2">
+                                            {starterPrompts.map((prompt) => (
+                                                <button
+                                                    className="border border-border bg-background px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:border-primary hover:bg-[var(--accent-glow)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                                                    disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
+                                                    key={prompt}
+                                                    onClick={() => {
+                                                        void sendMessage(prompt);
+                                                    }}
+                                                    type="button"
+                                                >
+                                                    {prompt}
+                                                </button>
+                                            ))}
                                         </div>
-                                        <UserMessage text={run.message} />
-                                        {toolSteps.length ? (
-                                            <div className="ml-11 grid gap-2">
-                                                {toolSteps.map((step) => (
-                                                    <ToolStepRow step={step} key={step.key} />
-                                                ))}
-                                            </div>
-                                        ) : null}
-                                        <AssistantMessage running={running} text={text} />
-                                        {run.error ? (
-                                            <div className="ml-11 flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-                                                <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
-                                                {run.error}
-                                            </div>
-                                        ) : null}
-                                    </article>
-                                );
-                            })}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="grid gap-6">
+                                    {runsForActiveSession.map((run) => {
+                                        const events = eventsByRun[run.id] ?? [];
+                                        const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
+                                        const toolSteps = groupToolSteps(events);
+                                        const text = assistantText(events, run);
+                                        const showToolSteps = running && !text && toolSteps.length > 0;
+                                        const showThinking = running && !text && !showToolSteps;
+                                        const showAssistant = Boolean(text) || showThinking || !running;
+                                        return (
+                                            <article className="grid gap-3" key={run.id}>
+                                                <UserMessage text={run.message} />
+                                                {showToolSteps ? (
+                                                    <div className="grid gap-2">
+                                                        {toolSteps.map((step) => (
+                                                            <ToolStepRow step={step} key={step.key} />
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+                                                {showAssistant ? (
+                                                    <AssistantMessage running={showThinking} text={text} />
+                                                ) : null}
+                                                {run.error ? (
+                                                    <div className="ml-11 flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                                                        <IconAlertTriangle
+                                                            className="mt-0.5 size-4 shrink-0"
+                                                            stroke={1.8}
+                                                        />
+                                                        {run.error}
+                                                    </div>
+                                                ) : null}
+                                            </article>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </div>
+                    <button
+                        aria-label={
+                            hasUnreadContent
+                                ? "Scroll to latest unread broker chat activity"
+                                : "Scroll to latest broker chat message"
+                        }
+                        className={cn(
+                            "absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground shadow-lg transition duration-150 hover:border-primary hover:text-primary motion-reduce:transition-none",
+                            showScrollButton
+                                ? "translate-y-0 opacity-100"
+                                : "pointer-events-none translate-y-2 opacity-0"
+                        )}
+                        onClick={() => scrollToBottom({ behavior: "smooth", force: true })}
+                        type="button"
+                    >
+                        <IconArrowDown className="size-4" stroke={1.8} />
+                        <span>{unreadCount > 0 ? `${unreadCount} new` : "Latest"}</span>
+                    </button>
+                    <span aria-live="polite" className="sr-only">
+                        {!isAutoScrollEnabled && !isNearBottom && hasUnreadContent
+                            ? "New broker chat activity is available below."
+                            : ""}
+                    </span>
                 </div>
 
                 <form
-                    className="border-t border-border p-4"
+                    className="border-t border-border bg-secondary/20 px-3 py-4"
                     onSubmit={(event) => {
                         event.preventDefault();
                         void sendMessage();
                     }}
                 >
-                    <div className="grid gap-3 min-[760px]:grid-cols-[minmax(0,1fr)_auto]">
-                        <Textarea
-                            className="min-h-24 resize-none"
-                            disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
-                            onChange={(event) => setMessage(event.target.value)}
-                            onKeyDown={(event) => {
-                                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                                    event.preventDefault();
-                                    void sendMessage();
+                    <div className="border border-border bg-background focus-within:border-primary focus-within:bg-card">
+                        <div className="flex min-w-0 items-center gap-3 p-2">
+                            <Textarea
+                                className="max-h-[260px] min-h-16 resize-none overflow-hidden border-0 bg-transparent px-2 py-5 shadow-none focus-visible:border-transparent disabled:bg-transparent"
+                                disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
+                                onChange={(event) => setMessage(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter" && !event.shiftKey) {
+                                        event.preventDefault();
+                                        void sendMessage();
+                                    }
+                                }}
+                                placeholder="Ask for connected broker status, holdings, positions, latest quotes, option chain data, or stream health."
+                                ref={messageInputRef}
+                                value={message}
+                            />
+                            <Button
+                                aria-label={activeRun ? "Stop active run" : "Send message"}
+                                className="size-11 px-0"
+                                disabled={activeRun ? false : sendDisabled}
+                                onClick={
+                                    activeRun
+                                        ? (event) => {
+                                              event.preventDefault();
+                                              void stopActiveRun();
+                                          }
+                                        : undefined
                                 }
-                            }}
-                            placeholder="Ask for connected broker status, holdings, positions, latest quotes, option chain data, or stream health."
-                            value={message}
-                        />
-                        <Button
-                            className="h-full min-h-12 min-[760px]:w-36"
-                            disabled={sendDisabled}
-                            type="submit"
-                        >
-                            {isSubmitting ? (
-                                <IconLoader2 className="size-4 animate-spin" stroke={1.8} />
-                            ) : (
-                                <IconArrowRight className="size-4" stroke={1.8} />
-                            )}
-                            Send
-                        </Button>
+                                size="icon"
+                                type={activeRun ? "button" : "submit"}
+                                variant={activeRun ? "destructive" : "default"}
+                            >
+                                {activeRun ? (
+                                    <IconPlayerStop className="size-4" stroke={1.8} />
+                                ) : isSubmitting ? (
+                                    <IconLoader2 className="size-4 animate-spin" stroke={1.8} />
+                                ) : (
+                                    <IconArrowRight className="size-4" stroke={1.8} />
+                                )}
+                            </Button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 border-t border-border bg-secondary/25 px-3 py-2">
+                            <Label className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                                Provider
+                                <Select
+                                    className="h-8 w-36 bg-background px-2 text-sm normal-case"
+                                    disabled={!configuredProviders.length}
+                                    onChange={(event) => setProvider(event.target.value as LlmProvider)}
+                                    value={provider}
+                                >
+                                    <option value="">Select provider</option>
+                                    {configuredProviders.map((item) => (
+                                        <option key={item.provider} value={item.provider}>
+                                            {providerName(item)}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Label>
+                            <Label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold uppercase text-muted-foreground min-[820px]:max-w-sm">
+                                Model
+                                <Select
+                                    className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
+                                    disabled={!selectedModels.length}
+                                    onChange={(event) => setModel(event.target.value)}
+                                    value={model}
+                                >
+                                    <option value="">Select model</option>
+                                    {selectedModels.map((item) => (
+                                        <option key={item.id} value={item.model_id}>
+                                            {item.label || item.model_id}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Label>
+                            <Label className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
+                                Detail
+                                <Select
+                                    className="h-8 w-32 bg-background px-2 text-sm normal-case"
+                                    onChange={(event) => setVisibility(event.target.value as BrokerChatVisibility)}
+                                    value={visibility}
+                                >
+                                    <option value="minimal">Minimal</option>
+                                    <option value="tool_calls">Tool calls</option>
+                                    <option value="full">Full</option>
+                                </Select>
+                            </Label>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-[1120px]:ml-auto">
+                                <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                                    <Checkbox
+                                        checked={includeToolOutputs}
+                                        onCheckedChange={(value) => setIncludeToolOutputs(Boolean(value))}
+                                    />
+                                    Tool output
+                                </Label>
+                                <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                                    <Checkbox
+                                        checked={includeReasoning}
+                                        onCheckedChange={(value) => setIncludeReasoning(Boolean(value))}
+                                    />
+                                    Reasoning
+                                </Label>
+                                <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                                    <Checkbox
+                                        checked={useMcp}
+                                        disabled={!mcpServer.is_enabled}
+                                        onCheckedChange={(value) => setUseMcp(Boolean(value))}
+                                    />
+                                    MCP
+                                </Label>
+                            </div>
+                        </div>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                             <IconCircleCheck className="size-3.5" stroke={1.8} />
                             Uses saved broker and LLM credentials
                         </span>
-                        <span>Ctrl/Command + Enter sends</span>
+                        <span>Enter sends · Shift + Enter adds a line</span>
                         <span>
                             {visibility === "minimal"
                                 ? "Minimal tool visibility"
@@ -1070,7 +1102,6 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                       : "no worker"}
                             </span>
                         ) : null}
-                        {activeRun ? <span>Stop the active run before sending another message.</span> : null}
                     </div>
                 </form>
             </div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AlertWorkflowRun } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
+import { formatIstDateTime } from "@/lib/datetime";
 
 const PAGE_SIZE = 20;
 
@@ -71,7 +72,7 @@ export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
                         <div className=" border border-border p-4" key={run.id}>
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="type-section-title">{run.rendered_title || run.reason}</div>
-                                <div className="type-meta">{new Date(run.created_at).toLocaleString()}</div>
+                                <div className="type-meta">{formatIstDateTime(run.created_at)}</div>
                             </div>
                             <div className="type-help mt-1 text-muted-foreground">
                                 {run.rendered_message || run.reason}

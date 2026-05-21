@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatIstDateTime } from "@/lib/datetime";
 
 function parseSymbols(input: string): string[] {
     return Array.from(
@@ -103,13 +104,7 @@ function extractSymbolsFromCsv(text: string): string[] {
 }
 
 function formatDate(value?: string | null): string {
-    if (!value) return "-";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return new Intl.DateTimeFormat("en-IN", {
-        dateStyle: "medium",
-        timeStyle: "short"
-    }).format(date);
+    return formatIstDateTime(value, "-");
 }
 
 function formatMarketCap(value?: number | null): string {

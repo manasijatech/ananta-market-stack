@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AlertNotification, AlertWorkflowRun } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import { formatIstDateTime } from "@/lib/datetime";
 
 const PAGE_SIZE = 12;
 
@@ -96,7 +97,7 @@ export function AlertHistoryList({
                         <div className="type-section-title">Recent workflow runs</div>
                         <div className="type-help mt-1 text-muted-foreground">
                             {runStats.total} loaded · {runStats.matched} matched · {runStats.unmatched} not matched
-                            {runStats.latestAt ? ` · Last ${new Date(runStats.latestAt).toLocaleString()}` : ""}
+                            {runStats.latestAt ? ` · Last ${formatIstDateTime(runStats.latestAt)}` : ""}
                         </div>
                     </div>
                     <Button
