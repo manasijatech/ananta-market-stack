@@ -9,7 +9,7 @@ The broker chat backend provides a durable, asynchronous chat surface for the br
 - Runner: `app/services/broker_chat_runner.py`
 - Queue: RQ queue automatically scoped from `BROKER_CHAT_QUEUE_NAME` (default `broker-chat`) plus a local database fingerprint.
 - Worker entrypoint: `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat`
-- Built-in worker: the API process always starts a small in-process RQ worker so simple installs do not need extra worker setup.
+- Built-in fallback: the API process starts a small fallback worker loop so simple installs do not need extra worker setup.
 - Stream fanout: Redis stream `broker-chat:run:{run_id}:events`
 
 The API process submits RQ jobs and returns immediately. The RQ worker runs the OpenAI Agents SDK agent, writes every streamed event to SQLite, and publishes lightweight markers to Redis so connected SSE clients can resume and tail the run.
@@ -20,8 +20,9 @@ RQ workers are process based. One normal worker process handles one broker chat 
 
 Current deployment options:
 
-- Local/single-process: start only the FastAPI server. The backend starts a lightweight in-process `SimpleWorker` loop and processes queued broker-chat jobs.
+- Local/single-process: start only the FastAPI server. If no dedicated RQ worker is registered for the scoped queue, the backend fallback loop processes queued broker-chat jobs.
 - Higher throughput: run one or more dedicated RQ workers with `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat`. These workers subscribe to the same automatically scoped queue as the API process.
+- Preferred execution path: dedicated RQ workers win. When at least one dedicated worker is registered on the scoped queue, the backend fallback loop stays idle and does not consume jobs.
 - Shared Redis safety: the effective queue name includes a local database fingerprint. Two local SQLite installs can share one Redis server without consuming each other's chat jobs.
 - Restart repair: backend and dedicated-worker startup reconcile incomplete chat runs. Queued runs are re-enqueued on the scoped queue; running runs are requeued only when no active scoped RQ job exists.
 
@@ -29,7 +30,7 @@ Scaling guidance:
 
 - Worker count is the number of running worker processes subscribed to the effective scoped queue name returned by `/api/v1/broker-chat/queue/health`.
 - Autoscaling is controlled outside RQ by the process manager or platform. Scale up when queue depth or oldest queued age rises; scale down when queue depth remains zero.
-- The queue health endpoint reports the base queue name, effective queue name, queue fingerprint, `queued_count`, `oldest_queued_seconds`, active RQ workers, and whether the built-in worker is available.
+- The queue health endpoint reports the base queue name, effective queue name, queue fingerprint, `queued_count`, `oldest_queued_seconds`, dedicated worker count, fallback worker count, and whether the fallback loop is available.
 - A practical autoscaling policy is: desired workers = clamp(ceil(`queued_count` / target_jobs_per_worker), min_workers, max_workers), with an override to scale up immediately when `oldest_queued_seconds` crosses the acceptable chat startup latency.
 - Broker chat jobs use live LLM and broker/MCP network calls, so keep worker counts within provider rate limits and broker session constraints.
 
@@ -42,7 +43,7 @@ Environment variables:
 - `BROKER_CHAT_RESULT_TTL_SECONDS`: RQ result/failure retention.
 - `BROKER_CHAT_STREAM_MAXLEN`: Redis stream approximate max length per run.
 - `BROKER_CHAT_HISTORY_TURN_LIMIT`: prior completed turns included in the next agent call.
-- `BROKER_CHAT_WORKER_POLL_SECONDS`: polling interval for the in-process worker.
+- `BROKER_CHAT_WORKER_POLL_SECONDS`: polling interval for the fallback worker loop.
 
 User-level display defaults are managed through:
 

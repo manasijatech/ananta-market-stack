@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import uuid
 
 from rq import SimpleWorker
 from rq.timeouts import TimerDeathPenalty
 
 from app.config import get_settings
 from app.services import broker_chat
-from app.services.broker_chat_queue import broker_chat_queue, redis_connection
+from app.services.broker_chat_queue import (
+    IN_PROCESS_WORKER_NAME_PREFIX,
+    broker_chat_external_worker_available,
+    broker_chat_queue,
+    redis_connection,
+)
 from db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -42,8 +49,15 @@ async def run_broker_chat_worker(stop_event: asyncio.Event) -> None:
         try:
             queue = broker_chat_queue()
             if queue.count:
-                worker = BrokerChatSimpleWorker([queue], connection=redis_connection())
-                await asyncio.to_thread(worker.work, burst=True, max_jobs=1)
+                if broker_chat_external_worker_available():
+                    logger.debug("broker chat scoped RQ worker is available; in-process fallback is idle")
+                else:
+                    worker = BrokerChatSimpleWorker(
+                        [queue],
+                        connection=redis_connection(),
+                        name=f"{IN_PROCESS_WORKER_NAME_PREFIX}{os.getpid()}-{uuid.uuid4().hex[:8]}",
+                    )
+                    await asyncio.to_thread(worker.work, burst=True, max_jobs=1)
         except Exception:
             logger.exception("broker chat in-process worker iteration failed")
         try:
