@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
 
 function parseSymbols(input: string): string[] {
@@ -245,7 +246,8 @@ export function WatchlistsManager({
                     }, {})
                 );
             })
-            .catch(() => {
+            .catch((caught) => {
+                notifyAlphaCreditWarning(caught);
                 if (!cancelled) setWatchlistMetadata({});
             });
         return () => {
@@ -316,7 +318,8 @@ export function WatchlistsManager({
                                 return acc;
                             }, {})
                         );
-                    } catch {
+                    } catch (caught) {
+                        notifyAlphaCreditWarning(caught);
                         if (!cancelled) setCreateSuggestionMetadata({});
                     }
                 } catch {
@@ -376,7 +379,8 @@ export function WatchlistsManager({
                                 return acc;
                             }, {})
                         );
-                    } catch {
+                    } catch (caught) {
+                        notifyAlphaCreditWarning(caught);
                         if (!cancelled) setSuggestionMetadata({});
                     }
                 } catch {

@@ -1,8 +1,10 @@
+import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warning-modal";
 import { WorkflowEditor } from "@/components/alerts/workflow-editor";
 import { getAlertPresets, getAlertTemplates } from "@/service/actions/alerts";
 import { getAlphaAnnouncementCategories } from "@/service/actions/alpha/announcements";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
 import { getWatchlists } from "@/service/actions/watchlist";
+import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
 
 type NewWorkflowPageProps = {
     searchParams?: Promise<{ template?: string }>;
@@ -10,13 +12,17 @@ type NewWorkflowPageProps = {
 
 export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageProps) {
     const params = await searchParams;
+    let creditWarningMessage: string | null = null;
     const [accounts, templates, watchlists, presets, systemConfig, announcementCategories] = await Promise.all([
         getBrokerAccounts(),
         getAlertTemplates(),
         getWatchlists(),
         getAlertPresets(),
         getSystemConfig(),
-        getAlphaAnnouncementCategories().catch(() => [])
+        getAlphaAnnouncementCategories().catch((caught) => {
+            creditWarningMessage = getAlphaCreditWarningMessage(caught);
+            return [];
+        })
     ]);
     const template = templates.find((item) => item.id === params?.template);
     const initialWorkflow = template
@@ -43,13 +49,16 @@ export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageP
         : null;
 
     return (
-        <WorkflowEditor
-            accounts={accounts}
-            announcementCategories={announcementCategories}
-            initialWorkflow={initialWorkflow}
-            llmProviders={systemConfig.llm_providers}
-            presets={presets}
-            watchlists={watchlists}
-        />
+        <>
+            <AlphaCreditWarningTrigger message={creditWarningMessage} />
+            <WorkflowEditor
+                accounts={accounts}
+                announcementCategories={announcementCategories}
+                initialWorkflow={initialWorkflow}
+                llmProviders={systemConfig.llm_providers}
+                presets={presets}
+                watchlists={watchlists}
+            />
+        </>
     );
 }

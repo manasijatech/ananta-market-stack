@@ -24,10 +24,17 @@ async function getAlphaSymbolMetadataBatch(symbols: string[]): Promise<AlphaSymb
     const response = await fetchFastApi(`/alpha/symbols/metadata?${query.toString()}`);
     const result = (await response.json()) as AlphaSymbolMetadataResponse;
     if (!response.ok) {
+        const detail = (result as unknown as { detail?: unknown; message?: unknown }).detail;
+        const message =
+            typeof detail === "string"
+                ? detail
+                : typeof (result as unknown as { message?: unknown }).message === "string"
+                  ? String((result as unknown as { message?: unknown }).message)
+                  : "Could not fetch symbol metadata from the local backend cache.";
         throw new Error(
             JSON.stringify({
                 status: response.status,
-                message: "Could not fetch symbol metadata from the local backend cache.",
+                message,
                 fieldErrors: {}
             })
         );

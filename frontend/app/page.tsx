@@ -11,6 +11,7 @@ import { useSession } from "@/components/session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
+import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 
 const brokers = [
     { name: "Zerodha", src: "/broker-logos/zerodha.jpg", latency: "42 ms", state: "Kite session" },
@@ -436,7 +437,8 @@ export default function HomePage() {
             .then((metadata) => {
                 if (!cancelled) setMetadataRows(metadata);
             })
-            .catch(() => {
+            .catch((caught) => {
+                notifyAlphaCreditWarning(caught);
                 if (!cancelled) setMetadataRows([]);
             });
         return () => {

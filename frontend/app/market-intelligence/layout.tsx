@@ -15,6 +15,7 @@ import { getAlphaEarnings } from "@/service/actions/alpha/earnings";
 import { getAlphaNews } from "@/service/actions/alpha/news";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getWatchlists } from "@/service/actions/watchlist";
+import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist } from "@/service/types/watchlist";
 
@@ -28,8 +29,13 @@ function todayIsoDate(): string {
     return new Date().toISOString().slice(0, 10);
 }
 
-async function loadInitialFeeds(symbols: string[]): Promise<MarketIntelligenceFeeds> {
-    if (!symbols.length) return emptyMarketIntelligenceFeeds();
+type InitialFeedsResult = {
+    creditWarningMessage: string | null;
+    feeds: MarketIntelligenceFeeds;
+};
+
+async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> {
+    if (!symbols.length) return { creditWarningMessage: null, feeds: emptyMarketIntelligenceFeeds() };
     const params = {
         symbols,
         from: isoDateDaysAgo(30),
@@ -47,11 +53,14 @@ async function loadInitialFeeds(symbols: string[]): Promise<MarketIntelligenceFe
     ]);
 
     return {
-        news: news.status === "fulfilled" ? (news.value.data ?? []) : [],
-        announcements: announcements.status === "fulfilled" ? (announcements.value.data ?? []) : [],
-        earnings: earnings.status === "fulfilled" ? (earnings.value.data ?? []) : [],
-        concalls: concalls.status === "fulfilled" ? (concalls.value.data ?? []) : [],
-        alerts: alerts.status === "fulfilled" ? (alerts.value.data ?? []) : []
+        creditWarningMessage: getAlphaCreditWarningMessage(news, announcements, earnings, concalls, alerts),
+        feeds: {
+            news: news.status === "fulfilled" ? (news.value.data ?? []) : [],
+            announcements: announcements.status === "fulfilled" ? (announcements.value.data ?? []) : [],
+            earnings: earnings.status === "fulfilled" ? (earnings.value.data ?? []) : [],
+            concalls: concalls.status === "fulfilled" ? (concalls.value.data ?? []) : [],
+            alerts: alerts.status === "fulfilled" ? (alerts.value.data ?? []) : []
+        }
     };
 }
 
@@ -70,17 +79,28 @@ export default async function MarketIntelligenceLayout({ children }: { children:
     const symbols = allSymbols.slice(0, ALPHA_SYMBOL_LIMIT);
     let symbolMetadata: Record<string, AlphaSymbolMetadata> = {};
     let initialFeeds = emptyMarketIntelligenceFeeds();
+    let creditWarningMessage: string | null = null;
 
     if (!error && symbols.length) {
-        try {
-            const [metadata, feeds] = await Promise.all([getAlphaSymbolMetadata(symbols), loadInitialFeeds(symbols)]);
+        const [metadataResult, feedsResult] = await Promise.allSettled([
+            getAlphaSymbolMetadata(symbols),
+            loadInitialFeeds(symbols)
+        ]);
+
+        creditWarningMessage =
+            getAlphaCreditWarningMessage(metadataResult, feedsResult) ??
+            (feedsResult.status === "fulfilled" ? feedsResult.value.creditWarningMessage : null);
+
+        if (metadataResult.status === "fulfilled") {
+            const metadata = metadataResult.value;
             symbolMetadata = metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
                 acc[item.symbol.trim().toUpperCase()] = item;
                 return acc;
             }, {});
-            initialFeeds = feeds;
-        } catch {
-            symbolMetadata = {};
+        }
+
+        if (feedsResult.status === "fulfilled") {
+            initialFeeds = feedsResult.value.feeds;
         }
     }
 
@@ -89,6 +109,7 @@ export default async function MarketIntelligenceLayout({ children }: { children:
             <MarketIntelligenceChrome
                 allSymbolsCount={allSymbols.length}
                 error={error}
+                creditWarningMessage={creditWarningMessage}
                 initialFeeds={initialFeeds}
                 symbolMetadata={symbolMetadata}
                 symbols={symbols}

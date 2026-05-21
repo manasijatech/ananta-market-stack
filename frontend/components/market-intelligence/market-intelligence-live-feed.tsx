@@ -38,6 +38,7 @@ import {
 } from "@/components/market-intelligence/market-intelligence-data";
 import { Button } from "@/components/ui/button";
 import { LiveWaveform } from "@/components/ui/live-waveform";
+import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
@@ -401,6 +402,7 @@ export function MarketIntelligenceLiveFeed({
                 };
             } catch (caught) {
                 if (!cancelled) {
+                    notifyAlphaCreditWarning(caught);
                     setSocketState("offline");
                     setSocketError(
                         caught instanceof Error ? caught.message : "Could not connect to the Alpha websocket."
@@ -810,23 +812,11 @@ function ConcallList({
     const [activeAudio, setActiveAudio] = useState<{ src: string; symbol: string; detail: string } | null>(null);
     const activeAudioRef = useRef<HTMLAudioElement | null>(null);
     const [activeAudioPlaying, setActiveAudioPlaying] = useState(false);
-    const [activeAudioLevel, setActiveAudioLevel] = useState(0);
     const activePlaybackSrc = activeAudio ? proxiedConcallAudioSrc(activeAudio.src) : "";
-    const audioGlowLevel = activeAudioPlaying ? activeAudioLevel : 0;
-    const audioGlowStyle = {
-        background: `radial-gradient(ellipse at center, color-mix(in srgb, var(--primary) ${Math.round(16 + audioGlowLevel * 18)}%, transparent) 0%, color-mix(in srgb, var(--primary) ${Math.round(7 + audioGlowLevel * 12)}%, transparent) 45%, transparent 82%)`,
-        opacity: 0.55 + audioGlowLevel * 0.35,
-        transform: `translateY(-50%) scaleX(${0.82 + audioGlowLevel * 0.62}) scaleY(${0.72 + audioGlowLevel * 0.42})`
-    } satisfies CSSProperties;
 
     useEffect(() => {
         setActiveAudioPlaying(false);
-        setActiveAudioLevel(0);
     }, [activeAudio?.src]);
-
-    const updateActiveAudioLevel = useCallback((level: number) => {
-        setActiveAudioLevel((previousLevel) => previousLevel * 0.62 + Math.max(0, Math.min(1, level)) * 0.38);
-    }, []);
 
     if (!items.length) return <EmptyFeed section="concalls" />;
     return (
@@ -845,24 +835,15 @@ function ConcallList({
                         <div
                             className="relative h-9 w-[120px] overflow-hidden text-primary"
                         >
-                            <div
-                                aria-hidden="true"
-                                className="absolute left-0 right-0 top-1/2 h-7 origin-center blur-[1.5px] transition-[opacity,transform] duration-75"
-                                style={audioGlowStyle}
-                            />
-                            <div className="absolute inset-x-1 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
                             <LiveWaveform
                                 active={activeAudioPlaying}
                                 barGap={1}
                                 barRadius={4}
                                 barWidth={2}
-                                fadeEdges
-                                fadeWidth={16}
                                 height={36}
                                 key={activePlaybackSrc}
                                 mediaElementRef={activeAudioRef}
                                 mode="static"
-                                onLevelChange={updateActiveAudioLevel}
                                 sensitivity={1.8}
                                 smoothingTimeConstant={0.85}
                                 className="absolute inset-0 h-full w-full"

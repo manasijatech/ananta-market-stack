@@ -60,6 +60,7 @@ import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
+import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
@@ -1609,7 +1610,8 @@ export function WorkflowEditor({
                                 return acc;
                             }, {})
                         );
-                    } catch {
+                    } catch (caught) {
+                        notifyAlphaCreditWarning(caught);
                         if (!cancelled) setSuggestionMetadata({});
                     }
                 } catch {
@@ -1647,7 +1649,8 @@ export function WorkflowEditor({
                         return acc;
                     }, {})
                 );
-            } catch {
+            } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 if (!cancelled) setTargetMetadata({});
             }
         });
@@ -1673,7 +1676,8 @@ export function WorkflowEditor({
                         return acc;
                     }, {})
                 );
-            } catch {
+            } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 if (!cancelled) setUniverseMetadata({});
             }
         });
@@ -1698,7 +1702,8 @@ export function WorkflowEditor({
             try {
                 const [metadata] = await getAlphaSymbolMetadata([selectedSymbol]);
                 if (!cancelled) setSelectedSymbolMetadata(metadata ?? null);
-            } catch {
+            } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 if (!cancelled) setSelectedSymbolMetadata(null);
             }
         });
@@ -1767,6 +1772,7 @@ export function WorkflowEditor({
                     }));
                 }
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 if (cancelled) return;
                 setPreview((current) => ({
                     ...current,
@@ -1827,6 +1833,7 @@ export function WorkflowEditor({
                     setPreview((current) => ({ ...current, loading: false, error: "" }));
                 }
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 setPreview((current) => ({
                     ...current,
                     loading: false,
@@ -2485,6 +2492,7 @@ export function WorkflowEditor({
                     router.refresh();
                 }
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not save workflow.");
             }
         });
@@ -2659,6 +2667,7 @@ export function WorkflowEditor({
                         : `Current preview tick did not match: ${result.reason}`
                 );
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not test workflow.");
             }
         });
@@ -2673,6 +2682,7 @@ export function WorkflowEditor({
                 const result = await sendWorkflowTestNotification(initialWorkflow.id, buildPreviewTick());
                 setMatchPreview(`${result.message} Notification id: ${result.notification_id}`);
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not send test alert.");
             }
         });
@@ -2701,6 +2711,7 @@ export function WorkflowEditor({
                 setLlmDetails(result as unknown as Record<string, unknown>);
                 setLlmPromptTab("preview");
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not preview LLM context.");
             }
         });
@@ -2719,6 +2730,7 @@ export function WorkflowEditor({
                 setLlmDetails(result as unknown as Record<string, unknown>);
                 setLlmPromptTab("preview");
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not run LLM test.");
             }
         });
@@ -2773,6 +2785,7 @@ export function WorkflowEditor({
                 router.push("/alerts-workspace/workflows");
                 router.refresh();
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not delete workflow.");
             }
         });
@@ -2897,6 +2910,7 @@ export function WorkflowEditor({
                 }
                 setEngineDetails(result);
             } catch (caught) {
+                notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Workflow engine action failed.");
             } finally {
                 setRunningEngineAction(null);
