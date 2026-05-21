@@ -5,10 +5,11 @@ The broker chat backend provides a durable, asynchronous chat surface for the br
 ## Runtime Shape
 
 - API router: `app/api/v1/broker_chat.py`
-- Durable state: `broker_chat_sessions`, `broker_chat_runs`, `broker_chat_events`, `user_broker_chat_preferences`
+- Durable state: `broker_chat_sessions`, `broker_chat_runs`, `broker_chat_events`, `user_broker_chat_preferences`, `user_mcp_server_configs`
 - Runner: `app/services/broker_chat_runner.py`
 - Queue: RQ queue named by `BROKER_CHAT_QUEUE_NAME` (default `broker-chat`)
 - Worker entrypoint: `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat`
+- Single-process fallback: `ENABLE_IN_PROCESS_BROKER_CHAT_WORKER=true` starts a small in-process RQ worker with the API process.
 - Stream fanout: Redis stream `broker-chat:run:{run_id}:events`
 
 The API process submits RQ jobs and returns immediately. The RQ worker runs the OpenAI Agents SDK agent, writes every streamed event to SQLite, and publishes lightweight markers to Redis so connected SSE clients can resume and tail the run.
@@ -22,11 +23,25 @@ Environment variables:
 - `BROKER_CHAT_RESULT_TTL_SECONDS`: RQ result/failure retention.
 - `BROKER_CHAT_STREAM_MAXLEN`: Redis stream approximate max length per run.
 - `BROKER_CHAT_HISTORY_TURN_LIMIT`: prior completed turns included in the next agent call.
+- `ENABLE_IN_PROCESS_BROKER_CHAT_WORKER`: defaults to `true` so local/single-process installs do not leave runs permanently queued when no separate RQ worker is running. Set it to `false` in deployments that run dedicated RQ workers.
+- `BROKER_CHAT_WORKER_POLL_SECONDS`: polling interval for the in-process worker.
 
 User-level display defaults are managed through:
 
 - `GET /api/v1/broker-chat/config`
 - `PUT /api/v1/broker-chat/config`
+
+Queue health is available at:
+
+- `GET /api/v1/broker-chat/queue/health`
+
+Hosted MCP configuration is managed through System Config:
+
+- `GET /api/v1/system-config/mcp`
+- `PUT /api/v1/system-config/mcp`
+- `DELETE /api/v1/system-config/mcp/key`
+
+MCP requires both the System Config MCP connection to be enabled and the broker-chat `use_mcp` run/config flag to be enabled. The MCP API key is stored encrypted and attached by the backend; users should not paste MCP secrets into chat messages.
 
 Visibility modes:
 
@@ -37,7 +52,7 @@ Visibility modes:
 ## API Flow
 
 1. Configure an LLM provider/API key and at least one model through the existing system-config APIs.
-2. Start an RQ worker:
+2. Start an RQ worker, or keep the default in-process worker enabled for local/single-process installs:
 
 ```bash
 PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat
@@ -53,7 +68,8 @@ Content-Type: application/json
 {
   "message": "Show my Reliance holding and latest quote",
   "provider": "openai",
-  "model": "your-configured-model"
+  "model": "your-configured-model",
+  "use_mcp": false
 }
 ```
 

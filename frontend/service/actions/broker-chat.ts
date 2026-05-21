@@ -7,6 +7,7 @@ import type {
     BrokerChatEventsPage,
     BrokerChatPreference,
     BrokerChatPreferenceUpdate,
+    BrokerChatQueueHealth,
     BrokerChatRun,
     BrokerChatSession,
     BrokerChatSubmitRequest,
@@ -85,6 +86,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export async function getBrokerChatConfig(): Promise<BrokerChatPreference> {
     return request<BrokerChatPreference>("/broker-chat/config");
+}
+
+export async function getBrokerChatQueueHealth(): Promise<BrokerChatQueueHealth> {
+    return request<BrokerChatQueueHealth>("/broker-chat/queue/health");
 }
 
 export async function updateBrokerChatConfig(payload: BrokerChatPreferenceUpdate): Promise<BrokerChatPreference> {

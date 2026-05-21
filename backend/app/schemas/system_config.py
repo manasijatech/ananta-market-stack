@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.broker import BrokerDataDefaultConfigOut, BrokerDataSearchConfigOut
 
 LlmProvider = Literal["openai", "openrouter", "gemini"]
+McpTransport = Literal["streamable_http", "sse"]
 
 
 class LlmModelOut(BaseModel):
@@ -111,9 +112,39 @@ class AlphaWebSocketConfigUpdateIn(BaseModel):
     full_market: bool = False
 
 
+class McpServerConfigOut(BaseModel):
+    is_enabled: bool = False
+    name: str | None = None
+    url: str = ""
+    transport: McpTransport = "streamable_http"
+    has_api_key: bool = False
+    api_key_hint: str | None = None
+    api_key_header_name: str = "Authorization"
+    api_key_prefix: str = "Bearer"
+    extra_headers: dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: int = 15
+    tool_cache_enabled: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class McpServerConfigUpdateIn(BaseModel):
+    is_enabled: bool = False
+    name: str | None = Field(default=None, max_length=128)
+    url: str = Field(default="", max_length=2048)
+    transport: McpTransport = "streamable_http"
+    api_key: str | None = Field(default=None, max_length=4096)
+    api_key_header_name: str = Field(default="Authorization", max_length=128)
+    api_key_prefix: str = Field(default="Bearer", max_length=64)
+    extra_headers: dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: int = Field(default=15, ge=1, le=120)
+    tool_cache_enabled: bool = True
+
+
 class SystemConfigOut(BaseModel):
     broker_data_default: BrokerDataDefaultConfigOut
     broker_data_search: BrokerDataSearchConfigOut
     llm_providers: list[LlmProviderConfigOut] = Field(default_factory=list)
     alpha_api: AlphaApiConfigOut
     alpha_websocket: AlphaWebSocketConfigOut
+    mcp_server: McpServerConfigOut

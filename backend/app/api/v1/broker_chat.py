@@ -22,7 +22,7 @@ from app.schemas.broker_chat import (
     BrokerChatVisibility,
 )
 from app.services import broker_chat as chat_svc
-from app.services.broker_chat_queue import broker_chat_stream_key, redis_connection
+from app.services.broker_chat_queue import broker_chat_queue_health, broker_chat_stream_key, redis_connection
 from db.models import BrokerChatEvent, BrokerChatRun, User
 from db.session import SessionLocal, get_db
 
@@ -53,6 +53,11 @@ def update_broker_chat_config(
         return chat_svc.update_preference(db, user.id, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/queue/health")
+def get_broker_chat_queue_health() -> dict[str, object]:
+    return broker_chat_queue_health()
 
 
 @router.post("/sessions", response_model=BrokerChatSessionOut)
