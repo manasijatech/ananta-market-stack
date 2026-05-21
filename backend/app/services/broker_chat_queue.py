@@ -44,7 +44,7 @@ def broker_chat_queue_name() -> str:
 
 
 def broker_chat_job_id(run_id: str) -> str:
-    return f"{broker_chat_queue_name()}:{run_id}"
+    return f"broker-chat-{_queue_instance_fingerprint()}-{run_id}"
 
 
 def redis_connection() -> redis.Redis:
@@ -140,9 +140,28 @@ def ensure_broker_chat_job_queued(run_id: str) -> str:
         return enqueue_broker_chat_run(run_id)
     status = job.get_status(refresh=True)
     status_value = getattr(status, "value", str(status))
+    if status_value in {"failed", "finished", "canceled", "cancelled", "stopped"}:
+        try:
+            FailedJobRegistry(queue.name, connection=connection).remove(job_id, delete_job=False)
+        except Exception:
+            pass
+        try:
+            job.delete(remove_from_queue=True)
+        except Exception:
+            pass
+        return enqueue_broker_chat_run(run_id)
     if status_value == "queued" and job_id not in queued_ids:
         queue.enqueue_job(job)
     return str(job.id)
+
+
+def broker_chat_job_status(run_id: str) -> str | None:
+    try:
+        job = Job.fetch(broker_chat_job_id(run_id), connection=redis_connection())
+    except Exception:
+        return None
+    status = job.get_status(refresh=True)
+    return getattr(status, "value", str(status))
 
 
 def broker_chat_queue_health() -> dict[str, object]:

@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from rq import SimpleWorker
+from rq.timeouts import TimerDeathPenalty
 
 from app.config import get_settings
 from app.services import broker_chat
@@ -14,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 class BrokerChatSimpleWorker(SimpleWorker):
+    death_penalty_class = TimerDeathPenalty
+
     def _install_signal_handlers(self) -> None:
         return None
 
