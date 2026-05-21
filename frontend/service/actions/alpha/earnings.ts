@@ -27,7 +27,7 @@ export async function getAlphaEarningsDetail(params: AlphaEarningsDetailParams):
     const symbol = params.symbol.trim().toUpperCase();
     const quarter = params.quarter.trim();
     const detailParams = params.detailed === undefined ? {} : { detailed: params.detailed };
-    return withAlphaSdk<AlphaEarningsDetail>((client) => client.getEarningsDetail(symbol, quarter, detailParams));
+    return withAlphaSdk<AlphaEarningsDetail>((client) => client.getEarningsDetail({ symbol, quarter, ...detailParams }));
 }
 
 export async function getAlphaEarningsAttachments(ids: string[]): Promise<AlphaAttachmentLookupResponse> {

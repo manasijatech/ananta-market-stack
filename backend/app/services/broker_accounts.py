@@ -58,6 +58,12 @@ def _next_groww_expiry_utc(now: datetime) -> datetime:
     return expiry_ist.astimezone(UTC)
 
 
+def _mark_session_healthy(db: Session, acc: BrokerAccount, *, verified_at: datetime | None = None) -> None:
+    from app.services.broker_sessions import mark_session_healthy
+
+    mark_session_healthy(db, acc, verified_at=verified_at)
+
+
 def create_broker_account(db: Session, user_id: str, payload: BrokerAccountCreate) -> BrokerAccount:
     if not db.get(User, user_id):
         raise ValueError("user not found")
@@ -255,8 +261,10 @@ def verify_account(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
         ok, msg = client.verify_connection()
     except Exception as e:
         ok, msg = False, str(e)
-    acc.last_verified_at = datetime.utcnow() if ok else acc.last_verified_at
-    acc.last_error = None if ok else (msg[:2000] if msg else "error")
+    if ok:
+        _mark_session_healthy(db, acc, verified_at=datetime.now(tz=UTC))
+    else:
+        acc.last_error = msg[:2000] if msg else "error"
     db.add(acc)
     db.commit()
     db.refresh(acc)
@@ -360,6 +368,7 @@ def apply_zerodha_session(db: Session, acc: BrokerAccount, request_token: str) -
     acc.last_error = None
     acc.session_status = "active"
     acc.session_expires_at = zerodha_auth.session_expiry_utc(row.access_token_generated_at)
+    _mark_session_healthy(db, acc, verified_at=row.access_token_generated_at)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -432,6 +441,7 @@ def apply_upstox_session(db: Session, acc: BrokerAccount, code: str) -> tuple[bo
     row.access_token_generated_at = datetime.now(tz=UTC)
     acc.last_error = None
     acc.session_status = "active"
+    _mark_session_healthy(db, acc, verified_at=row.access_token_generated_at)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -462,6 +472,7 @@ def apply_angel_session(
     acc.last_error = None
     acc.session_status = "active"
     acc.session_expires_at = datetime.now(tz=UTC) + timedelta(hours=24)
+    _mark_session_healthy(db, acc, verified_at=row.jwt_token_generated_at)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -486,6 +497,7 @@ def apply_dhan_session(db: Session, acc: BrokerAccount, token_id: str) -> tuple[
     acc.last_error = None
     acc.session_status = "active"
     acc.session_expires_at = row.access_token_expires_at
+    _mark_session_healthy(db, acc, verified_at=now)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -515,6 +527,7 @@ def apply_kotak_session(
     acc.last_error = None
     acc.session_status = "active"
     acc.session_expires_at = datetime.now(tz=UTC) + timedelta(hours=24)
+    _mark_session_healthy(db, acc, verified_at=row.session_bundle_generated_at)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -538,6 +551,7 @@ def apply_groww_refresh(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
     acc.last_error = None
     acc.session_status = "active"
     acc.session_expires_at = row.access_token_expires_at
+    _mark_session_healthy(db, acc, verified_at=now)
     db.add(row)
     db.add(acc)
     db.commit()

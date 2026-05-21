@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from common.datetime_compat import UTC
 import pyotp
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -88,6 +88,32 @@ def _set_session_state(
     acc.last_error = error
 
 
+SESSION_NOTIFICATION_KINDS = ("session_action_required", "session_refresh_failed")
+
+
+def mark_session_healthy(
+    db: Session,
+    acc: BrokerAccount,
+    *,
+    verified_at: datetime | None = None,
+) -> None:
+    """Record a successful broker session and retire stale session warnings."""
+    acc.last_verified_at = (verified_at or _now_utc()).replace(tzinfo=None)
+    acc.last_error = None
+    if not acc.session_status or acc.session_status in {"pending", "action_required", "automation_ready"}:
+        acc.session_status = "active"
+    db.execute(
+        update(BrokerNotification)
+        .where(
+            BrokerNotification.user_id == acc.user_id,
+            BrokerNotification.account_id == acc.id,
+            BrokerNotification.kind.in_(SESSION_NOTIFICATION_KINDS),
+            BrokerNotification.is_read.is_(False),
+        )
+        .values(is_read=True)
+    )
+
+
 def _create_notification_once_per_day(
     db: Session,
     *,
@@ -125,6 +151,21 @@ def _create_notification_once_per_day(
 
 
 def list_notifications(db: Session, user_id: str) -> list[BrokerNotification]:
+    active_accounts = list(
+        db.scalars(
+            select(BrokerAccount).where(
+                BrokerAccount.user_id == user_id,
+                BrokerAccount.is_active.is_(True),
+                BrokerAccount.session_status == "active",
+            )
+        ).all()
+    )
+    for acc in active_accounts:
+        if _is_active(acc.session_expires_at):
+            mark_session_healthy(db, acc, verified_at=acc.last_verified_at)
+            db.add(acc)
+    if active_accounts:
+        db.commit()
     q = (
         select(BrokerNotification)
         .where(BrokerNotification.user_id == user_id)
@@ -362,6 +403,7 @@ def refresh_dhan_session(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
         row.access_token_generated_at = now
         row.access_token_expires_at = dhan_auth.parse_expiry(payload.get("expiry_time")) or dhan_auth.default_expiry_from_now()
         _set_session_state(acc, status="active", expires_at=row.access_token_expires_at, error=None)
+        mark_session_healthy(db, acc, verified_at=now)
     elif access_token:
         payload, err = dhan_auth.renew_access_token(
             access_token=access_token,
@@ -373,6 +415,7 @@ def refresh_dhan_session(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
         row.access_token_generated_at = now
         row.access_token_expires_at = dhan_auth.parse_expiry(payload.get("expiry_time")) or dhan_auth.default_expiry_from_now()
         _set_session_state(acc, status="active", expires_at=row.access_token_expires_at, error=None)
+        mark_session_healthy(db, acc, verified_at=now)
     else:
         return False, "no stored Dhan access token or automation credentials"
 
@@ -485,7 +528,7 @@ def consume_upstox_notifier(db: Session, payload: dict) -> tuple[bool, str]:
     row.extended_token_cipher = encrypt_value(extended_token) if extended_token else None
     row.session_user_id_cipher = encrypt_value(user_id) if user_id else row.session_user_id_cipher
     matched.session_status = "active"
-    matched.last_error = None
+    mark_session_healthy(db, matched, verified_at=now)
     db.add(row)
     db.add(matched)
     db.commit()
@@ -533,6 +576,7 @@ def refresh_angel_session(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
     row.jwt_token_generated_at = now
     expires_at = now + timedelta(hours=24)
     _set_session_state(acc, status="active", expires_at=expires_at, error=None)
+    mark_session_healthy(db, acc, verified_at=now)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -580,6 +624,7 @@ def refresh_groww_session(
     row.access_token_generated_at = now
     row.access_token_expires_at = expires_at
     _set_session_state(acc, status="active", expires_at=expires_at, error=None)
+    mark_session_healthy(db, acc, verified_at=now)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -604,6 +649,7 @@ def refresh_kotak_session(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
     row.session_bundle_generated_at = now
     expires_at = now + timedelta(hours=24)
     _set_session_state(acc, status="active", expires_at=expires_at, error=None)
+    mark_session_healthy(db, acc, verified_at=now)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -620,6 +666,7 @@ def update_indmoney_access_token(db: Session, acc: BrokerAccount, access_token: 
     row.access_token_generated_at = now
     row.access_token_expires_at = expires_at
     _set_session_state(acc, status="active", expires_at=expires_at, error=None)
+    mark_session_healthy(db, acc, verified_at=now)
     db.add(row)
     db.add(acc)
     db.commit()

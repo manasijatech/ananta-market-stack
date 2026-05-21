@@ -25,7 +25,7 @@ export async function getAlphaConcallDetail(params: AlphaConcallDetailParams): P
     const symbol = params.symbol.trim().toUpperCase();
     const quarter = params.quarter.trim();
     const detailParams = params.detailed === undefined ? {} : { detailed: params.detailed };
-    return withAlphaSdk<AlphaConcall>((client) => client.getConcallsDetail(symbol, quarter, detailParams));
+    return withAlphaSdk<AlphaConcall>((client) => client.getConcallsDetail({ symbol, quarter, ...detailParams }));
 }
 
 export async function getAlphaConcallTranscripts(
@@ -37,7 +37,9 @@ export async function getAlphaConcallTranscripts(
             quarter: item.quarter.trim()
         }))
         .filter((item) => item.symbol && item.quarter);
-    return withAlphaSdk<AlphaConcallTranscriptBatchResponse>((client) => client.postConcallsTranscripts(normalized));
+    return withAlphaSdk<AlphaConcallTranscriptBatchResponse>((client) =>
+        client.postConcallsTranscripts({ items: normalized })
+    );
 }
 
 export async function getAlphaConcallArtifactUrls(
@@ -45,6 +47,6 @@ export async function getAlphaConcallArtifactUrls(
     quarter: string
 ): Promise<AlphaConcallArtifactUrlsResponse> {
     return withAlphaSdk<AlphaConcallArtifactUrlsResponse>((client) =>
-        client.getConcallsTranscript(symbol.trim().toUpperCase(), quarter.trim())
+        client.getConcallsTranscript({ symbol: symbol.trim().toUpperCase(), quarter: quarter.trim() })
     );
 }
