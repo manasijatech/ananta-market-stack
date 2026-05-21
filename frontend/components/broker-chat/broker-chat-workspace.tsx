@@ -997,6 +997,9 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         {queueHealth ? (
                             <span>
                                 Queue {queueHealth.queue_name}: {queueHealth.queued_count} queued ·{" "}
+                                {typeof queueHealth.oldest_queued_seconds === "number"
+                                    ? `oldest ${Math.round(queueHealth.oldest_queued_seconds)}s · `
+                                    : ""}
                                 {queueHealth.has_active_worker
                                     ? `${queueHealth.active_worker_count} RQ worker${queueHealth.active_worker_count === 1 ? "" : "s"}`
                                     : queueHealth.in_process_worker_enabled
