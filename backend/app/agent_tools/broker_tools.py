@@ -31,7 +31,7 @@ from app.services import broker_accounts, broker_data, broker_data_preferences, 
 from broker.core.instrument_store import SQLiteInstrumentResolver
 from broker.core.redis_cache import cache_quotes
 from broker.core.registry import get_client_for_account
-from db.models import BrokerAccount, User
+from db.models import BrokerAccount, SystemWatchlistPresetSymbol, User, UserWatchlist, UserWatchlistSymbol
 from db.session import SessionLocal
 
 DEFAULT_AGENT_USER_ID = "local-dev-user"
@@ -353,6 +353,141 @@ def _read_cached_quotes(
     return rows
 
 
+def _watchlist_source(watchlist: UserWatchlist) -> dict[str, Any]:
+    preset = watchlist.system_preset if watchlist.kind == "preset" else None
+    return {
+        "watchlist_id": watchlist.id,
+        "name": watchlist.name,
+        "kind": watchlist.kind,
+        "is_user_created": watchlist.kind == "manual",
+        "is_imported_preset": watchlist.kind == "preset",
+        "is_editable": watchlist.kind == "manual",
+        "preset_id": preset.id if preset else None,
+        "preset_slug": preset.slug if preset else None,
+        "preset_name": preset.name if preset else None,
+        "preset_trading_index_name": preset.trading_index_name if preset else None,
+        "preset_sync_status": preset.sync_status if preset else None,
+        "preset_last_synced_at": preset.last_constituents_sync_at if preset else None,
+        "created_at": watchlist.created_at,
+        "updated_at": watchlist.updated_at,
+    }
+
+
+def _watchlist_symbol_rows(
+    db: Session,
+    watchlist: UserWatchlist,
+    *,
+    limit: int,
+) -> list[UserWatchlistSymbol | SystemWatchlistPresetSymbol]:
+    safe_limit = max(1, min(int(limit), 2000))
+    if watchlist.kind == "preset" and watchlist.system_preset_id:
+        return list(
+            db.scalars(
+                select(SystemWatchlistPresetSymbol)
+                .where(SystemWatchlistPresetSymbol.preset_id == watchlist.system_preset_id)
+                .order_by(SystemWatchlistPresetSymbol.sort_order.asc(), SystemWatchlistPresetSymbol.symbol.asc())
+                .limit(safe_limit)
+            ).all()
+        )
+    return list(
+        db.scalars(
+            select(UserWatchlistSymbol)
+            .where(UserWatchlistSymbol.watchlist_id == watchlist.id)
+            .order_by(UserWatchlistSymbol.sort_order.asc(), UserWatchlistSymbol.symbol.asc())
+            .limit(safe_limit)
+        ).all()
+    )
+
+
+def _watchlist_symbol_payload(row: UserWatchlistSymbol | SystemWatchlistPresetSymbol) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "symbol": row.symbol,
+        "exchange": row.exchange or None,
+        "sort_order": row.sort_order,
+    }
+    if isinstance(row, UserWatchlistSymbol):
+        try:
+            ref = json.loads(row.instrument_ref_json or "{}")
+        except json.JSONDecodeError:
+            ref = {}
+        payload["instrument_ref"] = ref if isinstance(ref, dict) else {}
+        payload["created_at"] = row.created_at
+    else:
+        payload.update(
+            {
+                "company_name": row.company_name,
+                "industry": row.industry,
+                "isin": row.isin,
+                "series": row.series,
+                "weight": row.weight,
+                "created_at": row.created_at,
+            }
+        )
+    return payload
+
+
+def _watchlist_summary(
+    db: Session,
+    watchlist: UserWatchlist,
+    *,
+    include_symbols: bool,
+    symbol_limit: int,
+) -> dict[str, Any]:
+    rows = _watchlist_symbol_rows(db, watchlist, limit=symbol_limit if include_symbols else 1)
+    if watchlist.kind == "preset" and watchlist.system_preset:
+        symbol_count = len(watchlist.system_preset.symbols)
+    else:
+        symbol_count = len(watchlist.symbols)
+    payload = {
+        **_watchlist_source(watchlist),
+        "symbol_count": symbol_count,
+    }
+    if include_symbols:
+        payload["symbols"] = [_watchlist_symbol_payload(row) for row in rows]
+        payload["symbols_truncated"] = symbol_count > len(rows)
+    return payload
+
+
+def _owned_watchlists(db: Session, user_id: str) -> list[UserWatchlist]:
+    return list(
+        db.scalars(
+            select(UserWatchlist)
+            .where(UserWatchlist.user_id == user_id)
+            .order_by(UserWatchlist.updated_at.desc(), UserWatchlist.name.asc(), UserWatchlist.id.asc())
+        ).all()
+    )
+
+
+def _match_watchlists(
+    watchlists: list[UserWatchlist],
+    *,
+    watchlist_id: str | None,
+    name: str | None,
+    kind: Literal["manual", "preset"] | None,
+) -> list[UserWatchlist]:
+    rows = watchlists
+    if watchlist_id:
+        rows = [watchlist for watchlist in rows if watchlist.id == watchlist_id]
+    if kind:
+        rows = [watchlist for watchlist in rows if watchlist.kind == kind]
+    if name:
+        query = name.strip().casefold()
+        rows = [
+            watchlist
+            for watchlist in rows
+            if query in watchlist.name.casefold()
+            or (
+                watchlist.system_preset is not None
+                and (
+                    query in watchlist.system_preset.name.casefold()
+                    or query in watchlist.system_preset.slug.casefold()
+                    or query in watchlist.system_preset.trading_index_name.casefold()
+                )
+            )
+        ]
+    return rows
+
+
 @function_tool(strict_mode=False)
 def broker_list_accounts(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
     """List broker accounts connected to the current user.
@@ -390,6 +525,143 @@ def broker_list_accounts(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str
                 accounts=[_account_summary(acc) for acc in accounts],
                 default_config=broker_data_preferences.get_broker_data_default_config(db, user_id),
                 search_config=broker_data_preferences.get_broker_data_search_config(db, user_id),
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_list_watchlists(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    kind: Literal["manual", "preset"] | None = None,
+    query: str | None = None,
+    include_symbols: bool = False,
+    limit: int = 50,
+    symbol_limit: int = 100,
+) -> dict[str, Any]:
+    """List the current user's watchlists and distinguish custom vs imported preset lists.
+
+    Use this whenever the user asks what watchlists exist, asks about a named
+    watchlist, or wants to choose a watchlist-backed universe for market-data
+    analysis. ``kind: "manual"`` returns user-created custom watchlists;
+    ``kind: "preset"`` returns imported system preset watchlists such as index
+    constituents. The result includes ``is_user_created``,
+    ``is_imported_preset``, editability, preset slug/index metadata, and symbol
+    counts so the agent can explain the difference clearly.
+
+    Set ``include_symbols`` only for small previews. For a full symbol list or
+    a specific watchlist, use ``broker_get_watchlist_symbols``.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            safe_limit = max(1, min(int(limit), 200))
+            rows = _match_watchlists(
+                _owned_watchlists(db, user_id),
+                watchlist_id=None,
+                name=query,
+                kind=kind,
+            )
+            selected = rows[:safe_limit]
+            return _ok(
+                user_id=user_id,
+                total_count=len(rows),
+                returned_count=len(selected),
+                watchlists=[
+                    _watchlist_summary(
+                        db,
+                        watchlist,
+                        include_symbols=include_symbols,
+                        symbol_limit=symbol_limit,
+                    )
+                    for watchlist in selected
+                ],
+                truncated=len(rows) > len(selected),
+                guidance={
+                    "manual": "User-created custom watchlist; symbols are directly editable by the user.",
+                    "preset": "Imported system preset watchlist; symbols come from the linked preset and are refreshed through preset sync.",
+                },
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_get_watchlist_symbols(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    watchlist_id: str | None = None,
+    name: str | None = None,
+    kind: Literal["manual", "preset"] | None = None,
+    limit: int = 1000,
+) -> dict[str, Any]:
+    """Return symbols for one user watchlist, preserving manual vs preset semantics.
+
+    Use this after ``broker_list_watchlists`` or when the user names a
+    watchlist and asks what symbols it contains. For manual watchlists, symbols
+    come from ``user_watchlist_symbols`` and include stored broker instrument
+    references when available. For imported preset watchlists, symbols come
+    from the linked system preset and include preset metadata such as company
+    name, industry, ISIN, series, and weight when available.
+
+    If ``name`` matches multiple watchlists, the tool returns the candidate
+    watchlists instead of guessing. Pass ``kind`` to disambiguate custom/manual
+    watchlists from imported preset watchlists when names overlap.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            matches = _match_watchlists(
+                _owned_watchlists(db, user_id),
+                watchlist_id=watchlist_id,
+                name=name,
+                kind=kind,
+            )
+            if not matches:
+                return _error(
+                    "No matching watchlist was found for this user.",
+                    code="watchlist_not_found",
+                    user_id=user_id,
+                    watchlist_id=watchlist_id,
+                    name=name,
+                    kind=kind,
+                )
+            if len(matches) > 1:
+                return _ok(
+                    user_id=user_id,
+                    ambiguous=True,
+                    message="Multiple watchlists matched. Choose by watchlist_id or pass kind to distinguish manual vs preset.",
+                    candidates=[
+                        _watchlist_summary(db, watchlist, include_symbols=False, symbol_limit=1)
+                        for watchlist in matches[:20]
+                    ],
+                    total_count=len(matches),
+                    truncated=len(matches) > 20,
+                )
+
+            watchlist = matches[0]
+            rows = _watchlist_symbol_rows(db, watchlist, limit=limit)
+            source = _watchlist_source(watchlist)
+            if watchlist.kind == "preset" and watchlist.system_preset:
+                symbol_count = len(watchlist.system_preset.symbols)
+            else:
+                symbol_count = len(watchlist.symbols)
+            return _ok(
+                user_id=user_id,
+                watchlist=source,
+                symbol_count=symbol_count,
+                returned_count=len(rows),
+                symbols=[_watchlist_symbol_payload(row) for row in rows],
+                truncated=symbol_count > len(rows),
             )
         finally:
             db.close()
@@ -1116,6 +1388,8 @@ def broker_get_stream_status(
 
 BROKER_DATA_TOOLS = [
     broker_list_accounts,
+    broker_list_watchlists,
+    broker_get_watchlist_symbols,
     broker_get_session_status,
     broker_verify_connection,
     broker_run_session_maintenance,

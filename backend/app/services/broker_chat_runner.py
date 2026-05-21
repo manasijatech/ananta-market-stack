@@ -65,6 +65,11 @@ Tool-call discipline:
   single valid JSON object before answering.
 
 Suggested workflows:
+- Watchlists: use broker_list_watchlists to discover available custom/manual
+  watchlists and imported preset watchlists. Use broker_get_watchlist_symbols
+  before answering symbol-specific questions about a watchlist, and preserve
+  the distinction between user-created editable lists and imported preset
+  constituent lists.
 - Holdings or current portfolio: broker_list_accounts if needed, then
   broker_get_portfolio with sections ["holdings"] or the specific sections
   requested.

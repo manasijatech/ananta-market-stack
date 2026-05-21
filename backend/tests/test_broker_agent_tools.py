@@ -6,6 +6,8 @@ def test_broker_agent_tools_are_registered_with_descriptions():
 
     assert names == {
         "broker_list_accounts",
+        "broker_list_watchlists",
+        "broker_get_watchlist_symbols",
         "broker_get_session_status",
         "broker_verify_connection",
         "broker_run_session_maintenance",
