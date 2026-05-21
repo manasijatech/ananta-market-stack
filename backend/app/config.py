@@ -18,6 +18,14 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
     app_public_base_url: str | None = Field(default=None, validation_alias="APP_PUBLIC_BASE_URL")
+    cors_allowed_origins: str = Field(
+        default="http://localhost:3000,http://localhost:3001,http://localhost:3002,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002",
+        validation_alias="CORS_ALLOWED_ORIGINS",
+    )
+    cors_allow_origin_regex: str | None = Field(
+        default=r"http://(localhost|127\.0\.0\.1):\d+",
+        validation_alias="CORS_ALLOW_ORIGIN_REGEX",
+    )
     alpha_api_base_url: str = Field(
         default="https://developers.manasija.in",
         validation_alias="MANASIJA_API_BASE_URL",
@@ -28,6 +36,28 @@ class Settings(BaseSettings):
     redis_password: str | None = None
     redis_db: int = 0
     redis_quote_ttl_seconds: int = 30
+    broker_chat_queue_name: str = Field(default="broker-chat", validation_alias="BROKER_CHAT_QUEUE_NAME")
+    broker_chat_job_timeout_seconds: int = Field(
+        default=600,
+        validation_alias="BROKER_CHAT_JOB_TIMEOUT_SECONDS",
+    )
+    broker_chat_result_ttl_seconds: int = Field(
+        default=24 * 60 * 60,
+        validation_alias="BROKER_CHAT_RESULT_TTL_SECONDS",
+    )
+    broker_chat_stream_maxlen: int = Field(default=5000, validation_alias="BROKER_CHAT_STREAM_MAXLEN")
+    broker_chat_history_turn_limit: int = Field(
+        default=20,
+        validation_alias="BROKER_CHAT_HISTORY_TURN_LIMIT",
+    )
+    enable_in_process_broker_chat_worker: bool = Field(
+        default=False,
+        validation_alias="ENABLE_IN_PROCESS_BROKER_CHAT_WORKER",
+    )
+    broker_chat_worker_poll_seconds: float = Field(
+        default=1.0,
+        validation_alias="BROKER_CHAT_WORKER_POLL_SECONDS",
+    )
     system_maintenance_interval_seconds: int = Field(
         default=6 * 60 * 60,
         validation_alias="SYSTEM_MAINTENANCE_INTERVAL_SECONDS",

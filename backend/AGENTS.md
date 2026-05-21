@@ -9,6 +9,8 @@ Modular trading/data platform: self-hosted core plus future managed offerings. T
 See `idea.md` for product narrative and roadmap.
 See `docs/broker_auth_flows.md` for broker session/auth behavior and `docs/migrations.md` for the Alembic workflow.
 See `docs/windows_runtime_compat.md` for Python 3.10 / Windows-safe runtime conventions.
+See `docs/broker_agent_tools.md` for the OpenAI Agents SDK broker-data tool surface.
+See `docs/broker_chat.md` for the asynchronous broker chat API, RQ worker, and SSE stream behavior.
 
 ## Current phase (roadmap)
 
@@ -26,6 +28,8 @@ Also implemented now:
 - Separate **alerts workspace** domain for user-owned trading alerts and workflows.
 - Redis-backed **live data workers** for symbol subscription polling/fanout, workflow evaluation, and outbound alert delivery.
 - Dedicated **alert notifications** domain and channel settings for in-app, Discord webhook, and Telegram bot delivery.
+- Read-only OpenAI Agents SDK broker-data tools under `app/agent_tools/` for future chat integrations.
+- Asynchronous broker chat runs backed by RQ, SQLite history, and resumable Redis/SSE event streams.
 
 Next roadmap items (not implemented here): production-grade native broker websocket adapters for every broker, richer workflow graph primitives, billing, MCP tools, RBAC.
 
@@ -267,6 +271,7 @@ SQLite instrument cache tables:
 - **Migrations**: Alembic is now scaffolded in `alembic/`. Existing databases should be stamped to the baseline revision first, then future schema changes should use generated revisions instead of only runtime patching.
 - **Token maintenance**: a lightweight in-process maintenance loop checks broker sessions daily after **06:30 IST**, attempts broker-supported refresh paths, and emits notifications for manual re-auth flows. Use `/broker-accounts/maintenance/run` to trigger the same logic on demand.
 - **Instrument maintenance**: a separate daily sync pass runs after **08:30 IST** and refreshes instrument metadata into SQLite once per broker per day.
+- **Broker chat worker**: start `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat` to process `/broker-chat/runs` jobs from RQ.
 - **Alert workers**: start these separately when you need live alerting:
   - `PYTHONPATH=. ./venv/bin/python -m app.workers.live_market_data`
   - `PYTHONPATH=. ./venv/bin/python -m app.workers.alert_evaluator`
