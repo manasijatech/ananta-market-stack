@@ -13,6 +13,8 @@ from rq.worker import Worker
 
 from app.config import get_settings
 
+IN_PROCESS_WORKER_NAME_PREFIX = "broker-chat-inline-"
+
 
 def _queue_instance_fingerprint() -> str:
     """Return a stable local queue fingerprint for shared-Redis safety.
@@ -164,6 +166,30 @@ def broker_chat_job_status(run_id: str) -> str | None:
     return getattr(status, "value", str(status))
 
 
+def _queue_workers(queue: Queue, connection: redis.Redis) -> list[dict[str, object]]:
+    workers = []
+    try:
+        for worker in Worker.all(connection=connection, queue=queue):
+            name = str(worker.name)
+            workers.append(
+                {
+                    "name": name,
+                    "state": str(getattr(worker, "state", "")),
+                    "queues": worker.queue_names(),
+                    "is_in_process_fallback": name.startswith(IN_PROCESS_WORKER_NAME_PREFIX),
+                }
+            )
+    except Exception:
+        return []
+    return workers
+
+
+def broker_chat_external_worker_available() -> bool:
+    connection = redis_connection()
+    queue = broker_chat_queue()
+    return any(not bool(worker.get("is_in_process_fallback")) for worker in _queue_workers(queue, connection))
+
+
 def broker_chat_queue_health() -> dict[str, object]:
     connection = redis_connection()
     queue = broker_chat_queue()
@@ -183,18 +209,9 @@ def broker_chat_queue_health() -> dict[str, object]:
     except Exception:
         oldest_queued_seconds = None
         oldest_job_id = None
-    workers = []
-    try:
-        for worker in Worker.all(connection=connection, queue=queue):
-            workers.append(
-                {
-                    "name": worker.name,
-                    "state": str(getattr(worker, "state", "")),
-                    "queues": worker.queue_names(),
-                }
-            )
-    except Exception:
-        workers = []
+    workers = _queue_workers(queue, connection)
+    external_worker_count = sum(1 for worker in workers if not bool(worker.get("is_in_process_fallback")))
+    fallback_worker_count = len(workers) - external_worker_count
     return {
         "queue_name": queue.name,
         "base_queue_name": get_settings().broker_chat_queue_name,
@@ -204,6 +221,9 @@ def broker_chat_queue_health() -> dict[str, object]:
         "oldest_queued_seconds": oldest_queued_seconds,
         "workers": workers,
         "active_worker_count": len(workers),
+        "external_worker_count": external_worker_count,
+        "fallback_worker_count": fallback_worker_count,
+        "fallback_worker_available": True,
         "has_active_worker": bool(workers),
         "in_process_worker_enabled": True,
         "has_processing_path": True,

@@ -105,5 +105,9 @@ export interface BrokerChatQueueHealth {
         name?: string;
         state?: string;
         queues?: string[];
+        is_in_process_fallback?: boolean;
     }>;
+    external_worker_count?: number;
+    fallback_worker_count?: number;
+    fallback_worker_available?: boolean;
 }

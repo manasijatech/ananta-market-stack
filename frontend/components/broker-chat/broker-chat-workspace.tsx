@@ -1064,9 +1064,9 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                     ? `oldest ${Math.round(queueHealth.oldest_queued_seconds)}s · `
                                     : ""}
                                 {queueHealth.has_active_worker
-                                    ? `${queueHealth.active_worker_count} RQ worker${queueHealth.active_worker_count === 1 ? "" : "s"}`
+                                    ? `${queueHealth.external_worker_count ?? queueHealth.active_worker_count} RQ worker${(queueHealth.external_worker_count ?? queueHealth.active_worker_count) === 1 ? "" : "s"}${queueHealth.fallback_worker_count ? ` · ${queueHealth.fallback_worker_count} fallback` : ""}`
                                     : queueHealth.in_process_worker_enabled
-                                      ? "backend worker enabled"
+                                      ? "fallback available"
                                       : "no worker"}
                             </span>
                         ) : null}
