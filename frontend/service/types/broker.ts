@@ -407,12 +407,31 @@ export interface AlphaWebSocketConfig {
     last_event_at?: string | null;
 }
 
+export type McpTransport = "streamable_http" | "sse";
+
+export interface McpServerConfig {
+    is_enabled: boolean;
+    name?: string | null;
+    url: string;
+    transport: McpTransport;
+    has_api_key: boolean;
+    api_key_hint?: string | null;
+    api_key_header_name: string;
+    api_key_prefix: string;
+    extra_headers: Record<string, string>;
+    timeout_seconds: number;
+    tool_cache_enabled: boolean;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
 export interface SystemConfig {
     broker_data_default: BrokerDataDefaultConfig;
     broker_data_search: BrokerDataSearchConfig;
     llm_providers: LlmProviderConfig[];
     alpha_api: AlphaApiConfig;
     alpha_websocket: AlphaWebSocketConfig;
+    mcp_server: McpServerConfig;
 }
 
 export interface Notification {

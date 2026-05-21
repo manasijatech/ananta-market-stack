@@ -318,6 +318,49 @@ export async function updateAlphaWebSocketConfig(payload: {
     return result;
 }
 
+export async function updateMcpServerConfig(payload: {
+    is_enabled: boolean;
+    name?: string | null;
+    url: string;
+    transport: "streamable_http" | "sse";
+    api_key?: string | null;
+    api_key_header_name?: string;
+    api_key_prefix?: string;
+    extra_headers?: Record<string, string>;
+    timeout_seconds?: number;
+    tool_cache_enabled?: boolean;
+}): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp", {
+        method: "PUT",
+        body: JSON.stringify({
+            is_enabled: payload.is_enabled,
+            name: payload.name ?? null,
+            url: payload.url,
+            transport: payload.transport,
+            api_key: payload.api_key || null,
+            api_key_header_name: payload.api_key_header_name ?? "Authorization",
+            api_key_prefix: payload.api_key_prefix ?? "Bearer",
+            extra_headers: payload.extra_headers ?? {},
+            timeout_seconds: payload.timeout_seconds ?? 15,
+            tool_cache_enabled: payload.tool_cache_enabled ?? true
+        })
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function clearMcpServerApiKey(): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp/key", {
+        method: "DELETE"
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
 export async function refreshAlphaWebSocketAccount(): Promise<AlphaWebSocketConfig> {
     const result = await request<AlphaWebSocketConfig>("/system-config/alpha/websocket/refresh", {
         method: "POST"

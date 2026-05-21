@@ -75,6 +75,13 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    mcp_server_config: Mapped[UserMcpServerConfig | None] = relationship(
+        "UserMcpServerConfig",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class BrokerAccount(Base):
@@ -198,12 +205,37 @@ class UserBrokerChatPreference(Base):
     event_visibility: Mapped[str] = mapped_column(String(32), default="minimal")
     include_tool_outputs: Mapped[bool] = mapped_column(Boolean, default=False)
     include_reasoning: Mapped[bool] = mapped_column(Boolean, default=False)
+    use_mcp: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     user: Mapped[User] = relationship("User", back_populates="broker_chat_preference")
+
+
+class UserMcpServerConfig(Base):
+    __tablename__ = "user_mcp_server_configs"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    url: Mapped[str] = mapped_column(Text, default="")
+    transport: Mapped[str] = mapped_column(String(32), default="streamable_http")
+    api_key_cipher: Mapped[str] = mapped_column(Text, default="")
+    api_key_header_name: Mapped[str] = mapped_column(String(128), default="Authorization")
+    api_key_prefix: Mapped[str] = mapped_column(String(64), default="Bearer")
+    extra_headers_json: Mapped[str] = mapped_column(Text, default="{}")
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=15)
+    tool_cache_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="mcp_server_config")
 
 
 class BrokerChatSession(Base):

@@ -11,6 +11,7 @@ export interface BrokerChatPreference {
     event_visibility: BrokerChatVisibility;
     include_tool_outputs: boolean;
     include_reasoning: boolean;
+    use_mcp: boolean;
 }
 
 export interface BrokerChatPreferenceUpdate {
@@ -19,6 +20,7 @@ export interface BrokerChatPreferenceUpdate {
     event_visibility: BrokerChatVisibility;
     include_tool_outputs: boolean;
     include_reasoning: boolean;
+    use_mcp: boolean;
 }
 
 export interface BrokerChatSession {
@@ -60,6 +62,7 @@ export interface BrokerChatSubmitRequest {
     event_visibility?: BrokerChatVisibility | null;
     include_tool_outputs?: boolean | null;
     include_reasoning?: boolean | null;
+    use_mcp?: boolean | null;
     default_account_id?: string | null;
     search_account_id?: string | null;
     metadata?: BrokerChatPayload;
@@ -85,4 +88,18 @@ export interface BrokerChatEventsPage {
     run: BrokerChatRun;
     events: BrokerChatEvent[];
     next_after_sequence?: number | null;
+}
+
+export interface BrokerChatQueueHealth {
+    queue_name: string;
+    queued_count: number;
+    active_worker_count: number;
+    has_active_worker: boolean;
+    in_process_worker_enabled: boolean;
+    has_processing_path: boolean;
+    workers: Array<{
+        name?: string;
+        state?: string;
+        queues?: string[];
+    }>;
 }
