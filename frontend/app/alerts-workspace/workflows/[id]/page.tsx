@@ -2,9 +2,11 @@ import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warni
 import { AlertsHeaderOverride } from "@/components/alerts/alerts-workspace-chrome";
 import { ExecutionHistory } from "@/components/alerts/execution-history";
 import { WorkflowEditor } from "@/components/alerts/workflow-editor";
+import { WorkflowLlmUsagePanel } from "@/components/llm-usage/workflow-llm-usage-panel";
 import { getAlertPresets, getAlertWorkflow, getAlertWorkflowRuns } from "@/service/actions/alerts";
 import { getAlphaAnnouncementCategories } from "@/service/actions/alpha/announcements";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
+import { getWorkflowLlmUsageSummary } from "@/service/actions/llm-usage";
 import { getWatchlists } from "@/service/actions/watchlist";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
 
@@ -15,10 +17,11 @@ type WorkflowDetailPageProps = {
 export default async function WorkflowDetailPage({ params }: WorkflowDetailPageProps) {
     const { id } = await params;
     let creditWarningMessage: string | null = null;
-    const [accounts, workflow, runs, watchlists, presets, systemConfig, announcementCategories] = await Promise.all([
+    const [accounts, workflow, runs, llmUsage, watchlists, presets, systemConfig, announcementCategories] = await Promise.all([
         getBrokerAccounts(),
         getAlertWorkflow(id),
         getAlertWorkflowRuns(id, 100),
+        getWorkflowLlmUsageSummary(id),
         getWatchlists(),
         getAlertPresets(),
         getSystemConfig(),
@@ -40,6 +43,7 @@ export default async function WorkflowDetailPage({ params }: WorkflowDetailPageP
                 presets={presets}
                 watchlists={watchlists}
             />
+            <WorkflowLlmUsagePanel summary={llmUsage} />
             <ExecutionHistory runs={runs} />
         </div>
     );
