@@ -4,10 +4,14 @@ import { useState, useTransition } from "react";
 import { CircleHelpIcon } from "lucide-react";
 import {
     addLlmProviderModel,
+    clearMcpOAuth,
     clearMcpServerApiKey,
+    deleteMcpServerConfig,
     deleteAlphaApiCredential,
     deleteLlmProviderCredential,
     deleteLlmProviderModel,
+    refreshMcpInventory,
+    startMcpOAuth,
     updateBrokerDataDefaultConfig,
     updateBrokerDataSearchConfig,
     updateAlphaWebSocketConfig,
@@ -295,25 +299,30 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
         });
     }
 
+    function readMcpExtraHeaders(): Record<string, string> {
+        if (!mcpExtraHeadersText.trim()) {
+            return {};
+        }
+        const parsed = JSON.parse(mcpExtraHeadersText) as unknown;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            throw new Error("MCP extra headers must be a JSON object.");
+        }
+        return Object.fromEntries(
+            Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [key, String(value)])
+        );
+    }
+
     function saveMcpConfig() {
         setMcpError("");
         startTransition(async () => {
             try {
-                let extraHeaders: Record<string, string> = {};
-                if (mcpExtraHeadersText.trim()) {
-                    const parsed = JSON.parse(mcpExtraHeadersText) as unknown;
-                    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-                        throw new Error("MCP extra headers must be a JSON object.");
-                    }
-                    extraHeaders = Object.fromEntries(
-                        Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [key, String(value)])
-                    );
-                }
+                const extraHeaders = readMcpExtraHeaders();
                 const next = await updateMcpServerConfig({
                     is_enabled: mcpConfig.is_enabled,
                     name: mcpConfig.name ?? null,
                     url: mcpConfig.url,
                     transport: mcpConfig.transport,
+                    auth_mode: mcpConfig.auth_mode ?? "oauth",
                     api_key: mcpApiKey || null,
                     api_key_header_name: mcpConfig.api_key_header_name,
                     api_key_prefix: mcpConfig.api_key_prefix,
@@ -321,6 +330,72 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     timeout_seconds: mcpConfig.timeout_seconds,
                     tool_cache_enabled: mcpConfig.tool_cache_enabled
                 });
+                setMcpConfig(next);
+                setMcpApiKey("");
+                setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
+            } catch (caught) {
+                setMcpError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function startMcpAuthentication() {
+        setMcpError("");
+        startTransition(async () => {
+            try {
+                const saved = await updateMcpServerConfig({
+                    is_enabled: mcpConfig.is_enabled,
+                    name: mcpConfig.name ?? null,
+                    url: mcpConfig.url,
+                    transport: mcpConfig.transport,
+                    auth_mode: mcpConfig.auth_mode ?? "oauth",
+                    api_key: mcpApiKey || null,
+                    api_key_header_name: mcpConfig.api_key_header_name,
+                    api_key_prefix: mcpConfig.api_key_prefix,
+                    extra_headers: readMcpExtraHeaders(),
+                    timeout_seconds: mcpConfig.timeout_seconds,
+                    tool_cache_enabled: mcpConfig.tool_cache_enabled
+                });
+                setMcpConfig(saved);
+                setMcpApiKey("");
+                setMcpExtraHeadersText(JSON.stringify(saved.extra_headers ?? {}, null, 2));
+                const auth = await startMcpOAuth(`${window.location.origin}/api/mcp/oauth/callback`);
+                window.open(auth.authorization_url, "_blank", "noopener,noreferrer");
+            } catch (caught) {
+                setMcpError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function clearMcpAuthentication() {
+        setMcpError("");
+        startTransition(async () => {
+            try {
+                const next = await clearMcpOAuth();
+                setMcpConfig(next);
+            } catch (caught) {
+                setMcpError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function refreshMcpCapabilities() {
+        setMcpError("");
+        startTransition(async () => {
+            try {
+                const next = await refreshMcpInventory();
+                setMcpConfig(next);
+            } catch (caught) {
+                setMcpError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function clearMcpConfigCompletely() {
+        setMcpError("");
+        startTransition(async () => {
+            try {
+                const next = await deleteMcpServerConfig();
                 setMcpConfig(next);
                 setMcpApiKey("");
                 setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
@@ -685,7 +760,8 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     <div className="text-base font-bold tracking-tight">Hosted MCP server</div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
                         Configure the hosted MCP endpoint that broker chat can attach when MCP is enabled for a chat
-                        run. The API key is stored server-side and only sent from the backend to the MCP server.
+                        run. OAuth is preferred for remote MCP servers; direct bearer keys remain available as a
+                        fallback for simple or private deployments.
                     </p>
                 </div>
                 <div className="border border-border p-4">
@@ -693,13 +769,27 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         <div>
                             <div className="text-sm font-bold">MCP connection</div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                                {mcpConfig.is_enabled ? "Enabled" : "Disabled"} · API key{" "}
-                                {mcpConfig.has_api_key ? "configured" : "not configured"}
+                                {mcpConfig.is_enabled ? "Enabled" : "Disabled"} · OAuth{" "}
+                                {mcpConfig.oauth_authenticated ? "connected" : "not connected"} · API key{" "}
+                                {mcpConfig.has_api_key ? "fallback configured" : "fallback not configured"}
                                 {mcpConfig.updated_at ? ` · updated ${formatIstDateTime(mcpConfig.updated_at)}` : ""}
                             </div>
+                            {mcpConfig.oauth_authorized_at ? (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                    Authorized {formatIstDateTime(mcpConfig.oauth_authorized_at)}
+                                    {mcpConfig.oauth_token_expires_at
+                                        ? ` · token expires ${formatIstDateTime(mcpConfig.oauth_token_expires_at)}`
+                                        : ""}
+                                </div>
+                            ) : null}
                             {mcpConfig.api_key_hint ? (
                                 <div className="mt-1 text-xs text-muted-foreground">
-                                    Saved key: {mcpConfig.api_key_hint}
+                                    Saved fallback key: {mcpConfig.api_key_hint}
+                                </div>
+                            ) : null}
+                            {mcpConfig.inventory_checked_at ? (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                    Capabilities refreshed {formatIstDateTime(mcpConfig.inventory_checked_at)}
                                 </div>
                             ) : null}
                         </div>
@@ -724,7 +814,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         <Input
                             className="h-9 text-sm"
                             onChange={(event) => setMcpConfig((current) => ({ ...current, url: event.target.value }))}
-                            placeholder="https://mcp.example.com/mcp"
+                            placeholder="https://mcp.testing.manasija.in/"
                             value={mcpConfig.url}
                         />
                         <Select
@@ -740,6 +830,43 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                             <option value="streamable_http">Streamable HTTP</option>
                             <option value="sse">SSE</option>
                         </Select>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[180px_minmax(220px,1fr)]">
+                        <Select
+                            className="h-9"
+                            onChange={(event) =>
+                                setMcpConfig((current) => ({
+                                    ...current,
+                                    auth_mode: event.target.value as "oauth" | "api_key"
+                                }))
+                            }
+                            value={mcpConfig.auth_mode ?? "oauth"}
+                        >
+                            <option value="oauth">OAuth / browser authentication</option>
+                            <option value="api_key">Bearer API key fallback</option>
+                        </Select>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                disabled={isPending || !mcpConfig.url}
+                                onClick={startMcpAuthentication}
+                                type="button"
+                                variant="outline"
+                            >
+                                Authenticate MCP
+                            </Button>
+                            <Button
+                                disabled={isPending || !mcpConfig.oauth_authenticated}
+                                onClick={clearMcpAuthentication}
+                                type="button"
+                                variant="outline"
+                            >
+                                Clear OAuth
+                            </Button>
+                            <Button disabled={isPending || !mcpConfig.url} onClick={refreshMcpCapabilities} type="button">
+                                Refresh tools
+                            </Button>
+                        </div>
                     </div>
 
                     <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[minmax(220px,1fr)_180px_140px]">
@@ -773,6 +900,34 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                             placeholder="Bearer"
                             value={mcpConfig.api_key_prefix}
                         />
+                    </div>
+
+                    <div className="mt-3 grid gap-2 border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                        <div className="font-semibold text-foreground">
+                            MCP capabilities · {(mcpConfig.inventory.tools ?? []).length} tools ·{" "}
+                            {(mcpConfig.inventory.prompts ?? []).length} prompts ·{" "}
+                            {(mcpConfig.inventory.resources ?? []).length} resources
+                        </div>
+                        {(mcpConfig.inventory.tools ?? []).length ? (
+                            <div className="flex flex-wrap gap-1.5">
+                                {(mcpConfig.inventory.tools ?? []).slice(0, 12).map((tool) => (
+                                    <Badge key={String(tool.name)} variant="secondary">
+                                        {tool.name}
+                                    </Badge>
+                                ))}
+                            </div>
+                        ) : (
+                            <div>No MCP tools cached yet. Authenticate, then refresh tools.</div>
+                        )}
+                        {(mcpConfig.inventory.prompts ?? []).length || (mcpConfig.inventory.resources ?? []).length ? (
+                            <div>
+                                Context: {(mcpConfig.inventory.prompts ?? []).map((item) => item.name).filter(Boolean).join(", ") || "no prompts"} ·{" "}
+                                {(mcpConfig.inventory.resources ?? [])
+                                    .map((item) => item.name || item.uri)
+                                    .filter(Boolean)
+                                    .join(", ") || "no resources"}
+                            </div>
+                        ) : null}
                     </div>
 
                     <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[140px_minmax(260px,1fr)]">
@@ -822,8 +977,22 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         >
                             Clear MCP key
                         </Button>
+                        <Button
+                            disabled={isPending}
+                            onClick={clearMcpConfigCompletely}
+                            type="button"
+                            variant="outline"
+                        >
+                            Delete MCP config
+                        </Button>
                     </div>
                     {mcpError ? <div className="mt-3 text-sm text-destructive">{mcpError}</div> : null}
+                    {mcpConfig.oauth_last_error ? (
+                        <div className="mt-3 text-sm text-destructive">{mcpConfig.oauth_last_error}</div>
+                    ) : null}
+                    {mcpConfig.inventory_error ? (
+                        <div className="mt-3 text-sm text-destructive">{mcpConfig.inventory_error}</div>
+                    ) : null}
                 </div>
             </section>
 

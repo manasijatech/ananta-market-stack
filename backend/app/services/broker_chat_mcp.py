@@ -17,6 +17,8 @@ class BrokerChatMcpHandle:
     manager: MCPServerManager | None
     active_servers: list[Any]
     enabled: bool
+    instructions: str = ""
+    inventory: dict[str, Any] | None = None
 
     async def close(self) -> None:
         if self.manager is None:
@@ -34,6 +36,41 @@ def broker_chat_mcp_config() -> dict[str, Any]:
         "convert_schemas_to_strict": True,
         "include_server_in_tool_names": True,
     }
+
+
+def mcp_context_instructions(handle: BrokerChatMcpHandle) -> str:
+    if not handle.enabled or not handle.active_servers:
+        return ""
+    inventory = handle.inventory or {}
+    tool_names = [
+        str(tool.get("name") or "")
+        for tool in inventory.get("tools", [])
+        if isinstance(tool, dict) and tool.get("name")
+    ][:30]
+    prompt_names = [
+        str(prompt.get("name") or "")
+        for prompt in inventory.get("prompts", [])
+        if isinstance(prompt, dict) and prompt.get("name")
+    ][:20]
+    resource_names = [
+        str(resource.get("name") or resource.get("uri") or "")
+        for resource in inventory.get("resources", [])
+        if isinstance(resource, dict) and (resource.get("name") or resource.get("uri"))
+    ][:20]
+    sections = [
+        "MCP is connected for this run. Use MCP tools when they provide fresher or broader market intelligence than local broker tools, while keeping local broker tools preferred for connected-account and portfolio data."
+    ]
+    if tool_names:
+        sections.append(f"Available MCP tools include: {', '.join(tool_names)}.")
+    if prompt_names or resource_names:
+        sections.append(
+            "The MCP server also exposes reusable context. "
+            f"Prompts: {', '.join(prompt_names) if prompt_names else 'none listed'}. "
+            f"Resources: {', '.join(resource_names) if resource_names else 'none listed'}."
+        )
+    if handle.instructions:
+        sections.append("MCP server guidance:\n" + handle.instructions)
+    return "\n\n".join(sections)
 
 
 def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
@@ -70,6 +107,39 @@ async def connect_broker_chat_mcp(
 
     if not metadata.get("use_mcp"):
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=False)
+
+    if mcp_config.mcp_inventory_is_stale(db, run.user_id):
+        try:
+            mcp_schema = await mcp_config.refresh_mcp_inventory(db, run.user_id)
+            if mcp_schema.inventory_error:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="mcp_inventory_refresh_failed",
+                    public_payload={"status": "failed", "message": "Could not refresh MCP capabilities."},
+                    full_payload={"status": "failed", "message": mcp_schema.inventory_error},
+                )
+            else:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="mcp_inventory_refreshed",
+                    public_payload={
+                        "status": "refreshed",
+                        "tool_count": len(mcp_schema.inventory.get("tools", [])),
+                        "prompt_count": len(mcp_schema.inventory.get("prompts", [])),
+                        "resource_count": len(mcp_schema.inventory.get("resources", [])),
+                    },
+                    full_payload={"status": "refreshed", "inventory": mcp_schema.inventory},
+                )
+        except Exception as exc:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="mcp_inventory_refresh_failed",
+                public_payload={"status": "failed", "message": "Could not refresh MCP capabilities."},
+                full_payload={"status": "failed", "message": str(exc), "error_type": exc.__class__.__name__},
+            )
 
     try:
         connection = mcp_config.get_enabled_mcp_connection(db, run.user_id)
@@ -124,6 +194,11 @@ async def connect_broker_chat_mcp(
         await manager.__aexit__(None, None, None)
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=True)
 
+    inventory = connection.inventory or {}
+    tool_count = len(inventory.get("tools", [])) if isinstance(inventory.get("tools"), list) else 0
+    prompt_count = len(inventory.get("prompts", [])) if isinstance(inventory.get("prompts"), list) else 0
+    resource_count = len(inventory.get("resources", [])) if isinstance(inventory.get("resources"), list) else 0
+
     broker_chat.append_event(
         db,
         run,
@@ -133,6 +208,9 @@ async def connect_broker_chat_mcp(
             "name": connection.name,
             "transport": connection.transport,
             "server_count": len(manager.active_servers),
+            "tool_count": tool_count,
+            "prompt_count": prompt_count,
+            "resource_count": resource_count,
         },
         full_payload={
             "status": "connected",
@@ -140,6 +218,13 @@ async def connect_broker_chat_mcp(
             "url": connection.url,
             "transport": connection.transport,
             "server_count": len(manager.active_servers),
+            "inventory": inventory,
         },
     )
-    return BrokerChatMcpHandle(manager=manager, active_servers=list(manager.active_servers), enabled=True)
+    return BrokerChatMcpHandle(
+        manager=manager,
+        active_servers=list(manager.active_servers),
+        enabled=True,
+        instructions=connection.instructions,
+        inventory=inventory,
+    )

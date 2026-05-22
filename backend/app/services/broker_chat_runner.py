@@ -112,10 +112,13 @@ class BrokerChatCancelled(Exception):
     pass
 
 
-def _broker_chat_instructions() -> str:
+def _broker_chat_instructions(mcp_context: str = "") -> str:
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     current_day_context = now.strftime("Today is %A, %B %d, %Y in Asia/Kolkata (IST).")
-    return BROKER_CHAT_INSTRUCTIONS_TEMPLATE.replace("__CURRENT_DAY_CONTEXT__", current_day_context)
+    instructions = BROKER_CHAT_INSTRUCTIONS_TEMPLATE.replace("__CURRENT_DAY_CONTEXT__", current_day_context)
+    if mcp_context.strip():
+        instructions = f"{instructions}\n\nConnected MCP context:\n{mcp_context.strip()}"
+    return instructions
 
 
 def _safe_data(value: Any) -> Any:
@@ -237,9 +240,10 @@ async def _run_broker_chat(run_id: str) -> None:
             search_account_id=metadata.get("search_account_id"),
         )
         mcp_handle = await broker_chat_mcp.connect_broker_chat_mcp(db, run, metadata)
+        mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle)
         agent = Agent[BrokerAgentContext](
             name="Market-Stack Broker Data Agent",
-            instructions=_broker_chat_instructions(),
+            instructions=_broker_chat_instructions(mcp_context),
             model=_build_model(db, run),
             model_settings=ModelSettings(
                 temperature=0.3,

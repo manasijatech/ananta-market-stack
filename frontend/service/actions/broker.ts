@@ -323,6 +323,7 @@ export async function updateMcpServerConfig(payload: {
     name?: string | null;
     url: string;
     transport: "streamable_http" | "sse";
+    auth_mode?: "oauth" | "api_key";
     api_key?: string | null;
     api_key_header_name?: string;
     api_key_prefix?: string;
@@ -337,6 +338,7 @@ export async function updateMcpServerConfig(payload: {
             name: payload.name ?? null,
             url: payload.url,
             transport: payload.transport,
+            auth_mode: payload.auth_mode ?? "oauth",
             api_key: payload.api_key || null,
             api_key_header_name: payload.api_key_header_name ?? "Authorization",
             api_key_prefix: payload.api_key_prefix ?? "Bearer",
@@ -349,6 +351,59 @@ export async function updateMcpServerConfig(payload: {
     revalidatePath("/system-config");
     revalidatePath("/broker-chat");
     return result;
+}
+
+export async function startMcpOAuth(
+    redirectUri: string
+): Promise<{ authorization_url: string; redirect_uri: string; state: string }> {
+    return request<{ authorization_url: string; redirect_uri: string; state: string }>("/system-config/mcp/oauth/start", {
+        method: "POST",
+        body: JSON.stringify({ redirect_uri: redirectUri })
+    });
+}
+
+export async function completeMcpOAuth(payload: { code: string; state: string }): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp/oauth/complete", {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function deleteMcpServerConfig(): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp", {
+        method: "DELETE"
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function clearMcpOAuth(): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp/oauth", {
+        method: "DELETE"
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function refreshMcpInventory(): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<{ config: SystemConfig["mcp_server"]; refreshed: boolean }>(
+        "/system-config/mcp/inventory/refresh",
+        {
+            method: "POST"
+        }
+    );
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result.config;
 }
 
 export async function clearMcpServerApiKey(): Promise<SystemConfig["mcp_server"]> {

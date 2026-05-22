@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
@@ -21,6 +22,10 @@ from app.schemas.system_config import (
     LlmProvider,
     LlmProviderConfigOut,
     LlmProviderCredentialUpsertIn,
+    McpInventoryRefreshOut,
+    McpOAuthCompleteIn,
+    McpOAuthStartIn,
+    McpOAuthStartOut,
     McpServerConfigOut,
     McpServerConfigUpdateIn,
     SystemConfigOut,
@@ -255,3 +260,104 @@ def clear_mcp_server_api_key(
     user: User = Depends(get_current_user),
 ) -> McpServerConfigOut:
     return mcp_config.clear_mcp_api_key(db, user.id)
+
+
+@router.delete("/mcp", response_model=McpServerConfigOut)
+def delete_mcp_server_config(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    return mcp_config.delete_mcp_server_config(db, user.id)
+
+
+@router.post("/mcp/oauth/start", response_model=McpOAuthStartOut)
+def start_mcp_oauth(
+    body: McpOAuthStartIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpOAuthStartOut:
+    try:
+        return asyncio.run(mcp_config.start_mcp_oauth(db, user.id, body.redirect_uri if body else None))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not start MCP authentication: {exc}") from exc
+
+
+@router.get("/mcp/oauth/callback", response_class=HTMLResponse)
+def complete_mcp_oauth_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    if error:
+        return HTMLResponse(
+            "<!doctype html><html><body style='font-family:sans-serif;max-width:640px;margin:40px auto;'>"
+            "<h2>MCP authentication failed</h2>"
+            f"<p>{error}</p>"
+            "<p>You can close this tab and retry from Market Stack System Config.</p>"
+            "</body></html>",
+            status_code=400,
+        )
+    if not code or not state:
+        return HTMLResponse(
+            "<!doctype html><html><body style='font-family:sans-serif;max-width:640px;margin:40px auto;'>"
+            "<h2>MCP authentication failed</h2>"
+            "<p>The authorization server did not return both code and state.</p>"
+            "</body></html>",
+            status_code=400,
+        )
+    try:
+        asyncio.run(mcp_config.complete_mcp_oauth(db, state, code))
+    except Exception as exc:
+        return HTMLResponse(
+            "<!doctype html><html><body style='font-family:sans-serif;max-width:640px;margin:40px auto;'>"
+            "<h2>MCP authentication failed</h2>"
+            f"<p>{exc}</p>"
+            "<p>You can close this tab and retry from Market Stack System Config.</p>"
+            "</body></html>",
+            status_code=400,
+        )
+    return HTMLResponse(
+        "<!doctype html><html><body style='font-family:sans-serif;max-width:640px;margin:40px auto;'>"
+        "<h2>MCP authentication complete</h2>"
+        "<p>You can close this tab and return to Market Stack System Config.</p>"
+        "</body></html>",
+        status_code=200,
+    )
+
+
+@router.post("/mcp/oauth/complete", response_model=McpServerConfigOut)
+def complete_mcp_oauth(
+    body: McpOAuthCompleteIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    try:
+        asyncio.run(mcp_config.complete_mcp_oauth(db, body.state, body.code, user.id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not complete MCP authentication: {exc}") from exc
+    return mcp_config.get_mcp_server_config(db, user.id)
+
+
+@router.delete("/mcp/oauth", response_model=McpServerConfigOut)
+def clear_mcp_oauth(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    return mcp_config.clear_mcp_oauth(db, user.id)
+
+
+@router.post("/mcp/inventory/refresh", response_model=McpInventoryRefreshOut)
+def refresh_mcp_inventory(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpInventoryRefreshOut:
+    try:
+        config = asyncio.run(mcp_config.refresh_mcp_inventory(db, user.id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return McpInventoryRefreshOut(config=config, refreshed=True)
