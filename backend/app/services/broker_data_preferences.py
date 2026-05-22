@@ -41,6 +41,19 @@ def _account_session_active(acc: BrokerAccount) -> bool:
         return False
 
 
+def _clear_stale_session_error_if_active(db: Session, acc: BrokerAccount) -> None:
+    if not acc.is_active:
+        return
+    if not (acc.last_error or acc.session_status in {"pending", "action_required", "automation_ready"}):
+        return
+    if not _account_session_active(acc):
+        return
+    broker_session_svc.mark_session_healthy(db, acc, verified_at=acc.last_verified_at)
+    db.add(acc)
+    db.commit()
+    db.refresh(acc)
+
+
 def _get_preference(db: Session, user_id: str) -> UserBrokerDataPreference | None:
     return db.get(UserBrokerDataPreference, user_id)
 
@@ -200,6 +213,7 @@ def list_broker_accounts_with_preferences(db: Session, user_id: str) -> list[Bro
     )
     result: list[BrokerAccountOut] = []
     for row in accounts:
+        _clear_stale_session_error_if_active(db, row)
         out = BrokerAccountOut.model_validate(row)
         out.is_preferred_instrument_search = row.id == default_preferred
         result.append(out)
@@ -210,6 +224,7 @@ def broker_account_with_preference(
     db: Session,
     acc: BrokerAccount,
 ) -> BrokerAccountOut:
+    _clear_stale_session_error_if_active(db, acc)
     preferred = _get_preference(db, acc.user_id)
     preferred_account_id = preferred.preferred_search_account_id if preferred else None
     if preferred_account_id is None and acc.is_active:
