@@ -1,4 +1,4 @@
-"""Read-only broker data tools for future AI chat agents.
+"""Broker data and watchlist tools for future AI chat agents.
 
 The functions in this module intentionally wrap the same service/client paths
 used by the HTTP APIs. They do not accept broker secrets and they do not bypass
@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 from datetime import date, datetime
 from typing import Any, Literal
 
 import redis
 from agents import RunContextWrapper, function_tool
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,12 +24,21 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.schemas.broker import (
     HistoricalRequest,
+    InstrumentSearchRow,
     InstrumentRef,
     OptionChainRequest,
     OhlcRequest,
     QuoteRequest,
 )
+from app.schemas.watchlist import (
+    WatchlistCreateIn,
+    WatchlistSymbolCreateIn,
+    WatchlistSymbolsBulkIn,
+    WatchlistSymbolsReplaceIn,
+    WatchlistUpdateIn,
+)
 from app.services import broker_accounts, broker_data, broker_data_preferences, broker_sessions
+from app.services import watchlists as watchlist_svc
 from broker.core.instrument_store import SQLiteInstrumentResolver
 from broker.core.redis_cache import cache_quotes
 from broker.core.registry import get_client_for_account
@@ -38,6 +49,7 @@ DEFAULT_AGENT_USER_ID = "local-dev-user"
 
 PortfolioSection = Literal["orders", "trades", "positions", "holdings", "funds"]
 InstrumentStorageTarget = Literal["csv", "db"]
+_SYMBOL_LIKE_RE = re.compile(r"^[A-Z0-9&.\-]+$")
 
 
 class BrokerAgentContext(BaseModel):
@@ -121,6 +133,9 @@ def _tool_call(fn):
         return fn()
     except BrokerToolActionRequired as exc:
         return _error(str(exc), code="action_required", **exc.detail)
+    except HTTPException as exc:
+        message = str(exc.detail) if exc.detail else "Request failed."
+        return _error(message, code=f"http_{exc.status_code}")
     except ValueError as exc:
         return _error(str(exc), code="invalid_request")
     except Exception as exc:
@@ -488,6 +503,158 @@ def _match_watchlists(
     return rows
 
 
+def _instrument_ref_from_search_row(row: InstrumentSearchRow) -> InstrumentRef:
+    identifiers = row.identifiers or {}
+    payload = {
+        "symbol": row.symbol,
+        "exchange": row.exchange,
+        "zerodha_instrument_token": identifiers.get("zerodha_instrument_token"),
+        "upstox_instrument_key": identifiers.get("upstox_instrument_key"),
+        "angel_exchange": row.exchange,
+        "angel_token": identifiers.get("angel_token"),
+        "dhan_exchange_segment": identifiers.get("dhan_exchange_segment"),
+        "dhan_security_id": identifiers.get("dhan_security_id"),
+        "groww_exchange": row.exchange,
+        "groww_segment": row.segment,
+        "groww_trading_symbol": identifiers.get("groww_trading_symbol") or row.trading_symbol,
+        "indmoney_scrip_code": identifiers.get("indmoney_scrip_code"),
+        "kotak_query": identifiers.get("kotak_query"),
+        "kotak_segment": identifiers.get("kotak_segment"),
+        "kotak_psymbol": identifiers.get("kotak_psymbol"),
+    }
+    return InstrumentRef.model_validate({key: value for key, value in payload.items() if value not in (None, "")})
+
+
+def _symbol_match_rank(query: str, row: InstrumentSearchRow, preferred_exchange: str | None) -> tuple[int, int, int, str]:
+    normalized_query = query.strip().upper()
+    row_symbol = (row.symbol or "").strip().upper()
+    row_trading_symbol = (row.trading_symbol or "").strip().upper()
+    row_exchange = (row.exchange or "").strip().upper()
+    row_segment = (row.segment or "").strip().upper()
+    exact_rank = 0 if normalized_query in {row_symbol, row_trading_symbol} else 1
+    exchange_rank = 0 if preferred_exchange and row_exchange == preferred_exchange else 1
+    if not preferred_exchange and row_exchange == "NSE":
+        exchange_rank = 0
+    segment_rank = 0 if row_segment in {"NSE", "CASH", "EQ", "EQUITY"} else 1
+    return (exact_rank, exchange_rank, segment_rank, row_symbol or row_trading_symbol)
+
+
+def _is_exact_symbol_match(query: str, row: InstrumentSearchRow) -> bool:
+    normalized_query = query.strip().upper()
+    return normalized_query in {
+        (row.symbol or "").strip().upper(),
+        (row.trading_symbol or "").strip().upper(),
+    }
+
+
+def _resolve_watchlist_symbol_items(
+    db: Session,
+    ctx: RunContextWrapper[BrokerAgentContext],
+    symbols: list[str],
+    *,
+    exchange: str | None = None,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+) -> tuple[list[WatchlistSymbolCreateIn], list[dict[str, Any]]]:
+    user_id = _user_id(ctx)
+    safe_exchange = (exchange or "").strip().upper() or None
+    seen: set[str] = set()
+    resolved: list[WatchlistSymbolCreateIn] = []
+    unresolved: list[dict[str, Any]] = []
+    search_account: BrokerAccount | None = None
+    if account_id or broker_code:
+        search_account = _resolve_account(
+            db,
+            ctx,
+            account_id=account_id,
+            broker_code=broker_code,
+            purpose="search",
+            require_session=False,
+        )
+
+    for raw_symbol in symbols:
+        query = str(raw_symbol or "").strip()
+        if not query:
+            continue
+        dedupe_key = query.upper()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        if search_account:
+            matches = broker_data.search_instruments(
+                db,
+                search_account,
+                query=query,
+                exchange=safe_exchange,
+                limit=200,
+            )
+        else:
+            matches = broker_data_preferences.search_instruments_for_user(
+                db,
+                user_id,
+                query=query,
+                exchange=safe_exchange,
+                limit=200,
+            )
+        if not matches:
+            unresolved.append({"query": query, "reason": "No matching broker instrument was found."})
+            continue
+        ordered = sorted(matches, key=lambda row: _symbol_match_rank(query, row, safe_exchange))
+        if _SYMBOL_LIKE_RE.fullmatch(query.upper()) and not any(_is_exact_symbol_match(query, row) for row in ordered):
+            unresolved.append(
+                {
+                    "query": query,
+                    "reason": "Instrument search returned only partial matches, so no symbol was stored.",
+                }
+            )
+            continue
+        match = ordered[0]
+        resolved.append(
+            WatchlistSymbolCreateIn(
+                symbol=match.symbol,
+                exchange=match.exchange or safe_exchange,
+                account_id=match.account_id,
+                broker_code=match.broker_code,
+                instrument_ref=_instrument_ref_from_search_row(match),
+            )
+        )
+    return resolved, unresolved
+
+
+def _find_single_watchlist_for_mutation(
+    db: Session,
+    user_id: str,
+    *,
+    watchlist_id: str | None,
+    name: str | None,
+    kind: Literal["manual", "preset"] | None = None,
+) -> UserWatchlist:
+    matches = _match_watchlists(
+        _owned_watchlists(db, user_id),
+        watchlist_id=watchlist_id,
+        name=name,
+        kind=kind,
+    )
+    if not matches:
+        raise BrokerToolActionRequired(
+            "No matching watchlist was found for this user.",
+            detail={"watchlist_id": watchlist_id, "name": name, "kind": kind},
+        )
+    if len(matches) > 1:
+        raise BrokerToolActionRequired(
+            "Multiple watchlists matched. Use watchlist_id or pass kind to distinguish manual vs preset.",
+            detail={
+                "candidates": [
+                    _watchlist_summary(db, watchlist, include_symbols=False, symbol_limit=1)
+                    for watchlist in matches[:20]
+                ],
+                "total_count": len(matches),
+                "truncated": len(matches) > 20,
+            },
+        )
+    return matches[0]
+
+
 @function_tool(strict_mode=False)
 def broker_list_accounts(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
     """List broker accounts connected to the current user.
@@ -663,6 +830,340 @@ def broker_get_watchlist_symbols(
                 symbols=[_watchlist_symbol_payload(row) for row in rows],
                 truncated=symbol_count > len(rows),
             )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_create_watchlist(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    name: str,
+    symbols: list[str] | None = None,
+    exchange: str | None = None,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+) -> dict[str, Any]:
+    """Create a user-owned manual watchlist and optionally seed it with valid instruments.
+
+    Use this when the user asks to create a custom watchlist. If symbols or
+    company names are supplied, this tool first validates each entry through
+    the existing broker instrument search path and stores only matched
+    instruments with broker-specific identifiers. Invalid/unmatched entries are
+    returned under ``unresolved_symbols`` and are not stored.
+
+    This tool creates only manual/user-created watchlists. Imported preset
+    watchlists are managed through the preset catalog UI/API and cannot be
+    edited by these mutation tools.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            requested = symbols or []
+            resolved, unresolved = _resolve_watchlist_symbol_items(
+                db,
+                ctx,
+                requested,
+                exchange=exchange,
+                account_id=account_id,
+                broker_code=broker_code,
+            )
+            if requested and not resolved:
+                return _error(
+                    "No requested symbols matched broker instruments, so the watchlist was not created.",
+                    code="no_valid_symbols",
+                    unresolved_symbols=unresolved,
+                )
+            created = watchlist_svc.create_watchlist(db, user_id, WatchlistCreateIn(name=name, symbols=[]))
+            result = created
+            added_symbols: list[str] = []
+            skipped_symbols: list[str] = []
+            if resolved:
+                added = watchlist_svc.add_symbols_to_watchlist(
+                    db,
+                    user_id,
+                    created.id,
+                    WatchlistSymbolsBulkIn(items=resolved),
+                )
+                if added is not None:
+                    result = added.watchlist
+                    added_symbols = added.added_symbols
+                    skipped_symbols = added.skipped_symbols
+            return _ok(
+                watchlist=result,
+                added_symbols=added_symbols,
+                skipped_symbols=skipped_symbols,
+                unresolved_symbols=unresolved,
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_rename_watchlist(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    watchlist_id: str | None = None,
+    name: str | None = None,
+    new_name: str = "",
+) -> dict[str, Any]:
+    """Rename a user-created manual watchlist.
+
+    Use this only for custom/manual watchlists. Imported preset watchlists are
+    read-only links to system presets and cannot be renamed through this tool.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            watchlist = _find_single_watchlist_for_mutation(
+                db,
+                user_id,
+                watchlist_id=watchlist_id,
+                name=name,
+                kind=None,
+            )
+            updated = watchlist_svc.update_watchlist(
+                db,
+                user_id,
+                watchlist.id,
+                WatchlistUpdateIn(name=new_name),
+            )
+            if updated is None:
+                return _error("Watchlist not found.", code="watchlist_not_found")
+            return _ok(watchlist=updated)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_delete_watchlist(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    watchlist_id: str | None = None,
+    name: str | None = None,
+    kind: Literal["manual", "preset"] | None = None,
+) -> dict[str, Any]:
+    """Delete a user watchlist link.
+
+    Manual watchlists are deleted with their symbols. Imported preset
+    watchlists can also be removed from the user's watchlist list, but this
+    deletes only the user's imported-watchlist link, not the underlying system
+    preset catalog.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            watchlist = _find_single_watchlist_for_mutation(
+                db,
+                user_id,
+                watchlist_id=watchlist_id,
+                name=name,
+                kind=kind,
+            )
+            source = _watchlist_source(watchlist)
+            deleted = watchlist_svc.delete_watchlist(db, user_id, watchlist.id)
+            return _ok(deleted=deleted, watchlist=source)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_add_watchlist_symbols(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    watchlist_id: str | None = None,
+    name: str | None = None,
+    symbols: list[str] | None = None,
+    exchange: str | None = None,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+) -> dict[str, Any]:
+    """Add validated instruments to a manual watchlist.
+
+    Before storing anything, this tool searches broker instruments for each
+    supplied symbol/company name and stores only matched instruments. It never
+    edits imported preset watchlists; use ``broker_delete_watchlist`` only if
+    the user wants to remove an imported preset watchlist from their account.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            watchlist = _find_single_watchlist_for_mutation(
+                db,
+                user_id,
+                watchlist_id=watchlist_id,
+                name=name,
+                kind="manual",
+            )
+            resolved, unresolved = _resolve_watchlist_symbol_items(
+                db,
+                ctx,
+                symbols or [],
+                exchange=exchange,
+                account_id=account_id,
+                broker_code=broker_code,
+            )
+            if not resolved:
+                return _error(
+                    "No requested symbols matched broker instruments, so nothing was added.",
+                    code="no_valid_symbols",
+                    unresolved_symbols=unresolved,
+                )
+            result = watchlist_svc.add_symbols_to_watchlist(
+                db,
+                user_id,
+                watchlist.id,
+                WatchlistSymbolsBulkIn(items=resolved),
+            )
+            if result is None:
+                return _error("Watchlist not found.", code="watchlist_not_found")
+            return _ok(
+                watchlist=result.watchlist,
+                added_symbols=result.added_symbols,
+                skipped_symbols=result.skipped_symbols,
+                unresolved_symbols=unresolved,
+            )
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_replace_watchlist_symbols(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    watchlist_id: str | None = None,
+    name: str | None = None,
+    symbols: list[str] | None = None,
+    exchange: str | None = None,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+) -> dict[str, Any]:
+    """Replace all symbols in a manual watchlist with validated instruments.
+
+    Each requested symbol/company name is resolved through broker instrument
+    search first. Only valid matches are stored. Imported preset watchlists are
+    not editable and will return an action-required error through the shared
+    watchlist service.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            watchlist = _find_single_watchlist_for_mutation(
+                db,
+                user_id,
+                watchlist_id=watchlist_id,
+                name=name,
+                kind="manual",
+            )
+            requested = symbols or []
+            resolved, unresolved = _resolve_watchlist_symbol_items(
+                db,
+                ctx,
+                requested,
+                exchange=exchange,
+                account_id=account_id,
+                broker_code=broker_code,
+            )
+            if requested and not resolved:
+                return _error(
+                    "No requested symbols matched broker instruments, so the watchlist was not changed.",
+                    code="no_valid_symbols",
+                    unresolved_symbols=unresolved,
+                )
+            updated = watchlist_svc.replace_watchlist_symbols(
+                db,
+                user_id,
+                watchlist.id,
+                WatchlistSymbolsReplaceIn(symbols=resolved),
+            )
+            if updated is None:
+                return _error("Watchlist not found.", code="watchlist_not_found")
+            return _ok(watchlist=updated, unresolved_symbols=unresolved)
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def broker_remove_watchlist_symbols(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    watchlist_id: str | None = None,
+    name: str | None = None,
+    symbols: list[str] | None = None,
+    exchange: str | None = None,
+) -> dict[str, Any]:
+    """Remove one or more symbols from a manual watchlist.
+
+    If ``exchange`` is omitted, all rows matching each symbol in that manual
+    watchlist are removed. Imported preset watchlists are not editable; remove
+    the preset watchlist link with ``broker_delete_watchlist`` instead.
+    """
+
+    def call() -> dict[str, Any]:
+        db = _db()
+        try:
+            user_id = _user_id(ctx)
+            _ensure_user(db, user_id)
+            watchlist = _find_single_watchlist_for_mutation(
+                db,
+                user_id,
+                watchlist_id=watchlist_id,
+                name=name,
+                kind="manual",
+            )
+            requested = {str(symbol or "").strip().upper() for symbol in (symbols or []) if str(symbol or "").strip()}
+            if not requested:
+                return _error("Provide at least one symbol to remove.", code="invalid_request")
+            safe_exchange = (exchange or "").strip().upper()
+            removed: list[dict[str, Any]] = []
+            missing = set(requested)
+            current_rows = [
+                row
+                for row in list(watchlist.symbols)
+                if row.symbol.upper() in requested and (not safe_exchange or row.exchange.upper() == safe_exchange)
+            ]
+            updated = None
+            for row in current_rows:
+                updated = watchlist_svc.remove_symbol_from_watchlist(
+                    db,
+                    user_id,
+                    watchlist.id,
+                    row.symbol,
+                    row.exchange,
+                )
+                removed.append({"symbol": row.symbol, "exchange": row.exchange or None})
+                missing.discard(row.symbol.upper())
+                watchlist = _find_single_watchlist_for_mutation(
+                    db,
+                    user_id,
+                    watchlist_id=watchlist.id,
+                    name=None,
+                    kind="manual",
+                )
+            if updated is None:
+                updated = watchlist_svc.get_watchlist(db, user_id, watchlist.id)
+            return _ok(watchlist=updated, removed_symbols=removed, missing_symbols=sorted(missing))
         finally:
             db.close()
 
@@ -1390,6 +1891,12 @@ BROKER_DATA_TOOLS = [
     broker_list_accounts,
     broker_list_watchlists,
     broker_get_watchlist_symbols,
+    broker_create_watchlist,
+    broker_rename_watchlist,
+    broker_delete_watchlist,
+    broker_add_watchlist_symbols,
+    broker_replace_watchlist_symbols,
+    broker_remove_watchlist_symbols,
     broker_get_session_status,
     broker_verify_connection,
     broker_run_session_maintenance,

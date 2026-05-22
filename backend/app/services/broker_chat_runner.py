@@ -70,6 +70,12 @@ Suggested workflows:
   before answering symbol-specific questions about a watchlist, and preserve
   the distinction between user-created editable lists and imported preset
   constituent lists.
+- Watchlist mutations: use broker_create_watchlist, broker_add_watchlist_symbols,
+  broker_replace_watchlist_symbols, broker_remove_watchlist_symbols, or
+  broker_rename_watchlist only for manual watchlists. These tools validate
+  requested companies/symbols through broker_search_instruments-compatible
+  search before storing them. Use broker_delete_watchlist for either manual
+  watchlists or removing an imported preset watchlist link.
 - Holdings or current portfolio: broker_list_accounts if needed, then
   broker_get_portfolio with sections ["holdings"] or the specific sections
   requested.
