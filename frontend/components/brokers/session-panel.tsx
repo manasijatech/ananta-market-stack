@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { createSession, refreshSession, startDhanSession } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { formatDate } from "@/components/brokers/ui";
@@ -90,7 +91,9 @@ function TOTPInput({ name = "totp", onComplete }: { name?: string; onComplete?: 
 }
 
 export function SessionPanel({ account, sessionStatus }: { account: BrokerAccount; sessionStatus: SessionStatus }) {
+    const router = useRouter();
     const formRef = useRef<HTMLFormElement>(null);
+    const growwAutoAttemptedRef = useRef(false);
     const [mode, setMode] = useState<"auto" | "totp" | "token">("auto");
     const [message, setMessage] = useState("");
     const [dhanStart, setDhanStart] = useState<SessionStartResponse | null>(null);
@@ -115,6 +118,15 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
             broker === "indmoney" ||
             (broker === "groww" && mode !== "auto"));
 
+    useEffect(() => {
+        if (broker !== "groww" || mode !== "auto" || sessionStatus.session_active || growwAutoAttemptedRef.current) {
+            return;
+        }
+
+        growwAutoAttemptedRef.current = true;
+        runGrowwAutoSession({ automatic: true });
+    }, [broker, mode, sessionStatus.session_active]);
+
     function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const payload = payloadFromForm(broker, new FormData(event.currentTarget));
@@ -123,6 +135,9 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
             try {
                 const result = await createSession(account.id, broker, payload);
                 setMessage(result.message || (result.ok ? "Session updated." : "Session update failed."));
+                if (result.ok) {
+                    router.refresh();
+                }
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }
@@ -135,18 +150,24 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
             try {
                 const result = await refreshSession(account.id, broker);
                 setMessage("message" in result ? result.message : result.guidance);
+                if ("ok" in result && result.ok) {
+                    router.refresh();
+                }
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }
         });
     }
 
-    function runGrowwAutoSession() {
-        setMessage("");
+    function runGrowwAutoSession(options: { automatic?: boolean } = {}) {
+        setMessage(options.automatic ? "Starting Groww session automatically..." : "");
         startTransition(async () => {
             try {
                 const result = await createSession(account.id, "groww", { broker: "groww" });
                 setMessage(result.message || (result.ok ? "Groww session updated." : "Groww session update failed."));
+                if (result.ok) {
+                    router.refresh();
+                }
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }
@@ -294,7 +315,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                     <Button
                         className="border-primary bg-[var(--accent-glow)] text-primary hover:bg-[var(--accent-subtle)]"
                         disabled={isPending}
-                        onClick={runGrowwAutoSession}
+                        onClick={() => runGrowwAutoSession()}
                         type="button"
                     >
                         {isPending ? "Refreshing..." : "Run automatic refresh"}

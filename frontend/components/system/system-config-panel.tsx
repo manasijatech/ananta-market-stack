@@ -575,7 +575,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         and daily summaries.
                     </p>
                 </div>
-                <div className="border border-border p-4">
+                <div className="border border-border p-4" data-onboarding="manasija-alpha-api-input-section">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
                             <div className="text-sm font-bold">{config.alpha_api.label}</div>

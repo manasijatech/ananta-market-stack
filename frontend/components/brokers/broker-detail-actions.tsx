@@ -19,6 +19,9 @@ export function BrokerDetailActions({ accountId, verified }: { accountId: string
             try {
                 const result = await verifyBrokerAccount(accountId);
                 setMessage(result.ok ? "Connection verified." : result.message || "Verification failed.");
+                if (result.ok) {
+                    router.refresh();
+                }
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }

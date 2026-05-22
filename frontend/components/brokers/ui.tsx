@@ -62,6 +62,14 @@ export function statusTone(value?: string | null): string {
     return "border-border bg-card text-muted-foreground";
 }
 
+export function isBrokerAccountReady(account: BrokerAccount): boolean {
+    return (
+        account.is_active &&
+        Boolean(account.last_verified_at) &&
+        (account.session_status === "active" || account.session_status === "automation_ready")
+    );
+}
+
 export function StatusBadge({ children, className = "" }: { children: React.ReactNode; className?: string }) {
     return (
         <Badge className={cn("px-2.5 py-1 font-bold", className)} variant="outline">
@@ -72,8 +80,12 @@ export function StatusBadge({ children, className = "" }: { children: React.Reac
 
 export function BrokerCard({ account }: { account: BrokerAccount }) {
     const verified = Boolean(account.last_verified_at);
+    const ready = isBrokerAccountReady(account);
     return (
-        <Card className="group p-0 transition-colors duration-100 ease-out hover:border-primary/60">
+        <Card
+            className="group p-0 transition-colors duration-100 ease-out hover:border-primary/60"
+            data-onboarding={ready ? "active-broker-ready" : undefined}
+        >
             <Link className="block p-5" href={`/broker-connections/${account.id}`}>
                 <div className="mb-5 flex items-start justify-between gap-4">
                     <div className="flex min-w-0 items-start gap-3">
