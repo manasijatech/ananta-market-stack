@@ -18,6 +18,11 @@ const quickAccessItems = [
         description: "Save Discord and Telegram delivery credentials and test outbound channels."
     },
     {
+        href: "/llm-usage",
+        label: "LLM Usage",
+        description: "Track provider calls, token volume, cost metadata, and workflow-level model activity."
+    },
+    {
         href: "/system-config",
         label: "System Config",
         description: "Manage broker-data behavior, encrypted provider credentials, and saved LLM models."

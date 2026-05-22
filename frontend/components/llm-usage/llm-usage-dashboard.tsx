@@ -1,0 +1,466 @@
+import Link from "next/link";
+import { IconActivity, IconAlertTriangle, IconBrain, IconClock, IconCoins, IconRefresh } from "@tabler/icons-react";
+import { PageHeader, Shell, StatusBadge } from "@/components/brokers/ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatIstDateTime } from "@/lib/datetime";
+import type {
+    LlmUsageEventsPage,
+    LlmUsageFilters,
+    LlmUsageGranularity,
+    LlmUsageGroup,
+    LlmUsageOverview,
+    LlmUsageTimeBucket,
+    LlmUsageTimeseries,
+    LlmUsageTotals
+} from "@/service/types/llm-usage";
+
+type LlmUsageDashboardProps = {
+    overview: LlmUsageOverview;
+    timeseries: LlmUsageTimeseries;
+    events: LlmUsageEventsPage;
+    filters: LlmUsageFilters;
+    granularity: LlmUsageGranularity;
+};
+
+const tokenFormatter = new Intl.NumberFormat("en-IN");
+const costFormatter = new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 0
+});
+
+function compactNumber(value: number): string {
+    return new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function formatTokens(value: number): string {
+    return tokenFormatter.format(value || 0);
+}
+
+function formatCost(value: number): string {
+    return costFormatter.format(value || 0);
+}
+
+function successRate(totals: LlmUsageTotals): string {
+    if (!totals.request_count) return "0%";
+    return `${Math.round((totals.success_count / totals.request_count) * 100)}%`;
+}
+
+function errorRate(totals: LlmUsageTotals): string {
+    if (!totals.request_count) return "0%";
+    return `${Math.round((totals.error_count / totals.request_count) * 100)}%`;
+}
+
+function cleanFilter(value?: string | null): string {
+    return value ?? "";
+}
+
+function labelOrEmpty(value?: string | null): string {
+    return value?.trim() || "Unassigned";
+}
+
+function MetricTile({
+    label,
+    value,
+    detail,
+    icon: Icon
+}: {
+    label: string;
+    value: string;
+    detail: string;
+    icon: typeof IconActivity;
+}) {
+    return (
+        <div className="min-w-0 border border-border p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    {label}
+                </p>
+                <Icon className="size-4 shrink-0 text-primary" stroke={1.8} />
+            </div>
+            <div className="break-words text-3xl font-semibold leading-none tracking-normal">{value}</div>
+            <p className="mt-2 text-sm text-muted-foreground">{detail}</p>
+        </div>
+    );
+}
+
+function FilterForm({ filters, granularity }: { filters: LlmUsageFilters; granularity: LlmUsageGranularity }) {
+    return (
+        <form className="grid gap-3 border border-border p-4 min-[900px]:grid-cols-8" action="/llm-usage">
+            <label className="grid gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    From
+                </span>
+                <Input defaultValue={cleanFilter(filters.date_from)} name="date_from" type="date" />
+            </label>
+            <label className="grid gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    To
+                </span>
+                <Input defaultValue={cleanFilter(filters.date_to)} name="date_to" type="date" />
+            </label>
+            <label className="grid gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    Provider
+                </span>
+                <Input autoComplete="off" defaultValue={cleanFilter(filters.provider)} name="provider" placeholder="openai" />
+            </label>
+            <label className="grid gap-1 min-[900px]:col-span-2">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    Model
+                </span>
+                <Input autoComplete="off" defaultValue={cleanFilter(filters.model_id)} name="model_id" placeholder="gpt-4.1-mini" />
+            </label>
+            <label className="grid gap-1 min-[900px]:col-span-2">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    Workflow
+                </span>
+                <Input autoComplete="off" defaultValue={cleanFilter(filters.workflow_id)} name="workflow_id" placeholder="workflow id" />
+            </label>
+            <label className="grid gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    Bucket
+                </span>
+                <Select defaultValue={granularity} name="granularity">
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                </Select>
+            </label>
+            <label className="grid gap-1 min-[900px]:col-span-2">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    Request kind
+                </span>
+                <Input
+                    autoComplete="off"
+                    defaultValue={cleanFilter(filters.request_kind)}
+                    name="request_kind"
+                    placeholder="workflow_llm_analysis"
+                />
+            </label>
+            <label className="grid gap-1 min-[900px]:col-span-2">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                    API surface
+                </span>
+                <Input
+                    autoComplete="off"
+                    defaultValue={cleanFilter(filters.api_surface)}
+                    name="api_surface"
+                    placeholder="chat_completions"
+                />
+            </label>
+            <div className="flex items-end gap-2 min-[900px]:col-span-4">
+                <Button className="min-h-10" type="submit">
+                    Apply filters
+                </Button>
+                <Button asChild className="min-h-10" type="button" variant="secondary">
+                    <Link href="/llm-usage">Clear</Link>
+                </Button>
+            </div>
+        </form>
+    );
+}
+
+function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
+    return (
+        <section className="grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-4">
+            <MetricTile
+                detail={`${formatTokens(overview.totals.prompt_tokens)} input / ${formatTokens(overview.totals.completion_tokens)} output`}
+                icon={IconActivity}
+                label="Requests"
+                value={formatTokens(overview.totals.request_count)}
+            />
+            <MetricTile
+                detail={`${successRate(overview.totals)} success, ${errorRate(overview.totals)} error`}
+                icon={IconAlertTriangle}
+                label="Reliability"
+                value={`${formatTokens(overview.totals.success_count)} / ${formatTokens(overview.totals.error_count)}`}
+            />
+            <MetricTile
+                detail={`${formatTokens(overview.totals.cached_tokens)} cached, ${formatTokens(overview.totals.reasoning_tokens)} reasoning`}
+                icon={IconBrain}
+                label="Tokens"
+                value={formatTokens(overview.totals.total_tokens)}
+            />
+            <MetricTile
+                detail={`${formatTokens(overview.totals.priced_request_count)} priced requests`}
+                icon={IconCoins}
+                label="Provider cost"
+                value={formatCost(overview.totals.provider_cost_total)}
+            />
+        </section>
+    );
+}
+
+function PeriodGrid({ overview }: { overview: LlmUsageOverview }) {
+    const periods = [
+        { label: "Today", totals: overview.today },
+        { label: "Current week", totals: overview.current_week },
+        { label: "Current month", totals: overview.current_month }
+    ];
+    return (
+        <section className="grid gap-3 min-[760px]:grid-cols-3">
+            {periods.map((period) => (
+                <div className="border border-border p-4" key={period.label}>
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                        {period.label}
+                    </p>
+                    <div className="mt-3 flex items-end justify-between gap-3">
+                        <div className="text-2xl font-semibold leading-none">{formatTokens(period.totals.request_count)}</div>
+                        <div className="text-right text-xs text-muted-foreground">
+                            {formatTokens(period.totals.total_tokens)} tokens
+                        </div>
+                    </div>
+                    <div className="mt-4 h-2 bg-secondary">
+                        <div
+                            className="h-full bg-primary"
+                            style={{
+                                width: `${period.totals.request_count ? Math.max((period.totals.success_count / period.totals.request_count) * 100, 4) : 0}%`
+                            }}
+                        />
+                    </div>
+                </div>
+            ))}
+        </section>
+    );
+}
+
+function UsageChart({ buckets }: { buckets: LlmUsageTimeBucket[] }) {
+    const maxTokens = Math.max(...buckets.map((bucket) => bucket.total_tokens), 0);
+    return (
+        <section className="border border-border p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                    <div className="type-section-title">Usage trend</div>
+                    <p className="mt-1 text-sm text-muted-foreground">Token volume by selected bucket.</p>
+                </div>
+                <IconClock className="size-5 text-primary" stroke={1.8} />
+            </div>
+            {buckets.length ? (
+                <div className="flex h-56 items-end gap-2 overflow-x-auto border-t border-border pt-4">
+                    {buckets.map((bucket) => {
+                        const height = maxTokens ? Math.max((bucket.total_tokens / maxTokens) * 100, 3) : 0;
+                        return (
+                            <div className="flex min-w-16 flex-1 flex-col items-center gap-2" key={bucket.bucket_key}>
+                                <div className="flex h-40 w-full items-end">
+                                    <div
+                                        className="w-full bg-primary/80 transition-colors hover:bg-primary"
+                                        title={`${bucket.bucket_label}: ${formatTokens(bucket.total_tokens)} tokens`}
+                                        style={{ height: `${height}%` }}
+                                    />
+                                </div>
+                                <div className="w-full truncate text-center font-mono text-[10px] text-muted-foreground">
+                                    {bucket.bucket_label}
+                                </div>
+                                <div className="text-center text-xs font-semibold">{compactNumber(bucket.total_tokens)}</div>
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="border-t border-border pt-4 text-sm text-muted-foreground">No usage buckets in this slice.</div>
+            )}
+        </section>
+    );
+}
+
+function GroupTable({
+    title,
+    description,
+    rows,
+    kind
+}: {
+    title: string;
+    description: string;
+    rows: LlmUsageGroup[];
+    kind: "provider" | "model" | "workflow" | "request";
+}) {
+    return (
+        <section className="border border-border p-4">
+            <div className="mb-4">
+                <div className="type-section-title">{title}</div>
+                <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            </div>
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead className="text-right">Requests</TableHead>
+                        <TableHead className="text-right">Tokens</TableHead>
+                        <TableHead className="text-right">Cost</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {rows.slice(0, 8).map((row, index) => {
+                        const name =
+                            kind === "provider"
+                                ? labelOrEmpty(row.provider)
+                                : kind === "model"
+                                  ? labelOrEmpty(row.model_id)
+                                  : kind === "workflow"
+                                    ? labelOrEmpty(row.workflow_name || row.workflow_id)
+                                    : labelOrEmpty(row.request_kind);
+                        const sub =
+                            kind === "workflow"
+                                ? [row.provider, row.model_id, row.request_kind].filter(Boolean).join(" / ")
+                                : kind === "model"
+                                  ? labelOrEmpty(row.provider)
+                                  : row.last_request_at
+                                    ? formatIstDateTime(row.last_request_at)
+                                    : "";
+                        return (
+                            <TableRow key={`${name}-${index}`}>
+                                <TableCell>
+                                    <div className="max-w-[260px] truncate font-semibold">{name}</div>
+                                    {sub ? <div className="mt-1 max-w-[260px] truncate text-xs text-muted-foreground">{sub}</div> : null}
+                                </TableCell>
+                                <TableCell className="text-right">{formatTokens(row.request_count)}</TableCell>
+                                <TableCell className="text-right">{formatTokens(row.total_tokens)}</TableCell>
+                                <TableCell className="text-right">{formatCost(row.provider_cost_total)}</TableCell>
+                            </TableRow>
+                        );
+                    })}
+                    {!rows.length ? (
+                        <TableRow>
+                            <TableCell className="text-muted-foreground" colSpan={4}>
+                                No rows in this slice.
+                            </TableCell>
+                        </TableRow>
+                    ) : null}
+                </TableBody>
+            </Table>
+        </section>
+    );
+}
+
+function RecentEvents({ events }: { events: LlmUsageEventsPage }) {
+    return (
+        <section className="border border-border p-4">
+            <div className="mb-4 flex flex-col justify-between gap-3 min-[760px]:flex-row min-[760px]:items-end">
+                <div>
+                    <div className="type-section-title">Recent request ledger</div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Raw tracked calls with provider usage metadata and captured workflow context.
+                    </p>
+                </div>
+                <StatusBadge>{events.items.length} rows</StatusBadge>
+            </div>
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Completed</TableHead>
+                        <TableHead>Provider</TableHead>
+                        <TableHead>Workflow</TableHead>
+                        <TableHead className="text-right">Tokens</TableHead>
+                        <TableHead className="text-right">Latency</TableHead>
+                        <TableHead>Status</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {events.items.map((event) => (
+                        <TableRow key={event.id}>
+                            <TableCell className="whitespace-nowrap text-muted-foreground">
+                                {formatIstDateTime(event.completed_at)}
+                            </TableCell>
+                            <TableCell>
+                                <div className="font-semibold">{event.provider}</div>
+                                <div className="mt-1 max-w-[220px] truncate text-xs text-muted-foreground">{event.model_id}</div>
+                            </TableCell>
+                            <TableCell>
+                                <div className="max-w-[240px] truncate font-semibold">{labelOrEmpty(event.workflow_name || event.workflow_id)}</div>
+                                <div className="mt-1 max-w-[240px] truncate text-xs text-muted-foreground">
+                                    {event.request_kind} / {event.api_surface}
+                                </div>
+                                {event.error ? <div className="mt-1 max-w-[240px] truncate text-xs text-[var(--danger)]">{event.error}</div> : null}
+                            </TableCell>
+                            <TableCell className="text-right">{formatTokens(event.total_tokens)}</TableCell>
+                            <TableCell className="text-right">{event.latency_ms == null ? "n/a" : `${event.latency_ms} ms`}</TableCell>
+                            <TableCell>
+                                <Badge
+                                    variant={event.status === "success" ? "default" : "destructive"}
+                                >
+                                    {event.status}
+                                </Badge>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                    {!events.items.length ? (
+                        <TableRow>
+                            <TableCell className="text-muted-foreground" colSpan={6}>
+                                No tracked LLM calls match the current filters.
+                            </TableCell>
+                        </TableRow>
+                    ) : null}
+                </TableBody>
+            </Table>
+        </section>
+    );
+}
+
+export function LlmUsageDashboard({ overview, timeseries, events, filters, granularity }: LlmUsageDashboardProps) {
+    return (
+        <Shell>
+            <PageHeader
+                action={
+                    <Button asChild className="min-h-11">
+                        <Link href="/llm-usage">
+                            <IconRefresh className="size-4" stroke={1.8} />
+                            Refresh
+                        </Link>
+                    </Button>
+                }
+                description="Monitor provider calls, token volume, provider-reported cost, and workflow-level LLM activity."
+                eyebrow="Operations"
+                title="LLM Usage"
+            />
+            <div className="grid gap-5">
+                <FilterForm filters={filters} granularity={granularity} />
+                <TotalsGrid overview={overview} />
+                <PeriodGrid overview={overview} />
+                <UsageChart buckets={timeseries.buckets} />
+                <div className="grid gap-5 min-[1180px]:grid-cols-2">
+                    <GroupTable
+                        description="Requests grouped by upstream provider."
+                        kind="provider"
+                        rows={overview.by_provider}
+                        title="Providers"
+                    />
+                    <GroupTable
+                        description="Provider and model combinations with the highest usage."
+                        kind="model"
+                        rows={overview.by_model}
+                        title="Models"
+                    />
+                    <GroupTable
+                        description="Workflow identities are retained in the usage ledger."
+                        kind="workflow"
+                        rows={overview.top_workflows}
+                        title="Top workflows"
+                    />
+                    <GroupTable
+                        description="Backend request categories for alert analysis and feed triggers."
+                        kind="request"
+                        rows={overview.request_kinds}
+                        title="Request kinds"
+                    />
+                </div>
+                <RecentEvents events={events} />
+                {overview.notes.length ? (
+                    <section className="border border-border p-4">
+                        <div className="type-section-title">Ledger notes</div>
+                        <ul className="mt-3 grid gap-2 text-sm text-muted-foreground">
+                            {overview.notes.map((note) => (
+                                <li className="border-l-2 border-primary pl-3" key={note}>
+                                    {note}
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                ) : null}
+            </div>
+        </Shell>
+    );
+}
