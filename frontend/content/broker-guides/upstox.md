@@ -1,37 +1,57 @@
 # Upstox OAuth Setup
 
-Market Stack connects Upstox through OAuth using API key, API secret, and an exact redirect URI match.
+Market Stack connects Upstox with API key, API secret, and an exact redirect URI.
 
 ## What You Need
 
-| Market Stack field | Backend payload field | Required | Notes                                           |
-| ------------------ | --------------------- | -------- | ----------------------------------------------- |
-| Account label      | `label`               | Yes      | A friendly name for this Upstox account.        |
-| API key            | `api_key`             | Yes      | Upstox client ID or API key.                    |
-| API secret         | `api_secret`          | Yes      | Upstox API secret.                              |
-| Redirect URI       | `redirect_uri`        | Yes      | Must match the Upstox developer portal exactly. |
+| Market Stack field | Paste this |
+| --- | --- |
+| API key | Upstox API key or client ID |
+| API secret | Upstox API secret |
+| Redirect URI | Exact redirect URI saved in the Upstox app |
 
-## Setup Steps
+## Before You Start
 
-1. Create an Upstox developer app from [Upstox developer apps](https://account.upstox.com/developer/apps).
+1. Create or open your [Upstox developer app](https://account.upstox.com/developer/apps).
 2. Copy the API key and API secret.
-3. Add the redirect URI in Upstox. For local development, use `http://localhost:3000/broker-connections`. This is your frontend `NEXT_PUBLIC_APP_URL` plus `/broker-connections`. In production, use the same route on your deployed frontend domain, for example `https://your-domain.com/broker-connections`.
-4. Enter the exact same redirect URI in Market Stack. The FastAPI backend stores this value and sends it again while exchanging the `authorization_code`, so even a small mismatch will fail.
+3. Set the redirect URI in Upstox.
+4. For local Market Stack, use `http://localhost:3000/broker-connections`.
+5. Use the same redirect URI in Market Stack.
+
+## Add Upstox In Market Stack
+
+1. Go to **Brokers**.
+2. Click **Add broker**.
+3. Select **Upstox**.
+4. Paste API key, API secret, and redirect URI.
 5. Save the broker account.
 
-## Session Flow In Market Stack
+## Connect The Session
 
 1. Open the saved Upstox broker account.
 2. Open the Upstox login URL from the session panel.
-3. Complete OAuth authorization. Upstox documents this as the [login and authorization-code flow](https://upstox.com/developer/api-documentation/login).
-4. Upstox redirects to your configured frontend URL, such as `http://localhost:3000/broker-connections?code=...`.
-5. Market Stack automatically reads the `code`, exchanges it with FastAPI, verifies the account, and redirects you to the broker detail page.
-6. If auto-connect cannot find the right account, copy the returned code from the address bar and paste it into the `authorization_code` session form manually.
+3. Complete Upstox login and authorization.
+4. Upstox redirects back to `/broker-connections` with an authorization code.
+5. Market Stack reads the code and connects the account automatically.
 
-## Important Notes
+If automatic connection fails, copy only the `code` value from the browser address bar and paste it into the manual `authorization_code` field.
 
-- Use `http://localhost:3000/broker-connections` for local development because this frontend has a real `/broker-connections` page and no dedicated `/callback/upstox` page yet.
-- Use `http://localhost:3000` throughout local setup so the browser keeps the same auth session before and after broker login.
-- Redirect URI mismatches are the most common Upstox setup issue. The URI in the Upstox developer app, the Market Stack account form, and the generated login URL must be identical.
+## Advantages
+
+- Uses the standard OAuth authorization flow.
+- Market Stack can read the returned authorization code automatically.
+- No broker password or TOTP secret is stored in Market Stack.
+
+## Disadvantages
+
+- Redirect URI must match exactly.
+- Session refresh requires user authorization when the token expires.
+- A small typo in domain, path, or protocol can break the flow.
+
+**Recommendation:** Use `http://localhost:3000/broker-connections` for local setup and keep the same URL everywhere until the flow works.
+
+## Notes
+
+- The redirect URI in Upstox and Market Stack must be identical.
+- Use `http://localhost:3000` before and after broker login during local development.
 - Keep the API secret private.
-- For a deeper reference after setup, use Upstox's official [authentication docs](https://upstox.com/developer/api-documentation/authentication).

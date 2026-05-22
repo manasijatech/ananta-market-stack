@@ -1,40 +1,58 @@
 # Angel One SmartAPI Setup
 
-Market Stack connects Angel One through SmartAPI credentials and a TOTP-backed session login.
+Market Stack connects Angel One with SmartAPI credentials, your Angel client code, PIN, and TOTP.
 
 ## What You Need
 
-| Market Stack field | Backend payload field | Required | Notes                                       |
-| ------------------ | --------------------- | -------- | ------------------------------------------- |
-| Account label      | `label`               | Yes      | A friendly name for this Angel One account. |
-| API key            | `api_key`             | Yes      | SmartAPI application key.                   |
-| Client code        | `client_code`         | Yes      | Angel One user or client ID.                |
-| PIN                | `pin`                 | Yes      | Angel One login PIN.                        |
-| TOTP secret        | `totp_secret`         | Optional | Store only if you want automation later.    |
+| Market Stack field | Paste this |
+| --- | --- |
+| API key | Angel One SmartAPI app key |
+| Client code | Angel One client code or user ID |
+| PIN | Angel One login PIN |
+| TOTP secret | Optional authenticator or QR secret for automation |
 
-## Setup Steps
+## Before You Start
 
-1. Create or open your Angel One SmartAPI app.
-2. Copy the API key.
-3. Keep your client code and PIN ready.
-4. Configure an authenticator app for TOTP if your account does not already have one.
-5. Save the broker account in Market Stack.
+1. Create or open your [Angel One SmartAPI app](https://smartapi.angelone.in/).
+2. Copy the API key from the app.
+3. Keep your Angel client code and PIN ready.
+4. Make sure TOTP is enabled for your Angel account.
 
-## Quick Links
+## Add Angel One In Market Stack
 
-- [Angel One SmartAPI portal](https://smartapi.angelone.in/)
-- [SmartAPI docs](https://smartapi.angelone.in/docs)
-- [SmartAPI TOTP setup guide](https://smartapi.angelone.in/smartapi/forum/post/11137)
-- [SmartAPI Python SDK](https://github.com/angel-one/smartapi-python)
-- [SmartAPI Java SDK](https://github.com/angel-one/smartapi-java)
+1. Go to **Brokers**.
+2. Click **Add broker**.
+3. Select **Angel One**.
+4. Paste the API key, client code, and PIN.
+5. Add the TOTP secret only if you want automated refresh.
+6. Save the broker account.
 
-## Session Flow In Market Stack
+## Connect The Session
+
+If TOTP secret is not stored:
 
 1. Open the saved Angel One broker account.
 2. Enter client code, PIN, and the current 6-digit TOTP.
-3. Submit the session form to generate broker session tokens.
+3. Submit to generate the session.
 
-## Important Notes
+If TOTP secret is stored, Market Stack can attempt automated session refresh using the saved PIN and TOTP secret.
 
-- The 6-digit TOTP entered during login is not the same as the TOTP secret.
-- TOTP secret is optional and intended for automation.
+## Advantages
+
+- Good broker option when you already use Angel SmartAPI.
+- TOTP secret enables automation.
+- PIN and secrets are stored encrypted by the backend.
+
+## Disadvantages
+
+- Manual refresh needs the current 6-digit TOTP.
+- Automation depends on Angel's SmartAPI login rules staying compatible.
+- Requires storing PIN, and optionally TOTP secret, for automated refresh.
+
+**Recommendation:** Store the TOTP secret only if you need automation. Otherwise keep the setup manual and enter the current 6-digit TOTP when refreshing the session.
+
+## Notes
+
+- The current 6-digit TOTP is not the same as the TOTP secret.
+- Do not paste the 6-digit TOTP into the TOTP secret field.
+- Keep the PIN and TOTP secret private.

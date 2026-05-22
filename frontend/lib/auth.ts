@@ -1,13 +1,44 @@
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import Database from "better-sqlite3";
 import { betterAuth } from "better-auth";
 import { getPublicAppUrl } from "@/lib/runtime-config";
+
+type SqliteDatabase = {
+    exec(sql: string): unknown;
+};
+
+const require = createRequire(import.meta.url);
+
+function createDatabase(path: string): SqliteDatabase {
+    try {
+        const { DatabaseSync } = require("node:sqlite") as {
+            DatabaseSync?: new (path: string) => SqliteDatabase;
+        };
+
+        if (DatabaseSync) {
+            return new DatabaseSync(path);
+        }
+    } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code !== "ERR_UNKNOWN_BUILTIN_MODULE" && code !== "MODULE_NOT_FOUND") {
+            throw error;
+        }
+    }
+
+    const betterSqlite = require("better-sqlite3") as {
+        default?: new (path: string) => SqliteDatabase;
+        new (path: string): SqliteDatabase;
+    };
+    const Database = betterSqlite.default ?? betterSqlite;
+
+    return new Database(path);
+}
 
 const databasePath = process.env.AUTH_DATABASE_PATH ?? resolve(process.cwd(), "../backend/data/app.db");
 mkdirSync(dirname(databasePath), { recursive: true });
 
-const database = new Database(databasePath);
+const database = createDatabase(databasePath);
 
 database.exec("PRAGMA busy_timeout = 5000;");
 
