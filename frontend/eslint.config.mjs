@@ -18,5 +18,19 @@ export default tseslint.config(
                 }
             ]
         }
+    },
+    {
+        files: ["scripts/**/*.cjs"],
+        languageOptions: {
+            sourceType: "commonjs",
+            globals: {
+                console: "readonly",
+                process: "readonly",
+                require: "readonly"
+            }
+        },
+        rules: {
+            "@typescript-eslint/no-require-imports": "off"
+        }
     }
 );
