@@ -432,6 +432,8 @@ $env:PYTHONPATH = "."
 
 ## Manual Frontend Setup
 
+Use **Node.js 22** for the frontend (matches `frontend/Dockerfile` and `frontend/.nvmrc`). The auth stack depends on `better-sqlite3`, a native addon that must be compiled for your Node ABI. Prefer `npm install` over `bun install` locally; a `postinstall` script rebuilds the binding when it is missing.
+
 ```bash
 cd frontend
 npm install
