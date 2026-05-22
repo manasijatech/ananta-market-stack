@@ -58,9 +58,15 @@ Hosted MCP configuration is managed through System Config:
 
 - `GET /api/v1/system-config/mcp`
 - `PUT /api/v1/system-config/mcp`
+- `DELETE /api/v1/system-config/mcp`
+- `POST /api/v1/system-config/mcp/oauth/start`
+- `POST /api/v1/system-config/mcp/oauth/complete`
+- `GET /api/v1/system-config/mcp/oauth/callback`
+- `DELETE /api/v1/system-config/mcp/oauth`
+- `POST /api/v1/system-config/mcp/inventory/refresh`
 - `DELETE /api/v1/system-config/mcp/key`
 
-MCP requires both the System Config MCP connection to be enabled and the broker-chat `use_mcp` run/config flag to be enabled. The MCP API key is stored encrypted and attached by the backend; users should not paste MCP secrets into chat messages.
+MCP requires both the System Config MCP connection to be enabled and the broker-chat `use_mcp` run/config flag to be enabled. Remote MCP OAuth is the preferred authentication path for HTTP MCP servers. Direct bearer/API-key headers are still supported as a fallback for private servers or older deployments. Stored MCP OAuth tokens and fallback API keys are encrypted and attached by the backend; users should not paste MCP secrets into chat messages.
 
 ## MCP Integration
 
@@ -69,8 +75,11 @@ Broker chat uses the OpenAI Agents SDK local MCP server integration. For hosted 
 Implementation notes:
 
 - MCP connection setup lives in `app/services/broker_chat_mcp.py`.
+- MCP OAuth discovery, dynamic client registration, callback token exchange, fallback bearer headers, full config deletion, and tool/prompt/resource inventory refresh live in `app/services/mcp_config.py`.
+- The browser-facing OAuth callback should normally terminate at the frontend (`/api/mcp/oauth/callback`), which forwards code/state to `/api/v1/system-config/mcp/oauth/complete` through the existing authenticated SSR backend bridge. The backend HTML callback remains as a compatibility fallback.
 - The runner passes connected servers through `Agent(..., mcp_servers=...)`.
 - Agent-level MCP config enables strict-schema conversion and server-prefixed MCP tool names to reduce tool-name collisions with local broker tools.
+- System Config can refresh and cache MCP tools, prompts, resources, and preferred reusable instruction text. Broker chat also refreshes stale MCP inventory at run start, then injects cached MCP context into the agent instructions when MCP is connected.
 - MCP connection failures are persisted as `mcp_connection_failed` events and do not fail the run; the agent continues with local broker tools.
 - The current database shape supports one hosted MCP server per user. The helper uses `MCPServerManager`, so extending to multiple configured MCP servers later is a service-layer change rather than a runner rewrite.
 

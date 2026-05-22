@@ -9,6 +9,7 @@ from app.schemas.broker import BrokerDataDefaultConfigOut, BrokerDataSearchConfi
 
 LlmProvider = Literal["openai", "openrouter", "gemini"]
 McpTransport = Literal["streamable_http", "sse"]
+McpAuthMode = Literal["oauth", "api_key"]
 
 
 class LlmModelOut(BaseModel):
@@ -117,10 +118,18 @@ class McpServerConfigOut(BaseModel):
     name: str | None = None
     url: str = ""
     transport: McpTransport = "streamable_http"
+    auth_mode: McpAuthMode = "oauth"
     has_api_key: bool = False
     api_key_hint: str | None = None
     api_key_header_name: str = "Authorization"
     api_key_prefix: str = "Bearer"
+    oauth_authenticated: bool = False
+    oauth_authorized_at: datetime | None = None
+    oauth_token_expires_at: datetime | None = None
+    oauth_last_error: str | None = None
+    inventory: dict[str, Any] = Field(default_factory=dict)
+    inventory_checked_at: datetime | None = None
+    inventory_error: str | None = None
     extra_headers: dict[str, str] = Field(default_factory=dict)
     timeout_seconds: int = 15
     tool_cache_enabled: bool = True
@@ -133,12 +142,33 @@ class McpServerConfigUpdateIn(BaseModel):
     name: str | None = Field(default=None, max_length=128)
     url: str = Field(default="", max_length=2048)
     transport: McpTransport = "streamable_http"
+    auth_mode: McpAuthMode = "oauth"
     api_key: str | None = Field(default=None, max_length=4096)
     api_key_header_name: str = Field(default="Authorization", max_length=128)
     api_key_prefix: str = Field(default="Bearer", max_length=64)
     extra_headers: dict[str, str] = Field(default_factory=dict)
     timeout_seconds: int = Field(default=15, ge=1, le=120)
     tool_cache_enabled: bool = True
+
+
+class McpOAuthStartIn(BaseModel):
+    redirect_uri: str | None = Field(default=None, max_length=2048)
+
+
+class McpOAuthStartOut(BaseModel):
+    authorization_url: str
+    redirect_uri: str
+    state: str
+
+
+class McpOAuthCompleteIn(BaseModel):
+    code: str = Field(..., min_length=1, max_length=4096)
+    state: str = Field(..., min_length=1, max_length=512)
+
+
+class McpInventoryRefreshOut(BaseModel):
+    config: McpServerConfigOut
+    refreshed: bool = True
 
 
 class SystemConfigOut(BaseModel):

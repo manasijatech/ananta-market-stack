@@ -408,16 +408,30 @@ export interface AlphaWebSocketConfig {
 }
 
 export type McpTransport = "streamable_http" | "sse";
+export type McpAuthMode = "oauth" | "api_key";
 
 export interface McpServerConfig {
     is_enabled: boolean;
     name?: string | null;
     url: string;
     transport: McpTransport;
+    auth_mode: McpAuthMode;
     has_api_key: boolean;
     api_key_hint?: string | null;
     api_key_header_name: string;
     api_key_prefix: string;
+    oauth_authenticated: boolean;
+    oauth_authorized_at?: string | null;
+    oauth_token_expires_at?: string | null;
+    oauth_last_error?: string | null;
+    inventory: {
+        tools?: Array<{ name?: string; description?: string } & Record<string, unknown>>;
+        prompts?: Array<{ name?: string; description?: string } & Record<string, unknown>>;
+        resources?: Array<{ name?: string; uri?: string; description?: string } & Record<string, unknown>>;
+        instructions?: string;
+    };
+    inventory_checked_at?: string | null;
+    inventory_error?: string | null;
     extra_headers: Record<string, string>;
     timeout_seconds: number;
     tool_cache_enabled: boolean;
