@@ -228,7 +228,7 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
 
     return (
         <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-            <aside className="grid gap-3 self-start">
+            <aside className="grid gap-3 self-start" data-onboarding="broker-selector">
                 {supportedBrokers.map((code) => (
                     <Button
                         className={cn(

@@ -5,7 +5,15 @@ import { BrokerDetailActions } from "@/components/brokers/broker-detail-actions"
 import { NotificationsBanner } from "@/components/brokers/notifications-banner";
 import { PortfolioTabs } from "@/components/brokers/portfolio-tabs";
 import { SessionPanel } from "@/components/brokers/session-panel";
-import { brokerNames, formatDate, PageHeader, Shell, StatusBadge, statusTone } from "@/components/brokers/ui";
+import {
+    brokerNames,
+    formatDate,
+    isBrokerAccountReady,
+    PageHeader,
+    Shell,
+    StatusBadge,
+    statusTone
+} from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +25,9 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
     const { id } = await params;
     const account = await getBrokerAccount(id);
     const sessionStatus = await getSessionStatus(account.id, account.broker_code);
+    const ready =
+        isBrokerAccountReady(account) ||
+        (account.is_active && Boolean(account.last_verified_at) && sessionStatus.session_active);
 
     return (
         <Shell>
@@ -39,7 +50,10 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
             </div>
 
             <div className="grid gap-8">
-                <section className="grid gap-8 border-y border-border py-7 lg:grid-cols-[1fr_300px]">
+                <section
+                    className="grid gap-8 border-y border-border py-7 lg:grid-cols-[1fr_300px]"
+                    data-onboarding={ready ? "active-broker-ready" : undefined}
+                >
                     <div>
                         <div className="flex flex-wrap gap-2">
                             <StatusBadge

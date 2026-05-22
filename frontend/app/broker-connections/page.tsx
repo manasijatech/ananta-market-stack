@@ -23,7 +23,11 @@ export default async function BrokersPage() {
                 eyebrow="Broker accounts"
                 title="Broker Connections"
                 description="Manage broker credentials, session status, quotes, and portfolio data for your trading workspace."
-                action={<PrimaryLink href="/broker-connections/new">+ Add broker</PrimaryLink>}
+                action={
+                    <span data-onboarding="add-broker-action">
+                        <PrimaryLink href="/broker-connections/new">+ Add broker</PrimaryLink>
+                    </span>
+                }
             />
 
             <div className="mb-6">
