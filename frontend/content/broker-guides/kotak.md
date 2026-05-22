@@ -1,40 +1,63 @@
 # Kotak Neo Setup
 
-Market Stack connects Kotak Neo with UCC and portal access token, then uses mobile number, TOTP, and MPIN for sessions.
+Market Stack connects Kotak Neo with UCC and portal access token. Sessions use mobile number, TOTP, and MPIN.
 
 ## What You Need
 
-| Market Stack field  | Backend payload field | Required             | Notes                                         |
-| ------------------- | --------------------- | -------------------- | --------------------------------------------- |
-| Account label       | `label`               | Yes                  | A friendly name for this Kotak account.       |
-| UCC                 | `ucc`                 | Yes                  | Unique Client Code for Kotak.                 |
-| Portal access token | `portal_access_token` | Yes                  | Bearer token from Kotak Neo developer portal. |
-| Mobile number       | `mobile_number`       | Optional at creation | Required during session login.                |
-| MPIN                | `mpin`                | Optional at creation | Used during session login or automation.      |
-| TOTP secret         | `totp_secret`         | Optional             | Used for automation.                          |
+| Market Stack field | Paste this |
+| --- | --- |
+| UCC | Kotak Unique Client Code |
+| Portal access token | Kotak Neo portal access token |
+| Mobile number | Optional at setup, required for session login |
+| MPIN | Optional at setup, required for session login |
+| TOTP secret | Optional authenticator or QR secret for automation |
 
-## Setup Steps
+## Before You Start
 
-1. Open your Kotak Neo developer or API portal.
-2. Copy your UCC or client code.
-3. Generate and copy the portal access token.
-4. Keep registered mobile number, MPIN, and TOTP ready.
-5. Save the broker account in Market Stack.
+1. Enable [Kotak Neo Trade API access](https://www.kotakneo.com/platform/kotak-neo-trade-api/) for your account.
+2. Copy your UCC.
+3. Generate or copy the portal access token.
+4. Keep registered mobile number, MPIN, and current TOTP ready.
+5. Keep TOTP secret ready only if you want automation.
 
-## Quick Links
+## Add Kotak Neo In Market Stack
 
-- [Kotak Neo Trade API page](https://www.kotakneo.com/platform/kotak-neo-trade-api/)
-- [Kotak Neo API setup guide](https://www.kotakneo.com/investing-guide/trading-account/kotak-neo-trade-api-guide)
-- [Kotak support: API registration process](https://www.kotakneo.com/support/what-is-the-api-registration-process-in-the-new-version/)
-- [Kotak Trade API support center](https://www.kotakneo.com/support/trading/trade-api-and-terminals/)
+1. Go to **Brokers**.
+2. Click **Add broker**.
+3. Select **Kotak Neo**.
+4. Paste UCC and portal access token.
+5. Add mobile number, MPIN, and TOTP secret only if you want automated refresh.
+6. Save the broker account.
 
-## Session Flow In Market Stack
+## Connect The Session
 
-1. Open the saved Kotak broker account.
+Manual session:
+
+1. Open the saved Kotak Neo broker account.
 2. Enter registered mobile number, current 6-digit TOTP, and MPIN.
-3. Submit the session form to create a trading session.
+3. Submit to create the trading session.
 
-## Important Notes
+Automated refresh:
 
-- Portal access token and trade session credentials are separate pieces of the Kotak flow.
-- Store MPIN carefully. Market Stack sends it to the backend for encrypted storage only when provided.
+1. Store mobile number, MPIN, and TOTP secret.
+2. Market Stack can use those saved values to rebuild the session.
+
+## Advantages
+
+- Works with Kotak's portal token plus trade-session flow.
+- Manual mode lets you avoid storing MPIN and TOTP secret.
+- Automation is possible when mobile number, MPIN, and TOTP secret are stored.
+
+## Disadvantages
+
+- Portal access token and trade session are separate credentials.
+- Manual mode needs mobile number, current TOTP, and MPIN during refresh.
+- Automation requires storing MPIN and TOTP secret.
+
+**Recommendation:** Store mobile number, MPIN, and TOTP secret only if you need automated refresh. Otherwise use manual session login.
+
+## Notes
+
+- The current 6-digit TOTP is not the same as the TOTP secret.
+- Keep portal access token, MPIN, and TOTP secret private.
+- Use the mobile number registered with Kotak Neo.

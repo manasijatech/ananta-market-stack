@@ -1,42 +1,65 @@
 # Dhan API Setup
 
-Market Stack connects Dhan with API key, API secret, and your Dhan client ID.
+Market Stack connects Dhan with API key, API secret, and your Dhan client ID. PIN and TOTP secret are optional and are used for automation.
 
 ## What You Need
 
-| Market Stack field | Backend payload field | Required | Notes                                                             |
-| ------------------ | --------------------- | -------- | ----------------------------------------------------------------- |
-| Account label      | `label`               | Yes      | A friendly name for this Dhan account.                            |
-| API key            | `app_id`              | Yes      | Stored as `app_id` because that is the current backend field.     |
-| API secret         | `app_secret`          | Yes      | Stored as `app_secret` because that is the current backend field. |
-| Client ID          | `client_id`           | Yes      | Your Dhan client ID.                                              |
-| PIN                | `pin`                 | Optional | Used for automation when supported.                               |
-| TOTP secret        | `totp_secret`         | Optional | Used for automated token generation when supported.               |
+| Market Stack field | Paste this |
+| --- | --- |
+| API key | Dhan API key |
+| API secret | Dhan API secret |
+| Client ID | Dhan client ID |
+| PIN | Optional Dhan login PIN for automation |
+| TOTP secret | Optional authenticator or QR secret for automation |
 
-## Setup Steps
+## Before You Start
 
-1. Create API credentials in your Dhan API or developer console.
-2. Copy the API key and API secret.
+1. Enable [Dhan API access](https://dhanhq.co/) for your account.
+2. Generate or copy the API key and API secret.
 3. Copy your Dhan client ID.
-4. Configure TOTP and static IP whitelisting if Dhan requires it for your account.
-5. Save the broker account in Market Stack.
+4. Set up static IP allowlisting if Dhan requires it.
+5. Keep PIN and TOTP secret ready only if you want automated refresh.
 
-## Quick Links
+## Add Dhan In Market Stack
 
-- [Dhan web login](https://web.dhan.co/)
-- [DhanHQ API access help](https://dhan.co/support/platforms/dhanhq-api/how-to-access-dhan-api/)
-- [DhanHQ API access status help](https://dhan.co/support/platforms/dhanhq-api/how-can-i-check-my-api-access-status-for-dhanhq/)
-- [DhanHQ token validity help](https://dhan.co/support/platforms/dhanhq-api/what-is-the-maximum-validity-of-an-api-access-token-in-dhan-apis/)
-- [DhanHQ API product site](https://dhanhq.co/)
+1. Go to **Brokers**.
+2. Click **Add broker**.
+3. Select **Dhan**.
+4. Paste API key, API secret, and client ID.
+5. Add PIN and TOTP secret only if you want automation.
+6. Save the broker account.
 
-## Session Flow In Market Stack
+## Connect The Session
+
+Manual session:
 
 1. Open the saved Dhan broker account.
-2. Start the Dhan consent flow from the session panel.
+2. Click **Start Dhan consent flow**.
 3. Complete Dhan login and 2FA.
-4. Paste the returned `token_id` into the Dhan session form.
+4. Paste the returned `token_id` into Market Stack.
+5. Submit to update the session.
 
-## Important Notes
+Automated refresh:
 
-- Static IP whitelisting may be required before live API calls work.
-- Market Stack labels the fields as API key and API secret, while the backend currently stores them as `app_id` and `app_secret`.
+1. Store PIN and TOTP secret while adding the broker.
+2. Market Stack can use those saved values to attempt official token generation.
+
+## Advantages
+
+- API key, API secret, and client ID are straightforward to save.
+- Manual consent flow avoids storing PIN and TOTP secret.
+- Optional PIN and TOTP secret can reduce daily manual work.
+
+## Disadvantages
+
+- Manual mode requires a fresh `token_id` when the session expires.
+- Automation requires storing PIN and TOTP secret.
+- Static IP allowlisting may be required before live API calls work.
+
+**Recommendation:** Use manual consent if you do not want to store PIN and TOTP secret. Use PIN plus TOTP secret if you need unattended refresh.
+
+## Notes
+
+- Market Stack labels Dhan `app_id` as **API key** and `app_secret` as **API secret**.
+- Paste only the `token_id` value during manual session refresh.
+- Keep API secret, PIN, and TOTP secret private.
