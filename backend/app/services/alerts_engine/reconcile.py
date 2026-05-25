@@ -27,7 +27,7 @@ from db.models import (
 )
 from broker.core.redis_cache import _redis_client
 
-UI_DEMAND_SUBSCRIPTION_TTL_SECONDS = 90
+UI_DEMAND_SUBSCRIPTION_TTL_SECONDS = 60
 
 
 @dataclass(frozen=True)

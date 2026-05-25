@@ -52,6 +52,7 @@ class BackgroundAsyncLoopThread:
     def start(self) -> None:
         if self.thread and self.thread.is_alive():
             return
+        logger.info("%s starting", self.name)
 
         def runner() -> None:
             loop = asyncio.new_event_loop()
@@ -60,6 +61,7 @@ class BackgroundAsyncLoopThread:
             self.loop = loop
             self.stop_event = stop_event
             self.ready.set()
+            logger.info("%s started", self.name)
             try:
                 while not stop_event.is_set():
                     try:
@@ -83,6 +85,7 @@ class BackgroundAsyncLoopThread:
                 if pending:
                     loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                 loop.close()
+                logger.info("%s stopped", self.name)
 
         self.ready.clear()
         self.thread = Thread(target=runner, name=self.name, daemon=True)
@@ -90,6 +93,7 @@ class BackgroundAsyncLoopThread:
         self.ready.wait(timeout=2)
 
     def stop(self, timeout: float = 0.5) -> None:
+        logger.info("%s stopping", self.name)
         if self.loop and self.stop_event:
             try:
                 self.loop.call_soon_threadsafe(self.stop_event.set)

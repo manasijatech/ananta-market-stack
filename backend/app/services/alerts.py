@@ -48,7 +48,7 @@ from app.services.alerts_engine.conditions import (
     evaluate_logic,
 )
 from app.services.alerts_engine.explain import explain_ast
-from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
+from app.services.alerts_engine.reconcile import cleanup_expired_ui_subscriptions, reconcile_user_subscriptions
 from app.services.alerts_engine.samples import sample_alerts_for_ast
 from app.services.alerts_engine.universes import list_presets, resolve_universe
 from app.services.alert_llm_analysis import run_workflow_llm_analysis
@@ -1962,6 +1962,111 @@ def list_subscriptions(
     return [_subscription_to_out(row) for row in rows]
 
 
+_LIVE_STATUS_HEALTH_PRIORITY = {
+    "action_required": 100,
+    "error": 90,
+    "rate_limited": 80,
+    "unavailable": 70,
+    "pending": 50,
+    "unknown": 40,
+    "healthy": 10,
+    "ok": 0,
+}
+
+
+def _subscription_has_live_quote(row: LiveSubscriptionOut) -> bool:
+    if row.last_received_at:
+        return True
+    payload = row.last_quote or {}
+    candidates = [payload.get("ltp"), payload.get("last_price")]
+    raw = payload.get("raw")
+    if isinstance(raw, dict):
+        candidates.append(raw.get("last_price"))
+    for value in candidates:
+        try:
+            if float(value) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _subscription_sort_key(row: LiveSubscriptionOut) -> tuple[datetime, str]:
+    return (row.updated_at or datetime.min, row.id)
+
+
+def _merged_source_label(rows: list[LiveSubscriptionOut]) -> str | None:
+    labels: list[str] = []
+    for row in rows:
+        label = (row.source_label or row.source_id or row.source_type or "").strip()
+        if label and label not in labels:
+            labels.append(label)
+    if not labels:
+        return None
+    if len(labels) <= 3:
+        return ", ".join(labels)
+    return f"{', '.join(labels[:3])} +{len(labels) - 3} more"
+
+
+def _collapse_status_subscriptions(rows: list[LiveSubscriptionOut]) -> list[LiveSubscriptionOut]:
+    """Collapse UI demand owners for status output without changing DB ownership rows."""
+    grouped: dict[tuple[str | None, str | None, str, str | None], list[LiveSubscriptionOut]] = {}
+    passthrough: list[LiveSubscriptionOut] = []
+    for row in rows:
+        if row.source_kind != "ui":
+            passthrough.append(row)
+            continue
+        key = (row.account_id, row.broker_code, row.symbol, row.exchange)
+        grouped.setdefault(key, []).append(row)
+
+    collapsed = list(passthrough)
+    for group_rows in grouped.values():
+        if len(group_rows) == 1:
+            collapsed.append(group_rows[0])
+            continue
+        sorted_rows = sorted(group_rows, key=_subscription_sort_key, reverse=True)
+        rows_with_quote = [row for row in sorted_rows if _subscription_has_live_quote(row)]
+        representative = rows_with_quote[0] if rows_with_quote else sorted_rows[0]
+        latest_received_at = max(
+            (row.last_received_at for row in group_rows if row.last_received_at),
+            default=representative.last_received_at,
+        )
+        latest_reconciled_at = max(
+            (row.reconciled_at for row in group_rows if row.reconciled_at),
+            default=representative.reconciled_at,
+        )
+        latest_updated_at = max(row.updated_at for row in group_rows)
+        earliest_created_at = min(row.created_at for row in group_rows)
+        if rows_with_quote:
+            health_status = "ok"
+            health_reason = ""
+        else:
+            worst = max(
+                group_rows,
+                key=lambda item: _LIVE_STATUS_HEALTH_PRIORITY.get((item.health_status or "unknown").lower(), 40),
+            )
+            health_status = worst.health_status
+            health_reason = worst.health_reason
+        source_types = {row.source_type for row in group_rows if row.source_type}
+        collapsed.append(
+            representative.model_copy(
+                update={
+                    "id": f"ui:{representative.account_id}:{representative.broker_code}:{representative.exchange or ''}:{representative.symbol}",
+                    "source_type": next(iter(source_types)) if len(source_types) == 1 else "active_ui",
+                    "source_label": _merged_source_label(group_rows),
+                    "owner_id": f"{len(group_rows)} active UI sources",
+                    "last_received_at": latest_received_at,
+                    "reconciled_at": latest_reconciled_at,
+                    "health_status": health_status,
+                    "health_reason": health_reason,
+                    "created_at": earliest_created_at,
+                    "updated_at": latest_updated_at,
+                }
+            )
+        )
+    return sorted(collapsed, key=lambda item: (item.updated_at, item.symbol), reverse=True)
+
+
 def ensure_symbol_subscription(db: Session, user_id: str, payload: LiveSubscriptionCreateIn) -> LiveSubscriptionOut:
     payload.symbol = _normalize_symbol(payload.symbol)
     payload.exchange = (payload.exchange or "").strip().upper() or None
@@ -2151,9 +2256,14 @@ def _chunk_sessions(
     activity_index: dict[tuple[str, str, int], LiveWorkerSessionOut],
 ) -> list[LiveWorkerSessionOut]:
     grouped: dict[tuple[str, str], list[LiveSubscriptionOut]] = {}
+    seen: set[tuple[str, str, str, str | None]] = set()
     for row in rows:
         if not row.account_id or not row.broker_code or row.status != "active":
             continue
+        symbol_key = (row.account_id, row.broker_code, row.symbol, row.exchange)
+        if symbol_key in seen:
+            continue
+        seen.add(symbol_key)
         grouped.setdefault((row.account_id, row.broker_code), []).append(row)
 
     sessions: list[LiveWorkerSessionOut] = []
@@ -2276,8 +2386,9 @@ def _broker_statuses(
 
 
 def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
-    desired = list_subscriptions(db, user_id, statuses=["active"])
-    inactive = list_subscriptions(db, user_id, statuses=["inactive"])
+    cleanup_expired_ui_subscriptions(db, user_id=user_id, commit=True)
+    desired = _collapse_status_subscriptions(list_subscriptions(db, user_id, statuses=["active"]))
+    inactive = _collapse_status_subscriptions(list_subscriptions(db, user_id, statuses=["inactive"]))
     if not desired and not inactive:
         return LiveStreamsStatusOut(
             redis_ok=False,
