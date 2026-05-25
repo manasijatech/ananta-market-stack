@@ -90,6 +90,7 @@ def preference_to_schema(pref: UserBrokerChatPreference) -> BrokerChatPreference
         include_tool_outputs=bool(pref.include_tool_outputs),
         include_reasoning=bool(pref.include_reasoning),
         use_mcp=bool(pref.use_mcp),
+        mcp_server_ids=json_loads(pref.mcp_server_ids_json, []),
     )
 
 
@@ -111,6 +112,7 @@ def update_preference(
     pref.include_tool_outputs = payload.include_tool_outputs
     pref.include_reasoning = payload.include_reasoning
     pref.use_mcp = payload.use_mcp
+    pref.mcp_server_ids_json = json_dumps(payload.mcp_server_ids)
     db.add(pref)
     db.commit()
     db.refresh(pref)
@@ -209,6 +211,7 @@ def create_run(
     provider, model = _resolve_provider_model(db, user_id, payload, pref)
     now = utc_now()
     use_mcp = pref.use_mcp if payload.use_mcp is None else payload.use_mcp
+    mcp_server_ids = payload.mcp_server_ids if payload.mcp_server_ids is not None else json_loads(pref.mcp_server_ids_json, [])
     run = BrokerChatRun(
         id=str(uuid.uuid4()),
         session_id=session.id,
@@ -228,6 +231,7 @@ def create_run(
                 "default_account_id": payload.default_account_id,
                 "search_account_id": payload.search_account_id,
                 "use_mcp": bool(use_mcp),
+                "mcp_server_ids": mcp_server_ids,
             }
         ),
         queued_at=now,

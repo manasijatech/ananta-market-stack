@@ -48,6 +48,9 @@ def mcp_context_instructions(handle: BrokerChatMcpHandle) -> str:
         "For the user's connected broker account and portfolio state, local broker tools remain the authoritative source."
     ]
     inventory_sections: list[str] = []
+    servers = inventory.get("servers")
+    if isinstance(servers, list) and servers:
+        inventory_sections.append(f"Servers:\n{_inventory_json(servers)}")
     for label, key in (("Tools", "tools"), ("Prompts", "prompts"), ("Resources", "resources")):
         value = inventory.get(key)
         if value:
@@ -75,8 +78,8 @@ def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
         "sse_read_timeout": float(max(connection.timeout_seconds, 30)),
     }
     kwargs = {
-        "cache_tools_list": connection.tool_cache_enabled,
-        "name": connection.name or "Configured MCP server",
+        "cache_tools_list": True,
+        "name": connection.name or f"MCP server {connection.id}",
         "client_session_timeout_seconds": float(connection.timeout_seconds),
         "max_retry_attempts": 2,
         "retry_backoff_seconds_base": 0.75,
@@ -102,16 +105,17 @@ async def connect_broker_chat_mcp(
     if not metadata.get("use_mcp"):
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=False)
 
-    if mcp_config.mcp_inventory_is_stale(db, run.user_id):
+    selected_server_ids = _selected_server_ids(metadata)
+    for server_id in mcp_config.stale_mcp_server_ids(db, run.user_id, selected_server_ids):
         try:
-            mcp_schema = await mcp_config.refresh_mcp_inventory(db, run.user_id)
+            mcp_schema = await mcp_config.refresh_mcp_inventory(db, run.user_id, server_id)
             if mcp_schema.inventory_error:
                 broker_chat.append_event(
                     db,
                     run,
                     event_type="mcp_inventory_refresh_failed",
                     public_payload={"status": "failed", "message": "Could not refresh MCP capabilities."},
-                    full_payload={"status": "failed", "message": mcp_schema.inventory_error},
+                    full_payload={"status": "failed", "server_id": server_id, "message": mcp_schema.inventory_error},
                 )
             else:
                 broker_chat.append_event(
@@ -120,11 +124,13 @@ async def connect_broker_chat_mcp(
                     event_type="mcp_inventory_refreshed",
                     public_payload={
                         "status": "refreshed",
+                        "server_id": server_id,
+                        "name": mcp_schema.name,
                         "tool_count": len(mcp_schema.inventory.get("tools", [])),
                         "prompt_count": len(mcp_schema.inventory.get("prompts", [])),
                         "resource_count": len(mcp_schema.inventory.get("resources", [])),
                     },
-                    full_payload={"status": "refreshed", "inventory": mcp_schema.inventory},
+                    full_payload={"status": "refreshed", "server_id": server_id, "inventory": mcp_schema.inventory},
                 )
         except Exception as exc:
             broker_chat.append_event(
@@ -132,11 +138,16 @@ async def connect_broker_chat_mcp(
                 run,
                 event_type="mcp_inventory_refresh_failed",
                 public_payload={"status": "failed", "message": "Could not refresh MCP capabilities."},
-                full_payload={"status": "failed", "message": str(exc), "error_type": exc.__class__.__name__},
+                full_payload={
+                    "status": "failed",
+                    "server_id": server_id,
+                    "message": str(exc),
+                    "error_type": exc.__class__.__name__,
+                },
             )
 
     try:
-        connection = mcp_config.get_enabled_mcp_connection(db, run.user_id)
+        connections = mcp_config.get_enabled_mcp_connections(db, run.user_id, selected_server_ids)
     except Exception as exc:
         broker_chat.append_event(
             db,
@@ -147,7 +158,7 @@ async def connect_broker_chat_mcp(
         )
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=True)
 
-    if connection is None:
+    if not connections:
         broker_chat.append_event(
             db,
             run,
@@ -156,10 +167,10 @@ async def connect_broker_chat_mcp(
         )
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=True)
 
-    server = _build_mcp_server(connection)
+    servers = [_build_mcp_server(connection) for connection in connections]
     manager = MCPServerManager(
-        [server],
-        connect_timeout_seconds=float(connection.timeout_seconds),
+        servers,
+        connect_timeout_seconds=float(max(connection.timeout_seconds for connection in connections)),
         cleanup_timeout_seconds=5.0,
         drop_failed_servers=True,
         strict=False,
@@ -179,8 +190,6 @@ async def connect_broker_chat_mcp(
                     "message": str(exc),
                     "error_type": exc.__class__.__name__,
                     "server": getattr(failed_server, "name", None) or str(failed_server),
-                    "url": connection.url,
-                    "transport": connection.transport,
                 },
             )
 
@@ -188,7 +197,7 @@ async def connect_broker_chat_mcp(
         await manager.__aexit__(None, None, None)
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=True)
 
-    inventory = connection.inventory or {}
+    inventory = _combined_inventory(connections)
     tool_count = len(inventory.get("tools", [])) if isinstance(inventory.get("tools"), list) else 0
     prompt_count = len(inventory.get("prompts", [])) if isinstance(inventory.get("prompts"), list) else 0
     resource_count = len(inventory.get("resources", [])) if isinstance(inventory.get("resources"), list) else 0
@@ -199,8 +208,7 @@ async def connect_broker_chat_mcp(
         event_type="mcp_connected",
         public_payload={
             "status": "connected",
-            "name": connection.name,
-            "transport": connection.transport,
+            "server_names": [connection.name for connection in connections],
             "server_count": len(manager.active_servers),
             "tool_count": tool_count,
             "prompt_count": prompt_count,
@@ -208,9 +216,15 @@ async def connect_broker_chat_mcp(
         },
         full_payload={
             "status": "connected",
-            "name": connection.name,
-            "url": connection.url,
-            "transport": connection.transport,
+            "servers": [
+                {
+                    "id": connection.id,
+                    "name": connection.name,
+                    "url": connection.url,
+                    "transport": connection.transport,
+                }
+                for connection in connections
+            ],
             "server_count": len(manager.active_servers),
             "inventory": inventory,
         },
@@ -221,3 +235,29 @@ async def connect_broker_chat_mcp(
         enabled=True,
         inventory=inventory,
     )
+
+
+def _selected_server_ids(metadata: dict[str, Any]) -> list[str] | None:
+    raw = metadata.get("mcp_server_ids")
+    if not isinstance(raw, list):
+        return None
+    return [str(item) for item in raw if str(item).strip()]
+
+
+def _combined_inventory(connections: list[mcp_config.McpConnectionConfig]) -> dict[str, Any]:
+    combined: dict[str, Any] = {"servers": [], "tools": [], "prompts": [], "resources": []}
+    errors: dict[str, Any] = {}
+    for connection in connections:
+        inventory = connection.inventory or {}
+        combined["servers"].append({"id": connection.id, "name": connection.name, "transport": connection.transport})
+        for key in ("tools", "prompts", "resources"):
+            items = inventory.get(key)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                combined[key].append({"server_id": connection.id, "server_name": connection.name, **(item if isinstance(item, dict) else {"value": item})})
+        if inventory.get("errors"):
+            errors[connection.id] = inventory.get("errors")
+    if errors:
+        combined["errors"] = errors
+    return combined

@@ -18,6 +18,7 @@ class BrokerChatPreferenceOut(BaseModel):
     include_tool_outputs: bool = False
     include_reasoning: bool = False
     use_mcp: bool = False
+    mcp_server_ids: list[str] = Field(default_factory=list)
 
 
 class BrokerChatPreferenceUpdateIn(BaseModel):
@@ -27,6 +28,7 @@ class BrokerChatPreferenceUpdateIn(BaseModel):
     include_tool_outputs: bool = False
     include_reasoning: bool = False
     use_mcp: bool = False
+    mcp_server_ids: list[str] = Field(default_factory=list)
 
 
 class BrokerChatSessionCreateIn(BaseModel):
@@ -53,6 +55,7 @@ class BrokerChatSubmitIn(BaseModel):
     include_tool_outputs: bool | None = None
     include_reasoning: bool | None = None
     use_mcp: bool | None = None
+    mcp_server_ids: list[str] | None = None
     default_account_id: str | None = None
     search_account_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

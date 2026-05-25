@@ -267,6 +267,7 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
                 "include_tool_outputs": "BOOLEAN DEFAULT 0",
                 "include_reasoning": "BOOLEAN DEFAULT 0",
                 "use_mcp": "BOOLEAN DEFAULT 0",
+                "mcp_server_ids_json": "TEXT DEFAULT '[]'",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
             },
@@ -275,8 +276,10 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
             conn,
             "user_mcp_server_configs",
             {
+                "id": "VARCHAR(36)",
                 "user_id": "VARCHAR(36)",
                 "is_enabled": "BOOLEAN DEFAULT 0",
+                "use_by_default": "BOOLEAN DEFAULT 1",
                 "name": "VARCHAR(128)",
                 "url": "TEXT DEFAULT ''",
                 "transport": "VARCHAR(32) DEFAULT 'streamable_http'",
@@ -300,11 +303,11 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
                 "inventory_error": "TEXT",
                 "extra_headers_json": "TEXT DEFAULT '{}'",
                 "timeout_seconds": "INTEGER DEFAULT 15",
-                "tool_cache_enabled": "BOOLEAN DEFAULT 1",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
             },
         )
+        _ensure_mcp_server_configs_multi_server_table(conn)
         _ensure_table_columns(
             conn,
             "broker_holdings_snapshots",
@@ -614,3 +617,96 @@ def _ensure_table_columns(
         conn.execute(
             f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
         )
+
+
+def _ensure_mcp_server_configs_multi_server_table(conn: sqlite3.Connection) -> None:
+    table_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='user_mcp_server_configs'"
+    ).fetchone()
+    if table_exists is None:
+        return
+    columns = conn.execute("PRAGMA table_info('user_mcp_server_configs')").fetchall()
+    id_column = next((row for row in columns if row[1] == "id"), None)
+    if id_column is not None and int(id_column[5] or 0) == 1:
+        return
+
+    conn.execute("ALTER TABLE user_mcp_server_configs RENAME TO user_mcp_server_configs_single")
+    conn.execute(
+        """
+        CREATE TABLE user_mcp_server_configs (
+            id VARCHAR(36) PRIMARY KEY,
+            user_id VARCHAR(36),
+            is_enabled BOOLEAN DEFAULT 0,
+            use_by_default BOOLEAN DEFAULT 1,
+            name VARCHAR(128),
+            url TEXT DEFAULT '',
+            transport VARCHAR(32) DEFAULT 'streamable_http',
+            api_key_cipher TEXT DEFAULT '',
+            api_key_header_name VARCHAR(128) DEFAULT 'Authorization',
+            api_key_prefix VARCHAR(64) DEFAULT 'Bearer',
+            oauth_access_token_cipher TEXT DEFAULT '',
+            oauth_refresh_token_cipher TEXT DEFAULT '',
+            oauth_token_expires_at DATETIME,
+            oauth_client_id TEXT DEFAULT '',
+            oauth_client_secret_cipher TEXT DEFAULT '',
+            oauth_auth_metadata_json TEXT DEFAULT '{}',
+            oauth_state VARCHAR(128) DEFAULT '',
+            oauth_code_verifier_cipher TEXT DEFAULT '',
+            oauth_redirect_uri TEXT DEFAULT '',
+            oauth_scope TEXT DEFAULT '',
+            oauth_authorized_at DATETIME,
+            oauth_last_error TEXT,
+            inventory_json TEXT DEFAULT '{}',
+            inventory_checked_at DATETIME,
+            inventory_error TEXT,
+            extra_headers_json TEXT DEFAULT '{}',
+            timeout_seconds INTEGER DEFAULT 15,
+            created_at DATETIME,
+            updated_at DATETIME
+        )
+        """
+    )
+    existing = {row[1] for row in columns}
+    select_parts = [
+        "COALESCE(NULLIF(id, ''), lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))"
+        if "id" in existing
+        else "lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))",
+        "user_id",
+        "COALESCE(is_enabled, 0)",
+        "COALESCE(use_by_default, 1)" if "use_by_default" in existing else "1",
+        "name",
+        "COALESCE(url, '')",
+        "COALESCE(transport, 'streamable_http')",
+        "COALESCE(api_key_cipher, '')",
+        "COALESCE(api_key_header_name, 'Authorization')",
+        "COALESCE(api_key_prefix, 'Bearer')",
+        "COALESCE(oauth_access_token_cipher, '')" if "oauth_access_token_cipher" in existing else "''",
+        "COALESCE(oauth_refresh_token_cipher, '')" if "oauth_refresh_token_cipher" in existing else "''",
+        "oauth_token_expires_at" if "oauth_token_expires_at" in existing else "NULL",
+        "COALESCE(oauth_client_id, '')" if "oauth_client_id" in existing else "''",
+        "COALESCE(oauth_client_secret_cipher, '')" if "oauth_client_secret_cipher" in existing else "''",
+        "COALESCE(oauth_auth_metadata_json, '{}')" if "oauth_auth_metadata_json" in existing else "'{}'",
+        "COALESCE(oauth_state, '')" if "oauth_state" in existing else "''",
+        "COALESCE(oauth_code_verifier_cipher, '')" if "oauth_code_verifier_cipher" in existing else "''",
+        "COALESCE(oauth_redirect_uri, '')" if "oauth_redirect_uri" in existing else "''",
+        "COALESCE(oauth_scope, '')" if "oauth_scope" in existing else "''",
+        "oauth_authorized_at" if "oauth_authorized_at" in existing else "NULL",
+        "oauth_last_error" if "oauth_last_error" in existing else "NULL",
+        "COALESCE(inventory_json, '{}')" if "inventory_json" in existing else "'{}'",
+        "inventory_checked_at" if "inventory_checked_at" in existing else "NULL",
+        "inventory_error" if "inventory_error" in existing else "NULL",
+        "COALESCE(extra_headers_json, '{}')",
+        "COALESCE(timeout_seconds, 15)",
+        "created_at",
+        "updated_at",
+    ]
+    conn.execute(
+        "INSERT INTO user_mcp_server_configs "
+        "(id,user_id,is_enabled,use_by_default,name,url,transport,api_key_cipher,api_key_header_name,api_key_prefix,"
+        "oauth_access_token_cipher,oauth_refresh_token_cipher,oauth_token_expires_at,oauth_client_id,oauth_client_secret_cipher,"
+        "oauth_auth_metadata_json,oauth_state,oauth_code_verifier_cipher,oauth_redirect_uri,oauth_scope,oauth_authorized_at,"
+        "oauth_last_error,inventory_json,inventory_checked_at,inventory_error,extra_headers_json,timeout_seconds,"
+        "created_at,updated_at) "
+        f"SELECT {', '.join(select_parts)} FROM user_mcp_server_configs_single"
+    )
+    conn.execute("DROP TABLE user_mcp_server_configs_single")

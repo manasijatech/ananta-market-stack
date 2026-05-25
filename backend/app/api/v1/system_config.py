@@ -53,6 +53,7 @@ def get_system_config(
         alpha_api=alpha_config.get_alpha_api_config(db, user.id),
         alpha_websocket=alpha_websocket.alpha_ws_config_out(db, user.id),
         mcp_server=mcp_config.get_mcp_server_config(db, user.id),
+        mcp_servers=mcp_config.list_mcp_server_configs(db, user.id),
     )
 
 
@@ -242,6 +243,14 @@ def get_mcp_server_config(
     return mcp_config.get_mcp_server_config(db, user.id)
 
 
+@router.get("/mcp/servers", response_model=list[McpServerConfigOut])
+def list_mcp_server_configs(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[McpServerConfigOut]:
+    return mcp_config.list_mcp_server_configs(db, user.id)
+
+
 @router.put("/mcp", response_model=McpServerConfigOut)
 def update_mcp_server_config(
     body: McpServerConfigUpdateIn,
@@ -254,12 +263,46 @@ def update_mcp_server_config(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/mcp/servers", response_model=McpServerConfigOut)
+def create_mcp_server_config(
+    body: McpServerConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    try:
+        return mcp_config.create_mcp_server_config(db, user.id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/mcp/servers/{server_id}", response_model=McpServerConfigOut)
+def update_mcp_server_config_by_id(
+    server_id: str,
+    body: McpServerConfigUpdateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    try:
+        return mcp_config.upsert_mcp_server_config(db, user.id, body, server_id=server_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.delete("/mcp/key", response_model=McpServerConfigOut)
 def clear_mcp_server_api_key(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> McpServerConfigOut:
     return mcp_config.clear_mcp_api_key(db, user.id)
+
+
+@router.delete("/mcp/servers/{server_id}/key", response_model=McpServerConfigOut)
+def clear_mcp_server_api_key_by_id(
+    server_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    return mcp_config.clear_mcp_server_api_key(db, user.id, server_id)
 
 
 @router.delete("/mcp", response_model=McpServerConfigOut)
@@ -270,6 +313,15 @@ def delete_mcp_server_config(
     return mcp_config.delete_mcp_server_config(db, user.id)
 
 
+@router.delete("/mcp/servers/{server_id}", response_model=McpServerConfigOut)
+def delete_mcp_server_config_by_id(
+    server_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    return mcp_config.delete_mcp_server_config_by_id(db, user.id, server_id)
+
+
 @router.post("/mcp/oauth/start", response_model=McpOAuthStartOut)
 def start_mcp_oauth(
     body: McpOAuthStartIn | None = None,
@@ -277,11 +329,21 @@ def start_mcp_oauth(
     user: User = Depends(get_current_user),
 ) -> McpOAuthStartOut:
     try:
-        return asyncio.run(mcp_config.start_mcp_oauth(db, user.id, body.redirect_uri if body else None))
+        return asyncio.run(
+            mcp_config.start_mcp_oauth(
+                db,
+                user.id,
+                body.redirect_uri if body else None,
+                body.server_id if body else None,
+            )
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Could not start MCP authentication: {exc}") from exc
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not start MCP authentication: {mcp_config.describe_exception(exc)}",
+        ) from exc
 
 
 @router.get("/mcp/oauth/callback", response_class=HTMLResponse)
@@ -339,7 +401,10 @@ def complete_mcp_oauth(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Could not complete MCP authentication: {exc}") from exc
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not complete MCP authentication: {mcp_config.describe_exception(exc)}",
+        ) from exc
     return mcp_config.get_mcp_server_config(db, user.id)
 
 
@@ -351,6 +416,15 @@ def clear_mcp_oauth(
     return mcp_config.clear_mcp_oauth(db, user.id)
 
 
+@router.delete("/mcp/servers/{server_id}/oauth", response_model=McpServerConfigOut)
+def clear_mcp_oauth_by_id(
+    server_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpServerConfigOut:
+    return mcp_config.clear_mcp_server_oauth(db, user.id, server_id)
+
+
 @router.post("/mcp/inventory/refresh", response_model=McpInventoryRefreshOut)
 def refresh_mcp_inventory(
     db: Session = Depends(get_db),
@@ -358,6 +432,19 @@ def refresh_mcp_inventory(
 ) -> McpInventoryRefreshOut:
     try:
         config = asyncio.run(mcp_config.refresh_mcp_inventory(db, user.id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return McpInventoryRefreshOut(config=config, refreshed=True)
+
+
+@router.post("/mcp/servers/{server_id}/inventory/refresh", response_model=McpInventoryRefreshOut)
+def refresh_mcp_inventory_by_id(
+    server_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> McpInventoryRefreshOut:
+    try:
+        config = asyncio.run(mcp_config.refresh_mcp_inventory(db, user.id, server_id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return McpInventoryRefreshOut(config=config, refreshed=True)

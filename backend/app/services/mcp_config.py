@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import secrets
+import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -12,6 +13,7 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -26,12 +28,12 @@ DEFAULT_MCP_SCOPE = ""
 
 @dataclass(frozen=True)
 class McpConnectionConfig:
+    id: str
     name: str | None
     url: str
     transport: str
     headers: dict[str, str]
     timeout_seconds: int
-    tool_cache_enabled: bool
     inventory: dict[str, Any]
 
 
@@ -68,6 +70,27 @@ def _json_loads(value: str | None, default: Any) -> Any:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), default=str)
+
+
+def describe_exception(exc: BaseException) -> str:
+    leaves = _exception_leaf_messages(exc)
+    if not leaves:
+        return str(exc) or exc.__class__.__name__
+    unique: list[str] = []
+    for message in leaves:
+        if message not in unique:
+            unique.append(message)
+    return "; ".join(unique)
+
+
+def _exception_leaf_messages(exc: BaseException) -> list[str]:
+    if isinstance(exc, BaseExceptionGroup):
+        messages: list[str] = []
+        for child in exc.exceptions:
+            messages.extend(_exception_leaf_messages(child))
+        return messages
+    text = str(exc).strip()
+    return [f"{exc.__class__.__name__}: {text}" if text else exc.__class__.__name__]
 
 
 def _validate_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -122,7 +145,9 @@ def config_to_schema(row: UserMcpServerConfig | None) -> McpServerConfigOut:
     api_key = _decrypt_or_empty(row.api_key_cipher)
     oauth_authenticated = _has_valid_oauth_token(row)
     return McpServerConfigOut(
+        id=row.id,
         is_enabled=bool(row.is_enabled),
+        use_by_default=bool(row.use_by_default),
         name=row.name,
         url=row.url or "",
         transport=row.transport if row.transport in {"streamable_http", "sse"} else "streamable_http",
@@ -140,7 +165,6 @@ def config_to_schema(row: UserMcpServerConfig | None) -> McpServerConfigOut:
         inventory_error=row.inventory_error,
         extra_headers=_json_loads(row.extra_headers_json, {}),
         timeout_seconds=int(row.timeout_seconds or 15),
-        tool_cache_enabled=bool(row.tool_cache_enabled),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -148,22 +172,51 @@ def config_to_schema(row: UserMcpServerConfig | None) -> McpServerConfigOut:
 
 def get_mcp_server_config(db: Session, user_id: str) -> McpServerConfigOut:
     _ensure_user(db, user_id)
-    return config_to_schema(db.get(UserMcpServerConfig, user_id))
+    return config_to_schema(_primary_mcp_server_row(db, user_id))
+
+
+def list_mcp_server_configs(db: Session, user_id: str) -> list[McpServerConfigOut]:
+    _ensure_user(db, user_id)
+    return [config_to_schema(row) for row in _mcp_server_rows(db, user_id)]
+
+
+def _mcp_server_rows(db: Session, user_id: str) -> list[UserMcpServerConfig]:
+    return list(
+        db.scalars(
+            select(UserMcpServerConfig)
+            .where(UserMcpServerConfig.user_id == user_id)
+            .order_by(UserMcpServerConfig.created_at.asc(), UserMcpServerConfig.id.asc())
+        ).all()
+    )
+
+
+def _primary_mcp_server_row(db: Session, user_id: str) -> UserMcpServerConfig | None:
+    rows = _mcp_server_rows(db, user_id)
+    return rows[0] if rows else None
+
+
+def _owned_mcp_server_row(db: Session, user_id: str, server_id: str) -> UserMcpServerConfig:
+    row = db.get(UserMcpServerConfig, server_id)
+    if row is None or row.user_id != user_id:
+        raise ValueError("MCP server config not found.")
+    return row
 
 
 def upsert_mcp_server_config(
     db: Session,
     user_id: str,
     payload: McpServerConfigUpdateIn,
+    server_id: str | None = None,
 ) -> McpServerConfigOut:
     _ensure_user(db, user_id)
-    row = db.get(UserMcpServerConfig, user_id)
+    row = _owned_mcp_server_row(db, user_id, server_id) if server_id else _primary_mcp_server_row(db, user_id)
     now = _now()
     if row is None:
-        row = UserMcpServerConfig(user_id=user_id, created_at=now, updated_at=now)
+        row = UserMcpServerConfig(id=str(uuid.uuid4()), user_id=user_id, created_at=now, updated_at=now)
 
     previous_url = row.url or ""
     row.is_enabled = payload.is_enabled
+    row.use_by_default = payload.use_by_default
     row.name = (payload.name or "").strip() or None
     row.url = _validate_url(payload.url, required=payload.is_enabled)
     row.transport = payload.transport
@@ -171,7 +224,6 @@ def upsert_mcp_server_config(
     row.api_key_prefix = payload.api_key_prefix.strip() or "Bearer"
     row.extra_headers_json = _json_dumps(_validate_headers(payload.extra_headers))
     row.timeout_seconds = int(payload.timeout_seconds)
-    row.tool_cache_enabled = payload.tool_cache_enabled
     if payload.api_key is not None and payload.api_key.strip():
         row.api_key_cipher = encrypt_value(payload.api_key.strip())
     if row.url != previous_url:
@@ -186,10 +238,27 @@ def upsert_mcp_server_config(
     return config_to_schema(row)
 
 
+def create_mcp_server_config(
+    db: Session,
+    user_id: str,
+    payload: McpServerConfigUpdateIn,
+) -> McpServerConfigOut:
+    _ensure_user(db, user_id)
+    row = UserMcpServerConfig(id=str(uuid.uuid4()), user_id=user_id, created_at=_now(), updated_at=_now())
+    db.add(row)
+    db.flush()
+    return upsert_mcp_server_config(db, user_id, payload, server_id=row.id)
+
+
 def clear_mcp_api_key(db: Session, user_id: str) -> McpServerConfigOut:
-    row = db.get(UserMcpServerConfig, user_id)
+    row = _primary_mcp_server_row(db, user_id)
     if row is None:
         return get_mcp_server_config(db, user_id)
+    return clear_mcp_server_api_key(db, user_id, row.id)
+
+
+def clear_mcp_server_api_key(db: Session, user_id: str, server_id: str) -> McpServerConfigOut:
+    row = _owned_mcp_server_row(db, user_id, server_id)
     row.api_key_cipher = ""
     row.updated_at = _now()
     db.add(row)
@@ -199,9 +268,14 @@ def clear_mcp_api_key(db: Session, user_id: str) -> McpServerConfigOut:
 
 
 def clear_mcp_oauth(db: Session, user_id: str) -> McpServerConfigOut:
-    row = db.get(UserMcpServerConfig, user_id)
+    row = _primary_mcp_server_row(db, user_id)
     if row is None:
         return get_mcp_server_config(db, user_id)
+    return clear_mcp_server_oauth(db, user_id, row.id)
+
+
+def clear_mcp_server_oauth(db: Session, user_id: str, server_id: str) -> McpServerConfigOut:
+    row = _owned_mcp_server_row(db, user_id, server_id)
     _clear_oauth_state(row, clear_client=False)
     row.updated_at = _now()
     db.add(row)
@@ -211,10 +285,16 @@ def clear_mcp_oauth(db: Session, user_id: str) -> McpServerConfigOut:
 
 
 def delete_mcp_server_config(db: Session, user_id: str) -> McpServerConfigOut:
-    row = db.get(UserMcpServerConfig, user_id)
+    row = _primary_mcp_server_row(db, user_id)
     if row is not None:
-        db.delete(row)
-        db.commit()
+        return delete_mcp_server_config_by_id(db, user_id, row.id)
+    return get_mcp_server_config(db, user_id)
+
+
+def delete_mcp_server_config_by_id(db: Session, user_id: str, server_id: str) -> McpServerConfigOut:
+    row = _owned_mcp_server_row(db, user_id, server_id)
+    db.delete(row)
+    db.commit()
     return get_mcp_server_config(db, user_id)
 
 
@@ -234,31 +314,61 @@ def _clear_oauth_state(row: UserMcpServerConfig, *, clear_client: bool) -> None:
         row.oauth_auth_metadata_json = "{}"
 
 
-def get_enabled_mcp_connection(db: Session, user_id: str) -> McpConnectionConfig | None:
-    row = db.get(UserMcpServerConfig, user_id)
-    if row is None or not row.is_enabled:
-        return None
+def _connection_from_row(row: UserMcpServerConfig) -> McpConnectionConfig:
     url = _validate_url(row.url or "", required=True)
     headers = _headers_for_row(row)
     inventory = _json_loads(row.inventory_json, {})
     return McpConnectionConfig(
+        id=row.id,
         name=row.name,
         url=url,
         transport=row.transport if row.transport in {"streamable_http", "sse"} else "streamable_http",
         headers=headers,
         timeout_seconds=int(row.timeout_seconds or 15),
-        tool_cache_enabled=bool(row.tool_cache_enabled),
         inventory=inventory,
     )
 
 
+def get_enabled_mcp_connection(db: Session, user_id: str) -> McpConnectionConfig | None:
+    connections = get_enabled_mcp_connections(db, user_id)
+    return connections[0] if connections else None
+
+
+def get_enabled_mcp_connections(
+    db: Session,
+    user_id: str,
+    selected_server_ids: list[str] | None = None,
+) -> list[McpConnectionConfig]:
+    selected = {item for item in (selected_server_ids or []) if item}
+    rows = [row for row in _mcp_server_rows(db, user_id) if row.is_enabled and row.url]
+    if selected:
+        rows = [row for row in rows if row.id in selected]
+    else:
+        default_rows = [row for row in rows if row.use_by_default]
+        rows = default_rows or rows
+    return [_connection_from_row(row) for row in rows]
+
+
+def stale_mcp_server_ids(
+    db: Session,
+    user_id: str,
+    selected_server_ids: list[str] | None = None,
+    *,
+    max_age_seconds: int = 15 * 60,
+) -> list[str]:
+    selected = {item for item in (selected_server_ids or []) if item}
+    rows = [row for row in _mcp_server_rows(db, user_id) if row.is_enabled and row.url]
+    if selected:
+        rows = [row for row in rows if row.id in selected]
+    return [
+        row.id
+        for row in rows
+        if row.inventory_checked_at is None or row.inventory_checked_at <= _now() - timedelta(seconds=max_age_seconds)
+    ]
+
+
 def mcp_inventory_is_stale(db: Session, user_id: str, *, max_age_seconds: int = 15 * 60) -> bool:
-    row = db.get(UserMcpServerConfig, user_id)
-    if row is None or not row.is_enabled or not row.url:
-        return False
-    if row.inventory_checked_at is None:
-        return True
-    return row.inventory_checked_at <= _now() - timedelta(seconds=max_age_seconds)
+    return bool(stale_mcp_server_ids(db, user_id, max_age_seconds=max_age_seconds))
 
 
 def _headers_for_row(row: UserMcpServerConfig) -> dict[str, str]:
@@ -395,9 +505,14 @@ async def _register_oauth_client(auth_metadata: dict[str, Any], redirect_uri: st
     return registered
 
 
-async def start_mcp_oauth(db: Session, user_id: str, redirect_uri: str | None = None) -> McpOAuthStartOut:
+async def start_mcp_oauth(
+    db: Session,
+    user_id: str,
+    redirect_uri: str | None = None,
+    server_id: str | None = None,
+) -> McpOAuthStartOut:
     _ensure_user(db, user_id)
-    row = db.get(UserMcpServerConfig, user_id)
+    row = _owned_mcp_server_row(db, user_id, server_id) if server_id else _primary_mcp_server_row(db, user_id)
     if row is None or not row.url:
         raise ValueError("Save an MCP server URL before starting authentication.")
     url = _validate_url(row.url, required=True)
@@ -534,8 +649,8 @@ def _dump_model(value: Any) -> Any:
     return value
 
 
-async def refresh_mcp_inventory(db: Session, user_id: str) -> McpServerConfigOut:
-    row = db.get(UserMcpServerConfig, user_id)
+async def refresh_mcp_inventory(db: Session, user_id: str, server_id: str | None = None) -> McpServerConfigOut:
+    row = _owned_mcp_server_row(db, user_id, server_id) if server_id else _primary_mcp_server_row(db, user_id)
     if row is None:
         raise ValueError("Save an MCP server before refreshing its capabilities.")
     if not row.url:
@@ -547,7 +662,7 @@ async def refresh_mcp_inventory(db: Session, user_id: str) -> McpServerConfigOut
         row.inventory_error = None
     except Exception as exc:
         row.inventory_checked_at = _now()
-        row.inventory_error = str(exc)
+        row.inventory_error = describe_exception(exc)
     row.updated_at = _now()
     db.add(row)
     db.commit()
@@ -602,7 +717,7 @@ async def _list_mcp_capability(
     try:
         result = await asyncio.wait_for(getattr(session, method_name)(), timeout=timeout)
     except Exception as exc:
-        return [], f"{exc.__class__.__name__}: {exc}"
+        return [], describe_exception(exc)
     value = getattr(result, result_attr, [])
     dumped = _dump_model(value)
     return dumped if isinstance(dumped, list) else [], None
