@@ -43,6 +43,10 @@ function tickKey(tick: LivePriceTick): string {
     return [tick.account_id || "", tick.broker_code || "", tick.symbol].join(":");
 }
 
+function hasLivePrice(tick: LivePriceTick | undefined): boolean {
+    return toNumber(tick?.ltp ?? tick?.last_price) !== null;
+}
+
 function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     const [socketState, setSocketState] = useState<SocketState>("connecting");
     const [message, setMessage] = useState("");
@@ -64,7 +68,7 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     );
 
     const availableCount = useMemo(
-        () => desiredRows.reduce((count, row) => count + (prices[row.key] ? 1 : 0), 0),
+        () => desiredRows.reduce((count, row) => count + (hasLivePrice(prices[row.key]) ? 1 : 0), 0),
         [desiredRows, prices]
     );
 
@@ -165,7 +169,7 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                 <div>
                     <div className="type-section-title">Live prices</div>
                     <div className="type-help text-muted-foreground">
-                        {availableCount}/{desiredRows.length} desired symbols have a fresh Redis quote snapshot.
+                        {availableCount}/{desiredRows.length} desired rows have a live price snapshot.
                         {message ? ` ${message}.` : ""}
                     </div>
                 </div>
@@ -200,6 +204,7 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                         {desiredRows.map((row) => {
                             const price = prices[row.key];
                             const change = toNumber(price?.change_pct ?? price?.day_change_perc);
+                            const unavailableReason = !hasLivePrice(price) ? price?.unavailable_reason : "";
                             return (
                                 <tr className="border-b border-border last:border-0" key={row.key}>
                                     <td className="px-4 py-3">
@@ -208,7 +213,15 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                                             {row.exchange ?? "-"} · {row.broker_code ?? "-"}
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3 font-semibold">{formatPrice(price?.ltp ?? price?.last_price)}</td>
+                                    <td className="px-4 py-3 font-semibold">
+                                        {unavailableReason ? (
+                                            <span className="text-xs font-medium text-[var(--danger)]" title={unavailableReason}>
+                                                unavailable
+                                            </span>
+                                        ) : (
+                                            formatPrice(price?.ltp ?? price?.last_price)
+                                        )}
+                                    </td>
                                     <td
                                         className={`px-4 py-3 ${
                                             change === null

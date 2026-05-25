@@ -140,6 +140,11 @@ function livePriceKey(row: { account_id?: string | null; broker_code?: string | 
     return [row.account_id || "", row.broker_code || "", row.symbol.trim().toUpperCase()].join(":");
 }
 
+function livePriceLabel(price: LivePriceTick | undefined): string {
+    if (price?.unavailable_reason && toNumber(price.ltp ?? price.last_price) === null) return "unavailable";
+    return formatLivePrice(price?.ltp ?? price?.last_price);
+}
+
 function sortWatchlists(items: Watchlist[]): Watchlist[] {
     return [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }
@@ -1917,7 +1922,9 @@ export function WatchlistsManager({
                                                             {item.exchange ?? "-"}
                                                         </TableCell>
                                                         <TableCell className="px-4 py-3 text-right font-mono text-sm font-semibold text-foreground">
-                                                            {formatLivePrice(price?.ltp ?? price?.last_price)}
+                                                            <span title={price?.unavailable_reason || undefined}>
+                                                                {livePriceLabel(price)}
+                                                            </span>
                                                         </TableCell>
                                                         <TableCell
                                                             className={`px-4 py-3 text-right font-mono text-xs ${
@@ -2034,7 +2041,9 @@ export function WatchlistsManager({
                                                             Live price
                                                         </dt>
                                                         <dd className="mt-1 font-mono font-semibold text-foreground">
-                                                            {formatLivePrice(price?.ltp ?? price?.last_price)}
+                                                            <span title={price?.unavailable_reason || undefined}>
+                                                                {livePriceLabel(price)}
+                                                            </span>
                                                         </dd>
                                                     </div>
                                                     <div>

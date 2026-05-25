@@ -272,12 +272,46 @@ def _normalize_tick_payload(
     }
 
 
+def _quote_live_price(payload: dict[str, Any]) -> float | None:
+    candidates = [payload.get("ltp")]
+    detail = payload.get("detail")
+    raw = detail.get("raw") if isinstance(detail, dict) else None
+    if isinstance(raw, dict):
+        candidates.append(raw.get("last_price"))
+    for value in candidates:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric > 0:
+            return numeric
+    return None
+
+
+def _quote_error_message(payload: dict[str, Any]) -> str:
+    detail = payload.get("detail")
+    raw = detail.get("raw") if isinstance(detail, dict) else None
+    if not isinstance(raw, dict):
+        return "Broker did not return a live price for this symbol."
+    error = raw.get("error")
+    if isinstance(error, dict):
+        code = str(error.get("code") or "").strip()
+        message = str(error.get("message") or "").strip()
+        if code or message:
+            return f"{code}: {message}".strip(": ")
+    status = str(raw.get("status") or "").strip()
+    return f"Broker quote status: {status}" if status else "Broker did not return a live price for this symbol."
+
+
 def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> None:
     if redis_client is None:
         return
     try:
         key = f"live:quote:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}:{tick['symbol']}"
-        redis_client.setex(key, 120, json.dumps(tick, default=str))
+        redis_client.setex(key, 300, json.dumps(tick, default=str))
+        if _quote_live_price(tick) is not None:
+            market_key = f"live:quote:market:{tick['broker_code']}:{tick['symbol']}"
+            redis_client.setex(market_key, 300, json.dumps(tick, default=str))
         redis_client.xadd(
             f"live:ticks:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}",
             {"payload": json.dumps(tick, default=str)},
@@ -305,6 +339,104 @@ def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> Non
         )
     except redis.RedisError as exc:
         logger.warning("tick publish failed: %s", exc)
+
+
+def _publish_unavailable_tick(
+    redis_client: redis.Redis | None,
+    *,
+    user_id: str,
+    account_id: str,
+    broker_code: str,
+    symbols: list[str],
+    connection_index: int,
+    chunk_rows: list[LiveSymbolSubscription],
+    quote_payload: dict[str, Any],
+    row: LiveSymbolSubscription,
+    reason: str,
+) -> None:
+    tick = {
+        "user_id": user_id,
+        "account_id": account_id,
+        "broker_code": broker_code,
+        "symbol": row.symbol,
+        "exchange": row.exchange,
+        "instrument_key": row.symbol,
+        "ltp": None,
+        "last_price": None,
+        "status": "unavailable",
+        "unavailable_reason": reason,
+        "received_at": _utc_now().isoformat(),
+        "raw": quote_payload,
+        "adapter": "polling",
+        "symbols": symbols,
+        "connection_id": f"{broker_code}:{account_id}:{connection_index}",
+        "connection_index": connection_index,
+        "symbol_count": len(chunk_rows),
+        "capacity": 1000,
+    }
+    _publish_tick(redis_client, tick)
+
+
+def _apply_quote_results(
+    db,
+    redis_client: redis.Redis | None,
+    *,
+    user_id: str,
+    account_id: str,
+    broker_code: str,
+    chunk_rows: list[LiveSymbolSubscription],
+    chunk_groups: list[list[LiveSymbolSubscription]],
+    quotes: list[Any],
+    connection_index: int,
+) -> bool:
+    symbols = [sub.symbol for sub in chunk_rows]
+    any_valid_price = False
+    any_rate_limited = False
+    for row, duplicate_rows, quote in zip(chunk_rows, chunk_groups, quotes, strict=False):
+        if not quote:
+            continue
+        payload = quote.model_dump(mode="json")
+        received_at = _utc_now()
+        live_price = _quote_live_price(payload)
+        if live_price is None:
+            reason = _quote_error_message(payload)
+            any_rate_limited = any_rate_limited or "429" in reason or "rate limit" in reason.lower()
+            for subscription_row in duplicate_rows:
+                subscription_row.health_status = "rate_limited" if any_rate_limited else "unavailable"
+                subscription_row.health_reason = reason
+                subscription_row.updated_at = received_at
+                db.add(subscription_row)
+            _publish_unavailable_tick(
+                redis_client,
+                user_id=user_id,
+                account_id=account_id,
+                broker_code=broker_code,
+                symbols=symbols,
+                connection_index=connection_index,
+                chunk_rows=chunk_rows,
+                quote_payload=payload,
+                row=row,
+                reason=reason,
+            )
+            continue
+        any_valid_price = True
+        for subscription_row in duplicate_rows:
+            subscription_row.last_quote_json = json.dumps(payload, default=str)
+            subscription_row.last_received_at = received_at
+            subscription_row.health_status = "ok"
+            subscription_row.health_reason = ""
+            db.add(subscription_row)
+        _publish_tick(redis_client, _normalize_tick_payload(
+            user_id=user_id,
+            account_id=account_id,
+            broker_code=broker_code,
+            symbols=symbols,
+            connection_index=connection_index,
+            chunk_rows=chunk_rows,
+            quote_payload=payload,
+            row=row,
+        ))
+    return any_valid_price or not any_rate_limited
 
 
 def _retry_not_before(account_id: str) -> datetime | None:
@@ -480,29 +612,19 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                                 else:
                                     _clear_account_retry(account_id)
                                     _record_market_data_success(db, acc)
-                                    quote_index = {str(item.symbol or ""): item for item in quotes}
-                                    for row, duplicate_rows in zip(chunk_rows, chunk_groups, strict=False):
-                                        quote = quote_index.get(row.symbol)
-                                        if not quote:
-                                            continue
-                                        payload = quote.model_dump(mode="json")
-                                        received_at = _utc_now()
-                                        for subscription_row in duplicate_rows:
-                                            subscription_row.last_quote_json = json.dumps(payload, default=str)
-                                            subscription_row.last_received_at = received_at
-                                            subscription_row.health_status = "ok"
-                                            subscription_row.health_reason = ""
-                                            db.add(subscription_row)
-                                        _publish_tick(redis_client, _normalize_tick_payload(
-                                            user_id=user_id,
-                                            account_id=account_id,
-                                            broker_code=acc.broker_code,
-                                            symbols=[sub.symbol for sub in chunk_rows],
-                                            connection_index=chunk_index,
-                                            chunk_rows=chunk_rows,
-                                            quote_payload=payload,
-                                            row=row,
-                                        ))
+                                    ok = _apply_quote_results(
+                                        db,
+                                        redis_client,
+                                        user_id=user_id,
+                                        account_id=account_id,
+                                        broker_code=acc.broker_code,
+                                        chunk_rows=chunk_rows,
+                                        chunk_groups=chunk_groups,
+                                        quotes=quotes,
+                                        connection_index=chunk_index,
+                                    )
+                                    if not ok:
+                                        _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
                                     continue
                             _record_action_required_failure(db, acc, subscriptions, message)
                             _schedule_account_retry(account_id, ACTION_REQUIRED_RETRY_SECONDS)
@@ -515,29 +637,22 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                         break
                     _clear_account_retry(account_id)
                     _record_market_data_success(db, acc)
-                    quote_index = {str(item.symbol or ""): item for item in quotes}
-                    for row, duplicate_rows in zip(chunk_rows, chunk_groups, strict=False):
-                        quote = quote_index.get(row.symbol)
-                        if not quote:
-                            continue
-                        payload = quote.model_dump(mode="json")
-                        received_at = _utc_now()
-                        for subscription_row in duplicate_rows:
-                            subscription_row.last_quote_json = json.dumps(payload, default=str)
-                            subscription_row.last_received_at = received_at
-                            subscription_row.health_status = "ok"
-                            subscription_row.health_reason = ""
-                            db.add(subscription_row)
-                        _publish_tick(redis_client, _normalize_tick_payload(
-                            user_id=user_id,
-                            account_id=account_id,
-                            broker_code=acc.broker_code,
-                            symbols=[sub.symbol for sub in chunk_rows],
-                            connection_index=chunk_index,
-                            chunk_rows=chunk_rows,
-                            quote_payload=payload,
-                            row=row,
-                        ))
+                    ok = _apply_quote_results(
+                        db,
+                        redis_client,
+                        user_id=user_id,
+                        account_id=account_id,
+                        broker_code=acc.broker_code,
+                        chunk_rows=chunk_rows,
+                        chunk_groups=chunk_groups,
+                        quotes=quotes,
+                        connection_index=chunk_index,
+                    )
+                    if not ok:
+                        _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
+                        logger.warning("quote poll returned only unavailable/rate-limited rows for %s", account_id)
+                        account_failed = True
+                        break
                 if account_failed:
                     continue
             db.commit()
@@ -548,6 +663,77 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
             db.close()
         if not await _wait_for_stop(stop_event, poll_interval_seconds):
             continue
+
+
+def backfill_live_prices_for_user(user_id: str, *, source_kind: str | None = None, limit: int = 250) -> int:
+    redis_client = _redis()
+    db = SessionLocal()
+    published = 0
+    try:
+        stmt = select(LiveSymbolSubscription).where(
+            LiveSymbolSubscription.user_id == user_id,
+            LiveSymbolSubscription.status == "active",
+            LiveSymbolSubscription.account_id.is_not(None),
+            LiveSymbolSubscription.broker_code.is_not(None),
+        )
+        if source_kind:
+            stmt = stmt.where(LiveSymbolSubscription.source_kind == source_kind)
+        rows = db.scalars(stmt.order_by(LiveSymbolSubscription.updated_at.desc()).limit(limit)).all()
+        grouped: dict[tuple[str, str, str], list[LiveSymbolSubscription]] = {}
+        for row in rows:
+            if row.account_id and row.broker_code:
+                grouped.setdefault((row.user_id, row.account_id, row.broker_code), []).append(row)
+        for grouped_user_id, account_id, _broker_code in grouped:
+            if _should_skip_account_until_retry(account_id):
+                continue
+            acc = db.get(BrokerAccount, account_id)
+            if not acc:
+                continue
+            subscriptions = grouped[(grouped_user_id, account_id, _broker_code)]
+            unique_subscriptions: dict[tuple[str, str | None], list[LiveSymbolSubscription]] = {}
+            for subscription in subscriptions:
+                unique_subscriptions.setdefault((subscription.symbol, subscription.exchange), []).append(subscription)
+            ordered_groups = sorted(unique_subscriptions.values(), key=lambda items: (items[0].exchange or "", items[0].symbol))
+            chunk_groups = ordered_groups[:1000]
+            chunk_rows = [items[0] for items in chunk_groups]
+            instruments = [
+                {
+                    "symbol": row.symbol,
+                    "exchange": row.exchange,
+                    **json.loads(row.instrument_ref_json or "{}"),
+                }
+                for row in chunk_rows
+            ]
+            try:
+                quotes = broker_data.fetch_quotes(db, acc, instruments)
+            except Exception as exc:
+                message = str(exc)
+                _record_transient_failure(subscriptions, message)
+                _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
+                continue
+            _clear_account_retry(account_id)
+            ok = _apply_quote_results(
+                db,
+                redis_client,
+                user_id=grouped_user_id,
+                account_id=account_id,
+                broker_code=acc.broker_code,
+                chunk_rows=chunk_rows,
+                chunk_groups=chunk_groups,
+                quotes=quotes,
+                connection_index=1,
+            )
+            published += len(quotes)
+            if not ok:
+                _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
+        db.commit()
+        return published
+    except Exception as exc:
+        logger.warning("live price backfill failed for %s: %s", user_id, exc)
+        db.rollback()
+        return published
+    finally:
+        db.close()
 
 
 def _initial_stream_offset(redis_client: redis.Redis, stream_name: str) -> str:

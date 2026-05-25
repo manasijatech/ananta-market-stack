@@ -2093,6 +2093,8 @@ def touch_ui_live_subscriptions(
                 source_label=item.source_label,
                 owner_kind="ui",
                 owner_id=source_id,
+                health_status="pending",
+                health_reason="Waiting for the live price worker to fetch this active UI demand.",
                 created_at=now,
             )
         row.instrument_ref_json = _json_dumps(ref.model_dump(exclude_none=True))
@@ -2101,8 +2103,9 @@ def touch_ui_live_subscriptions(
         row.owner_kind = "ui"
         row.owner_id = source_id
         row.status = "active"
-        row.health_status = "healthy"
-        row.health_reason = ""
+        if row.health_status in {"", "unknown", "healthy"} and not row.last_received_at:
+            row.health_status = "pending"
+            row.health_reason = "Waiting for the live price worker to fetch this active UI demand."
         row.updated_at = now
         row.reconciled_at = now
         db.add(row)
