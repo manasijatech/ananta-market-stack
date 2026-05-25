@@ -463,6 +463,8 @@ class LlmUsageDailySnapshot(Base):
     cached_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
     reasoning_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached_tokens_reported_count: Mapped[int] = mapped_column(Integer, default=0)
+    reasoning_tokens_reported_count: Mapped[int] = mapped_column(Integer, default=0)
     input_audio_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_audio_tokens: Mapped[int] = mapped_column(Integer, default=0)
     image_tokens: Mapped[int] = mapped_column(Integer, default=0)

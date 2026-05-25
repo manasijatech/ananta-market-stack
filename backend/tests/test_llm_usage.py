@@ -76,6 +76,8 @@ def test_record_llm_usage_persists_event_and_daily_snapshot():
         assert snapshot.request_count == 1
         assert snapshot.success_count == 1
         assert snapshot.total_tokens == 165
+        assert snapshot.cached_tokens_reported_count == 1
+        assert snapshot.reasoning_tokens_reported_count == 1
         assert snapshot.provider_cost_total == 0.0123
         db.close()
     finally:
@@ -133,9 +135,78 @@ def test_usage_overview_aggregates_historical_workflow_usage():
         assert overview.totals.success_count == 1
         assert overview.totals.error_count == 1
         assert overview.totals.total_tokens == 15
+        assert overview.request_kinds[0].request_kind_label is not None
         assert overview.by_provider[0].provider in {"openai", "gemini"}
         assert any(item.workflow_id == "wf-deleted" for item in overview.top_workflows)
         assert any(item.request_kind == "workflow_feed_trigger" for item in overview.request_kinds)
+        db.close()
+    finally:
+        llm_usage.SessionLocal = original_session_local
+
+
+def test_rebuild_daily_snapshots_backfills_single_workflow_batch_context():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    original_session_local = llm_usage.SessionLocal
+    llm_usage.SessionLocal = session_factory
+    try:
+        db = session_factory()
+        db.add(User(id="u1", display_name="User"))
+        db.commit()
+        db.close()
+
+        first = datetime(2026, 5, 18, 10, 0, tzinfo=UTC).replace(tzinfo=None)
+        second = datetime(2026, 5, 18, 10, 5, tzinfo=UTC).replace(tzinfo=None)
+        llm_usage.record_llm_usage(
+            user_id="u1",
+            provider="gemini",
+            requested_model_id="gemini-2.5-flash-lite",
+            api_surface="chat_completions",
+            started_at=first,
+            completed_at=first,
+            status="success",
+            tracking=llm_usage.LlmTrackingContext(
+                request_kind="workflow_feed_trigger",
+                workflow_id="wf-1",
+                workflow_name="Feed Order Wins",
+            ),
+            response=_FakeResponse(
+                model="gemini-2.5-flash-lite",
+                response_id="resp_a",
+                usage={"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+            ),
+        )
+        llm_usage.record_llm_usage(
+            user_id="u1",
+            provider="gemini",
+            requested_model_id="gemini-2.5-flash-lite",
+            api_surface="chat_completions",
+            started_at=second,
+            completed_at=second,
+            status="success",
+            tracking=llm_usage.LlmTrackingContext(
+                request_kind="workflow_feed_trigger_batch",
+                metadata={"workflow_ids": ["wf-1"], "workflow_count": 1},
+            ),
+            response=_FakeResponse(
+                model="gemini-2.5-flash-lite",
+                response_id="resp_b",
+                usage={"prompt_tokens": 30, "completion_tokens": 4, "total_tokens": 34},
+            ),
+        )
+
+        db = session_factory()
+        llm_usage.rebuild_daily_snapshots(db)
+        db.commit()
+
+        batch_event = db.query(LlmUsageEvent).filter(LlmUsageEvent.request_kind == "workflow_feed_trigger_batch").one()
+        assert batch_event.workflow_id == "wf-1"
+        assert batch_event.workflow_ref == "wf-1"
+        assert batch_event.workflow_name == "Feed Order Wins"
+        batch_snapshot = db.query(LlmUsageDailySnapshot).filter(LlmUsageDailySnapshot.request_kind == "workflow_feed_trigger_batch").one()
+        assert batch_snapshot.workflow_id == "wf-1"
+        assert batch_snapshot.workflow_name == "Feed Order Wins"
         db.close()
     finally:
         llm_usage.SessionLocal = original_session_local

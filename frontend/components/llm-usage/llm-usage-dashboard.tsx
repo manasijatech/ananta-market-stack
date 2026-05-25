@@ -7,6 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatIstDateTime } from "@/lib/datetime";
+import {
+    apiSurfaceDisplay,
+    eventWorkflowDisplayName,
+    formatLlmCost,
+    groupWorkflowDisplayName,
+    metricReportingLabel,
+    requestKindDisplay
+} from "@/lib/llm-usage";
 import type {
     LlmUsageEventsPage,
     LlmUsageFilters,
@@ -27,21 +35,12 @@ type LlmUsageDashboardProps = {
 };
 
 const tokenFormatter = new Intl.NumberFormat("en-IN");
-const costFormatter = new Intl.NumberFormat("en-IN", {
-    maximumFractionDigits: 6,
-    minimumFractionDigits: 0
-});
-
 function compactNumber(value: number): string {
     return new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 function formatTokens(value: number): string {
     return tokenFormatter.format(value || 0);
-}
-
-function formatCost(value: number): string {
-    return costFormatter.format(value || 0);
 }
 
 function successRate(totals: LlmUsageTotals): string {
@@ -165,6 +164,18 @@ function FilterForm({ filters, granularity }: { filters: LlmUsageFilters; granul
 }
 
 function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
+    const cachedDetail = metricReportingLabel(
+        overview.totals.cached_tokens,
+        overview.totals.cached_tokens_reported_count,
+        overview.totals.request_count,
+        "Cached"
+    );
+    const reasoningDetail = metricReportingLabel(
+        overview.totals.reasoning_tokens,
+        overview.totals.reasoning_tokens_reported_count,
+        overview.totals.request_count,
+        "Reasoning"
+    );
     return (
         <section className="grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-4">
             <MetricTile
@@ -180,7 +191,7 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
                 value={`${formatTokens(overview.totals.success_count)} / ${formatTokens(overview.totals.error_count)}`}
             />
             <MetricTile
-                detail={`${formatTokens(overview.totals.cached_tokens)} cached, ${formatTokens(overview.totals.reasoning_tokens)} reasoning`}
+                detail={`${cachedDetail}, ${reasoningDetail}`}
                 icon={IconBrain}
                 label="Tokens"
                 value={formatTokens(overview.totals.total_tokens)}
@@ -189,7 +200,7 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
                 detail={`${formatTokens(overview.totals.priced_request_count)} priced requests`}
                 icon={IconCoins}
                 label="Provider cost"
-                value={formatCost(overview.totals.provider_cost_total)}
+                value={formatLlmCost(overview.totals.provider_cost_total, overview.totals.priced_request_count)}
             />
         </section>
     );
@@ -301,13 +312,15 @@ function GroupTable({
                                 : kind === "model"
                                   ? labelOrEmpty(row.model_id)
                                   : kind === "workflow"
-                                    ? labelOrEmpty(row.workflow_name || row.workflow_id)
-                                    : labelOrEmpty(row.request_kind);
+                                    ? groupWorkflowDisplayName(row)
+                                    : requestKindDisplay(row.request_kind, row.request_kind_label);
                         const sub =
                             kind === "workflow"
                                 ? [row.provider, row.model_id, row.request_kind].filter(Boolean).join(" / ")
                                 : kind === "model"
                                   ? labelOrEmpty(row.provider)
+                                  : kind === "request"
+                                    ? row.request_kind || ""
                                   : row.last_request_at
                                     ? formatIstDateTime(row.last_request_at)
                                     : "";
@@ -319,7 +332,7 @@ function GroupTable({
                                 </TableCell>
                                 <TableCell className="text-right">{formatTokens(row.request_count)}</TableCell>
                                 <TableCell className="text-right">{formatTokens(row.total_tokens)}</TableCell>
-                                <TableCell className="text-right">{formatCost(row.provider_cost_total)}</TableCell>
+                                <TableCell className="text-right">{formatLlmCost(row.provider_cost_total, row.priced_request_count)}</TableCell>
                             </TableRow>
                         );
                     })}
@@ -370,8 +383,11 @@ function RecentEvents({ events }: { events: LlmUsageEventsPage }) {
                                 <div className="mt-1 max-w-[220px] truncate text-xs text-muted-foreground">{event.model_id}</div>
                             </TableCell>
                             <TableCell>
-                                <div className="max-w-[240px] truncate font-semibold">{labelOrEmpty(event.workflow_name || event.workflow_id)}</div>
+                                <div className="max-w-[240px] truncate font-semibold">{eventWorkflowDisplayName(event)}</div>
                                 <div className="mt-1 max-w-[240px] truncate text-xs text-muted-foreground">
+                                    {requestKindDisplay(event.request_kind, event.request_kind_label)} / {apiSurfaceDisplay(event.api_surface, event.api_surface_label)}
+                                </div>
+                                <div className="mt-1 max-w-[240px] truncate text-[11px] text-muted-foreground">
                                     {event.request_kind} / {event.api_surface}
                                 </div>
                                 {event.error ? <div className="mt-1 max-w-[240px] truncate text-xs text-[var(--danger)]">{event.error}</div> : null}

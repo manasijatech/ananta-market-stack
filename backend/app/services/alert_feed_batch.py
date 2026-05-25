@@ -279,6 +279,8 @@ def run_feed_trigger_batches(
                 timeout=float(first.timeout_seconds),
                 tracking=LlmTrackingContext(
                     request_kind="workflow_feed_trigger_batch",
+                    workflow_id=group_cases[0].workflow_id if len(group_cases) == 1 else None,
+                    workflow_name=group_cases[0].workflow_name if len(group_cases) == 1 else None,
                     workflow_type="alpha_feed",
                     metadata={
                         "alpha_product": product,
@@ -287,6 +289,7 @@ def run_feed_trigger_batches(
                         "batch_id": batch_id,
                         "workflow_count": len(group_cases),
                         "workflow_ids": [case.workflow_id for case in group_cases],
+                        "workflow_names": [case.workflow_name for case in group_cases],
                     },
                 ),
             )
@@ -446,6 +449,8 @@ def run_followup_analysis_batches(
                 timeout=float(first_case.timeout_seconds),
                 tracking=LlmTrackingContext(
                     request_kind="workflow_followup_analysis_batch",
+                    workflow_id=group_items[0][0].workflow_id if len(group_items) == 1 else None,
+                    workflow_name=group_items[0][0].workflow_name if len(group_items) == 1 else None,
                     workflow_type="alpha_feed",
                     metadata={
                         "alpha_product": product,
@@ -454,6 +459,7 @@ def run_followup_analysis_batches(
                         "batch_id": batch_id,
                         "workflow_count": len(group_items),
                         "workflow_ids": [case.workflow_id for case, _request in group_items],
+                        "workflow_names": [case.workflow_name for case, _request in group_items],
                     },
                 ),
             )

@@ -20,6 +20,8 @@ export interface LlmUsageTotals {
     cached_tokens: number;
     cache_write_tokens: number;
     reasoning_tokens: number;
+    cached_tokens_reported_count: number;
+    reasoning_tokens_reported_count: number;
     input_audio_tokens: number;
     output_audio_tokens: number;
     image_tokens: number;
@@ -34,7 +36,9 @@ export interface LlmUsageGroup extends LlmUsageTotals {
     workflow_id?: string | null;
     workflow_name?: string | null;
     request_kind?: string | null;
+    request_kind_label?: string | null;
     api_surface?: string | null;
+    api_surface_label?: string | null;
     workflow_status?: string | null;
     workflow_type?: string | null;
     last_request_at?: string | null;
@@ -52,7 +56,9 @@ export interface LlmUsageEvent {
     provider: string;
     model_id: string;
     api_surface: string;
+    api_surface_label: string;
     request_kind: string;
+    request_kind_label: string;
     status: string;
     provider_response_id?: string | null;
     workflow_id?: string | null;
@@ -67,6 +73,8 @@ export interface LlmUsageEvent {
     cached_tokens: number;
     cache_write_tokens: number;
     reasoning_tokens: number;
+    cached_tokens_reported: boolean;
+    reasoning_tokens_reported: boolean;
     input_audio_tokens: number;
     output_audio_tokens: number;
     image_tokens: number;
