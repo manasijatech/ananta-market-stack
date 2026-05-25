@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { fetchFastApi } from "@/lib/fastapi";
+import { fetchFastApi, getAuthenticatedBackendHeaders } from "@/lib/fastapi";
+import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import type {
     AlertChannel,
     AlertChannelSelection,
@@ -25,6 +26,7 @@ import type {
 import type { BrokerCode } from "@/service/types/broker";
 
 type JsonObject = Record<string, unknown>;
+const publicApiBaseUrl = getPublicApiBaseUrl();
 
 function isJsonObject(value: unknown): value is JsonObject {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -295,6 +297,17 @@ export async function testAlertChannel(channelType: string, message: string): Pr
 
 export async function getLiveStreamsStatus(): Promise<LiveStreamsStatus> {
     return request<LiveStreamsStatus>("/live-streams/status");
+}
+
+export async function getLivePricesWebSocketConfig(): Promise<{ url: string }> {
+    const headers = await getAuthenticatedBackendHeaders();
+    const userId = headers.get("X-User-Id") || "local-dev-user";
+    const url = new URL(publicApiBaseUrl);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/live-streams/prices/ws`;
+    url.search = "";
+    url.searchParams.set("user_id", userId);
+    return { url: url.toString() };
 }
 
 export async function reconcileLiveSubscriptions(): Promise<AlertReconcileReport> {
