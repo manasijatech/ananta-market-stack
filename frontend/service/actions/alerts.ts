@@ -285,7 +285,7 @@ export async function saveAlertChannel(
         method: "PUT",
         body: JSON.stringify(payload)
     });
-    revalidatePath("/alert-channels");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -300,7 +300,9 @@ export async function getLiveStreamsStatus(): Promise<LiveStreamsStatus> {
     return request<LiveStreamsStatus>("/live-streams/status");
 }
 
-export async function getLivePricesWebSocketConfig(): Promise<{ url: string }> {
+export async function getLivePricesWebSocketConfig(
+    refs: Array<{ account_id?: string | null; broker_code?: string | null; symbol: string }> = []
+): Promise<{ url: string }> {
     const headers = await getAuthenticatedBackendHeaders();
     const userId = headers.get("X-User-Id") || "local-dev-user";
     const url = new URL(publicApiBaseUrl);
@@ -308,13 +310,17 @@ export async function getLivePricesWebSocketConfig(): Promise<{ url: string }> {
     url.pathname = `${url.pathname.replace(/\/+$/, "")}/live-streams/prices/ws`;
     url.search = "";
     url.searchParams.set("user_id", userId);
+    for (const ref of refs) {
+        if (ref.account_id && ref.broker_code && ref.symbol) {
+            url.searchParams.append("ref", `${ref.account_id}|${ref.broker_code}|${ref.symbol}`);
+        }
+    }
     return { url: url.toString() };
 }
 
 export async function reconcileLiveSubscriptions(): Promise<AlertReconcileReport> {
     const result = await request<AlertReconcileReport>("/live-streams/subscriptions/reconcile", { method: "POST" });
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -353,8 +359,7 @@ export async function addLiveSubscription(payload: {
         method: "POST",
         body: JSON.stringify(payload)
     });
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -373,8 +378,7 @@ export async function addLiveSubscriptionsBulk(payload: {
         method: "POST",
         body: JSON.stringify(payload)
     });
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -410,15 +414,13 @@ export async function replaceLiveSubscriptions(payload: {
         method: "PUT",
         body: JSON.stringify(payload)
     });
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
 export async function deleteLiveSubscription(id: string): Promise<void> {
     await request<{ ok: boolean }>(`/live-streams/subscriptions/${id}`, { method: "DELETE" });
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
 }
 
 export async function deleteLiveSubscriptions(ids: string[]): Promise<{ deleted: number }> {
@@ -426,7 +428,6 @@ export async function deleteLiveSubscriptions(ids: string[]): Promise<{ deleted:
     const result = await request<{ deleted: number }>(`/live-streams/subscriptions?${query.toString()}`, {
         method: "DELETE"
     });
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }

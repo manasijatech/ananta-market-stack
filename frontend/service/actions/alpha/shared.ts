@@ -189,7 +189,7 @@ export async function getAlphaApiKey() {
         throw new Error(
             JSON.stringify({
                 status: response.status,
-                message: extractMessage(payload, "Manasija Alpha API key is not configured. Add it in System Config."),
+                message: extractMessage(payload, "Manasija Alpha API key is not configured. Add it in Settings."),
                 fieldErrors: {}
             })
         );
@@ -199,7 +199,7 @@ export async function getAlphaApiKey() {
         throw new Error(
             JSON.stringify({
                 status: 400,
-                message: "Manasija Alpha API key is not configured. Add it in System Config.",
+                message: "Manasija Alpha API key is not configured. Add it in Settings.",
                 fieldErrors: {}
             })
         );

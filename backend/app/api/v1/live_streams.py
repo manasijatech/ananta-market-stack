@@ -78,7 +78,21 @@ def _stream_label(value: Any) -> str:
     return value.decode() if isinstance(value, bytes) else str(value)
 
 
-def _price_scope(user_id: str) -> tuple[dict[str, set[str]], list[tuple[str, str, str, str]]]:
+def _parse_price_ref(value: str) -> tuple[str, str, str] | None:
+    account_id, separator, rest = value.partition("|")
+    if not separator:
+        return None
+    broker_code, separator, symbol = rest.partition("|")
+    if not separator:
+        return None
+    normalized = (account_id.strip(), broker_code.strip(), _normal_symbol(symbol))
+    return normalized if all(normalized) else None
+
+
+def _price_scope(
+    user_id: str,
+    requested_refs: set[tuple[str, str, str]] | None = None,
+) -> tuple[dict[str, set[str]], list[tuple[str, str, str, str]]]:
     db = SessionLocal()
     try:
         rows = db.execute(
@@ -102,6 +116,9 @@ def _price_scope(user_id: str) -> tuple[dict[str, set[str]], list[tuple[str, str
     for account_id, broker_code, symbol in rows:
         normalized_symbol = _normal_symbol(symbol)
         if not account_id or not broker_code or not normalized_symbol:
+            continue
+        requested_ref = (str(account_id), str(broker_code), normalized_symbol)
+        if requested_refs is not None and requested_ref not in requested_refs:
             continue
         ref = (user_id, str(account_id), str(broker_code), normalized_symbol)
         if ref in seen_refs:
@@ -177,6 +194,11 @@ def live_status(
 @router.websocket("/prices/ws")
 async def live_prices_websocket(websocket: WebSocket) -> None:
     user_id = (websocket.query_params.get("user_id") or "").strip() or "local-dev-user"
+    requested_refs = {
+        parsed
+        for raw_ref in websocket.query_params.getlist("ref")
+        if (parsed := _parse_price_ref(raw_ref))
+    }
     await websocket.accept()
 
     client = _redis_client()
@@ -185,7 +207,7 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
         await websocket.close(code=1011)
         return
 
-    symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id)
+    symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id, requested_refs or None)
     streams = {stream_name: "$" for stream_name in symbols_by_stream}
     scope_stream = scope_stream_name(user_id)
     scope_offset = "$"
@@ -206,7 +228,7 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
         while True:
             now = monotonic()
             if now - last_scope_refresh >= PRICE_SCOPE_SAFETY_REFRESH_SECONDS:
-                next_symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id)
+                next_symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id, requested_refs or None)
                 added_streams = set(next_symbols_by_stream) - set(streams)
                 removed_streams = set(streams) - set(next_symbols_by_stream)
                 for stream_name in removed_streams:
@@ -247,7 +269,7 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
                     if symbol and symbol in allowed_symbols:
                         batch.append(payload)
             if scope_changed:
-                next_symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id)
+                next_symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id, requested_refs or None)
                 added_streams = set(next_symbols_by_stream) - set(streams)
                 removed_streams = set(streams) - set(next_symbols_by_stream)
                 for stream_name in removed_streams:

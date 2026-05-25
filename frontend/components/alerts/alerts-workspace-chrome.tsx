@@ -40,22 +40,6 @@ function headerForRoute(pathname: string, status: string | null): HeaderConfig {
         };
     }
 
-    if (pathname === "/alerts-workspace/subscriptions") {
-        return {
-            eyebrow: "Alerts Workspace",
-            title: "Subscriptions",
-            description: "Manage reusable symbol subscriptions that feed workflows and live data consumers."
-        };
-    }
-
-    if (pathname === "/alerts-workspace/stream-manager") {
-        return {
-            eyebrow: "Alerts Workspace",
-            title: "Stream Manager",
-            description: "Inspect live worker health, desired symbol subscriptions, and broker stream session state."
-        };
-    }
-
     if (pathname === "/alerts-workspace/workflows/new") {
         return {
             eyebrow: "Alerts Workspace",

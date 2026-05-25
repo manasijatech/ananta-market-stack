@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -142,6 +142,202 @@ function formatPayload(value: unknown) {
         return value;
     }
     return JSON.stringify(value, null, 2);
+}
+
+function textFromNode(node: ReactNode): string {
+    if (typeof node === "string" || typeof node === "number") {
+        return String(node);
+    }
+    if (Array.isArray(node)) {
+        return node.map(textFromNode).join("");
+    }
+    if (node && typeof node === "object" && "props" in node) {
+        const props = node.props as { children?: ReactNode };
+        return textFromNode(props.children);
+    }
+    return "";
+}
+
+function splitTableLine(line: string) {
+    return line
+        .trim()
+        .split(/\s{2,}/)
+        .map((cell) => cell.trim())
+        .filter(Boolean);
+}
+
+function isMarketQuoteHeader(line: string) {
+    return /symbol/i.test(line) && /(price|ltp|change|quote)/i.test(line);
+}
+
+function isMarkdownTableSeparator(line: string) {
+    return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function splitMarkdownTableRow(line: string) {
+    return line
+        .trim()
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map((cell) => cell.trim());
+}
+
+function isNumericText(value: string) {
+    return /^[+-−]?(?:₹|\$|€|£)?[\d,.]+%?$/.test(value.trim());
+}
+
+function normalizeHeaderCells(cells: string[], targetCount: number) {
+    const normalized = cells.flatMap((cell) => {
+        if (/^Day ChangeDay Change \(%\)$/i.test(cell)) {
+            return ["Day Change", "Day Change (%)"];
+        }
+        if (/^Day ChangeDay Change/i.test(cell)) {
+            return ["Day Change", cell.replace(/^Day Change/i, "").trim() || "Day Change (%)"];
+        }
+        return [cell];
+    });
+    while (normalized.length < targetCount) {
+        normalized.push(`Value ${normalized.length + 1}`);
+    }
+    return normalized.slice(0, targetCount);
+}
+
+function parseMarketQuoteRow(line: string) {
+    const tokens = line.trim().split(/\s+/).filter(Boolean);
+    const symbol = tokens[0] ?? "";
+    if (!symbol) {
+        return [];
+    }
+    const rest = tokens.slice(1);
+    const numericTokens = rest.filter(isNumericText);
+    if (numericTokens.length >= 3) {
+        const [ltp, dayChange, dayChangePercent] = numericTokens.slice(-3);
+        return [symbol, ltp, dayChange, dayChangePercent];
+    }
+    return [symbol, rest.join(" "), "", ""];
+}
+
+function parsePlainTextTable(value: string) {
+    const lines = value
+        .replace(/\r\n/g, "\n")
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .filter((line) => line.trim());
+    if (lines.length < 3) {
+        return null;
+    }
+
+    const headerCells = splitTableLine(lines[0]);
+    const knownMarketTable = isMarketQuoteHeader(lines[0]);
+    const bodyRows = knownMarketTable ? lines.slice(1).map(parseMarketQuoteRow) : lines.slice(1).map(splitTableLine);
+    const maxColumns = Math.max(headerCells.length, ...bodyRows.map((row) => row.length));
+    const tableLikeRows = bodyRows.filter((row) => row.length >= 2).length;
+
+    if (maxColumns < 2 || (!knownMarketTable && tableLikeRows < 2)) {
+        return null;
+    }
+
+    return {
+        headers: knownMarketTable
+            ? ["Symbol", "Last Traded Price (LTP)", "Day Change", "Day Change (%)"]
+            : normalizeHeaderCells(headerCells, maxColumns),
+        rows: bodyRows.filter((row) => row.length)
+    };
+}
+
+function isNumericTableCell(value: ReactNode) {
+    return isNumericText(textFromNode(value));
+}
+
+function normalizeMarketQuoteCells(cells: string[]) {
+    const symbol = cells[0]?.trim() ?? "";
+    if (!symbol) {
+        return null;
+    }
+    const rest = cells.slice(1).map((cell) => cell.trim());
+    const filledRest = rest.filter(Boolean);
+    const numericCells = filledRest.filter(isNumericText);
+    if (numericCells.length >= 3) {
+        const [ltp, dayChange, dayChangePercent] = numericCells.slice(-3);
+        return [symbol, ltp, dayChange, dayChangePercent];
+    }
+    const status = filledRest.join(" ");
+    return [symbol, status, "", ""];
+}
+
+function escapeMarkdownTableCell(value: string) {
+    return value.replace(/\|/g, "\\|");
+}
+
+function normalizeMarketQuoteMarkdownTable(lines: string[]) {
+    const rows = lines
+        .slice(1)
+        .filter((line) => !isMarkdownTableSeparator(line))
+        .map((line) => normalizeMarketQuoteCells(splitMarkdownTableRow(line)))
+        .filter((row): row is string[] => Boolean(row));
+
+    if (!rows.length) {
+        return lines.join("\n");
+    }
+
+    return [
+        "| Symbol | Last Traded Price (LTP) | Day Change | Day Change (%) |",
+        "| --- | --- | --- | --- |",
+        ...rows.map((row) => `| ${row.map(escapeMarkdownTableCell).join(" | ")} |`)
+    ].join("\n");
+}
+
+function normalizeAssistantMarkdown(value: string) {
+    const lines = value.replace(/\r\n/g, "\n").split("\n");
+    const output: string[] = [];
+    let tableBlock: string[] = [];
+    let inFence = false;
+
+    function flushTableBlock() {
+        if (!tableBlock.length) {
+            return;
+        }
+        output.push(
+            isMarketQuoteHeader(tableBlock[0])
+                ? normalizeMarketQuoteMarkdownTable(tableBlock)
+                : tableBlock.join("\n")
+        );
+        tableBlock = [];
+    }
+
+    for (const line of lines) {
+        if (/^\s*```/.test(line)) {
+            flushTableBlock();
+            inFence = !inFence;
+            output.push(line);
+            continue;
+        }
+
+        if (!inFence && line.includes("|")) {
+            tableBlock.push(line);
+            continue;
+        }
+
+        flushTableBlock();
+        output.push(line);
+    }
+
+    flushTableBlock();
+    return output.join("\n");
+}
+
+function tableColumnWidth(index: number, total: number) {
+    if (index === 0) {
+        return "16%";
+    }
+    if (total === 2) {
+        return "84%";
+    }
+    if (index === 1) {
+        return "30%";
+    }
+    return `${54 / Math.max(total - 2, 1)}%`;
 }
 
 function detailModeLabel(visibility: BrokerChatVisibility) {
@@ -411,9 +607,124 @@ function ReasoningStepRow({
     );
 }
 
+function MarkdownTable({ children }: { children: ReactNode }) {
+    return (
+        <div className="my-4 max-w-full overflow-x-auto border border-border bg-card shadow-sm last:mb-0">
+            <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
+                {children}
+            </table>
+        </div>
+    );
+}
+
+function MarkdownTableHead({ children }: { children: ReactNode }) {
+    return (
+        <th className="border-b border-border bg-secondary px-3 py-2.5 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground first:pl-4 first:text-left last:pr-4">
+            {children}
+        </th>
+    );
+}
+
+function MarkdownTableCell({ children }: { children: ReactNode }) {
+    return (
+        <td
+            className={cn(
+                "border-b border-border/70 px-3 py-2.5 align-top text-foreground first:pl-4 last:pr-4",
+                isNumericTableCell(children) ? "whitespace-nowrap text-center font-mono tabular-nums" : null
+            )}
+        >
+            {children}
+        </td>
+    );
+}
+
+function PlainTextTable({ source }: { source: string }) {
+    const table = parsePlainTextTable(source);
+    if (!table) {
+        return (
+            <pre className="mb-3 max-w-full overflow-auto border border-border bg-secondary/60 p-3 text-xs leading-5 last:mb-0">
+                {source}
+            </pre>
+        );
+    }
+
+    return (
+        <div className="my-4 max-w-full overflow-x-auto border border-border bg-card shadow-sm last:mb-0">
+            <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
+                <colgroup>
+                    {table.headers.map((header, index) => (
+                        <col
+                            key={`${header}-${index}-width`}
+                            style={{ width: tableColumnWidth(index, table.headers.length) }}
+                        />
+                    ))}
+                </colgroup>
+                <thead>
+                    <tr>
+                        {table.headers.map((header, index) => (
+                            <th
+                                className={cn(
+                                    "border-b border-border bg-secondary px-3 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground first:pl-4 last:pr-4",
+                                    index === 0 ? "text-left" : "text-center"
+                                )}
+                                key={`${header}-${index}`}
+                            >
+                                {header}
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {table.rows.map((row, rowIndex) => {
+                        const hasStatusMessage =
+                            table.headers.length === 4 &&
+                            row.length === 4 &&
+                            Boolean(row[1]) &&
+                            !row[2] &&
+                            !row[3] &&
+                            !isNumericTableCell(row[1]);
+                        return (
+                            <tr className="odd:bg-background even:bg-secondary/25" key={`${row.join(":")}-${rowIndex}`}>
+                                {hasStatusMessage ? (
+                                    <>
+                                        <td className="border-b border-border/70 px-4 py-2.5 align-top font-mono text-xs font-semibold text-foreground">
+                                            {row[0]}
+                                        </td>
+                                        <td
+                                            className="break-words border-b border-border/70 px-3 py-2.5 align-top text-muted-foreground"
+                                            colSpan={table.headers.length - 1}
+                                        >
+                                            {row[1]}
+                                        </td>
+                                    </>
+                                ) : (
+                                    table.headers.map((_, cellIndex) => (
+                                        <td
+                                            className={cn(
+                                                "border-b border-border/70 px-3 py-2.5 align-top text-foreground first:pl-4 last:pr-4",
+                                                cellIndex === 0 ? "font-mono text-xs font-semibold" : null,
+                                                isNumericTableCell(row[cellIndex] ?? "")
+                                                    ? "whitespace-nowrap text-center font-mono tabular-nums"
+                                                    : null
+                                            )}
+                                            key={`${rowIndex}-${cellIndex}`}
+                                        >
+                                            {row[cellIndex] ?? "-"}
+                                        </td>
+                                    ))
+                                )}
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 function AssistantMessage({ text, running }: { text: string; running: boolean }) {
     return (
-        <div className="max-w-4xl px-1 text-sm leading-6 text-foreground">
+        <div className="max-w-6xl px-1 text-sm leading-6 text-foreground">
             {text ? (
                 <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -425,13 +736,17 @@ function AssistantMessage({ text, running }: { text: string; running: boolean })
                             <code className="bg-secondary px-1 py-0.5 font-mono text-[0.92em]">{children}</code>
                         ),
                         pre: ({ children }) => (
-                            <pre className="mb-3 overflow-auto border border-border bg-secondary/60 p-3 text-xs">
-                                {children}
-                            </pre>
-                        )
+                            <PlainTextTable source={textFromNode(children)} />
+                        ),
+                        table: ({ children }) => <MarkdownTable>{children}</MarkdownTable>,
+                        thead: ({ children }) => <thead>{children}</thead>,
+                        tbody: ({ children }) => <tbody>{children}</tbody>,
+                        tr: ({ children }) => <tr className="odd:bg-background even:bg-secondary/25">{children}</tr>,
+                        th: ({ children }) => <MarkdownTableHead>{children}</MarkdownTableHead>,
+                        td: ({ children }) => <MarkdownTableCell>{children}</MarkdownTableCell>
                     }}
                 >
-                    {text}
+                    {normalizeAssistantMarkdown(text)}
                 </ReactMarkdown>
             ) : running ? (
                 <ShimmeringText
@@ -1032,7 +1347,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                     {!configuredProviders.length ? (
                         <div className="mt-4 flex items-start gap-2 border border-[var(--accent)] bg-[var(--accent-subtle)] p-3 text-sm text-[var(--accent-dim)] dark:text-[var(--accent)]">
                             <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
-                            Configure and enable at least one LLM provider in System Config before sending broker chat messages.
+                            Configure and enable at least one LLM provider in Settings before sending broker chat messages.
                         </div>
                     ) : null}
                     {error ? (
@@ -1058,7 +1373,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 <div className="relative min-h-0 overflow-hidden">
                     <div
                         aria-label="Broker chat messages"
-                        className="h-full min-h-0 overflow-y-auto px-8 py-5 [overflow-anchor:none] min-[900px]:px-10 min-[1400px]:px-14"
+                        className="h-full min-h-0 overflow-y-auto px-8 py-5 pb-20 [overflow-anchor:none] min-[900px]:px-10 min-[1400px]:px-14"
                         ref={chatScrollRef}
                         tabIndex={0}
                     >

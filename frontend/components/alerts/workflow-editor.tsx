@@ -4639,7 +4639,7 @@ export function WorkflowEditor({
                                     </option>
                                 ))}
                             </Select>
-                            <HelpText>Uses the encrypted provider key from System Config.</HelpText>
+                            <HelpText>Uses the encrypted provider key from Settings.</HelpText>
                         </div>
                         <div className="grid gap-2">
                             <Select
@@ -5099,8 +5099,8 @@ export function WorkflowEditor({
                     <div className="border border-border p-3">
                         <SectionTitle className="mb-2">Channels</SectionTitle>
                         <HelpText>
-                            Choose where the alert should be delivered. Inherit defaults uses your channel settings page
-                            as the base.
+                            Choose where the alert should be delivered. Inherit defaults uses the alert delivery
+                            channels saved in Settings.
                         </HelpText>
                         <div className="mt-3 grid gap-2 text-sm min-[560px]:grid-cols-2">
                             <Label
@@ -5135,7 +5135,7 @@ export function WorkflowEditor({
                             </Label>
                             <Label
                                 className="flex items-center gap-2"
-                                title="When enabled, default channels from the alert channel settings page are included automatically."
+                                title="When enabled, default alert delivery channels from Settings are included automatically."
                             >
                                 <Checkbox
                                     checked={inheritDefaults}

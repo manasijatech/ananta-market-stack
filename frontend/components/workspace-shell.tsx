@@ -13,7 +13,6 @@ import {
     IconMenu2,
     IconMessageCircle,
     IconNews,
-    IconRoute,
     IconSettings2,
     IconWallet
 } from "@tabler/icons-react";
@@ -50,14 +49,13 @@ const navGroups: { label: string; items: NavItem[] }[] = [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
             { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
             { href: "/llm-usage", label: "LLM Usage", icon: IconBrain },
-            { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging },
-            { href: "/alert-channels", label: "Alert Channels", icon: IconRoute }
+            { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
         ]
     },
     {
         label: "SETTINGS",
         items: [
-            { href: "/system-config", label: "System Config", icon: IconSettings2 },
+            { href: "/settings", label: "Settings", icon: IconSettings2 },
             { href: "/docs", label: "Docs", icon: IconBook, external: true }
         ]
     }
@@ -66,6 +64,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 const navItems = navGroups.flatMap((group) => group.items);
 const ONBOARDING_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
 const ONBOARDING_PHASE_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
+const ONBOARDING_STEP_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-step";
+const ONBOARDING_RESET_EVENT = "market-stack-reset-onboarding";
 const ONBOARDING_PHASE_BROKER_SELECTOR = "broker-selector";
 const ONBOARDING_PHASE_WAITING_FOR_ACTIVE_BROKER = "waiting-for-active-broker";
 const ONBOARDING_PHASE_ALPHA_API = "alpha-api";
@@ -133,7 +133,7 @@ const onboardingSteps: OnboardingStep[] = [
             <div className="grid gap-3 text-left">
                 <p>This broker is verified and has an active session, so the workspace can use broker-backed data.</p>
                 <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
-                    Next, open System Config from the Settings section.
+                    Next, open Settings.
                 </p>
             </div>
         ),
@@ -143,8 +143,8 @@ const onboardingSteps: OnboardingStep[] = [
         waitForTarget: true
     },
     {
-        target: '[data-onboarding="system-config-nav"]',
-        title: "System Config",
+        target: '[data-onboarding="settings-nav"]',
+        title: "Settings",
         content: (
             <div className="grid gap-3 text-left">
                 <p>Use this Settings navigation item after your broker connection is active.</p>
@@ -159,7 +159,7 @@ const onboardingSteps: OnboardingStep[] = [
     },
     {
         target: ALPHA_API_TARGET,
-        route: "/system-config",
+        route: "/settings#alpha",
         title: "Manasija Alpha API",
         content: (
             <div className="grid gap-3 text-left">
@@ -174,6 +174,11 @@ const onboardingSteps: OnboardingStep[] = [
         spotlightPadding: 6
     }
 ];
+
+function storedOnboardingStepIndex() {
+    const value = Number(localStorage.getItem(ONBOARDING_STEP_STORAGE_KEY));
+    return Number.isInteger(value) && value >= 0 && value < onboardingSteps.length ? value : null;
+}
 
 function isNavItemActive(pathname: string, href: string) {
     if (href === "/dashboard") {
@@ -195,6 +200,14 @@ function initials(name?: string | null, email?: string | null) {
         .slice(0, 2)
         .map((part) => part.charAt(0).toUpperCase())
         .join("");
+}
+
+function splitOnboardingRoute(route?: string) {
+    if (!route) {
+        return { path: "", hash: "" };
+    }
+    const [path, hash] = route.split("#");
+    return { path, hash: hash ? `#${hash}` : "" };
 }
 
 function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: string; closeOnSelect?: boolean }) {
@@ -220,8 +233,8 @@ function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: strin
                                 data-onboarding={
                                     item.href === "/broker-connections"
                                         ? "broker-connections-nav"
-                                        : item.href === "/system-config"
-                                          ? "system-config-nav"
+                                        : item.href === "/settings"
+                                          ? "settings-nav"
                                           : undefined
                                 }
                                 href={item.href}
@@ -271,11 +284,16 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
         if (localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true") {
             const onboardingPhase = localStorage.getItem(ONBOARDING_PHASE_STORAGE_KEY);
+            const storedStepIndex = storedOnboardingStepIndex();
             const activeBrokerStepIndex = onboardingSteps.findIndex((step) => step.target === ACTIVE_BROKER_TARGET);
             const brokerSelectorStepIndex = onboardingSteps.findIndex((step) => step.target === BROKER_SELECTOR_TARGET);
             const alphaApiStepIndex = onboardingSteps.findIndex((step) => step.target === ALPHA_API_TARGET);
 
             setOnboardingActive(true);
+            if (storedStepIndex !== null) {
+                setOnboardingStepIndex(storedStepIndex);
+                return;
+            }
             if (
                 onboardingPhase === ONBOARDING_PHASE_BROKER_SELECTOR &&
                 pathname === "/broker-connections/new" &&
@@ -297,6 +315,21 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     }, [isLoading, pathname, user]);
 
     useEffect(() => {
+        function handleOnboardingReset() {
+            localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+            localStorage.removeItem(ONBOARDING_PHASE_STORAGE_KEY);
+            localStorage.removeItem(ONBOARDING_STEP_STORAGE_KEY);
+            setOnboardingActive(true);
+            setOnboardingRun(false);
+            setOnboardingStepIndex(0);
+            setOnboardingTargetCheck(0);
+        }
+
+        window.addEventListener(ONBOARDING_RESET_EVENT, handleOnboardingReset);
+        return () => window.removeEventListener(ONBOARDING_RESET_EVENT, handleOnboardingReset);
+    }, []);
+
+    useEffect(() => {
         if (!onboardingActive) {
             setOnboardingRun(false);
             return;
@@ -307,9 +340,16 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        if (step.route && pathname !== step.route) {
+        const stepRoute = step.route;
+        const route = splitOnboardingRoute(stepRoute);
+        if (stepRoute && pathname !== route.path) {
             setOnboardingRun(false);
-            router.push(step.route);
+            router.push(stepRoute);
+            return;
+        }
+        if (stepRoute && route.hash && window.location.hash !== route.hash) {
+            setOnboardingRun(false);
+            router.push(stepRoute);
             return;
         }
 
@@ -341,6 +381,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     function finishOnboarding(nextHref?: string) {
         localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
         localStorage.removeItem(ONBOARDING_PHASE_STORAGE_KEY);
+        localStorage.removeItem(ONBOARDING_STEP_STORAGE_KEY);
         setOnboardingActive(false);
         setOnboardingRun(false);
 
@@ -350,6 +391,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     }
 
     function goToOnboardingStep(nextStepIndex: number) {
+        localStorage.setItem(ONBOARDING_STEP_STORAGE_KEY, String(nextStepIndex));
+        localStorage.removeItem(ONBOARDING_PHASE_STORAGE_KEY);
         const target = onboardingSteps[nextStepIndex]?.target;
         if (target === BROKER_SELECTOR_TARGET) {
             localStorage.setItem(ONBOARDING_PHASE_STORAGE_KEY, ONBOARDING_PHASE_BROKER_SELECTOR);
@@ -363,9 +406,10 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         setOnboardingRun(false);
         setOnboardingStepIndex(nextStepIndex);
 
-        const route = onboardingSteps[nextStepIndex]?.route;
-        if (route && pathname !== route) {
-            router.push(route);
+        const nextRoute = onboardingSteps[nextStepIndex]?.route;
+        const route = splitOnboardingRoute(nextRoute);
+        if (nextRoute && (pathname !== route.path || window.location.hash !== route.hash)) {
+            router.push(nextRoute);
         }
     }
 

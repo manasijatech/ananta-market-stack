@@ -10,12 +10,7 @@ const quickAccessItems = [
     {
         href: "/alerts-workspace",
         label: "Alerts Workspace",
-        description: "Manage workflows, live subscriptions, alert history, and stream health."
-    },
-    {
-        href: "/alert-channels",
-        label: "Alert Channels",
-        description: "Save Discord and Telegram delivery credentials and test outbound channels."
+        description: "Manage workflows, alert history, and live evaluation activity."
     },
     {
         href: "/llm-usage",
@@ -23,9 +18,9 @@ const quickAccessItems = [
         description: "Track provider calls, token volume, cost metadata, and workflow-level model activity."
     },
     {
-        href: "/system-config",
-        label: "System Config",
-        description: "Manage broker-data behavior, encrypted provider credentials, and saved LLM models."
+        href: "/settings",
+        label: "Settings",
+        description: "Manage broker data, live subscriptions, streams, alert delivery, provider credentials, and saved LLM models."
     }
 ];
 
