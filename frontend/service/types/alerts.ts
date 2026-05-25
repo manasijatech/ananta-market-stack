@@ -326,6 +326,8 @@ export interface LivePriceTick {
     received_at?: string | null;
     adapter?: string | null;
     connection_id?: string | null;
+    status?: string | null;
+    unavailable_reason?: string | null;
 }
 
 export interface AlertWorkflowValidation {

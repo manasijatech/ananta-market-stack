@@ -7,7 +7,7 @@ from time import monotonic
 from typing import Any
 
 import redis
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -49,6 +49,24 @@ def _normal_symbol(value: Any) -> str:
 
 def _quote_key(user_id: str, account_id: str, broker_code: str, symbol: str) -> str:
     return f"live:quote:{user_id}:{account_id}:{broker_code}:{symbol}"
+
+
+def _market_quote_key(broker_code: str, symbol: str) -> str:
+    return f"live:quote:market:{broker_code}:{symbol}"
+
+
+def _payload_has_live_price(payload: dict[str, Any]) -> bool:
+    candidates = [payload.get("ltp"), payload.get("last_price")]
+    raw = payload.get("raw")
+    if isinstance(raw, dict):
+        candidates.append(raw.get("last_price"))
+    for value in candidates:
+        try:
+            if float(value) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 def _stream_name(user_id: str, account_id: str, broker_code: str) -> str:
@@ -103,10 +121,27 @@ def _read_quote_snapshots(
         raw_rows = pipe.execute()
     except redis.RedisError:
         return []
-    for raw in raw_rows:
+    missing_refs: list[tuple[str, str, str, str]] = []
+    for index, raw in enumerate(raw_rows):
         payload = _loads_json(raw, {})
-        if isinstance(payload, dict) and payload:
+        ref = quote_refs[index] if index < len(quote_refs) else None
+        if isinstance(payload, dict) and payload and (_payload_has_live_price(payload) or payload.get("status")):
             rows.append(payload)
+        elif ref:
+            user_id, account_id, broker_code, symbol = ref
+            missing_refs.append((user_id, account_id, broker_code, symbol))
+    if missing_refs:
+        pipe = client.pipeline()
+        for _, _, broker_code, symbol in missing_refs:
+            pipe.get(_market_quote_key(broker_code, symbol))
+        try:
+            market_rows = pipe.execute()
+        except redis.RedisError:
+            market_rows = []
+        for raw in market_rows:
+            payload = _loads_json(raw, {})
+            if isinstance(payload, dict) and payload and _payload_has_live_price(payload):
+                rows.append(payload)
     return rows
 
 
@@ -233,10 +268,18 @@ def add_subscriptions_bulk(
 @router.post("/subscriptions/demand", response_model=list[LiveSubscriptionOut])
 def touch_demand_subscriptions(
     body: LiveSubscriptionBulkIn,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[LiveSubscriptionOut]:
-    return alert_svc.touch_ui_live_subscriptions(db, user.id, body.subscriptions)
+    rows = alert_svc.touch_ui_live_subscriptions(db, user.id, body.subscriptions)
+    try:
+        from app.services.alert_runtime import backfill_live_prices_for_user
+
+        background_tasks.add_task(backfill_live_prices_for_user, user.id, source_kind="ui")
+    except Exception:
+        pass
+    return rows
 
 
 @router.put("/subscriptions/replace", response_model=list[LiveSubscriptionOut])
