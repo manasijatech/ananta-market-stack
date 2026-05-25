@@ -1,9 +1,245 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
-import type { LiveStreamsStatus } from "@/service/types/alerts";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { getLivePricesWebSocketConfig, getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
+import type { LivePriceTick, LiveStreamsStatus } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+
+type SocketState = "connecting" | "connected" | "disconnected" | "error";
+
+function toNumber(value: unknown): number | null {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+}
+
+function formatNumber(value: unknown, options: Intl.NumberFormatOptions = {}): string {
+    const numeric = toNumber(value);
+    if (numeric === null) return "-";
+    return new Intl.NumberFormat("en-IN", options).format(numeric);
+}
+
+function formatPrice(value: unknown): string {
+    return formatNumber(value, { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+}
+
+function formatPercent(value: unknown): string {
+    const numeric = toNumber(value);
+    if (numeric === null) return "-";
+    return `${numeric >= 0 ? "+" : ""}${formatNumber(numeric, { maximumFractionDigits: 2 })}%`;
+}
+
+function formatTime(value: string | null | undefined): string {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function tickKey(tick: LivePriceTick): string {
+    return [tick.account_id || "", tick.broker_code || "", tick.symbol].join(":");
+}
+
+function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
+    const [socketState, setSocketState] = useState<SocketState>("connecting");
+    const [message, setMessage] = useState("");
+    const [prices, setPrices] = useState<Record<string, LivePriceTick>>({});
+    const pendingRef = useRef<Map<string, LivePriceTick>>(new Map());
+    const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const socketRef = useRef<WebSocket | null>(null);
+
+    const desiredRows = useMemo(
+        () =>
+            status.desired_subscriptions.map((subscription) => ({
+                key: [subscription.account_id || "", subscription.broker_code || "", subscription.symbol].join(":"),
+                symbol: subscription.symbol,
+                exchange: subscription.exchange,
+                broker_code: subscription.broker_code,
+                account_id: subscription.account_id
+            })),
+        [status.desired_subscriptions]
+    );
+
+    const availableCount = useMemo(
+        () => desiredRows.reduce((count, row) => count + (prices[row.key] ? 1 : 0), 0),
+        [desiredRows, prices]
+    );
+
+    useEffect(() => {
+        let cancelled = false;
+        let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+        function flushPending() {
+            flushTimerRef.current = null;
+            if (!pendingRef.current.size) return;
+            const updates = Array.from(pendingRef.current.entries());
+            pendingRef.current.clear();
+            setPrices((current) => {
+                const next = { ...current };
+                for (const [key, value] of updates) {
+                    next[key] = value;
+                }
+                return next;
+            });
+        }
+
+        function enqueue(rows: LivePriceTick[]) {
+            for (const row of rows) {
+                if (!row || !row.symbol) continue;
+                pendingRef.current.set(tickKey(row), row);
+            }
+            if (!flushTimerRef.current) {
+                flushTimerRef.current = setTimeout(flushPending, 200);
+            }
+        }
+
+        async function connect() {
+            setSocketState("connecting");
+            setMessage("");
+            try {
+                const { url } = await getLivePricesWebSocketConfig();
+                if (cancelled) return;
+                const socket = new WebSocket(url);
+                socketRef.current = socket;
+                socket.onopen = () => {
+                    setSocketState("connected");
+                    setMessage("");
+                };
+                socket.onmessage = (event) => {
+                    try {
+                        const payload = JSON.parse(String(event.data)) as {
+                            type?: string;
+                            rows?: LivePriceTick[];
+                            message?: string;
+                            symbol_count?: number;
+                        };
+                        if (payload.type === "snapshot" || payload.type === "prices") {
+                            enqueue(Array.isArray(payload.rows) ? payload.rows : []);
+                        } else if (payload.type === "connected" || payload.type === "scope") {
+                            setMessage(`${payload.symbol_count ?? 0} symbols in live scope`);
+                        } else if (payload.type === "error") {
+                            setSocketState("error");
+                            setMessage(payload.message || "Live price stream failed.");
+                        }
+                    } catch {
+                        setSocketState("error");
+                        setMessage("Received an invalid live price payload.");
+                    }
+                };
+                socket.onerror = () => {
+                    setSocketState("error");
+                    setMessage("Live price socket error.");
+                };
+                socket.onclose = () => {
+                    if (socketRef.current === socket) {
+                        socketRef.current = null;
+                    }
+                    if (cancelled) return;
+                    setSocketState("disconnected");
+                    reconnectTimer = setTimeout(connect, 2500);
+                };
+            } catch (error) {
+                if (cancelled) return;
+                setSocketState("error");
+                setMessage(error instanceof Error ? error.message : "Could not open live price socket.");
+                reconnectTimer = setTimeout(connect, 2500);
+            }
+        }
+
+        connect();
+        return () => {
+            cancelled = true;
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+            socketRef.current?.close();
+            socketRef.current = null;
+        };
+    }, []);
+
+    return (
+        <section className="grid gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <div className="type-section-title">Live prices</div>
+                    <div className="type-help text-muted-foreground">
+                        {availableCount}/{desiredRows.length} desired symbols have a fresh Redis quote snapshot.
+                        {message ? ` ${message}.` : ""}
+                    </div>
+                </div>
+                <div
+                    className={`type-meta border px-2.5 py-1 ${
+                        socketState === "connected"
+                            ? "border-[var(--success)] text-[var(--success)]"
+                            : socketState === "error"
+                              ? "border-[var(--danger)] text-[var(--danger)]"
+                              : "border-border text-muted-foreground"
+                    }`}
+                >
+                    {socketState}
+                </div>
+            </div>
+            <div className="max-h-[34rem] overflow-auto border border-border">
+                <table className="w-full min-w-[62rem] border-collapse text-left">
+                    <thead className="sticky top-0 bg-background">
+                        <tr className="type-meta border-b border-border text-muted-foreground">
+                            <th className="px-4 py-3">Symbol</th>
+                            <th className="px-4 py-3">LTP</th>
+                            <th className="px-4 py-3">Change</th>
+                            <th className="px-4 py-3">Open</th>
+                            <th className="px-4 py-3">High</th>
+                            <th className="px-4 py-3">Low</th>
+                            <th className="px-4 py-3">Volume</th>
+                            <th className="px-4 py-3">Bid / Ask</th>
+                            <th className="px-4 py-3">Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {desiredRows.map((row) => {
+                            const price = prices[row.key];
+                            const change = toNumber(price?.change_pct ?? price?.day_change_perc);
+                            return (
+                                <tr className="border-b border-border last:border-0" key={row.key}>
+                                    <td className="px-4 py-3">
+                                        <div className="type-section-title">{row.symbol}</div>
+                                        <div className="type-meta text-muted-foreground">
+                                            {row.exchange ?? "-"} · {row.broker_code ?? "-"}
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-3 font-semibold">{formatPrice(price?.ltp ?? price?.last_price)}</td>
+                                    <td
+                                        className={`px-4 py-3 ${
+                                            change === null
+                                                ? "text-muted-foreground"
+                                                : change >= 0
+                                                  ? "text-[var(--success)]"
+                                                  : "text-[var(--danger)]"
+                                        }`}
+                                    >
+                                        {formatPercent(change)}
+                                    </td>
+                                    <td className="px-4 py-3">{formatPrice(price?.open)}</td>
+                                    <td className="px-4 py-3">{formatPrice(price?.high)}</td>
+                                    <td className="px-4 py-3">{formatPrice(price?.low)}</td>
+                                    <td className="px-4 py-3">{formatNumber(price?.volume, { maximumFractionDigits: 0 })}</td>
+                                    <td className="px-4 py-3">
+                                        {formatPrice(price?.best_bid_price)} / {formatPrice(price?.best_ask_price)}
+                                    </td>
+                                    <td className="px-4 py-3 text-muted-foreground">{formatTime(price?.received_at)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+                {!desiredRows.length ? (
+                    <div className="type-body p-4 text-muted-foreground">No active desired symbols to display.</div>
+                ) : null}
+            </div>
+        </section>
+    );
+}
 
 export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsStatus }) {
     const [status, setStatus] = useState(initialStatus);
@@ -46,6 +282,8 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
             {reconcileNotice ? (
                 <div className="type-body border border-border px-4 py-3 text-muted-foreground">{reconcileNotice}</div>
             ) : null}
+
+            <LivePricesPanel status={status} />
 
             <section className="grid gap-3">
                 <div className="type-section-title">Broker readiness</div>

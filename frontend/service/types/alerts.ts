@@ -305,6 +305,29 @@ export interface LiveStreamsStatus {
     broker_statuses: LiveBrokerAccountStatus[];
 }
 
+export interface LivePriceTick {
+    user_id?: string;
+    account_id?: string;
+    broker_code?: string;
+    symbol: string;
+    exchange?: string | null;
+    ltp?: number | string | null;
+    last_price?: number | string | null;
+    open?: number | string | null;
+    high?: number | string | null;
+    low?: number | string | null;
+    close?: number | string | null;
+    day_change?: number | string | null;
+    day_change_perc?: number | string | null;
+    change_pct?: number | string | null;
+    volume?: number | string | null;
+    best_bid_price?: number | string | null;
+    best_ask_price?: number | string | null;
+    received_at?: string | null;
+    adapter?: string | null;
+    connection_id?: string | null;
+}
+
 export interface AlertWorkflowValidation {
     valid: boolean;
     errors: string[];
