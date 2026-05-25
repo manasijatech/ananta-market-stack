@@ -8,9 +8,7 @@ const items = [
     { href: "/alerts-workspace/workflows", label: "Active Workflows" },
     { href: "/alerts-workspace/workflows?status=inactive", label: "Inactive Workflows" },
     { href: "/alerts-workspace/workflows/new", label: "Create Workflow" },
-    { href: "/alerts-workspace/templates", label: "Templates" },
-    { href: "/alerts-workspace/subscriptions", label: "Subscriptions" },
-    { href: "/alerts-workspace/stream-manager", label: "Stream Manager" }
+    { href: "/alerts-workspace/templates", label: "Templates" }
 ];
 
 export function AlertsNav() {

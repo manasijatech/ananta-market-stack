@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
 import { getLivePricesWebSocketConfig, getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
 import type { LivePriceTick, LiveStreamsStatus } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type SocketState = "connecting" | "connected" | "disconnected" | "error";
+const LIVE_PRICE_PAGE_SIZE = 15;
 
 function toNumber(value: unknown): number | null {
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -47,10 +49,15 @@ function hasLivePrice(tick: LivePriceTick | undefined): boolean {
     return toNumber(tick?.ltp ?? tick?.last_price) !== null;
 }
 
+function hasRenderableTick(tick: LivePriceTick | undefined): boolean {
+    return Boolean(tick && (hasLivePrice(tick) || tick.unavailable_reason));
+}
+
 function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     const [socketState, setSocketState] = useState<SocketState>("connecting");
     const [message, setMessage] = useState("");
     const [prices, setPrices] = useState<Record<string, LivePriceTick>>({});
+    const [visibleCount, setVisibleCount] = useState(LIVE_PRICE_PAGE_SIZE);
     const pendingRef = useRef<Map<string, LivePriceTick>>(new Map());
     const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const socketRef = useRef<WebSocket | null>(null);
@@ -67,10 +74,30 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
         [status.desired_subscriptions]
     );
 
-    const availableCount = useMemo(
-        () => desiredRows.reduce((count, row) => count + (hasLivePrice(prices[row.key]) ? 1 : 0), 0),
-        [desiredRows, prices]
+    const visibleRows = desiredRows.slice(0, Math.min(visibleCount, desiredRows.length));
+    const displayRows = visibleRows.filter((row) => hasRenderableTick(prices[row.key]));
+    const visibleAvailableCount = useMemo(
+        () => visibleRows.reduce((count, row) => count + (hasLivePrice(prices[row.key]) ? 1 : 0), 0),
+        [visibleRows, prices]
     );
+    const pendingDisplayCount = Math.min(3, Math.max(visibleRows.length - displayRows.length, 0));
+    const visibleRefKey = visibleRows.map((row) => row.key).join(",");
+
+    useEffect(() => {
+        setVisibleCount((current) => Math.min(Math.max(current, LIVE_PRICE_PAGE_SIZE), Math.max(desiredRows.length, LIVE_PRICE_PAGE_SIZE)));
+    }, [desiredRows.length]);
+
+    function loadMoreVisibleRows() {
+        setVisibleCount((current) => Math.min(desiredRows.length, current + LIVE_PRICE_PAGE_SIZE));
+    }
+
+    function handleTableScroll(event: UIEvent<HTMLDivElement>) {
+        const element = event.currentTarget;
+        const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+        if (distanceFromBottom < 120 && visibleRows.length < desiredRows.length) {
+            loadMoreVisibleRows();
+        }
+    }
 
     useEffect(() => {
         let cancelled = false;
@@ -101,10 +128,19 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
         }
 
         async function connect() {
+            if (!visibleRows.length) {
+                setSocketState("disconnected");
+                setMessage("");
+                setPrices({});
+                pendingRef.current.clear();
+                return;
+            }
             setSocketState("connecting");
             setMessage("");
+            setPrices({});
+            pendingRef.current.clear();
             try {
-                const { url } = await getLivePricesWebSocketConfig();
+                const { url } = await getLivePricesWebSocketConfig(visibleRows);
                 if (cancelled) return;
                 const socket = new WebSocket(url);
                 socketRef.current = socket;
@@ -161,59 +197,80 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
             socketRef.current?.close();
             socketRef.current = null;
         };
-    }, []);
+    }, [visibleRefKey]);
 
     return (
-        <section className="grid gap-3">
+        <section className="grid min-w-0 max-w-full gap-3">
             <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                     <div className="type-section-title">Live prices</div>
                     <div className="type-help text-muted-foreground">
-                        {availableCount}/{desiredRows.length} desired rows have a live price snapshot.
+                        {visibleAvailableCount}/{visibleRows.length} visible rows have a live price snapshot.
                         {message ? ` ${message}.` : ""}
                     </div>
                 </div>
-                <div
-                    className={`type-meta border px-2.5 py-1 ${
-                        socketState === "connected"
-                            ? "border-[var(--success)] text-[var(--success)]"
-                            : socketState === "error"
-                              ? "border-[var(--danger)] text-[var(--danger)]"
-                              : "border-border text-muted-foreground"
-                    }`}
-                >
-                    {socketState}
+                <div className="flex items-center gap-2">
+                    <div className="type-meta whitespace-nowrap text-muted-foreground">
+                        Showing {displayRows.length} / {desiredRows.length}
+                    </div>
+                    <div
+                        className={`type-meta border px-2.5 py-1 ${
+                            socketState === "connected"
+                                ? "border-[var(--success)] text-[var(--success)]"
+                                : socketState === "error"
+                                  ? "border-[var(--danger)] text-[var(--danger)]"
+                                  : "border-border text-muted-foreground"
+                        }`}
+                    >
+                        {socketState}
+                    </div>
                 </div>
             </div>
-            <div className="max-h-[34rem] overflow-auto border border-border">
-                <table className="w-full min-w-[62rem] border-collapse text-left">
-                    <thead className="sticky top-0 bg-background">
-                        <tr className="type-meta border-b border-border text-muted-foreground">
-                            <th className="px-4 py-3">Symbol</th>
-                            <th className="px-4 py-3">LTP</th>
-                            <th className="px-4 py-3">Change</th>
-                            <th className="px-4 py-3">Open</th>
-                            <th className="px-4 py-3">High</th>
-                            <th className="px-4 py-3">Low</th>
-                            <th className="px-4 py-3">Volume</th>
-                            <th className="px-4 py-3">Bid / Ask</th>
-                            <th className="px-4 py-3">Updated</th>
+            <div
+                className="relative left-1/2 max-h-[32rem] w-[70vw] max-w-[70vw] min-w-0 -translate-x-1/2 overflow-y-auto overflow-x-hidden border border-border bg-card shadow-sm"
+                onScroll={handleTableScroll}
+            >
+                <table className="w-full table-fixed border-separate border-spacing-0 text-left text-xs">
+                    <colgroup>
+                        <col className="w-[18%]" />
+                        <col className="w-[10%]" />
+                        <col className="w-[8%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[9%]" />
+                        <col className="w-[11%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[12%]" />
+                    </colgroup>
+                    <thead className="sticky top-0 z-10">
+                        <tr className="bg-secondary text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                            <th className="border-b border-r border-border px-3 py-2.5">Symbol</th>
+                            <th className="border-b border-r border-border px-3 py-2.5 text-right">LTP</th>
+                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Change</th>
+                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Open</th>
+                            <th className="border-b border-r border-border px-3 py-2.5 text-right">High</th>
+                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Low</th>
+                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Volume</th>
+                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Bid / Ask</th>
+                            <th className="border-b border-border px-3 py-2.5 text-right">Time</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {desiredRows.map((row) => {
+                        {displayRows.map((row) => {
                             const price = prices[row.key];
                             const change = toNumber(price?.change_pct ?? price?.day_change_perc);
                             const unavailableReason = !hasLivePrice(price) ? price?.unavailable_reason : "";
                             return (
-                                <tr className="border-b border-border last:border-0" key={row.key}>
-                                    <td className="px-4 py-3">
-                                        <div className="type-section-title">{row.symbol}</div>
-                                        <div className="type-meta text-muted-foreground">
+                                <tr key={row.key}>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 align-middle">
+                                        <div className="truncate text-sm font-semibold leading-5" title={row.symbol}>
+                                            {row.symbol}
+                                        </div>
+                                        <div className="text-[11px] leading-4 text-muted-foreground">
                                             {row.exchange ?? "-"} · {row.broker_code ?? "-"}
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3 font-semibold">
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono font-semibold tabular-nums">
                                         {unavailableReason ? (
                                             <span className="text-xs font-medium text-[var(--danger)]" title={unavailableReason}>
                                                 unavailable
@@ -223,7 +280,7 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                                         )}
                                     </td>
                                     <td
-                                        className={`px-4 py-3 ${
+                                        className={`border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums ${
                                             change === null
                                                 ? "text-muted-foreground"
                                                 : change >= 0
@@ -233,21 +290,44 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                                     >
                                         {formatPercent(change)}
                                     </td>
-                                    <td className="px-4 py-3">{formatPrice(price?.open)}</td>
-                                    <td className="px-4 py-3">{formatPrice(price?.high)}</td>
-                                    <td className="px-4 py-3">{formatPrice(price?.low)}</td>
-                                    <td className="px-4 py-3">{formatNumber(price?.volume, { maximumFractionDigits: 0 })}</td>
-                                    <td className="px-4 py-3">
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">{formatPrice(price?.open)}</td>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">{formatPrice(price?.high)}</td>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">{formatPrice(price?.low)}</td>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">{formatNumber(price?.volume, { maximumFractionDigits: 0 })}</td>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
                                         {formatPrice(price?.best_bid_price)} / {formatPrice(price?.best_ask_price)}
                                     </td>
-                                    <td className="px-4 py-3 text-muted-foreground">{formatTime(price?.received_at)}</td>
+                                    <td className="border-b border-border/80 px-3 py-2.5 text-right font-mono text-[11px] text-muted-foreground">{formatTime(price?.received_at)}</td>
                                 </tr>
                             );
                         })}
+                        {pendingDisplayCount > 0
+                            ? Array.from({ length: pendingDisplayCount }).map((_, rowIndex) => (
+                                  <tr key={`pending-${rowIndex}`}>
+                                      <td className="border-b border-r border-border/80 px-3 py-2.5 align-middle">
+                                          <Skeleton className="h-4 w-28" />
+                                          <Skeleton className="mt-2 h-3 w-16" />
+                                      </td>
+                                      {Array.from({ length: 8 }).map((__, columnIndex) => (
+                                          <td
+                                              className="border-b border-r border-border/80 px-3 py-2.5"
+                                              key={`pending-${rowIndex}-${columnIndex}`}
+                                          >
+                                              <Skeleton className="ml-auto h-3 w-16" />
+                                          </td>
+                                      ))}
+                                  </tr>
+                              ))
+                            : null}
                     </tbody>
                 </table>
-                {!desiredRows.length ? (
+                {!visibleRows.length ? (
                     <div className="type-body p-4 text-muted-foreground">No active desired symbols to display.</div>
+                ) : null}
+                {visibleRows.length < desiredRows.length ? (
+                    <div className="border-t border-border p-3 text-center text-xs text-muted-foreground">
+                        Scroll for more rows
+                    </div>
                 ) : null}
             </div>
         </section>
@@ -276,7 +356,7 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
     }
 
     return (
-        <div className="grid gap-6">
+        <div className="grid min-w-0 max-w-full gap-6">
             <div className="flex flex-wrap items-center justify-between gap-3 border border-border p-4">
                 <div>
                     <div className="type-section-title">{status.worker_mode}</div>
@@ -359,40 +439,6 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                 ))}
                 {!status.active_sessions.length ? (
                     <div className="type-body text-muted-foreground">No active worker sessions yet.</div>
-                ) : null}
-            </section>
-
-            <section className="grid gap-3">
-                <div className="type-section-title">Desired subscriptions</div>
-                <div className="type-help text-muted-foreground">
-                    Only active subscriptions are tracked here and counted toward live worker capacity.
-                </div>
-                {status.desired_subscriptions.map((subscription) => (
-                    <div className=" border border-border p-4" key={subscription.id}>
-                        <div className="type-section-title">{subscription.symbol}</div>
-                        <div className="type-meta text-muted-foreground">
-                            {subscription.exchange ?? "-"} · {subscription.broker_code ?? "-"} · {subscription.status} ·{" "}
-                            {subscription.source_kind}
-                        </div>
-                        <div className="type-help mt-1 text-muted-foreground">
-                            {[
-                                subscription.source_type,
-                                subscription.source_label || subscription.source_id,
-                                subscription.owner_kind,
-                                subscription.health_status
-                            ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                        </div>
-                        {subscription.health_reason ? (
-                            <div className="type-meta mt-1 text-[var(--danger)]">{subscription.health_reason}</div>
-                        ) : null}
-                    </div>
-                ))}
-                {!status.desired_subscriptions.length ? (
-                    <div className="type-body text-muted-foreground">
-                        No active subscriptions are currently being tracked.
-                    </div>
                 ) : null}
             </section>
 

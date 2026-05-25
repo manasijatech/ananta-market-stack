@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
     const oauthError = url.searchParams.get("error");
-    const redirectUrl = new URL("/system-config", url.origin);
+    const redirectUrl = new URL("/settings", url.origin);
 
     if (oauthError) {
         redirectUrl.searchParams.set("mcp_auth", "error");

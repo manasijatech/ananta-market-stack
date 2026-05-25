@@ -73,8 +73,7 @@ export async function createWatchlist(payload: WatchlistCreateInput): Promise<Wa
         body: JSON.stringify(payload)
     });
     revalidatePath("/watchlists");
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -84,8 +83,7 @@ export async function addPresetWatchlist(presetId: string): Promise<Watchlist> {
         body: JSON.stringify({ preset_id: presetId })
     });
     revalidatePath("/watchlists");
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -101,15 +99,13 @@ export async function updateWatchlist(id: string, payload: WatchlistUpdateInput)
 export async function deleteWatchlist(id: string): Promise<void> {
     await request<{ ok: boolean }>(`/watchlists/${id}`, { method: "DELETE" });
     revalidatePath("/watchlists");
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
 }
 
 export async function refreshWatchlist(id: string): Promise<Watchlist> {
     const result = await request<Watchlist>(`/watchlists/${id}/refresh`, { method: "POST" });
     revalidatePath("/watchlists");
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -122,8 +118,7 @@ export async function addSymbolsToWatchlist(
         body: JSON.stringify(payload)
     });
     revalidatePath("/watchlists");
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -133,8 +128,7 @@ export async function replaceWatchlistSymbols(id: string, payload: WatchlistSymb
         body: JSON.stringify(payload)
     });
     revalidatePath("/watchlists");
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -148,7 +142,6 @@ export async function removeSymbolFromWatchlist(
         method: "DELETE"
     });
     revalidatePath("/watchlists");
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/alerts-workspace/stream-manager");
+    revalidatePath("/settings");
     return result;
 }

@@ -1,8 +1,5 @@
-import { StreamManager } from "@/components/alerts/stream-manager";
-import { getLiveStreamsStatus } from "@/service/actions/alerts";
+import { redirect } from "next/navigation";
 
 export default async function StreamManagerPage() {
-    const status = await getLiveStreamsStatus();
-
-    return <StreamManager initialStatus={status} />;
+    redirect("/settings#stream-manager");
 }

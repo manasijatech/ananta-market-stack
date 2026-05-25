@@ -19,7 +19,6 @@ import {
     startMcpOAuth,
     updateBrokerDataDefaultConfig,
     updateBrokerDataSearchConfig,
-    updateAlphaWebSocketConfig,
     updateMcpServerConfig,
     upsertAlphaApiCredential,
     upsertLlmProviderCredential
@@ -47,6 +46,8 @@ type ProviderDraftState = {
     modelId: string;
     label: string;
 };
+
+export type SystemConfigPanelSection = "all" | "broker-data" | "alpha" | "mcp" | "llm";
 
 const PROVIDER_LOGOS: Record<LlmProvider, { src: string; alt: string; imageClassName: string }> = {
     openai: {
@@ -202,7 +203,13 @@ function providerKey(provider: LlmProvider) {
     return provider;
 }
 
-export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConfig }) {
+export function SystemConfigPanel({
+    initialConfig,
+    section = "all"
+}: {
+    initialConfig: SystemConfig;
+    section?: SystemConfigPanelSection;
+}) {
     const [config, setConfig] = useState(initialConfig);
     const [selectedDefaultAccountId, setSelectedDefaultAccountId] = useState(
         initialConfig.broker_data_default.preferred_default_account_id ?? ""
@@ -213,7 +220,6 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
     const [defaultBrokerError, setDefaultBrokerError] = useState("");
     const [brokerError, setBrokerError] = useState("");
     const [alphaApiKey, setAlphaApiKey] = useState("");
-    const [alphaWsConfig, setAlphaWsConfig] = useState(initialConfig.alpha_websocket);
     const [alphaError, setAlphaError] = useState("");
     const [mcpServers, setMcpServers] = useState(
         initialConfig.mcp_servers.length ? initialConfig.mcp_servers : [initialConfig.mcp_server]
@@ -358,34 +364,6 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                 const next = await deleteAlphaApiCredential();
                 setConfig((current) => ({ ...current, alpha_api: next }));
                 setAlphaApiKey("");
-            } catch (caught) {
-                setAlphaError(parseActionError(caught).message);
-            }
-        });
-    }
-
-    function toggleAlphaWsProduct(product: string, checked: boolean) {
-        setAlphaWsConfig((current) => ({
-            ...current,
-            products: checked
-                ? Array.from(new Set([...current.products, product]))
-                : current.products.filter((item) => item !== product)
-        }));
-    }
-
-    function saveAlphaWsConfig() {
-        setAlphaError("");
-        startTransition(async () => {
-            try {
-                const next = await updateAlphaWebSocketConfig({
-                    is_enabled: alphaWsConfig.is_enabled,
-                    products: alphaWsConfig.products,
-                    scope_mode: alphaWsConfig.scope_mode,
-                    watchlist_ids: alphaWsConfig.watchlist_ids,
-                    include_all_watchlists: alphaWsConfig.include_all_watchlists,
-                    full_market: alphaWsConfig.full_market
-                });
-                setAlphaWsConfig(next);
             } catch (caught) {
                 setAlphaError(parseActionError(caught).message);
             }
@@ -600,8 +578,15 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
         });
     }
 
+    const showBrokerData = section === "all" || section === "broker-data";
+    const showAlpha = section === "all" || section === "alpha";
+    const showMcp = section === "all" || section === "mcp";
+    const showLlm = section === "all" || section === "llm";
+
     return (
         <div className="grid gap-5">
+            {showBrokerData ? (
+                <>
             <section className="border border-border p-4">
                 <div className="text-sm font-bold">Default broker for broker data</div>
                 <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
@@ -733,8 +718,12 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     <div className="text-sm text-muted-foreground">No broker accounts available yet.</div>
                 ) : null}
             </section>
+                </>
+            ) : null}
 
+            {showAlpha ? (
             <section className="grid gap-4">
+                {section === "all" ? (
                 <div>
                     <div className="flex items-center gap-2">
                         <div className="text-sm font-bold">Manasija Alpha API</div>
@@ -775,6 +764,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         and daily summaries.
                     </p>
                 </div>
+                ) : null}
                 <div className="border border-border p-4" data-onboarding="manasija-alpha-api-input-section">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
@@ -833,54 +823,17 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     </div>
                     {alphaError ? <div className="mt-3 text-sm text-destructive">{alphaError}</div> : null}
                 </div>
-                <div className="border border-border p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                            <div className="text-sm font-bold">Backend websocket worker</div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                                {alphaWsConfig.status} · {alphaWsConfig.effective_products.length} products ·{" "}
-                                {alphaWsConfig.scope_mode === "full_market"
-                                    ? "full market"
-                                    : `${alphaWsConfig.effective_symbol_count ?? alphaWsConfig.effective_symbols.length}${typeof alphaWsConfig.live_symbol_limit === "number" ? ` / ${alphaWsConfig.live_symbol_limit}` : ""} symbols`}
-                            </div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                                Market Stack plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"}
-                                {typeof alphaWsConfig.monthly_unique_symbol_limit === "number"
-                                    ? ` · ${alphaWsConfig.monthly_unique_symbol_limit} unique/month`
-                                    : ""}
-                            </div>
-                        </div>
-                        <Button disabled={isPending} onClick={saveAlphaWsConfig} type="button">
-                            Save websocket products
-                        </Button>
+                {config.alpha_api.account_error ? (
+                    <div className="border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                        {config.alpha_api.account_error}
                     </div>
-                    <div className="mt-3 grid max-w-md gap-2">
-                        {alphaWsConfig.entitled_addons
-                            .filter((addon) => addon.enabled)
-                            .map((addon) => (
-                                <Label className="flex items-center gap-2 text-sm" key={addon.product}>
-                                    <Checkbox
-                                        checked={alphaWsConfig.products.includes(addon.product)}
-                                        onCheckedChange={(checked) =>
-                                            toggleAlphaWsProduct(addon.product, Boolean(checked))
-                                        }
-                                    />
-                                    <span>
-                                        {addon.product} · {addon.tier ?? "tier unknown"}
-                                    </span>
-                                </Label>
-                            ))}
-                    </div>
-                    {config.alpha_api.account_error ? (
-                        <div className="mt-3 text-sm text-destructive">{config.alpha_api.account_error}</div>
-                    ) : null}
-                    {alphaWsConfig.last_error ? (
-                        <div className="mt-3 text-sm text-destructive">{alphaWsConfig.last_error}</div>
-                    ) : null}
-                </div>
+                ) : null}
             </section>
+            ) : null}
 
+            {showMcp ? (
             <section className="grid gap-4">
+                {section === "all" ? (
                 <div>
                     <div className="text-base font-bold tracking-tight">Hosted MCP servers</div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
@@ -888,6 +841,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         Enabled default servers are selected automatically in chat; users can narrow the set per run.
                     </p>
                 </div>
+                ) : null}
                 <div className="border border-border p-4">
                     <div className="mb-4 flex flex-wrap items-center gap-2">
                         <Select
@@ -1131,8 +1085,11 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     ) : null}
                 </div>
             </section>
+            ) : null}
 
+            {showLlm ? (
             <section className="grid gap-4">
+                {section === "all" ? (
                 <div>
                     <div className="text-base font-bold tracking-tight">LLM providers</div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
@@ -1141,6 +1098,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         URLs.
                     </p>
                 </div>
+                ) : null}
                 {config.llm_providers.map((provider) => (
                     <div className="border border-border p-4" key={provider.provider}>
                         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1346,6 +1304,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     </div>
                 ))}
             </section>
+            ) : null}
         </div>
     );
 }

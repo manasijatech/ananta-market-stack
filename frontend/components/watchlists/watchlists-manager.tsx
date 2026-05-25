@@ -266,6 +266,23 @@ export function WatchlistsManager({
             })),
         [createSuggestions, exchange, suggestions]
     );
+    const livePriceRefs = useMemo(
+        () =>
+            [...selectedLiveDemand, ...suggestionLiveDemand]
+                .flatMap((row) => {
+                    const accountId = "account_id" in row ? row.account_id : null;
+                    const brokerCode = "broker_code" in row ? row.broker_code : null;
+                    return typeof accountId === "string" && typeof brokerCode === "string" && row.symbol
+                        ? [{ account_id: accountId, broker_code: brokerCode, symbol: row.symbol }]
+                        : [];
+                })
+                .slice(0, 40),
+        [selectedLiveDemand, suggestionLiveDemand]
+    );
+    const livePriceRefKey = useMemo(
+        () => livePriceRefs.map((row) => [row.account_id ?? "", row.broker_code ?? "", row.symbol].join(":")).join(","),
+        [livePriceRefs]
+    );
     const alphaSymbols = selectedSymbols;
     const alphaSymbolKey = alphaSymbols.join(",");
     const createParsedSymbols = useMemo(
@@ -346,9 +363,17 @@ export function WatchlistsManager({
         }
 
         async function connect() {
+            if (!livePriceRefs.length) {
+                setLiveState("disconnected");
+                setLivePrices({});
+                livePendingRef.current.clear();
+                return;
+            }
             setLiveState("connecting");
+            setLivePrices({});
+            livePendingRef.current.clear();
             try {
-                const { url } = await getLivePricesWebSocketConfig();
+                const { url } = await getLivePricesWebSocketConfig(livePriceRefs);
                 if (cancelled) return;
                 const socket = new WebSocket(url);
                 liveSocketRef.current = socket;
@@ -385,7 +410,7 @@ export function WatchlistsManager({
             liveSocketRef.current?.close();
             liveSocketRef.current = null;
         };
-    }, []);
+    }, [livePriceRefKey]);
 
     useEffect(() => {
         const demand = [...selectedLiveDemand, ...suggestionLiveDemand];
@@ -1066,7 +1091,7 @@ export function WatchlistsManager({
                         <DialogHeader className="pr-8">
                             <DialogTitle>Manasija Alpha API required</DialogTitle>
                             <DialogDescription>
-                                Add a Manasija Alpha API key in System Config before creating watchlists.
+                                Add a Manasija Alpha API key in Settings before creating watchlists.
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter>
@@ -1082,11 +1107,11 @@ export function WatchlistsManager({
                                 className="normal-case tracking-normal"
                                 onClick={() => {
                                     setShowAlphaConfigPrompt(false);
-                                    router.push("/system-config");
+                                    router.push("/settings");
                                 }}
                                 type="button"
                             >
-                                Go to System Config
+                                Go to Settings
                             </Button>
                         </DialogFooter>
                     </DialogContent>

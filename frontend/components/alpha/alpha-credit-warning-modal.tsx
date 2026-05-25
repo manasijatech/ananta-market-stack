@@ -76,7 +76,7 @@ export function AlphaCreditWarningModal() {
                 <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
                     <p>{message}</p>
                     <p>
-                        Add credits to the Manasija Alpha account or update the Alpha API key in System Config, then try
+                        Add credits to the Manasija Alpha account or update the Alpha API key in Settings, then try
                         the request again.
                     </p>
                 </div>

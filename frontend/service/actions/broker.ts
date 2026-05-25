@@ -245,7 +245,7 @@ export async function updateBrokerDataDefaultConfig(
     });
     revalidatePath("/broker-connections");
     revalidatePath("/alerts-workspace");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -258,7 +258,7 @@ export async function updateBrokerDataSearchConfig(
     });
     revalidatePath("/broker-connections");
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -278,7 +278,7 @@ export async function upsertAlphaApiCredential(payload: {
         })
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/market-intelligence");
     return result;
 }
@@ -288,7 +288,7 @@ export async function deleteAlphaApiCredential(): Promise<AlphaApiConfig> {
         method: "DELETE"
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/market-intelligence");
     return result;
 }
@@ -312,8 +312,7 @@ export async function updateAlphaWebSocketConfig(payload: {
             full_market: payload.full_market ?? false
         })
     });
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/market-intelligence");
     return result;
 }
@@ -350,7 +349,7 @@ export async function updateMcpServerConfig(payload: {
         })
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -373,7 +372,7 @@ export async function createMcpServerConfig(payload: Parameters<typeof updateMcp
         })
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -394,7 +393,7 @@ export async function completeMcpOAuth(payload: { code: string; state: string })
         body: JSON.stringify(payload)
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -404,7 +403,7 @@ export async function deleteMcpServerConfig(): Promise<SystemConfig["mcp_server"
         method: "DELETE"
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -414,7 +413,7 @@ export async function deleteMcpServerConfigById(serverId: string): Promise<Syste
         method: "DELETE"
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -424,7 +423,7 @@ export async function clearMcpOAuth(): Promise<SystemConfig["mcp_server"]> {
         method: "DELETE"
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -434,7 +433,7 @@ export async function clearMcpOAuthById(serverId: string): Promise<SystemConfig[
         method: "DELETE"
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -447,7 +446,7 @@ export async function refreshMcpInventory(): Promise<SystemConfig["mcp_server"]>
         }
     );
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result.config;
 }
@@ -460,7 +459,7 @@ export async function refreshMcpInventoryById(serverId: string): Promise<SystemC
         }
     );
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result.config;
 }
@@ -470,7 +469,7 @@ export async function clearMcpServerApiKey(): Promise<SystemConfig["mcp_server"]
         method: "DELETE"
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -480,7 +479,7 @@ export async function clearMcpServerApiKeyById(serverId: string): Promise<System
         method: "DELETE"
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
 }
@@ -489,8 +488,7 @@ export async function refreshAlphaWebSocketAccount(): Promise<AlphaWebSocketConf
     const result = await request<AlphaWebSocketConfig>("/system-config/alpha/websocket/refresh", {
         method: "POST"
     });
-    revalidatePath("/alerts-workspace/subscriptions");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     revalidatePath("/market-intelligence");
     return result;
 }
@@ -507,8 +505,7 @@ export async function upsertLlmProviderCredential(
         })
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -517,8 +514,7 @@ export async function deleteLlmProviderCredential(provider: LlmProvider): Promis
         method: "DELETE"
     });
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -537,8 +533,7 @@ export async function addLlmProviderModel(payload: {
             is_enabled: payload.is_enabled ?? true
         })
     });
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -546,8 +541,7 @@ export async function deleteLlmProviderModel(modelRowId: string): Promise<LlmPro
     const result = await request<LlmProviderConfig[]>(`/system-config/llm/models/${modelRowId}`, {
         method: "DELETE"
     });
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -597,8 +591,7 @@ export async function createBrokerAccount(payload: CreateBrokerAccountPayload): 
     });
     revalidatePath("/broker-connections");
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -606,8 +599,7 @@ export async function deleteBrokerAccount(id: string): Promise<void> {
     await request<null>(`/broker-accounts/${id}`, { method: "DELETE" });
     revalidatePath("/broker-connections");
     revalidatePath("/dashboard");
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
 }
 
 export async function verifyBrokerAccount(id: string): Promise<VerifyResponse> {
@@ -616,8 +608,7 @@ export async function verifyBrokerAccount(id: string): Promise<VerifyResponse> {
     });
     revalidatePath(`/broker-connections/${id}`);
     revalidatePath("/broker-connections");
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -638,8 +629,7 @@ export async function createSession(
         body
     });
     revalidatePath(`/broker-connections/${id}`);
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 
@@ -662,8 +652,7 @@ export async function refreshSession(id: string, broker: BrokerCode): Promise<Se
     }
     const result = await request<SessionMutationResponse>(path, { method: "POST" });
     revalidatePath(`/broker-connections/${id}`);
-    revalidatePath("/system-config");
-    revalidatePath("/system-config");
+    revalidatePath("/settings");
     return result;
 }
 

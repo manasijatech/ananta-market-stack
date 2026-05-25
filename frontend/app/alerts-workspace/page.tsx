@@ -126,7 +126,7 @@ function buildAttentionItems({
         items.push({
             title: "Stream cache degraded",
             detail: streamStatus.redis_error || "Redis is not reporting healthy.",
-            href: "/alerts-workspace/stream-manager",
+            href: "/settings#stream-manager",
             label: "Inspect stream",
             tone: "danger"
         });
@@ -308,9 +308,9 @@ function CommandCenter({
                             </Link>
                         </Button>
                         <Button asChild className="min-h-9 whitespace-nowrap" variant="outline">
-                            <Link href="/alerts-workspace/stream-manager">
+                            <Link href="/settings#stream-manager">
                                 <IconPlugConnected className="size-4" stroke={1.8} />
-                                Stream manager
+                                Stream settings
                             </Link>
                         </Button>
                     </div>
@@ -458,7 +458,7 @@ function StreamReadiness({ streamStatus }: { streamStatus: LiveStreamsStatus }) 
                 </div>
                 <Link
                     className="type-meta font-semibold uppercase tracking-[0.12em] text-primary hover:text-foreground"
-                    href="/alerts-workspace/stream-manager"
+                    href="/settings#stream-manager"
                 >
                     Details
                 </Link>
@@ -525,8 +525,8 @@ function ActionRail() {
     const actions = [
         { href: "/alerts-workspace/workflows/new", label: "Create workflow", icon: IconBolt },
         { href: "/alerts-workspace/templates", label: "Browse templates", icon: IconChecklist },
-        { href: "/alerts-workspace/subscriptions", label: "Subscriptions", icon: IconRoute },
-        { href: "/alert-channels", label: "Channels", icon: IconSettings2 }
+        { href: "/settings#live-subscriptions", label: "Live data settings", icon: IconRoute },
+        { href: "/settings#alert-channels", label: "Delivery settings", icon: IconSettings2 }
     ];
 
     return (

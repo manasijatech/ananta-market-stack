@@ -22,7 +22,7 @@ export default async function WatchlistsPage() {
         error =
             systemConfigResult.reason instanceof Error
                 ? systemConfigResult.reason.message
-                : "Could not load System Config.";
+                : "Could not load Settings.";
     }
 
     return (

@@ -36,12 +36,22 @@ const nextConfig: NextConfig = {
             },
             {
                 source: "/dashboard/system-config",
-                destination: "/system-config",
+                destination: "/settings",
+                permanent: false
+            },
+            {
+                source: "/system-config",
+                destination: "/settings",
                 permanent: false
             },
             {
                 source: "/dashboard/broker-data",
-                destination: "/system-config",
+                destination: "/settings",
+                permanent: false
+            },
+            {
+                source: "/alert-channels",
+                destination: "/settings",
                 permanent: false
             }
         ];

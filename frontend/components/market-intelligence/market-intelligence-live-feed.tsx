@@ -421,7 +421,7 @@ export function MarketIntelligenceLiveFeed({
 
     return (
         <div className="grid gap-5">
-            <div className="flex flex-col gap-2 border-y border-border py-3 text-xs text-muted-foreground min-[720px]:flex-row min-[720px]:items-center min-[720px]:justify-between">
+            <div className="flex flex-col gap-2 py-1 text-xs text-muted-foreground min-[720px]:flex-row min-[720px]:items-center min-[720px]:justify-between">
                 <span className="font-semibold uppercase tracking-[0.16em] text-primary">
                     {initialSocketLabel(socketState)}
                 </span>
@@ -973,17 +973,28 @@ function SymbolLogo({
     metadata?: AlphaSymbolMetadata;
     small?: boolean;
 }) {
+    const [failed, setFailed] = useState(false);
     const sizeClassName = small ? "size-5 text-[9px]" : "size-8 text-[10px]";
+    const logo = metadata?.logo && !failed ? metadata.logo : "";
 
-    if (metadata?.logo) {
-        return <img alt="" className={`${sizeClassName} shrink-0 object-contain`} src={metadata.logo} />;
+    if (logo) {
+        return (
+            <img
+                alt=""
+                className={`${sizeClassName} shrink-0 object-contain`}
+                loading="lazy"
+                onError={() => setFailed(true)}
+                referrerPolicy="no-referrer"
+                src={logo}
+            />
+        );
     }
 
     return (
         <span
-            className={`flex ${sizeClassName} shrink-0 items-center justify-center font-mono font-semibold text-muted-foreground`}
+            className={`flex ${sizeClassName} shrink-0 items-center justify-center bg-secondary font-mono font-semibold text-muted-foreground`}
         >
-            {symbol.slice(0, 2)}
+            {symbol.slice(0, 2).toUpperCase()}
         </span>
     );
 }
