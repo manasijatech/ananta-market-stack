@@ -304,6 +304,15 @@ def _quote_error_message(payload: dict[str, Any]) -> str:
     return f"Broker quote status: {status}" if status else "Broker did not return a live price for this symbol."
 
 
+def _is_rate_limit_reason(reason: str) -> bool:
+    normalized = reason.lower()
+    return "429" in reason or "rate limit" in normalized or "rate_limit" in normalized
+
+
+def _quote_debug_sample(rows: list[dict[str, Any]], *, limit: int = 12) -> list[dict[str, Any]]:
+    return rows[:limit]
+
+
 def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> None:
     if redis_client is None:
         return
@@ -360,22 +369,50 @@ def _apply_quote_results(
     symbols = [sub.symbol for sub in chunk_rows]
     any_valid_price = False
     any_rate_limited = False
+    valid_count = 0
+    unavailable_count = 0
+    rate_limited_count = 0
+    failed_samples: list[dict[str, Any]] = []
     for row, duplicate_rows, quote in zip(chunk_rows, chunk_groups, quotes, strict=False):
         if not quote:
+            unavailable_count += 1
+            failed_samples.append(
+                {
+                    "symbol": row.symbol,
+                    "exchange": row.exchange,
+                    "status": "missing_quote_payload",
+                    "duplicate_rows": len(duplicate_rows),
+                }
+            )
             continue
         payload = quote.model_dump(mode="json")
         received_at = _utc_now()
         live_price = _quote_live_price(payload)
         if live_price is None:
             reason = _quote_error_message(payload)
-            any_rate_limited = any_rate_limited or "429" in reason or "rate limit" in reason.lower()
+            row_rate_limited = _is_rate_limit_reason(reason)
+            any_rate_limited = any_rate_limited or row_rate_limited
+            if row_rate_limited:
+                rate_limited_count += 1
+            else:
+                unavailable_count += 1
+            failed_samples.append(
+                {
+                    "symbol": row.symbol,
+                    "exchange": row.exchange,
+                    "status": "rate_limited" if row_rate_limited else "unavailable",
+                    "reason": reason[:500],
+                    "duplicate_rows": len(duplicate_rows),
+                }
+            )
             for subscription_row in duplicate_rows:
-                subscription_row.health_status = "rate_limited" if any_rate_limited else "unavailable"
+                subscription_row.health_status = "rate_limited" if row_rate_limited else "unavailable"
                 subscription_row.health_reason = reason
                 subscription_row.updated_at = received_at
-            db.add(subscription_row)
+                db.add(subscription_row)
             continue
         any_valid_price = True
+        valid_count += 1
         for subscription_row in duplicate_rows:
             subscription_row.last_quote_json = json.dumps(payload, default=str)
             subscription_row.last_received_at = received_at
@@ -392,6 +429,41 @@ def _apply_quote_results(
             quote_payload=payload,
             row=row,
         ))
+    if rate_limited_count:
+        logger.warning(
+            "quote batch rate limited user=%s account=%s broker=%s connection=%s valid=%s rate_limited=%s unavailable=%s symbols=%s sample=%s",
+            user_id,
+            account_id,
+            broker_code,
+            connection_index,
+            valid_count,
+            rate_limited_count,
+            unavailable_count,
+            len(chunk_rows),
+            _quote_debug_sample(failed_samples),
+        )
+    elif unavailable_count:
+        logger.debug(
+            "quote batch had unavailable rows user=%s account=%s broker=%s connection=%s valid=%s unavailable=%s symbols=%s sample=%s",
+            user_id,
+            account_id,
+            broker_code,
+            connection_index,
+            valid_count,
+            unavailable_count,
+            len(chunk_rows),
+            _quote_debug_sample(failed_samples),
+        )
+    else:
+        logger.debug(
+            "quote batch applied user=%s account=%s broker=%s connection=%s valid=%s symbols=%s",
+            user_id,
+            account_id,
+            broker_code,
+            connection_index,
+            valid_count,
+            len(chunk_rows),
+        )
     return any_valid_price or not any_rate_limited
 
 
@@ -405,7 +477,9 @@ def _should_skip_account_until_retry(account_id: str) -> bool:
 
 
 def _schedule_account_retry(account_id: str, delay_seconds: int) -> None:
-    _ACCOUNT_RETRY_NOT_BEFORE[account_id] = _utc_now() + timedelta(seconds=delay_seconds)
+    retry_at = _utc_now() + timedelta(seconds=delay_seconds)
+    _ACCOUNT_RETRY_NOT_BEFORE[account_id] = retry_at
+    logger.debug("scheduled live quote retry account=%s retry_at=%s delay_seconds=%s", account_id, retry_at.isoformat(), delay_seconds)
 
 
 def _clear_account_retry(account_id: str) -> None:
@@ -1576,6 +1650,7 @@ class BackgroundAsyncService:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        logger.info("%s starting", self.name)
 
         def runner() -> None:
             loop = asyncio.new_event_loop()
@@ -1584,6 +1659,7 @@ class BackgroundAsyncService:
             self._loop = loop
             self._stop_event = stop_event
             self._ready.set()
+            logger.info("%s started", self.name)
             try:
                 while not stop_event.is_set():
                     try:
@@ -1607,6 +1683,7 @@ class BackgroundAsyncService:
                 if pending:
                     loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                 loop.close()
+                logger.info("%s stopped", self.name)
 
         self._ready.clear()
         self._thread = threading.Thread(target=runner, name=self.name, daemon=True)
@@ -1614,6 +1691,7 @@ class BackgroundAsyncService:
         self._ready.wait(timeout=2)
 
     def stop(self, timeout: float = 0.5) -> None:
+        logger.info("%s stopping", self.name)
         if self._loop and self._stop_event:
             try:
                 self._loop.call_soon_threadsafe(self._stop_event.set)
