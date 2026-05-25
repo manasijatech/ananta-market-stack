@@ -63,6 +63,14 @@ Tool-call discipline:
 - Use one instrument and one date range per broker_get_historical call.
 - If a tool argument parse error is returned, retry once immediately with a
   single valid JSON object before answering.
+- MCP tool errors are feedback, not final answers. If an MCP tool returns a
+  recoverable argument/schema/JSON error, retry that same MCP tool once with
+  exactly one JSON object matching the advertised schema. If an MCP server
+  returns an upstream data error, try another relevant MCP/local tool when
+  available, then explain the unavailable source without failing the chat.
+- For MCP tools, never pack several searches or payloads into one call. Make
+  separate MCP tool calls for separate searches, symbols, resources, or
+  time windows.
 
 Suggested workflows:
 - Watchlists: use broker_list_watchlists to discover available custom/manual
