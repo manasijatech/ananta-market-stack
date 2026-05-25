@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.mcp import MCPServerManager, MCPServerSse, MCPServerStreamableHttp
+from agents.run_context import RunContextWrapper
 from sqlalchemy.orm import Session
 
 from app.services import broker_chat, mcp_config
@@ -35,7 +36,37 @@ def broker_chat_mcp_config() -> dict[str, Any]:
     return {
         "convert_schemas_to_strict": True,
         "include_server_in_tool_names": True,
+        "failure_error_function": mcp_tool_failure_message,
     }
+
+
+def mcp_tool_failure_message(_context: RunContextWrapper[Any], error: Exception) -> str:
+    """Return a model-visible, recoverable MCP tool error."""
+
+    message = mcp_config.describe_exception(error)
+    if _looks_like_json_argument_error(message):
+        return (
+            "Recoverable MCP tool argument error. The previous MCP tool call did not contain exactly one valid JSON object. "
+            "Retry the same tool once with one JSON object matching that tool's schema. "
+            "Do not concatenate JSON objects or combine multiple tool calls into one call. "
+            f"Parser error: {message}"
+        )
+    return (
+        "Recoverable MCP tool error. Do not fail the whole chat because of this single MCP call. "
+        "If the request can be corrected, retry once with valid arguments; otherwise continue with other MCP/local tools or explain the unavailable source. "
+        f"Tool error: {message}"
+    )
+
+
+def _looks_like_json_argument_error(message: str) -> bool:
+    lowered = message.lower()
+    return (
+        "invalid json input" in lowered
+        or "parsing tool arguments" in lowered
+        or "jsondecodeerror" in lowered
+        or "extra data" in lowered
+        or "expected a json object" in lowered
+    )
 
 
 def mcp_context_instructions(handle: BrokerChatMcpHandle) -> str:
@@ -84,6 +115,7 @@ def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
         "max_retry_attempts": 2,
         "retry_backoff_seconds_base": 0.75,
         "require_approval": "never",
+        "failure_error_function": mcp_tool_failure_message,
     }
     if connection.transport == "sse":
         return MCPServerSse(params, **kwargs)
