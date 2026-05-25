@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import api_router
 from app.config import get_settings
+from app.logging_config import configure_logging
 from app.services.alert_runtime import create_alert_worker_service
 from app.services.alpha_websocket import run_alpha_websocket_worker
 from app.services.broker_chat_worker_service import run_broker_chat_worker
@@ -17,7 +18,10 @@ from app.services.system_maintenance import run_startup_maintenance
 from app.services.watchlist_preset_worker import run_watchlist_preset_worker
 from db.session import init_db
 
+debug_log_path = configure_logging()
 logger = logging.getLogger(__name__)
+if debug_log_path:
+    logger.info("Market Stack backend debug logs are being written to %s", debug_log_path)
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 
 

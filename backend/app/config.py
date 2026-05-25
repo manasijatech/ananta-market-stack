@@ -13,6 +13,11 @@ class Settings(BaseSettings):
 
     app_name: str = "Market Stack"
     debug: bool = Field(default=False, validation_alias="APP_DEBUG")
+    log_to_file: bool | None = Field(default=None, validation_alias="LOG_TO_FILE")
+    log_file_path: str = Field(default="./data/logs/backend-debug.log", validation_alias="LOG_FILE_PATH")
+    log_file_max_bytes: int = Field(default=50 * 1024 * 1024, validation_alias="LOG_FILE_MAX_BYTES")
+    log_file_backup_count: int = Field(default=3, validation_alias="LOG_FILE_BACKUP_COUNT")
+    log_level: str | None = Field(default=None, validation_alias="LOG_LEVEL")
     database_url: str = Field(
         default="sqlite:///./data/app.db",
         validation_alias="DATABASE_URL",
