@@ -939,9 +939,9 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                             {(mcpConfig.inventory.resources ?? []).length} resources
                         </div>
                         {(mcpConfig.inventory.tools ?? []).length ? (
-                            <div className="flex flex-wrap gap-1.5">
-                                {(mcpConfig.inventory.tools ?? []).slice(0, 12).map((tool) => (
-                                    <Badge key={String(tool.name)} variant="secondary">
+                            <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                                {(mcpConfig.inventory.tools ?? []).map((tool, index) => (
+                                    <Badge key={`${String(tool.name || "tool")}-${index}`} variant="secondary">
                                         {tool.name}
                                     </Badge>
                                 ))}
@@ -956,6 +956,14 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                                     .map((item) => item.name || item.uri)
                                     .filter(Boolean)
                                     .join(", ") || "no resources"}
+                            </div>
+                        ) : null}
+                        {mcpConfig.inventory.errors && Object.keys(mcpConfig.inventory.errors).length ? (
+                            <div className="text-amber-700">
+                                Inventory notes:{" "}
+                                {Object.entries(mcpConfig.inventory.errors)
+                                    .map(([key, value]) => `${key}: ${value}`)
+                                    .join(" · ")}
                             </div>
                         ) : null}
                     </div>

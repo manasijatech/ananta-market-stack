@@ -79,7 +79,7 @@ Implementation notes:
 - The browser-facing OAuth callback should normally terminate at the frontend (`/api/mcp/oauth/callback`), which forwards code/state to `/api/v1/system-config/mcp/oauth/complete` through the existing authenticated SSR backend bridge. The backend HTML callback remains as a compatibility fallback.
 - The runner passes connected servers through `Agent(..., mcp_servers=...)`.
 - Agent-level MCP config enables strict-schema conversion and server-prefixed MCP tool names to reduce tool-name collisions with local broker tools.
-- System Config can refresh and cache MCP tools, prompts, resources, and preferred reusable instruction text. Broker chat also refreshes stale MCP inventory at run start, then injects cached MCP context into the agent instructions when MCP is connected.
+- System Config refreshes and caches the full MCP tools, prompts, and resources advertised by the configured server, with per-capability inventory notes when a server does not expose a capability. Broker chat also refreshes stale MCP inventory at run start, then injects the complete cached MCP context into the agent instructions when MCP is connected.
 - MCP connection failures are persisted as `mcp_connection_failed` events and do not fail the run; the agent continues with local broker tools.
 - The current database shape supports one hosted MCP server per user. The helper uses `MCPServerManager`, so extending to multiple configured MCP servers later is a service-layer change rather than a runner rewrite.
 

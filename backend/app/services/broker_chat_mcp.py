@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,7 +18,6 @@ class BrokerChatMcpHandle:
     manager: MCPServerManager | None
     active_servers: list[Any]
     enabled: bool
-    instructions: str = ""
     inventory: dict[str, Any] | None = None
 
     async def close(self) -> None:
@@ -42,35 +42,29 @@ def mcp_context_instructions(handle: BrokerChatMcpHandle) -> str:
     if not handle.enabled or not handle.active_servers:
         return ""
     inventory = handle.inventory or {}
-    tool_names = [
-        str(tool.get("name") or "")
-        for tool in inventory.get("tools", [])
-        if isinstance(tool, dict) and tool.get("name")
-    ][:30]
-    prompt_names = [
-        str(prompt.get("name") or "")
-        for prompt in inventory.get("prompts", [])
-        if isinstance(prompt, dict) and prompt.get("name")
-    ][:20]
-    resource_names = [
-        str(resource.get("name") or resource.get("uri") or "")
-        for resource in inventory.get("resources", [])
-        if isinstance(resource, dict) and (resource.get("name") or resource.get("uri"))
-    ][:20]
     sections = [
-        "MCP is connected for this run. Use MCP tools when they provide fresher or broader market intelligence than local broker tools, while keeping local broker tools preferred for connected-account and portfolio data."
+        "MCP is connected for this run. Treat connected MCP servers as additional tool and context providers. "
+        "Use their advertised tools, prompts, and resources according to the server-provided names, descriptions, schemas, and the user's request. "
+        "For the user's connected broker account and portfolio state, local broker tools remain the authoritative source."
     ]
-    if tool_names:
-        sections.append(f"Available MCP tools include: {', '.join(tool_names)}.")
-    if prompt_names or resource_names:
+    inventory_sections: list[str] = []
+    for label, key in (("Tools", "tools"), ("Prompts", "prompts"), ("Resources", "resources")):
+        value = inventory.get(key)
+        if value:
+            inventory_sections.append(f"{label}:\n{_inventory_json(value)}")
+    errors = inventory.get("errors")
+    if errors:
+        inventory_sections.append(f"Inventory listing notes:\n{_inventory_json(errors)}")
+    if inventory_sections:
         sections.append(
-            "The MCP server also exposes reusable context. "
-            f"Prompts: {', '.join(prompt_names) if prompt_names else 'none listed'}. "
-            f"Resources: {', '.join(resource_names) if resource_names else 'none listed'}."
+            "Cached MCP inventory follows. It is not a whitelist; live MCP tool availability is determined by the connected server.\n\n"
+            + "\n\n".join(inventory_sections)
         )
-    if handle.instructions:
-        sections.append("MCP server guidance:\n" + handle.instructions)
     return "\n\n".join(sections)
+
+
+def _inventory_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
 def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
@@ -82,7 +76,7 @@ def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
     }
     kwargs = {
         "cache_tools_list": connection.tool_cache_enabled,
-        "name": connection.name or "Market-Stack hosted MCP",
+        "name": connection.name or "Configured MCP server",
         "client_session_timeout_seconds": float(connection.timeout_seconds),
         "max_retry_attempts": 2,
         "retry_backoff_seconds_base": 0.75,
@@ -225,6 +219,5 @@ async def connect_broker_chat_mcp(
         manager=manager,
         active_servers=list(manager.active_servers),
         enabled=True,
-        instructions=connection.instructions,
         inventory=inventory,
     )

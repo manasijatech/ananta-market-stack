@@ -33,7 +33,6 @@ class McpConnectionConfig:
     timeout_seconds: int
     tool_cache_enabled: bool
     inventory: dict[str, Any]
-    instructions: str
 
 
 def _now() -> datetime:
@@ -113,7 +112,7 @@ def _inventory_summary(inventory: dict[str, Any]) -> dict[str, Any]:
         "tools": inventory.get("tools", []),
         "prompts": inventory.get("prompts", []),
         "resources": inventory.get("resources", []),
-        "instructions": inventory.get("instructions", ""),
+        "errors": inventory.get("errors", {}),
     }
 
 
@@ -250,7 +249,6 @@ def get_enabled_mcp_connection(db: Session, user_id: str) -> McpConnectionConfig
         timeout_seconds=int(row.timeout_seconds or 15),
         tool_cache_enabled=bool(row.tool_cache_enabled),
         inventory=inventory,
-        instructions=str(inventory.get("instructions") or ""),
     )
 
 
@@ -258,9 +256,7 @@ def mcp_inventory_is_stale(db: Session, user_id: str, *, max_age_seconds: int = 
     row = db.get(UserMcpServerConfig, user_id)
     if row is None or not row.is_enabled or not row.url:
         return False
-    inventory = _json_loads(row.inventory_json, {})
-    has_any_inventory = any(inventory.get(key) for key in ("tools", "prompts", "resources", "instructions"))
-    if not has_any_inventory or row.inventory_checked_at is None:
+    if row.inventory_checked_at is None:
         return True
     return row.inventory_checked_at <= _now() - timedelta(seconds=max_age_seconds)
 
@@ -561,67 +557,52 @@ async def refresh_mcp_inventory(db: Session, user_id: str) -> McpServerConfigOut
 
 async def _fetch_mcp_inventory(row: UserMcpServerConfig) -> dict[str, Any]:
     async with _mcp_session(row) as session:
-        await asyncio.wait_for(session.initialize(), timeout=float(row.timeout_seconds or 15))
-        tools_result = await asyncio.wait_for(session.list_tools(), timeout=float(row.timeout_seconds or 15))
-        prompts_result = await asyncio.wait_for(session.list_prompts(), timeout=float(row.timeout_seconds or 15))
-        resources_result = await asyncio.wait_for(session.list_resources(), timeout=float(row.timeout_seconds or 15))
+        timeout = float(row.timeout_seconds or 15)
+        await asyncio.wait_for(session.initialize(), timeout=timeout)
+        tools, tools_error = await _list_mcp_capability(session, method_name="list_tools", result_attr="tools", timeout=timeout)
+        prompts, prompts_error = await _list_mcp_capability(
+            session,
+            method_name="list_prompts",
+            result_attr="prompts",
+            timeout=timeout,
+        )
+        resources, resources_error = await _list_mcp_capability(
+            session,
+            method_name="list_resources",
+            result_attr="resources",
+            timeout=timeout,
+        )
 
-        tools = _dump_model(getattr(tools_result, "tools", []))
-        prompts = _dump_model(getattr(prompts_result, "prompts", []))
-        resources = _dump_model(getattr(resources_result, "resources", []))
-        instructions = await _fetch_preferred_instructions(session, prompts, resources, int(row.timeout_seconds or 15))
-        return {
+        errors = {
+            key: value
+            for key, value in {
+                "tools": tools_error,
+                "prompts": prompts_error,
+                "resources": resources_error,
+            }.items()
+            if value
+        }
+        inventory: dict[str, Any] = {
             "tools": tools,
             "prompts": prompts,
             "resources": resources,
-            "instructions": instructions,
         }
+        if errors:
+            inventory["errors"] = errors
+        return inventory
 
 
-async def _fetch_preferred_instructions(
+async def _list_mcp_capability(
     session: Any,
-    prompts: list[dict[str, Any]],
-    resources: list[dict[str, Any]],
-    timeout: int,
-) -> str:
-    prompt_names = [str(item.get("name") or "") for item in prompts]
-    for name in ["marketstack_default_agent_prompt", "default_agent_prompt"]:
-        if name in prompt_names:
-            result = await asyncio.wait_for(session.get_prompt(name), timeout=float(timeout))
-            return _prompt_text(_dump_model(result))
-    for resource in resources:
-        uri = str(resource.get("uri") or "")
-        name = str(resource.get("name") or "")
-        if uri == "marketstack://instructions/default-agent" or name in {
-            "marketstack_default_agent_instructions",
-            "default_agent_instructions",
-        }:
-            result = await asyncio.wait_for(session.read_resource(uri), timeout=float(timeout))
-            return _resource_text(_dump_model(result))
-    return ""
-
-
-def _prompt_text(payload: Any) -> str:
-    messages = payload.get("messages", []) if isinstance(payload, dict) else []
-    chunks: list[str] = []
-    for message in messages:
-        content = message.get("content") if isinstance(message, dict) else None
-        if isinstance(content, dict):
-            text = content.get("text")
-            if text:
-                chunks.append(str(text))
-        elif isinstance(content, str):
-            chunks.append(content)
-    return "\n\n".join(chunks).strip()
-
-
-def _resource_text(payload: Any) -> str:
-    contents = payload.get("contents", []) if isinstance(payload, dict) else []
-    chunks: list[str] = []
-    for content in contents:
-        if not isinstance(content, dict):
-            continue
-        text = content.get("text")
-        if text:
-            chunks.append(str(text))
-    return "\n\n".join(chunks).strip()
+    *,
+    method_name: str,
+    result_attr: str,
+    timeout: float,
+) -> tuple[list[Any], str | None]:
+    try:
+        result = await asyncio.wait_for(getattr(session, method_name)(), timeout=timeout)
+    except Exception as exc:
+        return [], f"{exc.__class__.__name__}: {exc}"
+    value = getattr(result, result_attr, [])
+    dumped = _dump_model(value)
+    return dumped if isinstance(dumped, list) else [], None

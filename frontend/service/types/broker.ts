@@ -428,7 +428,7 @@ export interface McpServerConfig {
         tools?: Array<{ name?: string; description?: string } & Record<string, unknown>>;
         prompts?: Array<{ name?: string; description?: string } & Record<string, unknown>>;
         resources?: Array<{ name?: string; uri?: string; description?: string } & Record<string, unknown>>;
-        instructions?: string;
+        errors?: Record<string, string>;
     };
     inventory_checked_at?: string | null;
     inventory_error?: string | null;
