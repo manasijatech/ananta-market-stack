@@ -24,10 +24,25 @@ from app.schemas.llm_usage import (
     WorkflowLlmUsageSummaryOut,
 )
 from common.datetime_compat import UTC
-from db.models import LlmUsageDailySnapshot, LlmUsageEvent
+from db.models import AlertWorkflow, LlmUsageDailySnapshot, LlmUsageEvent
 from db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
+
+_REQUEST_KIND_LABELS: dict[str, str] = {
+    "generic": "Generic request",
+    "workflow_llm_analysis": "Workflow LLM analysis",
+    "workflow_llm_test": "Workflow LLM test",
+    "workflow_feed_trigger": "Feed trigger",
+    "workflow_feed_trigger_batch": "Feed trigger batch",
+    "workflow_followup_analysis": "Follow-up analysis",
+    "workflow_followup_analysis_batch": "Follow-up analysis batch",
+}
+
+_API_SURFACE_LABELS: dict[str, str] = {
+    "chat_completions": "Chat Completions",
+    "responses_api": "Responses API",
+}
 
 
 @dataclass(slots=True)
@@ -109,29 +124,151 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def normalize_usage_payload(response: Any, provider: str) -> dict[str, Any]:
-    raw_usage = _as_plain_data(getattr(response, "usage", None)) or {}
-    if not isinstance(raw_usage, dict):
-        raw_usage = {}
-    prompt_details = raw_usage.get("prompt_tokens_details")
-    completion_details = raw_usage.get("completion_tokens_details")
-    if not isinstance(prompt_details, dict):
-        prompt_details = {}
-    if not isinstance(completion_details, dict):
-        completion_details = {}
-    provider_cost = _as_float(raw_usage.get("cost"))
+def _snake_case_label(value: str | None) -> str | None:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return None
+    return " ".join(part.capitalize() for part in cleaned.replace("-", "_").split("_") if part)
+
+
+def request_kind_label(value: str | None) -> str | None:
+    if not value:
+        return None
+    return _REQUEST_KIND_LABELS.get(value) or _snake_case_label(value)
+
+
+def api_surface_label(value: str | None) -> str | None:
+    if not value:
+        return None
+    return _API_SURFACE_LABELS.get(value) or _snake_case_label(value)
+
+
+def _first_present(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping and mapping.get(key) is not None:
+            return mapping.get(key)
+    return None
+
+
+def _details_dict(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def _non_empty_list(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        return []
+    return value
+
+
+def _normalize_usage_dict(raw_usage: dict[str, Any], provider: str) -> dict[str, Any]:
+    prompt_details_raw = _details_dict(
+        _first_present(
+            raw_usage,
+            "prompt_tokens_details",
+            "promptTokensDetails",
+            "prompt_token_details",
+        )
+    )
+    completion_details_raw = _details_dict(
+        _first_present(
+            raw_usage,
+            "completion_tokens_details",
+            "completionTokensDetails",
+            "completion_token_details",
+        )
+    )
+    prompt_details = prompt_details_raw or {}
+    completion_details = completion_details_raw or {}
+    provider_cost = _as_float(
+        _first_present(
+            raw_usage,
+            "cost",
+            "total_cost",
+            "cost_usd",
+            "costUsd",
+        )
+    )
     provider_cost_currency = "credits" if provider == "openrouter" and provider_cost is not None else None
+    cached_tokens = _as_int(
+        _first_present(
+            prompt_details,
+            "cached_tokens",
+            "cachedTokens",
+            "cached_content_token_count",
+            "cachedContentTokenCount",
+        )
+        if prompt_details
+        else _first_present(
+            raw_usage,
+            "cached_content_token_count",
+            "cachedContentTokenCount",
+            "cached_tokens",
+            "cachedTokens",
+        )
+    )
+    cache_write_tokens = _as_int(
+        _first_present(
+            prompt_details,
+            "cache_write_tokens",
+            "cacheWriteTokens",
+        )
+        if prompt_details
+        else _first_present(raw_usage, "cache_write_tokens", "cacheWriteTokens")
+    )
+    reasoning_tokens = _as_int(
+        _first_present(
+            completion_details,
+            "reasoning_tokens",
+            "reasoningTokens",
+            "thoughts_token_count",
+            "thoughtsTokenCount",
+        )
+        if completion_details
+        else _first_present(
+            raw_usage,
+            "thoughts_token_count",
+            "thoughtsTokenCount",
+            "reasoning_tokens",
+            "reasoningTokens",
+        )
+    )
+    prompt_details_reported = prompt_details_raw is not None or any(
+        _first_present(raw_usage, key) is not None
+        for key in (
+            "cached_content_token_count",
+            "cachedContentTokenCount",
+            "cached_tokens",
+            "cachedTokens",
+            "cache_write_tokens",
+            "cacheWriteTokens",
+        )
+    )
+    completion_details_reported = completion_details_raw is not None or any(
+        _first_present(raw_usage, key) is not None
+        for key in (
+            "thoughts_token_count",
+            "thoughtsTokenCount",
+            "reasoning_tokens",
+            "reasoningTokens",
+        )
+    )
     return {
-        "prompt_tokens": _as_int(raw_usage.get("prompt_tokens")),
-        "completion_tokens": _as_int(raw_usage.get("completion_tokens")),
-        "total_tokens": _as_int(raw_usage.get("total_tokens")),
-        "cached_tokens": _as_int(prompt_details.get("cached_tokens")),
-        "cache_write_tokens": _as_int(prompt_details.get("cache_write_tokens")),
-        "reasoning_tokens": _as_int(completion_details.get("reasoning_tokens")),
-        "input_audio_tokens": _as_int(prompt_details.get("audio_tokens")),
-        "output_audio_tokens": _as_int(completion_details.get("audio_tokens")),
-        "image_tokens": _as_int(completion_details.get("image_tokens")),
-        "video_tokens": _as_int(prompt_details.get("video_tokens")),
+        "prompt_tokens": _as_int(_first_present(raw_usage, "prompt_tokens", "promptTokenCount", "input_tokens")),
+        "completion_tokens": _as_int(
+            _first_present(raw_usage, "completion_tokens", "completionTokenCount", "candidatesTokenCount", "output_tokens")
+        ),
+        "total_tokens": _as_int(_first_present(raw_usage, "total_tokens", "totalTokenCount")),
+        "cached_tokens": cached_tokens,
+        "cache_write_tokens": cache_write_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "cached_tokens_reported": prompt_details_reported,
+        "reasoning_tokens_reported": completion_details_reported,
+        "input_audio_tokens": _as_int(_first_present(prompt_details, "audio_tokens", "audioTokens")),
+        "output_audio_tokens": _as_int(_first_present(completion_details, "audio_tokens", "audioTokens")),
+        "image_tokens": _as_int(_first_present(completion_details, "image_tokens", "imageTokens")),
+        "video_tokens": _as_int(_first_present(prompt_details, "video_tokens", "videoTokens")),
         "provider_cost": provider_cost,
         "provider_cost_currency": provider_cost_currency,
         "is_byok": raw_usage.get("is_byok") if isinstance(raw_usage.get("is_byok"), bool) else None,
@@ -140,6 +277,13 @@ def normalize_usage_payload(response: Any, provider: str) -> dict[str, Any]:
         "completion_tokens_details": completion_details,
         "raw_usage": raw_usage,
     }
+
+
+def normalize_usage_payload(response: Any, provider: str) -> dict[str, Any]:
+    raw_usage = _as_plain_data(getattr(response, "usage", None)) or {}
+    if not isinstance(raw_usage, dict):
+        raw_usage = {}
+    return _normalize_usage_dict(raw_usage, provider)
 
 
 def record_llm_usage(
@@ -162,6 +306,8 @@ def record_llm_usage(
         "cached_tokens": 0,
         "cache_write_tokens": 0,
         "reasoning_tokens": 0,
+        "cached_tokens_reported": False,
+        "reasoning_tokens_reported": False,
         "input_audio_tokens": 0,
         "output_audio_tokens": 0,
         "image_tokens": 0,
@@ -220,6 +366,8 @@ def record_llm_usage(
                     "cached_tokens": normalized["cached_tokens"],
                     "cache_write_tokens": normalized["cache_write_tokens"],
                     "reasoning_tokens": normalized["reasoning_tokens"],
+                    "cached_tokens_reported": normalized["cached_tokens_reported"],
+                    "reasoning_tokens_reported": normalized["reasoning_tokens_reported"],
                     "input_audio_tokens": normalized["input_audio_tokens"],
                     "output_audio_tokens": normalized["output_audio_tokens"],
                     "image_tokens": normalized["image_tokens"],
@@ -236,6 +384,7 @@ def record_llm_usage(
             completed_at=completed_at,
         )
         db.add(row)
+        hydrate_usage_event_dimensions(db, row)
         _upsert_daily_snapshot(db, row)
         db.commit()
     except Exception:
@@ -245,8 +394,118 @@ def record_llm_usage(
         db.close()
 
 
+def _usage_payload_from_row(row: LlmUsageEvent) -> dict[str, Any]:
+    payload = _json_loads(row.usage_json, {})
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def _usage_reporting_flags_from_payload(payload: dict[str, Any]) -> tuple[bool, bool]:
+    cached_reported = bool(payload.get("cached_tokens_reported"))
+    reasoning_reported = bool(payload.get("reasoning_tokens_reported"))
+    if cached_reported or reasoning_reported:
+        return cached_reported, reasoning_reported
+    raw_usage = payload.get("raw_usage")
+    if not isinstance(raw_usage, dict):
+        raw_usage = {}
+    normalized = _normalize_usage_dict(raw_usage, provider="")
+    return bool(normalized["cached_tokens_reported"]), bool(normalized["reasoning_tokens_reported"])
+
+
+def _copy_workflow_context_from_peer(db: Session, row: LlmUsageEvent) -> bool:
+    if not row.workflow_id:
+        return False
+    peer = db.scalars(
+        select(LlmUsageEvent)
+        .where(
+            LlmUsageEvent.user_id == row.user_id,
+            LlmUsageEvent.workflow_id == row.workflow_id,
+            LlmUsageEvent.id != row.id,
+        )
+        .order_by(LlmUsageEvent.completed_at.desc())
+    ).first()
+    if peer is None:
+        return False
+    changed = False
+    for field_name in ("workflow_name", "workflow_status", "workflow_type", "template_id", "account_id"):
+        if getattr(row, field_name) is None and getattr(peer, field_name) is not None:
+            setattr(row, field_name, getattr(peer, field_name))
+            changed = True
+    return changed
+
+
+def _copy_workflow_context_from_live_workflow(db: Session, row: LlmUsageEvent) -> bool:
+    if not row.workflow_id:
+        return False
+    workflow = db.get(AlertWorkflow, row.workflow_id)
+    if workflow is None:
+        return False
+    changed = False
+    if row.workflow_name is None:
+        row.workflow_name = workflow.name
+        changed = True
+    if row.workflow_status is None:
+        row.workflow_status = workflow.status
+        changed = True
+    if row.workflow_type is None:
+        workflow_type = _json_loads(workflow.workflow_dsl_json, {}).get("workflow_type")
+        if workflow_type:
+            row.workflow_type = str(workflow_type)
+            changed = True
+    if row.template_id is None and workflow.template_id is not None:
+        row.template_id = workflow.template_id
+        changed = True
+    if row.account_id is None and workflow.account_id is not None:
+        row.account_id = workflow.account_id
+        changed = True
+    return changed
+
+
+def hydrate_usage_event_dimensions(db: Session, row: LlmUsageEvent) -> bool:
+    metadata = _json_loads(row.metadata_json, {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    changed = False
+    workflow_names = [str(item) for item in _non_empty_list(metadata.get("workflow_names")) if str(item).strip()]
+    if not row.workflow_id:
+        workflow_ids = [str(item) for item in _non_empty_list(metadata.get("workflow_ids")) if str(item).strip()]
+        if len(workflow_ids) == 1:
+            row.workflow_id = workflow_ids[0]
+            row.workflow_ref = workflow_ids[0]
+            changed = True
+    elif not row.workflow_ref:
+        row.workflow_ref = row.workflow_id
+        changed = True
+    if row.workflow_name is None and len(workflow_names) == 1:
+        row.workflow_name = workflow_names[0]
+        changed = True
+    if row.workflow_id:
+        changed = _copy_workflow_context_from_peer(db, row) or changed
+        changed = _copy_workflow_context_from_live_workflow(db, row) or changed
+    return changed
+
+
+def rebuild_daily_snapshots(db: Session, *, user_id: str | None = None) -> None:
+    events_stmt = select(LlmUsageEvent).order_by(LlmUsageEvent.completed_at.asc(), LlmUsageEvent.created_at.asc(), LlmUsageEvent.id.asc())
+    if user_id:
+        events_stmt = events_stmt.where(LlmUsageEvent.user_id == user_id)
+        db.query(LlmUsageDailySnapshot).filter(LlmUsageDailySnapshot.user_id == user_id).delete(synchronize_session=False)
+    else:
+        db.query(LlmUsageDailySnapshot).delete(synchronize_session=False)
+    db.flush()
+    events = db.scalars(events_stmt).all()
+    for row in events:
+        hydrate_usage_event_dimensions(db, row)
+    db.flush()
+    for row in events:
+        _upsert_daily_snapshot(db, row)
+        db.flush()
+
+
 def _upsert_daily_snapshot(db: Session, row: LlmUsageEvent) -> None:
     bucket_date = _date_utc(row.completed_at)
+    cached_tokens_reported, reasoning_tokens_reported = _usage_reporting_flags_from_payload(_usage_payload_from_row(row))
     snapshot = db.scalars(
         select(LlmUsageDailySnapshot).where(
             LlmUsageDailySnapshot.user_id == row.user_id,
@@ -283,6 +542,8 @@ def _upsert_daily_snapshot(db: Session, row: LlmUsageEvent) -> None:
             cached_tokens=0,
             cache_write_tokens=0,
             reasoning_tokens=0,
+            cached_tokens_reported_count=0,
+            reasoning_tokens_reported_count=0,
             input_audio_tokens=0,
             output_audio_tokens=0,
             image_tokens=0,
@@ -308,6 +569,10 @@ def _upsert_daily_snapshot(db: Session, row: LlmUsageEvent) -> None:
     snapshot.cached_tokens = int(snapshot.cached_tokens or 0) + row.cached_tokens
     snapshot.cache_write_tokens = int(snapshot.cache_write_tokens or 0) + row.cache_write_tokens
     snapshot.reasoning_tokens = int(snapshot.reasoning_tokens or 0) + row.reasoning_tokens
+    if cached_tokens_reported:
+        snapshot.cached_tokens_reported_count = int(snapshot.cached_tokens_reported_count or 0) + 1
+    if reasoning_tokens_reported:
+        snapshot.reasoning_tokens_reported_count = int(snapshot.reasoning_tokens_reported_count or 0) + 1
     snapshot.input_audio_tokens = int(snapshot.input_audio_tokens or 0) + row.input_audio_tokens
     snapshot.output_audio_tokens = int(snapshot.output_audio_tokens or 0) + row.output_audio_tokens
     snapshot.image_tokens = int(snapshot.image_tokens or 0) + row.image_tokens
@@ -369,6 +634,8 @@ def _totals_from_rows(rows: list[LlmUsageDailySnapshot]) -> LlmUsageTotalsOut:
         totals.cached_tokens += row.cached_tokens
         totals.cache_write_tokens += row.cache_write_tokens
         totals.reasoning_tokens += row.reasoning_tokens
+        totals.cached_tokens_reported_count += row.cached_tokens_reported_count
+        totals.reasoning_tokens_reported_count += row.reasoning_tokens_reported_count
         totals.input_audio_tokens += row.input_audio_tokens
         totals.output_audio_tokens += row.output_audio_tokens
         totals.image_tokens += row.image_tokens
@@ -399,6 +666,8 @@ def _group_rows(
                 "cached_tokens": 0,
                 "cache_write_tokens": 0,
                 "reasoning_tokens": 0,
+                "cached_tokens_reported_count": 0,
+                "reasoning_tokens_reported_count": 0,
                 "input_audio_tokens": 0,
                 "output_audio_tokens": 0,
                 "image_tokens": 0,
@@ -417,6 +686,8 @@ def _group_rows(
         current["cached_tokens"] += row.cached_tokens
         current["cache_write_tokens"] += row.cache_write_tokens
         current["reasoning_tokens"] += row.reasoning_tokens
+        current["cached_tokens_reported_count"] += row.cached_tokens_reported_count
+        current["reasoning_tokens_reported_count"] += row.reasoning_tokens_reported_count
         current["input_audio_tokens"] += row.input_audio_tokens
         current["output_audio_tokens"] += row.output_audio_tokens
         current["image_tokens"] += row.image_tokens
@@ -468,7 +739,9 @@ def list_usage_events(
                 provider=row.provider,
                 model_id=row.model_id,
                 api_surface=row.api_surface,
+                api_surface_label=api_surface_label(row.api_surface) or row.api_surface,
                 request_kind=row.request_kind,
+                request_kind_label=request_kind_label(row.request_kind) or row.request_kind,
                 status=row.status,
                 provider_response_id=row.provider_response_id,
                 workflow_id=row.workflow_id,
@@ -483,6 +756,8 @@ def list_usage_events(
                 cached_tokens=row.cached_tokens,
                 cache_write_tokens=row.cache_write_tokens,
                 reasoning_tokens=row.reasoning_tokens,
+                cached_tokens_reported=_usage_reporting_flags_from_payload(_usage_payload_from_row(row))[0],
+                reasoning_tokens_reported=_usage_reporting_flags_from_payload(_usage_payload_from_row(row))[1],
                 input_audio_tokens=row.input_audio_tokens,
                 output_audio_tokens=row.output_audio_tokens,
                 image_tokens=row.image_tokens,
@@ -538,6 +813,7 @@ def usage_overview(db: Session, user_id: str, *, filters: LlmUsageFilterOut) -> 
                 "workflow_status": row.workflow_status,
                 "workflow_type": row.workflow_type,
                 "request_kind": row.request_kind,
+                "request_kind_label": request_kind_label(row.request_kind),
                 "provider": row.provider,
                 "model_id": row.model_id,
             },
@@ -545,10 +821,14 @@ def usage_overview(db: Session, user_id: str, *, filters: LlmUsageFilterOut) -> 
         request_kinds=_group_rows(
             all_rows,
             key_fn=lambda row: (row.request_kind,),
-            value_fn=lambda row: {"request_kind": row.request_kind},
+            value_fn=lambda row: {
+                "request_kind": row.request_kind,
+                "request_kind_label": request_kind_label(row.request_kind),
+            },
         ),
         notes=[
             "provider_cost_total only includes cost returned by the provider response; no local pricing estimates are injected.",
+            "Some provider and API-surface combinations do not expose cache, reasoning, or cost details. In those cases the dashboard should treat those metrics as not reported, not as proven zeros.",
             "historical workflow usage is retained even after workflow deletion because workflow identity is denormalized into the ledger.",
             "daily snapshots are updated at write time and power weekly/monthly aggregations without requiring the source workflow to remain active.",
         ],
@@ -584,6 +864,8 @@ def usage_timeseries(
                 "cached_tokens": 0,
                 "cache_write_tokens": 0,
                 "reasoning_tokens": 0,
+                "cached_tokens_reported_count": 0,
+                "reasoning_tokens_reported_count": 0,
                 "input_audio_tokens": 0,
                 "output_audio_tokens": 0,
                 "image_tokens": 0,
@@ -601,6 +883,8 @@ def usage_timeseries(
         current["cached_tokens"] += row.cached_tokens
         current["cache_write_tokens"] += row.cache_write_tokens
         current["reasoning_tokens"] += row.reasoning_tokens
+        current["cached_tokens_reported_count"] += row.cached_tokens_reported_count
+        current["reasoning_tokens_reported_count"] += row.reasoning_tokens_reported_count
         current["input_audio_tokens"] += row.input_audio_tokens
         current["output_audio_tokens"] += row.output_audio_tokens
         current["image_tokens"] += row.image_tokens
@@ -636,6 +920,7 @@ def workflow_usage_summary(
             key_fn=lambda row: (row.request_kind,),
             value_fn=lambda row: {
                 "request_kind": row.request_kind,
+                "request_kind_label": request_kind_label(row.request_kind),
                 "workflow_id": row.workflow_id,
                 "workflow_name": row.workflow_name,
                 "workflow_status": row.workflow_status,

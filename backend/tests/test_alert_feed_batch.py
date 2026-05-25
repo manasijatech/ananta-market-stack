@@ -256,6 +256,8 @@ def test_alpha_feed_prefilters_product_and_cooldown_before_batch(monkeypatch):
     assert len(calls) == 1
     cases = json.loads(calls[0]["user_text"])["workflow_cases"]
     assert [case["workflow_id"] for case in cases] == ["wf-ok"]
+    assert calls[0]["tracking"].workflow_id == "wf-ok"
+    assert calls[0]["tracking"].workflow_name == "Workflow wf-ok"
     db.close()
 
 
@@ -396,6 +398,8 @@ def test_alpha_feed_followup_analysis_batches_only_matched_workflows(monkeypatch
         "workflow_feed_trigger_batch",
         "workflow_followup_analysis_batch",
     ]
+    assert calls[1]["tracking"].workflow_id == "wf-match"
+    assert calls[1]["tracking"].workflow_name == "Workflow wf-match"
     notification = db.query(UserAlertNotification).one()
     assert "LLM Analysis: The news is material" in notification.message
     run = db.query(AlertWorkflowRun).one()

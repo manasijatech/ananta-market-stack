@@ -1,16 +1,13 @@
 import { IconBrain } from "@tabler/icons-react";
 import { StatusBadge } from "@/components/brokers/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatLlmCost, requestKindDisplay } from "@/lib/llm-usage";
 import type { WorkflowLlmUsageSummary } from "@/service/types/llm-usage";
 
 const numberFormatter = new Intl.NumberFormat("en-IN");
 
 function formatNumber(value: number): string {
     return numberFormatter.format(value || 0);
-}
-
-function formatCost(value: number): string {
-    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 6 }).format(value || 0);
 }
 
 export function WorkflowLlmUsagePanel({ summary }: { summary: WorkflowLlmUsageSummary }) {
@@ -54,7 +51,9 @@ export function WorkflowLlmUsagePanel({ summary }: { summary: WorkflowLlmUsageSu
                     <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                         Cost
                     </p>
-                    <div className="mt-2 text-2xl font-semibold leading-none">{formatCost(summary.totals.provider_cost_total)}</div>
+                    <div className="mt-2 text-2xl font-semibold leading-none">
+                        {formatLlmCost(summary.totals.provider_cost_total, summary.totals.priced_request_count)}
+                    </div>
                 </div>
             </div>
 
@@ -91,10 +90,13 @@ export function WorkflowLlmUsagePanel({ summary }: { summary: WorkflowLlmUsageSu
                 <TableBody>
                     {summary.request_kinds.map((row) => (
                         <TableRow key={row.request_kind ?? "unknown"}>
-                            <TableCell className="font-semibold">{row.request_kind ?? "Unknown"}</TableCell>
+                            <TableCell className="font-semibold">
+                                <div>{requestKindDisplay(row.request_kind, row.request_kind_label)}</div>
+                                {row.request_kind ? <div className="mt-1 text-xs text-muted-foreground">{row.request_kind}</div> : null}
+                            </TableCell>
                             <TableCell className="text-right">{formatNumber(row.request_count)}</TableCell>
                             <TableCell className="text-right">{formatNumber(row.total_tokens)}</TableCell>
-                            <TableCell className="text-right">{formatCost(row.provider_cost_total)}</TableCell>
+                            <TableCell className="text-right">{formatLlmCost(row.provider_cost_total, row.priced_request_count)}</TableCell>
                         </TableRow>
                     ))}
                     {!summary.request_kinds.length ? (
