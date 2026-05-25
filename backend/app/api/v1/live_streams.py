@@ -230,6 +230,15 @@ def add_subscriptions_bulk(
     return alert_svc.ensure_symbol_subscriptions(db, user.id, body.subscriptions)
 
 
+@router.post("/subscriptions/demand", response_model=list[LiveSubscriptionOut])
+def touch_demand_subscriptions(
+    body: LiveSubscriptionBulkIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[LiveSubscriptionOut]:
+    return alert_svc.touch_ui_live_subscriptions(db, user.id, body.subscriptions)
+
+
 @router.put("/subscriptions/replace", response_model=list[LiveSubscriptionOut])
 def replace_subscriptions(
     body: LiveSubscriptionReplaceIn,

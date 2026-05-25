@@ -25,7 +25,7 @@ from app.services.alert_market_cap import (
     market_cap_filter_enabled,
     market_cap_in_range,
 )
-from app.services.alerts_engine.reconcile import reconcile_all_users
+from app.services.alerts_engine.reconcile import cleanup_expired_ui_subscriptions, reconcile_all_users
 from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services.alerts_engine.ast import ensure_workflow_ast
 from app.services.alerts_engine.rolling_state import (
@@ -419,6 +419,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
     while not stop_event.is_set():
         db = SessionLocal()
         try:
+            cleanup_expired_ui_subscriptions(db, commit=False)
             rows = db.scalars(
                 select(LiveSymbolSubscription).where(LiveSymbolSubscription.status == "active")
             ).all()

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } fro
 import { AlertTriangle, Check, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
+import { getLivePricesWebSocketConfig, touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
 import {
     addPresetWatchlist,
@@ -16,6 +17,7 @@ import {
     updateWatchlist
 } from "@/service/actions/watchlist";
 import type { InstrumentRef } from "@/service/types/alerts";
+import type { LivePriceTick } from "@/service/types/alerts";
 import type { InstrumentSearchRow } from "@/service/types/broker";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist, WatchlistPresetCatalogEntry } from "@/service/types/watchlist";
@@ -113,6 +115,31 @@ function formatMarketCap(value?: number | null): string {
     return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
 }
 
+function toNumber(value: unknown): number | null {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+}
+
+function formatLivePrice(value: unknown): string {
+    const numeric = toNumber(value);
+    if (numeric === null) return "-";
+    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(numeric);
+}
+
+function formatLiveChange(value: unknown): string {
+    const numeric = toNumber(value);
+    if (numeric === null) return "-";
+    return `${numeric >= 0 ? "+" : ""}${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(numeric)}%`;
+}
+
+function livePriceKey(row: { account_id?: string | null; broker_code?: string | null; symbol: string }): string {
+    return [row.account_id || "", row.broker_code || "", row.symbol.trim().toUpperCase()].join(":");
+}
+
 function sortWatchlists(items: Watchlist[]): Watchlist[] {
     return [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }
@@ -189,11 +216,16 @@ export function WatchlistsManager({
     const [showAlphaConfigPrompt, setShowAlphaConfigPrompt] = useState(false);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
+    const [livePrices, setLivePrices] = useState<Record<string, LivePriceTick>>({});
+    const [liveState, setLiveState] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
     const [isPending, startTransition] = useTransition();
     const searchWrapRef = useRef<HTMLDivElement | null>(null);
     const presetListRef = useRef<HTMLDivElement | null>(null);
     const createCsvInputRef = useRef<HTMLInputElement | null>(null);
     const addCsvInputRef = useRef<HTMLInputElement | null>(null);
+    const livePendingRef = useRef<Map<string, LivePriceTick>>(new Map());
+    const liveFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const liveSocketRef = useRef<WebSocket | null>(null);
 
     const selected = useMemo(
         () => watchlists.find((item) => item.id === selectedId) ?? watchlists[0] ?? null,
@@ -202,6 +234,32 @@ export function WatchlistsManager({
     const selectedSymbols = useMemo(
         () => selected?.items.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean) ?? [],
         [selected]
+    );
+    const selectedLiveDemand = useMemo(
+        () =>
+            selected?.items.map((item) => ({
+                symbol: item.symbol,
+                exchange: item.exchange ?? null,
+                instrument_ref: item.instrument_ref,
+                source_type: "watchlist_view",
+                source_id: selected.id,
+                source_label: selected.name
+            })) ?? [],
+        [selected]
+    );
+    const suggestionLiveDemand = useMemo(
+        () =>
+            [...suggestions, ...createSuggestions].slice(0, 40).map((row) => ({
+                account_id: row.account_id ?? null,
+                broker_code: row.broker_code ?? null,
+                symbol: row.symbol,
+                exchange: row.exchange ?? (exchange.trim().toUpperCase() || null),
+                instrument_ref: instrumentFromSearch(row),
+                source_type: "symbol_search",
+                source_id: "watchlist_symbol_search",
+                source_label: "Watchlist symbol search"
+            })),
+        [createSuggestions, exchange, suggestions]
     );
     const alphaSymbols = selectedSymbols;
     const alphaSymbolKey = alphaSymbols.join(",");
@@ -254,6 +312,96 @@ export function WatchlistsManager({
             cancelled = true;
         };
     }, [alphaSymbolKey, alphaSymbols]);
+
+    useEffect(() => {
+        let cancelled = false;
+        let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+        function flushLivePrices() {
+            liveFlushTimerRef.current = null;
+            if (!livePendingRef.current.size) return;
+            const updates = Array.from(livePendingRef.current.entries());
+            livePendingRef.current.clear();
+            setLivePrices((current) => {
+                const next = { ...current };
+                for (const [key, value] of updates) next[key] = value;
+                return next;
+            });
+        }
+
+        function enqueue(rows: LivePriceTick[]) {
+            for (const row of rows) {
+                if (!row?.symbol) continue;
+                livePendingRef.current.set(livePriceKey(row), row);
+                livePendingRef.current.set(livePriceKey({ symbol: row.symbol }), row);
+            }
+            if (!liveFlushTimerRef.current) {
+                liveFlushTimerRef.current = setTimeout(flushLivePrices, 200);
+            }
+        }
+
+        async function connect() {
+            setLiveState("connecting");
+            try {
+                const { url } = await getLivePricesWebSocketConfig();
+                if (cancelled) return;
+                const socket = new WebSocket(url);
+                liveSocketRef.current = socket;
+                socket.onopen = () => setLiveState("connected");
+                socket.onmessage = (event) => {
+                    try {
+                        const payload = JSON.parse(String(event.data)) as { type?: string; rows?: LivePriceTick[] };
+                        if (payload.type === "snapshot" || payload.type === "prices") {
+                            enqueue(Array.isArray(payload.rows) ? payload.rows : []);
+                        }
+                    } catch {
+                        setLiveState("error");
+                    }
+                };
+                socket.onerror = () => setLiveState("error");
+                socket.onclose = () => {
+                    if (liveSocketRef.current === socket) liveSocketRef.current = null;
+                    if (cancelled) return;
+                    setLiveState("disconnected");
+                    reconnectTimer = setTimeout(connect, 2500);
+                };
+            } catch {
+                if (cancelled) return;
+                setLiveState("error");
+                reconnectTimer = setTimeout(connect, 2500);
+            }
+        }
+
+        connect();
+        return () => {
+            cancelled = true;
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            if (liveFlushTimerRef.current) clearTimeout(liveFlushTimerRef.current);
+            liveSocketRef.current?.close();
+            liveSocketRef.current = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        const demand = [...selectedLiveDemand, ...suggestionLiveDemand];
+        if (!demand.length) return;
+        let cancelled = false;
+
+        async function touchDemand() {
+            try {
+                await touchLiveDemandSubscriptions({ subscriptions: demand });
+            } catch {
+                if (!cancelled) setLiveState("error");
+            }
+        }
+
+        touchDemand();
+        const handle = window.setInterval(touchDemand, 30_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(handle);
+        };
+    }, [selectedLiveDemand, suggestionLiveDemand]);
 
     useEffect(() => {
         function handlePointerDown(event: MouseEvent) {
@@ -1486,7 +1634,7 @@ export function WatchlistsManager({
                                                 </div>
                                                 <div className="mt-2 font-mono text-xs uppercase text-muted-foreground">
                                                     {selected.items.length} symbols / updated{" "}
-                                                    {formatDate(selected.updated_at)}
+                                                    {formatDate(selected.updated_at)} / live {liveState}
                                                 </div>
                                                 {selected.kind === "preset" ? (
                                                     <div className="mt-2 text-xs text-muted-foreground">
@@ -1702,6 +1850,12 @@ export function WatchlistsManager({
                                                 <TableHead className="py-2 pr-4 font-semibold">Ticker</TableHead>
                                                 <TableHead className="px-4 py-2 font-semibold">Company</TableHead>
                                                 <TableHead className="px-4 py-2 font-semibold">Exchange</TableHead>
+                                                <TableHead className="px-4 py-2 text-right font-semibold">
+                                                    Live price
+                                                </TableHead>
+                                                <TableHead className="px-4 py-2 text-right font-semibold">
+                                                    Change
+                                                </TableHead>
                                                 <TableHead className="px-4 py-2 font-semibold">Sector</TableHead>
                                                 <TableHead className="px-4 py-2 text-right font-semibold">
                                                     Market cap
@@ -1718,6 +1872,8 @@ export function WatchlistsManager({
                                         <TableBody>
                                             {selected.items.map((item, index) => {
                                                 const metadata = watchlistMetadata[item.symbol.trim().toUpperCase()];
+                                                const price = livePrices[livePriceKey({ symbol: item.symbol })];
+                                                const change = toNumber(price?.change_pct ?? price?.day_change_perc);
                                                 return (
                                                     <TableRow
                                                         className="watchlist-data-row group border-b border-border text-foreground odd:bg-muted/40 hover:bg-[var(--bg-hover)]"
@@ -1759,6 +1915,20 @@ export function WatchlistsManager({
                                                         </TableCell>
                                                         <TableCell className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">
                                                             {item.exchange ?? "-"}
+                                                        </TableCell>
+                                                        <TableCell className="px-4 py-3 text-right font-mono text-sm font-semibold text-foreground">
+                                                            {formatLivePrice(price?.ltp ?? price?.last_price)}
+                                                        </TableCell>
+                                                        <TableCell
+                                                            className={`px-4 py-3 text-right font-mono text-xs ${
+                                                                change === null
+                                                                    ? "text-muted-foreground"
+                                                                    : change >= 0
+                                                                      ? "text-[var(--success)]"
+                                                                      : "text-[var(--danger)]"
+                                                            }`}
+                                                        >
+                                                            {formatLiveChange(change)}
                                                         </TableCell>
                                                         <TableCell className="max-w-[220px] px-4 py-3">
                                                             <div className="truncate text-xs font-medium text-foreground">
@@ -1806,6 +1976,8 @@ export function WatchlistsManager({
                                     {selected.items.map((item, index) => {
                                         const metadata = watchlistMetadata[item.symbol.trim().toUpperCase()];
                                         const company = metadata?.company_name ?? "-";
+                                        const price = livePrices[livePriceKey({ symbol: item.symbol })];
+                                        const change = toNumber(price?.change_pct ?? price?.day_change_perc);
                                         return (
                                             <article
                                                 className="watchlist-data-row border border-border bg-card p-3"
@@ -1857,6 +2029,30 @@ export function WatchlistsManager({
                                                     ) : null}
                                                 </div>
                                                 <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs">
+                                                    <div>
+                                                        <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                                                            Live price
+                                                        </dt>
+                                                        <dd className="mt-1 font-mono font-semibold text-foreground">
+                                                            {formatLivePrice(price?.ltp ?? price?.last_price)}
+                                                        </dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                                                            Change
+                                                        </dt>
+                                                        <dd
+                                                            className={`mt-1 font-mono font-semibold ${
+                                                                change === null
+                                                                    ? "text-foreground"
+                                                                    : change >= 0
+                                                                      ? "text-[var(--success)]"
+                                                                      : "text-[var(--danger)]"
+                                                            }`}
+                                                        >
+                                                            {formatLiveChange(change)}
+                                                        </dd>
+                                                    </div>
                                                     <div>
                                                         <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">
                                                             Market cap

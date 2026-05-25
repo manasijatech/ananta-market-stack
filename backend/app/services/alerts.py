@@ -58,7 +58,7 @@ from app.services.alert_llm_context import (
     prompt_placeholders_from_config,
     resolve_llm_context,
 )
-from app.services import llm_usage as llm_usage_svc
+from app.services import broker_data_preferences, llm_usage as llm_usage_svc
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import (
@@ -2018,6 +2018,97 @@ def ensure_symbol_subscriptions(
         seen.add(key)
         results.append(ensure_symbol_subscription(db, user_id, item))
     return results
+
+
+def _resolve_live_subscription_account(
+    db: Session,
+    user_id: str,
+    account_id: str | None,
+    broker_code: str | None,
+) -> tuple[str | None, str | None]:
+    normalized_account_id = (account_id or "").strip() or None
+    normalized_broker_code = (broker_code or "").strip().lower() or None
+    if normalized_account_id:
+        account = db.get(BrokerAccount, normalized_account_id)
+        if account and account.user_id == user_id and account.is_active:
+            return account.id, account.broker_code
+    account = broker_data_preferences.get_effective_default_broker_account(db, user_id, normalized_broker_code)
+    if account:
+        return account.id, account.broker_code
+    return normalized_account_id, normalized_broker_code
+
+
+def touch_ui_live_subscriptions(
+    db: Session,
+    user_id: str,
+    payloads: list[LiveSubscriptionCreateIn],
+) -> list[LiveSubscriptionOut]:
+    now = _now()
+    seen: set[tuple[str | None, str | None, str, str | None, str | None, str | None]] = set()
+    rows: list[LiveSymbolSubscription] = []
+    for item in payloads:
+        symbol = _normalize_symbol(item.symbol)
+        if not symbol:
+            continue
+        exchange = (item.exchange or item.instrument_ref.exchange or "").strip().upper() or None
+        account_id, broker_code = _resolve_live_subscription_account(db, user_id, item.account_id, item.broker_code)
+        source_type = item.source_type or "active_ui"
+        source_id = item.source_id or "live_view"
+        key = (account_id, broker_code, symbol, exchange, source_type, source_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        ref = item.instrument_ref
+        if ref.symbol is None:
+            ref.symbol = symbol
+        if ref.exchange is None and exchange:
+            ref.exchange = exchange
+        row = db.scalars(
+            select(LiveSymbolSubscription)
+            .where(
+                LiveSymbolSubscription.user_id == user_id,
+                LiveSymbolSubscription.account_id == account_id,
+                LiveSymbolSubscription.broker_code == broker_code,
+                LiveSymbolSubscription.workflow_id.is_(None),
+                LiveSymbolSubscription.symbol == symbol,
+                LiveSymbolSubscription.exchange == exchange,
+                LiveSymbolSubscription.source_kind == "ui",
+                LiveSymbolSubscription.source_type == source_type,
+                LiveSymbolSubscription.source_id == source_id,
+            )
+            .limit(1)
+        ).first()
+        if row is None:
+            row = LiveSymbolSubscription(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                workflow_id=None,
+                account_id=account_id,
+                broker_code=broker_code,
+                symbol=symbol,
+                exchange=exchange,
+                source_kind="ui",
+                source_type=source_type,
+                source_id=source_id,
+                source_label=item.source_label,
+                owner_kind="ui",
+                owner_id=source_id,
+                created_at=now,
+            )
+        row.instrument_ref_json = _json_dumps(ref.model_dump(exclude_none=True))
+        row.broker_code = broker_code
+        row.source_label = item.source_label
+        row.owner_kind = "ui"
+        row.owner_id = source_id
+        row.status = "active"
+        row.health_status = "healthy"
+        row.health_reason = ""
+        row.updated_at = now
+        row.reconciled_at = now
+        db.add(row)
+        rows.append(row)
+    db.commit()
+    return [_subscription_to_out(row) for row in rows]
 
 
 def remove_subscription(db: Session, user_id: str, subscription_id: str) -> bool:

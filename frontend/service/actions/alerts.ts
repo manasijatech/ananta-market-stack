@@ -20,6 +20,7 @@ import type {
     AlertWorkflowValidation,
     AlertReconcileReport,
     AlertUniversePreview,
+    InstrumentRef,
     LiveStreamsStatus,
     LiveSubscription
 } from "@/service/types/alerts";
@@ -375,6 +376,31 @@ export async function addLiveSubscriptionsBulk(payload: {
     revalidatePath("/alerts-workspace/subscriptions");
     revalidatePath("/alerts-workspace/stream-manager");
     return result;
+}
+
+export async function touchLiveDemandSubscriptions(payload: {
+    subscriptions: Array<{
+        account_id?: string | null;
+        broker_code?: string | null;
+        symbol: string;
+        exchange?: string | null;
+        instrument_ref?: InstrumentRef | Record<string, unknown>;
+        source_type?: string | null;
+        source_id?: string | null;
+        source_label?: string | null;
+    }>;
+}): Promise<LiveSubscription[]> {
+    return request<LiveSubscription[]>("/live-streams/subscriptions/demand", {
+        method: "POST",
+        body: JSON.stringify({
+            subscriptions: payload.subscriptions.map((item) => ({
+                ...item,
+                source_kind: "ui",
+                owner_kind: "ui",
+                owner_id: item.source_id ?? "live_view"
+            }))
+        })
+    });
 }
 
 export async function replaceLiveSubscriptions(payload: {

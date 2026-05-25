@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from common.datetime_compat import UTC
+import redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,9 @@ from db.models import (
     UserWatchlist,
     UserWatchlistSymbol,
 )
+from broker.core.redis_cache import _redis_client
+
+UI_DEMAND_SUBSCRIPTION_TTL_SECONDS = 90
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,15 @@ class DesiredSubscription:
 
 def _now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def _delete_quote_cache(redis_client: redis.Redis | None, row: LiveSymbolSubscription) -> None:
+    if redis_client is None or not row.account_id or not row.broker_code or not row.symbol:
+        return
+    try:
+        redis_client.delete(f"live:quote:{row.user_id}:{row.account_id}:{row.broker_code}:{row.symbol}")
+    except redis.RedisError:
+        return
 
 
 def _json_dumps(value: Any) -> str:
@@ -170,7 +183,7 @@ def _workflow_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
 
 def build_desired_subscriptions(db: Session, user_id: str) -> list[DesiredSubscription]:
     deduped: dict[tuple[str | None, str | None, str | None, str, str | None, str, str], DesiredSubscription] = {}
-    for item in [*_watchlist_desired(db, user_id), *_workflow_desired(db, user_id)]:
+    for item in _workflow_desired(db, user_id):
         key = (
             item.account_id,
             item.broker_code,
@@ -185,10 +198,12 @@ def build_desired_subscriptions(db: Session, user_id: str) -> list[DesiredSubscr
 
 
 def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
+    cleanup_expired_ui_subscriptions(db, user_id=user_id, commit=False)
     desired = build_desired_subscriptions(db, user_id)
     now = _now()
     created = restored = updated = deactivated = orphaned = errors = 0
     desired_keys = set()
+    redis_client = _redis_client()
 
     for item in desired:
         desired_keys.add((item.account_id, item.broker_code, item.workflow_id, item.symbol, item.exchange, item.owner_kind, item.owner_id))
@@ -248,12 +263,8 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
         key = (row.account_id, row.broker_code, row.workflow_id, row.symbol, row.exchange, row.owner_kind, row.owner_id)
         if key in desired_keys:
             continue
-        row.status = "inactive"
-        row.reconciled_at = now
-        row.health_status = "orphaned"
-        row.health_reason = "No active watchlist or workflow currently owns this subscription."
-        row.updated_at = now
-        db.add(row)
+        _delete_quote_cache(redis_client, row)
+        db.delete(row)
         deactivated += 1
         orphaned += 1
 
@@ -269,6 +280,31 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
         "desired": len(desired),
         "ran_at": now.isoformat(),
     }
+
+
+def cleanup_expired_ui_subscriptions(
+    db: Session,
+    *,
+    user_id: str | None = None,
+    commit: bool = True,
+) -> int:
+    cutoff = _now() - timedelta(seconds=UI_DEMAND_SUBSCRIPTION_TTL_SECONDS)
+    stmt = select(LiveSymbolSubscription).where(
+        LiveSymbolSubscription.source_kind == "ui",
+        LiveSymbolSubscription.updated_at < cutoff,
+    )
+    if user_id:
+        stmt = stmt.where(LiveSymbolSubscription.user_id == user_id)
+    rows = db.scalars(stmt).all()
+    if not rows:
+        return 0
+    redis_client = _redis_client()
+    for row in rows:
+        _delete_quote_cache(redis_client, row)
+        db.delete(row)
+    if commit:
+        db.commit()
+    return len(rows)
 
 
 def reconcile_all_users(db: Session) -> dict[str, Any]:
