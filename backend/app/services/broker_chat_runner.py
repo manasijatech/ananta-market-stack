@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from agents import Agent, ModelSettings, RunConfig, Runner
 from agents.items import ItemHelpers
+from agents.models.chatcmpl_converter import Converter
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
@@ -120,6 +121,90 @@ class BrokerChatCancelled(Exception):
     pass
 
 
+_ORIGINAL_ITEMS_TO_MESSAGES = Converter.items_to_messages
+_CHAT_COMPLETIONS_SANITIZER_INSTALLED = False
+
+
+def _is_single_json_object_text(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return False
+    return isinstance(parsed, dict)
+
+
+def _text_from_chat_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        chunks: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if text:
+                    chunks.append(str(text))
+                    continue
+            chunks.append(json.dumps(_safe_data(item), ensure_ascii=False, default=str))
+        return "\n".join(chunk for chunk in chunks if chunk).strip()
+    return json.dumps(_safe_data(value), ensure_ascii=False, default=str)
+
+
+def _sanitize_chat_completion_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for message in messages:
+        item = dict(message)
+        if item.get("role") == "assistant":
+            tool_calls = item.get("tool_calls")
+            if isinstance(tool_calls, list):
+                next_calls: list[Any] = []
+                for tool_call in tool_calls:
+                    if not isinstance(tool_call, dict):
+                        next_calls.append(tool_call)
+                        continue
+                    next_call = dict(tool_call)
+                    function = next_call.get("function")
+                    if isinstance(function, dict):
+                        next_function = dict(function)
+                        arguments = next_function.get("arguments")
+                        if not _is_single_json_object_text(arguments):
+                            next_function["arguments"] = json.dumps(
+                                {
+                                    "_invalid_tool_arguments": str(arguments or ""),
+                                    "_retry_instruction": (
+                                        "The previous tool arguments were not exactly one JSON object. "
+                                        "Use the paired tool output as feedback and retry with one valid JSON object matching the tool schema."
+                                    ),
+                                },
+                                ensure_ascii=False,
+                            )
+                        next_call["function"] = next_function
+                    next_calls.append(next_call)
+                item["tool_calls"] = next_calls
+        elif item.get("role") == "tool":
+            content = _text_from_chat_content(item.get("content"))
+            item["content"] = content or "Tool returned no text content."
+        sanitized.append(item)
+    return sanitized
+
+
+def _install_chat_completions_message_sanitizer() -> None:
+    global _CHAT_COMPLETIONS_SANITIZER_INSTALLED
+    if _CHAT_COMPLETIONS_SANITIZER_INSTALLED:
+        return
+
+    def _patched_items_to_messages(cls: type[Converter], *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        kwargs.setdefault("preserve_tool_output_all_content", True)
+        messages = _ORIGINAL_ITEMS_TO_MESSAGES(*args, **kwargs)
+        return _sanitize_chat_completion_messages(messages)
+
+    Converter.items_to_messages = classmethod(_patched_items_to_messages)
+    _CHAT_COMPLETIONS_SANITIZER_INSTALLED = True
+
+
 def _broker_chat_instructions(mcp_context: str = "") -> str:
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     current_day_context = now.strftime("Today is %A, %B %d, %Y in Asia/Kolkata (IST).")
@@ -204,6 +289,7 @@ def _output_preview(output: Any) -> dict[str, Any]:
 
 
 def _build_model(db, run) -> OpenAIChatCompletionsModel:
+    _install_chat_completions_message_sanitizer()
     definition = llm_config.provider_definition(run.provider)
     api_key = llm_config.get_provider_api_key(db, run.user_id, run.provider)
     kwargs: dict[str, Any] = {
