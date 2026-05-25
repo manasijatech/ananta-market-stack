@@ -1,9 +1,9 @@
-"""Reusable OpenAI-SDK helpers for OpenAI, OpenRouter, and Gemini.
+"""Reusable OpenAI-SDK helpers for OpenAI-compatible LLM providers.
 
 This module is the single backend entrypoint for provider-aware LLM calls.
-All three providers are intentionally routed through the `openai` Python SDK,
-with provider-specific differences limited to API key lookup, base URL, and a
-small amount of optional request metadata.
+Supported providers are intentionally routed through the `openai` Python SDK,
+with provider-specific differences limited to API key lookup, base URL, and
+optional request metadata.
 
 The helpers here are documented for later workflow reuse:
 
@@ -121,9 +121,9 @@ def generate_text(
 ) -> Any:
     """Generate text via Chat Completions using a provider-specific OpenAI client.
 
-    This is the safest cross-provider default for now because OpenRouter and the
-    Gemini OpenAI-compatible endpoint both document chat-completions compatibility.
-    Callers can pass either `user_text` or a prebuilt multimodal `user_content`.
+    This is the safest cross-provider default because OpenRouter, Gemini, and
+    Anthropic expose OpenAI-compatible chat-completions surfaces. Callers can pass
+    either `user_text` or a prebuilt multimodal `user_content`.
     """
 
     client = build_provider_client(db, user_id, provider, timeout=timeout)

@@ -21,7 +21,7 @@ export interface AlertChannelSelection {
     enabled: AlertChannelType[];
 }
 
-export type LlmProvider = "openai" | "openrouter" | "gemini";
+export type LlmProvider = "openai" | "openrouter" | "gemini" | "anthropic";
 
 export interface AlertLlmAnalysisConfig {
     enabled: boolean;
