@@ -7,3 +7,5 @@ __pycache__
 .venv/
 *.csv
 idea.md
+data/logs/
+*.log
