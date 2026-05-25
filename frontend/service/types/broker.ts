@@ -340,7 +340,7 @@ export interface BrokerDataDefaultConfig {
     accounts: BrokerDataDefaultAccount[];
 }
 
-export type LlmProvider = "openai" | "openrouter" | "gemini";
+export type LlmProvider = "openai" | "openrouter" | "gemini" | "anthropic";
 
 export interface LlmModelConfig {
     id: string;

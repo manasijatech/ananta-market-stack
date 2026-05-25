@@ -28,6 +28,12 @@ _PROVIDER_DEFINITIONS: dict[LlmProvider, dict[str, str]] = {
     "gemini": {
         "label": "Gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "documentation_url": "https://ai.google.dev/gemini-api/docs/openai",
+    },
+    "anthropic": {
+        "label": "Anthropic",
+        "base_url": "https://api.anthropic.com/v1/",
+        "documentation_url": "https://platform.claude.com/docs/en/api/openai-sdk",
     },
 }
 

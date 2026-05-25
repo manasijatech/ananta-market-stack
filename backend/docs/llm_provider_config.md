@@ -1,12 +1,13 @@
 # LLM provider configuration
 
-Market Stack supports three user-configurable LLM providers:
+Market Stack supports four user-configurable LLM providers:
 
 - `openai`
 - `openrouter`
 - `gemini`
+- `anthropic`
 
-All three are accessed through the Python `openai` SDK. Provider differences are
+All four are accessed through the Python `openai` SDK. Provider differences are
 limited to:
 
 - the stored API key
@@ -79,9 +80,9 @@ Key functions:
 - `build_file_part(filename, mime_type, data)`
 - `build_user_message_content(text=..., files=...)`
 
-`generate_text(...)` is the current cross-provider default because OpenRouter and
-Gemini both document OpenAI-compatible chat-completions support. The Responses
-API helper is also available for newer OpenAI-first workflows.
+`generate_text(...)` is the current cross-provider default because OpenRouter,
+Gemini, and Anthropic document OpenAI-compatible chat-completions support. The
+Responses API helper is also available for newer OpenAI-first workflows.
 
 ## System config API
 
@@ -119,3 +120,13 @@ Current routes:
 - Uses Gemini's OpenAI-compatible API surface through the OpenAI SDK
 - Inline file prompts should use base64 file parts, which aligns well with the
   reusable helpers in `llm_gateway.py`
+
+### Anthropic
+
+- Base URL: `https://api.anthropic.com/v1/`
+- Uses Claude's OpenAI SDK compatibility layer through the OpenAI SDK
+- Works with the current alert workflow chat-completions path and the broker
+  chat Agents SDK `OpenAIChatCompletionsModel` path
+- Anthropic documents this compatibility layer as a comparison/testing surface,
+  not the long-term full-feature Claude API. Prompt caching, PDF processing,
+  citations, and full extended-thinking features require the native Claude API.

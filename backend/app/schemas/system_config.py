@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.broker import BrokerDataDefaultConfigOut, BrokerDataSearchConfigOut
 
-LlmProvider = Literal["openai", "openrouter", "gemini"]
+LlmProvider = Literal["openai", "openrouter", "gemini", "anthropic"]
 McpTransport = Literal["streamable_http", "sse"]
 McpAuthMode = Literal["oauth", "api_key"]
 

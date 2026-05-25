@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from agents import Agent, ModelSettings, Runner
+from agents import Agent, ModelSettings, RunConfig, Runner
 from agents.items import ItemHelpers
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
@@ -261,6 +261,10 @@ async def _run_broker_chat(run_id: str) -> None:
             input=messages,
             context=context,
             max_turns=28,
+            run_config=RunConfig(
+                tracing_disabled=run.provider != "openai",
+                workflow_name="Market-Stack broker chat",
+            ),
         )
 
         async for event in stream.stream_events():

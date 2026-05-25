@@ -58,6 +58,11 @@ const PROVIDER_LOGOS: Record<LlmProvider, { src: string; alt: string; imageClass
         src: "/brand/providers/gemini.svg",
         alt: "Google Gemini logo",
         imageClassName: "h-6 w-auto"
+    },
+    anthropic: {
+        src: "/brand/providers/anthropic.svg",
+        alt: "Anthropic logo",
+        imageClassName: "h-5 w-auto"
     }
 };
 
@@ -155,6 +160,31 @@ const PROVIDER_SETUP_GUIDES: Record<
             "Gemini is a good choice for fast, lower-cost analysis.",
             "Use Flash models first for alerts unless you specifically need a larger Pro model.",
             "The key should be a Gemini API key, not a Google Cloud service-account JSON file."
+        ]
+    },
+    anthropic: {
+        summary: "Use an Anthropic API key with Claude's OpenAI SDK compatibility endpoint.",
+        steps: [
+            {
+                before: "Open ",
+                label: "Anthropic Console API keys",
+                href: "https://console.anthropic.com/settings/keys",
+                after: " and create a Claude API key."
+            },
+            { before: "Copy the key from the console." },
+            { before: "Paste the key in the Anthropic API key field and click Save key." },
+            {
+                before: "Use a Claude model ID from the ",
+                label: "Claude OpenAI SDK compatibility guide",
+                href: "https://platform.claude.com/docs/en/api/openai-sdk",
+                after: ", paste it, then click Add model."
+            }
+        ],
+        modelExamples: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
+        notes: [
+            "Market Stack uses Anthropic through Claude's OpenAI-compatible Chat Completions endpoint.",
+            "Prompt caching, citations, PDF processing, and full extended-thinking features need Anthropic's native API.",
+            "For broker chat, Claude runs through the Agents SDK Chat Completions model path."
         ]
     }
 };
