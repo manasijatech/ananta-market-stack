@@ -21,6 +21,7 @@ from app.schemas.alert import (
     LiveSubscriptionReplaceIn,
 )
 from app.services import alerts as alert_svc
+from app.services.live_price_scope import publish_scope_change, scope_stream_name
 from broker.core.redis_cache import _redis_client
 from db.models import LiveSymbolSubscription, User
 from db.session import SessionLocal, get_db
@@ -29,7 +30,7 @@ router = APIRouter()
 
 PRICE_STREAM_BLOCK_MS = 1000
 PRICE_STREAM_MAX_BATCH = 250
-PRICE_SCOPE_REFRESH_SECONDS = 2.0
+PRICE_SCOPE_SAFETY_REFRESH_SECONDS = 60.0
 
 
 def _loads_json(raw: Any, fallback: Any) -> Any:
@@ -71,6 +72,10 @@ def _payload_has_live_price(payload: dict[str, Any]) -> bool:
 
 def _stream_name(user_id: str, account_id: str, broker_code: str) -> str:
     return f"live:ticks:{user_id}:{account_id}:{broker_code}"
+
+
+def _stream_label(value: Any) -> str:
+    return value.decode() if isinstance(value, bytes) else str(value)
 
 
 def _price_scope(user_id: str) -> tuple[dict[str, set[str]], list[tuple[str, str, str, str]]]:
@@ -151,6 +156,10 @@ def _xread_prices(client: redis.Redis, streams: dict[str, str]) -> list[tuple[st
     return client.xread(streams, block=PRICE_STREAM_BLOCK_MS, count=PRICE_STREAM_MAX_BATCH)
 
 
+def _stream_query(price_streams: dict[str, str], scope_stream: str, scope_offset: str) -> dict[str, str]:
+    return {**price_streams, scope_stream: scope_offset}
+
+
 def _payload_from_stream_message(fields: dict[Any, Any]) -> dict[str, Any] | None:
     raw = fields.get(b"payload") or fields.get("payload")
     payload = _loads_json(raw, {})
@@ -178,6 +187,8 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
 
     symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id)
     streams = {stream_name: "$" for stream_name in symbols_by_stream}
+    scope_stream = scope_stream_name(user_id)
+    scope_offset = "$"
     last_scope_refresh = monotonic()
 
     await websocket.send_json(
@@ -194,7 +205,7 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
 
         while True:
             now = monotonic()
-            if now - last_scope_refresh >= PRICE_SCOPE_REFRESH_SECONDS:
+            if now - last_scope_refresh >= PRICE_SCOPE_SAFETY_REFRESH_SECONDS:
                 next_symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id)
                 added_streams = set(next_symbols_by_stream) - set(streams)
                 removed_streams = set(streams) - set(next_symbols_by_stream)
@@ -215,17 +226,19 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
                 if snapshots:
                     await websocket.send_json({"type": "snapshot", "rows": snapshots})
 
-            if not streams:
-                await asyncio.sleep(1.0)
-                continue
-
-            messages = await asyncio.to_thread(_xread_prices, client, streams)
+            messages = await asyncio.to_thread(_xread_prices, client, _stream_query(streams, scope_stream, scope_offset))
             batch: list[dict[str, Any]] = []
+            scope_changed = False
             for stream_name_raw, stream_messages in messages:
-                stream_name = stream_name_raw.decode() if isinstance(stream_name_raw, bytes) else str(stream_name_raw)
+                stream_name = _stream_label(stream_name_raw)
+                if stream_name == scope_stream:
+                    for message_id_raw, _fields in stream_messages:
+                        scope_offset = _stream_label(message_id_raw)
+                    scope_changed = True
+                    continue
                 allowed_symbols = symbols_by_stream.get(stream_name, set())
                 for message_id_raw, fields in stream_messages:
-                    message_id = message_id_raw.decode() if isinstance(message_id_raw, bytes) else str(message_id_raw)
+                    message_id = _stream_label(message_id_raw)
                     streams[stream_name] = message_id
                     payload = _payload_from_stream_message(fields)
                     if not payload:
@@ -233,6 +246,26 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
                     symbol = _normal_symbol(payload.get("symbol"))
                     if symbol and symbol in allowed_symbols:
                         batch.append(payload)
+            if scope_changed:
+                next_symbols_by_stream, quote_refs = await asyncio.to_thread(_price_scope, user_id)
+                added_streams = set(next_symbols_by_stream) - set(streams)
+                removed_streams = set(streams) - set(next_symbols_by_stream)
+                for stream_name in removed_streams:
+                    streams.pop(stream_name, None)
+                for stream_name in added_streams:
+                    streams[stream_name] = "$"
+                symbols_by_stream = next_symbols_by_stream
+                last_scope_refresh = monotonic()
+                await websocket.send_json(
+                    {
+                        "type": "scope",
+                        "stream_count": len(streams),
+                        "symbol_count": sum(len(symbols) for symbols in symbols_by_stream.values()),
+                    }
+                )
+                snapshots = await asyncio.to_thread(_read_quote_snapshots, client, quote_refs)
+                if snapshots:
+                    await websocket.send_json({"type": "snapshot", "rows": snapshots})
             if batch:
                 await websocket.send_json({"type": "prices", "rows": batch})
     except WebSocketDisconnect:
@@ -256,7 +289,9 @@ def add_subscription(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> LiveSubscriptionOut:
-    return alert_svc.ensure_symbol_subscription(db, user.id, body)
+    row = alert_svc.ensure_symbol_subscription(db, user.id, body)
+    publish_scope_change(user.id, reason="subscription_added")
+    return row
 
 
 @router.post("/subscriptions/bulk", response_model=list[LiveSubscriptionOut])
@@ -265,7 +300,9 @@ def add_subscriptions_bulk(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[LiveSubscriptionOut]:
-    return alert_svc.ensure_symbol_subscriptions(db, user.id, body.subscriptions)
+    rows = alert_svc.ensure_symbol_subscriptions(db, user.id, body.subscriptions)
+    publish_scope_change(user.id, reason="subscriptions_added")
+    return rows
 
 
 @router.post("/subscriptions/demand", response_model=list[LiveSubscriptionOut])
@@ -276,12 +313,19 @@ def touch_demand_subscriptions(
     user: User = Depends(get_current_user),
 ) -> list[LiveSubscriptionOut]:
     rows = alert_svc.touch_ui_live_subscriptions(db, user.id, body.subscriptions)
-    try:
-        from app.services.alert_runtime import backfill_live_prices_for_user
+    has_new_scope = any(
+        row.created_at == row.updated_at
+        or row.health_status == "pending"
+        for row in rows
+    )
+    if has_new_scope:
+        try:
+            from app.services.alert_runtime import backfill_live_prices_for_user
 
-        background_tasks.add_task(backfill_live_prices_for_user, user.id, source_kind="ui")
-    except Exception:
-        pass
+            background_tasks.add_task(backfill_live_prices_for_user, user.id, source_kind="ui")
+        except Exception:
+            pass
+        publish_scope_change(user.id, reason="ui_demand")
     return rows
 
 
@@ -291,7 +335,9 @@ def replace_subscriptions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[LiveSubscriptionOut]:
-    return alert_svc.replace_subscriptions(db, user.id, body.subscriptions)
+    rows = alert_svc.replace_subscriptions(db, user.id, body.subscriptions)
+    publish_scope_change(user.id, reason="subscriptions_replaced")
+    return rows
 
 
 @router.delete("/subscriptions/{subscription_id}")
@@ -303,6 +349,7 @@ def remove_subscription(
     ok = alert_svc.remove_subscription(db, user.id, subscription_id)
     if not ok:
         raise HTTPException(status_code=404, detail="subscription not found")
+    publish_scope_change(user.id, reason="subscription_removed")
     return {"ok": True}
 
 
@@ -313,7 +360,10 @@ def remove_subscriptions_bulk(
     user: User = Depends(get_current_user),
 ) -> dict[str, int]:
     ids = [item.strip() for item in subscription_ids.split(",") if item.strip()]
-    return {"deleted": alert_svc.remove_subscriptions(db, user.id, ids)}
+    deleted = alert_svc.remove_subscriptions(db, user.id, ids)
+    if deleted:
+        publish_scope_change(user.id, reason="subscriptions_removed")
+    return {"deleted": deleted}
 
 
 @router.post("/subscriptions/reconcile")
@@ -321,4 +371,7 @@ def reconcile_subscriptions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AlertReconcileReportOut:
-    return alert_svc.reconcile_subscriptions_for_user(db, user.id)
+    report = alert_svc.reconcile_subscriptions_for_user(db, user.id)
+    if any(int(report.get(key) or 0) for key in ("created", "restored", "deactivated", "orphaned")):
+        publish_scope_change(user.id, reason="subscriptions_reconciled")
+    return report

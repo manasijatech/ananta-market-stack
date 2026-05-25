@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     redis_password: str | None = None
     redis_db: int = 0
     redis_quote_ttl_seconds: int = 30
+    redis_live_price_ttl_seconds: int = Field(
+        default=30 * 60,
+        validation_alias="REDIS_LIVE_PRICE_TTL_SECONDS",
+    )
     broker_chat_queue_name: str = Field(default="broker-chat", validation_alias="BROKER_CHAT_QUEUE_NAME")
     broker_chat_job_timeout_seconds: int = Field(
         default=600,

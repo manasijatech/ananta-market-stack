@@ -16,6 +16,7 @@ from app.services import broker_data_preferences
 from app.schemas.alert import AlertWorkflowDsl
 from app.services.alerts_engine.ast import ensure_workflow_ast
 from app.services.alerts_engine.universes import ResolvedSymbol, resolve_universe
+from app.services.live_price_scope import publish_scope_change
 from db.models import (
     AlertWorkflow,
     BrokerAccount,
@@ -269,6 +270,8 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
         orphaned += 1
 
     db.commit()
+    if created or restored or deactivated or orphaned:
+        publish_scope_change(user_id, reason="reconciled")
     return {
         "user_id": user_id,
         "created": created,
@@ -298,12 +301,15 @@ def cleanup_expired_ui_subscriptions(
     rows = db.scalars(stmt).all()
     if not rows:
         return 0
+    affected_user_ids = {row.user_id for row in rows if row.user_id}
     redis_client = _redis_client()
     for row in rows:
         _delete_quote_cache(redis_client, row)
         db.delete(row)
     if commit:
         db.commit()
+    for affected_user_id in affected_user_ids:
+        publish_scope_change(affected_user_id, reason="ui_expired")
     return len(rows)
 
 

@@ -12,6 +12,7 @@ from common.datetime_compat import UTC
 import redis
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.services import alerts as alert_svc
 from app.services.alert_feed_batch import (
     FeedAnalysisRequest,
@@ -312,8 +313,9 @@ def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> Non
     try:
         key = f"live:quote:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}:{tick['symbol']}"
         market_key = f"live:quote:market:{tick['broker_code']}:{tick['symbol']}"
-        redis_client.setex(key, 60 * 60, json.dumps(tick, default=str))
-        redis_client.setex(market_key, 60 * 60, json.dumps(tick, default=str))
+        ttl = max(int(get_settings().redis_live_price_ttl_seconds), 60)
+        redis_client.setex(key, ttl, json.dumps(tick, default=str))
+        redis_client.setex(market_key, ttl, json.dumps(tick, default=str))
         redis_client.xadd(
             f"live:ticks:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}",
             {"payload": json.dumps(tick, default=str)},
@@ -341,42 +343,6 @@ def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> Non
         )
     except redis.RedisError as exc:
         logger.warning("tick publish failed: %s", exc)
-
-
-def _publish_unavailable_tick(
-    redis_client: redis.Redis | None,
-    *,
-    user_id: str,
-    account_id: str,
-    broker_code: str,
-    symbols: list[str],
-    connection_index: int,
-    chunk_rows: list[LiveSymbolSubscription],
-    quote_payload: dict[str, Any],
-    row: LiveSymbolSubscription,
-    reason: str,
-) -> None:
-    tick = {
-        "user_id": user_id,
-        "account_id": account_id,
-        "broker_code": broker_code,
-        "symbol": row.symbol,
-        "exchange": row.exchange,
-        "instrument_key": row.symbol,
-        "ltp": None,
-        "last_price": None,
-        "status": "unavailable",
-        "unavailable_reason": reason,
-        "received_at": _utc_now().isoformat(),
-        "raw": quote_payload,
-        "adapter": "polling",
-        "symbols": symbols,
-        "connection_id": f"{broker_code}:{account_id}:{connection_index}",
-        "connection_index": connection_index,
-        "symbol_count": len(chunk_rows),
-        "capacity": 1000,
-    }
-    _publish_tick(redis_client, tick)
 
 
 def _apply_quote_results(
