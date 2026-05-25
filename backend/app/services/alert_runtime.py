@@ -306,12 +306,14 @@ def _quote_error_message(payload: dict[str, Any]) -> str:
 def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> None:
     if redis_client is None:
         return
+    live_price = _quote_live_price(tick)
+    if live_price is None:
+        return
     try:
         key = f"live:quote:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}:{tick['symbol']}"
-        redis_client.setex(key, 300, json.dumps(tick, default=str))
-        if _quote_live_price(tick) is not None:
-            market_key = f"live:quote:market:{tick['broker_code']}:{tick['symbol']}"
-            redis_client.setex(market_key, 300, json.dumps(tick, default=str))
+        market_key = f"live:quote:market:{tick['broker_code']}:{tick['symbol']}"
+        redis_client.setex(key, 60 * 60, json.dumps(tick, default=str))
+        redis_client.setex(market_key, 60 * 60, json.dumps(tick, default=str))
         redis_client.xadd(
             f"live:ticks:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}",
             {"payload": json.dumps(tick, default=str)},
@@ -405,19 +407,7 @@ def _apply_quote_results(
                 subscription_row.health_status = "rate_limited" if any_rate_limited else "unavailable"
                 subscription_row.health_reason = reason
                 subscription_row.updated_at = received_at
-                db.add(subscription_row)
-            _publish_unavailable_tick(
-                redis_client,
-                user_id=user_id,
-                account_id=account_id,
-                broker_code=broker_code,
-                symbols=symbols,
-                connection_index=connection_index,
-                chunk_rows=chunk_rows,
-                quote_payload=payload,
-                row=row,
-                reason=reason,
-            )
+            db.add(subscription_row)
             continue
         any_valid_price = True
         for subscription_row in duplicate_rows:

@@ -29,7 +29,7 @@ router = APIRouter()
 
 PRICE_STREAM_BLOCK_MS = 1000
 PRICE_STREAM_MAX_BATCH = 250
-PRICE_SCOPE_REFRESH_SECONDS = 10.0
+PRICE_SCOPE_REFRESH_SECONDS = 2.0
 
 
 def _loads_json(raw: Any, fallback: Any) -> Any:
@@ -125,7 +125,7 @@ def _read_quote_snapshots(
     for index, raw in enumerate(raw_rows):
         payload = _loads_json(raw, {})
         ref = quote_refs[index] if index < len(quote_refs) else None
-        if isinstance(payload, dict) and payload and (_payload_has_live_price(payload) or payload.get("status")):
+        if isinstance(payload, dict) and payload and _payload_has_live_price(payload):
             rows.append(payload)
         elif ref:
             user_id, account_id, broker_code, symbol = ref
@@ -211,6 +211,9 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
                         "symbol_count": sum(len(symbols) for symbols in symbols_by_stream.values()),
                     }
                 )
+                snapshots = await asyncio.to_thread(_read_quote_snapshots, client, quote_refs)
+                if snapshots:
+                    await websocket.send_json({"type": "snapshot", "rows": snapshots})
 
             if not streams:
                 await asyncio.sleep(1.0)
