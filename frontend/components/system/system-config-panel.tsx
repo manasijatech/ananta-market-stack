@@ -4,12 +4,17 @@ import { useState, useTransition } from "react";
 import { CircleHelpIcon } from "lucide-react";
 import {
     addLlmProviderModel,
+    clearMcpOAuthById,
     clearMcpOAuth,
+    clearMcpServerApiKeyById,
     clearMcpServerApiKey,
+    createMcpServerConfig,
+    deleteMcpServerConfigById,
     deleteMcpServerConfig,
     deleteAlphaApiCredential,
     deleteLlmProviderCredential,
     deleteLlmProviderModel,
+    refreshMcpInventoryById,
     refreshMcpInventory,
     startMcpOAuth,
     updateBrokerDataDefaultConfig,
@@ -210,10 +215,17 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
     const [alphaApiKey, setAlphaApiKey] = useState("");
     const [alphaWsConfig, setAlphaWsConfig] = useState(initialConfig.alpha_websocket);
     const [alphaError, setAlphaError] = useState("");
-    const [mcpConfig, setMcpConfig] = useState(initialConfig.mcp_server);
+    const [mcpServers, setMcpServers] = useState(
+        initialConfig.mcp_servers.length ? initialConfig.mcp_servers : [initialConfig.mcp_server]
+    );
+    const [selectedMcpServerId, setSelectedMcpServerId] = useState(
+        initialConfig.mcp_servers[0]?.id ?? initialConfig.mcp_server.id ?? ""
+    );
+    const mcpConfig =
+        mcpServers.find((server) => server.id === selectedMcpServerId) ?? mcpServers[0] ?? initialConfig.mcp_server;
     const [mcpApiKey, setMcpApiKey] = useState("");
     const [mcpExtraHeadersText, setMcpExtraHeadersText] = useState(
-        JSON.stringify(initialConfig.mcp_server.extra_headers ?? {}, null, 2)
+        JSON.stringify((mcpConfig ?? initialConfig.mcp_server).extra_headers ?? {}, null, 2)
     );
     const [mcpError, setMcpError] = useState("");
     const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
@@ -226,6 +238,57 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
         )
     );
     const [isPending, startTransition] = useTransition();
+
+    function replaceMcpServer(next: SystemConfig["mcp_server"]) {
+        setMcpServers((current) => {
+            const exists = next.id && current.some((server) => server.id === next.id);
+            if (!exists) {
+                return [next, ...current.filter((server) => server.id)];
+            }
+            return current.map((server) => (server.id === next.id ? next : server));
+        });
+        setSelectedMcpServerId(next.id ?? "");
+        setConfig((current) => ({
+            ...current,
+            mcp_server: next,
+            mcp_servers: next.id
+                ? current.mcp_servers.some((server) => server.id === next.id)
+                    ? current.mcp_servers.map((server) => (server.id === next.id ? next : server))
+                    : [next, ...current.mcp_servers]
+                : current.mcp_servers
+        }));
+    }
+
+    function patchSelectedMcpServer(patch: Partial<SystemConfig["mcp_server"]>) {
+        setMcpServers((current) => current.map((server) => (server.id === mcpConfig.id ? { ...server, ...patch } : server)));
+    }
+
+    function autosaveSelectedMcpServer(patch: Partial<SystemConfig["mcp_server"]>) {
+        const nextDraft = { ...mcpConfig, ...patch };
+        patchSelectedMcpServer(patch);
+        setMcpError("");
+        startTransition(async () => {
+            try {
+                const next = await updateMcpServerConfig({
+                    id: nextDraft.id,
+                    is_enabled: nextDraft.is_enabled,
+                    use_by_default: nextDraft.use_by_default,
+                    name: nextDraft.name ?? null,
+                    url: nextDraft.url,
+                    transport: nextDraft.transport,
+                    auth_mode: nextDraft.auth_mode ?? "oauth",
+                    api_key: null,
+                    api_key_header_name: nextDraft.api_key_header_name,
+                    api_key_prefix: nextDraft.api_key_prefix,
+                    extra_headers: readMcpExtraHeaders(),
+                    timeout_seconds: nextDraft.timeout_seconds
+                });
+                replaceMcpServer(next);
+            } catch (caught) {
+                setMcpError(parseActionError(caught).message);
+            }
+        });
+    }
 
     function updateDraft(provider: LlmProvider, patch: Partial<ProviderDraftState>) {
         setDrafts((current) => ({
@@ -348,7 +411,9 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
             try {
                 const extraHeaders = readMcpExtraHeaders();
                 const next = await updateMcpServerConfig({
+                    id: mcpConfig.id,
                     is_enabled: mcpConfig.is_enabled,
+                    use_by_default: mcpConfig.use_by_default,
                     name: mcpConfig.name ?? null,
                     url: mcpConfig.url,
                     transport: mcpConfig.transport,
@@ -357,10 +422,9 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     api_key_header_name: mcpConfig.api_key_header_name,
                     api_key_prefix: mcpConfig.api_key_prefix,
                     extra_headers: extraHeaders,
-                    timeout_seconds: mcpConfig.timeout_seconds,
-                    tool_cache_enabled: mcpConfig.tool_cache_enabled
+                    timeout_seconds: mcpConfig.timeout_seconds
                 });
-                setMcpConfig(next);
+                replaceMcpServer(next);
                 setMcpApiKey("");
                 setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
             } catch (caught) {
@@ -374,7 +438,9 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
         startTransition(async () => {
             try {
                 const saved = await updateMcpServerConfig({
+                    id: mcpConfig.id,
                     is_enabled: mcpConfig.is_enabled,
+                    use_by_default: mcpConfig.use_by_default,
                     name: mcpConfig.name ?? null,
                     url: mcpConfig.url,
                     transport: mcpConfig.transport,
@@ -383,13 +449,12 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                     api_key_header_name: mcpConfig.api_key_header_name,
                     api_key_prefix: mcpConfig.api_key_prefix,
                     extra_headers: readMcpExtraHeaders(),
-                    timeout_seconds: mcpConfig.timeout_seconds,
-                    tool_cache_enabled: mcpConfig.tool_cache_enabled
+                    timeout_seconds: mcpConfig.timeout_seconds
                 });
-                setMcpConfig(saved);
+                replaceMcpServer(saved);
                 setMcpApiKey("");
                 setMcpExtraHeadersText(JSON.stringify(saved.extra_headers ?? {}, null, 2));
-                const auth = await startMcpOAuth(`${window.location.origin}/api/mcp/oauth/callback`);
+                const auth = await startMcpOAuth(`${window.location.origin}/api/mcp/oauth/callback`, saved.id);
                 window.open(auth.authorization_url, "_blank", "noopener,noreferrer");
             } catch (caught) {
                 setMcpError(parseActionError(caught).message);
@@ -401,8 +466,8 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
         setMcpError("");
         startTransition(async () => {
             try {
-                const next = await clearMcpOAuth();
-                setMcpConfig(next);
+                const next = mcpConfig.id ? await clearMcpOAuthById(mcpConfig.id) : await clearMcpOAuth();
+                replaceMcpServer(next);
             } catch (caught) {
                 setMcpError(parseActionError(caught).message);
             }
@@ -413,8 +478,8 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
         setMcpError("");
         startTransition(async () => {
             try {
-                const next = await refreshMcpInventory();
-                setMcpConfig(next);
+                const next = mcpConfig.id ? await refreshMcpInventoryById(mcpConfig.id) : await refreshMcpInventory();
+                replaceMcpServer(next);
             } catch (caught) {
                 setMcpError(parseActionError(caught).message);
             }
@@ -425,8 +490,12 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
         setMcpError("");
         startTransition(async () => {
             try {
-                const next = await deleteMcpServerConfig();
-                setMcpConfig(next);
+                const next = mcpConfig.id ? await deleteMcpServerConfigById(mcpConfig.id) : await deleteMcpServerConfig();
+                setMcpServers((current) => {
+                    const remaining = current.filter((server) => server.id !== mcpConfig.id);
+                    return remaining.length ? remaining : [next];
+                });
+                setSelectedMcpServerId(next.id ?? "");
                 setMcpApiKey("");
                 setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
             } catch (caught) {
@@ -439,9 +508,35 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
         setMcpError("");
         startTransition(async () => {
             try {
-                const next = await clearMcpServerApiKey();
-                setMcpConfig(next);
+                const next = mcpConfig.id ? await clearMcpServerApiKeyById(mcpConfig.id) : await clearMcpServerApiKey();
+                replaceMcpServer(next);
                 setMcpApiKey("");
+            } catch (caught) {
+                setMcpError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function addMcpServer() {
+        setMcpError("");
+        startTransition(async () => {
+            try {
+                const next = await createMcpServerConfig({
+                    is_enabled: false,
+                    use_by_default: true,
+                    name: "New MCP server",
+                    url: "",
+                    transport: "streamable_http",
+                    auth_mode: "oauth",
+                    api_key: null,
+                    api_key_header_name: "Authorization",
+                    api_key_prefix: "Bearer",
+                    extra_headers: {},
+                    timeout_seconds: 15
+                });
+                replaceMcpServer(next);
+                setMcpApiKey("");
+                setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
             } catch (caught) {
                 setMcpError(parseActionError(caught).message);
             }
@@ -787,14 +882,34 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
 
             <section className="grid gap-4">
                 <div>
-                    <div className="text-base font-bold tracking-tight">Hosted MCP server</div>
+                    <div className="text-base font-bold tracking-tight">Hosted MCP servers</div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
-                        Configure the hosted MCP endpoint that broker chat can attach when MCP is enabled for a chat
-                        run. OAuth is preferred for remote MCP servers; direct bearer keys remain available as a
-                        fallback for simple or private deployments.
+                        Configure one or more hosted MCP endpoints that broker chat can attach when MCP is enabled.
+                        Enabled default servers are selected automatically in chat; users can narrow the set per run.
                     </p>
                 </div>
                 <div className="border border-border p-4">
+                    <div className="mb-4 flex flex-wrap items-center gap-2">
+                        <Select
+                            className="h-9 min-w-[260px]"
+                            onChange={(event) => {
+                                const next = mcpServers.find((server) => server.id === event.target.value);
+                                setSelectedMcpServerId(event.target.value);
+                                setMcpApiKey("");
+                                setMcpExtraHeadersText(JSON.stringify(next?.extra_headers ?? {}, null, 2));
+                            }}
+                            value={mcpConfig.id ?? ""}
+                        >
+                            {mcpServers.map((server, index) => (
+                                <option key={server.id ?? `mcp-${index}`} value={server.id ?? ""}>
+                                    {server.name || server.url || `MCP server ${index + 1}`}
+                                </option>
+                            ))}
+                        </Select>
+                        <Button disabled={isPending} onClick={addMcpServer} type="button" variant="outline">
+                            Add MCP server
+                        </Button>
+                    </div>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <div className="text-sm font-bold">MCP connection</div>
@@ -826,34 +941,38 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         <Label className="flex items-center gap-2 text-sm">
                             <Checkbox
                                 checked={mcpConfig.is_enabled}
+                                onCheckedChange={(checked) => autosaveSelectedMcpServer({ is_enabled: Boolean(checked) })}
+                            />
+                            Enable this server
+                        </Label>
+                        <Label className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                                checked={mcpConfig.use_by_default}
                                 onCheckedChange={(checked) =>
-                                    setMcpConfig((current) => ({ ...current, is_enabled: Boolean(checked) }))
+                                    autosaveSelectedMcpServer({ use_by_default: Boolean(checked) })
                                 }
                             />
-                            Enable MCP globally
+                            Use by default in chat
                         </Label>
                     </div>
 
                     <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_180px]">
                         <Input
                             className="h-9 text-sm"
-                            onChange={(event) => setMcpConfig((current) => ({ ...current, name: event.target.value }))}
+                            onChange={(event) => patchSelectedMcpServer({ name: event.target.value })}
                             placeholder="Display name"
                             value={mcpConfig.name ?? ""}
                         />
                         <Input
                             className="h-9 text-sm"
-                            onChange={(event) => setMcpConfig((current) => ({ ...current, url: event.target.value }))}
+                            onChange={(event) => patchSelectedMcpServer({ url: event.target.value })}
                             placeholder="https://mcp.testing.manasija.in/"
                             value={mcpConfig.url}
                         />
                         <Select
                             className="h-9"
                             onChange={(event) =>
-                                setMcpConfig((current) => ({
-                                    ...current,
-                                    transport: event.target.value as "streamable_http" | "sse"
-                                }))
+                                patchSelectedMcpServer({ transport: event.target.value as "streamable_http" | "sse" })
                             }
                             value={mcpConfig.transport}
                         >
@@ -866,10 +985,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         <Select
                             className="h-9"
                             onChange={(event) =>
-                                setMcpConfig((current) => ({
-                                    ...current,
-                                    auth_mode: event.target.value as "oauth" | "api_key"
-                                }))
+                                patchSelectedMcpServer({ auth_mode: event.target.value as "oauth" | "api_key" })
                             }
                             value={mcpConfig.auth_mode ?? "oauth"}
                         >
@@ -914,10 +1030,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         <Input
                             className="h-9 text-sm"
                             onChange={(event) =>
-                                setMcpConfig((current) => ({
-                                    ...current,
-                                    api_key_header_name: event.target.value
-                                }))
+                                patchSelectedMcpServer({ api_key_header_name: event.target.value })
                             }
                             placeholder="Authorization"
                             value={mcpConfig.api_key_header_name}
@@ -925,7 +1038,7 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                         <Input
                             className="h-9 text-sm"
                             onChange={(event) =>
-                                setMcpConfig((current) => ({ ...current, api_key_prefix: event.target.value }))
+                                patchSelectedMcpServer({ api_key_prefix: event.target.value })
                             }
                             placeholder="Bearer"
                             value={mcpConfig.api_key_prefix}
@@ -974,26 +1087,11 @@ export function SystemConfigPanel({ initialConfig }: { initialConfig: SystemConf
                             min={1}
                             max={120}
                             onChange={(event) =>
-                                setMcpConfig((current) => ({
-                                    ...current,
-                                    timeout_seconds: Number(event.target.value || 15)
-                                }))
+                                patchSelectedMcpServer({ timeout_seconds: Number(event.target.value || 15) })
                             }
                             type="number"
                             value={mcpConfig.timeout_seconds}
                         />
-                        <Label className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                                checked={mcpConfig.tool_cache_enabled}
-                                onCheckedChange={(checked) =>
-                                    setMcpConfig((current) => ({
-                                        ...current,
-                                        tool_cache_enabled: Boolean(checked)
-                                    }))
-                                }
-                            />
-                            Cache MCP tool list between calls
-                        </Label>
                     </div>
 
                     <textarea

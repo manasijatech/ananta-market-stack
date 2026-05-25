@@ -411,7 +411,9 @@ export type McpTransport = "streamable_http" | "sse";
 export type McpAuthMode = "oauth" | "api_key";
 
 export interface McpServerConfig {
+    id?: string | null;
     is_enabled: boolean;
+    use_by_default: boolean;
     name?: string | null;
     url: string;
     transport: McpTransport;
@@ -434,7 +436,6 @@ export interface McpServerConfig {
     inventory_error?: string | null;
     extra_headers: Record<string, string>;
     timeout_seconds: number;
-    tool_cache_enabled: boolean;
     created_at?: string | null;
     updated_at?: string | null;
 }
@@ -446,6 +447,7 @@ export interface SystemConfig {
     alpha_api: AlphaApiConfig;
     alpha_websocket: AlphaWebSocketConfig;
     mcp_server: McpServerConfig;
+    mcp_servers: McpServerConfig[];
 }
 
 export interface Notification {

@@ -319,7 +319,9 @@ export async function updateAlphaWebSocketConfig(payload: {
 }
 
 export async function updateMcpServerConfig(payload: {
+    id?: string | null;
     is_enabled: boolean;
+    use_by_default?: boolean;
     name?: string | null;
     url: string;
     transport: "streamable_http" | "sse";
@@ -329,12 +331,13 @@ export async function updateMcpServerConfig(payload: {
     api_key_prefix?: string;
     extra_headers?: Record<string, string>;
     timeout_seconds?: number;
-    tool_cache_enabled?: boolean;
 }): Promise<SystemConfig["mcp_server"]> {
-    const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp", {
+    const path = payload.id ? `/system-config/mcp/servers/${payload.id}` : "/system-config/mcp";
+    const result = await request<SystemConfig["mcp_server"]>(path, {
         method: "PUT",
         body: JSON.stringify({
             is_enabled: payload.is_enabled,
+            use_by_default: payload.use_by_default ?? true,
             name: payload.name ?? null,
             url: payload.url,
             transport: payload.transport,
@@ -343,8 +346,30 @@ export async function updateMcpServerConfig(payload: {
             api_key_header_name: payload.api_key_header_name ?? "Authorization",
             api_key_prefix: payload.api_key_prefix ?? "Bearer",
             extra_headers: payload.extra_headers ?? {},
-            timeout_seconds: payload.timeout_seconds ?? 15,
-            tool_cache_enabled: payload.tool_cache_enabled ?? true
+            timeout_seconds: payload.timeout_seconds ?? 15
+        })
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function createMcpServerConfig(payload: Parameters<typeof updateMcpServerConfig>[0]): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp/servers", {
+        method: "POST",
+        body: JSON.stringify({
+            is_enabled: payload.is_enabled,
+            use_by_default: payload.use_by_default ?? true,
+            name: payload.name ?? null,
+            url: payload.url,
+            transport: payload.transport,
+            auth_mode: payload.auth_mode ?? "oauth",
+            api_key: payload.api_key || null,
+            api_key_header_name: payload.api_key_header_name ?? "Authorization",
+            api_key_prefix: payload.api_key_prefix ?? "Bearer",
+            extra_headers: payload.extra_headers ?? {},
+            timeout_seconds: payload.timeout_seconds ?? 15
         })
     });
     revalidatePath("/dashboard");
@@ -354,11 +379,12 @@ export async function updateMcpServerConfig(payload: {
 }
 
 export async function startMcpOAuth(
-    redirectUri: string
+    redirectUri: string,
+    serverId?: string | null
 ): Promise<{ authorization_url: string; redirect_uri: string; state: string }> {
     return request<{ authorization_url: string; redirect_uri: string; state: string }>("/system-config/mcp/oauth/start", {
         method: "POST",
-        body: JSON.stringify({ redirect_uri: redirectUri })
+        body: JSON.stringify({ redirect_uri: redirectUri, server_id: serverId ?? null })
     });
 }
 
@@ -383,8 +409,28 @@ export async function deleteMcpServerConfig(): Promise<SystemConfig["mcp_server"
     return result;
 }
 
+export async function deleteMcpServerConfigById(serverId: string): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>(`/system-config/mcp/servers/${serverId}`, {
+        method: "DELETE"
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
 export async function clearMcpOAuth(): Promise<SystemConfig["mcp_server"]> {
     const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp/oauth", {
+        method: "DELETE"
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function clearMcpOAuthById(serverId: string): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>(`/system-config/mcp/servers/${serverId}/oauth`, {
         method: "DELETE"
     });
     revalidatePath("/dashboard");
@@ -406,8 +452,31 @@ export async function refreshMcpInventory(): Promise<SystemConfig["mcp_server"]>
     return result.config;
 }
 
+export async function refreshMcpInventoryById(serverId: string): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<{ config: SystemConfig["mcp_server"]; refreshed: boolean }>(
+        `/system-config/mcp/servers/${serverId}/inventory/refresh`,
+        {
+            method: "POST"
+        }
+    );
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result.config;
+}
+
 export async function clearMcpServerApiKey(): Promise<SystemConfig["mcp_server"]> {
     const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp/key", {
+        method: "DELETE"
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/system-config");
+    revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function clearMcpServerApiKeyById(serverId: string): Promise<SystemConfig["mcp_server"]> {
+    const result = await request<SystemConfig["mcp_server"]>(`/system-config/mcp/servers/${serverId}/key`, {
         method: "DELETE"
     });
     revalidatePath("/dashboard");

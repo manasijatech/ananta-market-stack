@@ -56,6 +56,7 @@ type Props = {
     initialRuns: BrokerChatRun[];
     llmProviders: LlmProviderConfig[];
     mcpServer: McpServerConfig;
+    mcpServers: McpServerConfig[];
 };
 
 type ParsedSseEvent = {
@@ -84,6 +85,7 @@ type BrokerChatConfigPayload = {
     include_tool_outputs: boolean;
     include_reasoning: boolean;
     use_mcp: boolean;
+    mcp_server_ids: string[];
 };
 type BrokerChatConfigKeyPayload = Omit<BrokerChatConfigPayload, "default_provider"> & {
     default_provider: LlmProvider | "";
@@ -455,7 +457,7 @@ function UserMessage({ text }: { text: string }) {
     );
 }
 
-export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSessions, llmProviders, mcpServer }: Props) {
+export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSessions, llmProviders, mcpServer, mcpServers }: Props) {
     const { user } = useSession();
     const [sessions, setSessions] = useState(() => sortSessions(initialSessions));
     const [runs, setRuns] = useState(() => mergeRuns([], initialRuns));
@@ -471,7 +473,18 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const [visibility, setVisibility] = useState<BrokerChatVisibility>(initialConfig.event_visibility);
     const [includeToolOutputs, setIncludeToolOutputs] = useState(initialConfig.include_tool_outputs);
     const [includeReasoning, setIncludeReasoning] = useState(initialConfig.include_reasoning);
-    const [useMcp, setUseMcp] = useState(initialConfig.use_mcp && mcpServer.is_enabled);
+    const availableMcpServers = useMemo(
+        () => (mcpServers.length ? mcpServers : [mcpServer]).filter((server) => server.id && server.is_enabled),
+        [mcpServer, mcpServers]
+    );
+    const defaultMcpServerIds = useMemo(() => {
+        const defaults = availableMcpServers.filter((server) => server.use_by_default).map((server) => server.id as string);
+        return defaults.length ? defaults : availableMcpServers.map((server) => server.id as string);
+    }, [availableMcpServers]);
+    const [useMcp, setUseMcp] = useState(initialConfig.use_mcp && availableMcpServers.length > 0);
+    const [selectedMcpServerIds, setSelectedMcpServerIds] = useState(
+        initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds
+    );
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCreatingSession, setIsCreatingSession] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -487,7 +500,8 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             event_visibility: initialConfig.event_visibility,
             include_tool_outputs: initialConfig.include_tool_outputs,
             include_reasoning: initialConfig.include_reasoning,
-            use_mcp: initialConfig.use_mcp && mcpServer.is_enabled
+            use_mcp: initialConfig.use_mcp && availableMcpServers.length > 0,
+            mcp_server_ids: initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds
         })
     );
 
@@ -572,9 +586,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             event_visibility: visibility,
             include_tool_outputs: includeToolOutputs,
             include_reasoning: includeReasoning,
-            use_mcp: useMcp
+            use_mcp: useMcp,
+            mcp_server_ids: selectedMcpServerIds
         };
-    }, [includeReasoning, includeToolOutputs, model, provider, useMcp, visibility]);
+    }, [includeReasoning, includeToolOutputs, model, provider, selectedMcpServerIds, useMcp, visibility]);
 
     useEffect(() => {
         const requestId = ++configSaveRequestRef.current;
@@ -865,7 +880,8 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 event_visibility: visibility,
                 include_tool_outputs: includeToolOutputs,
                 include_reasoning: includeReasoning,
-                use_mcp: useMcp
+                use_mcp: useMcp,
+                mcp_server_ids: selectedMcpServerIds
             });
             setMessage("");
             setRuns((current) => mergeRuns(current, [result.run]));
@@ -1273,13 +1289,39 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                 <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
                                     <Checkbox
                                         checked={useMcp}
-                                        disabled={!mcpServer.is_enabled}
+                                        disabled={!availableMcpServers.length}
                                         onCheckedChange={(value) => setUseMcp(Boolean(value))}
                                     />
                                     MCP
                                 </Label>
                             </div>
                         </div>
+                        {useMcp && availableMcpServers.length > 1 ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                {availableMcpServers.map((server) => {
+                                    const serverId = server.id as string;
+                                    return (
+                                        <Label
+                                            className="flex items-center gap-1.5 border border-border px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground"
+                                            key={serverId}
+                                        >
+                                            <Checkbox
+                                                checked={selectedMcpServerIds.includes(serverId)}
+                                                onCheckedChange={(value) =>
+                                                    setSelectedMcpServerIds((current) => {
+                                                        const next = value
+                                                            ? Array.from(new Set([...current, serverId]))
+                                                            : current.filter((id) => id !== serverId);
+                                                        return next.length ? next : [serverId];
+                                                    })
+                                                }
+                                            />
+                                            {server.name || server.url}
+                                        </Label>
+                                    );
+                                })}
+                            </div>
+                        ) : null}
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">

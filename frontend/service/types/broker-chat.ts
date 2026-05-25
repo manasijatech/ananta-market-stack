@@ -12,6 +12,7 @@ export interface BrokerChatPreference {
     include_tool_outputs: boolean;
     include_reasoning: boolean;
     use_mcp: boolean;
+    mcp_server_ids: string[];
 }
 
 export interface BrokerChatPreferenceUpdate {
@@ -21,6 +22,7 @@ export interface BrokerChatPreferenceUpdate {
     include_tool_outputs: boolean;
     include_reasoning: boolean;
     use_mcp: boolean;
+    mcp_server_ids: string[];
 }
 
 export interface BrokerChatSession {
@@ -63,6 +65,7 @@ export interface BrokerChatSubmitRequest {
     include_tool_outputs?: boolean | null;
     include_reasoning?: boolean | null;
     use_mcp?: boolean | null;
+    mcp_server_ids?: string[] | null;
     default_account_id?: string | null;
     search_account_id?: string | null;
     metadata?: BrokerChatPayload;

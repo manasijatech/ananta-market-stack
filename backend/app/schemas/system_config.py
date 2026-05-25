@@ -114,7 +114,9 @@ class AlphaWebSocketConfigUpdateIn(BaseModel):
 
 
 class McpServerConfigOut(BaseModel):
+    id: str | None = None
     is_enabled: bool = False
+    use_by_default: bool = True
     name: str | None = None
     url: str = ""
     transport: McpTransport = "streamable_http"
@@ -132,13 +134,13 @@ class McpServerConfigOut(BaseModel):
     inventory_error: str | None = None
     extra_headers: dict[str, str] = Field(default_factory=dict)
     timeout_seconds: int = 15
-    tool_cache_enabled: bool = True
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
 
 class McpServerConfigUpdateIn(BaseModel):
     is_enabled: bool = False
+    use_by_default: bool = True
     name: str | None = Field(default=None, max_length=128)
     url: str = Field(default="", max_length=2048)
     transport: McpTransport = "streamable_http"
@@ -148,10 +150,10 @@ class McpServerConfigUpdateIn(BaseModel):
     api_key_prefix: str = Field(default="Bearer", max_length=64)
     extra_headers: dict[str, str] = Field(default_factory=dict)
     timeout_seconds: int = Field(default=15, ge=1, le=120)
-    tool_cache_enabled: bool = True
 
 
 class McpOAuthStartIn(BaseModel):
+    server_id: str | None = Field(default=None, max_length=64)
     redirect_uri: str | None = Field(default=None, max_length=2048)
 
 
@@ -178,3 +180,4 @@ class SystemConfigOut(BaseModel):
     alpha_api: AlphaApiConfigOut
     alpha_websocket: AlphaWebSocketConfigOut
     mcp_server: McpServerConfigOut
+    mcp_servers: list[McpServerConfigOut] = Field(default_factory=list)
