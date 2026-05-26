@@ -36,6 +36,7 @@ Use the checks that match the files you changed. If a check cannot be run becaus
 - Mention any setup, migration, or environment impact.
 - Do not include unrelated formatting churn.
 - Do not commit `.env`, `.env.local`, SQLite databases, generated secrets, broker tokens, API keys, or local cache files.
+- Expect maintainers to merge changes. Contributors should open pull requests rather than pushing directly to `main`.
 
 ## Backend Changes
 

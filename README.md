@@ -11,7 +11,7 @@ Resources: [Manasija](https://manasija.in/) | [Developer portal](https://develop
 - Next.js frontend with authentication, broker account setup, integration guides, portfolio views, quote workflows, alert management, and notification settings.
 - FastAPI backend with broker account persistence, encrypted credential storage, session helpers, unified broker operations, alert APIs, SQLite, Alembic, and Redis-backed live workflows.
 - Unified broker operations for profile, orders, trades, positions, holdings, funds, quotes, smart orders, close-all, and margin calculation where supported by the broker adapter.
-- Docker Compose setup for the frontend, backend, Redis, SQLite data, and generated local secrets.
+- Published Docker image and Docker Compose setup for the frontend, backend, Redis, SQLite data, and generated local secrets.
 - Broker setup guides rendered inside the app for Zerodha, Upstox, Angel, Dhan, Groww, INDmoney, and Kotak.
 
 ## Supported Brokers
@@ -48,14 +48,14 @@ The image starts the frontend, backend, SQLite data store, generated runtime sec
 
 For Railway or similar platforms, deploy the same image, attach a persistent volume at `/data`, and set `PORT=3000`.
 
-### Docker Compose From Source
+### Build From Source
 
 For source builds and contributor workflows, install [Docker](https://docs.docker.com/get-docker/) with [Docker Compose](https://docs.docker.com/compose/), then run:
 
 ```bash
-git clone <your-market-stack-repo-url>
-cd Market-Stack
-docker compose up --build
+git clone https://github.com/manasijatech/Market-stack.git
+cd Market-stack
+docker compose up -d --build
 ```
 
 Open:
@@ -76,15 +76,6 @@ Optional local overrides can be set with:
 
 ```bash
 cp .env.example .env
-```
-
-For example, if backend port `8000` is busy:
-
-```env
-BACKEND_PORT=8004
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
-MARKET_STACK_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
-APP_PUBLIC_BASE_URL=http://localhost:8004
 ```
 
 Useful commands:
@@ -121,7 +112,7 @@ Market-Stack/
 
 ## Prerequisites
 
-For the Docker path, you only need [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/).
+For the published Docker image path, you only need [Docker](https://docs.docker.com/get-docker/). For source builds, install Docker Compose as well.
 
 For manual development, use:
 
@@ -135,4 +126,4 @@ Broker credentials are encrypted at rest with a Fernet `CREDENTIAL_ENCRYPTION_KE
 
 Back up the application data volume and config/secrets volume together. If the encryption key is lost or rotated without a migration plan, existing encrypted broker credentials cannot be decrypted.
 
-For production, review the [self-hosting guide](docs/self-hosting.md) and [security notes](docs/security.md) before exposing the app publicly.
+For production, review the [published Docker image guide](docs/docker-image.md), [self-hosting guide](docs/self-hosting.md), and [security notes](docs/security.md) before exposing the app publicly.

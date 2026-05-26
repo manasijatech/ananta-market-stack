@@ -61,7 +61,7 @@ This page summarizes the main environment variables used by Market Stack. Most u
 
 Broker session flows often require the backend public URL to match the callback or redirect URL configured in the broker developer console.
 
-For local Docker:
+For local Docker Compose:
 
 ```env
 APP_PUBLIC_BASE_URL=http://localhost:8000
