@@ -26,7 +26,31 @@ Resources: [Manasija](https://manasija.in/) | [Developer portal](https://develop
 
 ## Quick Start
 
-Install [Docker](https://docs.docker.com/get-docker/) with [Docker Compose](https://docs.docker.com/compose/), then run:
+### Fastest Docker Run
+
+Run the published Market Stack image with one persistent data volume:
+
+```bash
+docker run -d \
+  --name market-stack \
+  -p 3000:3000 \
+  -v market-stack-data:/data \
+  ghcr.io/<owner>/market-stack:0.1.0
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+The image starts the frontend, backend, SQLite data store, generated runtime secrets, and Redis. Secrets are generated on first boot into `/data/config/market-stack.env`; they are not baked into the image.
+
+For Railway or similar platforms, deploy the same image, attach a persistent volume at `/data`, and set `PORT=3000`.
+
+### Docker Compose From Source
+
+For source builds and contributor workflows, install [Docker](https://docs.docker.com/get-docker/) with [Docker Compose](https://docs.docker.com/compose/), then run:
 
 ```bash
 git clone <your-market-stack-repo-url>
@@ -77,6 +101,7 @@ Use `docker compose down -v` only when you intentionally want to delete Docker-m
 ## Documentation
 
 - [Self-hosting guide](docs/self-hosting.md) - production-oriented Docker setup, domains, updates, backups, generated secrets, Redis, and troubleshooting.
+- [Published Docker image](docs/docker-image.md) - image setup, Railway setup, updates, backups, and manual/GitHub publishing.
 - [Development setup](docs/development.md) - manual backend/frontend setup, local env files, workers, migrations, and checks.
 - [Environment reference](docs/environment.md) - root Compose, backend, frontend, Redis, broker callback, and hosted API settings.
 - [API overview](docs/api-overview.md) - route groups, local OpenAPI docs, and hosted API documentation links.

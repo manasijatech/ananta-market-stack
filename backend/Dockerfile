@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN grep -v '^winloop==' requirements.txt > requirements-linux.txt \
+    && pip install --no-cache-dir -r requirements-linux.txt
 
 COPY . .
 COPY docker-entrypoint.sh /usr/local/bin/market-stack-backend-entrypoint
