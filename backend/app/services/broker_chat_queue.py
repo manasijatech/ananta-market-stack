@@ -54,8 +54,10 @@ def redis_connection() -> redis.Redis:
     return redis.Redis(
         host=settings.redis_host,
         port=settings.redis_port,
+        username=settings.redis_username or None,
         password=settings.redis_password or None,
         db=settings.redis_db,
+        ssl=settings.redis_ssl,
         decode_responses=False,
         socket_connect_timeout=2,
         socket_timeout=2,

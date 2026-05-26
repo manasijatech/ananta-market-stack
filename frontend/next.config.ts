@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
     reactStrictMode: true,
+    async rewrites() {
+        const internalApiBase = (process.env.MARKET_STACK_API_INTERNAL_URL ?? "http://127.0.0.1:8000/api/v1").replace(/\/+$/, "");
+        return [
+            {
+                source: "/api/v1/:path*",
+                destination: `${internalApiBase}/:path*`
+            }
+        ];
+    },
     async redirects() {
         return [
             {

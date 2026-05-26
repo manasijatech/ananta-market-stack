@@ -19,8 +19,10 @@ def _redis_client() -> redis.Redis | None:
         return redis.Redis(
             host=s.redis_host,
             port=s.redis_port,
+            username=s.redis_username or None,
             password=s.redis_password or None,
             db=s.redis_db,
+            ssl=s.redis_ssl,
             decode_responses=True,
             socket_connect_timeout=2,
             socket_timeout=2,

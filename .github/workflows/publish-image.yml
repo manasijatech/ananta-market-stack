@@ -1,0 +1,118 @@
+name: Publish Docker image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, for example 0.1.0. Leave empty to publish only a SHA tag."
+        required: false
+        type: string
+      publish_latest:
+        description: "Also publish the latest tag."
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/market-stack
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: image-tags
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
+        run: |
+          set -euo pipefail
+          version=""
+          publish_latest="${PUBLISH_LATEST:-false}"
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [ -n "${INPUT_VERSION}" ]; then
+            version="${INPUT_VERSION#v}"
+          fi
+
+          tags="${IMAGE_NAME}:sha-${GITHUB_SHA::7}"
+
+          if [ -n "$version" ]; then
+            if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Version must use MAJOR.MINOR.PATCH format, for example 0.1.0." >&2
+              exit 1
+            fi
+            major="${version%%.*}"
+            minor="${version%.*}"
+            tags="${tags}"$'\n'"${IMAGE_NAME}:${version}"$'\n'"${IMAGE_NAME}:${minor}"$'\n'"${IMAGE_NAME}:${major}"
+          fi
+
+          if [ "$publish_latest" = "true" ]; then
+            tags="${tags}"$'\n'"${IMAGE_NAME}:latest"
+          fi
+
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build smoke-test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: market-stack-smoke:ci
+
+      - name: Smoke test image
+        run: |
+          docker run -d --rm --name market-stack-smoke -p 3000:3000 -v market-stack-smoke-data:/data market-stack-smoke:ci
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3000 >/dev/null && curl -fsS http://127.0.0.1:3000/api/v1/brokers/supported >/dev/null; then
+              docker rm -f market-stack-smoke
+              docker volume rm market-stack-smoke-data
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs market-stack-smoke
+          docker rm -f market-stack-smoke
+          docker volume rm market-stack-smoke-data
+          exit 1
+
+      - name: Build and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image-tags.outputs.tags }}
+          provenance: true
+          sbom: true

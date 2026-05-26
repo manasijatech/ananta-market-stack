@@ -1,6 +1,8 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from pydantic import Field
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,8 +40,11 @@ class Settings(BaseSettings):
 
     redis_host: str = "127.0.0.1"
     redis_port: int = 6379
+    redis_username: str | None = None
     redis_password: str | None = None
     redis_db: int = 0
+    redis_ssl: bool = False
+    redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")
     redis_quote_ttl_seconds: int = 30
     redis_live_price_ttl_seconds: int = Field(
         default=30 * 60,
@@ -138,6 +143,30 @@ class Settings(BaseSettings):
 
     # Development-only fallback if no key set (not for production).
     allow_insecure_dev_credentials: bool = False
+
+    @model_validator(mode="after")
+    def _apply_redis_url(self) -> "Settings":
+        if not self.redis_url:
+            return self
+
+        parsed = urlparse(self.redis_url)
+        if parsed.scheme not in {"redis", "rediss"}:
+            return self
+
+        if parsed.hostname:
+            self.redis_host = parsed.hostname
+        if parsed.port:
+            self.redis_port = parsed.port
+        if parsed.username:
+            self.redis_username = parsed.username
+        if parsed.password:
+            self.redis_password = parsed.password
+        self.redis_ssl = parsed.scheme == "rediss"
+        if parsed.path and parsed.path != "/":
+            db_value = parsed.path.lstrip("/").split("/", 1)[0]
+            if db_value.isdigit():
+                self.redis_db = int(db_value)
+        return self
 
 
 @lru_cache
