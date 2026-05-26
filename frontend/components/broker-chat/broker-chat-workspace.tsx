@@ -440,6 +440,9 @@ function groupReasoningSteps(events: BrokerChatEvent[]): ReasoningStep[] {
             }
             const message = textPayload(event.payload, "message");
             const rawType = textPayload(event.payload, "raw_type");
+            if (rawType.endsWith(".delta")) {
+                return false;
+            }
             return Boolean(rawType || (message && message !== "Reasoning event received."));
         })
         .map((event) => ({
@@ -788,6 +791,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
     const previousRunCountRef = useRef(0);
     const previousActiveSessionIdRef = useRef<string | null>(null);
+    const loadedSessionIdRef = useRef<string | null>(null);
     const [provider, setProvider] = useState<LlmProvider | "">(initialConfig.default_provider ?? "");
     const [model, setModel] = useState(initialConfig.default_model ?? "");
     const [visibility, setVisibility] = useState<BrokerChatVisibility>(initialConfig.event_visibility);
@@ -813,6 +817,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const [queueHealth, setQueueHealth] = useState<BrokerChatQueueHealth | null>(null);
     const streamControllersRef = useRef<Record<string, AbortController>>({});
     const runsRef = useRef(runs);
+    const eventsByRunRef = useRef(eventsByRun);
     const streamDetailKeyRef = useRef(`${visibility}:${includeToolOutputs}:${includeReasoning}`);
     const configSaveRequestRef = useRef(0);
     const savedConfigKeyRef = useRef(
@@ -897,6 +902,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
 
     const hasConfiguredLlm = Boolean(provider && model);
     const activeRun = runsForActiveSession.find((run) => liveStatuses.has(run.status)) ?? null;
+    const activeLiveRunIdsKey = useMemo(
+        () => runsForActiveSession.filter((run) => liveStatuses.has(run.status)).map((run) => run.id).join("|"),
+        [runsForActiveSession]
+    );
     const sendDisabled = Boolean(activeRun) || !message.trim() || !hasConfiguredLlm || isSubmitting;
     const configPayload = useMemo<BrokerChatConfigPayload | null>(() => {
         if (!provider || !model) {
@@ -1083,7 +1092,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 includeReasoning
             });
             setRuns((current) => mergeRuns(current, [page.run]));
-            setEventsByRun((current) => ({ ...current, [runId]: page.events }));
+            setEventsByRun((current) => ({
+                ...current,
+                [runId]: mergeEvents(current[runId] ?? [], page.events)
+            }));
             if (liveStatuses.has(page.run.status)) {
                 const lastSequence = page.events.at(-1)?.sequence ?? 0;
                 void streamRun(runId, lastSequence);
@@ -1096,6 +1108,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         if (!activeSessionId) {
             return;
         }
+        if (loadedSessionIdRef.current === activeSessionId) {
+            return;
+        }
+        loadedSessionIdRef.current = activeSessionId;
         let cancelled = false;
         async function loadSession() {
             try {
@@ -1118,6 +1134,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     }, [runs]);
 
     useEffect(() => {
+        eventsByRunRef.current = eventsByRun;
+    }, [eventsByRun]);
+
+    useEffect(() => {
         for (const run of runs) {
             if (liveStatuses.has(run.status)) {
                 const lastSequence = eventsByRun[run.id]?.at(-1)?.sequence ?? 0;
@@ -1138,14 +1158,16 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         }
         window.setTimeout(() => {
             for (const run of liveRuns) {
-                const lastSequence = eventsByRun[run.id]?.at(-1)?.sequence ?? 0;
+                const lastSequence = eventsByRunRef.current[run.id]?.at(-1)?.sequence ?? 0;
                 void streamRun(run.id, lastSequence);
             }
         }, 0);
-    }, [eventsByRun, includeReasoning, includeToolOutputs, streamRun, visibility]);
+    }, [includeReasoning, includeToolOutputs, streamRun, visibility]);
 
     useEffect(() => {
-        const liveRuns = runsForActiveSession.filter((run) => liveStatuses.has(run.status));
+        const liveRuns = runsRef.current.filter(
+            (run) => run.session_id === activeSessionId && liveStatuses.has(run.status)
+        );
         if (!liveRuns.length) {
             return;
         }
@@ -1153,7 +1175,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         const pollLiveRuns = async () => {
             await Promise.all(
                 liveRuns.map(async (run) => {
-                    const afterSequence = eventsByRun[run.id]?.at(-1)?.sequence ?? 0;
+                    const afterSequence = eventsByRunRef.current[run.id]?.at(-1)?.sequence ?? 0;
                     const page = await getBrokerChatEvents(run.id, {
                         afterSequence,
                         limit: 100,
@@ -1181,7 +1203,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             cancelled = true;
             window.clearInterval(interval);
         };
-    }, [eventsByRun, includeReasoning, includeToolOutputs, runsForActiveSession, visibility]);
+    }, [activeLiveRunIdsKey, activeSessionId, includeReasoning, includeToolOutputs, visibility]);
 
     useEffect(() => {
         return () => {

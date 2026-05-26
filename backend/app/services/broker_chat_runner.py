@@ -300,6 +300,8 @@ def _first_text_value(value: Any) -> str:
 
 def _reasoning_event_payload(data: Any) -> tuple[dict[str, Any], dict[str, Any]] | None:
     raw_type = str(getattr(data, "type", "") or "")
+    if raw_type.endswith(".delta"):
+        return None
     raw = _safe_data(data)
     text = ""
     for attr in ("delta", "text", "summary", "content", "message"):
