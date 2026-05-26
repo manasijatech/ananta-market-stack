@@ -35,7 +35,7 @@ docker run -d \
   --name market-stack \
   -p 3000:3000 \
   -v market-stack-data:/data \
-  ghcr.io/<owner>/market-stack:0.1.0
+  ghcr.io/manasijatech/market-stack:0.1.0
 ```
 
 Open:

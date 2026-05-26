@@ -29,6 +29,10 @@ RUN python -m venv /opt/venv \
 
 FROM python:3.12-slim AS runtime
 
+LABEL org.opencontainers.image.title="Market Stack" \
+    org.opencontainers.image.description="Self-hosted trading and market-data workspace." \
+    org.opencontainers.image.source="https://github.com/manasijatech/Market-stack"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/backend \

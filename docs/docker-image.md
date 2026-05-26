@@ -19,7 +19,7 @@ docker run -d \
   --name market-stack \
   -p 3000:3000 \
   -v market-stack-data:/data \
-  ghcr.io/<owner>/market-stack:0.1.0
+  ghcr.io/manasijatech/market-stack:0.1.0
 ```
 
 Open:
@@ -35,7 +35,7 @@ docker run -d \
   --name market-stack \
   -p 3000:3000 \
   -v market-stack-data:/data \
-  ghcr.io/<owner>/market-stack:0.1.0
+  ghcr.io/manasijatech/market-stack:0.1.0
 ```
 
 ## Runtime Secrets
@@ -55,7 +55,7 @@ Back up `/data/app.db` and `/data/config/market-stack.env` together. Losing or c
 Use the published image:
 
 ```text
-ghcr.io/<owner>/market-stack:0.1.0
+ghcr.io/manasijatech/market-stack:0.1.0
 ```
 
 Set:
@@ -92,14 +92,14 @@ When `REDIS_URL` is set, Market Stack uses that Redis instance instead of starti
 Update by replacing the image while keeping the same `/data` volume:
 
 ```bash
-docker pull ghcr.io/<owner>/market-stack:0.1.1
+docker pull ghcr.io/manasijatech/market-stack:0.1.1
 docker stop market-stack
 docker rm market-stack
 docker run -d \
   --name market-stack \
   -p 3000:3000 \
   -v market-stack-data:/data \
-  ghcr.io/<owner>/market-stack:0.1.1
+  ghcr.io/manasijatech/market-stack:0.1.1
 ```
 
 Updates do not rotate secrets because secrets live in `/data/config/market-stack.env`.
@@ -116,7 +116,7 @@ Tag behavior:
 - Manual workflow runs can publish a version such as `0.1.0`.
 - Version tags such as `v0.1.0` publish `0.1.0`, `0.1`, `0`, and SHA tags.
 - `latest` is published only when the manual workflow input `publish_latest` is enabled.
-- Images are pushed to `ghcr.io/<owner>/market-stack`.
+- Images are pushed to `ghcr.io/manasijatech/market-stack`.
 
 ## GitHub Release Flow
 
@@ -134,9 +134,9 @@ git push origin v0.1.0
 4. Confirm the image exists in GitHub Packages:
 
 ```text
-ghcr.io/<owner>/market-stack:0.1.0
-ghcr.io/<owner>/market-stack:0.1
-ghcr.io/<owner>/market-stack:0
+ghcr.io/manasijatech/market-stack:0.1.0
+ghcr.io/manasijatech/market-stack:0.1
+ghcr.io/manasijatech/market-stack:0
 ```
 
 5. Use the pinned version tag in production instructions and Railway templates.
@@ -156,13 +156,13 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-std
 Then publish:
 
 ```bash
-scripts/publish-image.sh 0.1.0 ghcr.io/<owner>/market-stack
+scripts/publish-image.sh 0.1.0 ghcr.io/manasijatech/market-stack
 ```
 
 The script builds the image, smoke-tests it locally, tags it as `0.1.0`, `0.1`, `0`, and `sha-<commit>`, then pushes those tags. To also move `latest`, run:
 
 ```bash
-PUBLISH_LATEST=true scripts/publish-image.sh 0.1.0 ghcr.io/<owner>/market-stack
+PUBLISH_LATEST=true scripts/publish-image.sh 0.1.0 ghcr.io/manasijatech/market-stack
 ```
 
 Use `latest` for quick testing only. Use a pinned version such as `0.1.0` for users and production deployments.
