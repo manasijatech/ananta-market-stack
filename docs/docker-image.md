@@ -19,7 +19,7 @@ docker run -d \
   --name market-stack \
   -p 3000:3000 \
   -v market-stack-data:/data \
-  ghcr.io/manasijatech/market-stack:0.1.0
+  ghcr.io/manasijatech/market-stack:latest
 ```
 
 Open:
@@ -45,7 +45,7 @@ Back up `/data/app.db` and `/data/config/market-stack.env` together. Losing or c
 Use the published image:
 
 ```text
-ghcr.io/manasijatech/market-stack:0.1.0
+ghcr.io/manasijatech/market-stack:latest
 ```
 
 Set:
@@ -82,14 +82,14 @@ When `REDIS_URL` is set, Market Stack uses that Redis instance instead of starti
 Update by replacing the image while keeping the same `/data` volume:
 
 ```bash
-docker pull ghcr.io/manasijatech/market-stack:0.1.1
+docker pull ghcr.io/manasijatech/market-stack:latest
 docker stop market-stack
 docker rm market-stack
 docker run -d \
   --name market-stack \
   -p 3000:3000 \
   -v market-stack-data:/data \
-  ghcr.io/manasijatech/market-stack:0.1.1
+  ghcr.io/manasijatech/market-stack:latest
 ```
 
 Updates do not rotate secrets because secrets live in `/data/config/market-stack.env`.
@@ -124,12 +124,10 @@ git push origin v0.1.0
 4. Confirm the image exists in GitHub Packages:
 
 ```text
-ghcr.io/manasijatech/market-stack:0.1.0
-ghcr.io/manasijatech/market-stack:0.1
-ghcr.io/manasijatech/market-stack:0
+ghcr.io/manasijatech/market-stack:latest
 ```
 
-5. Use the pinned version tag in production instructions and Railway templates.
+5. Use the `latest` tag in production instructions and Railway templates.
 
 You can also run the workflow manually from GitHub Actions. Provide `version=0.1.0`. Enable `publish_latest` only when you intentionally want to move the `latest` tag.
 
@@ -155,4 +153,4 @@ The script builds the image, smoke-tests it locally, tags it as `0.1.0`, `0.1`, 
 PUBLISH_LATEST=true scripts/publish-image.sh 0.1.0 ghcr.io/manasijatech/market-stack
 ```
 
-Use `latest` for quick testing only. Use a pinned version such as `0.1.0` for users and production deployments.
+Use the `latest` tag in user-facing Docker image instructions so new installs and updates pick up the current published image.

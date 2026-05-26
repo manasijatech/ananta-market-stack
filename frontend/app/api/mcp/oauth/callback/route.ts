@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { fetchFastApi } from "@/lib/fastapi";
+import { getPublicAppUrl } from "@/lib/runtime-config";
 
 async function parseResponse(response: Response): Promise<unknown> {
     const text = await response.text();
@@ -20,12 +21,43 @@ function errorMessage(payload: unknown, fallback: string): string {
     return fallback;
 }
 
+function redirectOrigin(request: NextRequest, callbackUrl: URL): string {
+    const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+    const host = forwardedHost ?? request.headers.get("host") ?? "";
+    const forwardedProto =
+        request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? callbackUrl.protocol.replace(":", "");
+
+    if (host) {
+        const origin = new URL(`${forwardedProto}://${host}`);
+        if (origin.hostname === "0.0.0.0" || origin.hostname === "::") {
+            origin.hostname = "localhost";
+        }
+        if (!origin.port && callbackUrl.port) {
+            origin.port = callbackUrl.port;
+        }
+        return origin.origin;
+    }
+
+    if (callbackUrl.hostname === "0.0.0.0" || callbackUrl.hostname === "::") {
+        callbackUrl.hostname = "localhost";
+        return callbackUrl.origin;
+    }
+
+    return getPublicAppUrl();
+}
+
+function settingsRedirectUrl(request: NextRequest, callbackUrl: URL): URL {
+    const redirectUrl = new URL("/settings", redirectOrigin(request, callbackUrl));
+    redirectUrl.hash = "mcp";
+    return redirectUrl;
+}
+
 export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
     const oauthError = url.searchParams.get("error");
-    const redirectUrl = new URL("/settings", url.origin);
+    const redirectUrl = settingsRedirectUrl(request, url);
 
     if (oauthError) {
         redirectUrl.searchParams.set("mcp_auth", "error");
