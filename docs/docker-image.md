@@ -28,16 +28,6 @@ Open:
 http://localhost:3000
 ```
 
-Use a pinned version for production-like installs:
-
-```bash
-docker run -d \
-  --name market-stack \
-  -p 3000:3000 \
-  -v market-stack-data:/data \
-  ghcr.io/manasijatech/market-stack:0.1.0
-```
-
 ## Runtime Secrets
 
 On first boot, the container creates `/data/config/market-stack.env` with:
