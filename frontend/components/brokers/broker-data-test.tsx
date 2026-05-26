@@ -290,7 +290,12 @@ export function BrokerDataTest({
         if (wsRef.current || !streamStatus.websocket_enabled) {
             return;
         }
-        const wsUrl = `${apiBaseUrl.replace(/^http/i, "ws")}/broker-accounts/${account.id}/data/stream/ws?user_id=${encodeURIComponent(account.user_id)}`;
+        const url = new URL(apiBaseUrl, window.location.origin);
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+        url.pathname = `${url.pathname.replace(/\/+$/, "")}/broker-accounts/${account.id}/data/stream/ws`;
+        url.search = "";
+        url.searchParams.set("user_id", account.user_id);
+        const wsUrl = url.toString();
         const socket = new WebSocket(wsUrl);
         wsRef.current = socket;
         socket.onopen = () => setWsConnected(true);

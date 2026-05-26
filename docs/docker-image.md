@@ -65,7 +65,7 @@ Add a persistent volume mounted at:
 /data
 ```
 
-That is enough for the normal Railway setup. Market Stack will generate its own secrets and start Redis automatically.
+That is enough for the normal Railway setup. Market Stack will generate its own secrets, start Redis automatically, and route `/api/v1` traffic through the same public app domain.
 
 ## Advanced Redis
 

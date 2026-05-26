@@ -1,14 +1,14 @@
 "use server";
 
 import { getAuthenticatedBackendHeaders } from "@/lib/fastapi";
-import { getPublicApiBaseUrl } from "@/lib/runtime-config";
+import { getPublicApiBaseUrl, getPublicAppUrl } from "@/lib/runtime-config";
 
 const apiBaseUrl = getPublicApiBaseUrl();
 
 export async function getAlphaWebSocketConfig(products: string[] = []) {
     const headers = await getAuthenticatedBackendHeaders();
     const userId = headers.get("X-User-Id") || "local-dev-user";
-    const url = new URL(apiBaseUrl);
+    const url = new URL(apiBaseUrl, getPublicAppUrl());
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     url.pathname = `${url.pathname.replace(/\/+$/, "")}/alpha/ws`;
     url.search = "";

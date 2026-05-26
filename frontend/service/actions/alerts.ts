@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { fetchFastApi, getAuthenticatedBackendHeaders } from "@/lib/fastapi";
-import { getPublicApiBaseUrl } from "@/lib/runtime-config";
+import { getPublicApiBaseUrl, getPublicAppUrl } from "@/lib/runtime-config";
 import type {
     AlertChannel,
     AlertChannelSelection,
@@ -305,7 +305,7 @@ export async function getLivePricesWebSocketConfig(
 ): Promise<{ url: string }> {
     const headers = await getAuthenticatedBackendHeaders();
     const userId = headers.get("X-User-Id") || "local-dev-user";
-    const url = new URL(publicApiBaseUrl);
+    const url = new URL(publicApiBaseUrl, getPublicAppUrl());
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     url.pathname = `${url.pathname.replace(/\/+$/, "")}/live-streams/prices/ws`;
     url.search = "";
