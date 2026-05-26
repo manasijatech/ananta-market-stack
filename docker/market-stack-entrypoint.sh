@@ -7,7 +7,8 @@ DATA_DIR="${MARKET_STACK_DATA_DIR:-/data}"
 REDIS_DATA_DIR="${MARKET_STACK_REDIS_DATA_DIR:-$DATA_DIR/redis}"
 BACKEND_HOST="${MARKET_STACK_BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${MARKET_STACK_BACKEND_PORT:-8000}"
-FRONTEND_PORT="${PORT:-3000}"
+PUBLIC_PORT="${PORT:-3000}"
+FRONTEND_PORT="${MARKET_STACK_FRONTEND_PORT:-3001}"
 
 log() {
   printf '%s\n' "$*"
@@ -102,8 +103,76 @@ PY
   return 1
 }
 
+wait_for_frontend() {
+  i=0
+  while [ "$i" -lt 60 ]; do
+    if python - <<PY >/dev/null 2>&1
+import urllib.request
+urllib.request.urlopen("http://127.0.0.1:$FRONTEND_PORT", timeout=2).read()
+PY
+    then
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 1
+  done
+  log "Frontend did not become healthy in time."
+  return 1
+}
+
+write_nginx_config() {
+  cat > /etc/nginx/nginx.conf <<EOF
+events {}
+
+http {
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+  sendfile on;
+
+  map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    '' close;
+  }
+
+  server {
+    listen $PUBLIC_PORT;
+    server_name _;
+
+    client_max_body_size 25m;
+
+    location /api/v1/ {
+      proxy_pass http://$BACKEND_HOST:$BACKEND_PORT/api/v1/;
+      proxy_http_version 1.1;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection \$connection_upgrade;
+      proxy_read_timeout 3600s;
+      proxy_send_timeout 3600s;
+      proxy_buffering off;
+    }
+
+    location / {
+      proxy_pass http://127.0.0.1:$FRONTEND_PORT;
+      proxy_http_version 1.1;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
+      proxy_set_header Upgrade \$http_upgrade;
+      proxy_set_header Connection \$connection_upgrade;
+      proxy_read_timeout 3600s;
+      proxy_send_timeout 3600s;
+    }
+  }
+}
+EOF
+}
+
 stop_children() {
-  for pid in ${FRONTEND_PID:-} ${BACKEND_PID:-} ${REDIS_PID:-}; do
+  for pid in ${NGINX_PID:-} ${FRONTEND_PID:-} ${BACKEND_PID:-} ${REDIS_PID:-}; do
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
       kill "$pid" 2>/dev/null || true
     fi
@@ -122,10 +191,10 @@ export ALLOW_INSECURE_DEV_CREDENTIALS="${ALLOW_INSECURE_DEV_CREDENTIALS:-false}"
 export MARKET_STACK_API_INTERNAL_URL="${MARKET_STACK_API_INTERNAL_URL:-http://$BACKEND_HOST:$BACKEND_PORT/api/v1}"
 export NEXT_PUBLIC_API_BASE_URL="${NEXT_PUBLIC_API_BASE_URL:-${MARKET_STACK_PUBLIC_API_BASE_URL:-/api/v1}}"
 export MARKET_STACK_PUBLIC_API_BASE_URL="${MARKET_STACK_PUBLIC_API_BASE_URL:-$NEXT_PUBLIC_API_BASE_URL}"
-export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-${MARKET_STACK_PUBLIC_APP_URL:-http://localhost:$FRONTEND_PORT}}"
+export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-${MARKET_STACK_PUBLIC_APP_URL:-http://localhost:$PUBLIC_PORT}}"
 export MARKET_STACK_PUBLIC_APP_URL="${MARKET_STACK_PUBLIC_APP_URL:-$NEXT_PUBLIC_APP_URL}"
 export BETTER_AUTH_URL="${BETTER_AUTH_URL:-$MARKET_STACK_PUBLIC_APP_URL}"
-export BETTER_AUTH_TRUSTED_ORIGINS="${BETTER_AUTH_TRUSTED_ORIGINS:-$MARKET_STACK_PUBLIC_APP_URL,http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT}"
+export BETTER_AUTH_TRUSTED_ORIGINS="${BETTER_AUTH_TRUSTED_ORIGINS:-$MARKET_STACK_PUBLIC_APP_URL,http://localhost:$PUBLIC_PORT,http://127.0.0.1:$PUBLIC_PORT}"
 export APP_PUBLIC_BASE_URL="${APP_PUBLIC_BASE_URL:-$MARKET_STACK_PUBLIC_APP_URL}"
 
 if [ -z "${REDIS_URL:-}" ]; then
@@ -149,7 +218,17 @@ cd /app/frontend
 HOSTNAME=0.0.0.0 PORT="$FRONTEND_PORT" node node_modules/next/dist/bin/next start -p "$FRONTEND_PORT" -H 0.0.0.0 &
 FRONTEND_PID="$!"
 
+wait_for_frontend
+
+write_nginx_config
+nginx -g "daemon off;" &
+NGINX_PID="$!"
+
 while :; do
+  if ! kill -0 "$NGINX_PID" 2>/dev/null; then
+    wait "$NGINX_PID" || exit_code="$?"
+    break
+  fi
   if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
     wait "$BACKEND_PID" || exit_code="$?"
     break

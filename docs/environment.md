@@ -89,6 +89,8 @@ MARKET_STACK_PUBLIC_API_BASE_URL=/api/v1
 MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 ```
 
+The published image includes an internal reverse proxy so `/api/v1` supports normal HTTP requests and browser websocket upgrades on the same public domain.
+
 ## Hosted API Links
 
 The public developer portal is available at:

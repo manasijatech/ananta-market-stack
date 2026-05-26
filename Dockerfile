@@ -43,7 +43,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends redis-server ca-certificates \
+    && apt-get install -y --no-install-recommends redis-server nginx ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
