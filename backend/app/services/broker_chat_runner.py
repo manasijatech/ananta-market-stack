@@ -18,6 +18,8 @@ from app.services.broker_chat_queue import broker_chat_cancel_requested
 from db.models import BrokerChatRun
 from db.session import SessionLocal
 
+MAX_REASONING_EVENTS_PER_RUN = 25
+
 BROKER_CHAT_INSTRUCTIONS_TEMPLATE = """
 You are Market-Stack's broker data assistant.
 
@@ -279,6 +281,48 @@ def _extract_tool_call_output(item: Any) -> tuple[str | None, Any]:
     return str(call_id) if call_id else None, _json_from_maybe_string(getattr(item, "output", None))
 
 
+def _first_text_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("delta", "text", "summary", "content", "message"):
+            text = _first_text_value(value.get(key))
+            if text:
+                return text
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        parts = [_first_text_value(item) for item in value]
+        return " ".join(part for part in parts if part).strip()
+    return ""
+
+
+def _reasoning_event_payload(data: Any) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    raw_type = str(getattr(data, "type", "") or "")
+    raw = _safe_data(data)
+    text = ""
+    for attr in ("delta", "text", "summary", "content", "message"):
+        text = _first_text_value(getattr(data, attr, None))
+        if text:
+            break
+    if not text:
+        text = _first_text_value(raw)
+    if not text:
+        return None
+
+    public_payload = {
+        "message": text[:500],
+        "raw_type": raw_type,
+    }
+    full_payload = {
+        "message": text,
+        "raw_type": raw_type,
+        "raw": raw,
+    }
+    return public_payload, full_payload
+
+
 def _output_preview(output: Any) -> dict[str, Any]:
     text = json.dumps(output, default=str, ensure_ascii=False) if not isinstance(output, str) else output
     return {
@@ -310,13 +354,14 @@ async def _run_broker_chat(run_id: str) -> None:
     final_text = ""
     tool_names_by_call_id: dict[str, str] = {}
     pending_tool_names: list[str] = []
+    reasoning_events_emitted = 0
     try:
         run = db.get(BrokerChatRun, run_id)
         if run is None:
             return
         if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
             broker_chat.mark_run_terminal(db, run, status="cancelled", response_text=run.response_text)
-            broker_chat.append_event(db, run, event_type="run_cancelled", public_payload={"status": "cancelled"})
+            broker_chat.append_event_once(db, run, event_type="run_cancelled", public_payload={"status": "cancelled"})
             return
         broker_chat.mark_run_running(db, run)
         db.refresh(run)
@@ -397,13 +442,20 @@ async def _run_broker_chat(run_id: str) -> None:
                         full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
                     )
                 elif "reasoning" in str(raw_type):
+                    if not run.include_reasoning or reasoning_events_emitted >= MAX_REASONING_EVENTS_PER_RUN:
+                        continue
+                    reasoning_payload = _reasoning_event_payload(data)
+                    if reasoning_payload is None:
+                        continue
+                    public_payload, full_payload = reasoning_payload
                     broker_chat.append_event(
                         db,
                         run,
                         event_type="reasoning",
-                        public_payload={"message": "Reasoning event received."},
-                        full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
+                        public_payload=public_payload,
+                        full_payload=full_payload,
                     )
+                    reasoning_events_emitted += 1
                 continue
 
             if event_type == "run_item_stream_event":
@@ -493,7 +545,7 @@ async def _run_broker_chat(run_id: str) -> None:
         if run is not None:
             broker_chat.mark_run_terminal(db, run, status="cancelled", response_text=final_text, error=None)
             db.refresh(run)
-            broker_chat.append_event(
+            broker_chat.append_event_once(
                 db,
                 run,
                 event_type="run_cancelled",

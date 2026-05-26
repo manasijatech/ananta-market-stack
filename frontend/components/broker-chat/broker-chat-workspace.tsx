@@ -434,7 +434,14 @@ function groupToolSteps(events: BrokerChatEvent[]): ToolStep[] {
 
 function groupReasoningSteps(events: BrokerChatEvent[]): ReasoningStep[] {
     return events
-        .filter((event) => event.event_type === "reasoning")
+        .filter((event) => {
+            if (event.event_type !== "reasoning") {
+                return false;
+            }
+            const message = textPayload(event.payload, "message");
+            const rawType = textPayload(event.payload, "raw_type");
+            return Boolean(rawType || (message && message !== "Reasoning event received."));
+        })
         .map((event) => ({
             key: `${event.run_id}:reasoning:${event.sequence}`,
             event
@@ -466,10 +473,6 @@ function ToolStepDetails({ step, visibility }: { step: ToolStep; visibility: Bro
     const outputPayload = step.output?.payload;
     const argumentsPayload = payloadValue(startPayload, "arguments");
     const output = payloadValue(outputPayload, "output");
-    const outputMetadata = payloadValue(outputPayload, "output_metadata");
-    const startRawItem = payloadValue(startPayload, "raw_item");
-    const outputRawItem = payloadValue(outputPayload, "raw_item");
-    const outputFallback = output === undefined ? outputMetadata : output;
 
     return (
         <div className="ml-5 mt-1 grid max-w-5xl gap-3 border-l border-border px-3 py-2 text-xs">
@@ -478,20 +481,18 @@ function ToolStepDetails({ step, visibility }: { step: ToolStep; visibility: Bro
                 {step.callId ? <span>Call {step.callId}</span> : null}
             </div>
             <ToolDetailBlock label="Arguments" value={argumentsPayload} />
-            <ToolDetailBlock label={output === undefined ? "Output metadata" : "Output"} value={outputFallback} />
-            <ToolDetailBlock label="Started event payload" value={startPayload} />
-            <ToolDetailBlock label="Completed event payload" value={outputPayload} />
-            <ToolDetailBlock label="Started raw item" value={startRawItem} />
-            <ToolDetailBlock label="Completed raw item" value={outputRawItem} />
+            <ToolDetailBlock label="Output" value={output} />
         </div>
     );
 }
 
 function ToolStepRow({
+    includeToolOutputs,
     isRunActive,
     step,
     visibility
 }: {
+    includeToolOutputs: boolean;
     isRunActive: boolean;
     step: ToolStep;
     visibility: BrokerChatVisibility;
@@ -501,6 +502,7 @@ function ToolStepRow({
     const toolName = step.toolName.replace(/^broker_/, "").replace(/_/g, " ");
     const text = `${action} ${toolName}`;
     const showShimmer = isRunActive && !step.output;
+    const canExpand = includeToolOutputs && payloadValue(step.output?.payload, "output") !== undefined;
 
     return (
         <div className="grid gap-1 px-1 py-1.5 text-sm">
@@ -516,21 +518,23 @@ function ToolStepRow({
                 ) : (
                     <span className="min-w-0 font-medium text-muted-foreground">{text}</span>
                 )}
-                <button
-                    aria-expanded={open}
-                    aria-label={`${open ? "Hide" : "Show"} ${toolName} tool details`}
-                    className="flex size-7 shrink-0 items-center justify-center text-muted-foreground transition hover:bg-[var(--accent-glow)] hover:text-primary"
-                    onClick={() => setOpen((current) => !current)}
-                    title={`${open ? "Hide" : "Show"} tool details`}
-                    type="button"
-                >
-                    <IconChevronDown
-                        className={cn("size-4 transition-transform", open ? "rotate-180" : null)}
-                        stroke={1.8}
-                    />
-                </button>
+                {canExpand ? (
+                    <button
+                        aria-expanded={open}
+                        aria-label={`${open ? "Hide" : "Show"} ${toolName} tool output`}
+                        className="flex size-7 shrink-0 items-center justify-center text-muted-foreground transition hover:bg-[var(--accent-glow)] hover:text-primary"
+                        onClick={() => setOpen((current) => !current)}
+                        title={`${open ? "Hide" : "Show"} tool output`}
+                        type="button"
+                    >
+                        <IconChevronDown
+                            className={cn("size-4 transition-transform", open ? "rotate-180" : null)}
+                            stroke={1.8}
+                        />
+                    </button>
+                ) : null}
             </div>
-            {open ? <ToolStepDetails step={step} visibility={visibility} /> : null}
+            {open && canExpand ? <ToolStepDetails step={step} visibility={visibility} /> : null}
         </div>
     );
 }
@@ -567,7 +571,8 @@ function ReasoningStepRow({
 }) {
     const [open, setOpen] = useState(false);
     const rawType = textPayload(step.event.payload, "raw_type");
-    const label = rawType ? `Reasoning ${rawType}` : "Reasoning event received";
+    const message = textPayload(step.event.payload, "message");
+    const label = message || (rawType ? `Reasoning ${rawType}` : "Reasoning details");
 
     return (
         <div className="grid gap-1 px-1 py-1.5 text-sm">
@@ -807,6 +812,8 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const [streamingIds, setStreamingIds] = useState<string[]>([]);
     const [queueHealth, setQueueHealth] = useState<BrokerChatQueueHealth | null>(null);
     const streamControllersRef = useRef<Record<string, AbortController>>({});
+    const runsRef = useRef(runs);
+    const streamDetailKeyRef = useRef(`${visibility}:${includeToolOutputs}:${includeReasoning}`);
     const configSaveRequestRef = useRef(0);
     const savedConfigKeyRef = useRef(
         brokerChatConfigKey({
@@ -935,12 +942,21 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
 
     const streamRun = useCallback(
         async (runId: string, afterSequence = 0) => {
-            if (!user?.id || streamControllersRef.current[runId]) {
+            if (!user?.id) {
                 return;
+            }
+            const existingController = streamControllersRef.current[runId];
+            if (existingController && !existingController.signal.aborted) {
+                return;
+            }
+            if (existingController?.signal.aborted) {
+                delete streamControllersRef.current[runId];
             }
             const controller = new AbortController();
             streamControllersRef.current[runId] = controller;
             setStreamingIds((current) => (current.includes(runId) ? current : [...current, runId]));
+            let latestSequence = afterSequence;
+            let reconnectAfterClose = false;
             const params = new URLSearchParams({
                 after_sequence: String(afterSequence),
                 visibility,
@@ -978,6 +994,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         const parsed = parseSseBlock(block);
                         if (parsed?.event && parsed.event !== "ping" && parsed.event !== "error") {
                             const sequence = Number(parsed.id ?? 0);
+                            latestSequence = Number.isFinite(sequence) ? Math.max(latestSequence, sequence) : latestSequence;
                             const payload = parsed.data ? (JSON.parse(parsed.data) as Record<string, unknown>) : {};
                             const event: BrokerChatEvent = {
                                 id: `${runId}:${sequence}`,
@@ -1031,14 +1048,27 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 const freshRun = await getBrokerChatRun(runId).catch(() => null);
                 if (freshRun) {
                     setRuns((current) => mergeRuns(current, [freshRun]));
+                    reconnectAfterClose = liveStatuses.has(freshRun.status) && !controller.signal.aborted;
                 }
             } catch (err) {
                 if ((err as Error).name !== "AbortError") {
                     setError((err as Error).message || "Broker chat stream stopped.");
+                    const freshRun = await getBrokerChatRun(runId).catch(() => null);
+                    if (freshRun) {
+                        setRuns((current) => mergeRuns(current, [freshRun]));
+                        reconnectAfterClose = liveStatuses.has(freshRun.status);
+                    }
                 }
             } finally {
-                delete streamControllersRef.current[runId];
+                if (streamControllersRef.current[runId] === controller) {
+                    delete streamControllersRef.current[runId];
+                }
                 setStreamingIds((current) => current.filter((id) => id !== runId));
+                if (reconnectAfterClose && !controller.signal.aborted) {
+                    window.setTimeout(() => {
+                        void streamRun(runId, latestSequence);
+                    }, 1000);
+                }
             }
         },
         [includeReasoning, includeToolOutputs, user?.id, visibility]
@@ -1084,6 +1114,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     }, [activeSessionId, loadRunEvents]);
 
     useEffect(() => {
+        runsRef.current = runs;
+    }, [runs]);
+
+    useEffect(() => {
         for (const run of runs) {
             if (liveStatuses.has(run.status)) {
                 const lastSequence = eventsByRun[run.id]?.at(-1)?.sequence ?? 0;
@@ -1091,6 +1125,63 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             }
         }
     }, [eventsByRun, runs, streamRun]);
+
+    useEffect(() => {
+        const nextKey = `${visibility}:${includeToolOutputs}:${includeReasoning}`;
+        if (nextKey === streamDetailKeyRef.current) {
+            return;
+        }
+        streamDetailKeyRef.current = nextKey;
+        const liveRuns = runsRef.current.filter((run) => liveStatuses.has(run.status));
+        for (const run of liveRuns) {
+            streamControllersRef.current[run.id]?.abort();
+        }
+        window.setTimeout(() => {
+            for (const run of liveRuns) {
+                const lastSequence = eventsByRun[run.id]?.at(-1)?.sequence ?? 0;
+                void streamRun(run.id, lastSequence);
+            }
+        }, 0);
+    }, [eventsByRun, includeReasoning, includeToolOutputs, streamRun, visibility]);
+
+    useEffect(() => {
+        const liveRuns = runsForActiveSession.filter((run) => liveStatuses.has(run.status));
+        if (!liveRuns.length) {
+            return;
+        }
+        let cancelled = false;
+        const pollLiveRuns = async () => {
+            await Promise.all(
+                liveRuns.map(async (run) => {
+                    const afterSequence = eventsByRun[run.id]?.at(-1)?.sequence ?? 0;
+                    const page = await getBrokerChatEvents(run.id, {
+                        afterSequence,
+                        limit: 100,
+                        visibility,
+                        includeToolOutputs,
+                        includeReasoning
+                    }).catch(() => null);
+                    if (!page || cancelled) {
+                        return;
+                    }
+                    setRuns((current) => mergeRuns(current, [page.run]));
+                    if (page.events.length) {
+                        setEventsByRun((current) => ({
+                            ...current,
+                            [run.id]: mergeEvents(current[run.id] ?? [], page.events)
+                        }));
+                    }
+                })
+            );
+        };
+        const interval = window.setInterval(() => {
+            void pollLiveRuns();
+        }, 2500);
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
+    }, [eventsByRun, includeReasoning, includeToolOutputs, runsForActiveSession, visibility]);
 
     useEffect(() => {
         return () => {
@@ -1204,9 +1295,9 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 setActiveSessionId(result.run.session_id);
             }
             scrollToBottom({ behavior: "auto", force: true });
+            void streamRun(result.run.id, 0);
             const nextSessions = await getBrokerChatSessions(80).catch(() => sessions);
             setSessions(sortSessions(nextSessions));
-            void streamRun(result.run.id, 0);
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -1428,6 +1519,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                             <div className="grid gap-2">
                                                 {toolSteps.map((step) => (
                                                     <ToolStepRow
+                                                        includeToolOutputs={includeToolOutputs}
                                                         isRunActive={running}
                                                         step={step}
                                                         key={step.key}
@@ -1594,7 +1686,10 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                     />
                                     Tool output
                                 </Label>
-                                <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                                <Label
+                                    className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground"
+                                    title="Include provider reasoning text when the model exposes it. Off hides reasoning events."
+                                >
                                     <Checkbox
                                         checked={includeReasoning}
                                         onCheckedChange={(value) => setIncludeReasoning(Boolean(value))}

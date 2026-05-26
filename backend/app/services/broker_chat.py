@@ -387,7 +387,7 @@ def cancel_run(db: Session, user_id: str, run_id: str) -> BrokerChatRun:
     cancel_broker_chat_job(run.id)
     mark_run_terminal(db, run, status="cancelled", response_text=run.response_text, error=None)
     db.refresh(run)
-    append_event(
+    append_event_once(
         db,
         run,
         event_type="run_cancelled",
@@ -415,15 +415,23 @@ def _event_payload_for_visibility(
     public_payload = json_loads(row.public_payload_json, {})
     if visibility == "minimal":
         return public_payload
+
+    if visibility == "tool_calls":
+        if row.event_type == "tool_call_completed":
+            payload = {
+                "tool_name": public_payload.get("tool_name"),
+                "tool_call_id": public_payload.get("tool_call_id"),
+            }
+            if include_tool_outputs:
+                full_payload = json_loads(row.full_payload_json, public_payload)
+                if "output" in full_payload:
+                    payload["output"] = full_payload.get("output")
+            return {key: value for key, value in payload.items() if value is not None}
+        return public_payload
+
     full_payload = json_loads(row.full_payload_json, public_payload)
     if row.event_type == "tool_call_completed" and not include_tool_outputs:
-        output = full_payload.get("output")
-        if output is not None:
-            full_payload["output"] = {
-                "hidden": True,
-                "type": type(output).__name__,
-                "preview": str(output)[:240],
-            }
+        full_payload.pop("output", None)
     if row.event_type == "reasoning" and not include_reasoning:
         return public_payload
     return full_payload
@@ -470,6 +478,12 @@ def list_events(
         ).all()
     )
     effective_visibility = visibility or run.event_visibility
+    include_reasoning_value = run.include_reasoning if include_reasoning is None else include_reasoning
+    visible_rows = [
+        row
+        for row in rows
+        if row.event_type != "reasoning" or include_reasoning_value
+    ]
     events = [
         event_to_schema(
             row,
@@ -477,9 +491,9 @@ def list_events(
             include_tool_outputs=run.include_tool_outputs
             if include_tool_outputs is None
             else include_tool_outputs,
-            include_reasoning=run.include_reasoning if include_reasoning is None else include_reasoning,
+            include_reasoning=include_reasoning_value,
         )
-        for row in rows
+        for row in visible_rows
     ]
     return BrokerChatEventsPageOut(
         run=run_to_schema(run),
@@ -527,6 +541,31 @@ def append_event(
     db.commit()
     db.refresh(row)
     return row
+
+
+def append_event_once(
+    db: Session,
+    run: BrokerChatRun,
+    *,
+    event_type: str,
+    public_payload: dict[str, Any],
+    full_payload: dict[str, Any] | None = None,
+) -> BrokerChatEvent:
+    existing = db.scalar(
+        select(BrokerChatEvent)
+        .where(BrokerChatEvent.run_id == run.id, BrokerChatEvent.event_type == event_type)
+        .order_by(BrokerChatEvent.sequence.desc())
+        .limit(1)
+    )
+    if existing is not None:
+        return existing
+    return append_event(
+        db,
+        run,
+        event_type=event_type,
+        public_payload=public_payload,
+        full_payload=full_payload,
+    )
 
 
 def mark_run_running(db: Session, run: BrokerChatRun) -> BrokerChatRun:

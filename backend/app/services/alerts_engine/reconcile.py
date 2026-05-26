@@ -265,7 +265,12 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
         if key in desired_keys:
             continue
         _delete_quote_cache(redis_client, row)
-        db.delete(row)
+        row.status = "inactive"
+        row.reconciled_at = now
+        row.health_status = "orphaned"
+        row.health_reason = "No active watchlist or workflow currently owns this subscription."
+        row.updated_at = now
+        db.add(row)
         deactivated += 1
         orphaned += 1
 
