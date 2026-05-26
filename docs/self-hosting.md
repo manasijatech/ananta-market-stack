@@ -2,6 +2,8 @@
 
 This guide covers the Docker-based path for running Market Stack as a self-hosted application. For local source development, use [development.md](development.md).
 
+If you want the simplest prebuilt image flow for a VPS, Railway, or similar platform, use the [published Docker image guide](docker-image.md). The Compose flow below is best when you want to build from source or develop locally.
+
 ## Recommended Docker Setup
 
 From the repository root:
