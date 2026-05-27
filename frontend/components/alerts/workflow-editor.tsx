@@ -60,6 +60,7 @@ import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
+import { WorkflowAiChatPanel } from "@/components/alerts/workflow-ai-chat-panel";
 import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -1329,6 +1330,7 @@ export function WorkflowEditor({
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [matchPreview, setMatchPreview] = useState("");
+    const [chatWorkflow, setChatWorkflow] = useState<AlertWorkflow | null>(null);
     const [editorMode, setEditorMode] = useState<EditorMode>(initialWorkflow?.editor_mode ?? "rule");
     const initialWorkflowType = initialWorkflow?.workflow_dsl.workflow_type ?? "market_data";
     const [workflowType, setWorkflowType] = useState<"market_data" | "alpha_feed">(initialWorkflowType);
@@ -1539,6 +1541,8 @@ export function WorkflowEditor({
     const suppressLlmAutocompleteRef = useRef(false);
     const suppressMessageAutocompleteRef = useRef(false);
 
+    const persistedWorkflow = chatWorkflow ?? initialWorkflow ?? null;
+    const persistedWorkflowId = persistedWorkflow?.id ?? "";
     const selectedAccount = accounts.find((item) => item.id === accountId);
     const selectedWatchlist = watchlists.find((item) => item.id === selectedWatchlistId) ?? null;
     const isTemplateDraft = Boolean(initialWorkflow?.template_id && !initialWorkflow?.id);
@@ -2392,7 +2396,7 @@ export function WorkflowEditor({
         };
 
         return {
-            template_id: initialWorkflow?.template_id ?? null,
+            template_id: chatWorkflow?.template_id ?? initialWorkflow?.template_id ?? null,
             name,
             description,
             account_id: accountId || null,
@@ -2656,6 +2660,137 @@ export function WorkflowEditor({
         return true;
     }
 
+    function applyWorkflowToEditor(workflow: AlertWorkflow) {
+        const dsl = workflow.workflow_dsl;
+        const ast = dsl.workflow_ast as JsonObject | null | undefined;
+        const targetUniverse = (ast?.target_universe as JsonObject | undefined) ?? {};
+        const targeting = dsl.targeting;
+        const astSymbols = Array.isArray(targetUniverse.symbols) ? targetUniverse.symbols : [];
+        const astEntries = normalizeTargets(
+            astSymbols
+                .map((item) => {
+                    if (!isRecord(item)) return null;
+                    const nextSymbol = String(item.symbol ?? "").trim().toUpperCase();
+                    if (!nextSymbol) return null;
+                    const nextExchange = typeof item.exchange === "string" ? item.exchange : workflow.exchange ?? "NSE";
+                    return buildTargetEntry(nextSymbol, nextExchange, {
+                        ...(isRecord(item.instrument_ref) ? item.instrument_ref : {}),
+                        symbol: nextSymbol,
+                        exchange: nextExchange
+                    });
+                })
+                .filter(Boolean) as AlertTargetEntry[]
+        );
+        const nextTargetEntries = normalizeTargets(
+            astEntries.length ? astEntries : targeting?.entries?.length ? targeting.entries : []
+        );
+        const primaryTarget = nextTargetEntries[0];
+        const nextSymbol = primaryTarget?.symbol ?? workflow.symbol ?? "";
+        const nextExchange = primaryTarget?.exchange ?? workflow.exchange ?? "NSE";
+        const nextInstrument = primaryTarget?.instrument_ref ?? workflow.instrument_ref ?? {};
+        const nextWorkflowType = dsl.workflow_type ?? "market_data";
+        const nextActivePeriodDefaults = activePeriodDefaults(nextWorkflowType);
+        const nextActivePeriod = {
+            ...nextActivePeriodDefaults,
+            ...(dsl.active_period ?? {})
+        };
+        const nextChannels = dsl.channels ?? { inherit_defaults: true, enabled: ["in_app" as AlertChannelType] };
+        const nextEnabledChannels = workflow.channel_override?.enabled ?? nextChannels.enabled ?? ["in_app"];
+        const nextLogic = ast?.logic ? logicNodeToConditions(ast.logic) : null;
+        const nextConditions =
+            nextLogic?.conditions.length
+                ? nextLogic.conditions
+                : dsl.conditions?.length
+                  ? dsl.conditions
+                  : [{ field: "ltp", operator: "crosses_above", value: 3000 }];
+        const nextCombine = nextLogic?.combine ?? dsl.combine ?? "all";
+        const llm = dsl.llm_analysis;
+        const feed = dsl.feed_trigger;
+        const marketCap = dsl.market_cap_filter;
+
+        setChatWorkflow(workflow);
+        setName(workflow.name ?? "");
+        setDescription(workflow.description ?? "");
+        setAccountId(workflow.account_id ?? accounts[0]?.id ?? "");
+        setBrokerCode(workflow.broker_code ?? "");
+        setWorkflowType(nextWorkflowType);
+        setSymbol(nextSymbol);
+        setExchange(nextExchange);
+        setInstrumentRef(nextInstrument);
+        setSymbolSearch(nextTargetEntries.length === 1 ? nextSymbol : "");
+        setCommittedSymbolSearch(nextTargetEntries.length === 1 ? nextSymbol : "");
+        setSelectedSearchLabel(nextTargetEntries.length === 1 ? targetDisplay(nextTargetEntries[0]) : "");
+        setEditorMode(workflow.editor_mode ?? "rule");
+        setStatus(workflow.status === "active" ? "active" : "inactive");
+        setTargetEntries(nextTargetEntries);
+        setBulkTargets("");
+        if (targetUniverse.kind === "watchlist") {
+            setTargetMode("preset_universe");
+            setSelectedWatchlistId(String(targetUniverse.watchlist_id ?? selectedWatchlistId));
+        } else if (targeting?.mode) {
+            setTargetMode(targeting.mode);
+        } else {
+            setTargetMode(nextTargetEntries.length > 1 ? "symbol_list" : "single_symbol");
+        }
+        setCombine(nextCombine);
+        setConditions(nextConditions);
+        setCooldownSeconds(String(dsl.cooldown_seconds ?? 300));
+        setLevel(dsl.notification?.level ?? "info");
+        setTitleTemplate(dsl.notification?.title_template ?? "{symbol} alert");
+        setMessageTemplate(dsl.notification?.message_template ?? "{symbol} matched workflow");
+        setDslText(dsl.dsl_text ?? "");
+        setInheritDefaults(workflow.channel_override?.inherit_defaults ?? nextChannels.inherit_defaults ?? true);
+        setChannelInApp(nextEnabledChannels.includes("in_app"));
+        setChannelDiscord(nextEnabledChannels.includes("discord"));
+        setChannelTelegram(nextEnabledChannels.includes("telegram"));
+        setLlmEnabled(Boolean(llm?.enabled));
+        setLlmProvider(llm?.provider ?? firstLlmProvider?.provider ?? "");
+        setLlmModelId(llm?.model_id ?? firstLlmModel?.model_id ?? "");
+        setLlmPromptTemplate(llm?.prompt_template || fallbackLlmPrompt);
+        setLlmTemperature(String(llm?.temperature ?? 0.2));
+        setLlmMaxTokens(String(llm?.max_completion_tokens ?? 500));
+        setLlmTimeout(String(llm?.timeout_seconds ?? 25));
+        setFeedProducts(feed?.products ?? ["news"]);
+        setFeedAnnouncementCategories(feed?.announcement_categories ?? []);
+        setFeedCategoryFilterEnabled(Boolean(feed?.announcement_categories?.length));
+        setFeedIncludeRelatedCategories(feed?.include_related_categories ?? true);
+        setFeedConditionPrompt(feed?.condition_prompt ?? "");
+        setFeedSourceScope(feed?.source_scope ?? "current_alpha_subscription");
+        setFeedWatchlistIds(feed?.watchlist_ids ?? []);
+        setFeedPresetIds(feed?.preset_ids ?? []);
+        setFeedIncludeAllWatchlists(Boolean(feed?.include_all_watchlists));
+        setFeedTriggerLlmEnabled(Boolean(feed?.condition_prompt || feed?.provider || feed?.model_id));
+        setFeedProvider(feed?.provider ?? "");
+        setFeedModelId(feed?.model_id ?? "");
+        setFeedTemperature(String(feed?.temperature ?? 0.1));
+        setFeedMaxTokens(String(feed?.max_completion_tokens ?? 400));
+        setFeedTimeout(String(feed?.timeout_seconds ?? 25));
+        setMarketCapMode(marketCap?.mode ?? "all");
+        setMarketCapMin(marketCap?.min_value != null ? String(marketCap.min_value) : "");
+        setMarketCapMax(marketCap?.max_value != null ? String(marketCap.max_value) : "");
+        setActivePeriodEnabled(nextActivePeriod.enabled);
+        setActiveTimezone(nextActivePeriod.timezone);
+        setActiveDays(nextActivePeriod.days.length ? nextActivePeriod.days : nextActivePeriodDefaults.days);
+        setActiveSessionLabel(nextActivePeriod.sessions[0]?.label ?? "Regular market");
+        setActiveSessionStart(nextActivePeriod.sessions[0]?.start ?? "09:15");
+        setActiveSessionEnd(nextActivePeriod.sessions[0]?.end ?? "15:30");
+        setActiveExchanges(listCsv(nextActivePeriod.exchanges));
+        setActiveExchangeTypes(listCsv(nextActivePeriod.exchange_types));
+        setActiveSegments(listCsv(nextActivePeriod.segments));
+        setActiveInstrumentTypes(listCsv(nextActivePeriod.instrument_types));
+        setShowAdvancedMarketScope(
+            Boolean(
+                nextActivePeriod.exchanges.length ||
+                    nextActivePeriod.exchange_types.length ||
+                    nextActivePeriod.segments.length ||
+                    nextActivePeriod.instrument_types.length
+            )
+        );
+        setEngineDetails(null);
+        setEngineFeedback("Workflow AI Chat applied this workflow state to the editor.");
+        setNotice("Workflow draft loaded from chat snapshot.");
+    }
+
     useEffect(() => {
         if (!dslText.trim()) return;
         const targeting = workflowTargetingPayload();
@@ -2678,11 +2813,15 @@ export function WorkflowEditor({
         startTransition(async () => {
             try {
                 const payload = workflowPayload();
-                const workflow = initialWorkflow?.id
-                    ? await updateAlertWorkflow(initialWorkflow.id, payload)
+                const workflow = persistedWorkflowId
+                    ? await updateAlertWorkflow(persistedWorkflowId, payload)
                     : await createAlertWorkflow(payload);
-                setNotice(initialWorkflow?.id ? "Workflow saved." : "Workflow created.");
-                if (initialWorkflow?.id) {
+                setChatWorkflow(workflow);
+                setNotice(persistedWorkflowId ? "Workflow saved." : "Workflow created.");
+                if (persistedWorkflowId) {
+                    if (!initialWorkflow?.id) {
+                        router.push(`/alerts-workspace/workflows/${workflow.id}`);
+                    }
                     router.refresh();
                 } else {
                     router.push(`/alerts-workspace/workflows/${workflow.id}`);
@@ -2852,12 +2991,12 @@ export function WorkflowEditor({
     }
 
     function previewTest() {
-        if (!initialWorkflow) return;
+        if (!persistedWorkflowId) return;
         setError("");
         setMatchPreview("");
         startTransition(async () => {
             try {
-                const result = await testAlertWorkflow(initialWorkflow.id, buildPreviewTick());
+                const result = await testAlertWorkflow(persistedWorkflowId, buildPreviewTick());
                 setMatchPreview(
                     result.matched
                         ? `Current preview tick matched the workflow: ${result.reason}`
@@ -2871,12 +3010,12 @@ export function WorkflowEditor({
     }
 
     function sendTestAlert() {
-        if (!initialWorkflow) return;
+        if (!persistedWorkflowId) return;
         setError("");
         setMatchPreview("");
         startTransition(async () => {
             try {
-                const result = await sendWorkflowTestNotification(initialWorkflow.id, buildPreviewTick());
+                const result = await sendWorkflowTestNotification(persistedWorkflowId, buildPreviewTick());
                 setMatchPreview(`${result.message} Notification id: ${result.notification_id}`);
             } catch (caught) {
                 notifyAlphaCreditWarning(caught);
@@ -2886,19 +3025,19 @@ export function WorkflowEditor({
     }
 
     function requestLlmCreditConfirmation(action: "preview" | "test") {
-        if (!initialWorkflow?.id) return;
+        if (!persistedWorkflowId) return;
         setLlmCreditAction(action);
     }
 
     function runPreviewLlmContext() {
-        if (!initialWorkflow?.id) return;
+        if (!persistedWorkflowId) return;
         setError("");
         setLlmFeedback("");
         setLlmDetails(null);
         startTransition(async () => {
             try {
                 const result = await previewAlertWorkflowLlmContext(
-                    initialWorkflow.id,
+                    persistedWorkflowId,
                     buildPreviewTick(),
                     llmAnalysisPayload()
                 );
@@ -2915,13 +3054,13 @@ export function WorkflowEditor({
     }
 
     function runTestLlmAnalysis() {
-        if (!initialWorkflow?.id) return;
+        if (!persistedWorkflowId) return;
         setError("");
         setLlmFeedback("");
         setLlmDetails(null);
         startTransition(async () => {
             try {
-                const result = await testAlertWorkflowLlm(initialWorkflow.id, buildPreviewTick(), llmAnalysisPayload());
+                const result = await testAlertWorkflowLlm(persistedWorkflowId, buildPreviewTick(), llmAnalysisPayload());
                 const analysis = result.llm_analysis ?? {};
                 setLlmFeedback(String(analysis.output || analysis.error || analysis.status || "LLM test completed."));
                 setLlmDetails(result as unknown as Record<string, unknown>);
@@ -2967,10 +3106,10 @@ export function WorkflowEditor({
     }
 
     function removeWorkflow() {
-        if (!initialWorkflow?.id || typeof window === "undefined") return;
+        if (!persistedWorkflowId || typeof window === "undefined") return;
         if (
             !window.confirm(
-                `Delete workflow "${initialWorkflow.name}"? This removes its live subscription and history remains only in past notifications.`
+                `Delete workflow "${persistedWorkflow?.name ?? name}"? This removes its live subscription and history remains only in past notifications.`
             )
         ) {
             return;
@@ -2978,7 +3117,7 @@ export function WorkflowEditor({
         setError("");
         startTransition(async () => {
             try {
-                await deleteAlertWorkflow(initialWorkflow.id);
+                await deleteAlertWorkflow(persistedWorkflowId);
                 router.push("/alerts-workspace/workflows");
                 router.refresh();
             } catch (caught) {
@@ -3065,7 +3204,7 @@ export function WorkflowEditor({
     }
 
     function runEngineAction(action: EngineAction) {
-        if (!initialWorkflow?.id) return;
+        if (!persistedWorkflowId) return;
         setError("");
         setEngineFeedback("");
         setEngineDetails(null);
@@ -3075,7 +3214,7 @@ export function WorkflowEditor({
             try {
                 let result: Record<string, unknown>;
                 if (action === "validate") {
-                    result = (await validateAlertWorkflow(initialWorkflow.id)) as unknown as Record<string, unknown>;
+                    result = (await validateAlertWorkflow(persistedWorkflowId)) as unknown as Record<string, unknown>;
                     setEngineFeedback(
                         (result.valid as boolean) ? "Workflow validation passed." : "Workflow validation failed."
                     );
@@ -3083,7 +3222,7 @@ export function WorkflowEditor({
                         syncVisualBuilderFromAst(result.workflow_ast);
                     }
                 } else if (action === "compile") {
-                    result = (await compilePreviewAlertWorkflow(initialWorkflow.id)) as unknown as Record<
+                    result = (await compilePreviewAlertWorkflow(persistedWorkflowId)) as unknown as Record<
                         string,
                         unknown
                     >;
@@ -3094,13 +3233,14 @@ export function WorkflowEditor({
                         syncVisualBuilderFromAst(result.workflow_ast);
                     }
                 } else if (action === "explain") {
-                    result = await explainAlertWorkflow(initialWorkflow.id);
+                    result = await explainAlertWorkflow(persistedWorkflowId);
                     setEngineFeedback(String(result.summary ?? "Workflow explanation generated."));
                 } else if (action === "samples") {
-                    result = await getWorkflowSampleAlerts(initialWorkflow.id);
+                    result = await getWorkflowSampleAlerts(persistedWorkflowId);
                     setEngineFeedback("Sample alert payload generated.");
                 } else {
-                    const deployed = await deployAlertWorkflow(initialWorkflow.id);
+                    const deployed = await deployAlertWorkflow(persistedWorkflowId);
+                    setChatWorkflow(deployed);
                     result = deployed as unknown as Record<string, unknown>;
                     setEngineFeedback(`Workflow deployed as version ${deployed.deploy_version ?? 0}.`);
                     router.refresh();
@@ -4904,7 +5044,7 @@ export function WorkflowEditor({
                                         ? "bg-secondary text-foreground"
                                         : "text-muted-foreground"
                                 }
-                                disabled={isPending || !initialWorkflow?.id || !llmEnabled}
+                                disabled={isPending || !persistedWorkflowId || !llmEnabled}
                                 onClick={() => requestLlmCreditConfirmation("preview")}
                                 size="sm"
                                 type="button"
@@ -4915,7 +5055,7 @@ export function WorkflowEditor({
                         </div>
                         <div className="flex flex-wrap gap-2">
                             <Button
-                                disabled={isPending || !initialWorkflow?.id || !llmEnabled}
+                                disabled={isPending || !persistedWorkflowId || !llmEnabled}
                                 onClick={() => requestLlmCreditConfirmation("test")}
                                 size="sm"
                                 type="button"
@@ -5203,7 +5343,7 @@ export function WorkflowEditor({
                                             isLastAction && item.variant === "default" && "bg-primary/90",
                                             isRunning && "cursor-wait"
                                         )}
-                                        disabled={isPending || !initialWorkflow?.id}
+                                        disabled={isPending || !persistedWorkflowId}
                                         key={item.action}
                                         onClick={() => runEngineAction(item.action)}
                                         size="sm"
@@ -5220,22 +5360,22 @@ export function WorkflowEditor({
                         <div className="border border-border p-3">
                             <div className="type-step-eyebrow">Deployment</div>
                             <div className="type-body mt-2 text-muted-foreground">
-                                {initialWorkflow?.deployment_status ?? "draft"} · version{" "}
-                                {initialWorkflow?.deploy_version ?? 0}
+                                {persistedWorkflow?.deployment_status ?? "draft"} · version{" "}
+                                {persistedWorkflow?.deploy_version ?? 0}
                             </div>
                         </div>
                         <div className="border border-border p-3">
                             <div className="type-step-eyebrow">Last validation</div>
                             <div className="type-body mt-2 text-muted-foreground">
-                                {initialWorkflow?.last_validated_at
-                                    ? formatIstDateTime(initialWorkflow.last_validated_at)
+                                {persistedWorkflow?.last_validated_at
+                                    ? formatIstDateTime(persistedWorkflow.last_validated_at)
                                     : "-"}
                             </div>
                         </div>
                         <div className="border border-border p-3">
                             <div className="type-step-eyebrow">Runtime error</div>
                             <div className="type-body mt-2 text-muted-foreground">
-                                {initialWorkflow?.last_runtime_error || "-"}
+                                {persistedWorkflow?.last_runtime_error || "-"}
                             </div>
                         </div>
                     </div>
@@ -5355,25 +5495,25 @@ export function WorkflowEditor({
 
                 <div className="flex flex-wrap gap-2 border-t border-border pt-3">
                     <Button disabled={isPending} onClick={save} type="button">
-                        {isPending ? "Saving..." : initialWorkflow?.id ? "Save workflow" : "Create workflow"}
+                        {isPending ? "Saving..." : persistedWorkflowId ? "Save workflow" : "Create workflow"}
                     </Button>
-                    {initialWorkflow?.id ? (
+                    {persistedWorkflowId ? (
                         <Button disabled={isPending} onClick={previewTest} type="button" variant="secondary">
                             Evaluate current preview
                         </Button>
                     ) : null}
-                    {initialWorkflow?.id ? (
+                    {persistedWorkflowId ? (
                         <Button disabled={isPending} onClick={sendTestAlert} type="button" variant="secondary">
                             Send test alert
                         </Button>
                     ) : null}
-                    {initialWorkflow?.id ? (
+                    {persistedWorkflowId ? (
                         <Button disabled={isPending} onClick={removeWorkflow} type="button" variant="destructive">
                             Delete workflow
                         </Button>
                     ) : null}
                 </div>
-                {initialWorkflow?.id ? (
+                {persistedWorkflowId ? (
                     <div className="type-help grid gap-1 border border-border px-3 py-2 text-muted-foreground">
                         <div>
                             `Evaluate current preview` checks the workflow conditions against the live preview tick
@@ -5386,6 +5526,13 @@ export function WorkflowEditor({
                     </div>
                 ) : null}
             </div>
+            <WorkflowAiChatPanel
+                currentWorkflowId={persistedWorkflowId || null}
+                disabled={workflowType !== "market_data"}
+                getEditorPayload={() => workflowPayload() as Record<string, unknown>}
+                llmProviders={llmProviders}
+                onWorkflowApplied={applyWorkflowToEditor}
+            />
         </div>
     );
 }

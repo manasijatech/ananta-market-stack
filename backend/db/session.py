@@ -274,6 +274,17 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "user_alert_workflow_chat_preferences",
+            {
+                "user_id": "VARCHAR(36)",
+                "default_provider": "VARCHAR(32)",
+                "default_model": "VARCHAR(256)",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "user_mcp_server_configs",
             {
                 "id": "VARCHAR(36)",
@@ -483,6 +494,81 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "alert_workflow_chat_sessions",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "workflow_id": "VARCHAR(36)",
+                "title": "VARCHAR(256) DEFAULT 'Workflow AI chat'",
+                "status": "VARCHAR(32) DEFAULT 'active'",
+                "active_snapshot_id": "VARCHAR(36)",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "alert_workflow_chat_runs",
+            {
+                "id": "VARCHAR(36)",
+                "session_id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "workflow_id": "VARCHAR(36)",
+                "status": "VARCHAR(32) DEFAULT 'queued'",
+                "job_id": "VARCHAR(128)",
+                "provider": "VARCHAR(32) DEFAULT ''",
+                "model_id": "VARCHAR(256) DEFAULT ''",
+                "message": "TEXT",
+                "response_text": "TEXT DEFAULT ''",
+                "error": "TEXT",
+                "metadata_json": "TEXT DEFAULT '{}'",
+                "queued_at": "DATETIME",
+                "started_at": "DATETIME",
+                "completed_at": "DATETIME",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "alert_workflow_chat_events",
+            {
+                "id": "VARCHAR(36)",
+                "run_id": "VARCHAR(36)",
+                "session_id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "sequence": "INTEGER",
+                "event_type": "VARCHAR(64)",
+                "public_payload_json": "TEXT DEFAULT '{}'",
+                "full_payload_json": "TEXT DEFAULT '{}'",
+                "redis_stream_id": "VARCHAR(64)",
+                "created_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "alert_workflow_chat_snapshots",
+            {
+                "id": "VARCHAR(36)",
+                "session_id": "VARCHAR(36)",
+                "run_id": "VARCHAR(36)",
+                "workflow_id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "version": "INTEGER DEFAULT 1",
+                "label": "VARCHAR(256) DEFAULT 'Workflow snapshot'",
+                "workflow_payload_json": "TEXT DEFAULT '{}'",
+                "validation_json": "TEXT DEFAULT '{}'",
+                "compile_json": "TEXT DEFAULT '{}'",
+                "explanation_json": "TEXT DEFAULT '{}'",
+                "samples_json": "TEXT DEFAULT '{}'",
+                "diff_json": "TEXT DEFAULT '{}'",
+                "valid": "BOOLEAN DEFAULT 0",
+                "applied_at": "DATETIME",
+                "created_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "live_symbol_subscriptions",
             {
                 "id": "VARCHAR(36)",
@@ -596,6 +682,7 @@ def _ensure_table_columns(
         elif table_name in {
             "user_broker_data_preferences",
             "user_broker_chat_preferences",
+            "user_alert_workflow_chat_preferences",
             "user_mcp_server_configs",
             "user_alpha_api_credentials",
             "user_alpha_websocket_configs",

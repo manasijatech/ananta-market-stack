@@ -7,6 +7,7 @@ from app.api.v1 import (
     alert_runtime,
     alert_templates,
     alert_universes,
+    alert_workflow_chat,
     alert_workflows,
     alpha_ws,
     broker_chat,
@@ -35,6 +36,9 @@ api_router.include_router(
 )
 api_router.include_router(
     alert_workflows.router, prefix="/alert-workflows", tags=["alert-workflows"]
+)
+api_router.include_router(
+    alert_workflow_chat.router, prefix="/alert-workflow-chat", tags=["alert-workflow-chat"]
 )
 api_router.include_router(
     alert_templates.router, prefix="/alert-templates", tags=["alert-templates"]

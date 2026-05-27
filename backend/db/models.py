@@ -75,6 +75,13 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    alert_workflow_chat_preference: Mapped[UserAlertWorkflowChatPreference | None] = relationship(
+        "UserAlertWorkflowChatPreference",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     mcp_server_configs: Mapped[list[UserMcpServerConfig]] = relationship(
         "UserMcpServerConfig",
         back_populates="user",
@@ -316,6 +323,121 @@ class BrokerChatEvent(Base):
     public_payload_json: Mapped[str] = mapped_column(Text, default="{}")
     full_payload_json: Mapped[str] = mapped_column(Text, default="{}")
     redis_stream_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class UserAlertWorkflowChatPreference(Base):
+    __tablename__ = "user_alert_workflow_chat_preferences"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    default_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    default_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="alert_workflow_chat_preference")
+
+
+class AlertWorkflowChatSession(Base):
+    __tablename__ = "alert_workflow_chat_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("alert_workflows.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(256), default="Workflow AI chat")
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    active_snapshot_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
+    )
+
+
+class AlertWorkflowChatRun(Base):
+    __tablename__ = "alert_workflow_chat_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("alert_workflow_chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("alert_workflows.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    job_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="")
+    model_id: Mapped[str] = mapped_column(String(256), default="")
+    message: Mapped[str] = mapped_column(Text)
+    response_text: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    queued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
+    )
+
+
+class AlertWorkflowChatEvent(Base):
+    __tablename__ = "alert_workflow_chat_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("alert_workflow_chat_runs.id", ondelete="CASCADE"), index=True
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("alert_workflow_chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    public_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    full_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    redis_stream_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class AlertWorkflowChatSnapshot(Base):
+    __tablename__ = "alert_workflow_chat_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("alert_workflow_chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("alert_workflow_chat_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("alert_workflows.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    label: Mapped[str] = mapped_column(String(256), default="Workflow snapshot")
+    workflow_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    validation_json: Mapped[str] = mapped_column(Text, default="{}")
+    compile_json: Mapped[str] = mapped_column(Text, default="{}")
+    explanation_json: Mapped[str] = mapped_column(Text, default="{}")
+    samples_json: Mapped[str] = mapped_column(Text, default="{}")
+    diff_json: Mapped[str] = mapped_column(Text, default="{}")
+    valid: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 

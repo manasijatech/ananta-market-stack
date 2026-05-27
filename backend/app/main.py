@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.logging_config import configure_logging
 from app.services.alert_runtime import create_alert_worker_service
 from app.services.alpha_websocket import run_alpha_websocket_worker
+from app.services.alert_workflow_chat.worker_service import run_alert_workflow_chat_worker
 from app.services.broker_chat_worker_service import run_broker_chat_worker
 from app.services.broker_sessions import maintenance_loop
 from app.services.system_maintenance import run_startup_maintenance
@@ -133,6 +134,10 @@ async def lifespan(_app: FastAPI):
             run_watchlist_preset_worker,
         )
     broker_chat_worker_service = _start_background_service("broker-chat-worker", run_broker_chat_worker)
+    alert_workflow_chat_worker_service = _start_background_service(
+        "alert-workflow-chat-worker",
+        run_alert_workflow_chat_worker,
+    )
     yield
     if maintenance_service:
         maintenance_service.stop()
@@ -144,6 +149,8 @@ async def lifespan(_app: FastAPI):
         watchlist_preset_worker_service.stop()
     if broker_chat_worker_service:
         broker_chat_worker_service.stop()
+    if alert_workflow_chat_worker_service:
+        alert_workflow_chat_worker_service.stop()
 
 
 def _start_background_service(name: str, target) -> BackgroundAsyncLoopThread | None:
