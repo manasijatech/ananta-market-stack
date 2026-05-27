@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from common.datetime_compat import UTC
@@ -6,12 +7,85 @@ from app.schemas.alert import AlertWorkflowActivePeriod
 from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services.alerts_engine.ast import ensure_workflow_ast
 from app.services.alerts_engine.conditions import ConditionRuntimeContext, evaluate_logic, rolling_reference_key
+from app.services.alerts_engine.compiler import compile_workflow_dsl
 from app.services.alerts_engine.dsl import validate_dsl_text
+from app.services.alerts_engine.rolling_state import build_runtime_context, rolling_field_key
 from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
 from db.models import BrokerAccount, LiveSymbolSubscription, User, UserWatchlist, UserWatchlistSymbol
 from db.session import Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+
+class _MemoryPipeline:
+    def __init__(self, redis_client):
+        self.redis_client = redis_client
+        self.commands = []
+
+    def zadd(self, key, mapping):
+        self.commands.append(lambda: self.redis_client.zadd(key, mapping))
+        return self
+
+    def zremrangebyscore(self, key, minimum, maximum):
+        self.commands.append(lambda: self.redis_client.zremrangebyscore(key, minimum, maximum))
+        return self
+
+    def expire(self, key, ttl):
+        self.commands.append(lambda: self.redis_client.expire(key, ttl))
+        return self
+
+    def zcount(self, key, minimum, maximum):
+        self.commands.append(lambda: self.redis_client.zcount(key, minimum, maximum))
+        return self
+
+    def execute(self):
+        return [command() for command in self.commands]
+
+
+class _MemoryRedis:
+    def __init__(self):
+        self.values = {}
+        self.zsets = {}
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def setex(self, key, ttl, value):
+        self.values[key] = value
+        return True
+
+    def expire(self, key, ttl):
+        return True
+
+    def delete(self, key):
+        self.values.pop(key, None)
+        self.zsets.pop(key, None)
+        return 1
+
+    def zadd(self, key, mapping):
+        rows = self.zsets.setdefault(key, {})
+        rows.update(mapping)
+        return len(mapping)
+
+    def zrangebyscore(self, key, minimum, maximum, withscores=False):
+        rows = sorted(
+            ((member, score) for member, score in self.zsets.get(key, {}).items() if minimum <= score <= maximum),
+            key=lambda item: item[1],
+        )
+        return rows if withscores else [member for member, _score in rows]
+
+    def zremrangebyscore(self, key, minimum, maximum):
+        rows = self.zsets.setdefault(key, {})
+        removed = [member for member, score in rows.items() if minimum <= score <= maximum]
+        for member in removed:
+            rows.pop(member, None)
+        return len(removed)
+
+    def zcount(self, key, minimum, maximum):
+        return len([score for score in self.zsets.get(key, {}).values() if minimum <= score <= maximum])
+
+    def pipeline(self):
+        return _MemoryPipeline(self)
 
 
 def test_legacy_rule_payload_migrates_to_ast():
@@ -193,6 +267,176 @@ def test_rolling_operator_does_not_fallback_to_last_tick_while_window_warms():
     assert result.matched is False
     assert result.details["reference"] is None
     assert result.details["rolling"]["status"] == "warming_up"
+
+
+def test_dsl_supports_stateful_rolling_operator_config():
+    result = validate_dsl_text(
+        "rolling_volume_spike_gte(volume, value=2, window_seconds=300, "
+        "baseline=mean, min_samples=2, min_coverage_ratio=0.5, trigger_mode=rising_edge)"
+    )
+
+    assert result["valid"] is True
+    logic = result["workflow_ast"]["logic"]
+    assert logic["operator"] == "rolling_volume_spike_gte"
+    assert logic["trigger_mode"] == "rising_edge"
+    assert logic["config"]["baseline"] == "mean"
+    assert logic["config"]["min_samples"] == 2
+
+
+def test_compile_rejects_invalid_rolling_config():
+    result = compile_workflow_dsl(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "condition",
+                    "field": "ltp",
+                    "operator": "rolling_pct_change_gte",
+                    "value": 1,
+                    "window_seconds": 1,
+                    "config": {"baseline": "bad_mode", "min_coverage_ratio": 2},
+                },
+            }
+        }
+    )
+
+    assert result["valid"] is False
+    assert any("Rolling window" in error for error in result["errors"])
+    assert any("Unsupported rolling baseline" in error for error in result["errors"])
+    assert any("min_coverage_ratio" in error for error in result["errors"])
+
+
+def test_rolling_context_uses_baseline_and_readiness_gates():
+    ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "condition",
+                    "field": "ltp",
+                    "operator": "rolling_pct_change_gte",
+                    "value": 4,
+                    "window_seconds": 300,
+                    "config": {"baseline": "mean", "min_samples": 2, "min_coverage_ratio": 0.5},
+                },
+            }
+        }
+    )
+    redis_client = _MemoryRedis()
+    tick = {"symbol": "RELIANCE", "exchange": "NSE", "ltp": 110}
+    key = rolling_field_key(tick, "ltp")
+    redis_client.zadd(
+        key,
+        {
+            json.dumps({"ts": 0, "v": 100}): 0,
+            json.dumps({"ts": 100000, "v": 105}): 100000,
+        },
+    )
+
+    context = build_runtime_context(redis_client, tick, ast.logic, workflow_id="wf-1", now=200)
+    result = evaluate_logic(ast.logic, tick, {}, context)
+
+    assert result.matched is True
+    assert result.details["reference"] == 102.5
+    assert result.details["rolling"]["baseline"] == "mean"
+    assert result.details["rolling"]["sample_count"] == 2
+
+
+def test_stateful_hold_occurrence_and_edge_wrappers_use_runtime_state():
+    ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "condition",
+                    "field": "ltp",
+                    "operator": "gte",
+                    "value": 100,
+                    "hold_seconds": 2,
+                    "occurrences": 2,
+                    "occurrence_window_seconds": 10,
+                    "trigger_mode": "rising_edge",
+                },
+            }
+        }
+    )
+    redis_client = _MemoryRedis()
+    tick = {"workflow_id": "wf-1", "symbol": "RELIANCE", "exchange": "NSE", "ltp": 101}
+
+    first = evaluate_logic(
+        ast.logic,
+        tick,
+        {},
+        build_runtime_context(redis_client, tick, ast.logic, workflow_id="wf-1", now=10),
+    )
+    second = evaluate_logic(
+        ast.logic,
+        tick,
+        {},
+        build_runtime_context(redis_client, tick, ast.logic, workflow_id="wf-1", now=13),
+    )
+    third = evaluate_logic(
+        ast.logic,
+        tick,
+        {},
+        build_runtime_context(redis_client, tick, ast.logic, workflow_id="wf-1", now=14),
+    )
+    fourth = evaluate_logic(
+        ast.logic,
+        tick,
+        {},
+        build_runtime_context(redis_client, tick, ast.logic, workflow_id="wf-1", now=15),
+    )
+
+    assert first.matched is False
+    assert first.details["hold_status"] == "warming_up"
+    assert second.matched is False
+    assert second.details["occurrence_count"] == 1
+    assert third.matched is True
+    assert third.details["occurrence_count"] == 2
+    assert fourth.matched is False
+    assert fourth.details["trigger_mode"] == "rising_edge"
+
+
+def test_orderbook_operators_evaluate_spread_and_depth_ratios():
+    spread_ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "condition",
+                    "field": "best_bid_price",
+                    "operator": "spread_lte",
+                    "value": 10,
+                    "config": {"unit": "bps"},
+                },
+            }
+        }
+    )
+    ratio_ast = ensure_workflow_ast(
+        {
+            "workflow_ast": {
+                "target_universe": {"kind": "static_symbols", "symbols": []},
+                "logic": {
+                    "kind": "condition",
+                    "field": "total_buy_quantity",
+                    "operator": "total_buy_sell_ratio_gte",
+                    "value": 1.2,
+                },
+            }
+        }
+    )
+    tick = {
+        "best_bid_price": 100,
+        "best_ask_price": 100.05,
+        "total_buy_quantity": 1200,
+        "total_sell_quantity": 800,
+    }
+
+    assert evaluate_logic(spread_ast.logic, tick, {}).matched is True
+    ratio_result = evaluate_logic(ratio_ast.logic, tick, {})
+    assert ratio_result.matched is True
+    assert ratio_result.details["ratio"] == 1.5
 
 
 def test_dsl_validation_rejects_unknown_field():

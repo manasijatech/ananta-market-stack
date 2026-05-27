@@ -8,6 +8,11 @@ export interface AlertCondition {
     value?: string | number | boolean | null;
     window_seconds?: number | null;
     compare_to?: string | null;
+    hold_seconds?: number | null;
+    occurrences?: number | null;
+    occurrence_window_seconds?: number | null;
+    trigger_mode?: "level" | "rising_edge" | "falling_edge" | "every_match";
+    config?: Record<string, unknown>;
 }
 
 export interface AlertNotificationConfig {
@@ -374,6 +379,19 @@ export interface AlertConditionRegistryOperator {
     description: string;
     family: string;
     fields: string[];
+    config_fields?: Array<{
+        name: string;
+        label: string;
+        type: string;
+        description: string;
+        default?: unknown;
+        required?: boolean;
+        options?: Array<{ value: string; label: string }>;
+        min?: number | null;
+        max?: number | null;
+    }>;
+    state_requirements?: string[];
+    examples?: string[];
 }
 
 export interface AlertConditionRegistryFunction {

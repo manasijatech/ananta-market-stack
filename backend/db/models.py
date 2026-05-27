@@ -975,6 +975,7 @@ class AlertWorkflowRun(Base):
 
 class LiveSymbolSubscription(Base):
     __tablename__ = "live_symbol_subscriptions"
+    __mapper_args__ = {"confirm_deleted_rows": False}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(
