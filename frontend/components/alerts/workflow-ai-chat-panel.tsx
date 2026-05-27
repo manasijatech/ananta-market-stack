@@ -87,12 +87,16 @@ function eventText(event: AlertWorkflowChatEvent) {
 }
 
 function assistantText(events: AlertWorkflowChatEvent[], run: AlertWorkflowChatRun | null) {
-    const message = [...events].reverse().find((event) => event.event_type === "message_output");
-    if (message) return eventText(message);
+    const tokens = events.filter((event) => event.event_type === "token").map(eventText).join("");
+    if (tokens.trim()) return tokens;
+    const outputs = events
+        .filter((event) => event.event_type === "message_output")
+        .map(eventText)
+        .filter(Boolean);
+    if (outputs.length) return outputs.join("\n\n");
     const completed = [...events].reverse().find((event) => event.event_type === "run_completed");
     if (completed) return eventText(completed);
-    const tokens = events.filter((event) => event.event_type === "token").map(eventText).join("");
-    return tokens || run?.response_text || "";
+    return run?.response_text || "";
 }
 
 function snapshotSummary(snapshot: AlertWorkflowChatSnapshot) {
@@ -126,6 +130,86 @@ function sessionLabel(session: AlertWorkflowChatSession) {
 
 function terminalStatus(status: string) {
     return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function compactJson(value: unknown) {
+    if (value == null) return "";
+    if (typeof value === "string") return value;
+    try {
+        return JSON.stringify(value, null, 2);
+    } catch {
+        return String(value);
+    }
+}
+
+function toolTraceRows(events: AlertWorkflowChatEvent[]) {
+    const rows = new Map<
+        string,
+        {
+            id: string;
+            arguments?: unknown;
+            output?: Record<string, unknown>;
+            sequence: number;
+            status: "running" | "completed";
+            toolName: string;
+        }
+    >();
+    for (const event of events) {
+        if (event.event_type !== "tool_call_started" && event.event_type !== "tool_call_completed") continue;
+        const callId = String(event.payload.tool_call_id || `${event.event_type}-${event.sequence}`);
+        const existing = rows.get(callId);
+        const toolName = String(event.payload.tool_name || existing?.toolName || "workflow_tool");
+        if (event.event_type === "tool_call_started") {
+            rows.set(callId, {
+                id: callId,
+                arguments: event.payload.arguments,
+                output: existing?.output,
+                sequence: existing?.sequence ?? event.sequence,
+                status: existing?.status ?? "running",
+                toolName
+            });
+        } else {
+            rows.set(callId, {
+                id: callId,
+                arguments: existing?.arguments,
+                output: event.payload.output_metadata as Record<string, unknown>,
+                sequence: existing?.sequence ?? event.sequence,
+                status: "completed",
+                toolName
+            });
+        }
+    }
+    return Array.from(rows.values()).sort((left, right) => left.sequence - right.sequence);
+}
+
+function ToolTrace({ events }: { events: AlertWorkflowChatEvent[] }) {
+    const rows = toolTraceRows(events);
+    if (!rows.length) return null;
+    return (
+        <div className="grid gap-1.5">
+            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                Reasoning trace
+            </div>
+            {rows.map((row) => (
+                <details className="group border border-border bg-secondary/25 px-2 py-1.5 text-xs" key={row.id}>
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
+                        <span className="truncate">{row.toolName}</span>
+                        <span>{row.status}</span>
+                    </summary>
+                    {row.arguments ? (
+                        <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
+                            {compactJson(row.arguments)}
+                        </pre>
+                    ) : null}
+                    {row.output ? (
+                        <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
+                            {compactJson(row.output)}
+                        </pre>
+                    ) : null}
+                </details>
+            ))}
+        </div>
+    );
 }
 
 export function WorkflowAiChatPanel({
@@ -222,7 +306,6 @@ export function WorkflowAiChatPanel({
 
     async function loadSession(sessionId: string) {
         if (!sessionId) {
-            startNewChat();
             return;
         }
         setError("");
@@ -319,6 +402,13 @@ export function WorkflowAiChatPanel({
                                 [runId]: mergeEvents(current[runId] ?? [], [event])
                             }));
                             if (parsed.event === "snapshot_created") void refreshSnapshots();
+                            if (parsed.event === "snapshot_applied") {
+                                void refreshSnapshots();
+                                const workflow = payload.workflow;
+                                if (workflow && typeof workflow === "object") {
+                                    onWorkflowApplied(workflow as AlertWorkflow);
+                                }
+                            }
                             if (
                                 parsed.event === "run_completed" ||
                                 parsed.event === "run_failed" ||
@@ -367,7 +457,7 @@ export function WorkflowAiChatPanel({
                 }
             }
         },
-        [user?.id]
+        [onWorkflowApplied, user?.id]
     );
 
     async function sendMessage() {
@@ -442,7 +532,7 @@ export function WorkflowAiChatPanel({
 
     return (
         <aside
-            className="fixed bottom-0 right-0 top-0 z-50 grid grid-rows-[auto_minmax(0,1fr)_auto] border-l border-border bg-background shadow-2xl"
+            className="fixed bottom-0 right-0 top-[76px] z-50 grid grid-rows-[auto_minmax(0,1fr)_auto] border-l border-border bg-background shadow-2xl"
             style={{ width: clampPanelWidth(width) }}
         >
             <div
@@ -460,8 +550,9 @@ export function WorkflowAiChatPanel({
                         </div>
                     </div>
                     <div className="flex shrink-0 gap-1">
-                        <Button className="h-8 px-2" onClick={startNewChat} size="sm" title="Start new chat" type="button" variant="ghost">
+                        <Button className="h-8 gap-1 px-2" onClick={startNewChat} size="sm" title="Start new chat" type="button" variant="ghost">
                             <Plus className="size-4" />
+                            New
                         </Button>
                         <Button className="h-8 px-2" onClick={() => setOpen(false)} size="sm" title="Collapse chat" type="button" variant="ghost">
                             <PanelRightClose className="size-4" />
@@ -475,7 +566,7 @@ export function WorkflowAiChatPanel({
                         onChange={(event) => void loadSession(event.target.value)}
                         value={session?.id ?? ""}
                     >
-                        <option value="">New chat</option>
+                        <option value="">Chat history</option>
                         {workflowSessions.map((item) => (
                             <option key={item.id} value={item.id}>
                                 {sessionLabel(item)}
@@ -496,7 +587,6 @@ export function WorkflowAiChatPanel({
                         orderedRuns.map((run) => {
                             const events = eventsByRun[run.id] ?? [];
                             const text = assistantText(events, run);
-                            const toolEvents = events.filter((event) => event.event_type === "tool_call_started");
                             const isRunning = ["queued", "running"].includes(run.status);
                             return (
                                 <div className="grid gap-3" key={run.id}>
@@ -514,18 +604,7 @@ export function WorkflowAiChatPanel({
                                                 {formatShortDate(run.created_at)}
                                             </div>
                                         </div>
-                                        {toolEvents.length ? (
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {toolEvents.slice(-6).map((event) => (
-                                                    <span
-                                                        className="rounded-full border border-border bg-secondary/40 px-2 py-1 font-mono text-[10px] text-muted-foreground"
-                                                        key={event.id}
-                                                    >
-                                                        {String(event.payload.tool_name ?? "workflow_tool")}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        ) : null}
+                                        <ToolTrace events={events} />
                                         {text ? (
                                             <AlertLlmMarkdown className="text-sm text-foreground">{text}</AlertLlmMarkdown>
                                         ) : isRunning ? (

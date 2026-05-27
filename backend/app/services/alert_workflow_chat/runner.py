@@ -192,7 +192,18 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
                         public_payload={"tool_name": tool_name, "tool_call_id": call_id, "output_metadata": output_metadata},
                         full_payload={"tool_name": tool_name, "tool_call_id": call_id, "output": output, "output_metadata": output_metadata, "raw_item": safe_data(item)},
                     )
-                    if isinstance(output, dict) and isinstance(output.get("snapshot"), dict):
+                    if (
+                        isinstance(output, dict)
+                        and isinstance(output.get("snapshot"), dict)
+                        and isinstance(output.get("workflow"), dict)
+                    ):
+                        sessions.append_event(
+                            db,
+                            run,
+                            event_type="snapshot_applied",
+                            public_payload={"snapshot": output["snapshot"], "workflow": output["workflow"]},
+                        )
+                    elif isinstance(output, dict) and isinstance(output.get("snapshot"), dict):
                         sessions.append_event(
                             db,
                             run,
@@ -251,4 +262,3 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
 def run_alert_workflow_chat_job(run_id: str) -> str:
     asyncio.run(_run_alert_workflow_chat(run_id))
     return run_id
-
