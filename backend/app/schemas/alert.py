@@ -20,6 +20,11 @@ class AlertCondition(BaseModel):
     value: float | int | str | bool | None = None
     window_seconds: int | None = None
     compare_to: str | None = None
+    hold_seconds: int | None = None
+    occurrences: int | None = None
+    occurrence_window_seconds: int | None = None
+    trigger_mode: Literal["level", "rising_edge", "falling_edge", "every_match"] = "level"
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class AlertNotificationConfig(BaseModel):

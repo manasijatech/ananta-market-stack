@@ -72,6 +72,8 @@ def _compile_call(node: py_ast.Call) -> AlertLogicNode:
             continue
         if kw.arg in {"compare_to", "field"} and isinstance(kw.value, py_ast.Name):
             kwargs[kw.arg] = _name(kw.value)
+        elif kw.arg in {"baseline", "reference_mode", "trigger_mode", "unit"} and isinstance(kw.value, py_ast.Name):
+            kwargs[kw.arg] = kw.value.id
         else:
             kwargs[kw.arg] = _literal(kw.value)
     if node.args:
@@ -87,6 +89,24 @@ def _compile_call(node: py_ast.Call) -> AlertLogicNode:
         value=kwargs.get("value"),
         compare_to=kwargs.get("compare_to"),
         window_seconds=int(kwargs["window_seconds"]) if kwargs.get("window_seconds") is not None else None,
+        hold_seconds=int(kwargs["hold_seconds"]) if kwargs.get("hold_seconds") is not None else None,
+        occurrences=int(kwargs["occurrences"]) if kwargs.get("occurrences") is not None else None,
+        occurrence_window_seconds=int(kwargs["occurrence_window_seconds"]) if kwargs.get("occurrence_window_seconds") is not None else None,
+        trigger_mode=str(kwargs["trigger_mode"]) if kwargs.get("trigger_mode") is not None else None,
+        config={
+            key: value
+            for key, value in kwargs.items()
+            if key
+            not in {
+                "value",
+                "compare_to",
+                "window_seconds",
+                "hold_seconds",
+                "occurrences",
+                "occurrence_window_seconds",
+                "trigger_mode",
+            }
+        },
     )
 
 
@@ -122,6 +142,14 @@ def validate_dsl_text(text: str, base_ast: AlertWorkflowAst | None = None) -> di
     return {"valid": True, "errors": [], "workflow_ast": ast_to_dict(ast)}
 
 
+def _dsl_token(value: Any, *, field_name: bool = False) -> str:
+    if isinstance(value, str) and value.isidentifier():
+        if field_name and value not in _field_names():
+            return repr(value)
+        return value
+    return repr(value)
+
+
 def ast_to_dsl(logic: AlertLogicNode) -> str:
     if logic.kind in {"all", "any"}:
         return f"{logic.kind}({', '.join(ast_to_dsl(child) for child in logic.children)})"
@@ -133,13 +161,24 @@ def ast_to_dsl(logic: AlertLogicNode) -> str:
     if logic.operator in {"gt", "gte", "lt", "lte"}:
         symbol = {"gt": ">", "gte": ">=", "lt": "<", "lte": "<="}[logic.operator]
         return f"{logic.field} {symbol} {repr(logic.value)}"
-    args = [repr(logic.field)] if logic.field else []
+    args = [_dsl_token(logic.field, field_name=True)] if logic.field else []
     if logic.value is not None:
         args.append(f"value={repr(logic.value)}")
     if logic.compare_to:
-        args.append(f"compare_to={repr(logic.compare_to)}")
+        args.append(f"compare_to={_dsl_token(logic.compare_to, field_name=True)}")
     if logic.window_seconds:
         args.append(f"window_seconds={logic.window_seconds}")
+    if logic.hold_seconds:
+        args.append(f"hold_seconds={logic.hold_seconds}")
+    if logic.occurrences:
+        args.append(f"occurrences={logic.occurrences}")
+    if logic.occurrence_window_seconds:
+        args.append(f"occurrence_window_seconds={logic.occurrence_window_seconds}")
+    if logic.trigger_mode and logic.trigger_mode != "level":
+        args.append(f"trigger_mode={_dsl_token(logic.trigger_mode)}")
+    for key, value in sorted((logic.config or {}).items()):
+        if key not in {"value", "compare_to", "window_seconds", "hold_seconds", "occurrences", "occurrence_window_seconds", "trigger_mode"}:
+            args.append(f"{key}={_dsl_token(value)}")
     return f"{logic.operator or 'always'}({', '.join(args)})"
 
 

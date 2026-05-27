@@ -30,6 +30,9 @@ class AlertLogicNode(BaseModel):
     window_seconds: int | None = None
     hold_seconds: int | None = None
     occurrences: int | None = None
+    occurrence_window_seconds: int | None = None
+    trigger_mode: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
     children: list["AlertLogicNode"] = Field(default_factory=list)
 
 
@@ -92,6 +95,11 @@ def _legacy_conditions_to_logic(combine: str, conditions: list[Any]) -> AlertLog
                 value=payload.get("value"),
                 compare_to=payload.get("compare_to"),
                 window_seconds=payload.get("window_seconds"),
+                hold_seconds=payload.get("hold_seconds"),
+                occurrences=payload.get("occurrences"),
+                occurrence_window_seconds=payload.get("occurrence_window_seconds"),
+                trigger_mode=payload.get("trigger_mode"),
+                config=payload.get("config") or {},
             )
         )
     return AlertLogicNode(kind="any" if combine == "any" else "all", children=children)

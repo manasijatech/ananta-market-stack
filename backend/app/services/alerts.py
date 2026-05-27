@@ -751,6 +751,11 @@ def _legacy_conditions_from_logic(logic: dict[str, Any]) -> tuple[str, list[Aler
                 value=child.get("value"),
                 compare_to=child.get("compare_to"),
                 window_seconds=child.get("window_seconds"),
+                hold_seconds=child.get("hold_seconds"),
+                occurrences=child.get("occurrences"),
+                occurrence_window_seconds=child.get("occurrence_window_seconds"),
+                trigger_mode=child.get("trigger_mode") or "level",
+                config=child.get("config") or {},
             )
         )
     return combine, conditions

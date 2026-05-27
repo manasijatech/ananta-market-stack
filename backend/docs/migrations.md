@@ -53,8 +53,10 @@ Or with autogenerate:
   - `3b1f6d7c9a2e` for `broker_instruments` and `broker_instrument_sync_runs`
 - The next schema revision after that adds the alerting workspace domain:
   - `8c4f2aa91d72` for alert templates, workflows, runs, live subscriptions, user alert notifications, user alert channels, and delivery records
-- The current schema head also includes backend maintenance run logs:
+- The migration history includes backend maintenance run logs:
   - `b2c9d1e7f3ab` for `system_maintenance_logs`
+- The current schema head is `c4e9a7b2d1f6`, which normalizes Alerts V2 condition
+  state/config keys inside existing workflow/template JSON payloads.
 - Existing local SQLite development databases can be stamped to that revision if they already contain the current schema.
 - If a local SQLite database already contains runtime-patched tables but has not been Alembic-managed yet, do not run `upgrade head` against it blindly. Stamp it to the latest compatible revision first, then continue from there.
 

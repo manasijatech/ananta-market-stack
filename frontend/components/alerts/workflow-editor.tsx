@@ -198,6 +198,11 @@ const operatorOptions = [
         help: "Trigger when absolute change over a rolling window falls below the value."
     },
     {
+        value: "rolling_volume_spike_gte",
+        label: "Rolling volume spike",
+        help: "Trigger when current volume is a multiple of its rolling baseline volume."
+    },
+    {
         value: "field_gt",
         label: "Field greater than field",
         help: "Compare the selected field to another same-tick field."
@@ -258,6 +263,41 @@ const operatorOptions = [
         help: "Trigger when open interest decreases by at least the configured value."
     },
     {
+        value: "oi_change_pct_gte",
+        label: "Open interest percent increase",
+        help: "Trigger when open interest increases by at least the configured percent."
+    },
+    {
+        value: "oi_change_pct_lte",
+        label: "Open interest percent decrease",
+        help: "Trigger when open interest decreases by at least the configured percent."
+    },
+    {
+        value: "spread_lte",
+        label: "Spread below",
+        help: "Trigger when top-of-book spread stays below an absolute, percent, or bps threshold."
+    },
+    {
+        value: "bid_ask_imbalance_gte",
+        label: "Bid/ask imbalance above",
+        help: "Trigger when best bid quantity divided by best ask quantity reaches the threshold."
+    },
+    {
+        value: "bid_ask_imbalance_lte",
+        label: "Bid/ask imbalance below",
+        help: "Trigger when best bid quantity divided by best ask quantity falls to the threshold."
+    },
+    {
+        value: "total_buy_sell_ratio_gte",
+        label: "Total buy/sell ratio above",
+        help: "Trigger when total buy quantity divided by total sell quantity reaches the threshold."
+    },
+    {
+        value: "total_buy_sell_ratio_lte",
+        label: "Total buy/sell ratio below",
+        help: "Trigger when total buy quantity divided by total sell quantity falls to the threshold."
+    },
+    {
         value: "always",
         label: "Always",
         help: "Always match. Useful for delivery testing or staged workflow construction."
@@ -271,6 +311,28 @@ const compareOptions = [
         label: `Compare to ${item.label.toLowerCase()}`,
         help: item.help
     }))
+];
+
+const rollingBaselineOptions = [
+    { value: "oldest", label: "Oldest sample" },
+    { value: "nearest_window_start", label: "Nearest window start" },
+    { value: "mean", label: "Mean" },
+    { value: "median", label: "Median" },
+    { value: "min", label: "Minimum" },
+    { value: "max", label: "Maximum" }
+];
+
+const triggerModeOptions = [
+    { value: "level", label: "While true" },
+    { value: "rising_edge", label: "Only when it becomes true" },
+    { value: "falling_edge", label: "Only when it becomes false" },
+    { value: "every_match", label: "Every raw match" }
+] as const;
+
+const spreadUnitOptions = [
+    { value: "absolute", label: "Absolute price" },
+    { value: "percent", label: "Percent" },
+    { value: "bps", label: "Basis points" }
 ];
 
 const messageTemplateFields = [
@@ -407,7 +469,7 @@ type DslSuggestion = {
     value: string;
     label: string;
     description: string;
-    kind: "field" | "operator" | "function" | "placeholder";
+    kind: "field" | "operator" | "function" | "placeholder" | "config";
 };
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
@@ -673,15 +735,46 @@ function dslValue(value: unknown): string {
     return JSON.stringify(String(value ?? ""));
 }
 
+const dslIdentifierConfigKeys = new Set(["baseline", "compare_to", "field", "reference_mode", "trigger_mode", "unit"]);
+const conditionTopLevelDslKeys = new Set([
+    "value",
+    "compare_to",
+    "field",
+    "window_seconds",
+    "hold_seconds",
+    "occurrences",
+    "occurrence_window_seconds",
+    "trigger_mode"
+]);
+
+function dslKeywordValue(key: string, value: unknown): string {
+    if (dslIdentifierConfigKeys.has(key) && typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+        return value;
+    }
+    return dslValue(value);
+}
+
+function hasAdvancedConditionConfig(condition: AlertCondition): boolean {
+    return Boolean(
+        condition.window_seconds ||
+            condition.hold_seconds ||
+            condition.occurrences ||
+            condition.occurrence_window_seconds ||
+            (condition.trigger_mode && condition.trigger_mode !== "level") ||
+            Object.keys(condition.config ?? {}).some((key) => !conditionTopLevelDslKeys.has(key))
+    );
+}
+
 function conditionToDsl(condition: AlertCondition): string {
+    if (condition.operator === "always") return "always()";
     const field = condition.field || "ltp";
     const value = dslValue(condition.value ?? 0);
     const compareTo = condition.compare_to || "";
     const simple = { gt: ">", gte: ">=", lt: "<", lte: "<=" } as Record<string, string>;
-    if (simple[condition.operator]) {
+    if (simple[condition.operator] && !hasAdvancedConditionConfig(condition)) {
         return `${field} ${simple[condition.operator]} ${value}`;
     }
-    if (condition.operator.startsWith("field_") && compareTo) {
+    if (condition.operator.startsWith("field_") && compareTo && !hasAdvancedConditionConfig(condition)) {
         const symbol = { field_gt: ">", field_gte: ">=", field_lt: "<", field_lte: "<=" }[condition.operator] ?? ">";
         return `${field} ${symbol} ${compareTo}`;
     }
@@ -690,6 +783,22 @@ function conditionToDsl(condition: AlertCondition): string {
         args.push(`value=${value}`);
     if (compareTo) args.push(`compare_to=${compareTo}`);
     if (condition.window_seconds) args.push(`window_seconds=${condition.window_seconds}`);
+    if (condition.hold_seconds) args.push(`hold_seconds=${condition.hold_seconds}`);
+    if (condition.occurrences) args.push(`occurrences=${condition.occurrences}`);
+    if (condition.occurrence_window_seconds) {
+        args.push(`occurrence_window_seconds=${condition.occurrence_window_seconds}`);
+    }
+    if (condition.trigger_mode && condition.trigger_mode !== "level") {
+        args.push(`trigger_mode=${condition.trigger_mode}`);
+    }
+    for (const [key, configValue] of Object.entries(condition.config ?? {}).sort(([left], [right]) =>
+        left.localeCompare(right)
+    )) {
+        if (conditionTopLevelDslKeys.has(key) || configValue === null || configValue === undefined || configValue === "") {
+            continue;
+        }
+        args.push(`${key}=${dslKeywordValue(key, configValue)}`);
+    }
     return `${condition.operator || "always"}(${args.join(", ")})`;
 }
 
@@ -751,9 +860,60 @@ function logicNodeToConditions(
                 value:
                     typeof node.value === "string" || typeof node.value === "number" || typeof node.value === "boolean"
                         ? node.value
+                        : isRecord(node.config) &&
+                            (typeof node.config.value === "string" ||
+                                typeof node.config.value === "number" ||
+                                typeof node.config.value === "boolean")
+                          ? node.config.value
                         : null,
-                compare_to: typeof node.compare_to === "string" ? node.compare_to : null,
-                window_seconds: typeof node.window_seconds === "number" ? node.window_seconds : null
+                compare_to:
+                    typeof node.compare_to === "string"
+                        ? node.compare_to
+                        : isRecord(node.config) && typeof node.config.compare_to === "string"
+                          ? node.config.compare_to
+                          : null,
+                window_seconds:
+                    typeof node.window_seconds === "number"
+                        ? node.window_seconds
+                        : isRecord(node.config) && typeof node.config.window_seconds === "number"
+                          ? node.config.window_seconds
+                          : null,
+                hold_seconds:
+                    typeof node.hold_seconds === "number"
+                        ? node.hold_seconds
+                        : isRecord(node.config) && typeof node.config.hold_seconds === "number"
+                          ? node.config.hold_seconds
+                          : null,
+                occurrences:
+                    typeof node.occurrences === "number"
+                        ? node.occurrences
+                        : isRecord(node.config) && typeof node.config.occurrences === "number"
+                          ? node.config.occurrences
+                          : null,
+                occurrence_window_seconds:
+                    typeof node.occurrence_window_seconds === "number"
+                        ? node.occurrence_window_seconds
+                        : isRecord(node.config) && typeof node.config.occurrence_window_seconds === "number"
+                          ? node.config.occurrence_window_seconds
+                          : null,
+                trigger_mode:
+                    node.trigger_mode === "level" ||
+                    node.trigger_mode === "rising_edge" ||
+                    node.trigger_mode === "falling_edge" ||
+                    node.trigger_mode === "every_match"
+                        ? node.trigger_mode
+                        : isRecord(node.config) &&
+                            (node.config.trigger_mode === "level" ||
+                                node.config.trigger_mode === "rising_edge" ||
+                                node.config.trigger_mode === "falling_edge" ||
+                                node.config.trigger_mode === "every_match")
+                          ? node.config.trigger_mode
+                          : "level",
+                config: isRecord(node.config)
+                    ? Object.fromEntries(
+                          Object.entries(node.config).filter(([key]) => !conditionTopLevelDslKeys.has(key))
+                      )
+                    : {}
             }
         ],
         flattened: false
@@ -888,6 +1048,7 @@ function parseLocalDslExpression(text: string): Record<string, unknown> | null {
             return { kind: "not", children: args.slice(0, 1).map(parseLocalDslExpression).filter(Boolean) };
         }
         const condition: Record<string, unknown> = { kind: "condition", operator: name, children: [] };
+        const config: Record<string, unknown> = {};
         for (const [index, arg] of args.entries()) {
             const equalsIndex = arg.indexOf("=");
             if (equalsIndex > 0) {
@@ -897,10 +1058,16 @@ function parseLocalDslExpression(text: string): Record<string, unknown> | null {
                 if (key === "compare_to") condition.compare_to = value;
                 if (key === "field") condition.field = value;
                 if (key === "window_seconds") condition.window_seconds = Number(value);
+                if (key === "hold_seconds") condition.hold_seconds = Number(value);
+                if (key === "occurrences") condition.occurrences = Number(value);
+                if (key === "occurrence_window_seconds") condition.occurrence_window_seconds = Number(value);
+                if (key === "trigger_mode") condition.trigger_mode = value;
+                if (!conditionTopLevelDslKeys.has(key)) config[key] = value;
                 continue;
             }
             if (index === 0) condition.field = arg.trim();
         }
+        if (Object.keys(config).length) condition.config = config;
         if (!condition.field && name !== "always") condition.field = "ltp";
         return condition;
     }
@@ -1414,6 +1581,18 @@ export function WorkflowEditor({
                 label: `${item.operator}()`,
                 description: item.description,
                 kind: "operator" as const
+            })),
+            ...Array.from(
+                new Map(
+                    (conditionRegistry?.operators ?? [])
+                        .flatMap((item) => item.config_fields ?? [])
+                        .map((item) => [item.name, item] as const)
+                ).values()
+            ).map((item) => ({
+                value: `${item.name}=`,
+                label: `${item.name}=`,
+                description: item.description || "Operator configuration parameter.",
+                kind: "config" as const
             })),
             ...(conditionRegistry?.functions ?? []).map((item) => ({
                 value: `${item.name}(`,
@@ -2138,12 +2317,30 @@ export function WorkflowEditor({
     function workflowPayload() {
         const targeting = workflowTargetingPayload();
         const primaryTarget = targeting.entries[0];
-        const effectiveConditions =
+        let effectiveConditions =
             workflowType === "alpha_feed" ? [{ operator: "always", field: "event" }] : conditions;
+        let effectiveCombine = combine;
+        let effectiveWorkflowAst = workflowAstPayload(targeting, effectiveConditions) as Record<string, unknown>;
+        if (workflowType !== "alpha_feed" && dslText.trim()) {
+            const parsedAst = compileLocalDslToAst(
+                dslText,
+                effectiveWorkflowAst as unknown as Record<string, unknown>
+            );
+            const parsedLogic = parsedAst ? logicNodeToConditions(parsedAst.logic) : null;
+            if (parsedAst) {
+                effectiveWorkflowAst = parsedAst;
+            }
+            if (parsedLogic) {
+                effectiveCombine = parsedLogic.combine;
+                if (parsedLogic.conditions.length) {
+                    effectiveConditions = parsedLogic.conditions;
+                }
+            }
+        }
         const workflowDsl: AlertWorkflowDsl = {
             version: 2,
             workflow_type: workflowType,
-            combine,
+            combine: effectiveCombine,
             cooldown_seconds: Number(cooldownSeconds || 0),
             conditions: effectiveConditions,
             targeting,
@@ -2189,7 +2386,7 @@ export function WorkflowEditor({
                 instrument_types: csvList(activeInstrumentTypes)
             },
             dsl_text: dslText.trim() || null,
-            workflow_ast: workflowAstPayload(targeting, effectiveConditions),
+            workflow_ast: effectiveWorkflowAst,
             validation_status: "unknown",
             compiled_summary: {}
         };
@@ -4929,6 +5126,15 @@ export function WorkflowEditor({
                                     if (!dslText.trim() && suggestedDsl) {
                                         event.preventDefault();
                                         setDslText(suggestedDsl);
+                                        return;
+                                    }
+                                    if (
+                                        dslText.trim() &&
+                                        suggestedDsl.startsWith(dslText) &&
+                                        dslText !== suggestedDsl
+                                    ) {
+                                        event.preventDefault();
+                                        setDslText(suggestedDsl);
                                     }
                                 }
                             }}
@@ -5666,6 +5872,24 @@ function ConditionEditor({
     const operatorMeta = operatorOptions.find((item) => item.value === condition.operator);
     const compareMeta = compareOptions.find((item) => item.value === (condition.compare_to ?? ""));
     const isRollingOperator = condition.operator.startsWith("rolling_");
+    const isSpreadOperator = condition.operator === "spread_lte";
+    const isBookRatioOperator =
+        condition.operator.startsWith("bid_ask_imbalance") || condition.operator.startsWith("total_buy_sell_ratio");
+    const isVolumeOperator = ["volume_spike", "relative_volume_gte", "rolling_volume_spike_gte"].includes(
+        condition.operator
+    );
+    const usesCompareField = !isRollingOperator && !isSpreadOperator && !isBookRatioOperator;
+    const config = condition.config ?? {};
+
+    function updateConditionConfig(key: string, value: unknown) {
+        const nextConfig = { ...config };
+        if (value === null || value === undefined || value === "") {
+            delete nextConfig[key];
+        } else {
+            nextConfig[key] = value;
+        }
+        updateCondition(index, { config: nextConfig });
+    }
 
     return (
         <div className="grid gap-3">
@@ -5690,15 +5914,35 @@ function ConditionEditor({
                         className="h-9 border border-input bg-background px-3 text-sm"
                         onChange={(event) => {
                             const nextOperator = event.target.value;
+                            const nextConfig = { ...(condition.config ?? {}) };
+                            if (nextOperator.startsWith("rolling_")) {
+                                nextConfig.baseline = nextConfig.baseline ?? "oldest";
+                                nextConfig.min_samples = nextConfig.min_samples ?? 3;
+                                nextConfig.min_coverage_ratio = nextConfig.min_coverage_ratio ?? 0.8;
+                            }
+                            if (nextOperator === "spread_lte") {
+                                nextConfig.unit = nextConfig.unit ?? "bps";
+                            }
                             updateCondition(
                                 index,
                                 nextOperator.startsWith("rolling_")
                                     ? {
                                           operator: nextOperator,
                                           compare_to: null,
-                                          window_seconds: condition.window_seconds ?? 300
+                                          window_seconds: condition.window_seconds ?? 300,
+                                          config: nextConfig
                                       }
-                                    : { operator: nextOperator }
+                                    : {
+                                          operator: nextOperator,
+                                          compare_to:
+                                              nextOperator === "spread_lte" ||
+                                              nextOperator.startsWith("bid_ask_imbalance") ||
+                                              nextOperator.startsWith("total_buy_sell_ratio")
+                                                  ? null
+                                                  : condition.compare_to,
+                                          window_seconds: null,
+                                          config: nextConfig
+                                      }
                             );
                         }}
                         value={condition.operator}
@@ -5723,7 +5967,7 @@ function ConditionEditor({
                     <FieldLabel>Compare to</FieldLabel>
                     <Select
                         className="h-9 border border-input bg-background px-3 text-sm"
-                        disabled={isRollingOperator}
+                        disabled={!usesCompareField}
                         onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })}
                         value={condition.compare_to ?? ""}
                     >
@@ -5752,6 +5996,22 @@ function ConditionEditor({
                         />
                     </div>
                 ) : null}
+                {isSpreadOperator ? (
+                    <div className="grid min-w-0 gap-2">
+                        <FieldLabel>Spread unit</FieldLabel>
+                        <Select
+                            className="h-9 border border-input bg-background px-3 text-sm"
+                            onChange={(event) => updateConditionConfig("unit", event.target.value)}
+                            value={String(config.unit ?? "bps")}
+                        >
+                            {spreadUnitOptions.map((item) => (
+                                <option key={item.value} value={item.value}>
+                                    {item.label}
+                                </option>
+                            ))}
+                        </Select>
+                    </div>
+                ) : null}
                 <div className="grid min-w-[112px] gap-2">
                     <FieldLabel>Action</FieldLabel>
                     <Button
@@ -5764,6 +6024,153 @@ function ConditionEditor({
                     </Button>
                 </div>
             </div>
+            {isRollingOperator || isVolumeOperator ? (
+                <div className="grid max-w-4xl gap-3 border border-border bg-secondary/20 p-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]">
+                    {isRollingOperator ? (
+                        <>
+                            <div className="grid gap-2">
+                                <FieldLabel>Rolling baseline</FieldLabel>
+                                <Select
+                                    className="h-9 border border-input bg-background px-3 text-sm"
+                                    onChange={(event) => updateConditionConfig("baseline", event.target.value)}
+                                    value={String(config.baseline ?? "oldest")}
+                                >
+                                    {rollingBaselineOptions.map((item) => (
+                                        <option key={item.value} value={item.value}>
+                                            {item.label}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </div>
+                            <div className="grid gap-2">
+                                <FieldLabel>Min samples</FieldLabel>
+                                <Input
+                                    className="h-9 text-sm"
+                                    min={1}
+                                    onChange={(event) =>
+                                        updateConditionConfig(
+                                            "min_samples",
+                                            event.target.value ? Number(event.target.value) : null
+                                        )
+                                    }
+                                    placeholder="3"
+                                    type="number"
+                                    value={String(config.min_samples ?? "")}
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <FieldLabel>Min coverage</FieldLabel>
+                                <Input
+                                    className="h-9 text-sm"
+                                    max={1}
+                                    min={0}
+                                    onChange={(event) =>
+                                        updateConditionConfig(
+                                            "min_coverage_ratio",
+                                            event.target.value ? Number(event.target.value) : null
+                                        )
+                                    }
+                                    placeholder="0.8"
+                                    step="0.05"
+                                    type="number"
+                                    value={String(config.min_coverage_ratio ?? "")}
+                                />
+                            </div>
+                        </>
+                    ) : null}
+                    {isVolumeOperator ? (
+                        <div className="grid gap-2">
+                            <FieldLabel>Minimum volume</FieldLabel>
+                            <Input
+                                className="h-9 text-sm"
+                                min={0}
+                                onChange={(event) =>
+                                    updateConditionConfig(
+                                        "min_volume",
+                                        event.target.value ? Number(event.target.value) : null
+                                    )
+                                }
+                                placeholder="Optional"
+                                type="number"
+                                value={String(config.min_volume ?? "")}
+                            />
+                        </div>
+                    ) : null}
+                    <HelpText className="self-end">
+                        Rolling baselines use Redis samples and only match after the configured sample and coverage
+                        gates are satisfied.
+                    </HelpText>
+                </div>
+            ) : null}
+            <div className="grid max-w-4xl gap-3 border border-border p-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]">
+                <div className="grid gap-2">
+                    <FieldLabel>Trigger mode</FieldLabel>
+                    <Select
+                        className="h-9 border border-input bg-background px-3 text-sm"
+                        onChange={(event) =>
+                            updateCondition(index, {
+                                trigger_mode: event.target.value as AlertCondition["trigger_mode"]
+                            })
+                        }
+                        value={condition.trigger_mode ?? "level"}
+                    >
+                        {triggerModeOptions.map((item) => (
+                            <option key={item.value} value={item.value}>
+                                {item.label}
+                            </option>
+                        ))}
+                    </Select>
+                </div>
+                <div className="grid gap-2">
+                    <FieldLabel>Hold seconds</FieldLabel>
+                    <Input
+                        className="h-9 text-sm"
+                        min={1}
+                        onChange={(event) =>
+                            updateCondition(index, {
+                                hold_seconds: event.target.value ? Number(event.target.value) : null
+                            })
+                        }
+                        placeholder="Optional"
+                        type="number"
+                        value={String(condition.hold_seconds ?? "")}
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <FieldLabel>Occurrences</FieldLabel>
+                    <Input
+                        className="h-9 text-sm"
+                        min={1}
+                        onChange={(event) =>
+                            updateCondition(index, {
+                                occurrences: event.target.value ? Number(event.target.value) : null
+                            })
+                        }
+                        placeholder="Optional"
+                        type="number"
+                        value={String(condition.occurrences ?? "")}
+                    />
+                </div>
+                <div className="grid gap-2">
+                    <FieldLabel>Occurrence window</FieldLabel>
+                    <Input
+                        className="h-9 text-sm"
+                        min={1}
+                        onChange={(event) =>
+                            updateCondition(index, {
+                                occurrence_window_seconds: event.target.value ? Number(event.target.value) : null
+                            })
+                        }
+                        placeholder="300"
+                        type="number"
+                        value={String(condition.occurrence_window_seconds ?? "")}
+                    />
+                </div>
+                <HelpText className="self-end">
+                    These controls add stateful noise suppression: edge-only triggers, hold-for duration, and
+                    N-times-in-window recurrence.
+                </HelpText>
+            </div>
             <div className="grid gap-2 text-[13px] leading-5 text-muted-foreground [grid-template-columns:repeat(auto-fit,minmax(132px,1fr))]">
                 <div>{fieldMeta?.help}</div>
                 <div>{operatorMeta?.help}</div>
@@ -5771,7 +6178,9 @@ function ConditionEditor({
                 <div>
                     {isRollingOperator
                         ? "Rolling operators use Redis samples for this field over the configured window."
-                        : compareMeta?.help}
+                        : usesCompareField
+                          ? compareMeta?.help
+                          : "This operator derives its reference internally from the order book or runtime state."}
                 </div>
                 {isRollingOperator ? (
                     <div>Default is 300 seconds. The backend waits for enough window coverage before matching.</div>

@@ -997,10 +997,10 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                 continue
             previous_tick = _previous_tick_for_workflow(db, redis_client, workflow.id)
             ast = workflow_asts.get(row.id) or ensure_workflow_ast(workflow.workflow_dsl)
-            runtime_context = build_runtime_context(redis_client, tick, ast.logic)
+            runtime_context = build_runtime_context(redis_client, tick, ast.logic, workflow_id=workflow.id)
             evaluation = alert_svc.evaluate_workflow_payload_detail(
                 workflow,
-                tick,
+                {**tick, "workflow_id": workflow.id},
                 previous_tick,
                 runtime_context=runtime_context,
             )
