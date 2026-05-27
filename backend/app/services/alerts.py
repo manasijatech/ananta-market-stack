@@ -63,6 +63,7 @@ from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import (
     AlertWorkflow,
+    AlertWorkflowChatSnapshot,
     AlertWorkflowRun,
     AlertWorkflowTemplate,
     BrokerAccount,
@@ -1105,8 +1106,45 @@ def _sync_workflow_subscription(db: Session, workflow: AlertWorkflow) -> None:
     reconcile_user_subscriptions(db, workflow.user_id)
 
 
+def _repair_chat_snapshot_status_drift(db: Session, user_id: str) -> None:
+    """Heal workflows hidden by older chat applies that forced status=draft."""
+
+    rows = db.scalars(
+        select(AlertWorkflow).where(
+            AlertWorkflow.user_id == user_id,
+            AlertWorkflow.status == "draft",
+            AlertWorkflow.deployment_status.in_(["validated", "active"]),
+        )
+    ).all()
+    changed = False
+    for row in rows:
+        snapshot = db.scalars(
+            select(AlertWorkflowChatSnapshot)
+            .where(
+                AlertWorkflowChatSnapshot.user_id == user_id,
+                AlertWorkflowChatSnapshot.workflow_id == row.id,
+                AlertWorkflowChatSnapshot.valid.is_(True),
+                AlertWorkflowChatSnapshot.applied_at.is_not(None),
+            )
+            .order_by(AlertWorkflowChatSnapshot.applied_at.desc())
+            .limit(1)
+        ).first()
+        if snapshot is None:
+            continue
+        payload = _json_loads(snapshot.workflow_payload_json, {})
+        expected_status = payload.get("status")
+        if expected_status in {"active", "inactive"}:
+            row.status = expected_status
+            row.updated_at = _now()
+            db.add(row)
+            changed = True
+    if changed:
+        db.commit()
+
+
 def list_workflows(db: Session, user_id: str, *, status: str | None = None) -> list[AlertWorkflowOut]:
     ensure_system_templates(db)
+    _repair_chat_snapshot_status_drift(db, user_id)
     stmt = select(AlertWorkflow).where(AlertWorkflow.user_id == user_id)
     if status:
         stmt = stmt.where(AlertWorkflow.status == status)
@@ -1115,6 +1153,7 @@ def list_workflows(db: Session, user_id: str, *, status: str | None = None) -> l
 
 
 def get_workflow(db: Session, user_id: str, workflow_id: str) -> AlertWorkflowOut | None:
+    _repair_chat_snapshot_status_drift(db, user_id)
     row = db.get(AlertWorkflow, workflow_id)
     if not row or row.user_id != user_id:
         return None
@@ -1298,8 +1337,9 @@ def apply_workflow_chat_snapshot_payload(
     row = db.get(AlertWorkflow, workflow_id)
     if not row or row.user_id != user_id:
         return None
+    previous_status = row.status
     _persist_workflow(row, payload)
-    row.status = "draft"
+    row.status = previous_status
     if row.deployment_status == "active":
         row.deployment_status = "validated"
     if payload.workflow_dsl is not None and payload.graph_dsl is None:

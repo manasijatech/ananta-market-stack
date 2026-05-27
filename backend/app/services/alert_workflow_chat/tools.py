@@ -59,29 +59,86 @@ def _current_payload(db, context: WorkflowChatContext) -> dict[str, Any]:
     return snapshots.workflow_out_payload(workflow)
 
 
+def _set_context_payload(context: WorkflowChatContext, workflow_payload: dict[str, Any]) -> None:
+    context.editor_payload = snapshots.workflow_out_payload(workflow_payload)
+
+
+def _schema_workflow_payload(workflow: Any) -> dict[str, Any]:
+    return snapshots.workflow_out_payload(workflow.model_dump(mode="json") if hasattr(workflow, "model_dump") else workflow)
+
+
+def _target_universe_from_payload(payload: dict[str, Any]) -> Any:
+    dsl = payload.get("workflow_dsl") if isinstance(payload.get("workflow_dsl"), dict) else {}
+    ast = dsl.get("workflow_ast") if isinstance(dsl.get("workflow_ast"), dict) else {}
+    return ast.get("target_universe")
+
+
+def _guard_unintended_universe_change(
+    *,
+    context: WorkflowChatContext,
+    proposed_payload: dict[str, Any],
+    diff: dict[str, Any] | None,
+) -> None:
+    changed_fields = set()
+    if isinstance(diff, dict):
+        raw_changed_fields = diff.get("changed_fields")
+        if isinstance(raw_changed_fields, list):
+            changed_fields = {str(item) for item in raw_changed_fields}
+    universe_change_declared = any(
+        "target_universe" in field or field in {"workflow_dsl.targeting", "targeting", "universe"}
+        for field in changed_fields
+    )
+    if universe_change_declared:
+        return
+    db = SessionLocal()
+    try:
+        current_payload = _current_payload(db, context)
+    finally:
+        db.close()
+    current_universe = _target_universe_from_payload(current_payload)
+    proposed_universe = _target_universe_from_payload(proposed_payload)
+    if current_universe and proposed_universe and current_universe != proposed_universe:
+        raise ValueError(
+            "Snapshot would change the target universe without declaring a universe change. "
+            "Use workflow_set_universe or include workflow_dsl.workflow_ast.target_universe in changed_fields."
+        )
+
+
 def _create_snapshot_from_payload(
     *,
     context: WorkflowChatContext,
     workflow_payload: dict[str, Any],
     label: str | None,
     diff: dict[str, Any] | None = None,
+    apply_immediately: bool = False,
 ) -> dict[str, Any]:
     db = SessionLocal()
     try:
         session = db.get(AlertWorkflowChatSession, context.session_id)
         if not session or session.user_id != context.user_id:
             raise ValueError("workflow chat session not found")
+        normalized_payload = snapshots.workflow_out_payload(workflow_payload)
+        _guard_unintended_universe_change(context=context, proposed_payload=normalized_payload, diff=diff)
         row = snapshots.create_snapshot(
             db,
             session=session,
             user_id=context.user_id,
             workflow_id=context.workflow_id,
-            workflow_payload=snapshots.workflow_out_payload(workflow_payload),
+            workflow_payload=normalized_payload,
             run_id=context.run_id,
             label=label,
             diff=diff,
         )
-        return _ok(snapshot=snapshots.snapshot_to_schema(row).model_dump(mode="json"))
+        snapshot_payload = snapshots.snapshot_to_schema(row).model_dump(mode="json")
+        if not row.valid:
+            return _ok(snapshot=snapshot_payload)
+        _set_context_payload(context, normalized_payload)
+        if not apply_immediately:
+            return _ok(snapshot=snapshot_payload)
+        snapshot_schema, workflow = snapshots.apply_snapshot(db, context.user_id, row.id)
+        workflow_payload = _schema_workflow_payload(workflow)
+        _set_context_payload(context, workflow_payload)
+        return _ok(snapshot=snapshot_schema.model_dump(mode="json"), workflow=workflow.model_dump(mode="json"))
     finally:
         db.close()
 
@@ -92,6 +149,7 @@ def _create_snapshot_from_patch(
     label: str | None,
     changed_fields: list[str],
     patcher,
+    apply_immediately: bool = True,
 ) -> dict[str, Any]:
     db = SessionLocal()
     try:
@@ -104,6 +162,7 @@ def _create_snapshot_from_patch(
         workflow_payload=payload,
         label=label,
         diff={"changed_fields": changed_fields},
+        apply_immediately=apply_immediately,
     )
 
 
@@ -327,6 +386,7 @@ def workflow_create_snapshot(
     workflow_payload: dict[str, Any],
     label: str | None = None,
     changed_fields: list[str] | None = None,
+    apply_immediately: bool = False,
 ) -> dict[str, Any]:
     """Validate and store an immutable workflow snapshot from a complete workflow payload."""
 
@@ -337,6 +397,7 @@ def workflow_create_snapshot(
             workflow_payload=workflow_payload,
             label=label,
             diff={"changed_fields": changed_fields or []},
+            apply_immediately=apply_immediately,
         )
 
     return _tool_call(call)
@@ -365,6 +426,7 @@ def workflow_set_dsl(
             workflow_payload=payload,
             label=label or "Updated DSL script",
             diff={"changed_fields": ["workflow_dsl.dsl_text"]},
+            apply_immediately=True,
         )
 
     return _tool_call(call)
@@ -655,6 +717,7 @@ def workflow_revert_to_snapshot(
         db = SessionLocal()
         try:
             snapshot, workflow = snapshots.apply_snapshot(db, context.user_id, snapshot_id)
+            _set_context_payload(context, _schema_workflow_payload(workflow))
             return _ok(snapshot=snapshot.model_dump(mode="json"), workflow=workflow.model_dump(mode="json"))
         finally:
             db.close()
@@ -674,6 +737,7 @@ def workflow_apply_snapshot(
         db = SessionLocal()
         try:
             snapshot, workflow = snapshots.apply_snapshot(db, context.user_id, snapshot_id)
+            _set_context_payload(context, _schema_workflow_payload(workflow))
             return _ok(snapshot=snapshot.model_dump(mode="json"), workflow=workflow.model_dump(mode="json"))
         finally:
             db.close()
@@ -696,6 +760,7 @@ def workflow_deploy_snapshot(
         db = SessionLocal()
         try:
             snapshot, workflow = snapshots.deploy_snapshot(db, context.user_id, snapshot_id)
+            _set_context_payload(context, _schema_workflow_payload(workflow))
             return _ok(snapshot=snapshot.model_dump(mode="json"), workflow=workflow.model_dump(mode="json"))
         finally:
             db.close()
