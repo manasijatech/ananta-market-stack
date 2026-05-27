@@ -1226,6 +1226,53 @@ def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> 
     return _workflow_to_out(row)
 
 
+def create_draft_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> AlertWorkflowOut:
+    """Create a workflow editor draft without reconciling live subscriptions."""
+
+    payload.workflow_dsl.workflow_type = "market_data"
+    payload.workflow_dsl.targeting = _normalize_targeting(payload.workflow_dsl.targeting)
+    if not payload.workflow_dsl.targeting.entries:
+        payload.workflow_dsl.targeting = _default_targeting(payload.symbol, payload.exchange, payload.instrument_ref)
+    compiled = compile_workflow_dsl(payload.workflow_dsl)
+    _apply_compiled_ast_to_legacy_dsl(payload.workflow_dsl, compiled["workflow_ast"])
+    payload.workflow_dsl.workflow_ast = compiled["workflow_ast"]
+    payload.workflow_dsl.compiled_summary = compiled["compiled_summary"]
+    payload.workflow_dsl.validation_status = "valid" if compiled["valid"] else "invalid"
+    primary_target = _primary_target_entry(payload.workflow_dsl.targeting)
+    graph = payload.graph_dsl if payload.graph_dsl.nodes else _default_graph_from_dsl(payload.workflow_dsl)
+    now = _now()
+    row = AlertWorkflow(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        template_id=payload.template_id,
+        name=payload.name or "AI workflow draft",
+        description=payload.description,
+        account_id=payload.account_id,
+        broker_code=payload.broker_code,
+        symbol=primary_target.symbol if primary_target else payload.symbol,
+        exchange=primary_target.exchange if primary_target else payload.exchange,
+        instrument_ref_json=_json_dumps(
+            (primary_target.instrument_ref if primary_target else payload.instrument_ref).model_dump(exclude_none=True)
+        ),
+        workflow_dsl_json=_json_dumps(payload.workflow_dsl.model_dump()),
+        graph_dsl_json=_json_dumps(graph.model_dump()),
+        editor_mode=payload.editor_mode,
+        status="draft",
+        channel_override_json=_json_dumps(payload.channel_override.model_dump()) if payload.channel_override else "null",
+        deployment_status="draft",
+        compiled_summary_json=_json_dumps(compiled["compiled_summary"]),
+        last_validated_at=now,
+        last_compiled_at=now if compiled["valid"] else None,
+        last_runtime_error="; ".join(compiled["errors"]) if compiled["errors"] else None,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _workflow_to_out(row)
+
+
 def update_workflow(db: Session, user_id: str, workflow_id: str, payload: AlertWorkflowUpdate) -> AlertWorkflowOut | None:
     row = db.get(AlertWorkflow, workflow_id)
     if not row or row.user_id != user_id:
@@ -1237,6 +1284,29 @@ def update_workflow(db: Session, user_id: str, workflow_id: str, payload: AlertW
     db.commit()
     db.refresh(row)
     _sync_workflow_subscription(db, row)
+    return _workflow_to_out(row)
+
+
+def apply_workflow_chat_snapshot_payload(
+    db: Session,
+    user_id: str,
+    workflow_id: str,
+    payload: AlertWorkflowUpdate,
+) -> AlertWorkflowOut | None:
+    """Stage a chat snapshot into the workflow row without activating runtime subscriptions."""
+
+    row = db.get(AlertWorkflow, workflow_id)
+    if not row or row.user_id != user_id:
+        return None
+    _persist_workflow(row, payload)
+    row.status = "draft"
+    if row.deployment_status == "active":
+        row.deployment_status = "validated"
+    if payload.workflow_dsl is not None and payload.graph_dsl is None:
+        row.graph_dsl_json = _json_dumps(_default_graph_from_dsl(payload.workflow_dsl).model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
     return _workflow_to_out(row)
 
 

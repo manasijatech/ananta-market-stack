@@ -68,6 +68,30 @@ class Settings(BaseSettings):
         default=1.0,
         validation_alias="BROKER_CHAT_WORKER_POLL_SECONDS",
     )
+    alert_workflow_chat_queue_name: str = Field(
+        default="alert-workflow-chat",
+        validation_alias="ALERT_WORKFLOW_CHAT_QUEUE_NAME",
+    )
+    alert_workflow_chat_job_timeout_seconds: int = Field(
+        default=600,
+        validation_alias="ALERT_WORKFLOW_CHAT_JOB_TIMEOUT_SECONDS",
+    )
+    alert_workflow_chat_result_ttl_seconds: int = Field(
+        default=24 * 60 * 60,
+        validation_alias="ALERT_WORKFLOW_CHAT_RESULT_TTL_SECONDS",
+    )
+    alert_workflow_chat_stream_maxlen: int = Field(
+        default=5000,
+        validation_alias="ALERT_WORKFLOW_CHAT_STREAM_MAXLEN",
+    )
+    alert_workflow_chat_history_turn_limit: int = Field(
+        default=20,
+        validation_alias="ALERT_WORKFLOW_CHAT_HISTORY_TURN_LIMIT",
+    )
+    alert_workflow_chat_worker_poll_seconds: float = Field(
+        default=1.0,
+        validation_alias="ALERT_WORKFLOW_CHAT_WORKER_POLL_SECONDS",
+    )
     system_maintenance_interval_seconds: int = Field(
         default=6 * 60 * 60,
         validation_alias="SYSTEM_MAINTENANCE_INTERVAL_SECONDS",
