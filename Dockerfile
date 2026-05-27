@@ -5,8 +5,10 @@ WORKDIR /app/frontend
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 ARG NEXT_PUBLIC_API_BASE_URL=/api/v1
+ARG MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
-    NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+    NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    MARKET_STACK_API_INTERNAL_URL=$MARKET_STACK_API_INTERNAL_URL
 
 COPY frontend/package*.json ./
 RUN npm ci
@@ -14,8 +16,7 @@ RUN npm ci
 COPY frontend/ ./
 RUN BETTER_AUTH_SECRET=market-stack-build-time-placeholder \
     AUTH_DATABASE_PATH=/tmp/market-stack-build-auth.db \
-    npm run build \
-    && npm prune --omit=dev
+    npm run build
 
 FROM python:3.12-slim AS backend-builder
 
@@ -49,7 +50,9 @@ RUN apt-get update \
 COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=backend-builder /opt/venv /opt/venv
 COPY backend /app/backend
-COPY --from=frontend-builder /app/frontend /app/frontend
+COPY --from=frontend-builder /app/frontend/.next/standalone /app/frontend
+COPY --from=frontend-builder /app/frontend/.next/static /app/frontend/.next/static
+COPY --from=frontend-builder /app/frontend/public /app/frontend/public
 COPY docker/market-stack-entrypoint.sh /usr/local/bin/market-stack
 
 RUN sed -i 's/\r$//' /usr/local/bin/market-stack \

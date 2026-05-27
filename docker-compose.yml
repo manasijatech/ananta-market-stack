@@ -79,6 +79,7 @@ services:
       args:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:${FRONTEND_PORT:-3000}}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:${BACKEND_PORT:-8000}/api/v1}
+        MARKET_STACK_API_INTERNAL_URL: ${MARKET_STACK_API_INTERNAL_URL:-http://backend:8000/api/v1}
     depends_on:
       bootstrap:
         condition: service_completed_successfully
