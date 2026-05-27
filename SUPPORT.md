@@ -3,6 +3,7 @@
 Start with the docs that match what you are trying to do:
 
 - Quick Docker start: [README.md](README.md)
+- Published image updates and Railway setup: [docs/docker-image.md](docs/docker-image.md)
 - Production/self-hosting: [docs/self-hosting.md](docs/self-hosting.md)
 - Development setup: [docs/development.md](docs/development.md)
 - Environment variables: [docs/environment.md](docs/environment.md)

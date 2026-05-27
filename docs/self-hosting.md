@@ -2,7 +2,7 @@
 
 This guide covers the Docker-based path for running Market Stack as a self-hosted application. For local source development, use [development.md](development.md).
 
-If you want the simplest prebuilt image flow for a VPS, Railway, or similar platform, use the [published Docker image guide](docker-image.md). The Compose flow below is best when you want to build from source or develop locally.
+If you want the simplest prebuilt image flow for a VPS, Railway, or similar platform, use the [published Docker image guide](docker-image.md). That guide includes the single-container update flow and Railway environment variables. The Compose flow below is best when you want to build from source or develop locally.
 
 ## Recommended Docker Setup
 
@@ -36,7 +36,7 @@ git pull
 docker compose up -d --build
 ```
 
-This rebuilds images and recreates containers if needed. It preserves Docker named volumes, including:
+This rebuilds images and recreates containers if needed. Recreating containers is normal; persistent data is kept in Docker named volumes. It preserves:
 
 - `market-stack_backend_data` - SQLite app database and backend data.
 - `market-stack_market_stack_config` - generated `CREDENTIAL_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, and `REDIS_PASSWORD`.
@@ -50,6 +50,8 @@ docker compose up --build
 ```
 
 Do not run `docker compose down -v` on a real self-hosted instance unless you have backups.
+
+For the published single-image install, do not use `docker compose`. Follow [published image updates](docker-image.md#updating): pull the new image, remove the old container, and start a new container with the same `/data` volume.
 
 ## Production Domains
 
@@ -69,6 +71,8 @@ APP_PUBLIC_BASE_URL=https://your-backend-domain.example
 ```
 
 Most HTTP API calls are made by the Next.js server, so a private backend can work for normal pages. The backend still needs a browser-reachable URL for websocket features such as broker data websocket testing and market-intelligence live feeds. If you use those features, expose the backend through a reverse proxy or subdomain and point `MARKET_STACK_PUBLIC_API_BASE_URL` at that public backend URL.
+
+For Railway or the published single-image deployment, use the same public app domain for frontend, auth, and broker callbacks, and keep browser API traffic on `/api/v1`. See [Railway](docker-image.md#railway) and [Broker Callback URLs](environment.md#broker-callback-urls).
 
 ## Generated Secrets
 

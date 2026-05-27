@@ -46,7 +46,9 @@ http://localhost:3000
 
 The image starts the frontend, backend, SQLite data store, generated runtime secrets, and Redis. Secrets are generated on first boot into `/data/config/market-stack.env`; they are not baked into the image.
 
-For Railway or similar platforms, deploy the same image, attach a persistent volume at `/data`, and set `PORT=3000`.
+To update this install later, pull the new image and recreate the container with the same `market-stack-data:/data` volume. Removing the container is safe; removing the volume deletes the database and generated secrets. See [published image updates](docs/docker-image.md#updating).
+
+For Railway or similar platforms, deploy the same image, attach a persistent volume at `/data`, and set the required public URL environment variables. See the [Railway setup](docs/docker-image.md#railway) and [published-image environment notes](docs/environment.md#broker-callback-urls) before deploying; auth, redirects, and broker callbacks depend on these values matching your public domain.
 
 ### Build From Source
 
@@ -91,10 +93,10 @@ Use `docker compose down -v` only when you intentionally want to delete Docker-m
 
 ## Documentation
 
-- [Self-hosting guide](docs/self-hosting.md) - production-oriented Docker setup, domains, updates, backups, generated secrets, Redis, and troubleshooting.
-- [Published Docker image](docs/docker-image.md) - image setup, Railway setup, updates, backups, and manual/GitHub publishing.
+- [Published Docker image](docs/docker-image.md) - fastest single-image setup, Railway settings, safe updates, backups, and manual/GitHub publishing.
+- [Self-hosting guide](docs/self-hosting.md) - source/Compose setup, production domains, generated secrets, Redis, backups, and troubleshooting.
+- [Environment reference](docs/environment.md) - required domain/auth/API variables for Docker, Railway, broker callbacks, Redis, and hosted API settings.
 - [Development setup](docs/development.md) - manual backend/frontend setup, local env files, workers, migrations, and checks.
-- [Environment reference](docs/environment.md) - root Compose, backend, frontend, Redis, broker callback, and hosted API settings.
 - [API overview](docs/api-overview.md) - route groups, local OpenAPI docs, and hosted API documentation links.
 - [Security notes](docs/security.md) - encrypted broker credentials, secrets, backups, Redis, and production hardening.
 - [Contributing](CONTRIBUTING.md) - contribution workflow, checks, migrations, and compatibility expectations.

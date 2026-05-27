@@ -12,6 +12,8 @@ The image runs:
 
 No production secrets are baked into the image.
 
+The container itself is disposable. Persistent state lives in the `/data` mount, including SQLite, generated auth/encryption secrets, and bundled Redis data. Normal updates replace the container but reuse the same `/data` volume.
+
 ## Run Locally Or On A VPS
 
 ```bash
@@ -28,6 +30,8 @@ Open:
 http://localhost:3000
 ```
 
+If a container named `market-stack` already exists, Docker will refuse to create another one with the same name. Update by stopping and removing the old container, then starting a new one with the same `market-stack-data:/data` volume. See [Updating](#updating).
+
 ## Runtime Secrets
 
 On first boot, the container creates `/data/config/market-stack.env` with:
@@ -41,6 +45,8 @@ Existing values are preserved on later boots. If the host provides any of these 
 Back up `/data/app.db` and `/data/config/market-stack.env` together. Losing or changing `CREDENTIAL_ENCRYPTION_KEY` makes existing encrypted broker credentials unreadable.
 
 ## Railway
+
+Railway uses the same published image, but the public URL variables are important. Without them, auth redirects, trusted origins, broker callback URLs, and same-domain `/api/v1` routing may not match the Railway domain.
 
 Use the published image:
 
@@ -57,6 +63,9 @@ MARKET_STACK_PUBLIC_APP_URL=https://your-railway-domain
 APP_PUBLIC_BASE_URL=https://your-railway-domain
 BETTER_AUTH_URL=https://your-railway-domain
 BETTER_AUTH_TRUSTED_ORIGINS=https://your-railway-domain
+NEXT_PUBLIC_API_BASE_URL=/api/v1
+MARKET_STACK_PUBLIC_API_BASE_URL=/api/v1
+MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 ```
 
 Add a persistent volume mounted at:
@@ -66,6 +75,8 @@ Add a persistent volume mounted at:
 ```
 
 That is enough for the normal Railway setup. Market Stack will generate its own secrets, start Redis automatically, and route `/api/v1` traffic through the same public app domain.
+
+For the variable meanings and broker callback notes, see [environment.md](environment.md#broker-callback-urls).
 
 ## Advanced Redis
 
@@ -79,7 +90,7 @@ When `REDIS_URL` is set, Market Stack uses that Redis instance instead of starti
 
 ## Updating
 
-Update by replacing the image while keeping the same `/data` volume:
+Docker does not update a running container in place. Update by replacing the container while keeping the same `/data` volume:
 
 ```bash
 docker pull ghcr.io/manasijatech/market-stack:latest
@@ -92,9 +103,36 @@ docker run -d \
   ghcr.io/manasijatech/market-stack:latest
 ```
 
+PowerShell:
+
+```powershell
+docker pull ghcr.io/manasijatech/market-stack:latest
+docker stop market-stack
+docker rm market-stack
+docker run -d `
+  --name market-stack `
+  -p 3000:3000 `
+  -v market-stack-data:/data `
+  ghcr.io/manasijatech/market-stack:latest
+```
+
+This deletes only the old container. It does not delete the named Docker volume. Do not run `docker volume rm market-stack-data` unless you intentionally want to delete the database, generated secrets, and bundled Redis data.
+
 Updates do not rotate secrets because secrets live in `/data/config/market-stack.env`.
 
 The backend runs database migrations on startup. Before upgrading a real instance, back up the `/data` volume.
+
+Create a quick backup before updating:
+
+```bash
+docker run --rm -v market-stack-data:/data -v "$(pwd)":/backup alpine tar czf /backup/market-stack-data-backup.tgz -C /data .
+```
+
+PowerShell:
+
+```powershell
+docker run --rm -v market-stack-data:/data -v ${PWD}:/backup alpine tar czf /backup/market-stack-data-backup.tgz -C /data .
+```
 
 ## Publishing
 

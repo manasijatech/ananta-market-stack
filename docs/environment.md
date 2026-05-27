@@ -61,6 +61,11 @@ This page summarizes the main environment variables used by Market Stack. Most u
 
 Broker session flows often require the backend public URL to match the callback or redirect URL configured in the broker developer console.
 
+Deployment shape matters:
+
+- Docker Compose usually exposes frontend and backend separately, so callback/API URLs may point to the backend domain.
+- The published Docker image and Railway deployment expose one public app domain and proxy `/api/v1` internally, so callback/auth URLs should use the same app domain.
+
 For local Docker Compose:
 
 ```env
@@ -90,6 +95,8 @@ MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 ```
 
 The published image includes an internal reverse proxy so `/api/v1` supports normal HTTP requests and browser websocket upgrades on the same public domain.
+
+Railway uses the same shape as the published Docker image. Set the app-domain values in [docker-image.md#railway](docker-image.md#railway), mount a persistent volume at `/data`, and do not point browser API variables at `127.0.0.1`.
 
 ## Hosted API Links
 
