@@ -217,7 +217,7 @@ BACKEND_PID="$!"
 wait_for_backend
 
 cd /app/frontend
-HOSTNAME=0.0.0.0 PORT="$FRONTEND_PORT" node node_modules/next/dist/bin/next start -p "$FRONTEND_PORT" -H 0.0.0.0 &
+HOSTNAME=0.0.0.0 PORT="$FRONTEND_PORT" node server.js &
 FRONTEND_PID="$!"
 
 wait_for_frontend
