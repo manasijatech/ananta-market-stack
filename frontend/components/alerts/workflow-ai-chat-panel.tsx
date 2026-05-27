@@ -86,18 +86,26 @@ function eventText(event: AlertWorkflowChatEvent) {
     return "";
 }
 
-function assistantText(events: AlertWorkflowChatEvent[], run: AlertWorkflowChatRun | null) {
-    const tokens = events.filter((event) => event.event_type === "token").map(eventText).join("");
-    if (tokens.trim()) return tokens;
-    const outputs = events
-        .filter((event) => event.event_type === "message_output")
-        .map(eventText)
-        .filter(Boolean);
-    if (outputs.length) return outputs.join("\n\n");
-    const completed = [...events].reverse().find((event) => event.event_type === "run_completed");
-    if (completed) return eventText(completed);
-    return run?.response_text || "";
-}
+type TimelineItem =
+    | { id: string; kind: "text"; sequence: number; text: string }
+    | {
+          arguments?: unknown;
+          id: string;
+          kind: "tool";
+          output?: Record<string, unknown>;
+          sequence: number;
+          status: "running" | "completed";
+          toolName: string;
+      }
+    | {
+          id: string;
+          kind: "snapshot";
+          label: string;
+          sequence: number;
+          snapshotId?: string;
+          status: string;
+          version?: number;
+      };
 
 function snapshotSummary(snapshot: AlertWorkflowChatSnapshot) {
     const summary = snapshot.explanation?.summary;
@@ -142,72 +150,225 @@ function compactJson(value: unknown) {
     }
 }
 
-function toolTraceRows(events: AlertWorkflowChatEvent[]) {
-    const rows = new Map<
-        string,
-        {
-            id: string;
-            arguments?: unknown;
-            output?: Record<string, unknown>;
-            sequence: number;
-            status: "running" | "completed";
-            toolName: string;
+function snapshotFromPayload(payload: Record<string, unknown>) {
+    const snapshot = payload.snapshot;
+    return snapshot && typeof snapshot === "object" ? (snapshot as Record<string, unknown>) : null;
+}
+
+function buildTimelineItems(events: AlertWorkflowChatEvent[], run: AlertWorkflowChatRun | null) {
+    const sorted = events.slice().sort((left, right) => left.sequence - right.sequence);
+    const hasTokens = sorted.some((event) => event.event_type === "token");
+    const items: TimelineItem[] = [];
+    const toolIndexes = new Map<string, number>();
+    const unmatchedStarted: string[] = [];
+    let textBuffer = "";
+    let textStartSequence = 0;
+
+    function flushText() {
+        const text = textBuffer.trim();
+        if (!text) {
+            textBuffer = "";
+            textStartSequence = 0;
+            return;
         }
-    >();
-    for (const event of events) {
-        if (event.event_type !== "tool_call_started" && event.event_type !== "tool_call_completed") continue;
-        const callId = String(event.payload.tool_call_id || `${event.event_type}-${event.sequence}`);
-        const existing = rows.get(callId);
-        const toolName = String(event.payload.tool_name || existing?.toolName || "workflow_tool");
+        items.push({
+            id: `text-${textStartSequence}-${items.length}`,
+            kind: "text",
+            sequence: textStartSequence,
+            text
+        });
+        textBuffer = "";
+        textStartSequence = 0;
+    }
+
+    for (const event of sorted) {
+        if (event.event_type === "token" || (!hasTokens && event.event_type === "message_output")) {
+            const text = eventText(event);
+            if (text) {
+                if (!textStartSequence) textStartSequence = event.sequence;
+                textBuffer += text;
+            }
+            continue;
+        }
+        if (!hasTokens && event.event_type === "run_completed") {
+            const text = eventText(event);
+            if (text && !textBuffer.includes(text)) {
+                if (!textStartSequence) textStartSequence = event.sequence;
+                textBuffer += text;
+            }
+            continue;
+        }
+        flushText();
         if (event.event_type === "tool_call_started") {
-            rows.set(callId, {
+            const callId = String(event.payload.tool_call_id || `tool-${event.sequence}`);
+            const item: TimelineItem = {
                 id: callId,
+                kind: "tool",
                 arguments: event.payload.arguments,
-                output: existing?.output,
-                sequence: existing?.sequence ?? event.sequence,
-                status: existing?.status ?? "running",
-                toolName
-            });
-        } else {
-            rows.set(callId, {
-                id: callId,
-                arguments: existing?.arguments,
-                output: event.payload.output_metadata as Record<string, unknown>,
-                sequence: existing?.sequence ?? event.sequence,
-                status: "completed",
-                toolName
+                sequence: event.sequence,
+                status: "running",
+                toolName: String(event.payload.tool_name || "workflow_tool")
+            };
+            toolIndexes.set(callId, items.length);
+            unmatchedStarted.push(callId);
+            items.push(item);
+        } else if (event.event_type === "tool_call_completed") {
+            let callId = String(event.payload.tool_call_id || "");
+            if (!callId || !toolIndexes.has(callId)) {
+                const matchingIndex = unmatchedStarted.findIndex((id) => {
+                    const item = items[toolIndexes.get(id) ?? -1];
+                    return item?.kind === "tool" && item.toolName === String(event.payload.tool_name || item.toolName);
+                });
+                if (matchingIndex >= 0) {
+                    callId = unmatchedStarted.splice(matchingIndex, 1)[0] ?? callId;
+                }
+            }
+            const existingIndex = callId ? toolIndexes.get(callId) : undefined;
+            if (existingIndex !== undefined) {
+                const existing = items[existingIndex];
+                if (existing?.kind === "tool") {
+                    items[existingIndex] = {
+                        ...existing,
+                        output: event.payload.output_metadata as Record<string, unknown>,
+                        status: "completed"
+                    };
+                }
+            } else {
+                items.push({
+                    id: `tool-completed-${event.sequence}`,
+                    kind: "tool",
+                    output: event.payload.output_metadata as Record<string, unknown>,
+                    sequence: event.sequence,
+                    status: "completed",
+                    toolName: String(event.payload.tool_name || "workflow_tool")
+                });
+            }
+        } else if (event.event_type === "snapshot_created" || event.event_type === "snapshot_applied") {
+            const snapshot = snapshotFromPayload(event.payload);
+            items.push({
+                id: `${event.event_type}-${event.sequence}`,
+                kind: "snapshot",
+                label: String(snapshot?.label || (event.event_type === "snapshot_applied" ? "Snapshot applied" : "Snapshot saved")),
+                sequence: event.sequence,
+                snapshotId: typeof snapshot?.id === "string" ? snapshot.id : undefined,
+                status: event.event_type === "snapshot_applied" ? "applied" : "saved",
+                version: typeof snapshot?.version === "number" ? snapshot.version : undefined
             });
         }
     }
-    return Array.from(rows.values()).sort((left, right) => left.sequence - right.sequence);
+    flushText();
+
+    if (!items.length && run?.response_text) {
+        items.push({ id: `text-${run.id}`, kind: "text", sequence: 0, text: run.response_text });
+    }
+    return items;
 }
 
-function ToolTrace({ events }: { events: AlertWorkflowChatEvent[] }) {
-    const rows = toolTraceRows(events);
-    if (!rows.length) return null;
+function TimelineTool({ collapsed, item }: { collapsed: boolean; item: Extract<TimelineItem, { kind: "tool" }> }) {
     return (
-        <div className="grid gap-1.5">
-            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                Reasoning trace
+        <details className="group border border-border bg-secondary/20 px-2.5 py-2 text-xs" open={!collapsed}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
+                <span className="truncate">{item.toolName}</span>
+                <span>{item.status}</span>
+            </summary>
+            {item.arguments ? (
+                <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
+                    {compactJson(item.arguments)}
+                </pre>
+            ) : null}
+            {item.output ? (
+                <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
+                    {compactJson(item.output)}
+                </pre>
+            ) : null}
+        </details>
+    );
+}
+
+function TimelineSnapshot({ item }: { item: Extract<TimelineItem, { kind: "snapshot" }> }) {
+    return (
+        <div className="flex items-center justify-between gap-2 border border-border bg-secondary/20 px-2.5 py-2 text-xs text-muted-foreground">
+            <span className="truncate">
+                Snapshot {item.version ? `v${item.version}` : ""} {item.status}: {item.label}
+            </span>
+            {item.snapshotId ? <span className="font-mono text-[10px]">{item.snapshotId.slice(0, 8)}</span> : null}
+        </div>
+    );
+}
+
+function SnapshotDock({
+    applySnapshot,
+    snapshots
+}: {
+    applySnapshot: (snapshotId: string, deploy?: boolean) => Promise<void>;
+    snapshots: AlertWorkflowChatSnapshot[];
+}) {
+    const ordered = snapshots.slice().sort((left, right) => right.version - left.version);
+    const latest = ordered[0];
+    if (!latest) return null;
+    const history = ordered.slice(1);
+    return (
+        <div className="mt-5 border-t border-border pt-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="type-step-eyebrow">Snapshot</div>
+                {history.length ? (
+                    <details className="text-xs text-muted-foreground">
+                        <summary className="cursor-pointer list-none hover:text-foreground">
+                            {history.length} older
+                        </summary>
+                        <div className="absolute right-4 z-10 mt-2 grid max-h-72 w-[min(420px,calc(100%-2rem))] gap-1 overflow-auto border border-border bg-background p-2 shadow-xl">
+                            {history.map((snapshot) => (
+                                <button
+                                    className="grid gap-0.5 border border-border px-2 py-1.5 text-left hover:bg-secondary/40"
+                                    key={snapshot.id}
+                                    onClick={() => void applySnapshot(snapshot.id)}
+                                    type="button"
+                                >
+                                    <span className="truncate text-xs font-medium">{snapshot.label}</span>
+                                    <span className="font-mono text-[10px] text-muted-foreground">
+                                        v{snapshot.version} · {snapshot.valid ? "valid" : "invalid"} · {formatShortDate(snapshot.created_at)}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </details>
+                ) : null}
             </div>
-            {rows.map((row) => (
-                <details className="group border border-border bg-secondary/25 px-2 py-1.5 text-xs" key={row.id}>
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
-                        <span className="truncate">{row.toolName}</span>
-                        <span>{row.status}</span>
-                    </summary>
-                    {row.arguments ? (
-                        <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
-                            {compactJson(row.arguments)}
-                        </pre>
-                    ) : null}
-                    {row.output ? (
-                        <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
-                            {compactJson(row.output)}
-                        </pre>
-                    ) : null}
-                </details>
-            ))}
+            <div className="grid gap-2 border border-border bg-background p-3">
+                <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">{latest.label}</div>
+                        <div className="text-xs text-muted-foreground">
+                            v{latest.version} · {latest.valid ? "valid" : "invalid"} · {formatShortDate(latest.created_at)}
+                        </div>
+                    </div>
+                    <span className={cn("text-xs", latest.valid ? "text-primary" : "text-[var(--danger)]")}>
+                        {latest.valid ? "ready" : "blocked"}
+                    </span>
+                </div>
+                <div className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+                    {snapshotSummary(latest)}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        disabled={!latest.valid}
+                        onClick={() => void applySnapshot(latest.id)}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                    >
+                        Apply
+                    </Button>
+                    <Button
+                        disabled={!latest.valid}
+                        onClick={() => void applySnapshot(latest.id, true)}
+                        size="sm"
+                        type="button"
+                    >
+                        Deploy
+                    </Button>
+                </div>
+            </div>
         </div>
     );
 }
@@ -586,8 +747,9 @@ export function WorkflowAiChatPanel({
                     {orderedRuns.length ? (
                         orderedRuns.map((run) => {
                             const events = eventsByRun[run.id] ?? [];
-                            const text = assistantText(events, run);
                             const isRunning = ["queued", "running"].includes(run.status);
+                            const timelineItems = buildTimelineItems(events, run);
+                            const collapseTrace = !isRunning && timelineItems.some((item) => item.kind === "text");
                             return (
                                 <div className="grid gap-3" key={run.id}>
                                     <div className="flex justify-end">
@@ -604,9 +766,22 @@ export function WorkflowAiChatPanel({
                                                 {formatShortDate(run.created_at)}
                                             </div>
                                         </div>
-                                        <ToolTrace events={events} />
-                                        {text ? (
-                                            <AlertLlmMarkdown className="text-sm text-foreground">{text}</AlertLlmMarkdown>
+                                        {timelineItems.length ? (
+                                            <div className="grid gap-2">
+                                                {timelineItems.map((item) => {
+                                                    if (item.kind === "text") {
+                                                        return (
+                                                            <AlertLlmMarkdown className="text-sm text-foreground" key={item.id}>
+                                                                {item.text}
+                                                            </AlertLlmMarkdown>
+                                                        );
+                                                    }
+                                                    if (item.kind === "tool") {
+                                                        return <TimelineTool collapsed={collapseTrace} item={item} key={item.id} />;
+                                                    }
+                                                    return <TimelineSnapshot item={item} key={item.id} />;
+                                                })}
+                                            </div>
                                         ) : isRunning ? (
                                             <div className="text-sm text-muted-foreground">
                                                 Working through workflow tools...
@@ -634,52 +809,7 @@ export function WorkflowAiChatPanel({
                 </div>
 
                 {snapshots.length ? (
-                    <div className="mt-5 grid gap-2 border-t border-border pt-4">
-                        <div className="type-step-eyebrow">Snapshots</div>
-                        <div className="grid gap-2">
-                            {snapshots
-                                .slice()
-                                .reverse()
-                                .map((snapshot) => (
-                                    <div className="grid gap-2 border border-border p-3" key={snapshot.id}>
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                                <div className="truncate text-sm font-semibold">{snapshot.label}</div>
-                                                <div className="text-xs text-muted-foreground">
-                                                    v{snapshot.version} · {snapshot.valid ? "valid" : "invalid"} ·{" "}
-                                                    {formatShortDate(snapshot.created_at)}
-                                                </div>
-                                            </div>
-                                            <span className={cn("text-xs", snapshot.valid ? "text-primary" : "text-[var(--danger)]")}>
-                                                {snapshot.valid ? "ready" : "blocked"}
-                                            </span>
-                                        </div>
-                                        <div className="line-clamp-3 text-xs leading-5 text-muted-foreground">
-                                            {snapshotSummary(snapshot)}
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            <Button
-                                                disabled={!snapshot.valid}
-                                                onClick={() => applySnapshot(snapshot.id)}
-                                                size="sm"
-                                                type="button"
-                                                variant="secondary"
-                                            >
-                                                Apply
-                                            </Button>
-                                            <Button
-                                                disabled={!snapshot.valid}
-                                                onClick={() => applySnapshot(snapshot.id, true)}
-                                                size="sm"
-                                                type="button"
-                                            >
-                                                Deploy
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                        </div>
-                    </div>
+                    <SnapshotDock applySnapshot={applySnapshot} snapshots={snapshots} />
                 ) : null}
             </div>
 

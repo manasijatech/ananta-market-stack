@@ -98,7 +98,7 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
     db = SessionLocal()
     final_text = ""
     tool_names_by_call_id: dict[str, str] = {}
-    pending_tool_names: list[str] = []
+    pending_tool_calls: list[tuple[str, str | None]] = []
     try:
         run = db.get(AlertWorkflowChatRun, run_id)
         if run is None:
@@ -171,7 +171,7 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
                     tool_name, arguments, call_id = _extract_tool_call_start(item)
                     if call_id:
                         tool_names_by_call_id[call_id] = tool_name
-                    pending_tool_names.append(tool_name)
+                    pending_tool_calls.append((tool_name, call_id))
                     sessions.append_event(
                         db,
                         run,
@@ -182,8 +182,9 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
                 elif item_type == "tool_call_output_item":
                     call_id, output = _extract_tool_call_output(item)
                     tool_name = tool_names_by_call_id.get(call_id or "", "unknown")
-                    if tool_name == "unknown" and pending_tool_names:
-                        tool_name = pending_tool_names.pop(0)
+                    if tool_name == "unknown" and pending_tool_calls:
+                        tool_name, pending_call_id = pending_tool_calls.pop(0)
+                        call_id = call_id or pending_call_id
                     output_metadata = _output_preview(output)
                     sessions.append_event(
                         db,
