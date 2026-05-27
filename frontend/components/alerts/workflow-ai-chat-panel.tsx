@@ -74,6 +74,14 @@ function mergeEvents(existing: AlertWorkflowChatEvent[], incoming: AlertWorkflow
     return Array.from(map.values()).sort((left, right) => left.sequence - right.sequence);
 }
 
+function mergeSnapshots(existing: AlertWorkflowChatSnapshot[], incoming: AlertWorkflowChatSnapshot[]) {
+    const map = new Map<string, AlertWorkflowChatSnapshot>();
+    for (const snapshot of [...existing, ...incoming]) {
+        map.set(snapshot.id, snapshot);
+    }
+    return Array.from(map.values()).sort((left, right) => left.version - right.version);
+}
+
 function textPayload(payload: Record<string, unknown>, key: string) {
     const value = payload[key];
     return typeof value === "string" ? value : "";
@@ -303,32 +311,45 @@ function SnapshotDock({
     applySnapshot: (snapshotId: string, deploy?: boolean) => Promise<void>;
     snapshots: AlertWorkflowChatSnapshot[];
 }) {
-    const ordered = snapshots.slice().sort((left, right) => right.version - left.version);
+    const ordered = snapshots.slice().sort((left, right) => {
+        const leftApplied = left.applied_at ? new Date(left.applied_at).getTime() : 0;
+        const rightApplied = right.applied_at ? new Date(right.applied_at).getTime() : 0;
+        if (leftApplied !== rightApplied) return rightApplied - leftApplied;
+        return right.version - left.version;
+    });
     const latest = ordered[0];
     if (!latest) return null;
     const history = ordered.slice(1);
     return (
-        <div className="mt-5 border-t border-border pt-4">
+        <div className="mt-3 border-t border-border pt-3">
             <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="type-step-eyebrow">Snapshot</div>
+                <div className="type-step-eyebrow">Workflow Snapshot</div>
                 {history.length ? (
                     <details className="text-xs text-muted-foreground">
                         <summary className="cursor-pointer list-none hover:text-foreground">
-                            {history.length} older
+                            Show {history.length} older snapshot{history.length === 1 ? "" : "s"}
                         </summary>
-                        <div className="absolute right-4 z-10 mt-2 grid max-h-72 w-[min(420px,calc(100%-2rem))] gap-1 overflow-auto border border-border bg-background p-2 shadow-xl">
+                        <div className="mt-2 grid max-h-72 gap-1 overflow-auto border border-border bg-secondary/10 p-2">
                             {history.map((snapshot) => (
-                                <button
-                                    className="grid gap-0.5 border border-border px-2 py-1.5 text-left hover:bg-secondary/40"
-                                    key={snapshot.id}
-                                    onClick={() => void applySnapshot(snapshot.id)}
-                                    type="button"
-                                >
-                                    <span className="truncate text-xs font-medium">{snapshot.label}</span>
-                                    <span className="font-mono text-[10px] text-muted-foreground">
-                                        v{snapshot.version} · {snapshot.valid ? "valid" : "invalid"} · {formatShortDate(snapshot.created_at)}
-                                    </span>
-                                </button>
+                                <div className="flex items-center justify-between gap-2 border border-border bg-background px-2 py-1.5" key={snapshot.id}>
+                                    <div className="min-w-0">
+                                        <div className="truncate text-xs font-medium">{snapshot.label}</div>
+                                        <div className="font-mono text-[10px] text-muted-foreground">
+                                            v{snapshot.version} · {snapshot.applied_at ? "applied" : snapshot.valid ? "valid" : "invalid"} ·{" "}
+                                            {formatShortDate(snapshot.applied_at || snapshot.created_at)}
+                                        </div>
+                                    </div>
+                                    <Button
+                                        className="h-7 px-2 text-[10px]"
+                                        disabled={!snapshot.valid}
+                                        onClick={() => void applySnapshot(snapshot.id)}
+                                        size="sm"
+                                        type="button"
+                                        variant="ghost"
+                                    >
+                                        Apply
+                                    </Button>
+                                </div>
                             ))}
                         </div>
                     </details>
@@ -339,11 +360,12 @@ function SnapshotDock({
                     <div className="min-w-0">
                         <div className="truncate text-sm font-semibold">{latest.label}</div>
                         <div className="text-xs text-muted-foreground">
-                            v{latest.version} · {latest.valid ? "valid" : "invalid"} · {formatShortDate(latest.created_at)}
+                            v{latest.version} · {latest.applied_at ? "applied" : latest.valid ? "valid" : "invalid"} ·{" "}
+                            {formatShortDate(latest.applied_at || latest.created_at)}
                         </div>
                     </div>
                     <span className={cn("text-xs", latest.valid ? "text-primary" : "text-[var(--danger)]")}>
-                        {latest.valid ? "ready" : "blocked"}
+                        {latest.applied_at ? "current" : latest.valid ? "ready" : "blocked"}
                     </span>
                 </div>
                 <div className="line-clamp-2 text-xs leading-5 text-muted-foreground">
@@ -431,7 +453,7 @@ export function WorkflowAiChatPanel({
     useEffect(() => {
         if (!bodyRef.current) return;
         bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-    }, [eventsByRun, orderedRuns.length, snapshots.length, open]);
+    }, [eventsByRun, orderedRuns.length, open]);
 
     useEffect(() => {
         if (!open) return;
@@ -562,9 +584,16 @@ export function WorkflowAiChatPanel({
                                 ...current,
                                 [runId]: mergeEvents(current[runId] ?? [], [event])
                             }));
-                            if (parsed.event === "snapshot_created") void refreshSnapshots();
-                            if (parsed.event === "snapshot_applied") {
+                            if (parsed.event === "snapshot_created" || parsed.event === "snapshot_applied") {
+                                const snapshot = snapshotFromPayload(payload);
+                                if (snapshot) {
+                                    setSnapshots((current) =>
+                                        mergeSnapshots(current, [snapshot as unknown as AlertWorkflowChatSnapshot])
+                                    );
+                                }
                                 void refreshSnapshots();
+                            }
+                            if (parsed.event === "snapshot_applied") {
                                 const workflow = payload.workflow;
                                 if (workflow && typeof workflow === "object") {
                                     onWorkflowApplied(workflow as AlertWorkflow);
@@ -750,6 +779,7 @@ export function WorkflowAiChatPanel({
                             const isRunning = ["queued", "running"].includes(run.status);
                             const timelineItems = buildTimelineItems(events, run);
                             const collapseTrace = !isRunning && timelineItems.some((item) => item.kind === "text");
+                            const runSnapshots = snapshots.filter((snapshot) => snapshot.run_id === run.id);
                             return (
                                 <div className="grid gap-3" key={run.id}>
                                     <div className="flex justify-end">
@@ -791,6 +821,9 @@ export function WorkflowAiChatPanel({
                                                 No assistant response was stored for this turn.
                                             </div>
                                         )}
+                                        {runSnapshots.length ? (
+                                            <SnapshotDock applySnapshot={applySnapshot} snapshots={runSnapshots} />
+                                        ) : null}
                                     </div>
                                 </div>
                             );
@@ -808,7 +841,7 @@ export function WorkflowAiChatPanel({
                     )}
                 </div>
 
-                {snapshots.length ? (
+                {!orderedRuns.length && snapshots.length ? (
                     <SnapshotDock applySnapshot={applySnapshot} snapshots={snapshots} />
                 ) : null}
             </div>
