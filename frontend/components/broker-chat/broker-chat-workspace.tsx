@@ -73,10 +73,23 @@ type ToolStep = {
     output?: BrokerChatEvent;
 };
 
-type ReasoningStep = {
-    key: string;
-    event: BrokerChatEvent;
-};
+type BrokerTraceItem =
+    | {
+          events: BrokerChatEvent[];
+          key: string;
+          kind: "reasoning";
+          sequence: number;
+          text: string;
+      }
+    | {
+          callId?: string | null;
+          key: string;
+          kind: "tool";
+          output?: BrokerChatEvent;
+          sequence: number;
+          start?: BrokerChatEvent;
+          toolName: string;
+      };
 
 type BrokerChatConfigPayload = {
     default_provider: LlmProvider;
@@ -92,6 +105,7 @@ type BrokerChatConfigKeyPayload = Omit<BrokerChatConfigPayload, "default_provide
 };
 
 const liveStatuses = new Set(["queued", "running"]);
+const BROKER_CHAT_EVENT_VISIBILITY: BrokerChatVisibility = "full";
 
 function brokerChatConfigKey(config: BrokerChatConfigKeyPayload) {
     return JSON.stringify(config);
@@ -340,16 +354,6 @@ function tableColumnWidth(index: number, total: number) {
     return `${54 / Math.max(total - 2, 1)}%`;
 }
 
-function detailModeLabel(visibility: BrokerChatVisibility) {
-    if (visibility === "tool_calls") {
-        return "Tool calls";
-    }
-    if (visibility === "full") {
-        return "Full";
-    }
-    return "Minimal";
-}
-
 function assistantText(events: BrokerChatEvent[], run: BrokerChatRun) {
     const finalMessage = [...events]
         .reverse()
@@ -392,63 +396,101 @@ function parseSseBlock(block: string): ParsedSseEvent | null {
     return event;
 }
 
-function groupToolSteps(events: BrokerChatEvent[]): ToolStep[] {
-    const steps: ToolStep[] = [];
-    const pending: ToolStep[] = [];
-    for (const event of events) {
-        if (event.event_type === "tool_call_started") {
-            const callId = textPayload(event.payload, "tool_call_id") || null;
-            const step = {
-                key: callId || `${event.run_id}:${event.sequence}`,
-                toolName: textPayload(event.payload, "tool_name") || "tool",
-                callId,
-                start: event
-            };
-            steps.push(step);
-            pending.push(step);
+function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
+    const items: BrokerTraceItem[] = [];
+    const toolIndexes = new Map<string, number>();
+    const pendingToolKeys: string[] = [];
+    let reasoningEvents: BrokerChatEvent[] = [];
+    let reasoningText: string[] = [];
+    let reasoningStartSequence = 0;
+
+    function flushReasoning() {
+        const text = reasoningText.join("\n\n").trim();
+        if (!text) {
+            reasoningEvents = [];
+            reasoningText = [];
+            reasoningStartSequence = 0;
+            return;
+        }
+        items.push({
+            events: reasoningEvents,
+            key: `${reasoningEvents[0]?.run_id}:reasoning:${reasoningStartSequence}`,
+            kind: "reasoning",
+            sequence: reasoningStartSequence,
+            text
+        });
+        reasoningEvents = [];
+        reasoningText = [];
+        reasoningStartSequence = 0;
+    }
+
+    for (const event of events.slice().sort((left, right) => left.sequence - right.sequence)) {
+        if (event.event_type === "reasoning") {
+            const message = textPayload(event.payload, "message");
+            const rawType = textPayload(event.payload, "raw_type");
+            if (!rawType.endsWith(".delta") && (message || rawType)) {
+                if (!reasoningStartSequence) reasoningStartSequence = event.sequence;
+                reasoningEvents.push(event);
+                if (message) reasoningText.push(message);
+            }
             continue;
         }
-        if (event.event_type === "tool_call_completed") {
+        if (event.event_type !== "tool_call_started" && event.event_type !== "tool_call_completed") {
+            continue;
+        }
+        flushReasoning();
+        if (event.event_type === "tool_call_started") {
             const callId = textPayload(event.payload, "tool_call_id") || null;
-            const outputName = textPayload(event.payload, "tool_name");
-            const byCall = callId ? pending.find((item) => item.callId === callId && !item.output) : null;
-            const byName = pending.find(
-                (item) => !item.output && outputName !== "unknown" && item.toolName === outputName
-            );
-            const step = byCall ?? byName ?? pending.find((item) => !item.output);
-            if (step) {
-                step.output = event;
-                step.toolName = outputName && outputName !== "unknown" ? outputName : step.toolName;
-                continue;
-            }
-            steps.push({
-                key: `${event.run_id}:${event.sequence}`,
-                toolName: outputName && outputName !== "unknown" ? outputName : "tool",
+            const key = callId || `${event.run_id}:tool:${event.sequence}`;
+            const item: BrokerTraceItem = {
                 callId,
-                output: event
+                key,
+                kind: "tool",
+                sequence: event.sequence,
+                start: event,
+                toolName: textPayload(event.payload, "tool_name") || "tool"
+            };
+            toolIndexes.set(key, items.length);
+            pendingToolKeys.push(key);
+            items.push(item);
+            continue;
+        }
+        const callId = textPayload(event.payload, "tool_call_id") || null;
+        const outputName = textPayload(event.payload, "tool_name");
+        let key = callId || "";
+        let existingIndex = key ? toolIndexes.get(key) : undefined;
+        if (existingIndex === undefined) {
+            const matchingPendingIndex = pendingToolKeys.findIndex((pendingKey) => {
+                const pendingItem = items[toolIndexes.get(pendingKey) ?? -1];
+                return pendingItem?.kind === "tool" && (!outputName || outputName === "unknown" || pendingItem.toolName === outputName);
+            });
+            if (matchingPendingIndex >= 0) {
+                key = pendingToolKeys.splice(matchingPendingIndex, 1)[0] ?? key;
+                existingIndex = toolIndexes.get(key);
+            }
+        }
+        if (existingIndex !== undefined) {
+            const existing = items[existingIndex];
+            if (existing?.kind === "tool") {
+                items[existingIndex] = {
+                    ...existing,
+                    output: event,
+                    toolName: outputName && outputName !== "unknown" ? outputName : existing.toolName
+                };
+            }
+        } else {
+            items.push({
+                callId,
+                key: `${event.run_id}:tool-output:${event.sequence}`,
+                kind: "tool",
+                output: event,
+                sequence: event.sequence,
+                toolName: outputName && outputName !== "unknown" ? outputName : "tool"
             });
         }
     }
-    return steps;
-}
-
-function groupReasoningSteps(events: BrokerChatEvent[]): ReasoningStep[] {
-    return events
-        .filter((event) => {
-            if (event.event_type !== "reasoning") {
-                return false;
-            }
-            const message = textPayload(event.payload, "message");
-            const rawType = textPayload(event.payload, "raw_type");
-            if (rawType.endsWith(".delta")) {
-                return false;
-            }
-            return Boolean(rawType || (message && message !== "Reasoning event received."));
-        })
-        .map((event) => ({
-            key: `${event.run_id}:reasoning:${event.sequence}`,
-            event
-        }));
+    flushReasoning();
+    return items.sort((left, right) => left.sequence - right.sequence);
 }
 
 function ToolDetailBlock({ label, value }: { label: string; value: unknown }) {
@@ -471,7 +513,7 @@ function ToolDetailBlock({ label, value }: { label: string; value: unknown }) {
     );
 }
 
-function ToolStepDetails({ step, visibility }: { step: ToolStep; visibility: BrokerChatVisibility }) {
+function ToolStepDetails({ step }: { step: ToolStep }) {
     const startPayload = step.start?.payload;
     const outputPayload = step.output?.payload;
     const argumentsPayload = payloadValue(startPayload, "arguments");
@@ -480,7 +522,7 @@ function ToolStepDetails({ step, visibility }: { step: ToolStep; visibility: Bro
     return (
         <div className="ml-5 mt-1 grid max-w-5xl gap-3 border-l border-border px-3 py-2 text-xs">
             <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                <span>{detailModeLabel(visibility)} backend payload</span>
+                <span>Tool payload</span>
                 {step.callId ? <span>Call {step.callId}</span> : null}
             </div>
             <ToolDetailBlock label="Arguments" value={argumentsPayload} />
@@ -492,13 +534,11 @@ function ToolStepDetails({ step, visibility }: { step: ToolStep; visibility: Bro
 function ToolStepRow({
     includeToolOutputs,
     isRunActive,
-    step,
-    visibility
+    step
 }: {
     includeToolOutputs: boolean;
     isRunActive: boolean;
     step: ToolStep;
-    visibility: BrokerChatVisibility;
 }) {
     const [open, setOpen] = useState(false);
     const action = step.output ? "Checked" : "Calling";
@@ -537,81 +577,73 @@ function ToolStepRow({
                     </button>
                 ) : null}
             </div>
-            {open && canExpand ? <ToolStepDetails step={step} visibility={visibility} /> : null}
+            {open && canExpand ? <ToolStepDetails step={step} /> : null}
         </div>
     );
 }
 
-function ReasoningStepDetails({ step, visibility }: { step: ReasoningStep; visibility: BrokerChatVisibility }) {
-    const payload = step.event.payload;
-    const rawType = payloadValue(payload, "raw_type");
-    const raw = payloadValue(payload, "raw");
-    const message = payloadValue(payload, "message");
-
-    return (
-        <div className="ml-5 mt-1 grid max-w-5xl gap-3 border-l border-border px-3 py-2 text-xs">
-            <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                <span>{detailModeLabel(visibility)} backend payload</span>
-                {typeof rawType === "string" ? <span>{rawType}</span> : null}
-            </div>
-            <ToolDetailBlock label="Reasoning raw" value={raw} />
-            <ToolDetailBlock label="Reasoning message" value={message} />
-            <ToolDetailBlock label="Reasoning event payload" value={payload} />
-        </div>
-    );
-}
-
-function ReasoningStepRow({
+function ThinkingTrace({
+    collapsed,
     includeReasoning,
+    includeToolOutputs,
     isRunActive,
-    step,
-    visibility
+    items
 }: {
+    collapsed: boolean;
     includeReasoning: boolean;
+    includeToolOutputs: boolean;
     isRunActive: boolean;
-    step: ReasoningStep;
-    visibility: BrokerChatVisibility;
+    items: BrokerTraceItem[];
 }) {
-    const [open, setOpen] = useState(false);
-    const rawType = textPayload(step.event.payload, "raw_type");
-    const message = textPayload(step.event.payload, "message");
-    const label = message || (rawType ? `Reasoning ${rawType}` : "Reasoning details");
-
+    if (!items.length) return null;
+    const toolCount = items.filter((item) => item.kind === "tool").length;
+    const reasoningCount = items.filter((item) => item.kind === "reasoning").length;
     return (
-        <div className="grid gap-1 px-1 py-1.5 text-sm">
-            <div className="flex min-w-0 items-center gap-2">
-                <span className="size-1.5 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
-                {isRunActive ? (
-                    <ShimmeringText
-                        className="min-w-0 font-medium"
-                        color="var(--text-muted)"
-                        shimmerColor="var(--accent)"
-                        text={label}
-                    />
-                ) : (
-                    <span className="min-w-0 font-medium text-muted-foreground">{label}</span>
-                )}
-                <button
-                    aria-expanded={open}
-                    aria-label={`${open ? "Hide" : "Show"} reasoning details`}
-                    className="flex size-7 shrink-0 items-center justify-center text-muted-foreground transition hover:bg-[var(--accent-glow)] hover:text-primary"
-                    onClick={() => setOpen((current) => !current)}
-                    title={`${open ? "Hide" : "Show"} reasoning details`}
-                    type="button"
-                >
-                    <IconChevronDown
-                        className={cn("size-4 transition-transform", open ? "rotate-180" : null)}
-                        stroke={1.8}
-                    />
-                </button>
-                {!includeReasoning ? (
-                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                        Hidden
-                    </span>
-                ) : null}
+        <details className="ml-11 max-w-6xl border border-border bg-secondary/20 p-3" open={!collapsed}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span className="font-mono uppercase tracking-[0.14em]">
+                    Thinking
+                </span>
+                <span>
+                    {toolCount ? `${toolCount} tool${toolCount === 1 ? "" : "s"}` : null}
+                    {toolCount && reasoningCount ? " · " : null}
+                    {reasoningCount ? `${reasoningCount} reasoning update${reasoningCount === 1 ? "" : "s"}` : null}
+                </span>
+            </summary>
+            <div className="mt-3 grid gap-2">
+                {items.map((item) => {
+                    if (item.kind === "tool") {
+                        return (
+                            <ToolStepRow
+                                includeToolOutputs={includeToolOutputs}
+                                isRunActive={isRunActive}
+                                key={item.key}
+                                step={{
+                                    callId: item.callId,
+                                    key: item.key,
+                                    output: item.output,
+                                    start: item.start,
+                                    toolName: item.toolName
+                                }}
+                            />
+                        );
+                    }
+                    const reasoningText = includeReasoning ? item.text : "Reasoning hidden";
+                    return (
+                        <div className="flex min-w-0 items-start gap-2 px-1 py-1.5 text-sm text-muted-foreground" key={item.key}>
+                            <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/50" aria-hidden="true" />
+                            {isRunActive ? (
+                                <div className="min-w-0 rounded-sm bg-secondary/20 px-2 py-1">
+                                    <ThinkingMarkdown text={reasoningText} />
+                                </div>
+                            ) : (
+                                <ThinkingMarkdown text={reasoningText} />
+                            )}
+                        </div>
+                    );
+                })}
             </div>
-            {open ? <ReasoningStepDetails step={step} visibility={visibility} /> : null}
-        </div>
+        </details>
     );
 }
 
@@ -730,6 +762,39 @@ function PlainTextTable({ source }: { source: string }) {
     );
 }
 
+function ThinkingMarkdown({ text }: { text: string }) {
+    return (
+        <div className="min-w-0 text-sm leading-6 text-muted-foreground">
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                    ul: ({ children }) => <ul className="mb-2 list-disc pl-5 last:mb-0">{children}</ul>,
+                    ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 last:mb-0">{children}</ol>,
+                    code: ({ children }) => (
+                        <code className="bg-secondary/70 px-1 py-0.5 font-mono text-[0.92em] text-foreground">
+                            {children}
+                        </code>
+                    ),
+                    pre: ({ children }) => (
+                        <pre className="mb-2 max-w-full overflow-auto border border-border bg-secondary/40 p-2 text-xs leading-5 last:mb-0">
+                            {children}
+                        </pre>
+                    ),
+                    table: ({ children }) => <MarkdownTable>{children}</MarkdownTable>,
+                    thead: ({ children }) => <thead>{children}</thead>,
+                    tbody: ({ children }) => <tbody>{children}</tbody>,
+                    tr: ({ children }) => <tr className="odd:bg-background even:bg-secondary/25">{children}</tr>,
+                    th: ({ children }) => <MarkdownTableHead>{children}</MarkdownTableHead>,
+                    td: ({ children }) => <MarkdownTableCell>{children}</MarkdownTableCell>
+                }}
+            >
+                {normalizeAssistantMarkdown(text)}
+            </ReactMarkdown>
+        </div>
+    );
+}
+
 function AssistantMessage({ text, running }: { text: string; running: boolean }) {
     return (
         <div className="max-w-6xl px-1 text-sm leading-6 text-foreground">
@@ -794,7 +859,6 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const loadedSessionIdRef = useRef<string | null>(null);
     const [provider, setProvider] = useState<LlmProvider | "">(initialConfig.default_provider ?? "");
     const [model, setModel] = useState(initialConfig.default_model ?? "");
-    const [visibility, setVisibility] = useState<BrokerChatVisibility>(initialConfig.event_visibility);
     const [includeToolOutputs, setIncludeToolOutputs] = useState(initialConfig.include_tool_outputs);
     const [includeReasoning, setIncludeReasoning] = useState(initialConfig.include_reasoning);
     const availableMcpServers = useMemo(
@@ -818,13 +882,13 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const streamControllersRef = useRef<Record<string, AbortController>>({});
     const runsRef = useRef(runs);
     const eventsByRunRef = useRef(eventsByRun);
-    const streamDetailKeyRef = useRef(`${visibility}:${includeToolOutputs}:${includeReasoning}`);
+    const streamDetailKeyRef = useRef(`${includeToolOutputs}:${includeReasoning}`);
     const configSaveRequestRef = useRef(0);
     const savedConfigKeyRef = useRef(
         brokerChatConfigKey({
             default_provider: initialConfig.default_provider ?? "",
             default_model: initialConfig.default_model ?? "",
-            event_visibility: initialConfig.event_visibility,
+            event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
             include_tool_outputs: initialConfig.include_tool_outputs,
             include_reasoning: initialConfig.include_reasoning,
             use_mcp: initialConfig.use_mcp && availableMcpServers.length > 0,
@@ -914,13 +978,13 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         return {
             default_provider: provider,
             default_model: model,
-            event_visibility: visibility,
+            event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
             include_tool_outputs: includeToolOutputs,
             include_reasoning: includeReasoning,
             use_mcp: useMcp,
             mcp_server_ids: selectedMcpServerIds
         };
-    }, [includeReasoning, includeToolOutputs, model, provider, selectedMcpServerIds, useMcp, visibility]);
+    }, [includeReasoning, includeToolOutputs, model, provider, selectedMcpServerIds, useMcp]);
 
     useEffect(() => {
         const requestId = ++configSaveRequestRef.current;
@@ -968,7 +1032,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             let reconnectAfterClose = false;
             const params = new URLSearchParams({
                 after_sequence: String(afterSequence),
-                visibility,
+                visibility: BROKER_CHAT_EVENT_VISIBILITY,
                 include_tool_outputs: String(includeToolOutputs),
                 include_reasoning: String(includeReasoning)
             });
@@ -1080,14 +1144,14 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 }
             }
         },
-        [includeReasoning, includeToolOutputs, user?.id, visibility]
+        [includeReasoning, includeToolOutputs, user?.id]
     );
 
     const loadRunEvents = useCallback(
         async (runId: string) => {
             const page = await getBrokerChatEvents(runId, {
                 limit: 500,
-                visibility,
+                visibility: BROKER_CHAT_EVENT_VISIBILITY,
                 includeToolOutputs,
                 includeReasoning
             });
@@ -1101,7 +1165,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 void streamRun(runId, lastSequence);
             }
         },
-        [includeReasoning, includeToolOutputs, streamRun, visibility]
+        [includeReasoning, includeToolOutputs, streamRun]
     );
 
     useEffect(() => {
@@ -1147,7 +1211,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     }, [eventsByRun, runs, streamRun]);
 
     useEffect(() => {
-        const nextKey = `${visibility}:${includeToolOutputs}:${includeReasoning}`;
+        const nextKey = `${includeToolOutputs}:${includeReasoning}`;
         if (nextKey === streamDetailKeyRef.current) {
             return;
         }
@@ -1162,7 +1226,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 void streamRun(run.id, lastSequence);
             }
         }, 0);
-    }, [includeReasoning, includeToolOutputs, streamRun, visibility]);
+    }, [includeReasoning, includeToolOutputs, streamRun]);
 
     useEffect(() => {
         const liveRuns = runsRef.current.filter(
@@ -1179,7 +1243,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                     const page = await getBrokerChatEvents(run.id, {
                         afterSequence,
                         limit: 100,
-                        visibility,
+                        visibility: BROKER_CHAT_EVENT_VISIBILITY,
                         includeToolOutputs,
                         includeReasoning
                     }).catch(() => null);
@@ -1203,7 +1267,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
             cancelled = true;
             window.clearInterval(interval);
         };
-    }, [activeLiveRunIdsKey, activeSessionId, includeReasoning, includeToolOutputs, visibility]);
+    }, [activeLiveRunIdsKey, activeSessionId, includeReasoning, includeToolOutputs]);
 
     useEffect(() => {
         return () => {
@@ -1305,7 +1369,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 session_id: activeSessionId || null,
                 provider,
                 model,
-                event_visibility: visibility,
+                event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
                 include_tool_outputs: includeToolOutputs,
                 include_reasoning: includeReasoning,
                 use_mcp: useMcp,
@@ -1530,39 +1594,20 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                     {runsForActiveSession.map((run) => {
                                         const events = eventsByRun[run.id] ?? [];
                                         const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
-                                        const toolSteps = groupToolSteps(events);
-                                        const reasoningSteps = groupReasoningSteps(events);
+                                        const traceItems = buildBrokerTraceItems(events);
                                         const text = assistantText(events, run);
-                                        const showToolSteps = toolSteps.length > 0;
-                                        const showReasoningSteps = reasoningSteps.length > 0;
-                                        const showThinking = running && !text && !showToolSteps && !showReasoningSteps;
+                                        const showThinking = running && !text && !traceItems.length;
                                         const showAssistant = Boolean(text) || showThinking || !running;
-                                        const eventStepRows = showToolSteps || showReasoningSteps ? (
-                                            <div className="grid gap-2">
-                                                {toolSteps.map((step) => (
-                                                    <ToolStepRow
-                                                        includeToolOutputs={includeToolOutputs}
-                                                        isRunActive={running}
-                                                        step={step}
-                                                        key={step.key}
-                                                        visibility={visibility}
-                                                    />
-                                                ))}
-                                                {reasoningSteps.map((step) => (
-                                                    <ReasoningStepRow
-                                                        includeReasoning={includeReasoning}
-                                                        isRunActive={running}
-                                                        step={step}
-                                                        key={step.key}
-                                                        visibility={visibility}
-                                                    />
-                                                ))}
-                                            </div>
-                                        ) : null;
                                         return (
                                             <article className="grid gap-3" key={run.id}>
                                                 <UserMessage text={run.message} />
-                                                {eventStepRows}
+                                                <ThinkingTrace
+                                                    collapsed={!running && Boolean(text)}
+                                                    includeReasoning={includeReasoning}
+                                                    includeToolOutputs={includeToolOutputs}
+                                                    isRunActive={running}
+                                                    items={traceItems}
+                                                />
                                                 {showAssistant ? (
                                                     <AssistantMessage running={showThinking} text={text} />
                                                 ) : null}
@@ -1688,18 +1733,6 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                     ))}
                                 </Select>
                             </Label>
-                            <Label className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                                Detail
-                                <Select
-                                    className="h-8 w-32 bg-background px-2 text-sm normal-case"
-                                    onChange={(event) => setVisibility(event.target.value as BrokerChatVisibility)}
-                                    value={visibility}
-                                >
-                                    <option value="minimal">Minimal</option>
-                                    <option value="tool_calls">Tool calls</option>
-                                    <option value="full">Full</option>
-                                </Select>
-                            </Label>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-[1120px]:ml-auto">
                                 <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
                                     <Checkbox
@@ -1761,13 +1794,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             Uses saved broker and LLM credentials
                         </span>
                         <span>Enter sends · Shift + Enter adds a line</span>
-                        <span>
-                            {visibility === "minimal"
-                                ? "Minimal tool visibility"
-                                : visibility === "tool_calls"
-                                  ? "Tool call visibility"
-                                  : "Full event visibility"}
-                        </span>
+                        <span>Tool activity is shown inline in the thinking trace</span>
                         <span>{useMcp ? "MCP enabled for this chat" : "MCP disabled"}</span>
                         {queueHealth ? (
                             <span>
