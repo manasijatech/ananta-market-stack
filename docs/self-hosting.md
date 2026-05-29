@@ -74,6 +74,14 @@ Most HTTP API calls are made by the Next.js server, so a private backend can wor
 
 For Railway or the published single-image deployment, use the same public app domain for frontend, auth, and broker callbacks, and keep browser API traffic on `/api/v1`. See [Railway](docker-image.md#railway) and [Broker Callback URLs](environment.md#broker-callback-urls).
 
+Broker browser redirects should point to the frontend callback page:
+
+```text
+Zerodha redirect URL: https://your-frontend-domain.example/broker-connections
+Upstox OAuth redirect URI: https://your-frontend-domain.example/broker-connections
+Upstox notifier webhook: https://your-frontend-domain.example/api/broker-callbacks/upstox/notifier
+```
+
 ## Generated Secrets
 
 The `bootstrap` service creates `/config/market-stack.env` in the `market-stack_market_stack_config` volume.

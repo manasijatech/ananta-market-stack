@@ -76,6 +76,14 @@ Add a persistent volume mounted at:
 
 That is enough for the normal Railway setup. Market Stack will generate its own secrets, start Redis automatically, and route `/api/v1` traffic through the same public app domain.
 
+Broker developer-console URLs should use the same Railway app domain:
+
+```text
+Zerodha redirect URL: https://your-railway-domain/broker-connections
+Upstox OAuth redirect URI: https://your-railway-domain/broker-connections
+Upstox notifier webhook: https://your-railway-domain/api/broker-callbacks/upstox/notifier
+```
+
 For the variable meanings and broker callback notes, see [environment.md](environment.md#broker-callback-urls).
 
 ## Advanced Redis

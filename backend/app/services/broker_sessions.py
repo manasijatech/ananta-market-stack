@@ -69,8 +69,13 @@ def _next_groww_expiry_utc(now: datetime | None = None) -> datetime:
     return expiry_ist.astimezone(UTC)
 
 
-def _public_url(path: str) -> str | None:
-    base = (_settings.app_public_base_url or "").rstrip("/")
+def _public_app_url(path: str) -> str | None:
+    base = (
+        _settings.market_stack_public_app_url
+        or _settings.next_public_app_url
+        or _settings.app_public_base_url
+        or ""
+    ).rstrip("/")
     if not base:
         return None
     return f"{base}{path}"
@@ -485,11 +490,11 @@ def request_upstox_access_token(db: Session, acc: BrokerAccount) -> tuple[Sessio
     row.token_request_expires_at = token_request_expires_at
     db.add(row)
     db.commit()
-    notifier_url = _public_url("/api/v1/broker-accounts/sessions/upstox/notifier")
+    notifier_url = _public_app_url("/api/broker-callbacks/upstox/notifier")
     return SessionUpstoxRequestOut(
         account_id=acc.id,
         token_request_expires_at=token_request_expires_at,
-        notifier_url=payload.get("notifier_url") or notifier_url,
+        notifier_url=notifier_url or payload.get("notifier_url"),
         guidance=(
             "This is Upstox's official semi-automated flow. The user approves the token "
             "request in Upstox, and Upstox sends the token to the configured notifier webhook."
