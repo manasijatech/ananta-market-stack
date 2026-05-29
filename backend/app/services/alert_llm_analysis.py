@@ -105,7 +105,12 @@ def run_workflow_llm_analysis(
             workflow.user_id,
             config.provider,  # type: ignore[arg-type]
             model=str(config.model_id),
-            developer_prompt="You are a concise Indian-market alert analyst. Explain only what is supported by the provided context.",
+            developer_prompt=(
+                "You are a concise Indian-market alert analyst. Explain only what is supported by the provided "
+                "context. Treat Trigger evidence as authoritative for why the workflow fired. If it contains "
+                "rolling reference/current/change/sample data, use those exact values and do not say that the "
+                "trigger calculation or exact rolling data was not provided."
+            ),
             user_text=context["rendered_prompt"],
             temperature=config.temperature,
             max_completion_tokens=config.max_completion_tokens,
