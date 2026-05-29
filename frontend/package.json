@@ -5,7 +5,8 @@
     "scripts": {
         "dev": "next dev",
         "build": "next build",
-        "start": "next start",
+        "postbuild": "sh scripts/prepare-standalone.sh",
+        "start": "sh scripts/start-standalone.sh",
         "lint": "eslint .",
         "format": "prettier --write --ignore-unknown ."
     },

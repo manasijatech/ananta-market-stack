@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { betterAuth } from "better-auth";
 import { getPublicAppUrl } from "@/lib/runtime-config";
@@ -8,7 +8,14 @@ type SqliteDatabase = {
     exec(sql: string): unknown;
 };
 
-const databasePath = process.env.AUTH_DATABASE_PATH ?? resolve(process.cwd(), "../backend/data/app.db");
+function resolveDefaultAuthDatabasePath(): string {
+    const cwd = process.cwd();
+    const isStandaloneRuntime = cwd.endsWith(`${sep}.next${sep}standalone`);
+    const frontendRoot = isStandaloneRuntime ? resolve(cwd, "../..") : cwd;
+    return resolve(frontendRoot, "../backend/data/app.db");
+}
+
+const databasePath = process.env.AUTH_DATABASE_PATH ?? resolveDefaultAuthDatabasePath();
 mkdirSync(dirname(databasePath), { recursive: true });
 
 const database: SqliteDatabase = new DatabaseSync(databasePath);
