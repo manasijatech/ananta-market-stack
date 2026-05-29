@@ -236,7 +236,13 @@ def workflow_get_authoring_docs(
                 "Use all(...), any(...), and not(...) for grouping.",
                 "Do not use arbitrary Python or JavaScript; the backend compiles this expression to the alert AST.",
             ],
-            "placeholders": alert_svc.llm_placeholder_catalog(),
+            "notification_placeholders": alert_svc.notification_placeholder_catalog(),
+            "llm_context_placeholders": alert_svc.llm_placeholder_catalog(),
+            "notification_template_rules": [
+                "Title and message templates use simple braces only, for example {symbol}, {ltp}, {day_change_perc}.",
+                "Do not use optional LLM context placeholders in notification templates. @price.full and @trigger.reason are only for the optional analysis prompt.",
+                "Do not use dotted brace placeholders such as {price.full} or {trigger.reason}; use available notification placeholders such as {feed_trigger_reason}.",
+            ],
             "presets": alert_svc.alert_presets(),
         }
         if include_registry:

@@ -40,6 +40,10 @@ Workflow editing guidance:
   a documentation question.
 - Use workflow_get_authoring_docs for available fields, operators, config
   parameters, placeholders, and DSL examples.
+- For notification title/message templates, use only notification_placeholders
+  from workflow_get_authoring_docs. Never use optional-analysis placeholders
+  like @price.full or @trigger.reason, and never use dotted brace placeholders
+  like {price.full} or {trigger.reason}.
 - Use workflow_list_watchlists and workflow_get_watchlist_symbols when the user
   wants a dynamic watchlist universe.
 - Use workflow_search_instruments when the user wants a static single symbol or

@@ -16,7 +16,6 @@ import {
     getAlertLlmPlaceholders,
     previewAlertWorkflowLlmContext,
     sendWorkflowTestNotification,
-    testAlertWorkflow,
     testAlertWorkflowLlm,
     updateAlertWorkflow,
     validateAlertWorkflow
@@ -2990,25 +2989,6 @@ export function WorkflowEditor({
         };
     }
 
-    function previewTest() {
-        if (!persistedWorkflowId) return;
-        setError("");
-        setMatchPreview("");
-        startTransition(async () => {
-            try {
-                const result = await testAlertWorkflow(persistedWorkflowId, buildPreviewTick());
-                setMatchPreview(
-                    result.matched
-                        ? `Current preview tick matched the workflow: ${result.reason}`
-                        : `Current preview tick did not match: ${result.reason}`
-                );
-            } catch (caught) {
-                notifyAlphaCreditWarning(caught);
-                setError(caught instanceof Error ? caught.message : "Could not test workflow.");
-            }
-        });
-    }
-
     function sendTestAlert() {
         if (!persistedWorkflowId) return;
         setError("");
@@ -5498,11 +5478,6 @@ export function WorkflowEditor({
                         {isPending ? "Saving..." : persistedWorkflowId ? "Save workflow" : "Create workflow"}
                     </Button>
                     {persistedWorkflowId ? (
-                        <Button disabled={isPending} onClick={previewTest} type="button" variant="secondary">
-                            Evaluate current preview
-                        </Button>
-                    ) : null}
-                    {persistedWorkflowId ? (
                         <Button disabled={isPending} onClick={sendTestAlert} type="button" variant="secondary">
                             Send test alert
                         </Button>
@@ -5515,10 +5490,6 @@ export function WorkflowEditor({
                 </div>
                 {persistedWorkflowId ? (
                     <div className="type-help grid gap-1 border border-border px-3 py-2 text-muted-foreground">
-                        <div>
-                            `Evaluate current preview` checks the workflow conditions against the live preview tick
-                            shown above. It does not create an alert or notify any channel.
-                        </div>
                         <div>
                             `Send test alert` renders the current title and message templates with the preview payload
                             and attempts delivery through the selected channels.

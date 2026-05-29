@@ -83,6 +83,14 @@ def validate_workflow_payload(payload: dict[str, Any]) -> tuple[bool, dict[str, 
             "workflow_ast": workflow_ast,
             "compiled_summary": compile_result.get("compiled_summary") or {},
         }
+        notification_result = alert_svc.validate_notification_templates(
+            dsl.notification.title_template,
+            dsl.notification.message_template,
+        )
+        validation["notification_templates"] = notification_result
+        if not notification_result["valid"]:
+            validation["valid"] = False
+            validation["errors"] = list(validation["errors"]) + notification_result["errors"]
         if not validation["valid"] or not workflow_ast:
             return False, validation, compile_result, {}, {}
         ast = ensure_workflow_ast({"workflow_ast": workflow_ast})
@@ -199,4 +207,3 @@ def deploy_snapshot(db: Session, user_id: str, snapshot_id: str):
     if out is None:
         raise ValueError("workflow not found for snapshot")
     return snapshot, out
-

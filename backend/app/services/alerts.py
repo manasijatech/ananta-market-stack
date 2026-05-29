@@ -3,9 +3,9 @@ from __future__ import annotations
 import html
 import json
 import queue
+import re
 import threading
 import uuid
-from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -73,6 +73,74 @@ from db.models import (
     UserAlertNotification,
 )
 ALERT_NOTIFICATION_STREAM_MAXLEN = 2000
+NOTIFICATION_TEMPLATE_FIELDS = [
+    "symbol",
+    "exchange",
+    "ltp",
+    "open",
+    "high",
+    "low",
+    "close",
+    "last_price",
+    "average_price",
+    "reference_price",
+    "change_pct",
+    "abs_change",
+    "gap_pct",
+    "volume",
+    "avg_volume",
+    "volume_ratio",
+    "open_interest",
+    "previous_open_interest",
+    "oi_day_change",
+    "oi_day_change_percentage",
+    "day_change",
+    "day_change_perc",
+    "last_trade_quantity",
+    "last_trade_time",
+    "total_buy_quantity",
+    "total_sell_quantity",
+    "best_bid_price",
+    "best_bid_quantity",
+    "best_bid_orders",
+    "best_ask_price",
+    "best_ask_quantity",
+    "best_ask_orders",
+    "bid_price",
+    "bid_quantity",
+    "offer_price",
+    "offer_quantity",
+    "upper_circuit_limit",
+    "lower_circuit_limit",
+    "week_52_high",
+    "week_52_low",
+    "high_trade_range",
+    "low_trade_range",
+    "implied_volatility",
+    "market_cap",
+    "received_at",
+    "broker_code",
+    "account_id",
+    "alpha_product",
+    "alpha_event_id",
+    "category",
+    "related_categories",
+    "company_name",
+    "headline",
+    "title",
+    "summary",
+    "alpha_category_filter",
+    "feed_trigger_reason",
+    "llm_analysis",
+    "llm_analysis_status",
+    "instrument_key",
+    "connection_id",
+    "connection_index",
+    "symbol_count",
+    "capacity",
+]
+_NOTIFICATION_TEMPLATE_FIELD_SET = set(NOTIFICATION_TEMPLATE_FIELDS)
+_SIMPLE_PLACEHOLDER_RE = re.compile(r"(?<!{){([A-Za-z_][A-Za-z0-9_]*)}(?!})")
 _LEGACY_MARKET_ACTIVE_PERIOD = {
     "enabled": True,
     "timezone": "Asia/Kolkata",
@@ -946,7 +1014,7 @@ def ensure_system_templates(db: Session) -> None:
     for payload in SYSTEM_TEMPLATES:
         row = existing.get(payload["slug"])
         workflow_dsl = _workflow_dsl(payload["workflow_dsl"])
-        compiled = compile_workflow_dsl(workflow_dsl)
+        compiled = _apply_notification_validation_to_compile(workflow_dsl, compile_workflow_dsl(workflow_dsl))
         _apply_compiled_ast_to_legacy_dsl(workflow_dsl, compiled.get("workflow_ast"))
         workflow_dsl.workflow_ast = compiled.get("workflow_ast")
         workflow_dsl.compiled_summary = compiled.get("compiled_summary") or {}
@@ -1184,7 +1252,7 @@ def _persist_workflow(
         if not normalized_targeting.entries:
             normalized_targeting = _default_targeting(incoming_symbol, incoming_exchange, next_instrument_ref)
         workflow_dsl.targeting = normalized_targeting
-        compiled = compile_workflow_dsl(workflow_dsl)
+        compiled = _apply_notification_validation_to_compile(workflow_dsl, compile_workflow_dsl(workflow_dsl))
         _apply_compiled_ast_to_legacy_dsl(workflow_dsl, compiled["workflow_ast"])
         workflow_dsl.workflow_ast = compiled["workflow_ast"]
         workflow_dsl.compiled_summary = compiled["compiled_summary"]
@@ -1227,7 +1295,7 @@ def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> 
     payload.workflow_dsl.targeting = _normalize_targeting(payload.workflow_dsl.targeting)
     if not payload.workflow_dsl.targeting.entries:
         payload.workflow_dsl.targeting = _default_targeting(payload.symbol, payload.exchange, payload.instrument_ref)
-    compiled = compile_workflow_dsl(payload.workflow_dsl)
+    compiled = _apply_notification_validation_to_compile(payload.workflow_dsl, compile_workflow_dsl(payload.workflow_dsl))
     _apply_compiled_ast_to_legacy_dsl(payload.workflow_dsl, compiled["workflow_ast"])
     payload.workflow_dsl.workflow_ast = compiled["workflow_ast"]
     payload.workflow_dsl.compiled_summary = compiled["compiled_summary"]
@@ -1272,7 +1340,7 @@ def create_draft_workflow(db: Session, user_id: str, payload: AlertWorkflowCreat
     payload.workflow_dsl.targeting = _normalize_targeting(payload.workflow_dsl.targeting)
     if not payload.workflow_dsl.targeting.entries:
         payload.workflow_dsl.targeting = _default_targeting(payload.symbol, payload.exchange, payload.instrument_ref)
-    compiled = compile_workflow_dsl(payload.workflow_dsl)
+    compiled = _apply_notification_validation_to_compile(payload.workflow_dsl, compile_workflow_dsl(payload.workflow_dsl))
     _apply_compiled_ast_to_legacy_dsl(payload.workflow_dsl, compiled["workflow_ast"])
     payload.workflow_dsl.workflow_ast = compiled["workflow_ast"]
     payload.workflow_dsl.compiled_summary = compiled["compiled_summary"]
@@ -1419,10 +1487,69 @@ def instantiate_template(db: Session, user_id: str, template_id: str, payload: d
 
 def _render_message(template: str, context: dict[str, Any]) -> str:
     safe_context = {key: value for key, value in context.items() if value is not None}
-    try:
-        return template.format_map(defaultdict(str, safe_context))
-    except Exception:
-        return template
+
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in _NOTIFICATION_TEMPLATE_FIELD_SET:
+            return match.group(0)
+        return str(safe_context.get(key, ""))
+
+    return _SIMPLE_PLACEHOLDER_RE.sub(replace, template).replace("{{", "{").replace("}}", "}")
+
+
+def _extract_notification_template_fields(template: str) -> tuple[set[str], set[str]]:
+    valid: set[str] = set()
+    invalid: set[str] = set()
+    for match in re.finditer(r"(?<!{){([^{}\n]+)}(?!})", template or ""):
+        raw = match.group(1).strip()
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", raw):
+            valid.add(raw)
+        else:
+            invalid.add(raw)
+    return valid, invalid
+
+
+def validate_notification_templates(title_template: str, message_template: str) -> dict[str, Any]:
+    invalid: set[str] = set()
+    unknown: set[str] = set()
+    used: set[str] = set()
+    for template in (title_template or "", message_template or ""):
+        fields, invalid_fields = _extract_notification_template_fields(template)
+        invalid.update(invalid_fields)
+        used.update(fields)
+        unknown.update(field for field in fields if field not in _NOTIFICATION_TEMPLATE_FIELD_SET)
+    errors = []
+    if invalid:
+        errors.append(
+            "Unsupported notification placeholder syntax: "
+            + ", ".join(f"{{{field}}}" for field in sorted(invalid))
+            + ". Notification templates only support simple brace placeholders such as {symbol}, {ltp}, and {feed_trigger_reason}."
+        )
+    if unknown:
+        errors.append(
+            "Unknown notification placeholders: "
+            + ", ".join(f"{{{field}}}" for field in sorted(unknown))
+            + ". Use the notification placeholder catalog, not @LLM context placeholders like @trigger.reason or @price.full."
+        )
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "used_placeholders": sorted(used),
+        "available_placeholders": NOTIFICATION_TEMPLATE_FIELDS,
+    }
+
+
+def _apply_notification_validation_to_compile(workflow_dsl: AlertWorkflowDsl, compiled: dict[str, Any]) -> dict[str, Any]:
+    notification_result = validate_notification_templates(
+        workflow_dsl.notification.title_template,
+        workflow_dsl.notification.message_template,
+    )
+    compiled = dict(compiled)
+    compiled["notification_templates"] = notification_result
+    if not notification_result["valid"]:
+        compiled["valid"] = False
+        compiled["errors"] = list(compiled.get("errors") or []) + notification_result["errors"]
+    return compiled
 
 
 def _notification_context(
@@ -1567,7 +1694,7 @@ def validate_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, 
     if not row or row.user_id != user_id:
         return None
     dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
-    result = compile_workflow_dsl(dsl)
+    result = _apply_notification_validation_to_compile(dsl, compile_workflow_dsl(dsl))
     _apply_compiled_ast_to_legacy_dsl(dsl, result["workflow_ast"])
     row.workflow_dsl_json = _json_dumps({**dsl.model_dump(), "workflow_ast": result["workflow_ast"], "validation_status": "valid" if result["valid"] else "invalid", "compiled_summary": result["compiled_summary"]})
     row.compiled_summary_json = _json_dumps(result["compiled_summary"])
@@ -1585,7 +1712,7 @@ def compile_preview_workflow(db: Session, user_id: str, workflow_id: str) -> dic
     if not row or row.user_id != user_id:
         return None
     dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
-    result = compile_workflow_dsl(dsl)
+    result = _apply_notification_validation_to_compile(dsl, compile_workflow_dsl(dsl))
     _apply_compiled_ast_to_legacy_dsl(dsl, result["workflow_ast"])
     result["legacy_conditions"] = [condition.model_dump(exclude_none=True) for condition in dsl.conditions]
     result["legacy_combine"] = dsl.combine
@@ -1610,6 +1737,16 @@ def explain_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, A
 
 def llm_placeholder_catalog() -> dict[str, Any]:
     return placeholder_catalog()
+
+
+def notification_placeholder_catalog() -> dict[str, Any]:
+    return {
+        "syntax": "Use simple braces only, for example {symbol}, {ltp}, {day_change_perc}, {feed_trigger_reason}. Do not use @price.full, @trigger.reason, or dotted placeholders like {trigger.reason}.",
+        "placeholders": [
+            {"name": name, "token": f"{{{name}}}", "description": "Notification title/message placeholder."}
+            for name in NOTIFICATION_TEMPLATE_FIELDS
+        ],
+    }
 
 
 def _workflow_with_draft_llm_analysis(
@@ -1716,7 +1853,7 @@ def deploy_workflow(db: Session, user_id: str, workflow_id: str) -> AlertWorkflo
     if not row or row.user_id != user_id:
         return None
     dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
-    result = compile_workflow_dsl(dsl)
+    result = _apply_notification_validation_to_compile(dsl, compile_workflow_dsl(dsl))
     if not result["valid"]:
         row.deployment_status = "error"
         row.last_runtime_error = "; ".join(result["errors"])
