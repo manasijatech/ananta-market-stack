@@ -439,6 +439,7 @@ function activePeriodDefaults(workflowType: "market_data" | "alpha_feed") {
 const fallbackLlmPrompt = `Analyze why this alert triggered for {symbol}.
 
 Trigger: @trigger.reason
+Trigger evidence: @trigger.evidence
 Workflow: @trigger.summary
 Price data: @price.full
 Recent news: @news(days=2, max_pages=1, max_items=5)

@@ -20,6 +20,7 @@ DATA_PLACEHOLDERS = {"news", "announcements", "earnings", "concalls"}
 DEFAULT_PROMPT_TEMPLATE = """Analyze why this alert triggered for {symbol}.
 
 Trigger: @trigger.reason
+Trigger evidence: @trigger.evidence
 Workflow: @trigger.summary
 Price data: @price.full
 Recent news: @news(days=2, max_pages=1, max_items=5)
@@ -69,6 +70,13 @@ def placeholder_catalog() -> dict[str, Any]:
                 "label": "Trigger details",
                 "description": "Current tick, previous tick, condition details, and workflow identifiers.",
                 "example": "@trigger.details",
+                "params": [],
+            },
+            {
+                "name": "@trigger.evidence",
+                "label": "Trigger evidence",
+                "description": "Compact evaluator evidence, including rolling references, computed changes, sample counts, and stateful trigger gates.",
+                "example": "@trigger.evidence",
                 "params": [],
             },
             {
@@ -149,6 +157,70 @@ def parse_placeholder_calls(template: str) -> list[PlaceholderCall]:
 
 def _json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=str, indent=2)
+
+
+def _compact_number(value: Any) -> Any:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return value
+    return round(float(value), 4)
+
+
+def compact_trigger_evidence(details: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(details, dict):
+        return {}
+    if isinstance(details.get("children"), list):
+        return {
+            "conditions": [
+                compact_trigger_evidence(item)
+                for item in details["children"]
+                if isinstance(item, dict)
+            ]
+        }
+    if isinstance(details.get("child"), dict):
+        return {"condition": compact_trigger_evidence(details["child"])}
+
+    keys = (
+        "current",
+        "previous",
+        "reference",
+        "threshold",
+        "change",
+        "change_pct",
+        "gap_pct",
+        "multiplier",
+        "min_volume",
+        "ltp",
+        "raw_matched",
+        "trigger_mode",
+        "previous_state",
+        "hold_seconds",
+        "hold_elapsed_seconds",
+        "hold_status",
+        "occurrences",
+        "occurrence_count",
+        "occurrence_window_seconds",
+        "state_status",
+    )
+    evidence = {key: _compact_number(details[key]) for key in keys if key in details}
+    rolling = details.get("rolling")
+    if isinstance(rolling, dict):
+        evidence["rolling"] = {
+            key: _compact_number(rolling[key])
+            for key in (
+                "field",
+                "window_seconds",
+                "status",
+                "reference",
+                "age_seconds",
+                "min_age_seconds",
+                "sample_count",
+                "min_samples",
+                "baseline",
+                "coverage_ratio",
+            )
+            if key in rolling
+        }
+    return evidence
 
 
 def _symbol_from_tick(workflow: AlertWorkflowOut, tick: dict[str, Any]) -> str:
@@ -275,12 +347,15 @@ def resolve_llm_context(
                 placeholders[key] = {
                     "reason": reason,
                     "evaluation_details": evaluation_details or {},
+                    "trigger_evidence": compact_trigger_evidence(evaluation_details),
                     "current_tick": tick,
                     "previous_tick": previous_tick or {},
                     "workflow_id": workflow.id,
                     "workflow_name": workflow.name,
                     "symbol": symbol,
                 }
+            elif call.name == "trigger.evidence":
+                placeholders[key] = compact_trigger_evidence(evaluation_details)
             elif call.name in DATA_PLACEHOLDERS:
                 if api_key is None:
                     api_key = alpha_config.get_alpha_api_key(db, workflow.user_id)

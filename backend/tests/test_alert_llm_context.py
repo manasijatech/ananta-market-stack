@@ -83,6 +83,67 @@ def test_resolve_llm_context_uses_tick_symbol_not_workflow_universe_symbol():
     assert context["placeholders"]["@price.full"]["symbol"] == "TCS"
 
 
+def test_resolve_llm_context_exposes_compact_trigger_evidence():
+    workflow = _workflow()
+    workflow.workflow_dsl.llm_analysis.prompt_template = "Evidence @trigger.evidence"
+    details = {
+        "children": [
+            {
+                "current": 17028221,
+                "reference": 6704000,
+                "change_pct": 154.0009099045346,
+                "rolling": {
+                    "field": "volume",
+                    "window_seconds": 900,
+                    "status": "ready",
+                    "reference": 6704000,
+                    "age_seconds": 843.226,
+                    "sample_count": 106,
+                    "coverage_ratio": 0.9369177777777777,
+                },
+                "hold_seconds": 300,
+                "hold_elapsed_seconds": 346.536,
+                "hold_status": "ready",
+                "trigger_mode": "rising_edge",
+                "raw_matched": True,
+            }
+        ]
+    }
+
+    context = resolve_llm_context(
+        None,
+        workflow=workflow,
+        tick={"symbol": "BAJFINANCE", "volume": 17028221},
+        reason="volume rolling_pct_change_gte 50.0%",
+        evaluation_details=details,
+    )
+
+    evidence = context["placeholders"]["@trigger.evidence"]
+    assert evidence["conditions"][0]["change_pct"] == 154.0009
+    assert evidence["conditions"][0]["rolling"]["sample_count"] == 106
+    assert "154.0009" in context["rendered_prompt"]
+
+
+def test_notification_context_renders_trigger_aliases_and_price_full():
+    workflow = _workflow()
+    context = alert_svc._notification_context(
+        workflow,
+        {"symbol": "TCS", "ltp": 1000},
+        {"symbol": "TCS", "ltp": 990},
+        reason="ltp gte 1000",
+        evaluation_details={"current": 1000, "threshold": 1000},
+    )
+
+    rendered = alert_svc._render_message(
+        "Reason {trigger.reason} Evidence {trigger_evidence} Price {price.full}",
+        context,
+    )
+
+    assert "ltp gte 1000" in rendered
+    assert '"threshold": 1000' in rendered
+    assert '"ltp": 1000' in rendered
+
+
 def test_preview_workflow_llm_context_uses_draft_llm_without_persisting(monkeypatch):
     workflow = _workflow()
 

@@ -53,6 +53,7 @@ from app.services.alerts_engine.samples import sample_alerts_for_ast
 from app.services.alerts_engine.universes import list_presets, resolve_universe
 from app.services.alert_llm_analysis import run_workflow_llm_analysis
 from app.services.alert_llm_context import (
+    compact_trigger_evidence,
     default_prompt_template,
     placeholder_catalog,
     prompt_placeholders_from_config,
@@ -133,6 +134,10 @@ NOTIFICATION_TEMPLATE_FIELDS = [
     "feed_trigger_reason",
     "llm_analysis",
     "llm_analysis_status",
+    "trigger_reason",
+    "trigger_details",
+    "trigger_evidence",
+    "price_full",
     "instrument_key",
     "connection_id",
     "connection_index",
@@ -140,7 +145,14 @@ NOTIFICATION_TEMPLATE_FIELDS = [
     "capacity",
 ]
 _NOTIFICATION_TEMPLATE_FIELD_SET = set(NOTIFICATION_TEMPLATE_FIELDS)
-_SIMPLE_PLACEHOLDER_RE = re.compile(r"(?<!{){([A-Za-z_][A-Za-z0-9_]*)}(?!})")
+_BRACE_PLACEHOLDER_RE = re.compile(r"(?<!{){([^{}\n]+)}(?!})")
+_SIMPLE_PLACEHOLDER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_NOTIFICATION_TEMPLATE_ALIASES = {
+    "trigger.reason": "trigger_reason",
+    "trigger.details": "trigger_details",
+    "trigger.evidence": "trigger_evidence",
+    "price.full": "price_full",
+}
 _LEGACY_MARKET_ACTIVE_PERIOD = {
     "enabled": True,
     "timezone": "Asia/Kolkata",
@@ -340,6 +352,8 @@ def workflow_target_entry_for_tick(workflow: AlertWorkflowOut, tick: dict[str, A
         if tick_exchange and entry.exchange and entry.exchange != tick_exchange:
             continue
         return entry
+    if tick_symbol:
+        return None
     return _primary_target_entry(workflow.workflow_dsl.targeting)
 
 
@@ -1489,12 +1503,13 @@ def _render_message(template: str, context: dict[str, Any]) -> str:
     safe_context = {key: value for key, value in context.items() if value is not None}
 
     def replace(match: re.Match[str]) -> str:
-        key = match.group(1)
+        raw_key = match.group(1).strip()
+        key = _NOTIFICATION_TEMPLATE_ALIASES.get(raw_key, raw_key)
         if key not in _NOTIFICATION_TEMPLATE_FIELD_SET:
             return match.group(0)
         return str(safe_context.get(key, ""))
 
-    return _SIMPLE_PLACEHOLDER_RE.sub(replace, template).replace("{{", "{").replace("}}", "}")
+    return _BRACE_PLACEHOLDER_RE.sub(replace, template).replace("{{", "{").replace("}}", "}")
 
 
 def _extract_notification_template_fields(template: str) -> tuple[set[str], set[str]]:
@@ -1502,8 +1517,9 @@ def _extract_notification_template_fields(template: str) -> tuple[set[str], set[
     invalid: set[str] = set()
     for match in re.finditer(r"(?<!{){([^{}\n]+)}(?!})", template or ""):
         raw = match.group(1).strip()
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", raw):
-            valid.add(raw)
+        key = _NOTIFICATION_TEMPLATE_ALIASES.get(raw, raw)
+        if _SIMPLE_PLACEHOLDER_RE.fullmatch(key) and key in _NOTIFICATION_TEMPLATE_FIELD_SET:
+            valid.add(key)
         else:
             invalid.add(raw)
     return valid, invalid
@@ -1557,12 +1573,27 @@ def _notification_context(
     tick: dict[str, Any],
     previous_tick: dict[str, Any] | None = None,
     llm_analysis: dict[str, Any] | None = None,
+    *,
+    reason: str = "",
+    evaluation_details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a template context with computed fields used by notification placeholders."""
 
     context: dict[str, Any] = dict(tick)
     context["symbol"] = str(context.get("symbol") or workflow.symbol or "")
     context["exchange"] = str(context.get("exchange") or workflow.exchange or "")
+    evidence = compact_trigger_evidence(evaluation_details)
+    context["trigger_reason"] = reason
+    context["trigger_details"] = _json_dumps(
+        {
+            "reason": reason,
+            "evaluation_details": evaluation_details or {},
+            "trigger_evidence": evidence,
+            "previous_tick": previous_tick or {},
+        }
+    )
+    context["trigger_evidence"] = _json_dumps(evidence)
+    context["price_full"] = _json_dumps(tick)
     if llm_analysis:
         context["llm_analysis"] = str(llm_analysis.get("output") or "")
         context["llm_analysis_status"] = str(llm_analysis.get("status") or "")
@@ -1741,7 +1772,11 @@ def llm_placeholder_catalog() -> dict[str, Any]:
 
 def notification_placeholder_catalog() -> dict[str, Any]:
     return {
-        "syntax": "Use simple braces only, for example {symbol}, {ltp}, {day_change_perc}, {feed_trigger_reason}. Do not use @price.full, @trigger.reason, or dotted placeholders like {trigger.reason}.",
+        "syntax": (
+            "Use simple braces only, for example {symbol}, {ltp}, {day_change_perc}, "
+            "{trigger_reason}, {trigger_evidence}, or {feed_trigger_reason}. Optional-analysis "
+            "placeholders such as @price.full and @trigger.reason are only for LLM prompt templates."
+        ),
         "placeholders": [
             {"name": name, "token": f"{{{name}}}", "description": "Notification title/message placeholder."}
             for name in NOTIFICATION_TEMPLATE_FIELDS

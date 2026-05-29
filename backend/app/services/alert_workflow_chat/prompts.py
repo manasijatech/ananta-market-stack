@@ -43,7 +43,17 @@ Workflow editing guidance:
 - For notification title/message templates, use only notification_placeholders
   from workflow_get_authoring_docs. Never use optional-analysis placeholders
   like @price.full or @trigger.reason, and never use dotted brace placeholders
-  like {price.full} or {trigger.reason}.
+  like {price.full} or {trigger.reason}. If the user wants condition evidence
+  in the alert body, use {trigger_reason} or {trigger_evidence}.
+- For optional LLM analysis prompt templates, include @trigger.evidence whenever
+  the workflow uses rolling, hold, occurrence, or edge-triggered operators. This
+  is the evaluator's exact evidence: current value, rolling reference, computed
+  change, sample count, coverage, and stateful gates.
+- Prefer stable workflow operators for live alerts: use rolling operators with
+  explicit window_seconds, min_samples, min_coverage_ratio, and trigger_mode
+  rising_edge when the user wants one alert per new move; add hold_seconds only
+  when the user wants the move to persist. Avoid broad level-triggered rules on
+  noisy live fields unless the cooldown is intentionally long.
 - Use workflow_list_watchlists and workflow_get_watchlist_symbols when the user
   wants a dynamic watchlist universe.
 - Use workflow_search_instruments when the user wants a static single symbol or

@@ -828,7 +828,34 @@ def _store_previous_tick_for_workflow(
         logger.warning("workflow tick cache failed for %s: %s", workflow_id, exc)
 
 
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _tick_ohlc_fields(tick: dict[str, Any]) -> dict[str, Any]:
+    raw = tick.get("raw")
+    if isinstance(raw, dict):
+        detail = raw.get("detail")
+        if isinstance(detail, dict) and isinstance(detail.get("raw"), dict):
+            raw = detail["raw"]
+    raw_ohlc = raw.get("ohlc") if isinstance(raw, dict) and isinstance(raw.get("ohlc"), dict) else {}
+    return {
+        "open": _first_present(tick.get("open"), raw_ohlc.get("open"), raw_ohlc.get("open_price")),
+        "high": _first_present(tick.get("high"), raw_ohlc.get("high"), raw_ohlc.get("high_price")),
+        "low": _first_present(tick.get("low"), raw_ohlc.get("low"), raw_ohlc.get("low_price")),
+        "close": _first_present(tick.get("close"), raw_ohlc.get("close"), raw_ohlc.get("close_price")),
+    }
+
+
 def _enrich_tick_for_match(db, workflow: AlertWorkflow, tick: dict[str, Any]) -> dict[str, Any]:
+    existing_ohlc = _tick_ohlc_fields(tick)
+    tick = {
+        **tick,
+        **{key: value for key, value in existing_ohlc.items() if value not in (None, "")},
+    }
     if not workflow.account_id:
         return tick
     account = db.get(BrokerAccount, workflow.account_id)
@@ -836,14 +863,18 @@ def _enrich_tick_for_match(db, workflow: AlertWorkflow, tick: dict[str, Any]) ->
         return tick
     workflow_out = alert_svc._workflow_to_out(workflow)  # type: ignore[attr-defined]
     matched_target = alert_svc.workflow_target_entry_for_tick(workflow_out, tick)
+    tick_symbol = str(tick.get("symbol") or "").strip().upper()
+    if matched_target and matched_target.symbol != tick_symbol:
+        matched_target = None
+    instrument_ref = (
+        matched_target.instrument_ref.model_dump(exclude_none=True)
+        if matched_target
+        else {}
+    )
     instrument = {
-        "symbol": (matched_target.symbol if matched_target else None) or workflow.symbol or tick.get("symbol"),
-        "exchange": (matched_target.exchange if matched_target else None) or workflow.exchange or tick.get("exchange"),
-        **(
-            matched_target.instrument_ref.model_dump(exclude_none=True)
-            if matched_target
-            else json.loads(workflow.instrument_ref_json or "{}")
-        ),
+        "symbol": (matched_target.symbol if matched_target else None) or tick.get("symbol") or workflow.symbol,
+        "exchange": (matched_target.exchange if matched_target else None) or tick.get("exchange") or workflow.exchange,
+        **instrument_ref,
     }
     try:
         ohlc_rows = broker_data.fetch_ohlc(db, account, [instrument])
@@ -856,10 +887,10 @@ def _enrich_tick_for_match(db, workflow: AlertWorkflow, tick: dict[str, Any]) ->
     ohlc = first_row.model_dump(mode="json") if hasattr(first_row, "model_dump") else dict(first_row)
     return {
         **tick,
-        "open": ohlc.get("open", tick.get("open")),
-        "high": ohlc.get("high", tick.get("high")),
-        "low": ohlc.get("low", tick.get("low")),
-        "close": ohlc.get("close", tick.get("close")),
+        "open": _first_present(ohlc.get("open"), tick.get("open")),
+        "high": _first_present(ohlc.get("high"), tick.get("high")),
+        "low": _first_present(ohlc.get("low"), tick.get("low")),
+        "close": _first_present(ohlc.get("close"), tick.get("close")),
         "ohlc": ohlc,
     }
 
@@ -1039,6 +1070,8 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                         evaluation_tick,
                         previous_tick,
                         llm_analysis,
+                        reason=reason,
+                        evaluation_details=evaluation.details,
                     )
                     title = alert_svc._render_message(  # type: ignore[attr-defined]
                         workflow.workflow_dsl.notification.title_template,
@@ -1074,6 +1107,8 @@ def _process_tick_event(db, redis_client: redis.Redis | None, tick: dict[str, An
                     evaluation_tick,
                     previous_tick,
                     llm_analysis,
+                    reason=reason,
+                    evaluation_details=evaluation.details,
                 )
                 title = alert_svc._render_message(  # type: ignore[attr-defined]
                     workflow.workflow_dsl.notification.title_template,

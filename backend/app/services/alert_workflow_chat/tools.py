@@ -236,12 +236,18 @@ def workflow_get_authoring_docs(
                 "Use all(...), any(...), and not(...) for grouping.",
                 "Do not use arbitrary Python or JavaScript; the backend compiles this expression to the alert AST.",
             ],
+            "operator_guidance": [
+                "For rolling price or volume alerts, set window_seconds, min_samples, and min_coverage_ratio explicitly so the workflow waits for a warmed reference window.",
+                "Use trigger_mode=rising_edge for one alert when a condition first becomes true; use level only when repeated alerts after cooldown are intended.",
+                "Use hold_seconds only when the user wants the condition to remain true for a sustained period before alerting.",
+                "Use @trigger.evidence in LLM prompt templates for rolling/stateful workflows so analysis receives exact current/reference/change/sample-count data.",
+            ],
             "notification_placeholders": alert_svc.notification_placeholder_catalog(),
             "llm_context_placeholders": alert_svc.llm_placeholder_catalog(),
             "notification_template_rules": [
-                "Title and message templates use simple braces only, for example {symbol}, {ltp}, {day_change_perc}.",
+                "Title and message templates use simple braces only, for example {symbol}, {ltp}, {day_change_perc}, {trigger_reason}, or {trigger_evidence}.",
                 "Do not use optional LLM context placeholders in notification templates. @price.full and @trigger.reason are only for the optional analysis prompt.",
-                "Do not use dotted brace placeholders such as {price.full} or {trigger.reason}; use available notification placeholders such as {feed_trigger_reason}.",
+                "Do not use dotted brace placeholders such as {price.full} or {trigger.reason}; use available notification placeholders such as {trigger_reason}, {trigger_evidence}, and {feed_trigger_reason}.",
             ],
             "presets": alert_svc.alert_presets(),
         }
