@@ -51,5 +51,6 @@ If automatic connection fails, copy only the `request_token` value from the brow
 ## Notes
 
 - Use `http://localhost:3000/broker-connections` for local setup.
+- For hosted installs, use your public app domain: `https://your-app-domain.example/broker-connections`.
 - The Zerodha app redirect URL must match Market Stack's callback route.
 - Keep the API secret private.

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
     app_public_base_url: str | None = Field(default=None, validation_alias="APP_PUBLIC_BASE_URL")
+    market_stack_public_app_url: str | None = Field(default=None, validation_alias="MARKET_STACK_PUBLIC_APP_URL")
+    next_public_app_url: str | None = Field(default=None, validation_alias="NEXT_PUBLIC_APP_URL")
     cors_allowed_origins: str = Field(
         default="http://localhost:3000,http://localhost:3001,http://localhost:3002,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002",
         validation_alias="CORS_ALLOWED_ORIGINS",

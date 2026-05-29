@@ -18,7 +18,7 @@ The broker data APIs under `/api/v1/broker-accounts/{account_id}/data/...` are r
 1. Create the account with `api_key` and `api_secret`.
 2. Call `GET /api/v1/broker-accounts/{account_id}/sessions/zerodha`.
 3. Redirect the user to `login_url`.
-4. Zerodha redirects back with `request_token`.
+4. Zerodha redirects the browser back to the frontend callback route, normally `/broker-connections`, with `request_token`.
 5. Call `POST /api/v1/broker-accounts/{account_id}/sessions/zerodha` with that `request_token`.
 6. Use the broker operations APIs until the token expires the next morning.
 
@@ -62,11 +62,12 @@ This is intentionally labeled experimental because it depends on Zerodha web end
 
 ### Default official OAuth flow
 
-1. Create the account with `api_key`, `api_secret`, and `redirect_uri`.
-2. Call `GET /api/v1/broker-accounts/{account_id}/sessions/upstox`.
-3. Redirect the user to `login_url`.
-4. Upstox redirects back with `authorization_code`.
-5. Call `POST /api/v1/broker-accounts/{account_id}/sessions/upstox`.
+1. Configure the Upstox app redirect URI as the frontend callback route, normally `https://your-app.example.com/broker-connections`.
+2. Create the account with `api_key`, `api_secret`, and the same `redirect_uri`.
+3. Call `GET /api/v1/broker-accounts/{account_id}/sessions/upstox`.
+4. Redirect the user to `login_url`.
+5. Upstox redirects the browser back to the frontend callback route with `authorization_code` or `code`.
+6. Call `POST /api/v1/broker-accounts/{account_id}/sessions/upstox`.
 
 ### Example create request
 
@@ -76,7 +77,7 @@ This is intentionally labeled experimental because it depends on Zerodha web end
   "label": "main-upstox",
   "api_key": "upstox_app_key",
   "api_secret": "upstox_app_secret",
-  "redirect_uri": "https://your-app.example.com/upstox/callback"
+  "redirect_uri": "https://your-app.example.com/broker-connections"
 }
 ```
 
@@ -94,7 +95,8 @@ Upstox also supports a broker-approved token-request flow:
 
 1. Call `POST /api/v1/broker-accounts/{account_id}/sessions/upstox/request-token`.
 2. Upstox prompts the user for approval inside Upstox channels.
-3. Upstox delivers the token to your notifier webhook at `POST /api/v1/broker-accounts/sessions/upstox/notifier`.
+3. Upstox delivers the token to your frontend notifier webhook at `POST /api/broker-callbacks/upstox/notifier`.
+4. The frontend forwards the payload to `POST /api/v1/broker-accounts/sessions/upstox/notifier`.
 
 This is still official, and is preferable to any credential-scraping approach.
 

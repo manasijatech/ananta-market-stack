@@ -13,7 +13,7 @@ This page summarizes the main environment variables used by Market Stack. Most u
 | `MARKET_STACK_PUBLIC_APP_URL` | `http://localhost:3000` | Runtime-friendly public frontend URL for server-rendered flows. |
 | `MARKET_STACK_PUBLIC_API_BASE_URL` | `http://localhost:8000/api/v1` | Runtime-friendly public backend API URL. |
 | `MARKET_STACK_API_INTERNAL_URL` | `http://backend:8000/api/v1` | Internal frontend-to-backend URL inside Docker Compose. |
-| `APP_PUBLIC_BASE_URL` | `http://localhost:8000` | Backend public URL used by broker callback/session flows. |
+| `APP_PUBLIC_BASE_URL` | `http://localhost:8000` | Backend public URL used by backend API links and fallback session flows. |
 | `CREDENTIAL_ENCRYPTION_KEY` | empty | Optional first-run seed for broker credential encryption. Generated if empty in Docker. |
 | `BETTER_AUTH_SECRET` | empty | Optional first-run seed for auth signing. Generated if empty in Docker. |
 | `REDIS_PASSWORD` | empty | Optional first-run seed for bundled Redis auth. Generated if empty in Docker. |
@@ -27,7 +27,7 @@ This page summarizes the main environment variables used by Market Stack. Most u
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | `sqlite:///./data/app.db` locally, `sqlite:////data/app.db` in Docker | SQLAlchemy database URL. |
-| `APP_PUBLIC_BASE_URL` | `http://localhost:8000` | Public backend URL for broker callbacks and session flows. |
+| `APP_PUBLIC_BASE_URL` | `http://localhost:8000` | Public backend URL for backend API links and fallback session flows. |
 | `MANASIJA_API_BASE_URL` | `https://developers.manasija.in` | Base URL for Manasija developer APIs. |
 | `REDIS_HOST` | `127.0.0.1` locally, `redis` in Docker | Redis host. |
 | `REDIS_PORT` | `6379` | Redis port. |
@@ -59,27 +59,55 @@ This page summarizes the main environment variables used by Market Stack. Most u
 
 ## Broker Callback URLs
 
-Broker session flows often require the backend public URL to match the callback or redirect URL configured in the broker developer console.
+Broker session flows often require an exact callback or redirect URL in the broker developer console. In Market Stack, broker browser callbacks terminate at the Next.js frontend first, then the frontend calls the relevant backend session exchange.
 
 Deployment shape matters:
 
-- Docker Compose usually exposes frontend and backend separately, so callback/API URLs may point to the backend domain.
-- The published Docker image and Railway deployment expose one public app domain and proxy `/api/v1` internally, so callback/auth URLs should use the same app domain.
+- Docker Compose usually exposes frontend and backend separately. Broker browser callback URLs should still point to the frontend domain.
+- The published Docker image and Railway deployment expose one public app domain and proxy `/api/v1` internally, so broker callbacks, auth URLs, and browser API traffic should use the same app domain.
+
+Use these broker-facing callback URLs:
+
+```text
+Zerodha redirect URL: <MARKET_STACK_PUBLIC_APP_URL>/broker-connections
+Upstox OAuth redirect URI: <MARKET_STACK_PUBLIC_APP_URL>/broker-connections
+Upstox notifier webhook: <MARKET_STACK_PUBLIC_APP_URL>/api/broker-callbacks/upstox/notifier
+```
+
+The Upstox OAuth redirect URI must also be saved in the Market Stack Upstox broker account. It must match the broker console value exactly.
 
 For local Docker Compose:
 
 ```env
 APP_PUBLIC_BASE_URL=http://localhost:8000
+MARKET_STACK_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 MARKET_STACK_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+Broker console values for local Docker Compose:
+
+```text
+Zerodha redirect URL: http://localhost:3000/broker-connections
+Upstox OAuth redirect URI: http://localhost:3000/broker-connections
+Upstox notifier webhook: http://localhost:3000/api/broker-callbacks/upstox/notifier
 ```
 
 For production, use your real backend domain:
 
 ```env
 APP_PUBLIC_BASE_URL=https://your-backend-domain.example
+MARKET_STACK_PUBLIC_APP_URL=https://your-frontend-domain.example
 NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
 MARKET_STACK_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
+```
+
+Broker console values for split-domain production:
+
+```text
+Zerodha redirect URL: https://your-frontend-domain.example/broker-connections
+Upstox OAuth redirect URI: https://your-frontend-domain.example/broker-connections
+Upstox notifier webhook: https://your-frontend-domain.example/api/broker-callbacks/upstox/notifier
 ```
 
 For the published Docker image, the frontend and backend share one public port. Use the frontend domain for auth variables and leave browser API traffic on the built-in relative path:
@@ -95,6 +123,14 @@ MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 ```
 
 The published image includes an internal reverse proxy so `/api/v1` supports normal HTTP requests and browser websocket upgrades on the same public domain.
+
+Broker console values for the published Docker image and Railway:
+
+```text
+Zerodha redirect URL: https://your-app-domain.example/broker-connections
+Upstox OAuth redirect URI: https://your-app-domain.example/broker-connections
+Upstox notifier webhook: https://your-app-domain.example/api/broker-callbacks/upstox/notifier
+```
 
 Railway uses the same shape as the published Docker image. Set the app-domain values in [docker-image.md#railway](docker-image.md#railway), mount a persistent volume at `/data`, and do not point browser API variables at `127.0.0.1`.
 

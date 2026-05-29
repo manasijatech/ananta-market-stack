@@ -91,7 +91,7 @@ def create_broker_account(
                     "label": "upstox-main",
                     "api_key": "upstox_api_key",
                     "api_secret": "upstox_api_secret",
-                    "redirect_uri": "https://your-app.example.com/upstox/callback",
+                    "redirect_uri": "https://your-app.example.com/broker-connections",
                 },
             },
         },

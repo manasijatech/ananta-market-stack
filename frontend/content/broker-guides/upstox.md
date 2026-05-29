@@ -16,7 +16,8 @@ Market Stack connects Upstox with API key, API secret, and an exact redirect URI
 2. Copy the API key and API secret.
 3. Set the redirect URI in Upstox.
 4. For local Market Stack, use `http://localhost:3000/broker-connections`.
-5. Use the same redirect URI in Market Stack.
+5. If you use Upstox token-request approval, set the notifier webhook to `http://localhost:3000/api/broker-callbacks/upstox/notifier` for local Market Stack.
+6. Use the same redirect URI in Market Stack.
 
 ## Add Upstox In Market Stack
 
@@ -53,5 +54,7 @@ If automatic connection fails, copy only the `code` value from the browser addre
 ## Notes
 
 - The redirect URI in Upstox and Market Stack must be identical.
+- For hosted installs, use your public app domain: `https://your-app-domain.example/broker-connections`.
+- If you use the Upstox notifier flow, use the same app domain with `/api/broker-callbacks/upstox/notifier`.
 - Use `http://localhost:3000` before and after broker login during local development.
 - Keep the API secret private.
