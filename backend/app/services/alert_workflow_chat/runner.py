@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from datetime import datetime
 from typing import Any
 
 from agents import Agent, ModelSettings, RunConfig, Runner
@@ -11,6 +12,7 @@ from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
 from app.services import llm_config
+from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.alert_workflow_chat import sessions
 from app.services.alert_workflow_chat.prompts import workflow_chat_instructions
 from app.services.alert_workflow_chat.queue import alert_workflow_chat_cancel_requested
@@ -18,10 +20,42 @@ from app.services.alert_workflow_chat.serialization import json_loads, safe_data
 from app.services.alert_workflow_chat.tools import WORKFLOW_CHAT_TOOLS, WorkflowChatContext
 from db.models import AlertWorkflowChatRun
 from db.session import SessionLocal
+from common.datetime_compat import UTC
 
 
 class WorkflowChatCancelled(Exception):
     pass
+
+
+def _usage_response_from_raw_event(data: Any) -> Any:
+    return getattr(data, "response", None) or data
+
+
+def _record_workflow_chat_usage(
+    run: AlertWorkflowChatRun,
+    *,
+    response: Any = None,
+    started_at: datetime,
+    completed_at: datetime | None = None,
+    status: str = "success",
+    error: str | None = None,
+) -> None:
+    record_llm_usage(
+        user_id=run.user_id,
+        provider=run.provider,
+        requested_model_id=run.model_id,
+        api_surface="agents_sdk",
+        started_at=started_at,
+        completed_at=completed_at or datetime.now(tz=UTC).replace(tzinfo=None),
+        status=status,
+        tracking=LlmTrackingContext(
+            request_kind="alert_workflow_chat",
+            workflow_id=run.workflow_id,
+            metadata={"alert_workflow_chat_run_id": run.id, "alert_workflow_chat_session_id": run.session_id},
+        ),
+        response=response,
+        error=error,
+    )
 
 
 def _build_model(db, run: AlertWorkflowChatRun) -> OpenAIChatCompletionsModel:
@@ -99,6 +133,8 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
     final_text = ""
     tool_names_by_call_id: dict[str, str] = {}
     pending_tool_calls: list[tuple[str, str | None]] = []
+    response_started_at = datetime.now(tz=UTC).replace(tzinfo=None)
+    usage_events_recorded = 0
     try:
         run = db.get(AlertWorkflowChatRun, run_id)
         if run is None:
@@ -163,6 +199,31 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
                             public_payload={"text": delta},
                             full_payload={"text": delta, "raw_type": raw_type, "raw": safe_data(data)},
                         )
+                elif raw_type == "response.created":
+                    response_started_at = datetime.now(tz=UTC).replace(tzinfo=None)
+                    sessions.append_event(
+                        db,
+                        run,
+                        event_type="response_started",
+                        public_payload={"response_id": getattr(data, "response_id", None)},
+                        full_payload={"raw_type": raw_type, "raw": safe_data(data)},
+                    )
+                elif raw_type == "response.completed":
+                    completed_at = datetime.now(tz=UTC).replace(tzinfo=None)
+                    _record_workflow_chat_usage(
+                        run,
+                        response=_usage_response_from_raw_event(data),
+                        started_at=response_started_at,
+                        completed_at=completed_at,
+                    )
+                    usage_events_recorded += 1
+                    sessions.append_event(
+                        db,
+                        run,
+                        event_type="response_completed",
+                        public_payload={"response_id": getattr(data, "response_id", None)},
+                        full_payload={"raw_type": raw_type, "raw": safe_data(data)},
+                    )
                 continue
             if event_type == "run_item_stream_event":
                 item = getattr(event, "item", None)
@@ -246,6 +307,14 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
     except Exception as exc:
         run = db.get(AlertWorkflowChatRun, run_id)
         if run is not None and run.status != "cancelled":
+            if usage_events_recorded == 0:
+                _record_workflow_chat_usage(
+                    run,
+                    started_at=response_started_at,
+                    completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+                    status="error",
+                    error=str(exc),
+                )
             sessions.mark_run_terminal(db, run, status="failed", response_text=final_text, error=str(exc))
             db.refresh(run)
             sessions.append_event(

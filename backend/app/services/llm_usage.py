@@ -37,11 +37,14 @@ _REQUEST_KIND_LABELS: dict[str, str] = {
     "workflow_feed_trigger_batch": "Feed trigger batch",
     "workflow_followup_analysis": "Follow-up analysis",
     "workflow_followup_analysis_batch": "Follow-up analysis batch",
+    "broker_chat": "Broker chat",
+    "alert_workflow_chat": "Alert workflow chat",
 }
 
 _API_SURFACE_LABELS: dict[str, str] = {
     "chat_completions": "Chat Completions",
     "responses_api": "Responses API",
+    "agents_sdk": "Agents SDK",
 }
 
 

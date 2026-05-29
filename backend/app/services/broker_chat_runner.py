@@ -14,7 +14,9 @@ from openai import AsyncOpenAI
 
 from app.agent_tools import BROKER_DATA_TOOLS, BrokerAgentContext
 from app.services import broker_chat, broker_chat_mcp, llm_config
+from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.broker_chat_queue import broker_chat_cancel_requested
+from common.datetime_compat import UTC
 from db.models import BrokerChatRun
 from db.session import SessionLocal
 
@@ -121,6 +123,36 @@ Answer quality:
 
 class BrokerChatCancelled(Exception):
     pass
+
+
+def _usage_response_from_raw_event(data: Any) -> Any:
+    return getattr(data, "response", None) or data
+
+
+def _record_broker_chat_usage(
+    run: BrokerChatRun,
+    *,
+    response: Any = None,
+    started_at: datetime,
+    completed_at: datetime | None = None,
+    status: str = "success",
+    error: str | None = None,
+) -> None:
+    record_llm_usage(
+        user_id=run.user_id,
+        provider=run.provider,
+        requested_model_id=run.model_id,
+        api_surface="agents_sdk",
+        started_at=started_at,
+        completed_at=completed_at or datetime.now(tz=UTC).replace(tzinfo=None),
+        status=status,
+        tracking=LlmTrackingContext(
+            request_kind="broker_chat",
+            metadata={"broker_chat_run_id": run.id, "broker_chat_session_id": run.session_id},
+        ),
+        response=response,
+        error=error,
+    )
 
 
 _ORIGINAL_ITEMS_TO_MESSAGES = Converter.items_to_messages
@@ -357,6 +389,8 @@ async def _run_broker_chat(run_id: str) -> None:
     tool_names_by_call_id: dict[str, str] = {}
     pending_tool_names: list[str] = []
     reasoning_events_emitted = 0
+    response_started_at = datetime.now(tz=UTC).replace(tzinfo=None)
+    usage_events_recorded = 0
     try:
         run = db.get(BrokerChatRun, run_id)
         if run is None:
@@ -428,6 +462,7 @@ async def _run_broker_chat(run_id: str) -> None:
                             full_payload={"text": delta, "raw_type": raw_type, "raw": _safe_data(data)},
                         )
                 elif raw_type == "response.created":
+                    response_started_at = datetime.now(tz=UTC).replace(tzinfo=None)
                     broker_chat.append_event(
                         db,
                         run,
@@ -436,6 +471,14 @@ async def _run_broker_chat(run_id: str) -> None:
                         full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
                     )
                 elif raw_type == "response.completed":
+                    completed_at = datetime.now(tz=UTC).replace(tzinfo=None)
+                    _record_broker_chat_usage(
+                        run,
+                        response=_usage_response_from_raw_event(data),
+                        started_at=response_started_at,
+                        completed_at=completed_at,
+                    )
+                    usage_events_recorded += 1
                     broker_chat.append_event(
                         db,
                         run,
@@ -557,6 +600,14 @@ async def _run_broker_chat(run_id: str) -> None:
     except Exception as exc:
         run = db.get(BrokerChatRun, run_id)
         if run is not None and run.status != "cancelled":
+            if usage_events_recorded == 0:
+                _record_broker_chat_usage(
+                    run,
+                    started_at=response_started_at,
+                    completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+                    status="error",
+                    error=str(exc),
+                )
             broker_chat.mark_run_terminal(db, run, status="failed", response_text=final_text, error=str(exc))
             db.refresh(run)
             broker_chat.append_event(
