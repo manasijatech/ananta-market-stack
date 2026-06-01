@@ -56,7 +56,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 import { WorkflowAiChatPanel } from "@/components/alerts/workflow-ai-chat-panel";
@@ -65,6 +64,10 @@ import { formatIstDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 type EngineAction = "validate" | "compile" | "explain" | "samples" | "deploy";
+
+function normalizeEditorMode(mode: EditorMode | null | undefined): EditorMode {
+    return mode === "graph" ? "rule" : (mode ?? "rule");
+}
 
 function buildGraph(dsl: AlertWorkflowDsl): AlertGraphDsl {
     const nodes: AlertGraphDsl["nodes"] = [
@@ -1331,7 +1334,7 @@ export function WorkflowEditor({
     const [notice, setNotice] = useState("");
     const [matchPreview, setMatchPreview] = useState("");
     const [chatWorkflow, setChatWorkflow] = useState<AlertWorkflow | null>(null);
-    const [editorMode, setEditorMode] = useState<EditorMode>(initialWorkflow?.editor_mode ?? "rule");
+    const [editorMode, setEditorMode] = useState<EditorMode>(normalizeEditorMode(initialWorkflow?.editor_mode));
     const initialWorkflowType = initialWorkflow?.workflow_dsl.workflow_type ?? "market_data";
     const [workflowType, setWorkflowType] = useState<"market_data" | "alpha_feed">(initialWorkflowType);
     const [name, setName] = useState(initialWorkflow?.name ?? "");
@@ -2720,7 +2723,7 @@ export function WorkflowEditor({
         setSymbolSearch(nextTargetEntries.length === 1 ? nextSymbol : "");
         setCommittedSymbolSearch(nextTargetEntries.length === 1 ? nextSymbol : "");
         setSelectedSearchLabel(nextTargetEntries.length === 1 ? targetDisplay(nextTargetEntries[0]) : "");
-        setEditorMode(workflow.editor_mode ?? "rule");
+        setEditorMode(normalizeEditorMode(workflow.editor_mode));
         setStatus(workflow.status === "active" ? "active" : "inactive");
         setTargetEntries(nextTargetEntries);
         setBulkTargets("");
@@ -4810,111 +4813,52 @@ export function WorkflowEditor({
             </div>
 
             <div className="max-w-5xl">
-                <Tabs onValueChange={(value) => setEditorMode(value as EditorMode)} value={editorMode}>
-                    <div className="grid gap-3 border border-border p-3">
-                        <div>
-                            <div className="max-w-[760px]">
-                                <div className="type-step-eyebrow">{buildTriggerStep}</div>
-                                <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Build trigger</h2>
-                                <HelpText className="mt-1.5">
-                                    Start with the rule logic first, then refine the outgoing alert content underneath
-                                    it.
-                                </HelpText>
-                            </div>
-                            <TabsList>
-                                <TabsTrigger value="rule">Rule Builder</TabsTrigger>
-                                <TabsTrigger value="graph">Graph Builder</TabsTrigger>
-                            </TabsList>
-                        </div>
-                        <TabsContent className="mt-0" value="rule">
-                            <RuleEditor
-                                addCondition={addCondition}
-                                applyMessageField={applyMessageField}
-                                combine={combine}
-                                conditions={conditions}
-                                cooldownSeconds={cooldownSeconds}
-                                filteredMessageFields={filteredMessageFields}
-                                handleMessageTemplateKeyDown={handleMessageTemplateKeyDown}
-                                level={level}
-                                applySuggestedCopy={() => {
-                                    setTitleTemplate(suggestedCopy.title);
-                                    setMessageTemplate(suggestedCopy.message);
-                                }}
-                                currentTemplatesMatchSuggestion={currentTemplatesMatchSuggestion}
-                                messageFieldIndex={messageFieldIndex}
-                                messageFieldListRef={messageFieldListRef}
-                                messageFieldPosition={messageFieldPosition}
-                                messageTemplate={messageTemplate}
-                                messageInputRef={messageInputRef}
-                                messageTemplateWrapRef={messageTemplateWrapRef}
-                                onMessageTemplateBlur={() =>
-                                    window.setTimeout(() => {
-                                        setShowMessageFieldSuggestions(false);
-                                        setMessageFieldPosition(null);
-                                    }, 120)
-                                }
-                                removeCondition={removeCondition}
-                                setCombine={updateCombine}
-                                setCooldownSeconds={setCooldownSeconds}
-                                setLevel={setLevel}
-                                setTitleTemplate={setTitleTemplate}
-                                showMessageFieldSuggestions={showMessageFieldSuggestions}
-                                suggestedCopy={suggestedCopy}
-                                titleTemplate={titleTemplate}
-                                updateMessageTemplate={updateMessageTemplate}
-                                updateCondition={updateCondition}
-                            />
-                        </TabsContent>
-                        <TabsContent className="mt-0" value="graph">
-                            <div className="grid gap-3">
-                                <div className="border border-border p-3">
-                                    <SectionTitle className="mb-2">Trigger</SectionTitle>
-                                    <HelpText>
-                                        The graph starts from the live quote stream for the selected symbol and account.
-                                    </HelpText>
-                                </div>
-                                <div className="grid w-fit max-w-full gap-3">
-                                    {conditions.map((condition, index) => (
-                                        <div className="border border-border p-3" key={`${condition.field}-${index}`}>
-                                            <SectionTitle className="mb-2">Condition node {index + 1}</SectionTitle>
-                                            <ConditionEditor
-                                                condition={condition}
-                                                index={index}
-                                                removeCondition={removeCondition}
-                                                updateCondition={updateCondition}
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="border border-border p-3">
-                                    <SectionTitle className="mb-2">Notification node</SectionTitle>
-                                    <HelpText>
-                                        These templates render the alert title and body when the conditions match.
-                                    </HelpText>
-                                    <div className="mt-3 grid max-w-[820px] gap-3 min-[960px]:grid-cols-[200px_minmax(0,1fr)_120px]">
-                                        <Input
-                                            className="max-w-[200px]"
-                                            onChange={(event) => setTitleTemplate(event.target.value)}
-                                            placeholder="Title template"
-                                            value={titleTemplate}
-                                        />
-                                        <Input
-                                            onChange={(event) => setMessageTemplate(event.target.value)}
-                                            placeholder="Message template"
-                                            value={messageTemplate}
-                                        />
-                                        <Input
-                                            className="max-w-[120px]"
-                                            onChange={(event) => setLevel(event.target.value)}
-                                            placeholder="Level"
-                                            value={level}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </TabsContent>
+                <div className="grid gap-3 border border-border p-3">
+                    <div className="max-w-[760px]">
+                        <div className="type-step-eyebrow">{buildTriggerStep}</div>
+                        <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Build trigger</h2>
+                        <HelpText className="mt-1.5">
+                            Start with the rule logic first, then refine the outgoing alert content underneath it.
+                        </HelpText>
                     </div>
-                </Tabs>
+                    <RuleEditor
+                        addCondition={addCondition}
+                        applyMessageField={applyMessageField}
+                        combine={combine}
+                        conditions={conditions}
+                        cooldownSeconds={cooldownSeconds}
+                        filteredMessageFields={filteredMessageFields}
+                        handleMessageTemplateKeyDown={handleMessageTemplateKeyDown}
+                        level={level}
+                        applySuggestedCopy={() => {
+                            setTitleTemplate(suggestedCopy.title);
+                            setMessageTemplate(suggestedCopy.message);
+                        }}
+                        currentTemplatesMatchSuggestion={currentTemplatesMatchSuggestion}
+                        messageFieldIndex={messageFieldIndex}
+                        messageFieldListRef={messageFieldListRef}
+                        messageFieldPosition={messageFieldPosition}
+                        messageTemplate={messageTemplate}
+                        messageInputRef={messageInputRef}
+                        messageTemplateWrapRef={messageTemplateWrapRef}
+                        onMessageTemplateBlur={() =>
+                            window.setTimeout(() => {
+                                setShowMessageFieldSuggestions(false);
+                                setMessageFieldPosition(null);
+                            }, 120)
+                        }
+                        removeCondition={removeCondition}
+                        setCombine={updateCombine}
+                        setCooldownSeconds={setCooldownSeconds}
+                        setLevel={setLevel}
+                        setTitleTemplate={setTitleTemplate}
+                        showMessageFieldSuggestions={showMessageFieldSuggestions}
+                        suggestedCopy={suggestedCopy}
+                        titleTemplate={titleTemplate}
+                        updateMessageTemplate={updateMessageTemplate}
+                        updateCondition={updateCondition}
+                    />
+                </div>
             </div>
 
             <div className="grid max-w-5xl gap-3 border border-border p-3">
