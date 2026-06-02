@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from common.datetime_compat import UTC
-from market_stack_sdk import MarketStackClient
+from drishti_sdk import DrishtiClient
 import redis
 import websockets
 from sqlalchemy import select
@@ -260,7 +260,7 @@ def _int_or_none(value: Any) -> int | None:
 async def fetch_alpha_account(api_key: str) -> dict[str, Any]:
     settings = get_settings()
     payload = await asyncio.to_thread(
-        lambda: MarketStackClient(
+        lambda: DrishtiClient(
             api_key=api_key,
             base_url=settings.alpha_api_base_url.rstrip("/"),
             timeout=15,

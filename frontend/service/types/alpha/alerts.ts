@@ -1,3 +1,3 @@
-import type { Alert } from "@manasija/market-stack-sdk";
+import type { Alert } from "drishti-sdk";
 
 export type AlphaAlert = Alert;
