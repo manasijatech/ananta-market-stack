@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from market_stack_sdk import MarketStackApiError
+from drishti_sdk import DrishtiApiError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -59,7 +59,7 @@ def test_missing_symbol_metadata_falls_back_when_alpha_lookup_is_unavailable(mon
     db = session_factory()
 
     def fail_fetch(_api_key, _symbols):
-        raise MarketStackApiError(403, {"error": {"code": "forbidden"}})
+        raise DrishtiApiError(403, {"error": {"code": "forbidden"}})
 
     monkeypatch.setattr(alpha_symbols.alpha_config, "get_alpha_api_key", lambda _db, _user_id: "test-key")
     monkeypatch.setattr(alpha_symbols, "_fetch_alpha_symbol_metadata", fail_fetch)

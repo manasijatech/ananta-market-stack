@@ -7,7 +7,7 @@ import type {
     PresignedUrlResponse,
     StringListResponse,
     SymbolQuarterKey
-} from "@manasija/market-stack-sdk";
+} from "drishti-sdk";
 
 export type AlphaPaginatedResponse<T> = PaginatedResponse<T>;
 export type AlphaStringListResponse = StringListResponse;

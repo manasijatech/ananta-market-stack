@@ -5,7 +5,7 @@ import type {
     AlphaPaginatedResponse,
     AlphaStringListResponse
 } from "@/service/types/alpha/common";
-import type { AlphaAnnouncementBatchResponse, AlphaAnnouncementDetail } from "@/service/types/alpha/announcements";
+import type { AlphaAnnouncementDetail } from "@/service/types/alpha/announcements";
 import {
     normalizeList,
     toAnnouncementsListQueryParams,
@@ -23,18 +23,6 @@ export async function getAlphaAnnouncements(
 ): Promise<AlphaPaginatedResponse<AlphaAnnouncementDetail>> {
     return withAlphaSdk<AlphaPaginatedResponse<AlphaAnnouncementDetail>>((client) =>
         client.getAnnouncements(toAnnouncementsListQueryParams(params))
-    );
-}
-
-export async function getAlphaAnnouncementsByIds(
-    ids: string[],
-    detailed = true
-): Promise<AlphaAnnouncementBatchResponse> {
-    return withAlphaSdk<AlphaAnnouncementBatchResponse>((client) =>
-        client.getAnnouncementsItems({
-            ids: normalizeList(ids),
-            detailed
-        })
     );
 }
 

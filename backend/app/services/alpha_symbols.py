@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 import httpx
-from market_stack_sdk import MarketStackApiError, MarketStackClient
+from drishti_sdk import DrishtiApiError, DrishtiClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -128,9 +128,8 @@ def _fetch_alpha_symbol_metadata(api_key: str, symbols: list[str]) -> list[Alpha
     if not symbols:
         return []
     settings = get_settings()
-    query = ",".join(symbols)
-    with MarketStackClient(api_key=api_key, base_url=settings.alpha_api_base_url.rstrip("/"), timeout=15) as client:
-        payload = client.get_symbols_metadata({"symbols": query})
+    with DrishtiClient(api_key=api_key, base_url=settings.alpha_api_base_url.rstrip("/"), timeout=15) as client:
+        payload = client.get_symbols_metadata(symbols=symbols)
     data = payload.get("data") if isinstance(payload, dict) else []
     if not isinstance(data, list):
         return []
@@ -163,7 +162,7 @@ def get_symbol_metadata(
             batch = missing[index:index + _ALPHA_SYMBOL_BATCH_SIZE]
             try:
                 fetched = _fetch_alpha_symbol_metadata(api_key, batch)
-            except (MarketStackApiError, httpx.HTTPError) as exc:
+            except (DrishtiApiError, httpx.HTTPError) as exc:
                 logger.warning("Alpha symbol metadata fetch failed for %s: %s", ",".join(batch), exc)
                 fetched = []
                 for symbol in batch:

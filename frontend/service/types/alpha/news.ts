@@ -1,3 +1,3 @@
-import type { NewsItem } from "@manasija/market-stack-sdk";
+import type { NewsItem } from "drishti-sdk";
 
 export type AlphaNewsItem = NewsItem;

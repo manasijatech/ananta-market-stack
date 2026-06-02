@@ -1,8 +1,8 @@
 import "server-only";
 
 import {
-    MarketStackApiError,
-    MarketStackClient,
+    DrishtiApiError,
+    DrishtiClient,
     type AlertsQueryParams,
     type AnnouncementsListQueryParams,
     type ConcallsQueryParams,
@@ -10,7 +10,7 @@ import {
     type NewsQueryParams,
     type NewsSentiment,
     type QueryParams
-} from "@manasija/market-stack-sdk";
+} from "drishti-sdk";
 import { fetchFastApi } from "@/lib/fastapi";
 
 type AlphaQueryValue = string | number | boolean | null | undefined;
@@ -210,14 +210,14 @@ export async function getAlphaApiKey() {
 
 export async function getAlphaSdkClient() {
     const apiKey = await getAlphaApiKey();
-    return new MarketStackClient({
+    return new DrishtiClient({
         apiKey,
         baseUrl: alphaBaseUrl()
     });
 }
 
 function parseSdkError(error: unknown): never {
-    if (error instanceof MarketStackApiError) {
+    if (error instanceof DrishtiApiError) {
         const fallback =
             error.statusCode >= 500
                 ? "The Manasija Alpha API is unavailable. Please try again."
@@ -266,7 +266,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     return readResponse<T>(response);
 }
 
-export async function withAlphaSdk<T>(fn: (client: MarketStackClient) => Promise<T>): Promise<T> {
+export async function withAlphaSdk<T>(fn: (client: DrishtiClient) => Promise<T>): Promise<T> {
     const client = await getAlphaSdkClient();
     try {
         return await fn(client);

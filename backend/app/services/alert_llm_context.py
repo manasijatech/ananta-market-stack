@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from common.datetime_compat import UTC
-from market_stack_sdk import MarketStackClient
+from drishti_sdk import DrishtiClient
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -292,7 +292,7 @@ def _fetch_alpha_placeholder(
     items: list[dict[str, Any]] = []
     pages_fetched = 0
     has_next = False
-    with MarketStackClient(api_key=api_key, base_url=settings.alpha_api_base_url.rstrip("/"), timeout=15) as client:
+    with DrishtiClient(api_key=api_key, base_url=settings.alpha_api_base_url.rstrip("/"), timeout=15) as client:
         for page in range(1, max_pages + 1):
             params["page"] = page
             payload = client.get(_endpoint_for(name), params=params)

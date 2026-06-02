@@ -770,7 +770,7 @@ function AnnouncementList({
                     earning?.earnings_significant ? "significant" : announcement?.category,
                     formatDate(item.date)
                 ].filter(Boolean);
-                const body = announcement?.management_guidance ?? item.summary ?? "No summary provided.";
+                const body =  item.summary ?? "No summary provided.";
                 return (
                     <article className="min-w-0 max-w-full border-l-2 border-border pl-4" key={itemKey(item)}>
                         <div className="flex items-start justify-between gap-4">

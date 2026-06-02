@@ -1,3 +1,3 @@
-import type { Concall } from "@manasija/market-stack-sdk";
+import type { Concall } from "drishti-sdk";
 
 export type AlphaConcall = Concall;

@@ -1,4 +1,4 @@
-import type { AnnouncementBatchResponse, AnnouncementDetail, EarningsDetail } from "@manasija/market-stack-sdk";
+import type { AnnouncementBatchResponse, AnnouncementDetail, EarningsDetail } from "drishti-sdk";
 
 /** Announcement list/detail rows from alpha-api (`important`, not legacy `imp_announcement`). */
 export type AlphaAnnouncementDetail = AnnouncementDetail;
