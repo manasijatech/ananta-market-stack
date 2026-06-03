@@ -53,22 +53,22 @@ const PROVIDER_LOGOS: Record<LlmProvider, { src: string; alt: string; imageClass
     openai: {
         src: "/brand/providers/openai.svg",
         alt: "OpenAI logo",
-        imageClassName: "h-6 w-auto"
+        imageClassName: "size-6 object-contain"
     },
     openrouter: {
         src: "/brand/providers/openrouter.svg",
         alt: "OpenRouter logo",
-        imageClassName: "h-4.5 w-auto"
+        imageClassName: "size-6 object-contain"
     },
     gemini: {
         src: "/brand/providers/gemini.svg",
         alt: "Google Gemini logo",
-        imageClassName: "h-6 w-auto"
+        imageClassName: "size-6 object-contain"
     },
     anthropic: {
         src: "/brand/providers/anthropic.svg",
         alt: "Anthropic logo",
-        imageClassName: "h-5 w-auto"
+        imageClassName: "size-6 object-contain"
     }
 };
 
@@ -106,9 +106,10 @@ const PROVIDER_SETUP_GUIDES: Record<
                 after: ", paste the model ID, then click Add model."
             }
         ],
-        modelExamples: ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
+        modelExamples: ["gpt-5.4-nano", "gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
         notes: [
-            "Use gpt-5.4-mini first when you want lower cost and faster alert analysis.",
+            "Cheapest option: use gpt-5.4-nano for simple, high-volume alert analysis.",
+            "Use gpt-5.4-mini when you want a stronger low-cost default.",
             "Use gpt-5.5 only when you need stronger reasoning and accept higher cost.",
             "Do not paste an organization ID, project ID, or environment variable name here."
         ]
