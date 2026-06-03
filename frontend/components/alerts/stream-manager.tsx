@@ -75,17 +75,32 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     );
 
     const visibleRows = desiredRows.slice(0, Math.min(visibleCount, desiredRows.length));
-    const displayRows = visibleRows.filter((row) => hasRenderableTick(prices[row.key]));
     const visibleAvailableCount = useMemo(
         () => visibleRows.reduce((count, row) => count + (hasLivePrice(prices[row.key]) ? 1 : 0), 0),
         [visibleRows, prices]
     );
-    const pendingDisplayCount = Math.min(3, Math.max(visibleRows.length - displayRows.length, 0));
     const visibleRefKey = visibleRows.map((row) => row.key).join(",");
+    const desiredRefKey = desiredRows.map((row) => row.key).join(",");
 
     useEffect(() => {
         setVisibleCount((current) => Math.min(Math.max(current, LIVE_PRICE_PAGE_SIZE), Math.max(desiredRows.length, LIVE_PRICE_PAGE_SIZE)));
     }, [desiredRows.length]);
+
+    useEffect(() => {
+        const desiredKeys = new Set(desiredRows.map((row) => row.key));
+        setPrices((current) => {
+            let changed = false;
+            const next: Record<string, LivePriceTick> = {};
+            for (const [key, value] of Object.entries(current)) {
+                if (desiredKeys.has(key)) {
+                    next[key] = value;
+                } else {
+                    changed = true;
+                }
+            }
+            return changed ? next : current;
+        });
+    }, [desiredRefKey, desiredRows]);
 
     function loadMoreVisibleRows() {
         setVisibleCount((current) => Math.min(desiredRows.length, current + LIVE_PRICE_PAGE_SIZE));
@@ -137,7 +152,6 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
             }
             setSocketState("connecting");
             setMessage("");
-            setPrices({});
             pendingRef.current.clear();
             try {
                 const { url } = await getLivePricesWebSocketConfig(visibleRows);
@@ -211,7 +225,7 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                 </div>
                 <div className="flex items-center gap-2">
                     <div className="type-meta whitespace-nowrap text-muted-foreground">
-                        Showing {displayRows.length} / {desiredRows.length}
+                        Showing {visibleRows.length} / {desiredRows.length}
                     </div>
                     <div
                         className={`type-meta border px-2.5 py-1 ${
@@ -256,8 +270,9 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {displayRows.map((row) => {
+                        {visibleRows.map((row) => {
                             const price = prices[row.key];
+                            const hasRenderablePrice = hasRenderableTick(price);
                             const change = toNumber(price?.change_pct ?? price?.day_change_perc);
                             const unavailableReason = !hasLivePrice(price) ? price?.unavailable_reason : "";
                             return (
@@ -271,7 +286,9 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                                         </div>
                                     </td>
                                     <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono font-semibold tabular-nums">
-                                        {unavailableReason ? (
+                                        {!hasRenderablePrice ? (
+                                            <Skeleton className="ml-auto h-3 w-16" />
+                                        ) : unavailableReason ? (
                                             <span className="text-xs font-medium text-[var(--danger)]" title={unavailableReason}>
                                                 unavailable
                                             </span>
@@ -288,37 +305,37 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                                                   : "text-[var(--danger)]"
                                         }`}
                                     >
-                                        {formatPercent(change)}
+                                        {hasRenderablePrice ? formatPercent(change) : <Skeleton className="ml-auto h-3 w-14" />}
                                     </td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">{formatPrice(price?.open)}</td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">{formatPrice(price?.high)}</td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">{formatPrice(price?.low)}</td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">{formatNumber(price?.volume, { maximumFractionDigits: 0 })}</td>
                                     <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
-                                        {formatPrice(price?.best_bid_price)} / {formatPrice(price?.best_ask_price)}
+                                        {hasRenderablePrice ? formatPrice(price?.open) : <Skeleton className="ml-auto h-3 w-16" />}
                                     </td>
-                                    <td className="border-b border-border/80 px-3 py-2.5 text-right font-mono text-[11px] text-muted-foreground">{formatTime(price?.received_at)}</td>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                        {hasRenderablePrice ? formatPrice(price?.high) : <Skeleton className="ml-auto h-3 w-16" />}
+                                    </td>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                        {hasRenderablePrice ? formatPrice(price?.low) : <Skeleton className="ml-auto h-3 w-16" />}
+                                    </td>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                        {hasRenderablePrice ? (
+                                            formatNumber(price?.volume, { maximumFractionDigits: 0 })
+                                        ) : (
+                                            <Skeleton className="ml-auto h-3 w-16" />
+                                        )}
+                                    </td>
+                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                        {hasRenderablePrice ? (
+                                            `${formatPrice(price?.best_bid_price)} / ${formatPrice(price?.best_ask_price)}`
+                                        ) : (
+                                            <Skeleton className="ml-auto h-3 w-24" />
+                                        )}
+                                    </td>
+                                    <td className="border-b border-border/80 px-3 py-2.5 text-right font-mono text-[11px] text-muted-foreground">
+                                        {hasRenderablePrice ? formatTime(price?.received_at) : <Skeleton className="ml-auto h-3 w-16" />}
+                                    </td>
                                 </tr>
                             );
                         })}
-                        {pendingDisplayCount > 0
-                            ? Array.from({ length: pendingDisplayCount }).map((_, rowIndex) => (
-                                  <tr key={`pending-${rowIndex}`}>
-                                      <td className="border-b border-r border-border/80 px-3 py-2.5 align-middle">
-                                          <Skeleton className="h-4 w-28" />
-                                          <Skeleton className="mt-2 h-3 w-16" />
-                                      </td>
-                                      {Array.from({ length: 8 }).map((__, columnIndex) => (
-                                          <td
-                                              className="border-b border-r border-border/80 px-3 py-2.5"
-                                              key={`pending-${rowIndex}-${columnIndex}`}
-                                          >
-                                              <Skeleton className="ml-auto h-3 w-16" />
-                                          </td>
-                                      ))}
-                                  </tr>
-                              ))
-                            : null}
                     </tbody>
                 </table>
                 {!visibleRows.length ? (

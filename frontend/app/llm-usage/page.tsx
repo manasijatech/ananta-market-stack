@@ -1,4 +1,5 @@
-import { LlmUsageDashboard } from "@/components/llm-usage/llm-usage-dashboard";
+import { LlmUsageDashboard, buildLlmUsageFilterOptions } from "@/components/llm-usage/llm-usage-dashboard";
+import { LLM_USAGE_ALL_FILTER_VALUE } from "@/lib/llm-usage-filters";
 import {
     getLlmUsageEvents,
     getLlmUsageOverview,
@@ -17,6 +18,7 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 
 function cleanParam(value: string | string[] | undefined): string | undefined {
     const clean = firstParam(value)?.trim();
+    if (clean === LLM_USAGE_ALL_FILTER_VALUE) return undefined;
     return clean || undefined;
 }
 
@@ -39,15 +41,19 @@ export default async function LlmUsagePage({ searchParams }: LlmUsagePageProps) 
     };
     const granularity = parseGranularity(params.granularity);
 
-    const [overview, timeseries, events] = await Promise.all([
+    const [overview, timeseries, events, filterOptionsOverview, filterOptionsEvents] = await Promise.all([
         getLlmUsageOverview(filters),
         getLlmUsageTimeseries(filters, granularity),
-        getLlmUsageEvents(filters, 100)
+        getLlmUsageEvents(filters, 100),
+        getLlmUsageOverview({}),
+        getLlmUsageEvents({}, 500)
     ]);
+    const filterOptions = buildLlmUsageFilterOptions(filterOptionsOverview, filterOptionsEvents);
 
     return (
         <LlmUsageDashboard
             events={events}
+            filterOptions={filterOptions}
             filters={filters}
             granularity={granularity}
             overview={overview}
