@@ -633,26 +633,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
             <div className="min-[980px]:pl-[252px]">
                 <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-[252px] min-[980px]:flex min-[980px]:h-20 min-[980px]:items-center min-[980px]:px-10 min-[980px]:py-0">
-                    <div className="flex w-full flex-col gap-4 min-[860px]:flex-row min-[860px]:items-center min-[860px]:justify-between">
-                        <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 min-[860px]:flex">
-                            {navItems.map((item) => {
-                                const active = isNavItemActive(pathname, item.href);
-                                return (
-                                    <Link
-                                        className={
-                                            active
-                                                ? "text-sm font-semibold uppercase tracking-[0.06em] text-primary"
-                                                : "text-sm font-semibold uppercase tracking-[0.06em] text-muted-foreground hover:text-foreground"
-                                        }
-                                        href={item.href}
-                                        key={item.href}
-                                    >
-                                        {item.label}
-                                    </Link>
-                                );
-                            })}
-                        </nav>
-                        <div className="flex flex-wrap items-center gap-3 self-start min-[860px]:ml-auto min-[860px]:self-auto">
+                    <div className="flex w-full items-center justify-end">
+                        <div className="flex flex-wrap items-center gap-3">
                             <AlertNotificationsTray />
                             <ThemeToggle />
                         </div>

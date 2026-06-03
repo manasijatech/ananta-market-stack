@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+    Check,
+    ChevronDown,
     History,
-    MessageCircle,
-    PanelRightClose,
     Plus,
     Send,
     Settings2,
@@ -13,7 +13,6 @@ import {
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 import { useSession } from "@/components/session-provider";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { cn } from "@/lib/utils";
@@ -80,6 +79,103 @@ function mergeSnapshots(existing: AlertWorkflowChatSnapshot[], incoming: AlertWo
         map.set(snapshot.id, snapshot);
     }
     return Array.from(map.values()).sort((left, right) => left.version - right.version);
+}
+
+type PanelDropdownOption = {
+    label: string;
+    value: string;
+};
+
+function PanelDropdown({
+    className,
+    emptyLabel = "No options",
+    menuDirection = "down",
+    onValueChange,
+    options,
+    placeholder,
+    value
+}: {
+    className?: string;
+    emptyLabel?: string;
+    menuDirection?: "down" | "up";
+    onValueChange: (value: string) => void;
+    options: PanelDropdownOption[];
+    placeholder: string;
+    value: string;
+}) {
+    const [open, setOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const selected = options.find((option) => option.value === value);
+
+    useEffect(() => {
+        if (!open) return;
+
+        function handlePointerDown(event: PointerEvent) {
+            if (!rootRef.current?.contains(event.target as Node)) {
+                setOpen(false);
+            }
+        }
+
+        document.addEventListener("pointerdown", handlePointerDown);
+        return () => document.removeEventListener("pointerdown", handlePointerDown);
+    }, [open]);
+
+    return (
+        <div className={cn("relative min-w-0", className)} ref={rootRef}>
+            <button
+                aria-expanded={open}
+                aria-haspopup="listbox"
+                className="flex h-8 w-full min-w-0 items-center justify-between gap-2 border border-input bg-background px-3 text-left text-xs text-foreground outline-none transition-colors hover:border-primary focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => setOpen((current) => !current)}
+                onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                        setOpen(false);
+                    }
+                }}
+                type="button"
+            >
+                <span className={cn("truncate", selected ? "text-foreground" : "text-muted-foreground")}>
+                    {selected?.label ?? placeholder}
+                </span>
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+            </button>
+            {open ? (
+                <div
+                    className={cn(
+                        "absolute left-0 right-0 z-[90] max-h-64 overflow-y-auto border border-border bg-popover p-1 text-popover-foreground shadow-xl",
+                        menuDirection === "up" ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]"
+                    )}
+                    role="listbox"
+                >
+                    {options.length ? (
+                        options.map((option) => {
+                            const selectedOption = option.value === value;
+                            return (
+                                <button
+                                    aria-selected={selectedOption}
+                                    className="flex h-8 w-full min-w-0 items-center gap-2 px-2 text-left text-sm outline-none hover:bg-primary hover:text-primary-foreground focus-visible:bg-primary focus-visible:text-primary-foreground"
+                                    key={option.value}
+                                    onClick={() => {
+                                        onValueChange(option.value);
+                                        setOpen(false);
+                                    }}
+                                    role="option"
+                                    type="button"
+                                >
+                                    <span className="flex size-4 shrink-0 items-center justify-center">
+                                        {selectedOption ? <Check className="size-4" /> : null}
+                                    </span>
+                                    <span className="truncate">{option.label}</span>
+                                </button>
+                            );
+                        })
+                    ) : (
+                        <div className="px-2 py-2 text-sm text-muted-foreground">{emptyLabel}</div>
+                    )}
+                </div>
+            ) : null}
+        </div>
+    );
 }
 
 function textPayload(payload: Record<string, unknown>, key: string) {
@@ -415,7 +511,6 @@ export function WorkflowAiChatPanel({
     );
     const firstProvider = enabledProviders[0];
     const firstModel = firstProvider?.models.find((model) => model.is_enabled);
-    const [open, setOpen] = useState(false);
     const [width, setWidth] = useState(DEFAULT_PANEL_WIDTH);
     const [session, setSession] = useState<AlertWorkflowChatSession | null>(null);
     const [sessions, setSessions] = useState<AlertWorkflowChatSession[]>([]);
@@ -437,6 +532,18 @@ export function WorkflowAiChatPanel({
         if (!currentWorkflowId) return sessions;
         return sessions.filter((item) => item.workflow_id === currentWorkflowId);
     }, [currentWorkflowId, sessions]);
+    const sessionOptions = useMemo(
+        () => workflowSessions.map((item) => ({ label: sessionLabel(item), value: item.id })),
+        [workflowSessions]
+    );
+    const providerOptions = useMemo(
+        () => enabledProviders.map((item) => ({ label: item.label, value: item.provider })),
+        [enabledProviders]
+    );
+    const modelOptions = useMemo(
+        () => selectedModels.map((item) => ({ label: item.label || item.model_id, value: item.model_id })),
+        [selectedModels]
+    );
 
     const activeRun = runs.find((item) => item.id === activeRunId) ?? runs[0] ?? null;
     const busy = Boolean(activeRun && ["queued", "running"].includes(activeRun.status));
@@ -453,12 +560,11 @@ export function WorkflowAiChatPanel({
     useEffect(() => {
         if (!bodyRef.current) return;
         bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-    }, [eventsByRun, orderedRuns.length, open]);
+    }, [eventsByRun, orderedRuns.length]);
 
     useEffect(() => {
-        if (!open) return;
         void refreshSessions();
-    }, [open, currentWorkflowId]);
+    }, [currentWorkflowId]);
 
     useEffect(() => {
         return () => {
@@ -668,7 +774,6 @@ export function WorkflowAiChatPanel({
                 provider: provider || null,
                 model: model || null
             });
-            setOpen(true);
             setSession(result.session);
             if (result.session.workflow) onWorkflowApplied(result.session.workflow);
             setSessions((current) => [result.session, ...current.filter((item) => item.id !== result.session.id)]);
@@ -707,19 +812,6 @@ export function WorkflowAiChatPanel({
 
     if (disabled) return null;
 
-    if (!open) {
-        return (
-            <button
-                className="fixed right-0 top-28 z-40 flex h-14 w-11 items-center justify-center border border-r-0 border-border bg-background shadow-xl hover:bg-secondary"
-                onClick={() => setOpen(true)}
-                title="Open Workflow AI Chat"
-                type="button"
-            >
-                <MessageCircle className="size-4" />
-            </button>
-        );
-    }
-
     return (
         <aside
             className="fixed bottom-0 right-0 top-[76px] z-50 grid grid-rows-[auto_minmax(0,1fr)_auto] border-l border-border bg-background shadow-2xl"
@@ -744,25 +836,18 @@ export function WorkflowAiChatPanel({
                             <Plus className="size-4" />
                             New
                         </Button>
-                        <Button className="h-8 px-2" onClick={() => setOpen(false)} size="sm" title="Collapse chat" type="button" variant="ghost">
-                            <PanelRightClose className="size-4" />
-                        </Button>
                     </div>
                 </div>
                 <div className="mt-3 flex min-w-0 items-center gap-2">
                     <History className="size-4 shrink-0 text-muted-foreground" />
-                    <Select
-                        className="h-8 min-w-0 flex-1 rounded-full border border-input bg-background px-3 text-xs"
-                        onChange={(event) => void loadSession(event.target.value)}
+                    <PanelDropdown
+                        className="flex-1"
+                        emptyLabel="No chat history"
+                        onValueChange={(value) => void loadSession(value)}
+                        options={sessionOptions}
+                        placeholder="Chat history"
                         value={session?.id ?? ""}
-                    >
-                        <option value="">Chat history</option>
-                        {workflowSessions.map((item) => (
-                            <option key={item.id} value={item.id}>
-                                {sessionLabel(item)}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                 </div>
             </div>
 
@@ -847,66 +932,71 @@ export function WorkflowAiChatPanel({
             </div>
 
             <div className="border-t border-border bg-background px-4 py-3">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary/40 px-2.5 py-1 text-[11px] text-muted-foreground">
-                        <Settings2 className="size-3" />
-                        Model
-                    </span>
-                    <Select
-                        className="h-8 max-w-[160px] rounded-full border border-input bg-background px-3 text-xs"
-                        onChange={(event) => setProvider(event.target.value as LlmProvider)}
-                        value={provider}
-                    >
-                        <option value="">Provider</option>
-                        {enabledProviders.map((item) => (
-                            <option key={item.provider} value={item.provider}>
-                                {item.label}
-                            </option>
-                        ))}
-                    </Select>
-                    <Select
-                        className="h-8 min-w-[180px] flex-1 rounded-full border border-input bg-background px-3 text-xs"
-                        onChange={(event) => setModel(event.target.value)}
-                        value={model}
-                    >
-                        <option value="">Model</option>
-                        {selectedModels.map((item) => (
-                            <option key={item.id} value={item.model_id}>
-                                {item.label || item.model_id}
-                            </option>
-                        ))}
-                    </Select>
-                </div>
-                <Textarea
-                    className="min-h-[82px] resize-none border border-input bg-background px-3 py-2 text-sm outline-none"
-                    disabled={isSending || busy}
-                    onChange={(event) => setMessage(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                            event.preventDefault();
-                            void sendMessage();
-                        }
-                    }}
-                    placeholder="Ask the agent to explain, create, or modify this workflow..."
-                    value={message}
-                />
-                <div className="mt-2 flex items-center justify-between gap-2">
-                    <div className="text-[11px] text-muted-foreground">Enter sends. Shift+Enter adds a new line.</div>
-                    <div className="flex gap-2">
-                        {busy ? (
-                            <Button onClick={cancelActiveRun} type="button" variant="secondary">
-                                <Square className="size-4" />
-                                Stop
+                <div className="border border-input bg-background transition-colors focus-within:border-ring">
+                    <Textarea
+                        className="min-h-[98px] resize-none rounded-none border-0 bg-transparent px-3 py-3 text-sm shadow-none outline-none focus-visible:border-transparent"
+                        disabled={isSending || busy}
+                        onChange={(event) => setMessage(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter" && !event.shiftKey) {
+                                event.preventDefault();
+                                void sendMessage();
+                            }
+                        }}
+                        placeholder="Ask the agent to explain, create, or modify this workflow..."
+                        value={message}
+                    />
+                    <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-t border-border px-2 py-2">
+                        <div className="min-w-0 text-[11px] text-muted-foreground">
+                            <span className="truncate" title="Enter sends. Shift+Enter adds a new line.">
+                                Enter sends
+                            </span>
+                        </div>
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
+                            <Settings2 className="size-4 shrink-0 text-muted-foreground" />
+                            <PanelDropdown
+                                className="w-[112px] flex-[0_1_112px]"
+                                emptyLabel="No providers"
+                                menuDirection="up"
+                                onValueChange={(value) => setProvider(value as LlmProvider)}
+                                options={providerOptions}
+                                placeholder="Provider"
+                                value={provider}
+                            />
+                            <PanelDropdown
+                                className="min-w-[132px] flex-[1_1_150px] max-w-[190px]"
+                                emptyLabel="No models"
+                                menuDirection="up"
+                                onValueChange={setModel}
+                                options={modelOptions}
+                                placeholder="Model"
+                                value={model}
+                            />
+                            {busy ? (
+                                <Button
+                                    aria-label="Stop workflow chat run"
+                                    className="size-8"
+                                    onClick={cancelActiveRun}
+                                    size="icon"
+                                    title="Stop"
+                                    type="button"
+                                    variant="secondary"
+                                >
+                                    <Square className="size-3.5" />
+                                </Button>
+                            ) : null}
+                            <Button
+                                aria-label="Send workflow chat message"
+                                className="size-8"
+                                disabled={!message.trim() || isSending || busy || !provider || !model}
+                                onClick={sendMessage}
+                                size="icon"
+                                title="Send"
+                                type="button"
+                            >
+                                <Send className="size-4" />
                             </Button>
-                        ) : null}
-                        <Button
-                            disabled={!message.trim() || isSending || busy || !provider || !model}
-                            onClick={sendMessage}
-                            type="button"
-                        >
-                            <Send className="size-4" />
-                            Send
-                        </Button>
+                        </div>
                     </div>
                 </div>
                 {!enabledProviders.length ? (
