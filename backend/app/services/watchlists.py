@@ -192,7 +192,7 @@ def _dedupe_subscription_items(
 
 
 def _default_broker_account(db: Session, user_id: str, broker_code: str | None = None) -> BrokerAccount | None:
-    return broker_data_preferences.get_effective_default_broker_account(db, user_id, broker_code)
+    return broker_data_preferences.get_stream_default_broker_account(db, user_id, broker_code)
 
 
 def _resolve_subscription_account(

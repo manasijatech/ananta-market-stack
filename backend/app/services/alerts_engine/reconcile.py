@@ -11,6 +11,7 @@ import redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.schemas.broker import InstrumentRef
 from app.services import broker_data_preferences
 from app.schemas.alert import AlertWorkflowDsl
@@ -27,7 +28,8 @@ from db.models import (
 )
 from broker.core.redis_cache import _redis_client
 
-UI_DEMAND_SUBSCRIPTION_TTL_SECONDS = 60
+def _ui_demand_subscription_ttl_seconds() -> int:
+    return max(int(get_settings().live_ui_demand_ttl_seconds), 60)
 
 
 @dataclass(frozen=True)
@@ -74,7 +76,7 @@ def _json_loads(value: str | None) -> dict[str, Any]:
 
 
 def _default_broker_account(db: Session, user_id: str, broker_code: str | None = None) -> BrokerAccount | None:
-    return broker_data_preferences.get_effective_default_broker_account(db, user_id, broker_code)
+    return broker_data_preferences.get_stream_default_broker_account(db, user_id, broker_code)
 
 
 def _resolve_account(
@@ -184,7 +186,7 @@ def _workflow_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
 
 def build_desired_subscriptions(db: Session, user_id: str) -> list[DesiredSubscription]:
     deduped: dict[tuple[str | None, str | None, str | None, str, str | None, str, str], DesiredSubscription] = {}
-    for item in _workflow_desired(db, user_id):
+    for item in [*_workflow_desired(db, user_id), *_watchlist_desired(db, user_id)]:
         key = (
             item.account_id,
             item.broker_code,
@@ -296,7 +298,7 @@ def cleanup_expired_ui_subscriptions(
     user_id: str | None = None,
     commit: bool = True,
 ) -> int:
-    cutoff = _now() - timedelta(seconds=UI_DEMAND_SUBSCRIPTION_TTL_SECONDS)
+    cutoff = _now() - timedelta(seconds=_ui_demand_subscription_ttl_seconds())
     stmt = select(LiveSymbolSubscription).where(
         LiveSymbolSubscription.source_kind == "ui",
         LiveSymbolSubscription.updated_at < cutoff,

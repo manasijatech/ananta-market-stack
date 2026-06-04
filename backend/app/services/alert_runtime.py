@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -65,6 +66,7 @@ BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
 TRANSIENT_RETRY_SECONDS = 60
 _ACCOUNT_RETRY_NOT_BEFORE: dict[str, datetime] = {}
+_GROWW_FEED_SESSIONS: dict[str, dict[str, Any]] = {}
 
 
 def _redis() -> redis.Redis | None:
@@ -309,8 +311,26 @@ def _is_rate_limit_reason(reason: str) -> bool:
     return "429" in reason or "rate limit" in normalized or "rate_limit" in normalized
 
 
+def _is_access_forbidden_reason(reason: str) -> bool:
+    normalized = reason.lower()
+    return "403" in reason or "access forbidden" in normalized or "forbidden" in normalized
+
+
+def _quote_failure_status(*, row_rate_limited: bool, row_access_forbidden: bool) -> str:
+    if row_rate_limited:
+        return "rate_limited"
+    if row_access_forbidden:
+        return "action_required"
+    return "unavailable"
+
+
 def _quote_debug_sample(rows: list[dict[str, Any]], *, limit: int = 12) -> list[dict[str, Any]]:
     return rows[:limit]
+
+
+def _subscription_priority(row: LiveSymbolSubscription) -> tuple[int, str, str]:
+    source_priority = {"workflow": 0, "watchlist": 1, "ui": 2}.get(row.source_kind or "", 3)
+    return (source_priority, row.exchange or "", row.symbol)
 
 
 def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> None:
@@ -354,6 +374,217 @@ def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> Non
         logger.warning("tick publish failed: %s", exc)
 
 
+def _publish_live_session(
+    redis_client: redis.Redis | None,
+    *,
+    user_id: str,
+    account_id: str,
+    broker_code: str,
+    adapter: str,
+    symbols: list[str],
+    connection_index: int,
+    capacity: int = 1000,
+) -> None:
+    if redis_client is None:
+        return
+    try:
+        redis_client.setex(
+            f"alert-live:session:{user_id}:{account_id}:{broker_code}:{connection_index}",
+            120,
+            json.dumps(
+                {
+                    "user_id": user_id,
+                    "account_id": account_id,
+                    "broker_code": broker_code,
+                    "adapter": adapter,
+                    "connected": True,
+                    "symbols": symbols,
+                    "connection_id": f"{broker_code}:{account_id}:{connection_index}",
+                    "connection_index": connection_index,
+                    "symbol_count": len(symbols),
+                    "capacity": capacity,
+                    "last_seen_at": _utc_now().isoformat(),
+                },
+                default=str,
+            ),
+        )
+    except redis.RedisError as exc:
+        logger.warning("live session publish failed: %s", exc)
+
+
+def _groww_feed_instrument(row: LiveSymbolSubscription, hydrated: dict[str, Any]) -> dict[str, str] | None:
+    exchange = str(hydrated.get("groww_exchange") or hydrated.get("exchange") or row.exchange or "NSE").strip()
+    segment = str(hydrated.get("groww_segment") or hydrated.get("segment") or "CASH").strip()
+    exchange_token = str(
+        hydrated.get("groww_exchange_token")
+        or hydrated.get("exchange_token")
+        or ""
+    ).strip()
+    if not exchange or not segment or not exchange_token:
+        return None
+    return {"exchange": exchange, "segment": segment, "exchange_token": exchange_token}
+
+
+def _groww_feed_key(instrument: dict[str, str]) -> tuple[str, str, str]:
+    return (instrument["exchange"], instrument["segment"], instrument["exchange_token"])
+
+
+def _groww_feed_session(acc: BrokerAccount) -> dict[str, Any]:
+    session = _GROWW_FEED_SESSIONS.get(acc.id)
+    if session is not None:
+        return session
+    if not acc.groww:
+        raise ValueError("missing groww credentials")
+    from broker.crypto import decrypt_value
+    from growwapi import GrowwAPI, GrowwFeed
+
+    access_token = decrypt_value(acc.groww.access_token_cipher)
+    feed = GrowwFeed(GrowwAPI(access_token))
+    session = {"feed": feed, "subscribed": set(), "created_at": time.monotonic()}
+    _GROWW_FEED_SESSIONS[acc.id] = session
+    return session
+
+
+def _sync_groww_feed_subscriptions(feed: Any, session: dict[str, Any], instruments: list[dict[str, str]]) -> None:
+    desired = {_groww_feed_key(item) for item in instruments}
+    subscribed: set[tuple[str, str, str]] = session.setdefault("subscribed", set())
+    to_subscribe = [item for item in instruments if _groww_feed_key(item) not in subscribed]
+    to_unsubscribe = [
+        {"exchange": exchange, "segment": segment, "exchange_token": exchange_token}
+        for exchange, segment, exchange_token in subscribed - desired
+    ]
+    if to_subscribe:
+        feed.subscribe_ltp(to_subscribe)
+        subscribed.update(_groww_feed_key(item) for item in to_subscribe)
+    if to_unsubscribe:
+        try:
+            feed.unsubscribe_ltp(to_unsubscribe)
+        finally:
+            for item in to_unsubscribe:
+                subscribed.discard(_groww_feed_key(item))
+
+
+def _groww_ltp_payload_value(payload: dict[str, Any], instrument: dict[str, str]) -> dict[str, Any] | None:
+    root = payload.get("ltp") if isinstance(payload.get("ltp"), dict) else payload
+    exchange_rows = root.get(instrument["exchange"]) if isinstance(root, dict) else None
+    segment_rows = exchange_rows.get(instrument["segment"]) if isinstance(exchange_rows, dict) else None
+    value = segment_rows.get(instrument["exchange_token"]) if isinstance(segment_rows, dict) else None
+    return value if isinstance(value, dict) else None
+
+
+def _apply_groww_feed_results(
+    db,
+    redis_client: redis.Redis | None,
+    *,
+    user_id: str,
+    account_id: str,
+    broker_code: str,
+    chunk_rows: list[LiveSymbolSubscription],
+    chunk_groups: list[list[LiveSymbolSubscription]],
+    instruments: list[dict[str, Any]],
+    connection_index: int,
+) -> str | None:
+    if connection_index > 1:
+        _mark_subscription_health(
+            [row for group in chunk_groups for row in group],
+            status="capacity_wait",
+            reason="Groww feed supports 1000 live subscriptions per account. Higher-priority workflow and watchlist symbols are tracked first.",
+        )
+        return "ok"
+    acc = db.get(BrokerAccount, account_id)
+    if not acc:
+        return None
+    hydrated = broker_data.hydrate_instruments(db, acc, instruments)
+    feed_instruments: list[dict[str, str]] = []
+    feed_rows: list[LiveSymbolSubscription] = []
+    feed_groups: list[list[LiveSymbolSubscription]] = []
+    for row, duplicate_rows, hydrated_row in zip(chunk_rows, chunk_groups, hydrated, strict=False):
+        feed_instrument = _groww_feed_instrument(row, hydrated_row)
+        if feed_instrument is None:
+            for subscription_row in duplicate_rows:
+                subscription_row.health_status = "pending"
+                subscription_row.health_reason = "Waiting for Groww exchange token from the instrument cache."
+                db.add(subscription_row)
+            continue
+        feed_instruments.append(feed_instrument)
+        feed_rows.append(row)
+        feed_groups.append(duplicate_rows)
+    if not feed_instruments:
+        return None
+    try:
+        session = _groww_feed_session(acc)
+        feed = session["feed"]
+        _sync_groww_feed_subscriptions(feed, session, feed_instruments)
+        payload = feed.get_ltp() or {}
+    except Exception as exc:
+        message = str(exc)
+        status = "action_required" if _is_access_forbidden_reason(message) else "error"
+        _mark_subscription_health([row for group in feed_groups for row in group], status=status, reason=message)
+        if status == "action_required":
+            _record_action_required_failure(db, acc, [row for group in feed_groups for row in group], message)
+        logger.warning("Groww feed failed for %s: %s", account_id, exc)
+        return "failed"
+
+    now = _utc_now()
+    symbols = [row.symbol for row in feed_rows]
+    _publish_live_session(
+        redis_client,
+        user_id=user_id,
+        account_id=account_id,
+        broker_code=broker_code,
+        adapter="groww_feed",
+        symbols=symbols,
+        connection_index=connection_index,
+    )
+    for row, duplicate_rows, feed_instrument in zip(feed_rows, feed_groups, feed_instruments, strict=False):
+        value = _groww_ltp_payload_value(payload, feed_instrument)
+        if not value:
+            for subscription_row in duplicate_rows:
+                if subscription_row.health_status not in {"action_required", "rate_limited", "error"}:
+                    subscription_row.health_status = "pending"
+                    subscription_row.health_reason = "Subscribed to Groww feed; waiting for the first live tick."
+                    db.add(subscription_row)
+            continue
+        ltp = value.get("ltp")
+        if ltp in (None, "", 0, "0"):
+            continue
+        quote_payload = {
+            "symbol": row.symbol,
+            "ltp": float(ltp),
+            "broker_code": broker_code,
+            "account_id": account_id,
+            "detail": {
+                "exchange": row.exchange,
+                "raw": {
+                    "last_price": float(ltp),
+                    "source": "groww_feed",
+                    "tsInMillis": value.get("tsInMillis"),
+                    "exchange_token": feed_instrument["exchange_token"],
+                },
+            },
+        }
+        for subscription_row in duplicate_rows:
+            subscription_row.last_quote_json = json.dumps(quote_payload, default=str)
+            subscription_row.last_received_at = now
+            subscription_row.health_status = "ok"
+            subscription_row.health_reason = ""
+            db.add(subscription_row)
+        _publish_tick(
+            redis_client,
+            _normalize_tick_payload(
+                user_id=user_id,
+                account_id=account_id,
+                broker_code=broker_code,
+                symbols=symbols,
+                connection_index=connection_index,
+                chunk_rows=feed_rows,
+                quote_payload=quote_payload,
+                row=row,
+            ),
+        )
+    return "ok"
+
+
 def _apply_quote_results(
     db,
     redis_client: redis.Redis | None,
@@ -391,6 +622,7 @@ def _apply_quote_results(
         if live_price is None:
             reason = _quote_error_message(payload)
             row_rate_limited = _is_rate_limit_reason(reason)
+            row_access_forbidden = _is_access_forbidden_reason(reason)
             any_rate_limited = any_rate_limited or row_rate_limited
             if row_rate_limited:
                 rate_limited_count += 1
@@ -400,13 +632,19 @@ def _apply_quote_results(
                 {
                     "symbol": row.symbol,
                     "exchange": row.exchange,
-                    "status": "rate_limited" if row_rate_limited else "unavailable",
+                    "status": _quote_failure_status(
+                        row_rate_limited=row_rate_limited,
+                        row_access_forbidden=row_access_forbidden,
+                    ),
                     "reason": reason[:500],
                     "duplicate_rows": len(duplicate_rows),
                 }
             )
             for subscription_row in duplicate_rows:
-                subscription_row.health_status = "rate_limited" if row_rate_limited else "unavailable"
+                subscription_row.health_status = _quote_failure_status(
+                    row_rate_limited=row_rate_limited,
+                    row_access_forbidden=row_access_forbidden,
+                )
                 subscription_row.health_reason = reason
                 subscription_row.updated_at = received_at
                 db.add(subscription_row)
@@ -610,7 +848,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                     )
                 ordered_subscription_groups = sorted(
                     unique_subscriptions.values(),
-                    key=lambda items: (items[0].exchange or "", items[0].symbol),
+                    key=lambda items: _subscription_priority(items[0]),
                 )
                 account_failed = False
                 for chunk_index, start in enumerate(range(0, len(ordered_subscription_groups), 1000), start=1):
@@ -624,6 +862,26 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                         }
                         for row in chunk_rows
                     ]
+                    if acc.broker_code == "groww":
+                        feed_result = _apply_groww_feed_results(
+                            db,
+                            redis_client,
+                            user_id=user_id,
+                            account_id=account_id,
+                            broker_code=acc.broker_code,
+                            chunk_rows=chunk_rows,
+                            chunk_groups=chunk_groups,
+                            instruments=instruments,
+                            connection_index=chunk_index,
+                        )
+                        if feed_result == "ok":
+                            _clear_account_retry(account_id)
+                            _record_market_data_success(db, acc)
+                            continue
+                        if feed_result == "failed":
+                            _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
+                            account_failed = True
+                            break
                     try:
                         quotes = await asyncio.to_thread(broker_data.fetch_quotes, db, acc, instruments)
                     except Exception as exc:
@@ -723,7 +981,7 @@ def backfill_live_prices_for_user(user_id: str, *, source_kind: str | None = Non
             unique_subscriptions: dict[tuple[str, str | None], list[LiveSymbolSubscription]] = {}
             for subscription in subscriptions:
                 unique_subscriptions.setdefault((subscription.symbol, subscription.exchange), []).append(subscription)
-            ordered_groups = sorted(unique_subscriptions.values(), key=lambda items: (items[0].exchange or "", items[0].symbol))
+            ordered_groups = sorted(unique_subscriptions.values(), key=lambda items: _subscription_priority(items[0]))
             chunk_groups = ordered_groups[:1000]
             chunk_rows = [items[0] for items in chunk_groups]
             instruments = [

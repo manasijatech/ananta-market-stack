@@ -162,6 +162,10 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER",
     )
+    live_ui_demand_ttl_seconds: int = Field(
+        default=5 * 60,
+        validation_alias="LIVE_UI_DEMAND_TTL_SECONDS",
+    )
     watchlist_preset_worker_interval_seconds: int = Field(
         default=60 * 60,
         validation_alias="WATCHLIST_PRESET_WORKER_INTERVAL_SECONDS",

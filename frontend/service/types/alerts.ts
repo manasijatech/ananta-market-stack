@@ -144,6 +144,7 @@ export interface InstrumentRef {
     groww_exchange?: string | null;
     groww_segment?: string | null;
     groww_trading_symbol?: string | null;
+    groww_exchange_token?: string | null;
     indmoney_scrip_code?: string | null;
     kotak_query?: string | null;
     kotak_segment?: string | null;

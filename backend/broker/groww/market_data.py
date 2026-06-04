@@ -35,6 +35,9 @@ _HISTORICAL_INTERVALS = {
 }
 
 
+_LTP_BATCH_SIZE = 50
+
+
 def _groww_historical_interval(value: Any) -> str:
     normalized = str(value or "1day").strip().lower().replace(" ", "")
     return _HISTORICAL_INTERVALS.get(normalized, normalized or "1day")
@@ -51,16 +54,84 @@ def _groww_time(value: Any) -> str:
     return dt.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _quote_request(inst: dict[str, Any], resolver: InstrumentResolver) -> dict[str, str]:
+    exchange = str(inst.get("groww_exchange") or map_exchange(inst.get("exchange", "NSE")))
+    segment = str(inst.get("groww_segment") or map_segment(inst.get("exchange", "NSE")))
+    trading_symbol = str(
+        inst.get("groww_trading_symbol")
+        or resolver.broker_symbol(inst.get("symbol", ""), inst.get("exchange", "NSE"))
+    )
+    return {"exchange": exchange, "segment": segment, "trading_symbol": trading_symbol}
+
+
+def _quote_row(
+    *,
+    symbol: str,
+    exchange: str,
+    ltp: Any,
+    raw: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "symbol": symbol,
+        "exchange": exchange,
+        "ltp": float(ltp or 0),
+        "raw": raw,
+    }
+
+
+def _fetch_ltp_batches(
+    http: GrowwHTTP,
+    requests: list[dict[str, str]],
+) -> list[dict[str, Any] | None]:
+    out: list[dict[str, Any] | None] = [None] * len(requests)
+    grouped: dict[str, list[tuple[int, dict[str, str]]]] = {}
+    for index, request in enumerate(requests):
+        grouped.setdefault(request["segment"], []).append((index, request))
+
+    for segment, items in grouped.items():
+        for start in range(0, len(items), _LTP_BATCH_SIZE):
+            chunk = items[start : start + _LTP_BATCH_SIZE]
+            exchange_symbols = ",".join(
+                f"{item['exchange']}_{item['trading_symbol']}"
+                for _, item in chunk
+            )
+            response = http.get(
+                "/v1/live-data/ltp",
+                {"segment": segment, "exchange_symbols": exchange_symbols},
+            )
+            payload = response.get("payload") if response.get("status") == "SUCCESS" else None
+            if not isinstance(payload, dict):
+                for index, item in chunk:
+                    out[index] = _quote_row(
+                        symbol=item["trading_symbol"],
+                        exchange=item["exchange"],
+                        ltp=0,
+                        raw=response,
+                    )
+                continue
+            for index, item in chunk:
+                key = f"{item['exchange']}_{item['trading_symbol']}"
+                out[index] = _quote_row(
+                    symbol=item["trading_symbol"],
+                    exchange=item["exchange"],
+                    ltp=payload.get(key, 0),
+                    raw={"status": "SUCCESS", "payload": payload, "source": "ltp", "key": key},
+                )
+    return out
+
+
 def fetch_quotes(
     http: GrowwHTTP, instruments: list[dict[str, Any]], resolver: InstrumentResolver
 ) -> list[dict[str, Any]]:
+    requests = [_quote_request(inst, resolver) for inst in instruments]
+    if len(requests) > 1:
+        return [row for row in _fetch_ltp_batches(http, requests) if row is not None]
+
     out: list[dict[str, Any]] = []
-    for inst in instruments:
-        ex = inst.get("groww_exchange") or map_exchange(inst.get("exchange", "NSE"))
-        seg = inst.get("groww_segment") or map_segment(inst.get("exchange", "NSE"))
-        tsym = inst.get("groww_trading_symbol") or resolver.broker_symbol(
-            inst.get("symbol", ""), inst.get("exchange", "NSE")
-        )
+    for request in requests:
+        ex = request["exchange"]
+        seg = request["segment"]
+        tsym = request["trading_symbol"]
         r = http.get(
             "/v1/live-data/quote",
             {"exchange": ex, "segment": seg, "trading_symbol": tsym},
@@ -69,14 +140,12 @@ def fetch_quotes(
         if r.get("status") == "SUCCESS" and isinstance(r.get("payload"), dict):
             payload = r["payload"]
         lp = payload.get("last_price", 0) if isinstance(payload, dict) else 0
-        out.append(
-            {
-                "symbol": tsym,
-                "exchange": ex,
-                "ltp": float(lp or 0),
-                "raw": payload if isinstance(payload, dict) else r,
-            }
-        )
+        if not lp:
+            ltp_rows = _fetch_ltp_batches(http, [request])
+            if ltp_rows and ltp_rows[0] is not None:
+                out.append(ltp_rows[0])
+                continue
+        out.append(_quote_row(symbol=tsym, exchange=ex, ltp=lp, raw=payload if isinstance(payload, dict) else r))
     return out
 
 
@@ -93,6 +162,7 @@ def sync_instruments(_http: GrowwHTTP) -> list[dict[str, Any]]:
             {
                 "symbol": trading_symbol or groww_symbol or item.get("symbol") or "",
                 "exchange": exchange,
+                "exchange_token": item.get("exchange_token") or item.get("Exchange Token"),
                 "segment": segment,
                 "trading_symbol": trading_symbol,
                 "name": item.get("company_name") or item.get("name"),
@@ -106,7 +176,11 @@ def sync_instruments(_http: GrowwHTTP) -> list[dict[str, Any]]:
                 "groww_exchange": exchange,
                 "groww_segment": segment,
                 "groww_trading_symbol": trading_symbol,
-                "native_payload": {"groww_symbol": groww_symbol},
+                "groww_exchange_token": item.get("exchange_token") or item.get("Exchange Token"),
+                "native_payload": {
+                    "groww_symbol": groww_symbol,
+                    "exchange_token": item.get("exchange_token") or item.get("Exchange Token"),
+                },
                 "raw_payload": item,
             }
         )
