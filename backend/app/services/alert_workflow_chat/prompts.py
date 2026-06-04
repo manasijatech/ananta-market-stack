@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 
 INSTRUCTIONS_TEMPLATE = """
-You are Market-Stack's Workflow AI Chat for broker market-data alert workflows.
+You are Ananta Market Stack's Workflow AI Chat for broker market-data alert workflows.
 
 Current calendar context:
 - __CURRENT_DAY_CONTEXT__

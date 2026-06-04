@@ -57,7 +57,7 @@ class BrokerAgentContext(BaseModel):
 
     user_id: str | None = Field(
         default=None,
-        description="Market-Stack user id whose broker accounts should be used.",
+        description="Ananta Market Stack user id whose broker accounts should be used.",
     )
     default_account_id: str | None = Field(
         default=None,
@@ -1292,7 +1292,7 @@ def broker_get_data_capabilities(
 
     Use this before requesting optional capabilities such as historical candles,
     option chain, greeks, instrument cache, or stream inspection. Capability
-    guidance reflects the existing Market-Stack uniform API support for the
+    guidance reflects the existing Ananta Market Stack uniform API support for the
     selected broker.
 
     Use this when the user asks whether something is possible, when a previous
@@ -1803,7 +1803,7 @@ def broker_get_profile(
     """Fetch broker profile/user information for the selected account.
 
     Use this when the agent needs broker-side account metadata. The shape is
-    broker-native and does not include stored credentials from Market-Stack.
+    broker-native and does not include stored credentials from Ananta Market Stack.
     """
 
     def call() -> dict[str, Any]:

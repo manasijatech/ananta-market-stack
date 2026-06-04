@@ -7,9 +7,9 @@ Usage:
   scripts/publish-image.sh VERSION [IMAGE]
 
 Examples:
-  scripts/publish-image.sh 0.1.0 ghcr.io/your-github-user/market-stack
-  IMAGE=ghcr.io/your-github-user/market-stack scripts/publish-image.sh 0.1.0
-  PUBLISH_LATEST=true scripts/publish-image.sh 0.1.0 ghcr.io/your-github-user/market-stack
+  scripts/publish-image.sh 0.1.0 ghcr.io/your-github-user/ananta-market-stack
+  IMAGE=ghcr.io/your-github-user/ananta-market-stack scripts/publish-image.sh 0.1.0
+  PUBLISH_LATEST=true scripts/publish-image.sh 0.1.0 ghcr.io/your-github-user/ananta-market-stack
 
 Before running:
   echo "$GHCR_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
@@ -42,9 +42,9 @@ cd "$repo_root"
 minor="${version%.*}"
 major="${version%%.*}"
 sha_tag="sha-$(git rev-parse --short HEAD 2>/dev/null || echo local)"
-local_tag="market-stack:publish-${version}"
-container_name="market-stack-publish-smoke"
-volume_name="market-stack-publish-smoke-data"
+local_tag="ananta-market-stack:publish-${version}"
+container_name="ananta-market-stack-publish-smoke"
+volume_name="ananta-market-stack-publish-smoke-data"
 
 cleanup() {
   docker rm -f "$container_name" >/dev/null 2>&1 || true

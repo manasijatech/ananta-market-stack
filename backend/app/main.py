@@ -22,7 +22,7 @@ from db.session import init_db
 debug_log_path = configure_logging()
 logger = logging.getLogger(__name__)
 if debug_log_path:
-    logger.info("Market Stack backend debug logs are being written to %s", debug_log_path)
+    logger.info("Ananta Market Stack backend debug logs are being written to %s", debug_log_path)
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 
 
@@ -167,7 +167,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     description="""
-# Market-Stack API
+# Ananta Market Stack API
 Modular trading/data platform for multi-broker account management.
 
 ### Key Features:
@@ -186,7 +186,7 @@ Refer to `AGENTS.md` in the repository for architectural details and implementat
     version="1.0.0",
     lifespan=lifespan,
     contact={
-        "name": "Market-Stack Support",
+        "name": "Ananta Market Stack Support",
     },
 )
 

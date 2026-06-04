@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Market Stack. This project combines a Next.js frontend, FastAPI backend, broker integrations, encrypted credential handling, Redis-backed workflows, and local/self-hosted deployment support. Small, focused changes are easier to review and safer for users.
+Thanks for helping improve Ananta Market Stack. This project combines a Next.js frontend, FastAPI backend, broker integrations, encrypted credential handling, Redis-backed workflows, and local/self-hosted deployment support. Small, focused changes are easier to review and safer for users.
 
 ## Start Here
 

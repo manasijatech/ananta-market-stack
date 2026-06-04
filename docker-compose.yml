@@ -1,10 +1,12 @@
+name: ananta-market-stack
+
 services:
   bootstrap:
     image: python:3.12-alpine
     working_dir: /app
     volumes:
       - ./docker/bootstrap_secrets.py:/app/bootstrap_secrets.py:ro
-      - market_stack_config:/config
+      - ananta_market_stack_config:/config
     environment:
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
@@ -18,19 +20,19 @@ services:
       bootstrap:
         condition: service_completed_successfully
     volumes:
-      - market_stack_config:/config:ro
+      - ananta_market_stack_config:/config:ro
       - redis_data:/data
     command:
       - sh
       - -c
       - |
-        REDIS_PASSWORD="$$(awk -F= '$$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/market-stack.env)"
+        REDIS_PASSWORD="$$(awk -F= '$$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/ananta-market-stack.env)"
         exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
     healthcheck:
       test:
         - CMD-SHELL
         - |
-          REDIS_PASSWORD="$(awk -F= '$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/market-stack.env)"
+          REDIS_PASSWORD="$(awk -F= '$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/ananta-market-stack.env)"
           redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG
       interval: 10s
       timeout: 5s
@@ -59,7 +61,7 @@ services:
       ENABLE_IN_PROCESS_ALPHA_WS_WORKER: ${ENABLE_IN_PROCESS_ALPHA_WS_WORKER:-true}
       ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER: ${ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER:-true}
     volumes:
-      - market_stack_config:/config:ro
+      - ananta_market_stack_config:/config:ro
       - backend_data:/data
     ports:
       - "${BACKEND_PORT:-8000}:8000"
@@ -98,7 +100,7 @@ services:
       MARKET_STACK_API_INTERNAL_URL: ${MARKET_STACK_API_INTERNAL_URL:-http://backend:8000/api/v1}
       MANASIJA_API_BASE_URL: ${MANASIJA_API_BASE_URL:-https://developers.manasija.in}
     volumes:
-      - market_stack_config:/config:ro
+      - ananta_market_stack_config:/config:ro
       - backend_data:/data
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
@@ -114,5 +116,5 @@ services:
 
 volumes:
   backend_data:
-  market_stack_config:
+  ananta_market_stack_config:
   redis_data:

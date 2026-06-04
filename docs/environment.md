@@ -1,6 +1,6 @@
 # Environment Reference
 
-This page summarizes the main environment variables used by Market Stack. Most users should start with the root [.env.example](../.env.example) and only override values they need to change.
+This page summarizes the main environment variables used by Ananta Market Stack. Most users should start with the root [.env.example](../.env.example) and only override values they need to change.
 
 ## Root Docker Compose Variables
 
@@ -59,7 +59,7 @@ This page summarizes the main environment variables used by Market Stack. Most u
 
 ## Broker Callback URLs
 
-Broker session flows often require an exact callback or redirect URL in the broker developer console. In Market Stack, broker browser callbacks terminate at the Next.js frontend first, then the frontend calls the relevant backend session exchange.
+Broker session flows often require an exact callback or redirect URL in the broker developer console. In Ananta Market Stack, broker browser callbacks terminate at the Next.js frontend first, then the frontend calls the relevant backend session exchange.
 
 Deployment shape matters:
 
@@ -74,7 +74,7 @@ Upstox OAuth redirect URI: <MARKET_STACK_PUBLIC_APP_URL>/broker-connections
 Upstox notifier webhook: <MARKET_STACK_PUBLIC_APP_URL>/api/broker-callbacks/upstox/notifier
 ```
 
-The Upstox OAuth redirect URI must also be saved in the Market Stack Upstox broker account. It must match the broker console value exactly.
+The Upstox OAuth redirect URI must also be saved in the Ananta Market Stack Upstox broker account. It must match the broker console value exactly.
 
 For local Docker Compose:
 

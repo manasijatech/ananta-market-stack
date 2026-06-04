@@ -2250,7 +2250,7 @@ def _discord_notification_payload(notification: UserAlertNotification, payload: 
         for name, value in _notification_facts(notification, payload)
     ]
     return {
-        "username": "Market Stack Alerts",
+        "username": "Ananta Market Stack Alerts",
         "embeds": [
             {
                 "title": notification.title,
@@ -2282,7 +2282,7 @@ def _telegram_notification_payload(notification: UserAlertNotification, payload:
 
 def _discord_test_payload(message: str) -> dict[str, Any]:
     return {
-        "username": "Market Stack Alerts",
+        "username": "Ananta Market Stack Alerts",
         "embeds": [
             {
                 "title": "Channel test",

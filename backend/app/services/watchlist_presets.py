@@ -117,7 +117,7 @@ def _http_client() -> httpx.Client:
         timeout=DEFAULT_FETCH_TIMEOUT_SECONDS,
         follow_redirects=True,
         headers={
-            "user-agent": "Mozilla/5.0 (compatible; Market-Stack Watchlist Sync/1.0)",
+            "user-agent": "Mozilla/5.0 (compatible; ananta-market-stack Watchlist Sync/1.0)",
             "accept": "application/json,text/csv,text/plain,*/*",
         },
     )

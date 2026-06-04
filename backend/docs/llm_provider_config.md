@@ -1,6 +1,6 @@
 # LLM provider configuration
 
-Market Stack supports four user-configurable LLM providers:
+Ananta Market Stack supports four user-configurable LLM providers:
 
 - `openai`
 - `openrouter`

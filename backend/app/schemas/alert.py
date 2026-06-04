@@ -336,7 +336,7 @@ class AlphaWebSocketEventOut(BaseModel):
 
 class AlertNotificationTestIn(BaseModel):
     title: str = "Test alert"
-    message: str = "This is a test alert from Market Stack."
+    message: str = "This is a test alert from Ananta Market Stack."
     level: str = "info"
     channels: list[AlertChannelType] = Field(default_factory=lambda: ["in_app"])
 
@@ -362,7 +362,7 @@ class AlertChannelOut(BaseModel):
 
 
 class AlertChannelTestIn(BaseModel):
-    message: str = "Market Stack channel test"
+    message: str = "Ananta Market Stack channel test"
 
 
 class LiveSubscriptionCreateIn(BaseModel):

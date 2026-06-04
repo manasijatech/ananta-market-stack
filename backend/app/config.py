@@ -13,7 +13,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Market Stack"
+    app_name: str = "Ananta Market Stack"
     debug: bool = Field(default=False, validation_alias="APP_DEBUG")
     log_to_file: bool | None = Field(default=None, validation_alias="LOG_TO_FILE")
     log_file_path: str = Field(default="./data/logs/backend-debug.log", validation_alias="LOG_FILE_PATH")

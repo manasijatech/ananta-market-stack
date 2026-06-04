@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.config import get_settings
 
-_FILE_HANDLER_NAME = "market-stack-debug-file"
+_FILE_HANDLER_NAME = "ananta-market-stack-debug-file"
 
 
 def _level_from_name(value: str | None, *, default: int) -> int:

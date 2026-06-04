@@ -1,6 +1,6 @@
 # Development Setup
 
-This guide is for working on Market Stack from source. For Docker-based self-hosting, use [self-hosting.md](self-hosting.md).
+This guide is for working on Ananta Market Stack from source. For Docker-based self-hosting, use [self-hosting.md](self-hosting.md).
 
 ## Requirements
 

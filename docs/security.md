@@ -1,6 +1,6 @@
 # Security Notes
 
-Market Stack can store broker credentials, broker session tokens, auth state, and alert delivery configuration. Treat the deployment as sensitive infrastructure.
+Ananta Market Stack can store broker credentials, broker session tokens, auth state, and alert delivery configuration. Treat the deployment as sensitive infrastructure.
 
 ## Credential Encryption
 
@@ -15,7 +15,7 @@ Important behavior:
 
 ## Docker Secrets
 
-Docker Compose stores generated secrets in the `market-stack_market_stack_config` volume. This includes:
+Docker Compose stores generated secrets in the `ananta-market-stack_ananta_market_stack_config` volume. This includes:
 
 - `CREDENTIAL_ENCRYPTION_KEY`
 - `BETTER_AUTH_SECRET`
@@ -27,8 +27,8 @@ The config volume is preserved across rebuilds. Root `.env` values seed those se
 
 Back up these volumes together:
 
-- `market-stack_backend_data`
-- `market-stack_market_stack_config`
+- `ananta-market-stack_backend_data`
+- `ananta-market-stack_ananta_market_stack_config`
 
 The backend data volume contains SQLite application data. The config volume contains the key needed to decrypt broker credentials in that data.
 

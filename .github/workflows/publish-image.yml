@@ -22,7 +22,7 @@ permissions:
   id-token: write
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/market-stack
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/ananta-market-stack
 
 jobs:
   build-and-publish:
@@ -89,22 +89,22 @@ jobs:
           context: .
           file: Dockerfile
           load: true
-          tags: market-stack-smoke:ci
+          tags: ananta-market-stack-smoke:ci
 
       - name: Smoke test image
         run: |
-          docker run -d --rm --name market-stack-smoke -p 3000:3000 -v market-stack-smoke-data:/data market-stack-smoke:ci
+          docker run -d --rm --name ananta-market-stack-smoke -p 3000:3000 -v ananta-market-stack-smoke-data:/data ananta-market-stack-smoke:ci
           for i in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:3000 >/dev/null && curl -fsS http://127.0.0.1:3000/api/v1/brokers/supported >/dev/null; then
-              docker rm -f market-stack-smoke
-              docker volume rm market-stack-smoke-data
+              docker rm -f ananta-market-stack-smoke
+              docker volume rm ananta-market-stack-smoke-data
               exit 0
             fi
             sleep 2
           done
-          docker logs market-stack-smoke
-          docker rm -f market-stack-smoke
-          docker volume rm market-stack-smoke-data
+          docker logs ananta-market-stack-smoke
+          docker rm -f ananta-market-stack-smoke
+          docker volume rm ananta-market-stack-smoke-data
           exit 1
 
       - name: Build and publish

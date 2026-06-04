@@ -2,7 +2,7 @@
 set -eu
 
 load_generated_env() {
-  if [ ! -f /config/market-stack.env ]; then
+  if [ ! -f /config/ananta-market-stack.env ]; then
     return
   fi
 
@@ -16,7 +16,7 @@ load_generated_env() {
     if [ -z "$current" ]; then
       export "$key=$value"
     fi
-  done < /config/market-stack.env
+  done < /config/ananta-market-stack.env
 }
 
 load_generated_env

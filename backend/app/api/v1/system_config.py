@@ -358,7 +358,7 @@ def complete_mcp_oauth_callback(
             "<!doctype html><html><body style='font-family:sans-serif;max-width:640px;margin:40px auto;'>"
             "<h2>MCP authentication failed</h2>"
             f"<p>{error}</p>"
-            "<p>You can close this tab and retry from Market Stack System Config.</p>"
+            "<p>You can close this tab and retry from Ananta Market Stack System Config.</p>"
             "</body></html>",
             status_code=400,
         )
@@ -377,14 +377,14 @@ def complete_mcp_oauth_callback(
             "<!doctype html><html><body style='font-family:sans-serif;max-width:640px;margin:40px auto;'>"
             "<h2>MCP authentication failed</h2>"
             f"<p>{exc}</p>"
-            "<p>You can close this tab and retry from Market Stack System Config.</p>"
+            "<p>You can close this tab and retry from Ananta Market Stack System Config.</p>"
             "</body></html>",
             status_code=400,
         )
     return HTMLResponse(
         "<!doctype html><html><body style='font-family:sans-serif;max-width:640px;margin:40px auto;'>"
         "<h2>MCP authentication complete</h2>"
-        "<p>You can close this tab and return to Market Stack System Config.</p>"
+        "<p>You can close this tab and return to Ananta Market Stack System Config.</p>"
         "</body></html>",
         status_code=200,
     )
