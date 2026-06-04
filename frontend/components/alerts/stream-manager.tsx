@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
 import { getLivePricesWebSocketConfig, getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
-import type { LivePriceTick, LiveStreamsStatus } from "@/service/types/alerts";
+import type { LivePriceTick, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -53,6 +53,50 @@ function hasRenderableTick(tick: LivePriceTick | undefined): boolean {
     return Boolean(tick && (hasLivePrice(tick) || tick.unavailable_reason));
 }
 
+function subscriptionKey(subscription: LiveSubscription): string {
+    return [subscription.account_id || "", subscription.broker_code || "", subscription.symbol].join(":");
+}
+
+function subscriptionHealthReason(subscription: LiveSubscription): string {
+    const status = (subscription.health_status || "").toLowerCase();
+    const reason = subscription.health_reason || "";
+    if (reason) return reason;
+    if (status === "action_required") return "Broker live data needs account attention before prices can update.";
+    if (status === "rate_limited") return "Broker quote fallback is currently rate limited.";
+    if (status === "unavailable") return "Broker did not return a live price for this symbol.";
+    if (status === "capacity_wait") return "This symbol is waiting behind higher-priority live subscriptions.";
+    if (status === "pending") return "Waiting for the live price worker to fetch this symbol.";
+    if (status === "error") return "Live price worker hit an error for this symbol.";
+    return "";
+}
+
+function tickFromSubscription(subscription: LiveSubscription): LivePriceTick | null {
+    const quote = subscription.last_quote || {};
+    const status = (subscription.health_status || "").toLowerCase();
+    if (Object.keys(quote).length) {
+        return {
+            ...(quote as Partial<LivePriceTick>),
+            symbol: subscription.symbol,
+            exchange: subscription.exchange,
+            account_id: subscription.account_id ?? undefined,
+            broker_code: subscription.broker_code ?? undefined,
+            received_at: subscription.last_received_at || (quote as Partial<LivePriceTick>).received_at || null,
+            status: status || (quote as Partial<LivePriceTick>).status || null
+        };
+    }
+    const reason = subscriptionHealthReason(subscription);
+    if (!reason || status === "ok" || status === "healthy") return null;
+    return {
+        symbol: subscription.symbol,
+        exchange: subscription.exchange,
+        account_id: subscription.account_id ?? undefined,
+        broker_code: subscription.broker_code ?? undefined,
+        received_at: subscription.updated_at,
+        status,
+        unavailable_reason: reason
+    };
+}
+
 function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     const [socketState, setSocketState] = useState<SocketState>("connecting");
     const [message, setMessage] = useState("");
@@ -65,14 +109,25 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     const desiredRows = useMemo(
         () =>
             status.desired_subscriptions.map((subscription) => ({
-                key: [subscription.account_id || "", subscription.broker_code || "", subscription.symbol].join(":"),
+                key: subscriptionKey(subscription),
                 symbol: subscription.symbol,
                 exchange: subscription.exchange,
                 broker_code: subscription.broker_code,
-                account_id: subscription.account_id
+                account_id: subscription.account_id,
+                health_status: subscription.health_status,
+                health_reason: subscription.health_reason
             })),
         [status.desired_subscriptions]
     );
+
+    const statusTicks = useMemo(() => {
+        const rows: Record<string, LivePriceTick> = {};
+        for (const subscription of status.desired_subscriptions) {
+            const tick = tickFromSubscription(subscription);
+            if (tick) rows[subscriptionKey(subscription)] = tick;
+        }
+        return rows;
+    }, [status.desired_subscriptions]);
 
     const visibleRows = desiredRows.slice(0, Math.min(visibleCount, desiredRows.length));
     const visibleAvailableCount = useMemo(
@@ -89,18 +144,15 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     useEffect(() => {
         const desiredKeys = new Set(desiredRows.map((row) => row.key));
         setPrices((current) => {
-            let changed = false;
-            const next: Record<string, LivePriceTick> = {};
+            const next: Record<string, LivePriceTick> = { ...statusTicks };
             for (const [key, value] of Object.entries(current)) {
                 if (desiredKeys.has(key)) {
                     next[key] = value;
-                } else {
-                    changed = true;
                 }
             }
-            return changed ? next : current;
+            return next;
         });
-    }, [desiredRefKey, desiredRows]);
+    }, [desiredRefKey, desiredRows, statusTicks]);
 
     function loadMoreVisibleRows() {
         setVisibleCount((current) => Math.min(desiredRows.length, current + LIVE_PRICE_PAGE_SIZE));
@@ -274,7 +326,13 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                             const price = prices[row.key];
                             const hasRenderablePrice = hasRenderableTick(price);
                             const change = toNumber(price?.change_pct ?? price?.day_change_perc);
-                            const unavailableReason = !hasLivePrice(price) ? price?.unavailable_reason : "";
+                            const unavailableReason = !hasLivePrice(price) ? price?.unavailable_reason || row.health_reason : "";
+                            const unavailableLabel =
+                                price?.status === "rate_limited"
+                                    ? "rate limited"
+                                    : price?.status === "action_required"
+                                      ? "action needed"
+                                      : "unavailable";
                             return (
                                 <tr key={row.key}>
                                     <td className="border-b border-r border-border/80 px-3 py-2.5 align-middle">
@@ -290,7 +348,7 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                                             <Skeleton className="ml-auto h-3 w-16" />
                                         ) : unavailableReason ? (
                                             <span className="text-xs font-medium text-[var(--danger)]" title={unavailableReason}>
-                                                unavailable
+                                                {unavailableLabel}
                                             </span>
                                         ) : (
                                             formatPrice(price?.ltp ?? price?.last_price)
