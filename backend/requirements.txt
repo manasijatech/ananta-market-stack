@@ -56,7 +56,7 @@ requests==2.34.2
 rich==14.3.3
 rich-toolkit==0.20.0
 rignore==0.7.6
-rpds-py==0.30.0
+rpds-py==2026.5.1
 rq==2.9.0
 sentry-sdk==2.57.0
 shellingham==1.5.4
