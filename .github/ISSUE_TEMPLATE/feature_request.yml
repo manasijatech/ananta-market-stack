@@ -1,13 +1,47 @@
 name: Feature Request
-description: Suggest an idea or new feature for the market stack
+description: Suggest an improvement or new capability
+labels: ["enhancement"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem and the outcome you want. For small fixes, a pull request is often faster than waiting for triage.
+
   - type: textarea
     id: problem
     attributes:
-      label: Is your feature request related to a problem?
-      placeholder: A clear description of what the problem is.
+      label: Problem or use case
+      description: What problem does this solve? Who benefits?
+    validations:
+      required: true
+
   - type: textarea
     id: solution
     attributes:
-      label: Describe the solution you'd like
-      placeholder: A clear description of what you want to happen.
+      label: Proposed solution
+      description: What would you like to see? Include UI/API notes if relevant.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Frontend / UI
+        - Backend API
+        - Broker integration
+        - Alerts / notifications
+        - Docker / deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to open a pull request for this
+          required: false
