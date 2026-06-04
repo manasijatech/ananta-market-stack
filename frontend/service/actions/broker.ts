@@ -189,12 +189,6 @@ export async function getInstrumentSyncStatus(id: string): Promise<InstrumentSyn
     return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync-status`);
 }
 
-export async function syncInstrumentData(id: string): Promise<InstrumentSyncResult> {
-    return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync-db`, {
-        method: "POST"
-    });
-}
-
 export async function syncInstrumentCsv(id: string): Promise<InstrumentSyncResult> {
     return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync-csv`, {
         method: "POST"
