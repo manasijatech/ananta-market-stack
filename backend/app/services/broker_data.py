@@ -510,8 +510,12 @@ def cached_instrument_count(db: Session, broker_code: str) -> int:
     return count_instruments(db, broker_code)
 
 
+def instrument_csv_available(broker_code: str) -> bool:
+    return _csv_path_for_broker(broker_code).exists()
+
+
 def instrument_cache_available(db: Session, broker_code: str) -> bool:
-    return cached_instrument_count(db, broker_code) > 0 or _csv_path_for_broker(broker_code).exists()
+    return cached_instrument_count(db, broker_code) > 0 or instrument_csv_available(broker_code)
 
 
 def _preserve_existing_instrument_cache(
@@ -565,73 +569,6 @@ def _fetch_instrument_rows_with_retries(db: Session, acc: BrokerAccount) -> tupl
     return [], last_error
 
 
-def sync_instruments_combined(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
-    """Background-friendly sync: one run record, retries, CSV before SQLite."""
-    reconcile_stale_sync_run(db, acc.broker_code, inflight=True)
-    run = create_sync_run(db, acc.broker_code)
-    started_at = run.started_at
-    csv_path = _csv_path_for_broker(acc.broker_code)
-
-    try:
-        rows, fetch_error = _fetch_instrument_rows_with_retries(db, acc)
-        if not rows:
-            preserved = _preserve_existing_instrument_cache(
-                db, acc, storage_target="db+csv", started_at=started_at
-            )
-            if preserved.sync_status == "preserved":
-                finish_sync_run(
-                    db,
-                    run,
-                    status=preserved.sync_status,
-                    row_count=preserved.row_count,
-                    error=preserved.error,
-                )
-                return preserved
-            finish_sync_run(
-                db,
-                run,
-                status="failed",
-                row_count=0,
-                error=fetch_error or "Instrument sync returned no rows.",
-            )
-            return _instrument_sync_out(
-                broker_code=acc.broker_code,
-                sync_status="failed",
-                row_count=0,
-                started_at=started_at,
-                finished_at=datetime.utcnow(),
-                error=fetch_error or "Instrument sync returned no rows.",
-                storage_target="db+csv",
-            )
-
-        _write_csv(rows, csv_path)
-        row_count = replace_instruments(db, acc.broker_code, rows)
-        finish_sync_run(db, run, status="completed", row_count=row_count)
-        _CSV_SEARCH_CACHE.pop(acc.broker_code, None)
-        return _instrument_sync_out(
-            broker_code=acc.broker_code,
-            sync_status="completed",
-            row_count=row_count,
-            started_at=started_at,
-            finished_at=run.finished_at,
-            storage_target="db+csv",
-            csv_path=_csv_relpath(csv_path),
-        )
-    except Exception as exc:
-        logger.exception("Combined instrument sync failed for %s", acc.broker_code)
-        finish_sync_run(db, run, status="failed", row_count=0, error=str(exc)[:2000])
-        return _instrument_sync_out(
-            broker_code=acc.broker_code,
-            sync_status="failed",
-            row_count=0,
-            started_at=started_at,
-            finished_at=run.finished_at,
-            error=str(exc)[:2000],
-            storage_target="db+csv",
-            csv_path=_csv_relpath(csv_path) if csv_path.exists() else None,
-        )
-
-
 def sync_instruments_to_db(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
     run = create_sync_run(db, acc.broker_code)
     try:
@@ -662,32 +599,52 @@ def sync_instruments_to_db(db: Session, acc: BrokerAccount) -> InstrumentSyncOut
 
 
 def sync_instruments_to_csv(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
+    reconcile_stale_sync_run(db, acc.broker_code, inflight=False)
     run = create_sync_run(db, acc.broker_code)
     csv_path = _csv_path_for_broker(acc.broker_code)
     try:
-        rows = _fetch_instrument_rows(db, acc)
+        rows, fetch_error = _fetch_instrument_rows_with_retries(db, acc)
         if not rows:
-            preserved = _preserve_existing_instrument_cache(
-                db, acc, storage_target="csv", started_at=run.started_at
-            )
+            if instrument_csv_available(acc.broker_code):
+                preserved = _preserve_existing_instrument_cache(
+                    db, acc, storage_target="csv", started_at=run.started_at
+                )
+                run = finish_sync_run(
+                    db,
+                    run,
+                    status=preserved.sync_status,
+                    row_count=preserved.row_count,
+                    error=preserved.error,
+                )
+                return _instrument_sync_out(
+                    broker_code=acc.broker_code,
+                    sync_status=run.status,
+                    row_count=run.row_count,
+                    started_at=run.started_at,
+                    finished_at=run.finished_at,
+                    error=run.error,
+                    storage_target="csv",
+                    csv_path=preserved.csv_path,
+                )
             run = finish_sync_run(
                 db,
                 run,
-                status=preserved.sync_status,
-                row_count=preserved.row_count,
-                error=preserved.error,
+                status="failed",
+                row_count=0,
+                error=fetch_error or "Instrument sync returned no rows.",
             )
             return _instrument_sync_out(
                 broker_code=acc.broker_code,
                 sync_status=run.status,
-                row_count=run.row_count,
+                row_count=0,
                 started_at=run.started_at,
                 finished_at=run.finished_at,
                 error=run.error,
                 storage_target="csv",
-                csv_path=preserved.csv_path,
+                csv_path=None,
             )
         _write_csv(rows, csv_path)
+        _CSV_SEARCH_CACHE.pop(acc.broker_code, None)
         run = finish_sync_run(db, run, status="completed", row_count=len(rows))
         return _instrument_sync_out(
             broker_code=acc.broker_code,

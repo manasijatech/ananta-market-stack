@@ -20,7 +20,7 @@ _inflight: set[str] = set()
 
 
 def instrument_cache_ready(db: Session, acc: BrokerAccount) -> bool:
-    return broker_data.instrument_cache_available(db, acc.broker_code)
+    return broker_data.instrument_csv_available(acc.broker_code)
 
 
 def is_instrument_sync_inflight(account_id: str) -> bool:
@@ -108,7 +108,7 @@ def instrument_sync_status(db: Session, acc: BrokerAccount) -> InstrumentSyncOut
             sync_status="running",
             row_count=0,
             error=None,
-            storage_target="db+csv",
+            storage_target="csv",
         )
 
     status = last_run.status
@@ -122,7 +122,7 @@ def instrument_sync_status(db: Session, acc: BrokerAccount) -> InstrumentSyncOut
         started_at=last_run.started_at,
         finished_at=last_run.finished_at,
         error=last_run.error,
-        storage_target="db+csv",
+        storage_target="csv",
     )
 
 
@@ -199,7 +199,7 @@ def _run_instrument_sync(account_id: str) -> None:
         if not acc.last_verified_at and not _account_session_active(acc):
             logger.info("Skipping instrument sync for %s: no active session", account_id)
             return
-        broker_data.sync_instruments_combined(db, acc)
+        broker_data.sync_instruments_to_csv(db, acc)
     except Exception:
         logger.exception("Background instrument sync failed for account %s", account_id)
     finally:

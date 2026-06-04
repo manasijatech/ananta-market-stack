@@ -17,7 +17,6 @@ import {
     getStreamStatus,
     getTrades,
     searchBrokerInstruments,
-    syncInstrumentData,
     syncInstrumentCsv
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
@@ -241,23 +240,17 @@ export function BrokerDataTest({
         });
     }
 
-    function syncInstruments(storage: "db" | "csv" | "delete") {
+    function syncInstruments(storage: "csv" | "delete") {
         setError("");
         startTransition(async () => {
             try {
                 const result =
-                    storage === "db"
-                        ? await syncInstrumentData(account.id)
-                        : storage === "csv"
-                          ? await syncInstrumentCsv(account.id)
-                          : await deleteInstrumentStorage(account.id);
+                    storage === "csv"
+                        ? await syncInstrumentCsv(account.id)
+                        : await deleteInstrumentStorage(account.id);
                 setSyncResult(result);
                 setPayload(
-                    storage === "db"
-                        ? "Instrument sync to DB"
-                        : storage === "csv"
-                          ? "Instrument sync to CSV"
-                          : "Instrument storage delete",
+                    storage === "csv" ? "Instrument sync to CSV" : "Instrument storage delete",
                     result
                 );
                 if (storage === "delete") {
@@ -421,18 +414,10 @@ export function BrokerDataTest({
 
             <Section
                 title="Instrument sync"
-                description="Manage broker-scoped instrument storage in SQLite and as a local CSV under backend/data/instruments."
+                description="Download the broker instrument master to a local CSV under backend/data/instruments. Background verify flows use the same CSV-only sync."
             >
                 <div className="flex flex-wrap items-center gap-3">
-                    <Button disabled={isPending || !sessionActive} onClick={() => syncInstruments("db")} type="button">
-                        {isPending ? "Working..." : "Sync to DB"}
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => syncInstruments("csv")}
-                        type="button"
-                        variant="outline"
-                    >
+                    <Button disabled={isPending || !sessionActive} onClick={() => syncInstruments("csv")} type="button">
                         {isPending ? "Working..." : "Sync to CSV"}
                     </Button>
                     <Button

@@ -250,14 +250,14 @@ def get_instrument_sync_status(
             broker=acc.broker_code,
             sync_status="not_started",
             row_count=0,
-            storage_target="db+csv",
+            storage_target="csv",
         )
     if status is None:
         return InstrumentSyncOut(
             broker=acc.broker_code,
             sync_status="not_started",
             row_count=0,
-            storage_target="db+csv",
+            storage_target="csv",
         )
     return status
 
