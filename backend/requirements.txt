@@ -15,7 +15,7 @@ email-validator==2.3.0
 fastapi==0.135.3
 fastapi-cli==0.0.24
 fastapi-cloud-cli==0.15.1
-fastar==0.9.0
+fastar==0.11.0
 greenlet==3.3.2
 griffelib==2.0.2
 growwapi==1.5.0
@@ -40,7 +40,7 @@ openai-agents==0.17.3
 pycparser==3.0
 pydantic==2.12.5
 pydantic-extra-types==2.11.1
-pydantic-settings==2.13.1
+pydantic-settings==2.14.1
 pydantic_core==2.41.5
 Pygments==2.20.0
 PyJWT==2.12.1
@@ -66,7 +66,7 @@ SQLAlchemy==2.0.48
 sse-starlette==3.4.4
 starlette==1.0.0
 tqdm==4.67.3
-typer==0.24.1
+typer==0.26.7
 types-requests==2.33.0.20260518
 typing-inspection==0.4.2
 typing_extensions==4.15.0
