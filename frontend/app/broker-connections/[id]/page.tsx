@@ -1,8 +1,8 @@
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { getBrokerAccount, getSessionStatus } from "@/service/actions/broker";
 import { BrokerDetailActions } from "@/components/brokers/broker-detail-actions";
+import { InstrumentSyncBanner } from "@/components/brokers/instrument-sync-banner";
 import { NotificationsBanner } from "@/components/brokers/notifications-banner";
 import { PortfolioTabs } from "@/components/brokers/portfolio-tabs";
 import { SessionPanel } from "@/components/brokers/session-panel";
@@ -19,11 +19,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { formatUserFacingError } from "@/lib/api-errors";
 import type { BrokerAccountDetail, SessionStatus } from "@/service/types/broker";
-
-const InstrumentSyncBanner = dynamic(
-    () => import("@/components/brokers/instrument-sync-banner").then((module) => module.InstrumentSyncBanner),
-    { ssr: false }
-);
 
 type BrokerDetailPageProps = {
     params: Promise<{ id: string }>;
