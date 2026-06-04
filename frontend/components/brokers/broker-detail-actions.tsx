@@ -18,7 +18,11 @@ export function BrokerDetailActions({ accountId, verified }: { accountId: string
         startTransition(async () => {
             try {
                 const result = await verifyBrokerAccount(accountId);
-                setMessage(result.ok ? "Connection verified." : result.message || "Verification failed.");
+                const parts = [
+                    result.ok ? "Connection verified." : result.message || "Verification failed.",
+                    result.instrument_sync_message
+                ].filter(Boolean);
+                setMessage(parts.join(" "));
                 if (result.ok) {
                     router.refresh();
                 }

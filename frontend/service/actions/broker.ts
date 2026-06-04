@@ -185,6 +185,10 @@ export async function getDataCapabilities(id: string): Promise<DataCapabilities>
     return request<DataCapabilities>(`/broker-accounts/${id}/data/capabilities`);
 }
 
+export async function getInstrumentSyncStatus(id: string): Promise<InstrumentSyncResult> {
+    return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync-status`);
+}
+
 export async function syncInstrumentData(id: string): Promise<InstrumentSyncResult> {
     return request<InstrumentSyncResult>(`/broker-accounts/${id}/data/instruments/sync-db`, {
         method: "POST"

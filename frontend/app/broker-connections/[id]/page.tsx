@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getBrokerAccount, getSessionStatus } from "@/service/actions/broker";
 import { BrokerDetailActions } from "@/components/brokers/broker-detail-actions";
+import { InstrumentSyncBanner } from "@/components/brokers/instrument-sync-banner";
 import { NotificationsBanner } from "@/components/brokers/notifications-banner";
 import { PortfolioTabs } from "@/components/brokers/portfolio-tabs";
 import { SessionPanel } from "@/components/brokers/session-panel";
@@ -45,8 +46,11 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
                 }
             />
 
-            <div className="mb-6">
+            <div className="mb-6 space-y-4">
                 <NotificationsBanner />
+                {sessionStatus.session_active || account.last_verified_at ? (
+                    <InstrumentSyncBanner accountId={account.id} />
+                ) : null}
             </div>
 
             <div className="grid gap-8">

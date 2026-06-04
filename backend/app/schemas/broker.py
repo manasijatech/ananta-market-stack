@@ -213,6 +213,15 @@ class QuoteRow(BaseModel):
 class VerifyOut(BaseModel):
     ok: bool
     message: str = ""
+    instrument_sync_scheduled: bool = False
+    instrument_sync_status: str | None = Field(
+        default=None,
+        description="Background instrument sync state: scheduled, running, completed, failed, pending, or not_needed.",
+    )
+    instrument_sync_message: str | None = Field(
+        default=None,
+        description="User-facing note while instrument master data is downloading or if sync failed.",
+    )
 
 
 class SessionZerodhaIn(BaseModel):

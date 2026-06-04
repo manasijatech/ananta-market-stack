@@ -26,6 +26,7 @@ from app.schemas.broker import (
 from app.services import broker_accounts as ba_svc
 from app.services import broker_data_preferences as bdp_svc
 from app.services import broker_sessions as bs_svc
+from app.services.instrument_sync_jobs import build_verify_out
 from broker.core.registry import BROKER_CODES
 from db.models import BrokerAccount, User
 from db.session import get_db
@@ -191,7 +192,7 @@ def verify_broker_account(
     """
     acc = _get_owned_account(db, user.id, account_id)
     ok, msg = ba_svc.verify_account(db, acc)
-    return VerifyOut(ok=ok, message=msg or "")
+    return build_verify_out(db, acc, ok, msg or "")
 
 
 @router.post("/{account_id}/quotes", response_model=list[QuoteRow])
@@ -235,7 +236,7 @@ def session_zerodha(
     if acc.broker_code != "zerodha":
         raise HTTPException(status_code=400, detail="account is not zerodha")
     ok, err = ba_svc.apply_zerodha_session(db, acc, body.request_token)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.get("/{account_id}/sessions/zerodha", response_model=ZerodhaSessionStatusOut)
@@ -304,7 +305,7 @@ def session_upstox(
     if acc.broker_code != "upstox":
         raise HTTPException(status_code=400, detail="account is not upstox")
     ok, err = ba_svc.apply_upstox_session(db, acc, body.authorization_code)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.post("/{account_id}/sessions/upstox/request-token", response_model=SessionUpstoxRequestOut)
@@ -333,7 +334,7 @@ async def upstox_notifier(request: Request, db: Session = Depends(get_db)) -> Ve
     """**Public Webhook for Upstox semi-automated token delivery.**"""
     payload = await request.json()
     ok, err = bs_svc.consume_upstox_notifier(db, payload)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.post("/{account_id}/sessions/angel", response_model=VerifyOut)
@@ -354,7 +355,7 @@ def session_angel(
     ok, err = ba_svc.apply_angel_session(
         db, acc, body.client_code, body.pin, body.totp
     )
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.get("/{account_id}/sessions/angel", response_model=BrokerSessionStatusOut)
@@ -381,7 +382,7 @@ def angel_session_refresh(
     if acc.broker_code != "angel":
         raise HTTPException(status_code=400, detail="account is not angel")
     ok, err = bs_svc.refresh_angel_session(db, acc)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.post("/{account_id}/sessions/dhan", response_model=VerifyOut)
@@ -396,7 +397,7 @@ def session_dhan(
     if acc.broker_code != "dhan":
         raise HTTPException(status_code=400, detail="account is not dhan")
     ok, err = ba_svc.apply_dhan_session(db, acc, body.token_id)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.get("/{account_id}/sessions/dhan", response_model=BrokerSessionStatusOut)
@@ -423,7 +424,7 @@ def dhan_session_refresh(
     if acc.broker_code != "dhan":
         raise HTTPException(status_code=400, detail="account is not dhan")
     ok, err = bs_svc.refresh_dhan_session(db, acc)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.post("/{account_id}/sessions/dhan/start", response_model=SessionStartOut)
@@ -456,7 +457,7 @@ def session_kotak(
     ok, err = ba_svc.apply_kotak_session(
         db, acc, body.mobile_number, body.totp, body.mpin
     )
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.get("/{account_id}/sessions/kotak", response_model=BrokerSessionStatusOut)
@@ -483,7 +484,7 @@ def kotak_session_refresh(
     if acc.broker_code != "kotak":
         raise HTTPException(status_code=400, detail="account is not kotak")
     ok, err = bs_svc.refresh_kotak_session(db, acc)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.post("/{account_id}/sessions/groww", response_model=VerifyOut)
@@ -503,7 +504,7 @@ def session_groww(
     if acc.broker_code != "groww":
         raise HTTPException(status_code=400, detail="account is not groww")
     ok, err = bs_svc.refresh_groww_session(db, acc, body)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
 
 
 @router.get("/{account_id}/sessions/groww", response_model=BrokerSessionStatusOut)
@@ -544,4 +545,4 @@ def session_indmoney(
     if acc.broker_code != "indmoney":
         raise HTTPException(status_code=400, detail="account is not indmoney")
     ok, err = bs_svc.update_indmoney_access_token(db, acc, body.access_token)
-    return VerifyOut(ok=ok, message=err or "")
+    return build_verify_out(db, acc, ok, err or "")
