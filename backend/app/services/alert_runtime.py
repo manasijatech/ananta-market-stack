@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import threading
-import time
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -37,6 +36,8 @@ from app.services.alerts_engine.rolling_state import (
     record_tick_samples,
 )
 from app.services import broker_data
+from app.services.live_price_adapters import get_live_price_adapter
+from broker.core.live_prices import LivePriceAdapter, is_access_forbidden_reason
 from app.services.broker_sessions import (
     _create_notification_once_per_day,
     get_broker_session_status,
@@ -65,12 +66,7 @@ RECONCILE_INTERVAL_SECONDS = 5 * 60
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
 TRANSIENT_RETRY_SECONDS = 60
-GROWW_REST_FALLBACK_POLL_SECONDS = 30
-GROWW_REST_FALLBACK_SYMBOL_LIMIT = 200
 _ACCOUNT_RETRY_NOT_BEFORE: dict[str, datetime] = {}
-_GROWW_FEED_SESSIONS: dict[str, dict[str, Any]] = {}
-_GROWW_REST_FALLBACK_NOT_BEFORE: dict[str, datetime] = {}
-_GROWW_FEED_DISABLED_NOT_BEFORE: dict[str, datetime] = {}
 
 
 def _redis() -> redis.Redis | None:
@@ -316,17 +312,7 @@ def _is_rate_limit_reason(reason: str) -> bool:
 
 
 def _is_access_forbidden_reason(reason: str) -> bool:
-    normalized = reason.lower()
-    return "403" in reason or "access forbidden" in normalized or "forbidden" in normalized
-
-
-def _live_feed_access_reason(broker_code: str, reason: str) -> str:
-    broker_label = broker_code.upper()
-    detail = reason.strip() or "Broker live feed access is unavailable."
-    return (
-        f"{broker_label} live websocket/feed access is not available for this account or token. "
-        f"The app will try the throttled REST quote fallback when available. Broker response: {detail}"
-    )
+    return is_access_forbidden_reason(reason)
 
 
 def _quote_failure_status(*, row_rate_limited: bool, row_access_forbidden: bool) -> str:
@@ -425,83 +411,12 @@ def _publish_live_session(
         logger.warning("live session publish failed: %s", exc)
 
 
-def _groww_feed_instrument(row: LiveSymbolSubscription, hydrated: dict[str, Any]) -> dict[str, str] | None:
-    exchange = str(hydrated.get("groww_exchange") or hydrated.get("exchange") or row.exchange or "NSE").strip()
-    segment = str(hydrated.get("groww_segment") or hydrated.get("segment") or "CASH").strip()
-    exchange_token = str(
-        hydrated.get("groww_exchange_token")
-        or hydrated.get("exchange_token")
-        or ""
-    ).strip()
-    if not exchange or not segment or not exchange_token:
-        return None
-    return {"exchange": exchange, "segment": segment, "exchange_token": exchange_token}
-
-
-def _groww_feed_key(instrument: dict[str, str]) -> tuple[str, str, str]:
-    return (instrument["exchange"], instrument["segment"], instrument["exchange_token"])
-
-
-def _groww_feed_session(account_id: str, access_token_cipher: str) -> dict[str, Any]:
-    session = _GROWW_FEED_SESSIONS.get(account_id)
-    if session is not None:
-        return session
-    from broker.crypto import decrypt_value
-    from growwapi import GrowwAPI, GrowwFeed
-    import contextlib
-    import io
-
-    access_token = decrypt_value(access_token_cipher)
-    with contextlib.redirect_stdout(io.StringIO()):
-        feed = GrowwFeed(GrowwAPI(access_token))
-    session = {"feed": feed, "subscribed": set(), "created_at": time.monotonic()}
-    _GROWW_FEED_SESSIONS[account_id] = session
-    return session
-
-
-def _sync_groww_feed_subscriptions(feed: Any, session: dict[str, Any], instruments: list[dict[str, str]]) -> None:
-    desired = {_groww_feed_key(item) for item in instruments}
-    subscribed: set[tuple[str, str, str]] = session.setdefault("subscribed", set())
-    to_subscribe = [item for item in instruments if _groww_feed_key(item) not in subscribed]
-    to_unsubscribe = [
-        {"exchange": exchange, "segment": segment, "exchange_token": exchange_token}
-        for exchange, segment, exchange_token in subscribed - desired
-    ]
-    if to_subscribe:
-        feed.subscribe_ltp(to_subscribe)
-        subscribed.update(_groww_feed_key(item) for item in to_subscribe)
-    if to_unsubscribe:
-        try:
-            feed.unsubscribe_ltp(to_unsubscribe)
-        finally:
-            for item in to_unsubscribe:
-                subscribed.discard(_groww_feed_key(item))
-
-
-def _groww_ltp_payload_value(payload: dict[str, Any], instrument: dict[str, str]) -> dict[str, Any] | None:
-    root = payload.get("ltp") if isinstance(payload.get("ltp"), dict) else payload
-    exchange_rows = root.get(instrument["exchange"]) if isinstance(root, dict) else None
-    segment_rows = exchange_rows.get(instrument["segment"]) if isinstance(exchange_rows, dict) else None
-    value = segment_rows.get(instrument["exchange_token"]) if isinstance(segment_rows, dict) else None
-    return value if isinstance(value, dict) else None
-
-
-def _fetch_groww_feed_payload(
-    *,
-    account_id: str,
-    access_token_cipher: str,
-    feed_instruments: list[dict[str, str]],
-) -> dict[str, Any]:
-    session = _groww_feed_session(account_id, access_token_cipher)
-    feed = session["feed"]
-    _sync_groww_feed_subscriptions(feed, session, feed_instruments)
-    return feed.get_ltp() or {}
-
-
-async def _apply_groww_feed_results(
+async def _apply_live_feed_results(
     db,
     redis_client: redis.Redis | None,
     *,
+    adapter: LivePriceAdapter,
+    acc: BrokerAccount,
     user_id: str,
     account_id: str,
     broker_code: str,
@@ -514,16 +429,10 @@ async def _apply_groww_feed_results(
         _mark_subscription_health(
             [row for group in chunk_groups for row in group],
             status="capacity_wait",
-            reason="Groww feed supports 1000 live subscriptions per account. Higher-priority workflow and watchlist symbols are tracked first.",
+            reason=adapter.capacity_wait_reason(),
         )
         return "ok"
-    acc = db.get(BrokerAccount, account_id)
-    if not acc:
-        return None
-    if not acc.groww:
-        return None
-    access_token_cipher = acc.groww.access_token_cipher
-    disabled_reason = _groww_feed_disabled_reason(account_id)
+    disabled_reason = adapter.disabled_reason(account_id)
     if disabled_reason:
         _mark_subscription_health(
             [row for group in chunk_groups for row in group],
@@ -536,11 +445,11 @@ async def _apply_groww_feed_results(
     feed_rows: list[LiveSymbolSubscription] = []
     feed_groups: list[list[LiveSymbolSubscription]] = []
     for row, duplicate_rows, hydrated_row in zip(chunk_rows, chunk_groups, hydrated, strict=False):
-        feed_instrument = _groww_feed_instrument(row, hydrated_row)
+        feed_instrument = adapter.feed_instrument(row, hydrated_row)
         if feed_instrument is None:
             for subscription_row in duplicate_rows:
                 subscription_row.health_status = "pending"
-                subscription_row.health_reason = "Waiting for Groww exchange token from the instrument cache."
+                subscription_row.health_reason = "Waiting for broker live-feed identifiers from the instrument cache."
                 db.add(subscription_row)
             continue
         feed_instruments.append(feed_instrument)
@@ -548,25 +457,17 @@ async def _apply_groww_feed_results(
         feed_groups.append(duplicate_rows)
     if not feed_instruments:
         return None
-    try:
-        payload = await asyncio.to_thread(
-            _fetch_groww_feed_payload,
-            account_id=account_id,
-            access_token_cipher=access_token_cipher,
-            feed_instruments=feed_instruments,
-        )
-    except Exception as exc:
-        message = str(exc)
-        access_forbidden = _is_access_forbidden_reason(message)
-        status = "action_required" if access_forbidden else "error"
-        health_reason = _live_feed_access_reason(broker_code, message) if access_forbidden else message
+    fetch_result = await adapter.fetch_payload(acc, feed_instruments)
+    if fetch_result.status in {"fallback", "failed"}:
+        status = "action_required" if fetch_result.status == "fallback" else "error"
+        health_reason = fetch_result.reason or "Broker live feed is unavailable."
         _mark_subscription_health([row for group in feed_groups for row in group], status=status, reason=health_reason)
         if status == "action_required":
             _record_action_required_failure(db, acc, [row for group in feed_groups for row in group], health_reason)
-            _disable_groww_feed(account_id)
-        _drop_groww_feed_session(account_id)
-        logger.warning("Groww feed failed for %s: %s", account_id, exc)
-        return "fallback" if access_forbidden else "failed"
+        return fetch_result.status
+    if fetch_result.status == "unsupported":
+        return None
+    payload = fetch_result.payload
 
     now = _utc_now()
     symbols = [row.symbol for row in feed_rows]
@@ -575,18 +476,19 @@ async def _apply_groww_feed_results(
         user_id=user_id,
         account_id=account_id,
         broker_code=broker_code,
-        adapter="groww_feed",
+        adapter=adapter.adapter_name,
         symbols=symbols,
         connection_index=connection_index,
+        capacity=adapter.capacity,
     )
     any_feed_price = False
     for row, duplicate_rows, feed_instrument in zip(feed_rows, feed_groups, feed_instruments, strict=False):
-        value = _groww_ltp_payload_value(payload, feed_instrument)
+        value = adapter.payload_value(payload, feed_instrument)
         if not value:
             for subscription_row in duplicate_rows:
                 if subscription_row.health_status not in {"action_required", "rate_limited", "error"}:
                     subscription_row.health_status = "pending"
-                    subscription_row.health_reason = "Subscribed to Groww feed; waiting for the first live tick."
+                    subscription_row.health_reason = "Subscribed to broker live feed; waiting for the first live tick."
                     db.add(subscription_row)
             continue
         ltp = value.get("ltp")
@@ -602,7 +504,7 @@ async def _apply_groww_feed_results(
                 "exchange": row.exchange,
                 "raw": {
                     "last_price": float(ltp),
-                    "source": "groww_feed",
+                    "source": adapter.adapter_name,
                     "tsInMillis": value.get("tsInMillis"),
                     "exchange_token": feed_instrument["exchange_token"],
                 },
@@ -769,45 +671,6 @@ def _clear_account_retry(account_id: str) -> None:
     _ACCOUNT_RETRY_NOT_BEFORE.pop(account_id, None)
 
 
-def _groww_rest_fallback_allowed(account_id: str) -> bool:
-    retry_at = _GROWW_REST_FALLBACK_NOT_BEFORE.get(account_id)
-    return not retry_at or retry_at <= _utc_now()
-
-
-def _schedule_groww_rest_fallback(account_id: str) -> None:
-    _GROWW_REST_FALLBACK_NOT_BEFORE[account_id] = _utc_now() + timedelta(seconds=GROWW_REST_FALLBACK_POLL_SECONDS)
-
-
-def _groww_feed_disabled_reason(account_id: str) -> str | None:
-    retry_at = _GROWW_FEED_DISABLED_NOT_BEFORE.get(account_id)
-    if retry_at and retry_at > _utc_now():
-        return (
-            "Groww live websocket/feed access is currently disabled for this account after a broker access failure. "
-            "The app is using the throttled REST quote fallback where available."
-        )
-    _GROWW_FEED_DISABLED_NOT_BEFORE.pop(account_id, None)
-    return None
-
-
-def _disable_groww_feed(account_id: str) -> None:
-    _GROWW_FEED_DISABLED_NOT_BEFORE[account_id] = _utc_now() + timedelta(seconds=ACTION_REQUIRED_RETRY_SECONDS)
-
-
-def _drop_groww_feed_session(account_id: str) -> None:
-    session = _GROWW_FEED_SESSIONS.pop(account_id, None)
-    if not session:
-        return
-    feed = session.get("feed")
-    nats_client = getattr(feed, "_nats_client", None)
-    loop = getattr(nats_client, "_loop", None)
-    socket = getattr(nats_client, "_socket", None)
-    try:
-        if socket is not None and loop is not None and loop.is_running():
-            asyncio.run_coroutine_threadsafe(socket.close(), loop)
-    except Exception:
-        logger.debug("Groww feed socket cleanup failed for %s", account_id, exc_info=True)
-
-
 def _is_action_required_broker_error(message: str) -> bool:
     normalized = message.lower()
     markers = (
@@ -947,10 +810,13 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                         }
                         for row in chunk_rows
                     ]
-                    if acc.broker_code == "groww":
-                        feed_result = await _apply_groww_feed_results(
+                    live_adapter = get_live_price_adapter(acc.broker_code)
+                    if live_adapter:
+                        feed_result = await _apply_live_feed_results(
                             db,
                             redis_client,
+                            adapter=live_adapter,
+                            acc=acc,
                             user_id=user_id,
                             account_id=account_id,
                             broker_code=acc.broker_code,
@@ -965,26 +831,26 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                             continue
                         if feed_result == "fallback":
                             used_feed_fallback = True
-                            if not _groww_rest_fallback_allowed(account_id):
+                            if not live_adapter.rest_fallback_allowed(account_id):
                                 continue
-                            _schedule_groww_rest_fallback(account_id)
-                            if len(chunk_rows) > GROWW_REST_FALLBACK_SYMBOL_LIMIT:
+                            live_adapter.schedule_rest_fallback(account_id)
+                            if len(chunk_rows) > live_adapter.fallback_symbol_limit:
                                 deferred_rows = [
                                     subscription_row
-                                    for duplicate_rows in chunk_groups[GROWW_REST_FALLBACK_SYMBOL_LIMIT:]
+                                    for duplicate_rows in chunk_groups[live_adapter.fallback_symbol_limit:]
                                     for subscription_row in duplicate_rows
                                 ]
                                 _mark_subscription_health(
                                     deferred_rows,
                                     status="action_required",
                                     reason=(
-                                        "Groww live feed access is unavailable, so REST fallback is throttled to "
-                                        f"{GROWW_REST_FALLBACK_SYMBOL_LIMIT} higher-priority symbols per pass to avoid broker rate limits."
+                                        "Broker live feed access is unavailable, so REST fallback is throttled to "
+                                        f"{live_adapter.fallback_symbol_limit} higher-priority symbols per pass to avoid broker rate limits."
                                     ),
                                 )
-                            chunk_groups = chunk_groups[:GROWW_REST_FALLBACK_SYMBOL_LIMIT]
+                            chunk_groups = chunk_groups[:live_adapter.fallback_symbol_limit]
                             chunk_rows = [items[0] for items in chunk_groups]
-                            instruments = instruments[:GROWW_REST_FALLBACK_SYMBOL_LIMIT]
+                            instruments = instruments[:live_adapter.fallback_symbol_limit]
                         if feed_result == "failed":
                             _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
                             account_failed = True
