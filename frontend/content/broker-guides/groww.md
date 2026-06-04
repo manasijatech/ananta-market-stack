@@ -1,6 +1,6 @@
 # Groww Trade API Setup
 
-Market Stack supports three Groww connection modes. Pick one mode and enter only the fields for that mode.
+Ananta Market Stack supports three Groww connection modes. Pick one mode and enter only the fields for that mode.
 
 ## Before You Start
 
@@ -14,7 +14,7 @@ Static IP setup is required for Groww API access.
 
 Use this when you have a Groww API key and API secret.
 
-| Market Stack field | Paste this       |
+| Ananta Market Stack field | Paste this       |
 | ------------------ | ---------------- |
 | API key            | Groww API key    |
 | API secret         | Groww API secret |
@@ -23,7 +23,7 @@ Advantages:
 
 - Good default option for normal setup.
 - Uses Groww's official API approval flow.
-- Can refresh the session from Market Stack after approval.
+- Can refresh the session from Ananta Market Stack after approval.
 
 Disadvantages:
 
@@ -33,9 +33,9 @@ Disadvantages:
 
 ## Option 2: TOTP
 
-Use this when you want Market Stack to generate Groww sessions with your TOTP setup.
+Use this when you want Ananta Market Stack to generate Groww sessions with your TOTP setup.
 
-| Market Stack field | Paste this                       |
+| Ananta Market Stack field | Paste this                       |
 | ------------------ | -------------------------------- |
 | TOTP API key       | Groww user API key for TOTP auth |
 | TOTP secret        | Authenticator or QR secret       |
@@ -44,7 +44,7 @@ Advantages:
 
 - Best option for automation.
 - No need to paste a new access token manually.
-- Market Stack can generate the current OTP from the saved TOTP secret.
+- Ananta Market Stack can generate the current OTP from the saved TOTP secret.
 
 Disadvantages:
 
@@ -56,7 +56,7 @@ Disadvantages:
 
 Use this when you already have a fresh Groww access token and want the fastest manual setup.
 
-| Market Stack field | Paste this                 |
+| Ananta Market Stack field | Paste this                 |
 | ------------------ | -------------------------- |
 | Access token       | Current Groww access token |
 
@@ -74,7 +74,7 @@ Disadvantages:
 
 **Recommendation:** Use **TOTP** for regular automated use. Use **API approval** if you do not want to store the TOTP secret. Use **Access token** only for quick testing or manual sessions.
 
-## Add Groww In Market Stack
+## Add Groww In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
@@ -87,4 +87,4 @@ Disadvantages:
 
 - Do not mix fields from different options.
 - Keep API secrets, TOTP secrets, and access tokens private.
-- Market Stack does not need a redirect URL for Groww.
+- Ananta Market Stack does not need a redirect URL for Groww.

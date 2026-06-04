@@ -1,10 +1,10 @@
 # INDmoney Token Setup
 
-Market Stack connects INDmoney with a manual access token. There is no automated login or TOTP flow for INDmoney in Market Stack right now.
+Ananta Market Stack connects INDmoney with a manual access token. There is no automated login or TOTP flow for INDmoney in Ananta Market Stack right now.
 
 ## What You Need
 
-| Market Stack field | Paste this                           |
+| Ananta Market Stack field | Paste this                           |
 | ------------------ | ------------------------------------ |
 | Access token       | Current INDmoney bearer access token |
 
@@ -15,7 +15,7 @@ Market Stack connects INDmoney with a manual access token. There is no automated
 3. Generate or copy a fresh access token.
 4. Set up static IP allowlisting if INDmoney requires it for your account.
 
-## Add INDmoney In Market Stack
+## Add INDmoney In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
@@ -28,7 +28,7 @@ Market Stack connects INDmoney with a manual access token. There is no automated
 INDmoney access tokens can expire. When that happens:
 
 1. Generate or copy a fresh token from INDmoney.
-2. Open the saved INDmoney broker account in Market Stack.
+2. Open the saved INDmoney broker account in Ananta Market Stack.
 3. Paste the new token in the session form.
 4. Submit to update the stored token.
 

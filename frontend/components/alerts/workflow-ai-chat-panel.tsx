@@ -528,13 +528,9 @@ export function WorkflowAiChatPanel({
     const streamControllersRef = useRef<Record<string, AbortController>>({});
     const bodyRef = useRef<HTMLDivElement | null>(null);
 
-    const workflowSessions = useMemo(() => {
-        if (!currentWorkflowId) return sessions;
-        return sessions.filter((item) => item.workflow_id === currentWorkflowId);
-    }, [currentWorkflowId, sessions]);
     const sessionOptions = useMemo(
-        () => workflowSessions.map((item) => ({ label: sessionLabel(item), value: item.id })),
-        [workflowSessions]
+        () => sessions.map((item) => ({ label: sessionLabel(item), value: item.id })),
+        [sessions]
     );
     const providerOptions = useMemo(
         () => enabledProviders.map((item) => ({ label: item.label, value: item.provider })),
@@ -556,6 +552,17 @@ export function WorkflowAiChatPanel({
         if (provider && selectedModels.some((item) => item.model_id === model)) return;
         setModel(selectedModels[0]?.model_id ?? "");
     }, [model, provider, selectedModels]);
+
+    useEffect(() => {
+        if (disabled) return;
+        const panelWidth = clampPanelWidth(width);
+        document.documentElement.style.setProperty("--workflow-ai-chat-panel-width", `${panelWidth}px`);
+        document.body.classList.add("workflow-ai-chat-panel-open");
+        return () => {
+            document.body.classList.remove("workflow-ai-chat-panel-open");
+            document.documentElement.style.removeProperty("--workflow-ai-chat-panel-width");
+        };
+    }, [disabled, width]);
 
     useEffect(() => {
         if (!bodyRef.current) return;
@@ -814,7 +821,7 @@ export function WorkflowAiChatPanel({
 
     return (
         <aside
-            className="fixed bottom-0 right-0 top-[76px] z-50 grid grid-rows-[auto_minmax(0,1fr)_auto] border-l border-border bg-background shadow-2xl"
+            className="fixed bottom-0 right-0 top-[67px] z-50 grid grid-rows-[auto_minmax(0,1fr)_auto] border-l border-border bg-background shadow-2xl min-[980px]:top-20"
             style={{ width: clampPanelWidth(width) }}
         >
             <div
@@ -823,7 +830,7 @@ export function WorkflowAiChatPanel({
                 onPointerDown={startResize}
                 role="separator"
             />
-            <div className="border-b border-border px-4 py-3">
+            <div className="border-b border-border px-4 pb-3 pt-3 min-[980px]:min-h-[150px] min-[980px]:pt-[35px]">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <div className="type-step-eyebrow">Workflow AI Chat</div>
@@ -919,7 +926,7 @@ export function WorkflowAiChatPanel({
                             <div>
                                 Example: “Create a rolling price-volume breakout for my test watchlist and use Discord.”
                             </div>
-                            {workflowSessions.length ? (
+                            {sessions.length ? (
                                 <div>Select a chat from History above to reopen earlier runs and snapshots.</div>
                             ) : null}
                         </div>

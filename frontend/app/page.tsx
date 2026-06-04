@@ -234,7 +234,7 @@ function LiquidityHeroScene({ symbolMetadata }: { symbolMetadata: Record<string,
         <div className="liquidity-scene" aria-hidden="true">
             <div className="liquidity-grid" />
             <div className="landing-scene-label absolute left-4 top-4 hidden font-mono text-[10px] uppercase min-[760px]:block">
-                Market Stack live order-flow simulation
+                Ananta Market Stack live order-flow simulation
             </div>
             <div className="landing-scene-label absolute right-5 top-5 hidden grid gap-2 font-mono text-[10px] min-[980px]:grid">
                 <span>REDIS STREAM: OK</span>
@@ -294,7 +294,7 @@ function BrokerSignalMap() {
                         Many broker sessions. One private market operations layer.
                     </h2>
                     <p className="landing-copy mt-5 max-w-2xl text-sm leading-6 md:text-base">
-                        Market Stack turns fragmented broker APIs into a single self-hosted workspace for sessions,
+                        Ananta Market Stack turns fragmented broker APIs into a single self-hosted workspace for sessions,
                         quotes, positions, instruments, and live data subscriptions.
                     </p>
                 </div>
@@ -561,7 +561,7 @@ export default function HomePage() {
                             Your positions, watchlists, prompts, and alert logic should not be vendor telemetry.
                         </h2>
                         <p className="landing-copy mt-5 max-w-2xl text-sm leading-6 md:text-base">
-                            Market Stack is meant to be a foundation: open-source core, private deployments, managed
+                            Ananta Market Stack is meant to be a foundation: open-source core, private deployments, managed
                             options for teams, and implementation support when a desk needs custom integrations.
                         </p>
                         <div className="self-host-proof mt-7">

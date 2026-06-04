@@ -67,7 +67,7 @@ export function AlphaCreditWarningModal() {
                         <div className="grid gap-1">
                             <DialogTitle>Alpha credits required</DialogTitle>
                             <DialogDescription>
-                                Market Stack could not complete this Alpha API request because the account has
+                                Ananta Market Stack could not complete this Alpha API request because the account has
                                 insufficient credits.
                             </DialogDescription>
                         </div>

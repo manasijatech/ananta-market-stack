@@ -1,10 +1,10 @@
 # Upstox OAuth Setup
 
-Market Stack connects Upstox with API key, API secret, and an exact redirect URI.
+Ananta Market Stack connects Upstox with API key, API secret, and an exact redirect URI.
 
 ## What You Need
 
-| Market Stack field | Paste this |
+| Ananta Market Stack field | Paste this |
 | --- | --- |
 | API key | Upstox API key or client ID |
 | API secret | Upstox API secret |
@@ -15,11 +15,11 @@ Market Stack connects Upstox with API key, API secret, and an exact redirect URI
 1. Create or open your [Upstox developer app](https://account.upstox.com/developer/apps).
 2. Copy the API key and API secret.
 3. Set the redirect URI in Upstox.
-4. For local Market Stack, use `http://localhost:3000/broker-connections`.
-5. If you use Upstox token-request approval, set the notifier webhook to `http://localhost:3000/api/broker-callbacks/upstox/notifier` for local Market Stack.
-6. Use the same redirect URI in Market Stack.
+4. For local Ananta Market Stack, use `http://localhost:3000/broker-connections`.
+5. If you use Upstox token-request approval, set the notifier webhook to `http://localhost:3000/api/broker-callbacks/upstox/notifier` for local Ananta Market Stack.
+6. Use the same redirect URI in Ananta Market Stack.
 
-## Add Upstox In Market Stack
+## Add Upstox In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
@@ -33,15 +33,15 @@ Market Stack connects Upstox with API key, API secret, and an exact redirect URI
 2. Open the Upstox login URL from the session panel.
 3. Complete Upstox login and authorization.
 4. Upstox redirects back to `/broker-connections` with an authorization code.
-5. Market Stack reads the code and connects the account automatically.
+5. Ananta Market Stack reads the code and connects the account automatically.
 
 If automatic connection fails, copy only the `code` value from the browser address bar and paste it into the manual `authorization_code` field.
 
 ## Advantages
 
 - Uses the standard OAuth authorization flow.
-- Market Stack can read the returned authorization code automatically.
-- No broker password or TOTP secret is stored in Market Stack.
+- Ananta Market Stack can read the returned authorization code automatically.
+- No broker password or TOTP secret is stored in Ananta Market Stack.
 
 ## Disadvantages
 
@@ -53,7 +53,7 @@ If automatic connection fails, copy only the `code` value from the browser addre
 
 ## Notes
 
-- The redirect URI in Upstox and Market Stack must be identical.
+- The redirect URI in Upstox and Ananta Market Stack must be identical.
 - For hosted installs, use your public app domain: `https://your-app-domain.example/broker-connections`.
 - If you use the Upstox notifier flow, use the same app domain with `/api/broker-callbacks/upstox/notifier`.
 - Use `http://localhost:3000` before and after broker login during local development.

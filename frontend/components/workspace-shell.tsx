@@ -62,10 +62,10 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 ];
 
 const navItems = navGroups.flatMap((group) => group.items);
-const ONBOARDING_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
-const ONBOARDING_PHASE_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
-const ONBOARDING_STEP_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-step";
-const ONBOARDING_RESET_EVENT = "market-stack-reset-onboarding";
+const ONBOARDING_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
+const ONBOARDING_PHASE_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
+const ONBOARDING_STEP_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-step";
+const ONBOARDING_RESET_EVENT = "ananta-market-stack-reset-onboarding";
 const ONBOARDING_PHASE_BROKER_SELECTOR = "broker-selector";
 const ONBOARDING_PHASE_WAITING_FOR_ACTIVE_BROKER = "waiting-for-active-broker";
 const ONBOARDING_PHASE_ALPHA_API = "alpha-api";
@@ -559,7 +559,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                             <DialogContent className="left-0 top-0 h-dvh max-h-dvh w-[min(22rem,calc(100vw-1.5rem))] max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-0 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left">
                                 <DialogHeader className="border-b border-border px-5 py-5 pr-16">
                                     <DialogTitle className="sr-only">Workspace navigation</DialogTitle>
-                                    <BrandLogo imageClassName="h-10 w-48 max-w-full" />
+                                    <BrandLogo imageClassName="h-10 w-64 max-w-full" />
                                 </DialogHeader>
                                 <div className="min-h-0 overflow-y-auto px-3 py-4">
                                     <NavigationGroups closeOnSelect pathname={pathname} />
@@ -587,7 +587,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                             </DialogContent>
                         </Dialog>
                         <div className="min-w-0">
-                            <BrandLogo imageClassName="h-9 w-40" />
+                            <BrandLogo imageClassName="h-9 w-56" />
                             <div className="mt-0.5 truncate font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                 {activeSection?.label ?? "Workspace"}
                             </div>
@@ -603,7 +603,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-[252px] min-[980px]:overflow-hidden">
                 <div className="flex h-full w-full flex-col border-r border-border">
                     <div className="flex h-18 items-center border-b border-border px-5 min-[980px]:h-20">
-                        <BrandLogo imageClassName="h-10 w-48" />
+                        <BrandLogo imageClassName="h-10 w-64" />
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
                         <NavigationGroups pathname={pathname} />

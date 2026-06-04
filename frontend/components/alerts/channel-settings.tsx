@@ -47,7 +47,7 @@ const compactFieldGridClassName = "grid max-w-md gap-3";
 const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
     discord: {
         title: "Discord setup guide",
-        summary: "Market Stack sends alerts to Discord by posting to one incoming webhook URL.",
+        summary: "Ananta Market Stack sends alerts to Discord by posting to one incoming webhook URL.",
         requiredFields: ["Discord webhook URL"],
         optionalFields: ["Label"],
         steps: [
@@ -64,7 +64,7 @@ const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
     telegram: {
         title: "Telegram setup guide",
         summary:
-            "Market Stack sends alerts through the Telegram Bot API using your bot token and a destination chat id.",
+            "Ananta Market Stack sends alerts through the Telegram Bot API using your bot token and a destination chat id.",
         requiredFields: ["Telegram bot token", "Telegram chat id"],
         optionalFields: ["Label"],
         steps: [
@@ -101,7 +101,7 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
     const telegramInitial = initialChannels.find((item) => item.channel_type === "telegram");
     const [discord, setDiscord] = useState(stateFor(discordInitial, { webhook_url: "" }));
     const [telegram, setTelegram] = useState(stateFor(telegramInitial, { bot_token: "", chat_id: "" }));
-    const [message, setMessage] = useState("Market Stack channel test");
+    const [message, setMessage] = useState("Ananta Market Stack channel test");
     const [error, setError] = useState("");
     const [isPending, startTransition] = useTransition();
 

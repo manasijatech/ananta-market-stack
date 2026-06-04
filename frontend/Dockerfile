@@ -15,10 +15,10 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-COPY docker-entrypoint.sh /usr/local/bin/market-stack-frontend-entrypoint
-RUN sed -i 's/\r$//' /usr/local/bin/market-stack-frontend-entrypoint \
-    && chmod +x /usr/local/bin/market-stack-frontend-entrypoint \
-    && BETTER_AUTH_SECRET=market-stack-build-time-placeholder AUTH_DATABASE_PATH=/tmp/market-stack-build-auth.db npm run build
+COPY docker-entrypoint.sh /usr/local/bin/ananta-market-stack-frontend-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/ananta-market-stack-frontend-entrypoint \
+    && chmod +x /usr/local/bin/ananta-market-stack-frontend-entrypoint \
+    && BETTER_AUTH_SECRET=ananta-market-stack-build-time-placeholder AUTH_DATABASE_PATH=/tmp/ananta-market-stack-build-auth.db npm run build
 
 FROM node:24-slim AS runner
 
@@ -27,12 +27,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY --from=builder /usr/local/bin/market-stack-frontend-entrypoint /usr/local/bin/market-stack-frontend-entrypoint
+COPY --from=builder /usr/local/bin/ananta-market-stack-frontend-entrypoint /usr/local/bin/ananta-market-stack-frontend-entrypoint
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
 EXPOSE 3000
 
-ENTRYPOINT ["market-stack-frontend-entrypoint"]
+ENTRYPOINT ["ananta-market-stack-frontend-entrypoint"]
 CMD ["node", "server.js"]

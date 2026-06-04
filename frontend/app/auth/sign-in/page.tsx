@@ -7,7 +7,7 @@ export default function SignInPage() {
             eyebrow="Welcome back"
             title="Sign in"
             subtitle="Use your email and password to continue."
-            footerText="New to Market Stack?"
+            footerText="New to Ananta Market Stack?"
             footerHref="/auth/sign-up"
             footerAction="Create an account"
         >

@@ -1,10 +1,10 @@
 # Dhan API Setup
 
-Market Stack connects Dhan with API key, API secret, and your Dhan client ID. PIN and TOTP secret are optional and are used for automation.
+Ananta Market Stack connects Dhan with API key, API secret, and your Dhan client ID. PIN and TOTP secret are optional and are used for automation.
 
 ## What You Need
 
-| Market Stack field | Paste this |
+| Ananta Market Stack field | Paste this |
 | --- | --- |
 | API key | Dhan API key |
 | API secret | Dhan API secret |
@@ -20,7 +20,7 @@ Market Stack connects Dhan with API key, API secret, and your Dhan client ID. PI
 4. Set up static IP allowlisting if Dhan requires it.
 5. Keep PIN and TOTP secret ready only if you want automated refresh.
 
-## Add Dhan In Market Stack
+## Add Dhan In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
@@ -36,13 +36,13 @@ Manual session:
 1. Open the saved Dhan broker account.
 2. Click **Start Dhan consent flow**.
 3. Complete Dhan login and 2FA.
-4. Paste the returned `token_id` into Market Stack.
+4. Paste the returned `token_id` into Ananta Market Stack.
 5. Submit to update the session.
 
 Automated refresh:
 
 1. Store PIN and TOTP secret while adding the broker.
-2. Market Stack can use those saved values to attempt official token generation.
+2. Ananta Market Stack can use those saved values to attempt official token generation.
 
 ## Advantages
 
@@ -60,6 +60,6 @@ Automated refresh:
 
 ## Notes
 
-- Market Stack labels Dhan `app_id` as **API key** and `app_secret` as **API secret**.
+- Ananta Market Stack labels Dhan `app_id` as **API key** and `app_secret` as **API secret**.
 - Paste only the `token_id` value during manual session refresh.
 - Keep API secret, PIN, and TOTP secret private.
