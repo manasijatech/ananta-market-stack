@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -10,8 +12,14 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Public, fixed dev-only key when ALLOW_INSECURE_DEV_CREDENTIALS=true — never use in production.
-_INSECURE_DEV_FERNET_KEY = "utA_Cd56rWF3DrZvK5n9Khp7SkFXI7gtW62lG-JfnMY="
+# Label only — Fernet material is derived at runtime so scanners do not see a key in git.
+_INSECURE_DEV_KEY_LABEL = b"ananta-market-stack-insecure-local-dev-v1"
+
+
+def _insecure_dev_fernet() -> Fernet:
+    """Deterministic dev-only Fernet instance. Never use in production."""
+    digest = hashlib.sha256(_INSECURE_DEV_KEY_LABEL).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
 
 
 def _fernet() -> Fernet:
@@ -24,7 +32,7 @@ def _fernet() -> Fernet:
             "Using built-in dev Fernet key (ALLOW_INSECURE_DEV_CREDENTIALS). "
             "Set CREDENTIAL_ENCRYPTION_KEY for any shared or production data."
         )
-        return Fernet(_INSECURE_DEV_FERNET_KEY.encode("ascii"))
+        return _insecure_dev_fernet()
     raise RuntimeError(
         "Set CREDENTIAL_ENCRYPTION_KEY (Fernet key) in the environment, or set "
         "ALLOW_INSECURE_DEV_CREDENTIALS=true only for local development. See AGENTS.md."

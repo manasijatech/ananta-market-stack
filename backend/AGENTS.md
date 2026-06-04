@@ -98,7 +98,7 @@ When you touch broker behavior:
 | `DATABASE_URL` | SQLAlchemy URL (default `sqlite:///./data/app.db`) |
 | `REDIS_*` | Host, port, password, db index, quote TTL |
 | `CREDENTIAL_ENCRYPTION_KEY` | Fernet key (44-char urlsafe base64) for all encrypted columns |
-| `ALLOW_INSECURE_DEV_CREDENTIALS` | If `true`, uses a **fixed dev-only** Fernet key (never in production) |
+| `ALLOW_INSECURE_DEV_CREDENTIALS` | If `true`, uses a **derived dev-only** Fernet key (never in production) |
 | `APP_DEBUG` | App debug flag (avoids clashing with generic `DEBUG`) |
 | `ENABLE_ORDER_MUTATIONS` | Defaults to `false`. When `false`, order placement/modification/cancel endpoints return `403` and stay hidden from OpenAPI. |
 | `REDIS_*` | Required for production alert fanout, live tick cache, and workflow evaluation coordination. |

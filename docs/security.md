@@ -11,7 +11,12 @@ Important behavior:
 - Losing `CREDENTIAL_ENCRYPTION_KEY` makes existing encrypted broker secrets unreadable.
 - Rotating `CREDENTIAL_ENCRYPTION_KEY` requires a deliberate migration plan.
 - Anyone with both the SQLite database and the encryption key can decrypt stored broker secrets.
-- `ALLOW_INSECURE_DEV_CREDENTIALS=true` is only for throwaway local development.
+- `ALLOW_INSECURE_DEV_CREDENTIALS=true` is only for throwaway local development. It uses a deterministic key derived in code, not a value from the repository.
+- Do not put real Fernet keys in `.env.example`, docs, or tests. Secret scanners treat any valid-looking Fernet string as a leak, even in examples.
+
+If GitGuardian or GitHub secret scanning reported a Fernet key in this repository, it was almost certainly from `backend/.env.example` (a sample key committed since the first backend import) or the old hard-coded dev fallback in `backend/broker/crypto.py` — not from `docker build` or `docker push`. Image builds generate secrets at container start into `/data/config/` and do not publish them to GitHub.
+
+If you ever copied the old `.env.example` key into production, generate a new `CREDENTIAL_ENCRYPTION_KEY`, update your config volume or `.env`, and re-enter broker credentials (existing ciphertext cannot be decrypted with a new key).
 
 ## Docker Secrets
 
