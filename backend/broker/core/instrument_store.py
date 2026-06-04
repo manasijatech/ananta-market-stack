@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from common.datetime_compat import UTC
@@ -106,6 +106,33 @@ def latest_sync_run(db: Session, broker_code: str) -> BrokerInstrumentSyncRun | 
         .limit(1)
     )
     return db.scalars(stmt).first()
+
+
+_STALE_SYNC_RUNNING = timedelta(minutes=45)
+_STALE_SYNC_ORPHAN = timedelta(minutes=3)
+
+
+def reconcile_stale_sync_run(
+    db: Session,
+    broker_code: str,
+    *,
+    inflight: bool,
+) -> BrokerInstrumentSyncRun | None:
+    """Mark abandoned or timed-out sync runs so new work can be scheduled."""
+    last_run = latest_sync_run(db, broker_code)
+    if last_run is None or last_run.status != "running" or last_run.started_at is None:
+        return last_run
+    age = datetime.utcnow() - last_run.started_at
+    if inflight and age < _STALE_SYNC_RUNNING:
+        return last_run
+    if not inflight and age < _STALE_SYNC_ORPHAN:
+        return last_run
+    reason = (
+        "Instrument sync timed out before completion."
+        if age >= _STALE_SYNC_RUNNING
+        else "Instrument sync stopped unexpectedly; retrying."
+    )
+    return finish_sync_run(db, last_run, status="failed", row_count=0, error=reason)
 
 
 def count_instruments(db: Session, broker_code: str) -> int:

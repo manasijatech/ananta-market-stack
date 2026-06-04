@@ -6,10 +6,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatUserFacingError } from "@/lib/api-errors";
 import type { InstrumentSyncResult } from "@/service/types/broker";
 
-const ACTIVE_STATUSES = new Set(["running", "scheduled", "not_started", "pending"]);
+const RUNNING_STATUSES = new Set(["running"]);
 
-function isActive(status: string | null | undefined): boolean {
-    return Boolean(status && ACTIVE_STATUSES.has(status));
+function isRunning(status: string | null | undefined): boolean {
+    return Boolean(status && RUNNING_STATUSES.has(status));
 }
 
 export function InstrumentSyncBanner({
@@ -23,10 +23,11 @@ export function InstrumentSyncBanner({
 }) {
     const [status, setStatus] = useState<InstrumentSyncResult | null>(null);
     const [message, setMessage] = useState(initialMessage ?? "");
-    const [active, setActive] = useState(isActive(initialStatus));
+    const [active, setActive] = useState(isRunning(initialStatus));
 
     useEffect(() => {
         let cancelled = false;
+        let attemptsWithoutProgress = 0;
 
         async function poll() {
             try {
@@ -35,13 +36,20 @@ export function InstrumentSyncBanner({
                     return;
                 }
                 setStatus(result);
-                const stillActive = isActive(result.sync_status);
-                setActive(stillActive);
-                if (stillActive) {
+                const stillRunning = isRunning(result.sync_status);
+                setActive(stillRunning);
+
+                if (stillRunning) {
+                    attemptsWithoutProgress += 1;
                     setMessage(
                         "Downloading the broker instrument master. Symbol search and alert symbol pickers will work once this finishes."
                     );
-                } else if (result.sync_status === "failed") {
+                    return;
+                }
+
+                attemptsWithoutProgress = 0;
+
+                if (result.sync_status === "failed") {
                     setMessage(
                         result.error ||
                             "Instrument sync failed. Open Test data APIs to retry sync, or click Verify on this broker account."
@@ -50,11 +58,17 @@ export function InstrumentSyncBanner({
                 } else if (result.sync_status === "completed" || result.sync_status === "preserved") {
                     setMessage("");
                     setActive(false);
+                } else if (result.sync_status === "not_started" || result.sync_status === "pending") {
+                    setMessage("");
+                    setActive(false);
                 }
             } catch (caught) {
                 if (!cancelled) {
-                    setActive(false);
-                    setMessage(formatUserFacingError(caught, ""));
+                    attemptsWithoutProgress += 1;
+                    if (attemptsWithoutProgress >= 3) {
+                        setActive(false);
+                        setMessage(formatUserFacingError(caught, ""));
+                    }
                 }
             }
         }
@@ -87,7 +101,9 @@ export function InstrumentSyncBanner({
             <AlertTitle>{title}</AlertTitle>
             <AlertDescription>
                 {message}
-                {rowCount > 0 && status?.sync_status === "completed" ? ` (${rowCount.toLocaleString()} symbols indexed.)` : null}
+                {rowCount > 0 && status?.sync_status === "completed"
+                    ? ` (${rowCount.toLocaleString()} symbols indexed.)`
+                    : null}
             </AlertDescription>
         </Alert>
     );

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import sys
+import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Any
@@ -19,6 +21,7 @@ from broker.core.instrument_store import (
     SQLiteInstrumentResolver,
     create_sync_run,
     finish_sync_run,
+    reconcile_stale_sync_run,
     replace_instruments,
     search_instruments as search_cached_instruments,
 )
@@ -28,6 +31,8 @@ from db.models import BrokerAccount, BrokerInstrument
 _INSTRUMENT_EXPORT_DIR = Path(__file__).resolve().parents[2] / "data" / "instruments"
 _CSV_CACHE_TTL = timedelta(minutes=1)
 _CSV_SEARCH_CACHE: dict[str, dict[str, Any]] = {}
+_INSTRUMENT_FETCH_ATTEMPTS = 3
+logger = logging.getLogger(__name__)
 
 try:
     csv.field_size_limit(sys.maxsize)
@@ -536,6 +541,95 @@ def _preserve_existing_instrument_cache(
 
 def sync_instruments_for_account(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
     return sync_instruments_to_csv(db, acc)
+
+
+def _fetch_instrument_rows_with_retries(db: Session, acc: BrokerAccount) -> tuple[list[dict[str, Any]], str | None]:
+    last_error: str | None = None
+    for attempt in range(1, _INSTRUMENT_FETCH_ATTEMPTS + 1):
+        try:
+            rows = _fetch_instrument_rows(db, acc)
+            if rows:
+                return rows, None
+            last_error = "Broker returned no instrument rows."
+        except Exception as exc:
+            last_error = str(exc)[:2000]
+            logger.warning(
+                "Instrument fetch attempt %s/%s failed for %s: %s",
+                attempt,
+                _INSTRUMENT_FETCH_ATTEMPTS,
+                acc.broker_code,
+                exc,
+            )
+        if attempt < _INSTRUMENT_FETCH_ATTEMPTS:
+            time.sleep(min(2**attempt, 10))
+    return [], last_error
+
+
+def sync_instruments_combined(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
+    """Background-friendly sync: one run record, retries, CSV before SQLite."""
+    reconcile_stale_sync_run(db, acc.broker_code, inflight=True)
+    run = create_sync_run(db, acc.broker_code)
+    started_at = run.started_at
+    csv_path = _csv_path_for_broker(acc.broker_code)
+
+    try:
+        rows, fetch_error = _fetch_instrument_rows_with_retries(db, acc)
+        if not rows:
+            preserved = _preserve_existing_instrument_cache(
+                db, acc, storage_target="db+csv", started_at=started_at
+            )
+            if preserved.sync_status == "preserved":
+                finish_sync_run(
+                    db,
+                    run,
+                    status=preserved.sync_status,
+                    row_count=preserved.row_count,
+                    error=preserved.error,
+                )
+                return preserved
+            finish_sync_run(
+                db,
+                run,
+                status="failed",
+                row_count=0,
+                error=fetch_error or "Instrument sync returned no rows.",
+            )
+            return _instrument_sync_out(
+                broker_code=acc.broker_code,
+                sync_status="failed",
+                row_count=0,
+                started_at=started_at,
+                finished_at=datetime.utcnow(),
+                error=fetch_error or "Instrument sync returned no rows.",
+                storage_target="db+csv",
+            )
+
+        _write_csv(rows, csv_path)
+        row_count = replace_instruments(db, acc.broker_code, rows)
+        finish_sync_run(db, run, status="completed", row_count=row_count)
+        _CSV_SEARCH_CACHE.pop(acc.broker_code, None)
+        return _instrument_sync_out(
+            broker_code=acc.broker_code,
+            sync_status="completed",
+            row_count=row_count,
+            started_at=started_at,
+            finished_at=run.finished_at,
+            storage_target="db+csv",
+            csv_path=_csv_relpath(csv_path),
+        )
+    except Exception as exc:
+        logger.exception("Combined instrument sync failed for %s", acc.broker_code)
+        finish_sync_run(db, run, status="failed", row_count=0, error=str(exc)[:2000])
+        return _instrument_sync_out(
+            broker_code=acc.broker_code,
+            sync_status="failed",
+            row_count=0,
+            started_at=started_at,
+            finished_at=run.finished_at,
+            error=str(exc)[:2000],
+            storage_target="db+csv",
+            csv_path=_csv_relpath(csv_path) if csv_path.exists() else None,
+        )
 
 
 def sync_instruments_to_db(db: Session, acc: BrokerAccount) -> InstrumentSyncOut:
