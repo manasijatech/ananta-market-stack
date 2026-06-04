@@ -243,7 +243,15 @@ def get_instrument_sync_status(
     user: User = Depends(get_current_user),
 ) -> InstrumentSyncOut:
     acc = _owned(db, user.id, account_id)
-    status = instrument_sync_status(db, acc)
+    try:
+        status = instrument_sync_status(db, acc)
+    except Exception:
+        return InstrumentSyncOut(
+            broker=acc.broker_code,
+            sync_status="not_started",
+            row_count=0,
+            storage_target="db+csv",
+        )
     if status is None:
         return InstrumentSyncOut(
             broker=acc.broker_code,

@@ -6,6 +6,7 @@ import { BrokerCard, PageHeader, PrimaryLink, Shell } from "@/components/brokers
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BrokerAccount } from "@/service/types/broker";
+import { formatUserFacingError } from "@/lib/api-errors";
 
 export default async function BrokersPage() {
     let accounts: BrokerAccount[] = [];
@@ -14,7 +15,7 @@ export default async function BrokersPage() {
     try {
         accounts = await getBrokerAccounts();
     } catch (caught) {
-        error = caught instanceof Error ? caught.message : "Could not load broker accounts.";
+        error = formatUserFacingError(caught, "Could not load broker accounts.");
     }
 
     return (
