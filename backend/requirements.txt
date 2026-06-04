@@ -54,7 +54,7 @@ redis==7.4.0
 referencing==0.37.0
 requests==2.34.2
 rich==14.3.3
-rich-toolkit==0.19.7
+rich-toolkit==0.20.0
 rignore==0.7.6
 rpds-py==0.30.0
 rq==2.9.0
