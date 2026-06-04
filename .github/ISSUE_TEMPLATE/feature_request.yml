@@ -1,0 +1,13 @@
+name: Feature Request
+description: Suggest an idea or new feature for the market stack
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      placeholder: A clear description of what the problem is.
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+      placeholder: A clear description of what you want to happen.
