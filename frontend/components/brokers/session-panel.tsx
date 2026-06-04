@@ -27,7 +27,7 @@ function isZerodhaStatus(status: SessionStatus): status is ZerodhaSessionStatus 
 }
 
 function brokerSessionInputName(key: string): string {
-    return `market_stack_broker_session_${key}`;
+    return `ananta_market_stack_broker_session_${key}`;
 }
 
 function isExpiredTokenStatus(sessionStatus: SessionStatus, expiresAt?: string | null): boolean {
@@ -187,7 +187,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
 
     function rememberPendingBrokerLogin() {
         window.localStorage.setItem(
-            "market-stack:pending-broker-login",
+            "ananta-market-stack:pending-broker-login",
             JSON.stringify({
                 accountId: account.id,
                 broker,

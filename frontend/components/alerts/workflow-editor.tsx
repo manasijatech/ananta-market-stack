@@ -3492,11 +3492,11 @@ export function WorkflowEditor({
                                     value={workflowType}
                                 >
                                     <option value="market_data">Broker market data trigger</option>
-                                    <option value="alpha_feed">Market Stack websocket feed trigger</option>
+                                    <option value="alpha_feed">Ananta Market Stack websocket feed trigger</option>
                                 </Select>
                                 <HelpText>
                                     {workflowType === "alpha_feed"
-                                        ? "This workflow analyzes stored Market Stack websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
+                                        ? "This workflow analyzes stored Ananta Market Stack websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
                                         : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
                                 </HelpText>
                             </Label>
@@ -3759,7 +3759,7 @@ export function WorkflowEditor({
                             <StepHeader
                                 step={feedTriggerStep}
                                 title="Feed trigger"
-                                description="Choose which Market Stack websocket products and symbol scopes can create alerts before optional trigger LLM classification runs."
+                                description="Choose which Ananta Market Stack websocket products and symbol scopes can create alerts before optional trigger LLM classification runs."
                             />
                             <div className="grid max-w-3xl gap-4 min-[900px]:grid-cols-2">
                                 <div>
@@ -3796,7 +3796,7 @@ export function WorkflowEditor({
                                     </Select>
                                     <HelpText>
                                         Events are only available for symbols currently subscribed by the background
-                                        Market Stack websocket worker unless full-market is enabled for the chosen
+                                        Ananta Market Stack websocket worker unless full-market is enabled for the chosen
                                         products.
                                     </HelpText>
                                 </div>

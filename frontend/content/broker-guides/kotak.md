@@ -1,10 +1,10 @@
 # Kotak Neo Setup
 
-Market Stack connects Kotak Neo with UCC and portal access token. Sessions use mobile number, TOTP, and MPIN.
+Ananta Market Stack connects Kotak Neo with UCC and portal access token. Sessions use mobile number, TOTP, and MPIN.
 
 ## What You Need
 
-| Market Stack field | Paste this |
+| Ananta Market Stack field | Paste this |
 | --- | --- |
 | UCC | Kotak Unique Client Code |
 | Portal access token | Kotak Neo portal access token |
@@ -20,7 +20,7 @@ Market Stack connects Kotak Neo with UCC and portal access token. Sessions use m
 4. Keep registered mobile number, MPIN, and current TOTP ready.
 5. Keep TOTP secret ready only if you want automation.
 
-## Add Kotak Neo In Market Stack
+## Add Kotak Neo In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
@@ -40,7 +40,7 @@ Manual session:
 Automated refresh:
 
 1. Store mobile number, MPIN, and TOTP secret.
-2. Market Stack can use those saved values to rebuild the session.
+2. Ananta Market Stack can use those saved values to rebuild the session.
 
 ## Advantages
 

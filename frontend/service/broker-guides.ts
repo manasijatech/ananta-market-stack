@@ -109,7 +109,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
             "Open the INDstocks API trading page.",
             "Generate or copy a fresh INDmoney bearer access token.",
             "Set up static IP allowlisting if INDmoney requires it.",
-            "Paste the access token into Market Stack."
+            "Paste the access token into Ananta Market Stack."
         ],
         formMapping: [
             { label: "Access token", field: "access_token", note: "Paste only the token value, not the word Bearer." }
@@ -120,7 +120,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
         ],
         notes: [
             "Treat access tokens like passwords.",
-            "INDmoney is manual-token only in Market Stack right now; there is no automated login or TOTP flow."
+            "INDmoney is manual-token only in Ananta Market Stack right now; there is no automated login or TOTP flow."
         ]
     },
     kotak: {
@@ -168,7 +168,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
             "Create an Upstox developer app.",
             "Copy the API key and API secret.",
             "Set the redirect URI to http://localhost:3000/broker-connections for local development.",
-            "Save the exact same redirect URI in Market Stack."
+            "Save the exact same redirect URI in Ananta Market Stack."
         ],
         formMapping: [
             { label: "API key", field: "api_key", note: "Upstox client ID or API key." },
@@ -182,23 +182,23 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
         sessionSteps: [
             "Save the account, then open the broker detail page.",
             "Open the Upstox login URL from the session panel.",
-            "After authorization, Market Stack reads the code from /broker-connections and connects the account automatically."
+            "After authorization, Ananta Market Stack reads the code from /broker-connections and connects the account automatically."
         ],
         notes: [
-            "The redirect URI in Upstox and Market Stack must be identical.",
+            "The redirect URI in Upstox and Ananta Market Stack must be identical.",
             "Use http://localhost:3000 before and after broker login."
         ]
     },
     zerodha: {
         broker: "zerodha",
         title: "Zerodha Kite Connect Setup",
-        summary: "Connect Zerodha with Kite Connect API key and API secret, then authorize the session from Market Stack.",
+        summary: "Connect Zerodha with Kite Connect API key and API secret, then authorize the session from Ananta Market Stack.",
         required: ["Account label", "API key", "API secret"],
         setupSteps: [
             "Create or open your Kite Connect app.",
             "Copy the API key and API secret.",
             "Set the app redirect URL to http://localhost:3000/broker-connections for local development.",
-            "Save the credentials in Market Stack."
+            "Save the credentials in Ananta Market Stack."
         ],
         formMapping: [
             { label: "API key", field: "api_key", note: "Kite Connect API key." },
@@ -207,7 +207,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
         sessionSteps: [
             "Open the broker detail page after saving credentials.",
             "Open the Zerodha login URL shown in the session panel.",
-            "After authorization, Market Stack reads the request_token from /broker-connections and connects the account automatically."
+            "After authorization, Ananta Market Stack reads the request_token from /broker-connections and connects the account automatically."
         ],
         notes: [
             "Zerodha sessions usually need fresh authorization each trading day.",

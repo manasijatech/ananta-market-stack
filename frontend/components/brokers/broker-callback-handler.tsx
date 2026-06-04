@@ -18,7 +18,7 @@ type PendingBrokerLogin = {
     createdAt?: number;
 };
 
-const pendingLoginKey = "market-stack:pending-broker-login";
+const pendingLoginKey = "ananta-market-stack:pending-broker-login";
 const pendingLoginMaxAgeMs = 10 * 60 * 1000;
 
 function callbackPayload(params: URLSearchParams): {
@@ -106,7 +106,7 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
             setCallbackState({
                 tone: "warning",
                 message:
-                    "Broker login returned successfully, but this browser session cannot see any broker accounts. Open Market Stack using localhost:3000 before starting broker login, then use the same host for the callback."
+                    "Broker login returned successfully, but this browser session cannot see any broker accounts. Open Ananta Market Stack using localhost:3000 before starting broker login, then use the same host for the callback."
             });
             return;
         }
@@ -159,7 +159,7 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
                 const message = parseActionError(caught).message;
                 setCallbackState({
                     tone: "destructive",
-                    message: `Broker login returned, but Market Stack could not finish setup automatically. ${message}`
+                    message: `Broker login returned, but Ananta Market Stack could not finish setup automatically. ${message}`
                 });
             }
         }

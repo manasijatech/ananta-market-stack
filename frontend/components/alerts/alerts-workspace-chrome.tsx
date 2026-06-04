@@ -97,7 +97,7 @@ export function AlertsWorkspaceChrome({ children }: { children: React.ReactNode 
     return (
         <HeaderOverrideContext.Provider value={setHeaderOverride}>
             {compactAlertsHeader ? (
-                <header className="mb-4 flex min-w-0 flex-col justify-between gap-4 border-b border-border pb-4 min-[860px]:flex-row min-[860px]:items-end">
+                <header className="alerts-workspace-chrome-header mb-4 flex min-w-0 flex-col justify-between gap-4 border-b border-border pb-4 min-[860px]:flex-row min-[860px]:items-end">
                     <div className="min-w-0">
                         <p className="type-page-eyebrow mb-2">{header.eyebrow}</p>
                         <h1 className="break-words text-[clamp(26px,9vw,38px)] font-semibold leading-none tracking-normal">

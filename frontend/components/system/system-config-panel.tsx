@@ -141,7 +141,7 @@ const PROVIDER_SETUP_GUIDES: Record<
         notes: [
             "OpenRouter model IDs normally look like provider/model-name.",
             "If a model fails, check credits, model availability, and whether the model needs a paid account.",
-            "OpenRouter is useful when you want to switch model providers without changing Market Stack code."
+            "OpenRouter is useful when you want to switch model providers without changing Ananta Market Stack code."
         ]
     },
     gemini: {
@@ -189,7 +189,7 @@ const PROVIDER_SETUP_GUIDES: Record<
         ],
         modelExamples: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
         notes: [
-            "Market Stack uses Anthropic through Claude's OpenAI-compatible Chat Completions endpoint.",
+            "Ananta Market Stack uses Anthropic through Claude's OpenAI-compatible Chat Completions endpoint.",
             "Prompt caching, citations, PDF processing, and full extended-thinking features need Anthropic's native API.",
             "For broker chat, Claude runs through the Agents SDK Chat Completions model path."
         ]
@@ -744,7 +744,7 @@ export function SystemConfigPanel({
                                 <DialogHeader className="border-b border-border px-5 py-4 pr-14">
                                     <DialogTitle>Manasija Alpha API</DialogTitle>
                                     <DialogDescription>
-                                        This key connects Market Stack to Manasija Alpha market intelligence services.
+                                        This key connects Ananta Market Stack to Manasija Alpha market intelligence services.
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
@@ -1052,7 +1052,7 @@ export function SystemConfigPanel({
                     <textarea
                         className="mt-3 min-h-24 w-full border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-primary"
                         onChange={(event) => setMcpExtraHeadersText(event.target.value)}
-                        placeholder='{"X-Workspace": "market-stack"}'
+                        placeholder='{"X-Workspace": "ananta-market-stack"}'
                         value={mcpExtraHeadersText}
                     />
 

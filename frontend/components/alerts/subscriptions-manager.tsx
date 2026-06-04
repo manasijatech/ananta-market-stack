@@ -225,7 +225,7 @@ export function SubscriptionsManager({
             nextSymbolCount > liveSymbolLimit
         ) {
             setError(
-                `This Market Stack plan allows ${liveSymbolLimit} live symbols. Your selected scope currently resolves to about ${nextSymbolCount}.`
+                `This Ananta Market Stack plan allows ${liveSymbolLimit} live symbols. Your selected scope currently resolves to about ${nextSymbolCount}.`
             );
             return;
         }
@@ -292,7 +292,7 @@ export function SubscriptionsManager({
                 <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                         <div className="text-base font-semibold leading-5 text-foreground">
-                            Market Stack websocket subscriptions
+                            Ananta Market Stack websocket subscriptions
                         </div>
                         <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
                             Backend worker status: {alphaWsConfig.status}
@@ -301,7 +301,7 @@ export function SubscriptionsManager({
                                 : ""}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                            Market Stack plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"} ·{" "}
+                            Ananta Market Stack plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"} ·{" "}
                             {alphaWsConfig.scope_mode === "full_market"
                                 ? "full market"
                                 : `${activeLiveSymbols}${typeof liveSymbolLimit === "number" ? ` / ${liveSymbolLimit}` : ""} live symbols`}

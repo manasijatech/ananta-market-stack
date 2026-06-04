@@ -21,7 +21,7 @@ type GrowwMode = "approval" | "totp" | "token";
 const fallbackBrokerRedirectUrl = "http://localhost:3000/broker-connections";
 
 function brokerCredentialInputName(key: string): string {
-    return `market_stack_broker_credential_${key}`;
+    return `ananta_market_stack_broker_credential_${key}`;
 }
 
 function stringField(formData: FormData, key: string): string {

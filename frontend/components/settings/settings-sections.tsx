@@ -82,10 +82,10 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
     }
 ];
 
-const ONBOARDING_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
-const ONBOARDING_PHASE_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
-const ONBOARDING_STEP_STORAGE_KEY = "market-stack-joyride-broker-system-config-alpha-guide-v2-step";
-const ONBOARDING_RESET_EVENT = "market-stack-reset-onboarding";
+const ONBOARDING_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
+const ONBOARDING_PHASE_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
+const ONBOARDING_STEP_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-step";
+const ONBOARDING_RESET_EVENT = "ananta-market-stack-reset-onboarding";
 
 function sectionFromHash(): SettingsSection {
     if (typeof window === "undefined") {

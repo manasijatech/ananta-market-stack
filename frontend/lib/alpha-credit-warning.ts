@@ -1,4 +1,4 @@
-export const ALPHA_CREDIT_WARNING_EVENT = "market-stack:alpha-credit-warning";
+export const ALPHA_CREDIT_WARNING_EVENT = "ananta-market-stack:alpha-credit-warning";
 
 export const DEFAULT_ALPHA_CREDIT_WARNING_MESSAGE =
     "Insufficient Alpha API credits. Add credits or update the Alpha API key before using market intelligence data.";

@@ -17,7 +17,7 @@ export function AlertsNav() {
 
     return (
         <nav
-            className="-mx-4 mb-4 flex min-w-0 gap-1.5 overflow-x-auto px-4 pb-1 min-[760px]:mx-0 min-[760px]:flex-wrap min-[760px]:overflow-visible min-[760px]:px-0 min-[760px]:pb-0"
+            className="alerts-workspace-nav -mx-4 mb-4 flex min-w-0 gap-1.5 overflow-x-auto px-4 pb-1 min-[760px]:mx-0 min-[760px]:flex-wrap min-[760px]:overflow-visible min-[760px]:px-0 min-[760px]:pb-0"
             aria-label="Alerts workspace"
         >
             {items.map((item) => {

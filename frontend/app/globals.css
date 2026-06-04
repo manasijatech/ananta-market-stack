@@ -1414,6 +1414,13 @@
 }
 
 @layer components {
+    @media (min-width: 980px) {
+        body.workflow-ai-chat-panel-open .alerts-workspace-chrome-header,
+        body.workflow-ai-chat-panel-open .alerts-workspace-nav {
+            margin-right: var(--workflow-ai-chat-panel-width, 0px);
+        }
+    }
+
     .type-page-eyebrow {
         @apply font-mono text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary;
     }

@@ -90,7 +90,7 @@ const trustedOrigins = Array.from(
 );
 
 export const auth = betterAuth({
-    appName: "Market Stack",
+    appName: "Ananta Market Stack",
     baseURL: authBaseURL,
     trustedOrigins,
     secret: process.env.BETTER_AUTH_SECRET,
@@ -106,7 +106,7 @@ export const auth = betterAuth({
         updateAge: 60 * 60 * 24
     },
     advanced: {
-        cookiePrefix: "market-stack",
+        cookiePrefix: "ananta-market-stack",
         database: {
             generateId: "uuid"
         }

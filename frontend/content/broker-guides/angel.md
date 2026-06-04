@@ -1,10 +1,10 @@
 # Angel One SmartAPI Setup
 
-Market Stack connects Angel One with SmartAPI credentials, your Angel client code, PIN, and TOTP.
+Ananta Market Stack connects Angel One with SmartAPI credentials, your Angel client code, PIN, and TOTP.
 
 ## What You Need
 
-| Market Stack field | Paste this |
+| Ananta Market Stack field | Paste this |
 | --- | --- |
 | API key | Angel One SmartAPI app key |
 | Client code | Angel One client code or user ID |
@@ -18,7 +18,7 @@ Market Stack connects Angel One with SmartAPI credentials, your Angel client cod
 3. Keep your Angel client code and PIN ready.
 4. Make sure TOTP is enabled for your Angel account.
 
-## Add Angel One In Market Stack
+## Add Angel One In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
@@ -35,7 +35,7 @@ If TOTP secret is not stored:
 2. Enter client code, PIN, and the current 6-digit TOTP.
 3. Submit to generate the session.
 
-If TOTP secret is stored, Market Stack can attempt automated session refresh using the saved PIN and TOTP secret.
+If TOTP secret is stored, Ananta Market Stack can attempt automated session refresh using the saved PIN and TOTP secret.
 
 ## Advantages
 
