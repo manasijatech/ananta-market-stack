@@ -1,7 +1,9 @@
-* @TechManasija
+* @TechManasija @Shaunfurtado
 
-/.github/ @TechManasija
-/Dockerfile @TechManasija
-/docker/ @TechManasija
-/scripts/ @TechManasija
-/backend/alembic/ @TechManasija
+/.github/ @TechManasija @Shaunfurtado
+/Dockerfile @TechManasija @Shaunfurtado
+/docker/ @TechManasija @Shaunfurtado
+/scripts/ @TechManasija @Shaunfurtado
+/backend/alembic/ @TechManasija @Shaunfurtado
+/docs/security.md @TechManasija @Shaunfurtado
+/SECURITY.md @TechManasija @Shaunfurtado

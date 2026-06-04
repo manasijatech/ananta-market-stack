@@ -1,5 +1,9 @@
 # Ananta Market Stack
 
+[![CI](https://github.com/manasijatech/ananta-market-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/manasijatech/ananta-market-stack/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/manasijatech/ananta-market-stack)](LICENSE)
+[![GitHub issues](https://img.shields.io/github/issues/manasijatech/ananta-market-stack)](https://github.com/manasijatech/ananta-market-stack/issues)
+
 Ananta Market Stack is a self-hosted trading and market-data workspace for connecting broker accounts, managing broker sessions, viewing portfolio data, fetching market data, and running user-owned alert workflows from one consistent UI and API.
 
 It is built for people who want a practical local or self-hosted market workspace without wiring together every broker integration themselves. Developers can also use it as a FastAPI + Next.js reference implementation for broker account management, encrypted credential storage, market-data APIs, alerting, and broker-aware automation.
@@ -101,6 +105,9 @@ Use `docker compose down -v` only when you intentionally want to delete Docker-m
 - [Security notes](docs/security.md) - encrypted broker credentials, secrets, backups, Redis, and production hardening.
 - [Contributing](CONTRIBUTING.md) - contribution workflow, checks, migrations, and compatibility expectations.
 - [Support](SUPPORT.md) - where to start when setup or runtime issues appear.
+- [Security policy](SECURITY.md) - how to report vulnerabilities privately.
+- [Code of Conduct](CODE_OF_CONDUCT.md) - community expectations.
+- [Maintainers](MAINTAINERS.md) - branch protection, releases, and publishing (maintainers only).
 
 ## Project Layout
 

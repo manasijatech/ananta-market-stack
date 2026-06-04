@@ -1,24 +1,82 @@
 name: Bug Report
-description: File a report to help us improve ananta-market-stack
+description: Something is broken in Ananta Market Stack
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report!
+        Thanks for reporting a bug. Please read [SUPPORT.md](https://github.com/manasijatech/ananta-market-stack/blob/main/SUPPORT.md) first.
+        Do **not** paste broker secrets, `.env` files, or database dumps.
+
+  - type: dropdown
+    id: setup
+    attributes:
+      label: How are you running the stack?
+      options:
+        - Published Docker image (`docker run`)
+        - Docker Compose from source
+        - Manual backend + frontend development
+        - Railway or other PaaS
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or image tag
+      placeholder: e.g. latest, 0.1.0, or git commit SHA
+    validations:
+      required: false
+
+  - type: dropdown
+    id: broker
+    attributes:
+      label: Broker involved (if any)
+      multiple: false
+      options:
+        - None / not broker-specific
+        - angel
+        - dhan
+        - groww
+        - indmoney
+        - kotak
+        - upstox
+        - zerodha
+        - other
+
   - type: textarea
     id: clear-description
     attributes:
-      label: Describe the bug
-      placeholder: A clear and concise description of what the bug is.
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
     validations:
       required: true
+
   - type: textarea
     id: reproduction-steps
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Go to '...'
-        2. Click on '....'
+        1. Start the stack with ...
+        2. Open ...
         3. See error
     validations:
       required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. Ubuntu 24.04, macOS 15, Windows 11
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Redact secrets. For Docker, `docker compose logs -f backend` or `frontend` output helps.
+      render: shell
+    validations:
+      required: false

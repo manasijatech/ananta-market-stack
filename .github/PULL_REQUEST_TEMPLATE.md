@@ -1,16 +1,37 @@
-## Description
-Fixes # (issue number)
+## Summary
 
-## Type of Change
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+<!-- What changed and why? Link issues with "Fixes #123" when applicable. -->
 
-## How Has This Been Tested?
-- [ ] Unit Tests
-- [ ] Integration Tests
+Fixes #
 
-## Checklist:
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] My changes generate no new warnings
+## Type of change
+
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation only
+
+## Checks run
+
+Mark what you ran locally (see [CONTRIBUTING.md](../CONTRIBUTING.md)):
+
+- [ ] Backend: `alembic upgrade head` (if models/migrations changed)
+- [ ] Backend: `python -m compileall -q app broker` (or touched modules)
+- [ ] Frontend: `npm run lint`
+- [ ] Frontend: `npm run build` (if frontend changed)
+- [ ] Docker smoke test (if Docker/runtime changed)
+- [ ] Could not run some checks (explain below)
+
+## Screenshots / recordings
+
+<!-- Required for meaningful UI changes -->
+
+## Security, migrations, and ops
+
+- [ ] No secrets, tokens, `.env`, or database files committed
+- [ ] Alembic migration included and reviewed (if schema changed)
+- [ ] Security-sensitive change explained below (auth, credentials, Redis, encryption)
+
+**Notes:**
+
+<!-- Setup impact, env var changes, broker flow changes, Windows compat, etc. -->
