@@ -84,15 +84,25 @@ def build_verify_out(db: Session, acc: BrokerAccount, ok: bool, message: str) ->
     if not ok:
         return VerifyOut(ok=False, message=message or "")
 
-    scheduled = schedule_instrument_sync_if_needed(db, acc)
-    sync_status, sync_message = _sync_user_message(db, acc, scheduled=scheduled)
-    return VerifyOut(
-        ok=True,
-        message=message or "",
-        instrument_sync_scheduled=scheduled,
-        instrument_sync_status=sync_status,
-        instrument_sync_message=sync_message,
-    )
+    try:
+        scheduled = schedule_instrument_sync_if_needed(db, acc)
+        sync_status, sync_message = _sync_user_message(db, acc, scheduled=scheduled)
+        return VerifyOut(
+            ok=True,
+            message=message or "",
+            instrument_sync_scheduled=scheduled,
+            instrument_sync_status=sync_status,
+            instrument_sync_message=sync_message,
+        )
+    except Exception:
+        logger.exception("Failed to prepare instrument sync status for account %s", acc.id)
+        return VerifyOut(
+            ok=True,
+            message=message or "",
+            instrument_sync_scheduled=False,
+            instrument_sync_status=None,
+            instrument_sync_message=None,
+        )
 
 
 def _sync_user_message(db: Session, acc: BrokerAccount, *, scheduled: bool) -> tuple[str | None, str | None]:

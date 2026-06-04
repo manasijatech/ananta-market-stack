@@ -25,6 +25,8 @@ import { getLlmUsageOverview } from "@/service/actions/llm-usage";
 import type { AlertWorkflow, AlertWorkflowRun, LiveStreamsStatus } from "@/service/types/alerts";
 import type { BrokerAccount, SystemConfig } from "@/service/types/broker";
 import type { LlmUsageOverview } from "@/service/types/llm-usage";
+import { formatUserFacingError } from "@/lib/api-errors";
+import { parseActionError } from "@/components/brokers/action-error";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,7 @@ type Tone = "good" | "warn" | "danger" | "muted";
 type LoadResult<T> = {
     data: T;
     error?: string;
+    status?: number;
 };
 
 type DashboardData = {
@@ -60,13 +63,18 @@ function compactNumber(value: number): string {
     return compactFormatter.format(value || 0);
 }
 
-function extractError(caught: unknown): string {
-    return caught instanceof Error ? caught.message : "Could not load this API.";
-}
-
 function settled<T>(result: PromiseSettledResult<T>, fallback: T): LoadResult<T> {
     if (result.status === "fulfilled") return { data: result.value };
-    return { data: fallback, error: extractError(result.reason) };
+    const parsed = parseActionError(result.reason);
+    return {
+        data: fallback,
+        error: formatUserFacingError(result.reason),
+        status: parsed.status
+    };
+}
+
+function isFreshSetupError(result: LoadResult<unknown>): boolean {
+    return Boolean(result.error && result.status && result.status >= 500);
 }
 
 function toneClasses(tone: Tone) {
@@ -179,12 +187,16 @@ function BrokerOverviewCard({ data }: { data: DashboardData["accounts"] }) {
     const readyAccounts = data.data.filter(isBrokerAccountReady);
     const attentionAccounts = data.data.filter((account) => account.last_error || !isBrokerAccountReady(account));
     const automationAccounts = data.data.filter((account) => account.automation_enabled);
-    const tone: Tone = data.error ? "danger" : attentionAccounts.length ? "warn" : readyAccounts.length ? "good" : "muted";
+    const startup = isFreshSetupError(data) && data.data.length === 0;
+    const tone: Tone = startup ? "muted" : data.error ? "danger" : attentionAccounts.length ? "warn" : readyAccounts.length ? "good" : "muted";
+    const cardError = startup
+        ? "No broker accounts yet. Add a broker connection to begin setup."
+        : data.error;
 
     return (
         <DashboardCard
             description="Session readiness, verification, and automation coverage across connected broker accounts."
-            error={data.error}
+            error={cardError}
             href="/broker-connections"
             icon={IconBuildingBank}
             label="Broker API"
@@ -223,13 +235,20 @@ function AlertsOverviewCard({
         unreadAlerts.error ||
         alertRuns.error ||
         liveStreams.error;
-    const tone: Tone = error
-        ? "danger"
-        : runtimeIssues.length || unreadAlerts.data
-          ? "warn"
-          : activeWorkflows.data.length
-            ? "good"
-            : "muted";
+    const serviceUnavailable =
+        [activeWorkflows, inactiveWorkflows, unreadAlerts, alertRuns, liveStreams].some(isFreshSetupError);
+    const cardError = serviceUnavailable
+        ? "Alerts and live streams will appear after the workspace finishes starting."
+        : error;
+    const tone: Tone = serviceUnavailable
+        ? "muted"
+        : error
+          ? "danger"
+          : runtimeIssues.length || unreadAlerts.data
+            ? "warn"
+            : activeWorkflows.data.length
+              ? "good"
+              : "muted";
 
     return (
         <DashboardCard
@@ -237,7 +256,7 @@ function AlertsOverviewCard({
                 firstRuntimeError(allWorkflows) ||
                 "Workflow state, recent evaluation matches, alert inbox pressure, and live subscription coverage."
             }
-            error={error}
+            error={cardError}
             href="/alerts-workspace"
             icon={IconBellRinging}
             label="Alert APIs"
@@ -332,15 +351,15 @@ function SnapshotBar({ data }: { data: DashboardData }) {
     const llmRequestsToday = data.llmOverview.data?.today.request_count ?? 0;
     const unreadAlerts = data.unreadAlerts.data;
     const degradedApis = [
-        data.accounts.error,
-        data.activeWorkflows.error,
-        data.inactiveWorkflows.error,
-        data.unreadAlerts.error,
-        data.alertRuns.error,
-        data.liveStreams.error,
-        data.llmOverview.error,
-        data.systemConfig.error
-    ].filter(Boolean).length;
+        data.accounts,
+        data.activeWorkflows,
+        data.inactiveWorkflows,
+        data.unreadAlerts,
+        data.alertRuns,
+        data.liveStreams,
+        data.llmOverview,
+        data.systemConfig
+    ].filter((result) => result.error && !isFreshSetupError(result)).length;
 
     return (
         <section className="grid gap-3 border border-border bg-card p-4 min-[820px]:grid-cols-4">

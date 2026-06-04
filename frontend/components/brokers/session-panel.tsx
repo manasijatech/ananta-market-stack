@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState, useTransition } from "react";
 import { createSession, refreshSession, startDhanSession } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
@@ -91,7 +90,6 @@ function TOTPInput({ name = "totp", onComplete }: { name?: string; onComplete?: 
 }
 
 export function SessionPanel({ account, sessionStatus }: { account: BrokerAccount; sessionStatus: SessionStatus }) {
-    const router = useRouter();
     const formRef = useRef<HTMLFormElement>(null);
     const growwAutoAttemptedRef = useRef(false);
     const [mode, setMode] = useState<"auto" | "totp" | "token">("auto");
@@ -124,7 +122,10 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         }
 
         growwAutoAttemptedRef.current = true;
-        runGrowwAutoSession({ automatic: true });
+        const timer = window.setTimeout(() => {
+            runGrowwAutoSession({ automatic: true });
+        }, 300);
+        return () => window.clearTimeout(timer);
     }, [broker, mode, sessionStatus.session_active]);
 
     function submit(event: FormEvent<HTMLFormElement>) {
@@ -134,10 +135,11 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         startTransition(async () => {
             try {
                 const result = await createSession(account.id, broker, payload);
-                setMessage(result.message || (result.ok ? "Session updated." : "Session update failed."));
-                if (result.ok) {
-                    router.refresh();
-                }
+                const parts = [
+                    result.message || (result.ok ? "Session updated." : "Session update failed."),
+                    result.instrument_sync_message
+                ].filter(Boolean);
+                setMessage(parts.join(" "));
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }
@@ -150,9 +152,6 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
             try {
                 const result = await refreshSession(account.id, broker);
                 setMessage("message" in result ? result.message : result.guidance);
-                if ("ok" in result && result.ok) {
-                    router.refresh();
-                }
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }
@@ -164,10 +163,11 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         startTransition(async () => {
             try {
                 const result = await createSession(account.id, "groww", { broker: "groww" });
-                setMessage(result.message || (result.ok ? "Groww session updated." : "Groww session update failed."));
-                if (result.ok) {
-                    router.refresh();
-                }
+                const parts = [
+                    result.message || (result.ok ? "Groww session updated." : "Groww session update failed."),
+                    result.instrument_sync_message
+                ].filter(Boolean);
+                setMessage(parts.join(" "));
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }

@@ -23,9 +23,6 @@ export function BrokerDetailActions({ accountId, verified }: { accountId: string
                     result.instrument_sync_message
                 ].filter(Boolean);
                 setMessage(parts.join(" "));
-                if (result.ok) {
-                    router.refresh();
-                }
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }

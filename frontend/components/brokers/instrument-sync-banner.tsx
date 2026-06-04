@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getInstrumentSyncStatus } from "@/service/actions/broker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { formatUserFacingError } from "@/lib/api-errors";
 import type { InstrumentSyncResult } from "@/service/types/broker";
 
 const ACTIVE_STATUSES = new Set(["running", "scheduled", "not_started", "pending"]);
@@ -50,9 +51,10 @@ export function InstrumentSyncBanner({
                     setMessage("");
                     setActive(false);
                 }
-            } catch {
+            } catch (caught) {
                 if (!cancelled) {
                     setActive(false);
+                    setMessage(formatUserFacingError(caught, ""));
                 }
             }
         }

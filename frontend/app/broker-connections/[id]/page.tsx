@@ -1,8 +1,8 @@
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { getBrokerAccount, getSessionStatus } from "@/service/actions/broker";
 import { BrokerDetailActions } from "@/components/brokers/broker-detail-actions";
-import { InstrumentSyncBanner } from "@/components/brokers/instrument-sync-banner";
 import { NotificationsBanner } from "@/components/brokers/notifications-banner";
 import { PortfolioTabs } from "@/components/brokers/portfolio-tabs";
 import { SessionPanel } from "@/components/brokers/session-panel";
@@ -17,6 +17,13 @@ import {
 } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { formatUserFacingError } from "@/lib/api-errors";
+import type { BrokerAccountDetail, SessionStatus } from "@/service/types/broker";
+
+const InstrumentSyncBanner = dynamic(
+    () => import("@/components/brokers/instrument-sync-banner").then((module) => module.InstrumentSyncBanner),
+    { ssr: false }
+);
 
 type BrokerDetailPageProps = {
     params: Promise<{ id: string }>;
@@ -24,11 +31,46 @@ type BrokerDetailPageProps = {
 
 export default async function BrokerDetailPage({ params }: BrokerDetailPageProps) {
     const { id } = await params;
-    const account = await getBrokerAccount(id);
-    const sessionStatus = await getSessionStatus(account.id, account.broker_code);
+    let account: BrokerAccountDetail | null = null;
+    let sessionStatus: SessionStatus | null = null;
+    let loadError = "";
+
+    try {
+        account = await getBrokerAccount(id);
+        sessionStatus = await getSessionStatus(account.id, account.broker_code);
+    } catch (caught) {
+        loadError = formatUserFacingError(caught, "Could not load this broker account.");
+    }
+
+    if (!account || !sessionStatus) {
+        return (
+            <Shell>
+                <PageHeader
+                    eyebrow="Broker account"
+                    title="Broker account"
+                    description="Review account status, update broker sessions, fetch quotes, and inspect broker-native portfolio data."
+                    action={
+                        <Button asChild variant="outline">
+                            <Link href="/broker-connections">
+                                <ArrowLeft className="size-4" aria-hidden="true" />
+                                Back to brokers
+                            </Link>
+                        </Button>
+                    }
+                />
+                <Alert variant="warning">
+                    <AlertDescription>
+                        {loadError || "This broker account could not be loaded."}
+                    </AlertDescription>
+                </Alert>
+            </Shell>
+        );
+    }
+
     const ready =
         isBrokerAccountReady(account) ||
         (account.is_active && Boolean(account.last_verified_at) && sessionStatus.session_active);
+    const showInstrumentSync = sessionStatus.session_active || Boolean(account.last_verified_at);
 
     return (
         <Shell>
@@ -48,9 +90,7 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
 
             <div className="mb-6 space-y-4">
                 <NotificationsBanner />
-                {sessionStatus.session_active || account.last_verified_at ? (
-                    <InstrumentSyncBanner accountId={account.id} />
-                ) : null}
+                {showInstrumentSync ? <InstrumentSyncBanner accountId={account.id} /> : null}
             </div>
 
             <div className="grid gap-8">
