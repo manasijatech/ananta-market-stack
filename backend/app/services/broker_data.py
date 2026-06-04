@@ -121,6 +121,10 @@ def _hydrate_exact_match(
     merged.setdefault("groww_segment", row.groww_segment or row.segment)
     merged.setdefault("groww_trading_symbol", row.groww_trading_symbol or row.trading_symbol)
     merged.setdefault("groww_symbol", _native_payload_value(row, "groww_symbol"))
+    merged.setdefault(
+        "groww_exchange_token",
+        _native_payload_value(row, "exchange_token") or _raw_payload_value(row, "exchange_token"),
+    )
     merged.setdefault("indmoney_scrip_code", row.indmoney_scrip_code)
     merged.setdefault("kotak_query", row.kotak_query)
     merged.setdefault("kotak_segment", row.kotak_segment)
@@ -143,6 +147,15 @@ def _csv_exact_match(broker_code: str, *, symbol: str, exchange: str) -> dict[st
 def _native_payload_value(row: BrokerInstrument, key: str) -> str | None:
     try:
         payload = json.loads(row.native_payload_json or "{}")
+    except json.JSONDecodeError:
+        return None
+    value = payload.get(key)
+    return str(value) if value is not None else None
+
+
+def _raw_payload_value(row: BrokerInstrument, key: str) -> str | None:
+    try:
+        payload = json.loads(row.raw_payload_json or "{}")
     except json.JSONDecodeError:
         return None
     value = payload.get(key)
@@ -324,11 +337,24 @@ def _csv_exact_payload(row: dict[str, Any]) -> dict[str, Any]:
         "groww_exchange": row.get("groww_exchange") or row.get("exchange"),
         "groww_segment": row.get("groww_segment") or row.get("segment"),
         "groww_trading_symbol": row.get("groww_trading_symbol") or row.get("trading_symbol"),
+        "groww_exchange_token": row.get("groww_exchange_token") or row.get("exchange_token") or _csv_json_value(row, "raw_payload", "exchange_token"),
         "indmoney_scrip_code": row.get("indmoney_scrip_code"),
         "kotak_query": row.get("kotak_query"),
         "kotak_segment": row.get("kotak_segment"),
         "kotak_psymbol": row.get("kotak_psymbol"),
     }
+
+
+def _csv_json_value(row: dict[str, Any], column: str, key: str) -> str | None:
+    raw = row.get(column)
+    if not raw:
+        return None
+    try:
+        payload = json.loads(str(raw))
+    except json.JSONDecodeError:
+        return None
+    value = payload.get(key)
+    return str(value) if value is not None else None
 
 
 def _csv_row_to_schema(
@@ -362,6 +388,7 @@ def _csv_row_to_schema(
             "dhan_security_id": row.get("dhan_security_id"),
             "dhan_exchange_segment": row.get("dhan_exchange_segment"),
             "groww_trading_symbol": row.get("groww_trading_symbol"),
+            "groww_exchange_token": row.get("groww_exchange_token") or row.get("exchange_token") or _csv_json_value(row, "raw_payload", "exchange_token"),
             "indmoney_scrip_code": row.get("indmoney_scrip_code"),
             "kotak_query": row.get("kotak_query"),
             "kotak_segment": row.get("kotak_segment"),
@@ -733,7 +760,7 @@ def fetch_quotes(
     instruments: list[dict[str, Any]],
 ) -> list[QuoteRow]:
     client = _client(db, acc)
-    hydrated = [_hydrate_exact_match(db, acc.broker_code, item) for item in instruments]
+    hydrated = hydrate_instruments(db, acc, instruments)
     rows = client.fetch_quotes(hydrated)
     return [
         QuoteRow(
@@ -745,6 +772,14 @@ def fetch_quotes(
         )
         for row in rows
     ]
+
+
+def hydrate_instruments(
+    db: Session,
+    acc: BrokerAccount,
+    instruments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [_hydrate_exact_match(db, acc.broker_code, item) for item in instruments]
 
 
 def fetch_holdings(db: Session, acc: BrokerAccount) -> dict[str, Any]:

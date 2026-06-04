@@ -192,6 +192,7 @@ class InstrumentRef(BaseModel):
     groww_exchange: str | None = None
     groww_segment: str | None = None
     groww_trading_symbol: str | None = None
+    groww_exchange_token: str | None = None
     indmoney_scrip_code: str | None = None
     kotak_query: str | None = None
     kotak_segment: str | None = None

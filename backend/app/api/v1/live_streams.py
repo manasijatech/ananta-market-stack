@@ -7,7 +7,7 @@ from time import monotonic
 from typing import Any
 
 import redis
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -330,7 +330,6 @@ def add_subscriptions_bulk(
 @router.post("/subscriptions/demand", response_model=list[LiveSubscriptionOut])
 def touch_demand_subscriptions(
     body: LiveSubscriptionBulkIn,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[LiveSubscriptionOut]:
@@ -341,12 +340,6 @@ def touch_demand_subscriptions(
         for row in rows
     )
     if has_new_scope:
-        try:
-            from app.services.alert_runtime import backfill_live_prices_for_user
-
-            background_tasks.add_task(backfill_live_prices_for_user, user.id, source_kind="ui")
-        except Exception:
-            pass
         publish_scope_change(user.id, reason="ui_demand")
     return rows
 

@@ -2445,6 +2445,11 @@ def _subscription_sort_key(row: LiveSubscriptionOut) -> tuple[datetime, str]:
     return (row.updated_at or datetime.min, row.id)
 
 
+def _live_subscription_priority(row: LiveSubscriptionOut) -> tuple[int, str, str]:
+    source_priority = {"workflow": 0, "watchlist": 1, "ui": 2}.get(row.source_kind or "", 3)
+    return (source_priority, row.exchange or "", row.symbol)
+
+
 def _merged_source_label(rows: list[LiveSubscriptionOut]) -> str | None:
     labels: list[str] = []
     for row in rows:
@@ -2587,7 +2592,7 @@ def _resolve_live_subscription_account(
         account = db.get(BrokerAccount, normalized_account_id)
         if account and account.user_id == user_id and account.is_active:
             return account.id, account.broker_code
-    account = broker_data_preferences.get_effective_default_broker_account(db, user_id, normalized_broker_code)
+    account = broker_data_preferences.get_stream_default_broker_account(db, user_id, normalized_broker_code)
     if account:
         return account.id, account.broker_code
     return normalized_account_id, normalized_broker_code
@@ -2718,7 +2723,7 @@ def _chunk_sessions(
 
     sessions: list[LiveWorkerSessionOut] = []
     for (account_id, broker_code), subscriptions in grouped.items():
-        ordered = sorted(subscriptions, key=lambda item: (item.exchange or "", item.symbol))
+        ordered = sorted(subscriptions, key=_live_subscription_priority)
         for index, start in enumerate(range(0, len(ordered), 1000), start=1):
             chunk = ordered[start : start + 1000]
             activity = activity_index.get((account_id, broker_code, index))
@@ -2747,11 +2752,15 @@ def _broker_statuses(
     sessions: list[LiveWorkerSessionOut],
 ) -> list[LiveBrokerAccountStatusOut]:
     desired_counts: dict[tuple[str, str], int] = {}
+    desired_reasons: dict[tuple[str, str], list[str]] = {}
     for row in desired:
         if not row.account_id or not row.broker_code:
             continue
         key = (row.account_id, row.broker_code)
         desired_counts[key] = desired_counts.get(key, 0) + 1
+        reason = (row.health_reason or "").strip()
+        if reason:
+            desired_reasons.setdefault(key, []).append(reason)
 
     worker_counts: dict[tuple[str, str], int] = {}
     for row in sessions:
@@ -2811,6 +2820,10 @@ def _broker_statuses(
                 guidance = "Broker session status is still being prepared in the background."
         action_required = desired_symbol_count > 0 and not session_active
         session_status = acc.session_status or ("active" if session_active else "pending")
+        data_access_reason = _stream_data_access_reason(desired_reasons.get((account_id, broker_code), []))
+        if data_access_reason:
+            guidance = data_access_reason
+            action_required = desired_symbol_count > 0
         last_error = acc.last_error or (guidance if action_required else None)
         statuses.append(
             LiveBrokerAccountStatusOut(
@@ -2819,7 +2832,7 @@ def _broker_statuses(
                 label=acc.label,
                 session_status=session_status,
                 session_active=session_active,
-                can_stream=session_active and desired_symbol_count > 0,
+                can_stream=session_active and desired_symbol_count > 0 and not data_access_reason,
                 action_required=action_required,
                 automation_enabled=automation_enabled,
                 automation_mode=automation_mode,
@@ -2835,14 +2848,26 @@ def _broker_statuses(
     return statuses
 
 
+def _stream_data_access_reason(reasons: list[str]) -> str | None:
+    for reason in reasons:
+        normalized = reason.lower()
+        if "403" in reason or "access forbidden" in normalized or "forbidden" in normalized:
+            return (
+                "Groww live-data access is forbidden for this token. Check whether Market Quote/LTP live-data "
+                "access is enabled for the Groww API subscription tied to this account."
+            )
+    return None
+
+
 def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
     cleanup_expired_ui_subscriptions(db, user_id=user_id, commit=True)
     desired = _collapse_status_subscriptions(list_subscriptions(db, user_id, statuses=["active"]))
     inactive = _collapse_status_subscriptions(list_subscriptions(db, user_id, statuses=["inactive"]))
+    ok, error = _ping_redis_with_timeout()
     if not desired and not inactive:
         return LiveStreamsStatusOut(
-            redis_ok=False,
-            redis_error="no live subscriptions to monitor",
+            redis_ok=ok,
+            redis_error=error,
             worker_mode="redis-event-driven-alerts",
             active_sessions=[],
             desired_subscriptions=[],
@@ -2850,7 +2875,6 @@ def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
             broker_statuses=[],
         )
 
-    ok, error = _ping_redis_with_timeout()
     activity_sessions: list[LiveWorkerSessionOut] = []
     client = _redis_client() if ok else None
     if client:

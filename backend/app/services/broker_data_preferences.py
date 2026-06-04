@@ -339,6 +339,34 @@ def get_effective_default_broker_account(
     return None
 
 
+def get_stream_default_broker_account(
+    db: Session,
+    user_id: str,
+    broker_code: str | None = None,
+) -> BrokerAccount | None:
+    account = get_effective_default_broker_account(db, user_id, broker_code)
+    if account is not None:
+        return account
+
+    stmt = (
+        select(BrokerAccount)
+        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+    )
+    if broker_code:
+        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
+    accounts = list(db.scalars(stmt).all())
+    if not accounts:
+        return None
+
+    pref = _get_preference(db, user_id)
+    preferred_account_id = pref.preferred_default_account_id if pref else None
+    if preferred_account_id is None and not broker_code:
+        preferred_account_id = _default_data_preferred_account_id(accounts)
+    ordered = _candidate_order(accounts, preferred_account_id)
+    return ordered[0] if ordered else None
+
+
 def maybe_schedule_instrument_recovery(db: Session, acc: BrokerAccount) -> bool:
     if not _account_session_active(acc):
         return False
