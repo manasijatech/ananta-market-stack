@@ -72,3 +72,9 @@ When adding docs:
 ## Security-Sensitive Changes
 
 If your change touches broker credentials, session tokens, auth state, Redis, secret generation, encryption, or API key handling, explain the security impact in the pull request. Avoid logging secrets or returning raw stored credentials from APIs.
+
+For vulnerability reports, use [SECURITY.md](SECURITY.md) instead of a public issue.
+
+## Community
+
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). Maintainers: see [MAINTAINERS.md](MAINTAINERS.md) for access, branch protection, and release workflow.
