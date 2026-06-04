@@ -1,6 +1,6 @@
-# Market Stack
+# Ananta Market Stack
 
-Market Stack is a self-hosted trading and market-data workspace for connecting broker accounts, managing broker sessions, viewing portfolio data, fetching market data, and running user-owned alert workflows from one consistent UI and API.
+Ananta Market Stack is a self-hosted trading and market-data workspace for connecting broker accounts, managing broker sessions, viewing portfolio data, fetching market data, and running user-owned alert workflows from one consistent UI and API.
 
 It is built for people who want a practical local or self-hosted market workspace without wiring together every broker integration themselves. Developers can also use it as a FastAPI + Next.js reference implementation for broker account management, encrypted credential storage, market-data APIs, alerting, and broker-aware automation.
 
@@ -28,14 +28,14 @@ Resources: [Manasija](https://manasija.in/) | [Developer portal](https://develop
 
 ### Fastest Docker Run
 
-Run the published Market Stack image with one persistent data volume:
+Run the published Ananta Market Stack image with one persistent data volume:
 
 ```bash
 docker run -d \
-  --name market-stack \
+  --name ananta-market-stack \
   -p 3000:3000 \
-  -v market-stack-data:/data \
-  ghcr.io/manasijatech/market-stack:latest
+  -v ananta-market-stack-data:/data \
+  ghcr.io/manasijatech/ananta-market-stack:latest
 ```
 
 Open:
@@ -44,9 +44,9 @@ Open:
 http://localhost:3000
 ```
 
-The image starts the frontend, backend, SQLite data store, generated runtime secrets, and Redis. Secrets are generated on first boot into `/data/config/market-stack.env`; they are not baked into the image.
+The image starts the frontend, backend, SQLite data store, generated runtime secrets, and Redis. Secrets are generated on first boot into `/data/config/ananta-market-stack.env`; they are not baked into the image.
 
-To update this install later, pull the new image and recreate the container with the same `market-stack-data:/data` volume. Removing the container is safe; removing the volume deletes the database and generated secrets. See [published image updates](docs/docker-image.md#updating).
+To update this install later, pull the new image and recreate the container with the same `ananta-market-stack-data:/data` volume. Removing the container is safe; removing the volume deletes the database and generated secrets. See [published image updates](docs/docker-image.md#updating).
 
 For Railway or similar platforms, deploy the same image, attach a persistent volume at `/data`, and set the required public URL environment variables. See the [Railway setup](docs/docker-image.md#railway) and [published-image environment notes](docs/environment.md#broker-callback-urls) before deploying; auth, redirects, and broker callbacks depend on these values matching your public domain.
 
@@ -55,8 +55,8 @@ For Railway or similar platforms, deploy the same image, attach a persistent vol
 For source builds and contributor workflows, install [Docker](https://docs.docker.com/get-docker/) with [Docker Compose](https://docs.docker.com/compose/), then run:
 
 ```bash
-git clone https://github.com/manasijatech/Market-stack.git
-cd Market-stack
+git clone https://github.com/manasijatech/ananta-market-stack.git
+cd ananta-market-stack
 docker compose up -d --build
 ```
 
@@ -105,7 +105,7 @@ Use `docker compose down -v` only when you intentionally want to delete Docker-m
 ## Project Layout
 
 ```text
-Market-Stack/
+ananta-market-stack/
   backend/       FastAPI app, broker integrations, services, database, workers
   frontend/      Next.js app, UI, auth, broker guides, server actions
   docs/          Public setup, self-hosting, environment, API, and security docs

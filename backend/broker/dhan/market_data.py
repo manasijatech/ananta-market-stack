@@ -135,5 +135,5 @@ def fetch_option_chain(http: DhanHTTP, request: dict[str, Any]) -> dict[str, Any
 def stream_capabilities() -> dict[str, Any]:
     return {
         "websocket_enabled": True,
-        "guidance": "Dhan market feeds support websocket subscriptions. Market Stack websocket v1 is broker-uniform and read-only.",
+        "guidance": "Dhan market feeds support websocket subscriptions. Ananta Market Stack websocket v1 is broker-uniform and read-only.",
     }

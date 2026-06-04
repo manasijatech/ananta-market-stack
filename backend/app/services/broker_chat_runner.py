@@ -23,7 +23,7 @@ from db.session import SessionLocal
 MAX_REASONING_EVENTS_PER_RUN = 25
 
 BROKER_CHAT_INSTRUCTIONS_TEMPLATE = """
-You are Market-Stack's broker data assistant.
+You are Ananta Market Stack's broker data assistant.
 
 Current calendar context:
 - __CURRENT_DAY_CONTEXT__
@@ -417,7 +417,7 @@ async def _run_broker_chat(run_id: str) -> None:
         mcp_handle = await broker_chat_mcp.connect_broker_chat_mcp(db, run, metadata)
         mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle)
         agent = Agent[BrokerAgentContext](
-            name="Market-Stack Broker Data Agent",
+            name="Ananta Market Stack Broker Data Agent",
             instructions=_broker_chat_instructions(mcp_context),
             model=_build_model(db, run),
             model_settings=ModelSettings(
@@ -438,7 +438,7 @@ async def _run_broker_chat(run_id: str) -> None:
             max_turns=28,
             run_config=RunConfig(
                 tracing_disabled=run.provider != "openai",
-                workflow_name="Market-Stack broker chat",
+                workflow_name="Ananta Market Stack broker chat",
             ),
         )
 

@@ -1,13 +1,13 @@
 # Published Docker Image
 
-Market Stack can be distributed as a single Docker image for small self-hosted deployments and platform hosts such as Railway.
+Ananta Market Stack can be distributed as a single Docker image for small self-hosted deployments and platform hosts such as Railway.
 
 The image runs:
 
 - Next.js frontend on public port `3000` or `$PORT`.
 - FastAPI backend internally on `127.0.0.1:8000`.
 - SQLite at `/data/app.db`.
-- Generated runtime secrets at `/data/config/market-stack.env`.
+- Generated runtime secrets at `/data/config/ananta-market-stack.env`.
 - Redis, started automatically by default.
 
 No production secrets are baked into the image.
@@ -18,10 +18,10 @@ The container itself is disposable. Persistent state lives in the `/data` mount,
 
 ```bash
 docker run -d \
-  --name market-stack \
+  --name ananta-market-stack \
   -p 3000:3000 \
-  -v market-stack-data:/data \
-  ghcr.io/manasijatech/market-stack:latest
+  -v ananta-market-stack-data:/data \
+  ghcr.io/manasijatech/ananta-market-stack:latest
 ```
 
 Open:
@@ -30,11 +30,11 @@ Open:
 http://localhost:3000
 ```
 
-If a container named `market-stack` already exists, Docker will refuse to create another one with the same name. Update by stopping and removing the old container, then starting a new one with the same `market-stack-data:/data` volume. See [Updating](#updating).
+If a container named `ananta-market-stack` already exists, Docker will refuse to create another one with the same name. Update by stopping and removing the old container, then starting a new one with the same `ananta-market-stack-data:/data` volume. See [Updating](#updating).
 
 ## Runtime Secrets
 
-On first boot, the container creates `/data/config/market-stack.env` with:
+On first boot, the container creates `/data/config/ananta-market-stack.env` with:
 
 - `CREDENTIAL_ENCRYPTION_KEY`
 - `BETTER_AUTH_SECRET`
@@ -42,7 +42,7 @@ On first boot, the container creates `/data/config/market-stack.env` with:
 
 Existing values are preserved on later boots. If the host provides any of these variables, the provided values are used.
 
-Back up `/data/app.db` and `/data/config/market-stack.env` together. Losing or changing `CREDENTIAL_ENCRYPTION_KEY` makes existing encrypted broker credentials unreadable.
+Back up `/data/app.db` and `/data/config/ananta-market-stack.env` together. Losing or changing `CREDENTIAL_ENCRYPTION_KEY` makes existing encrypted broker credentials unreadable.
 
 ## Railway
 
@@ -51,7 +51,7 @@ Railway uses the same published image, but the public URL variables are importan
 Use the published image:
 
 ```text
-ghcr.io/manasijatech/market-stack:latest
+ghcr.io/manasijatech/ananta-market-stack:latest
 ```
 
 Set:
@@ -74,7 +74,7 @@ Add a persistent volume mounted at:
 /data
 ```
 
-That is enough for the normal Railway setup. Market Stack will generate its own secrets, start Redis automatically, and route `/api/v1` traffic through the same public app domain.
+That is enough for the normal Railway setup. Ananta Market Stack will generate its own secrets, start Redis automatically, and route `/api/v1` traffic through the same public app domain.
 
 Broker developer-console URLs should use the same Railway app domain:
 
@@ -94,52 +94,58 @@ The bundled Redis process is the default and is the simplest option for self-hos
 REDIS_URL=${{ Redis.REDIS_URL }}
 ```
 
-When `REDIS_URL` is set, Market Stack uses that Redis instance instead of starting the bundled Redis process.
+When `REDIS_URL` is set, Ananta Market Stack uses that Redis instance instead of starting the bundled Redis process.
 
 ## Updating
 
-Docker does not update a running container in place. Update by replacing the container while keeping the same `/data` volume:
+Docker does not update a running container in place. Update by replacing the container while keeping the same `/data` volume.
+
+If you are upgrading from the older `ghcr.io/manasijatech/market-stack` image, reuse your existing data volume and rename the generated secrets file once before starting the new container (replace `YOUR_DATA_VOLUME` with the volume you already use, for example `market-stack-data`):
 
 ```bash
-docker pull ghcr.io/manasijatech/market-stack:latest
-docker stop market-stack
-docker rm market-stack
+docker run --rm -v YOUR_DATA_VOLUME:/data alpine sh -c 'mv /data/config/market-stack.env /data/config/ananta-market-stack.env 2>/dev/null || true'
+```
+
+```bash
+docker pull ghcr.io/manasijatech/ananta-market-stack:latest
+docker stop ananta-market-stack
+docker rm ananta-market-stack
 docker run -d \
-  --name market-stack \
+  --name ananta-market-stack \
   -p 3000:3000 \
-  -v market-stack-data:/data \
-  ghcr.io/manasijatech/market-stack:latest
+  -v ananta-market-stack-data:/data \
+  ghcr.io/manasijatech/ananta-market-stack:latest
 ```
 
 PowerShell:
 
 ```powershell
-docker pull ghcr.io/manasijatech/market-stack:latest
-docker stop market-stack
-docker rm market-stack
+docker pull ghcr.io/manasijatech/ananta-market-stack:latest
+docker stop ananta-market-stack
+docker rm ananta-market-stack
 docker run -d `
-  --name market-stack `
+  --name ananta-market-stack `
   -p 3000:3000 `
-  -v market-stack-data:/data `
-  ghcr.io/manasijatech/market-stack:latest
+  -v ananta-market-stack-data:/data `
+  ghcr.io/manasijatech/ananta-market-stack:latest
 ```
 
-This deletes only the old container. It does not delete the named Docker volume. Do not run `docker volume rm market-stack-data` unless you intentionally want to delete the database, generated secrets, and bundled Redis data.
+This deletes only the old container. It does not delete the named Docker volume. Do not run `docker volume rm ananta-market-stack-data` unless you intentionally want to delete the database, generated secrets, and bundled Redis data.
 
-Updates do not rotate secrets because secrets live in `/data/config/market-stack.env`.
+Updates do not rotate secrets because secrets live in `/data/config/ananta-market-stack.env`.
 
 The backend runs database migrations on startup. Before upgrading a real instance, back up the `/data` volume.
 
 Create a quick backup before updating:
 
 ```bash
-docker run --rm -v market-stack-data:/data -v "$(pwd)":/backup alpine tar czf /backup/market-stack-data-backup.tgz -C /data .
+docker run --rm -v ananta-market-stack-data:/data -v "$(pwd)":/backup alpine tar czf /backup/ananta-market-stack-data-backup.tgz -C /data .
 ```
 
 PowerShell:
 
 ```powershell
-docker run --rm -v market-stack-data:/data -v ${PWD}:/backup alpine tar czf /backup/market-stack-data-backup.tgz -C /data .
+docker run --rm -v ananta-market-stack-data:/data -v ${PWD}:/backup alpine tar czf /backup/ananta-market-stack-data-backup.tgz -C /data .
 ```
 
 ## Publishing
@@ -152,7 +158,7 @@ Tag behavior:
 - Manual workflow runs can publish a version such as `0.1.0`.
 - Version tags such as `v0.1.0` publish `0.1.0`, `0.1`, `0`, and SHA tags.
 - `latest` is published only when the manual workflow input `publish_latest` is enabled.
-- Images are pushed to `ghcr.io/manasijatech/market-stack`.
+- Images are pushed to `ghcr.io/manasijatech/ananta-market-stack`.
 
 ## GitHub Release Flow
 
@@ -170,7 +176,7 @@ git push origin v0.1.0
 4. Confirm the image exists in GitHub Packages:
 
 ```text
-ghcr.io/manasijatech/market-stack:latest
+ghcr.io/manasijatech/ananta-market-stack:latest
 ```
 
 5. Use the `latest` tag in production instructions and Railway templates.
@@ -190,13 +196,13 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-std
 Then publish:
 
 ```bash
-scripts/publish-image.sh 0.1.0 ghcr.io/manasijatech/market-stack
+scripts/publish-image.sh 0.1.0 ghcr.io/manasijatech/ananta-market-stack
 ```
 
 The script builds the image, smoke-tests it locally, tags it as `0.1.0`, `0.1`, `0`, and `sha-<commit>`, then pushes those tags. To also move `latest`, run:
 
 ```bash
-PUBLISH_LATEST=true scripts/publish-image.sh 0.1.0 ghcr.io/manasijatech/market-stack
+PUBLISH_LATEST=true scripts/publish-image.sh 0.1.0 ghcr.io/manasijatech/ananta-market-stack
 ```
 
 Use the `latest` tag in user-facing Docker image instructions so new installs and updates pick up the current published image.

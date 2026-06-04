@@ -14,8 +14,8 @@ COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ ./
-RUN BETTER_AUTH_SECRET=market-stack-build-time-placeholder \
-    AUTH_DATABASE_PATH=/tmp/market-stack-build-auth.db \
+RUN BETTER_AUTH_SECRET=ananta-market-stack-build-time-placeholder \
+    AUTH_DATABASE_PATH=/tmp/ananta-market-stack-build-auth.db \
     npm run build
 
 FROM python:3.12-slim AS backend-builder
@@ -30,9 +30,9 @@ RUN python -m venv /opt/venv \
 
 FROM python:3.12-slim AS runtime
 
-LABEL org.opencontainers.image.title="Market Stack" \
+LABEL org.opencontainers.image.title="Ananta Market Stack" \
     org.opencontainers.image.description="Self-hosted trading and market-data workspace." \
-    org.opencontainers.image.source="https://github.com/manasijatech/Market-stack"
+    org.opencontainers.image.source="https://github.com/manasijatech/ananta-market-stack"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -53,10 +53,10 @@ COPY backend /app/backend
 COPY --from=frontend-builder /app/frontend/.next/standalone /app/frontend
 COPY --from=frontend-builder /app/frontend/.next/static /app/frontend/.next/static
 COPY --from=frontend-builder /app/frontend/public /app/frontend/public
-COPY docker/market-stack-entrypoint.sh /usr/local/bin/market-stack
+COPY docker/ananta-market-stack-entrypoint.sh /usr/local/bin/ananta-market-stack
 
-RUN sed -i 's/\r$//' /usr/local/bin/market-stack \
-    && chmod +x /usr/local/bin/market-stack \
+RUN sed -i 's/\r$//' /usr/local/bin/ananta-market-stack \
+    && chmod +x /usr/local/bin/ananta-market-stack \
     && mkdir -p /data \
     && rm -rf /app/backend/data \
     && ln -s /data /app/backend/data
@@ -64,4 +64,4 @@ RUN sed -i 's/\r$//' /usr/local/bin/market-stack \
 VOLUME ["/data"]
 EXPOSE 3000
 
-ENTRYPOINT ["market-stack"]
+ENTRYPOINT ["ananta-market-stack"]

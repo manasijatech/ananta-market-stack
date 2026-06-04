@@ -112,5 +112,5 @@ def fetch_historical(
 def stream_capabilities() -> dict[str, Any]:
     return {
         "websocket_enabled": True,
-        "guidance": "Zerodha supports Kite ticker websocket feeds. Market Stack websocket v1 is a read-only inspection layer.",
+        "guidance": "Zerodha supports Kite ticker websocket feeds. Ananta Market Stack websocket v1 is a read-only inspection layer.",
     }

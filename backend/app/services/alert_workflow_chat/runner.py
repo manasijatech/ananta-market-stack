@@ -161,7 +161,7 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
             deploy_allowed=_deploy_requested(run.message),
         )
         agent = Agent[WorkflowChatContext](
-            name="Market-Stack Workflow AI Chat",
+            name="Ananta Market Stack Workflow AI Chat",
             instructions=workflow_chat_instructions(),
             model=_build_model(db, run),
             model_settings=ModelSettings(temperature=0.2, max_tokens=5000, include_usage=True),
@@ -176,7 +176,7 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
             max_turns=20,
             run_config=RunConfig(
                 tracing_disabled=run.provider != "openai",
-                workflow_name="Market-Stack alert workflow chat",
+                workflow_name="Ananta Market Stack alert workflow chat",
             ),
         )
 

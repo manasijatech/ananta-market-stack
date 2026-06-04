@@ -1,4 +1,4 @@
-"""OpenAI Agents SDK tool surfaces for Market-Stack."""
+"""OpenAI Agents SDK tool surfaces for Ananta Market Stack."""
 
 from app.agent_tools.broker_tools import BROKER_DATA_TOOLS, BrokerAgentContext
 

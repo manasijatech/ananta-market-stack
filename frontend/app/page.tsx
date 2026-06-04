@@ -23,8 +23,8 @@ const brokers = [
     { name: "Kotak Neo", src: "/broker-logos/kotak.jpg", latency: "67 ms", state: "Session bundle" }
 ];
 
-const deployCommand = `git clone https://github.com/manasijatech/Market-Stack.git
-cd Market-Stack
+const deployCommand = `git clone https://github.com/manasijatech/ananta-market-stack.git
+cd ananta-market-stack
 docker compose up --build`;
 
 const orderRows = [
@@ -462,7 +462,7 @@ export default function HomePage() {
                             <ThemeToggle />
                         </div>
                         <Link
-                            href="https://github.com/manasijatech/Market-Stack"
+                            href="https://github.com/manasijatech/ananta-market-stack"
                             target="_blank"
                             rel="noreferrer"
                             className="landing-nav-link hidden items-center gap-2 px-3 py-2 font-mono text-xs transition sm:flex"
@@ -628,7 +628,7 @@ export default function HomePage() {
                         </div>
                         <div className="mt-8 flex flex-wrap gap-3">
                             <Link
-                                href="https://github.com/manasijatech/Market-Stack"
+                                href="https://github.com/manasijatech/ananta-market-stack"
                                 target="_blank"
                                 rel="noreferrer"
                                 className="landing-source-button flex min-h-12 items-center gap-2 px-5 font-mono text-sm transition"

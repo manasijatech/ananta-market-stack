@@ -186,5 +186,5 @@ def fetch_greeks(http: GrowwHTTP, request: dict[str, Any]) -> dict[str, Any]:
 def stream_capabilities() -> dict[str, Any]:
     return {
         "websocket_enabled": True,
-        "guidance": "Groww supports live data APIs. Market Stack websocket v1 polls the read-only data endpoints for testing.",
+        "guidance": "Groww supports live data APIs. Ananta Market Stack websocket v1 polls the read-only data endpoints for testing.",
     }

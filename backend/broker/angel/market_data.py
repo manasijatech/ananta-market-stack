@@ -108,5 +108,5 @@ def fetch_historical(
 def stream_capabilities() -> dict[str, Any]:
     return {
         "websocket_enabled": True,
-        "guidance": "Angel SmartAPI supports SmartWebSocket feeds. Market Stack websocket v1 uses a broker-uniform inspection layer.",
+        "guidance": "Angel SmartAPI supports SmartWebSocket feeds. Ananta Market Stack websocket v1 uses a broker-uniform inspection layer.",
     }

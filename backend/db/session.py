@@ -59,7 +59,7 @@ def init_db() -> None:
     with _INIT_LOCK:
         _check_database_health()
         if _requires_sqlite_legacy_bootstrap():
-            logger.info("Applying legacy SQLite bootstrap for Market-Stack database")
+            logger.info("Applying legacy SQLite bootstrap for ananta-market-stack database")
             Base.metadata.create_all(bind=engine)
             _apply_sqlite_legacy_patches_if_needed()
             _stamp_database_at_head()

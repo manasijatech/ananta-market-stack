@@ -21,7 +21,7 @@ from app.schemas.system_config import McpOAuthStartOut, McpServerConfigOut, McpS
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import User, UserMcpServerConfig
 
-MCP_CLIENT_NAME = "Market Stack Broker Chat"
+MCP_CLIENT_NAME = "Ananta Market Stack Broker Chat"
 MCP_CLIENT_VERSION = "0.1.0"
 DEFAULT_MCP_SCOPE = ""
 

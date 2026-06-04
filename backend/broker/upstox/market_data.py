@@ -154,5 +154,5 @@ def fetch_historical(
 def stream_capabilities() -> dict[str, Any]:
     return {
         "websocket_enabled": True,
-        "guidance": "Upstox exposes Market Data Feed websocket APIs. Market Stack websocket v1 keeps a uniform test surface.",
+        "guidance": "Upstox exposes Market Data Feed websocket APIs. Ananta Market Stack websocket v1 keeps a uniform test surface.",
     }

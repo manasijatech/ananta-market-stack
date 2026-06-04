@@ -1,6 +1,6 @@
 # Broker Agent Tools
 
-`app.agent_tools.broker_tools` exposes OpenAI Agents SDK `function_tool` wrappers around the existing Market-Stack broker services. These tools are used by the broker chat runner and are also reusable for future broker-aware agents.
+`app.agent_tools.broker_tools` exposes OpenAI Agents SDK `function_tool` wrappers around the existing Ananta Market Stack broker services. These tools are used by the broker chat runner and are also reusable for future broker-aware agents.
 
 The chat runner is now implemented separately in `docs/broker_chat.md`; this file documents the reusable tool surface.
 
@@ -21,7 +21,7 @@ agent = Agent[BrokerAgentContext](
 
 The context fields are:
 
-- `user_id`: Market-Stack user id. Defaults to `local-dev-user` to match the current API dependency.
+- `user_id`: Ananta Market Stack user id. Defaults to `local-dev-user` to match the current API dependency.
 - `default_account_id`: Optional preferred account for live market data and portfolio tools.
 - `search_account_id`: Optional preferred account for instrument-search tools.
 
