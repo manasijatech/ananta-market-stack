@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support guide
+    url: https://github.com/manasijatech/ananta-market-stack/blob/main/SUPPORT.md
+    about: Start here for setup, logs, and what to include in a report
+  - name: Security vulnerability
+    url: https://github.com/manasijatech/ananta-market-stack/security/advisories/new
+    about: Report security issues privately (do not use a public issue)
