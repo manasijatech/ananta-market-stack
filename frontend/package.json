@@ -23,7 +23,7 @@
         "@radix-ui/react-tabs": "^1.1.13",
         "@tabler/icons-react": "^3.44.0",
         "@xyflow/react": "^12.11.0",
-        "better-auth": "^1.6.9",
+        "better-auth": "^1.6.14",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "drishti-sdk": "^0.2.5",
