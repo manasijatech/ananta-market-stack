@@ -27,6 +27,7 @@ import type { BrokerAccount, SystemConfig } from "@/service/types/broker";
 import type { LlmUsageOverview } from "@/service/types/llm-usage";
 import { formatUserFacingError } from "@/lib/api-errors";
 import { parseActionError } from "@/components/brokers/action-error";
+import { withServerFetchRetry } from "@/lib/server-fetch-retry";
 
 export const dynamic = "force-dynamic";
 
@@ -161,14 +162,16 @@ async function loadDashboardData(): Promise<DashboardData> {
         llmOverview,
         systemConfig
     ] = await Promise.allSettled([
-        getBrokerAccounts(),
-        getAlertWorkflows("active"),
-        getAlertWorkflows("inactive"),
-        getAlertUnreadCount().then((value) => value.unread_count),
-        getAlertHistory(24),
-        getLiveStreamsStatus(),
-        getLlmUsageOverview(),
-        getSystemConfig()
+        withServerFetchRetry("broker accounts", getBrokerAccounts),
+        withServerFetchRetry("active workflows", () => getAlertWorkflows("active")),
+        withServerFetchRetry("inactive workflows", () => getAlertWorkflows("inactive")),
+        withServerFetchRetry("alert unread count", () =>
+            getAlertUnreadCount().then((value) => value.unread_count)
+        ),
+        withServerFetchRetry("alert history", () => getAlertHistory(24)),
+        withServerFetchRetry("live streams", getLiveStreamsStatus),
+        withServerFetchRetry("llm usage", getLlmUsageOverview),
+        withServerFetchRetry("system config", getSystemConfig)
     ]);
 
     return {

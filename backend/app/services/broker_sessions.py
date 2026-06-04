@@ -860,6 +860,13 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
             run_daily_instrument_sync_once()
         except Exception:
             pass
+        if initial_cycle:
+            try:
+                from app.services.instrument_sync_jobs import run_startup_instrument_sync_pass
+
+                run_startup_instrument_sync_pass()
+            except Exception:
+                pass
         try:
             from app.services import broker_data_preferences
 

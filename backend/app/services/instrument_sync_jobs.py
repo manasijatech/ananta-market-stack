@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 import threading
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.schemas.broker import InstrumentSyncOut, VerifyOut
 from app.services import broker_data
 from app.services.broker_data_preferences import _account_session_active
-from broker.core.instrument_store import latest_sync_run
+from broker.core.instrument_store import latest_sync_run, reconcile_stale_sync_run
 from db.models import BrokerAccount
 from db.session import SessionLocal
 
@@ -20,6 +21,11 @@ _inflight: set[str] = set()
 
 def instrument_cache_ready(db: Session, acc: BrokerAccount) -> bool:
     return broker_data.instrument_cache_available(db, acc.broker_code)
+
+
+def is_instrument_sync_inflight(account_id: str) -> bool:
+    with _lock:
+        return account_id in _inflight
 
 
 def schedule_instrument_sync(account_id: str) -> bool:
@@ -40,27 +46,62 @@ def schedule_instrument_sync(account_id: str) -> bool:
 def schedule_instrument_sync_if_needed(db: Session, acc: BrokerAccount) -> bool:
     if not acc.is_active:
         return False
-    if not _account_session_active(acc) and not acc.last_verified_at:
+    if not acc.last_verified_at and not _account_session_active(acc):
         return False
 
+    reconcile_stale_sync_run(
+        db,
+        acc.broker_code,
+        inflight=is_instrument_sync_inflight(acc.id),
+    )
     last_run = latest_sync_run(db, acc.broker_code)
     if last_run and last_run.status == "running":
-        return False
-    if instrument_cache_ready(db, acc.broker_code):
+        if is_instrument_sync_inflight(acc.id):
+            return False
+        return schedule_instrument_sync(acc.id)
+
+    if instrument_cache_ready(db, acc):
         if last_run and last_run.status in {"completed", "preserved"}:
             return False
     return schedule_instrument_sync(acc.id)
 
 
-def is_instrument_sync_inflight(account_id: str) -> bool:
-    with _lock:
-        return account_id in _inflight
+def run_startup_instrument_sync_pass() -> None:
+    """Queue background sync for verified brokers missing instrument cache."""
+    db = SessionLocal()
+    scheduled = 0
+    try:
+        accounts = list(
+            db.scalars(
+                select(BrokerAccount).where(
+                    BrokerAccount.is_active.is_(True),
+                    BrokerAccount.last_verified_at.is_not(None),
+                )
+            ).all()
+        )
+        for acc in accounts:
+            if schedule_instrument_sync_if_needed(db, acc):
+                scheduled += 1
+        if scheduled:
+            logger.info("Queued instrument sync for %s broker account(s) on startup", scheduled)
+    except Exception:
+        logger.exception("Startup instrument sync pass failed")
+    finally:
+        db.close()
 
 
 def instrument_sync_status(db: Session, acc: BrokerAccount) -> InstrumentSyncOut | None:
+    reconcile_stale_sync_run(
+        db,
+        acc.broker_code,
+        inflight=is_instrument_sync_inflight(acc.id),
+    )
     last_run = latest_sync_run(db, acc.broker_code)
-    if last_run is None and not is_instrument_sync_inflight(acc.id):
+    inflight = is_instrument_sync_inflight(acc.id)
+
+    if last_run is None and not inflight:
         return None
+
     if last_run is None:
         return InstrumentSyncOut(
             broker=acc.broker_code,
@@ -69,9 +110,14 @@ def instrument_sync_status(db: Session, acc: BrokerAccount) -> InstrumentSyncOut
             error=None,
             storage_target="db+csv",
         )
+
+    status = last_run.status
+    if inflight and status != "running":
+        status = "running"
+
     return InstrumentSyncOut(
         broker=acc.broker_code,
-        sync_status="running" if is_instrument_sync_inflight(acc.id) and last_run.status != "running" else last_run.status,
+        sync_status=status,
         row_count=last_run.row_count,
         started_at=last_run.started_at,
         finished_at=last_run.finished_at,
@@ -106,15 +152,26 @@ def build_verify_out(db: Session, acc: BrokerAccount, ok: bool, message: str) ->
 
 
 def _sync_user_message(db: Session, acc: BrokerAccount, *, scheduled: bool) -> tuple[str | None, str | None]:
+    reconcile_stale_sync_run(
+        db,
+        acc.broker_code,
+        inflight=is_instrument_sync_inflight(acc.id),
+    )
     last_run = latest_sync_run(db, acc.broker_code)
     inflight = is_instrument_sync_inflight(acc.id)
     running = inflight or (last_run is not None and last_run.status == "running")
 
-    if running or scheduled:
+    if running:
         return (
-            "running" if running else "scheduled",
+            "running",
             "Downloading the broker instrument master in the background. Symbol search and workflows "
             "will work once this finishes; you can stay on this page.",
+        )
+
+    if scheduled:
+        return (
+            "running",
+            "Starting instrument download in the background. Symbol search will work once this finishes.",
         )
 
     if instrument_cache_ready(db, acc):
@@ -139,14 +196,12 @@ def _run_instrument_sync(account_id: str) -> None:
         acc = db.get(BrokerAccount, account_id)
         if not acc or not acc.is_active:
             return
-        try:
-            broker_data.sync_instruments_to_db(db, acc)
-        except Exception:
-            logger.exception("Background instrument DB sync failed for account %s", account_id)
-        try:
-            broker_data.sync_instruments_to_csv(db, acc)
-        except Exception:
-            logger.exception("Background instrument CSV sync failed for account %s", account_id)
+        if not acc.last_verified_at and not _account_session_active(acc):
+            logger.info("Skipping instrument sync for %s: no active session", account_id)
+            return
+        broker_data.sync_instruments_combined(db, acc)
+    except Exception:
+        logger.exception("Background instrument sync failed for account %s", account_id)
     finally:
         db.close()
         with _lock:

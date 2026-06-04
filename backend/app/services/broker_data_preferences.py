@@ -342,13 +342,25 @@ def get_effective_default_broker_account(
 def maybe_schedule_instrument_recovery(db: Session, acc: BrokerAccount) -> bool:
     if not _account_session_active(acc):
         return False
+    from broker.core.instrument_store import reconcile_stale_sync_run
+    from app.services.instrument_sync_jobs import is_instrument_sync_inflight, schedule_instrument_sync
+
+    reconcile_stale_sync_run(
+        db,
+        acc.broker_code,
+        inflight=is_instrument_sync_inflight(acc.id),
+    )
     last_run = latest_sync_run(db, acc.broker_code)
     now = _now_utc_naive()
-    if last_run and last_run.status == "running":
+    if last_run and last_run.status == "running" and is_instrument_sync_inflight(acc.id):
         return False
-    if last_run and last_run.started_at and now - last_run.started_at < _RECOVERY_COOLDOWN:
+    if (
+        last_run
+        and last_run.started_at
+        and now - last_run.started_at < _RECOVERY_COOLDOWN
+        and last_run.status in {"completed", "preserved"}
+    ):
         return False
-    from app.services.instrument_sync_jobs import schedule_instrument_sync
 
     with _recovery_lock:
         if acc.id in _inflight_recoveries:
