@@ -1,21 +1,36 @@
 version: 2
 updates:
+  # GitHub Actions: one grouped PR per week (not one per action)
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
     groups:
       github-actions:
         patterns: ["*"]
 
+  # Python backend: grouped minor/patch; majors need a deliberate PR
   - package-ecosystem: pip
     directory: /backend
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
+      interval: monthly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      pip-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
+  # Frontend: grouped minor/patch; majors (e.g. Next) reviewed separately
   - package-ecosystem: npm
     directory: /frontend
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
+      interval: monthly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
