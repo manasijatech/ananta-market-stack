@@ -187,6 +187,8 @@ The daily maintenance loop runs after `06:30 IST` and writes reminders or refres
 
 - `GET /api/v1/notifications`
 
+When a broker session is established or the account is verified successfully, Ananta Market Stack schedules a background instrument sync (SQLite + CSV) if the local cache is empty. The broker detail page polls sync status so users can see progress before symbol search works.
+
 The daily instrument-sync loop runs after `08:30 IST` and refreshes the SQLite `broker_instruments` cache for each broker. Sync failures also show up through the notification system and `broker_instrument_sync_runs`.
 
 You can also trigger it on demand with:

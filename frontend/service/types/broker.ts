@@ -465,6 +465,9 @@ export interface Notification {
 export interface VerifyResponse {
     ok: boolean;
     message: string;
+    instrument_sync_scheduled?: boolean;
+    instrument_sync_status?: string | null;
+    instrument_sync_message?: string | null;
 }
 
 export interface SessionStartResponse {

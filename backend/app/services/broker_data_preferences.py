@@ -339,19 +339,6 @@ def get_effective_default_broker_account(
     return None
 
 
-def _run_instrument_recovery(account_id: str) -> None:
-    db = SessionLocal()
-    try:
-        acc = db.get(BrokerAccount, account_id)
-        if not acc or not acc.is_active:
-            return
-        broker_data.sync_instruments_to_csv(db, acc)
-    finally:
-        db.close()
-        with _recovery_lock:
-            _inflight_recoveries.discard(account_id)
-
-
 def maybe_schedule_instrument_recovery(db: Session, acc: BrokerAccount) -> bool:
     if not _account_session_active(acc):
         return False
@@ -361,12 +348,22 @@ def maybe_schedule_instrument_recovery(db: Session, acc: BrokerAccount) -> bool:
         return False
     if last_run and last_run.started_at and now - last_run.started_at < _RECOVERY_COOLDOWN:
         return False
+    from app.services.instrument_sync_jobs import schedule_instrument_sync
+
     with _recovery_lock:
         if acc.id in _inflight_recoveries:
             return False
         _inflight_recoveries.add(acc.id)
+
+    def _recovery_wrapper(account_id: str) -> None:
+        try:
+            schedule_instrument_sync(account_id)
+        finally:
+            with _recovery_lock:
+                _inflight_recoveries.discard(account_id)
+
     thread = threading.Thread(
-        target=_run_instrument_recovery,
+        target=_recovery_wrapper,
         args=(acc.id,),
         name=f"instrument-recovery-{acc.id}",
         daemon=True,

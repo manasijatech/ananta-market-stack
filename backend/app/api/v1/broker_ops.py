@@ -23,6 +23,7 @@ from app.schemas.broker import (
     StreamStatusOut,
 )
 from app.services import broker_data
+from app.services.instrument_sync_jobs import instrument_sync_status
 from app.services.broker_streams import stream_registry
 from broker.core.instrument_store import SQLiteInstrumentResolver
 from broker.core.registry import get_client_for_account
@@ -233,6 +234,24 @@ def get_data_capabilities(
         account_id=acc.id,
         capabilities=broker_data.get_capabilities(db, acc),
     )
+
+
+@router.get("/{account_id}/data/instruments/sync-status", response_model=InstrumentSyncOut)
+def get_instrument_sync_status(
+    account_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InstrumentSyncOut:
+    acc = _owned(db, user.id, account_id)
+    status = instrument_sync_status(db, acc)
+    if status is None:
+        return InstrumentSyncOut(
+            broker=acc.broker_code,
+            sync_status="not_started",
+            row_count=0,
+            storage_target="db+csv",
+        )
+    return status
 
 
 @router.post("/{account_id}/data/instruments/sync", response_model=InstrumentSyncOut)

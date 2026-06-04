@@ -131,8 +131,27 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
 
         async function connect() {
             try {
-                await createSession(selectedAccount.id, selectedPayload.broker, selectedPayload.payload);
-                await verifyBrokerAccount(selectedAccount.id);
+                const sessionResult = await createSession(
+                    selectedAccount.id,
+                    selectedPayload.broker,
+                    selectedPayload.payload
+                );
+                if (!sessionResult.ok) {
+                    setCallbackState({
+                        tone: "destructive",
+                        message: sessionResult.message || "Broker session could not be established."
+                    });
+                    return;
+                }
+                const verifyResult = await verifyBrokerAccount(selectedAccount.id);
+                const syncMessage =
+                    verifyResult.instrument_sync_message ||
+                    sessionResult.instrument_sync_message ||
+                    "Downloading the instrument master in the background.";
+                setCallbackState({
+                    tone: "default",
+                    message: `${selectedAccount.label} is connected. ${syncMessage}`
+                });
                 window.localStorage.removeItem(pendingLoginKey);
                 router.replace(`/broker-connections/${selectedAccount.id}`);
                 router.refresh();

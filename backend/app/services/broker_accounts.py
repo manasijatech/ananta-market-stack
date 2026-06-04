@@ -268,15 +268,6 @@ def verify_account(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
     db.add(acc)
     db.commit()
     db.refresh(acc)
-    should_auto_sync = ok and (prior_verified_at is None or bool(prior_error))
-    if should_auto_sync:
-        try:
-            from app.services import broker_data
-
-            broker_data.sync_instruments_for_account(db, acc)
-        except Exception:
-            # Verify should remain successful even if the one-time sync fails.
-            pass
     return ok, msg
 
 
