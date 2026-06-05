@@ -456,7 +456,7 @@ export default function HomePage() {
         <main className="landing-page">
             <nav className="landing-nav fixed left-0 top-0 z-50 w-full backdrop-blur-md">
                 <div className="flex h-16 w-full items-center justify-between px-5">
-                    <BrandLogo imageClassName="landing-logo h-8 w-auto" />
+                    <BrandLogo imageClassName="landing-logo h-10 w-auto" />
                     <div className="flex items-center gap-3">
                         <div className="landing-theme-toggle">
                             <ThemeToggle />
@@ -663,7 +663,7 @@ export default function HomePage() {
 
             <footer className="landing-footer px-5 py-8">
                 <div className="mx-auto flex max-w-7xl flex-col gap-4 text-xs sm:flex-row sm:items-center sm:justify-between">
-                    <BrandLogo imageClassName="landing-logo h-6 w-auto opacity-70" />
+                    <BrandLogo imageClassName="landing-logo h-7 w-auto opacity-70" />
                     <span className="font-mono">Open-source core for broker-connected market workflows.</span>
                 </div>
             </footer>
