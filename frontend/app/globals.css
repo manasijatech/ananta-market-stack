@@ -312,10 +312,6 @@
     filter: none;
 }
 
-.dark .landing-logo {
-    filter: brightness(0) invert(1);
-}
-
 .landing-nav-link,
 .landing-secondary-button {
     border: 1px solid var(--landing-border);
