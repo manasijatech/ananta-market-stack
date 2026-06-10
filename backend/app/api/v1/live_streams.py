@@ -20,7 +20,9 @@ from app.schemas.alert import (
     LiveSubscriptionOut,
     LiveSubscriptionReplaceIn,
 )
+from app.schemas.live_heatmap import HeatmapResponseOut
 from app.services import alerts as alert_svc
+from app.services import live_heatmap
 from app.services.live_price_scope import publish_scope_change, scope_stream_name
 from broker.core.redis_cache import _redis_client
 from db.models import LiveSymbolSubscription, User
@@ -189,6 +191,16 @@ def live_status(
     user: User = Depends(get_current_user),
 ) -> LiveStreamsStatusOut:
     return alert_svc.live_stream_status(db, user.id)
+
+
+@router.get("/heatmap", response_model=HeatmapResponseOut)
+def get_live_heatmap(
+    limit: int = Query(default=100, ge=1, le=1000),
+    days: int | None = Query(default=None, ge=1, le=3650),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> HeatmapResponseOut:
+    return live_heatmap.get_live_heatmap(db, user_id=user.id, limit=limit, days=days)
 
 
 @router.websocket("/prices/ws")
