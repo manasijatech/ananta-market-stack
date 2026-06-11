@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user
+from app.deps import get_current_principal, get_current_user
 from app.schemas.broker import (
     BrokerDataDefaultConfigUpdateIn,
     BrokerDataSearchConfigUpdateIn,
@@ -35,6 +35,7 @@ from app.services import alpha_websocket
 from app.services import broker_data_preferences
 from app.services import llm_config
 from app.services import mcp_config
+from app.services.rbac import Principal
 from db.models import User
 from db.session import get_db
 
@@ -44,43 +45,43 @@ router = APIRouter()
 @router.get("", response_model=SystemConfigOut)
 def get_system_config(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> SystemConfigOut:
     return SystemConfigOut(
-        broker_data_default=broker_data_preferences.get_broker_data_default_config(db, user.id),
-        broker_data_search=broker_data_preferences.get_broker_data_search_config(db, user.id),
-        llm_providers=llm_config.list_provider_configs(db, user.id),
-        alpha_api=alpha_config.get_alpha_api_config(db, user.id),
-        alpha_websocket=alpha_websocket.alpha_ws_config_out(db, user.id),
-        mcp_server=mcp_config.get_mcp_server_config(db, user.id),
-        mcp_servers=mcp_config.list_mcp_server_configs(db, user.id),
+        broker_data_default=broker_data_preferences.get_broker_data_default_config(db, principal.user.id, principal),
+        broker_data_search=broker_data_preferences.get_broker_data_search_config(db, principal.user.id, principal),
+        llm_providers=llm_config.list_provider_configs(db, principal.user.id),
+        alpha_api=alpha_config.get_alpha_api_config(db, principal.user.id),
+        alpha_websocket=alpha_websocket.alpha_ws_config_out(db, principal.user.id),
+        mcp_server=mcp_config.get_mcp_server_config(db, principal.user.id),
+        mcp_servers=mcp_config.list_mcp_server_configs(db, principal.user.id),
     )
 
 
 @router.get("/broker-search")
 def get_broker_search_config(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ):
-    return broker_data_preferences.get_broker_data_search_config(db, user.id)
+    return broker_data_preferences.get_broker_data_search_config(db, principal.user.id, principal)
 
 
 @router.get("/broker-default")
 def get_broker_default_config(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ):
-    return broker_data_preferences.get_broker_data_default_config(db, user.id)
+    return broker_data_preferences.get_broker_data_default_config(db, principal.user.id, principal)
 
 
 @router.put("/broker-default")
 def update_broker_default_config(
     body: BrokerDataDefaultConfigUpdateIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ):
     try:
-        return broker_data_preferences.update_broker_data_default_config(db, user.id, body)
+        return broker_data_preferences.update_broker_data_default_config(db, principal.user.id, body, principal)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -89,10 +90,10 @@ def update_broker_default_config(
 def update_broker_search_config(
     body: BrokerDataSearchConfigUpdateIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ):
     try:
-        return broker_data_preferences.update_broker_data_search_config(db, user.id, body)
+        return broker_data_preferences.update_broker_data_search_config(db, principal.user.id, body, principal)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -175,15 +176,16 @@ def search_instruments(
     segment: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> list[InstrumentSearchRow]:
     return broker_data_preferences.search_instruments_for_user(
         db,
-        user.id,
+        principal.user.id,
         query=q,
         exchange=exchange,
         segment=segment,
         limit=limit,
+        principal=principal,
     )
 
 

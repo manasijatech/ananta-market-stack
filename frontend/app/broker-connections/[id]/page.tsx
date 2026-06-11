@@ -143,7 +143,11 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
                         ) : null}
                     </div>
                     <div className="border-t border-border pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-                        <BrokerDetailActions accountId={account.id} verified={Boolean(account.last_verified_at)} />
+                        <BrokerDetailActions
+                            accountId={account.id}
+                            permissions={account.access_permissions ?? []}
+                            verified={Boolean(account.last_verified_at)}
+                        />
                     </div>
                 </section>
 

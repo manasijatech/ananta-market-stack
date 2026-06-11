@@ -12,6 +12,7 @@ class BrokerAccountOut(BaseModel):
     """Public representation of a broker account without sensitive credentials."""
 
     id: str = Field(..., description="Unique ID for the broker account.")
+    workspace_id: str | None = Field(None, description="Workspace that owns this broker account.")
     user_id: str = Field(..., description="The user owning this account.")
     broker_code: str = Field(..., description="The broker identifier (e.g., 'zerodha', 'upstox').")
     label: str = Field(..., description="A friendly name for the account.")
@@ -26,6 +27,11 @@ class BrokerAccountOut(BaseModel):
         False,
         description="Whether this account is pinned as the user's preferred symbol-search broker.",
     )
+    access_permissions: list[str] = Field(
+        default_factory=list,
+        description="RBAC permissions granted to the current user for this account.",
+    )
+    is_shared: bool = Field(False, description="Whether the account is accessible through workspace sharing.")
     created_at: datetime
     updated_at: datetime
 
