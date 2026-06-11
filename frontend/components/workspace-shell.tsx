@@ -56,6 +56,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         label: "SETTINGS",
         items: [
             { href: "/settings", label: "Settings", icon: IconSettings2 },
+            { href: "/settings/access", label: "Access", icon: IconSettings2 },
             { href: "/docs", label: "Docs", icon: IconBook, external: true }
         ]
     }

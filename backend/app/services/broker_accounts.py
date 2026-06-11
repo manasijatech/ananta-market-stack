@@ -64,12 +64,19 @@ def _mark_session_healthy(db: Session, acc: BrokerAccount, *, verified_at: datet
     mark_session_healthy(db, acc, verified_at=verified_at)
 
 
-def create_broker_account(db: Session, user_id: str, payload: BrokerAccountCreate) -> BrokerAccount:
+def create_broker_account(
+    db: Session,
+    user_id: str,
+    payload: BrokerAccountCreate,
+    *,
+    workspace_id: str | None = None,
+) -> BrokerAccount:
     if not db.get(User, user_id):
         raise ValueError("user not found")
     bid = str(uuid.uuid4())
     acc = BrokerAccount(
         id=bid,
+        workspace_id=workspace_id,
         user_id=user_id,
         broker_code=payload.broker,
         label=payload.label,

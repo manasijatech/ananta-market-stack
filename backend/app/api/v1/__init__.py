@@ -19,6 +19,7 @@ from app.api.v1 import (
     llm_usage,
     meta,
     notifications,
+    rbac,
     system_config,
     users,
     watchlists,
@@ -81,4 +82,7 @@ api_router.include_router(
 )
 api_router.include_router(
     broker_ops.router, prefix="/broker-accounts", tags=["broker-operations"]
+)
+api_router.include_router(
+    rbac.router, prefix="/rbac", tags=["rbac"]
 )

@@ -17,6 +17,12 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    workspace_memberships: Mapped[list[WorkspaceMember]] = relationship(
+        "WorkspaceMember",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     broker_accounts: Mapped[list[BrokerAccount]] = relationship(
         "BrokerAccount", back_populates="user", cascade="all, delete-orphan"
     )
@@ -90,12 +96,151 @@ class User(Base):
     )
 
 
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(256), default="Default workspace")
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    members: Mapped[list[WorkspaceMember]] = relationship(
+        "WorkspaceMember",
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    broker_accounts: Mapped[list[BrokerAccount]] = relationship(
+        "BrokerAccount",
+        back_populates="workspace",
+        passive_deletes=True,
+    )
+
+
+class WorkspaceMember(Base):
+    __tablename__ = "workspace_members"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_members_workspace_user"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(64), default="pending", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    workspace: Mapped[Workspace] = relationship("Workspace", back_populates="members")
+    user: Mapped[User] = relationship("User", back_populates="workspace_memberships")
+
+
+class Role(Base):
+    __tablename__ = "roles"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_roles_workspace_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), index=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    permissions: Mapped[list[RolePermission]] = relationship(
+        "RolePermission",
+        back_populates="role",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role_id", "permission", name="uq_role_permissions_role_permission"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    role_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("roles.id", ondelete="CASCADE"), index=True
+    )
+    permission: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    role: Mapped[Role] = relationship("Role", back_populates="permissions")
+
+
+class BrokerAccountGrant(Base):
+    __tablename__ = "broker_account_grants"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "subject_type",
+            "subject_id",
+            name="uq_broker_account_grants_account_subject",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    account_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), index=True
+    )
+    subject_type: Mapped[str] = mapped_column(String(16), index=True)
+    subject_id: Mapped[str] = mapped_column(String(64), index=True)
+    permissions_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    actor_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    resource_type: Mapped[str] = mapped_column(String(64), index=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class BrokerAccount(Base):
     """Logical broker connection: one row per linked account (multiple per user and per broker)."""
 
     __tablename__ = "broker_accounts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
@@ -114,6 +259,7 @@ class BrokerAccount(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="broker_accounts")
+    workspace: Mapped[Workspace | None] = relationship("Workspace", back_populates="broker_accounts")
 
     zerodha: Mapped[ZerodhaCredentials | None] = relationship(
         "ZerodhaCredentials",

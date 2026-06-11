@@ -8,10 +8,20 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
-export function BrokerDetailActions({ accountId, verified }: { accountId: string; verified: boolean }) {
+export function BrokerDetailActions({
+    accountId,
+    verified,
+    permissions = []
+}: {
+    accountId: string;
+    verified: boolean;
+    permissions?: string[];
+}) {
     const router = useRouter();
     const [message, setMessage] = useState("");
     const [isPending, startTransition] = useTransition();
+    const canManageSessions = permissions.includes("broker.manage_sessions");
+    const canDelete = permissions.includes("broker.delete");
 
     function verify() {
         setMessage("");
@@ -48,17 +58,24 @@ export function BrokerDetailActions({ accountId, verified }: { accountId: string
         <div>
             <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-muted-foreground">Account actions</h2>
             <div className="mt-4 flex flex-wrap gap-3">
-                <Button disabled={isPending} onClick={verify} type="button">
-                    Verify
-                </Button>
+                {canManageSessions ? (
+                    <Button disabled={isPending} onClick={verify} type="button">
+                        Verify
+                    </Button>
+                ) : null}
                 {verified ? (
                     <Button asChild disabled={isPending} type="button" variant="outline">
                         <Link href={`/broker-connections/${accountId}/data-test`}>Test data APIs</Link>
                     </Button>
                 ) : null}
-                <Button disabled={isPending} onClick={remove} type="button" variant="destructive">
-                    Delete
-                </Button>
+                {canDelete ? (
+                    <Button disabled={isPending} onClick={remove} type="button" variant="destructive">
+                        Delete
+                    </Button>
+                ) : null}
+                {!canManageSessions && !canDelete ? (
+                    <p className="text-sm text-muted-foreground">You have read-only access to this broker account.</p>
+                ) : null}
             </div>
             {message ? (
                 <Alert className="mt-4">

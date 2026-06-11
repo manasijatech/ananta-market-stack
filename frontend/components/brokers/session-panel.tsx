@@ -97,6 +97,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
     const [dhanStart, setDhanStart] = useState<SessionStartResponse | null>(null);
     const [isPending, startTransition] = useTransition();
     const broker = account.broker_code;
+    const canManageSessions = account.access_permissions?.includes("broker.manage_sessions") ?? false;
     const refreshedAt = isZerodhaStatus(sessionStatus)
         ? sessionStatus.access_token_generated_at
         : sessionStatus.token_generated_at;
@@ -218,7 +219,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                         </Badge>
                     </div>
                 </div>
-                {canRefresh(broker) ? (
+                {canManageSessions && canRefresh(broker) ? (
                     <Button
                         className="self-start"
                         disabled={isPending}
@@ -242,7 +243,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                 </div>
             </dl>
 
-            {"login_url" in sessionStatus && sessionStatus.login_url && !sessionStatus.session_active ? (
+            {canManageSessions && "login_url" in sessionStatus && sessionStatus.login_url && !sessionStatus.session_active ? (
                 <Button
                     asChild
                     className={cn(
@@ -266,6 +267,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
             {"login_url" in sessionStatus &&
             sessionStatus.login_url &&
             !sessionStatus.session_active &&
+            canManageSessions &&
             hasManualSessionForm ? (
                 <div className="my-6 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
                     <span className="h-px flex-1 bg-border" />
@@ -274,7 +276,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                 </div>
             ) : null}
 
-            {broker === "dhan" ? (
+            {canManageSessions && broker === "dhan" ? (
                 <Button className="mt-5" disabled={isPending} onClick={startDhan} type="button" variant="outline">
                     Start Dhan consent flow
                 </Button>
@@ -294,7 +296,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                 </Alert>
             ) : null}
 
-            {broker === "groww" ? (
+            {canManageSessions && broker === "groww" ? (
                 <div className="mt-5 flex flex-wrap gap-2">
                     {(["auto", "totp", "token"] as const).map((item) => (
                         <Button
@@ -310,7 +312,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                 </div>
             ) : null}
 
-            {broker === "groww" && mode === "auto" && !sessionStatus.session_active ? (
+            {canManageSessions && broker === "groww" && mode === "auto" && !sessionStatus.session_active ? (
                 <div className="mt-5">
                     <Button
                         className="border-primary bg-[var(--accent-glow)] text-primary hover:bg-[var(--accent-subtle)]"
@@ -326,7 +328,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                 </div>
             ) : null}
 
-            {hasManualSessionForm ? (
+            {canManageSessions && hasManualSessionForm ? (
                 <form
                     ref={formRef}
                     autoComplete="off"
@@ -456,6 +458,11 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                 <Alert className="mt-4">
                     <AlertDescription>{message}</AlertDescription>
                 </Alert>
+            ) : null}
+            {!canManageSessions ? (
+                <p className="mt-4 text-sm text-muted-foreground">
+                    You can view this broker session, but only admins or users with session-management access can update it.
+                </p>
             ) : null}
         </section>
     );
