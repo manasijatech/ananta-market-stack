@@ -243,7 +243,11 @@ export async function updateBrokerDataDefaultConfig(
     });
     revalidatePath("/broker-connections");
     revalidatePath("/alerts-workspace");
+    revalidatePath("/dashboard");
+    revalidatePath("/heatmap");
+    revalidatePath("/market-intelligence");
     revalidatePath("/settings");
+    revalidatePath("/watchlists");
     return result;
 }
 
