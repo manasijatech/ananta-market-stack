@@ -185,6 +185,12 @@ function isNavItemActive(pathname: string, href: string) {
     if (href === "/dashboard") {
         return pathname === "/dashboard";
     }
+    if (href === "/settings") {
+        return pathname === "/settings";
+    }
+    if (href === "/settings/access") {
+        return pathname === "/settings/access" || pathname.startsWith("/settings/access/");
+    }
     if (href === "/market-intelligence") {
         return pathname.startsWith("/market-intelligence");
     }

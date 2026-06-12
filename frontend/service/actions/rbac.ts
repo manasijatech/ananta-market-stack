@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { fetchFastApi } from "@/lib/fastapi";
-import type { BrokerAccountGrant, RbacPrincipal, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
+import type { BrokerAccountGrant, RbacPrincipal, RoleDefinition, SignupStatus, WorkspaceMember } from "@/service/types/rbac";
 
 async function readResponse<T>(response: Response): Promise<T> {
     const text = await response.text();
@@ -30,6 +30,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export async function getRbacMe(): Promise<RbacPrincipal> {
     return request<RbacPrincipal>("/rbac/me");
+}
+
+export async function getSignupStatus(): Promise<SignupStatus> {
+    return request<SignupStatus>("/rbac/signup-status");
 }
 
 export async function getWorkspaceMembers(): Promise<WorkspaceMember[]> {
