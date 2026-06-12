@@ -12,7 +12,7 @@ async function readResponse<T>(response: Response): Promise<T> {
             payload && typeof payload === "object" && "detail" in payload
                 ? String((payload as { detail?: unknown }).detail)
                 : "Request failed.";
-        throw new Error(detail);
+        throw new Error(JSON.stringify({ status: response.status, message: detail, fieldErrors: {} }));
     }
     return payload as T;
 }

@@ -21,7 +21,11 @@ export function BrokerDetailActions({
     const [message, setMessage] = useState("");
     const [isPending, startTransition] = useTransition();
     const canManageSessions = permissions.includes("broker.manage_sessions");
+    const canUseData = permissions.includes("broker.use_data");
     const canDelete = permissions.includes("broker.delete");
+    const verifyDisabledReason = "You need session-management access on this broker account to verify or refresh it.";
+    const dataDisabledReason = "You need portfolio and market-data access on this broker account to open the data tools.";
+    const deleteDisabledReason = "Only users with delete access can remove this broker account.";
 
     function verify() {
         setMessage("");
@@ -62,19 +66,39 @@ export function BrokerDetailActions({
                     <Button disabled={isPending} onClick={verify} type="button">
                         Verify
                     </Button>
-                ) : null}
+                ) : (
+                    <span title={verifyDisabledReason}>
+                        <Button disabled type="button">
+                            Verify
+                        </Button>
+                    </span>
+                )}
                 {verified ? (
-                    <Button asChild disabled={isPending} type="button" variant="outline">
-                        <Link href={`/broker-connections/${accountId}/data-test`}>Test data APIs</Link>
-                    </Button>
+                    canUseData ? (
+                        <Button asChild disabled={isPending} type="button" variant="outline">
+                            <Link href={`/broker-connections/${accountId}/data-test`}>Test data APIs</Link>
+                        </Button>
+                    ) : (
+                        <span title={dataDisabledReason}>
+                            <Button disabled type="button" variant="outline">
+                                Test data APIs
+                            </Button>
+                        </span>
+                    )
                 ) : null}
                 {canDelete ? (
                     <Button disabled={isPending} onClick={remove} type="button" variant="destructive">
                         Delete
                     </Button>
-                ) : null}
-                {!canManageSessions && !canDelete ? (
-                    <p className="text-sm text-muted-foreground">You have read-only access to this broker account.</p>
+                ) : (
+                    <span title={deleteDisabledReason}>
+                        <Button disabled type="button" variant="destructive">
+                            Delete
+                        </Button>
+                    </span>
+                )}
+                {!canManageSessions && !canUseData && !canDelete ? (
+                    <p className="text-sm text-muted-foreground">You currently have view-only access to this broker account.</p>
                 ) : null}
             </div>
             {message ? (

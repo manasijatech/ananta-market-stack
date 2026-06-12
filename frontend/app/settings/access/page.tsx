@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { PageHeader, Shell } from "@/components/brokers/ui";
+import { AccessGrantEditor } from "@/components/settings/access-grant-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { canManageWorkspaceAccess } from "@/lib/rbac";
 import { getBrokerAccounts } from "@/service/actions/broker";
 import {
     approveWorkspaceMember,
@@ -11,19 +13,10 @@ import {
     getRbacMe,
     getWorkspaceMembers,
     getWorkspaceRoles,
-    updateWorkspaceMemberRole,
-    upsertBrokerAccountGrant
+    updateWorkspaceMemberRole
 } from "@/service/actions/rbac";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { BrokerAccountGrant, WorkspaceMember } from "@/service/types/rbac";
-
-const brokerPermissions = [
-    "broker.view",
-    "broker.use_data",
-    "broker.manage_sessions",
-    "broker.manage_credentials",
-    "broker.delete"
-] as const;
 
 function memberLabel(member: WorkspaceMember): string {
     return member.display_name || member.auth_name || member.email || "Name missing";
@@ -37,7 +30,7 @@ function memberSubtitle(member: WorkspaceMember): string {
     return "Ask this user to add a name during signup.";
 }
 
-function permissionLabel(permission: (typeof brokerPermissions)[number]): string {
+function permissionLabel(permission: string): string {
     if (permission === "broker.view") return "View account";
     if (permission === "broker.use_data") return "Use portfolio and market data";
     if (permission === "broker.manage_sessions") return "Refresh sessions";
@@ -49,7 +42,7 @@ function permissionSummary(grant: BrokerAccountGrant): string {
     if (!grant.permissions.length) {
         return "No access";
     }
-    return grant.permissions.map((permission) => permissionLabel(permission as (typeof brokerPermissions)[number])).join(", ");
+    return grant.permissions.map((permission) => permissionLabel(permission)).join(", ");
 }
 
 async function approveMemberAction(formData: FormData) {
@@ -67,18 +60,6 @@ async function disableMemberAction(formData: FormData) {
     await disableWorkspaceMember(String(formData.get("user_id") ?? ""));
 }
 
-async function grantBrokerAccessAction(formData: FormData) {
-    "use server";
-    const [subjectType = "", subjectId = ""] = String(formData.get("subject_key") ?? "").split(":", 2);
-    const permissions = brokerPermissions.filter((permission) => formData.get(permission) === "on");
-    await upsertBrokerAccountGrant({
-        accountId: String(formData.get("account_id") ?? ""),
-        subjectType: subjectType as "user" | "role",
-        subjectId,
-        permissions
-    });
-}
-
 type AccountWithGrants = {
     account: BrokerAccount;
     grants: BrokerAccountGrant[];
@@ -91,8 +72,16 @@ async function loadAccountGrants(accounts: BrokerAccount[]): Promise<AccountWith
 
 export default async function AccessSettingsPage() {
     const me = await getRbacMe();
-    if (!me.is_admin) {
-        redirect("/dashboard");
+    if (!canManageWorkspaceAccess(me)) {
+        return (
+            <AccessDeniedState
+                title="Workspace access settings"
+                description="Approve members, assign roles, and manage broker sharing from this page."
+                reason="Your current role does not include workspace access management."
+                backHref="/settings"
+                backLabel="Go to settings"
+            />
+        );
     }
 
     const [members, roles, accounts] = await Promise.all([
@@ -101,7 +90,6 @@ export default async function AccessSettingsPage() {
         getBrokerAccounts()
     ]);
     const accountGrants = await loadAccountGrants(accounts);
-    const memberOptions = members.filter((member) => member.status !== "disabled");
     const viewerDefault = roles.find((role) => role.name === "viewer")?.name ?? roles[0]?.name ?? "viewer";
 
     return (
@@ -228,68 +216,7 @@ export default async function AccessSettingsPage() {
                                 </Alert>
                             )}
 
-                            <form action={grantBrokerAccessAction} className="grid gap-4 border border-border bg-card p-4">
-                                <input name="account_id" type="hidden" value={account.id} />
-                                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-                                    <div className="grid gap-2">
-                                        <label className="text-sm font-semibold" htmlFor={`subject-${account.id}`}>
-                                            Grant access to
-                                        </label>
-                                        <select
-                                            className="border border-border bg-background px-3 py-2 text-sm"
-                                            defaultValue={memberOptions[0] ? `user:${memberOptions[0].user_id}` : roles[0] ? `role:${roles[0].name}` : ""}
-                                            id={`subject-${account.id}`}
-                                            name="subject_key"
-                                        >
-                                            {memberOptions.length ? (
-                                                <optgroup label="People">
-                                                    {memberOptions.map((member) => (
-                                                        <option key={member.user_id} value={`user:${member.user_id}`}>
-                                                            {memberLabel(member)}
-                                                            {member.email ? ` - ${member.email}` : ""}
-                                                        </option>
-                                                    ))}
-                                                </optgroup>
-                                            ) : null}
-                                            <optgroup label="Role defaults">
-                                                {roles.map((role) => (
-                                                    <option key={role.name} value={`role:${role.name}`}>
-                                                        {role.label}
-                                                    </option>
-                                                ))}
-                                            </optgroup>
-                                        </select>
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <div className="text-sm font-semibold">Recommended starting point</div>
-                                        <div className="border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-                                            Keep `View account` and `Use portfolio and market data` on by default, then add session or credential access only when needed.
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                    {brokerPermissions.map((permission) => (
-                                        <label className="flex items-start gap-3 border border-border bg-background p-3" key={permission}>
-                                            <input
-                                                defaultChecked={permission === "broker.view" || permission === "broker.use_data"}
-                                                name={permission}
-                                                type="checkbox"
-                                            />
-                                            <span>
-                                                <span className="block text-sm font-semibold">{permissionLabel(permission)}</span>
-                                                <span className="block text-sm text-muted-foreground">{permission}</span>
-                                            </span>
-                                        </label>
-                                    ))}
-                                </div>
-
-                                <div>
-                                    <Button className="w-fit" type="submit">
-                                        Save access grant
-                                    </Button>
-                                </div>
-                            </form>
+                            <AccessGrantEditor accountId={account.id} grants={grants} members={members} roles={roles} />
                         </div>
                     ))}
                 </div>
