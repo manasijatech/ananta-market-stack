@@ -197,10 +197,21 @@ def live_status(
 def get_live_heatmap(
     limit: int = Query(default=100, ge=1, le=1000),
     days: int | None = Query(default=None, ge=1, le=3650),
+    scope: str = Query(default="tracked"),
+    watchlist_id: str | None = Query(default=None),
+    account_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> HeatmapResponseOut:
-    return live_heatmap.get_live_heatmap(db, user_id=user.id, limit=limit, days=days)
+    return live_heatmap.get_live_heatmap(
+        db,
+        user_id=user.id,
+        limit=limit,
+        days=days,
+        scope=scope,
+        watchlist_id=watchlist_id,
+        account_id=account_id,
+    )
 
 
 @router.websocket("/prices/ws")
