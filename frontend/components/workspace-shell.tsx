@@ -7,6 +7,7 @@ import {
     IconBellRinging,
     IconExternalLink,
     IconBrain,
+    IconLayoutGrid,
     IconLayoutDashboard,
     IconListCheck,
     IconLogout,
@@ -21,6 +22,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { EVENTS, Joyride, STATUS, type EventData, type Step, type TooltipRenderProps } from "react-joyride";
 import { AlertNotificationsTray } from "@/components/alerts/alert-notifications-tray";
 import { BrandLogo } from "@/components/brand-logo";
+import {
+    HEATMAP_FILTER_CHANGE_EVENT,
+    HEATMAP_FILTER_STORAGE_KEY,
+    isHeatmapScope,
+    parseStoredHeatmapFilters
+} from "@/components/heatmap/heatmap-filter-state";
 import { useSession } from "@/components/session-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -47,6 +54,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         label: "INTELLIGENCE",
         items: [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
+            { href: "/heatmap", label: "Heatmap", icon: IconLayoutGrid },
             { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
             { href: "/llm-usage", label: "LLM Usage", icon: IconBrain },
             { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
@@ -210,7 +218,34 @@ function splitOnboardingRoute(route?: string) {
     return { path, hash: hash ? `#${hash}` : "" };
 }
 
+function storedHeatmapHref() {
+    try {
+        const stored = parseStoredHeatmapFilters(localStorage.getItem(HEATMAP_FILTER_STORAGE_KEY) ?? undefined);
+        if (!isHeatmapScope(stored.scope)) return "/heatmap";
+
+        const params = new URLSearchParams({ scope: stored.scope });
+        if (stored.scope === "watchlist" && stored.watchlistId) {
+            params.set("watchlist_id", stored.watchlistId);
+        }
+        if (stored.scope === "portfolio_holdings" && stored.accountId) {
+            params.set("account_id", stored.accountId);
+        }
+        return `/heatmap?${params.toString()}`;
+    } catch {
+        return "/heatmap";
+    }
+}
+
 function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: string; closeOnSelect?: boolean }) {
+    const [heatmapHref, setHeatmapHref] = useState("/heatmap");
+
+    useEffect(() => {
+        const syncHeatmapHref = () => setHeatmapHref(storedHeatmapHref());
+        syncHeatmapHref();
+        window.addEventListener(HEATMAP_FILTER_CHANGE_EVENT, syncHeatmapHref);
+        return () => window.removeEventListener(HEATMAP_FILTER_CHANGE_EVENT, syncHeatmapHref);
+    }, []);
+
     return (
         <nav className="grid gap-1" aria-label="Primary navigation">
             {navGroups.map((group, groupIndex) => (
@@ -222,6 +257,7 @@ function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: strin
                     {group.items.map((item) => {
                         const Icon = item.icon;
                         const active = isNavItemActive(pathname, item.href);
+                        const href = item.href === "/heatmap" ? heatmapHref : item.href;
                         const link = (
                             <Link
                                 className={[
@@ -237,7 +273,7 @@ function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: strin
                                           ? "settings-nav"
                                           : undefined
                                 }
-                                href={item.href}
+                                href={href}
                                 key={item.href}
                             >
                                 <Icon className="size-4 shrink-0" stroke={1.8} />
@@ -559,7 +595,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                             <DialogContent className="left-0 top-0 h-dvh max-h-dvh w-[min(22rem,calc(100vw-1.5rem))] max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-0 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left">
                                 <DialogHeader className="border-b border-border px-5 py-5 pr-16">
                                     <DialogTitle className="sr-only">Workspace navigation</DialogTitle>
-                                    <BrandLogo imageClassName="h-10 w-64 max-w-full" />
+                                    <BrandLogo imageClassName="max-w-full text-[1.5rem]" />
                                 </DialogHeader>
                                 <div className="min-h-0 overflow-y-auto px-3 py-4">
                                     <NavigationGroups closeOnSelect pathname={pathname} />
@@ -587,7 +623,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                             </DialogContent>
                         </Dialog>
                         <div className="min-w-0">
-                            <BrandLogo imageClassName="h-9 w-56" />
+                            <BrandLogo imageClassName="text-[1.35rem]" />
                             <div className="mt-0.5 truncate font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                 {activeSection?.label ?? "Workspace"}
                             </div>
@@ -603,7 +639,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-[252px] min-[980px]:overflow-hidden">
                 <div className="flex h-full w-full flex-col border-r border-border">
                     <div className="flex h-18 items-center border-b border-border px-5 min-[980px]:h-20">
-                        <BrandLogo imageClassName="h-10 w-64" />
+                        <BrandLogo imageClassName="text-[1.5rem]" />
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
                         <NavigationGroups pathname={pathname} />

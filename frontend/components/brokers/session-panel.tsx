@@ -107,14 +107,14 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         !sessionStatus.session_active && "login_url" in sessionStatus && Boolean(sessionStatus.login_url);
     const shouldPulseLogin = shouldHighlightLogin && isExpiredTokenStatus(sessionStatus, expiresAt);
     const hasManualSessionForm =
-        !sessionStatus.session_active &&
-        (broker === "zerodha" ||
-            broker === "upstox" ||
-            broker === "angel" ||
-            broker === "dhan" ||
-            broker === "kotak" ||
-            broker === "indmoney" ||
-            (broker === "groww" && mode !== "auto"));
+        broker === "indmoney" ||
+        (!sessionStatus.session_active &&
+            (broker === "zerodha" ||
+                broker === "upstox" ||
+                broker === "angel" ||
+                broker === "dhan" ||
+                broker === "kotak" ||
+                (broker === "groww" && mode !== "auto")));
 
     useEffect(() => {
         if (broker !== "groww" || mode !== "auto" || sessionStatus.session_active || growwAutoAttemptedRef.current) {

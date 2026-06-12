@@ -71,6 +71,15 @@ def _default_data_preferred_account_id(accounts: list[BrokerAccount]) -> str | N
     return ordered[0].id if ordered else None
 
 
+def _preferred_default_account_id(db: Session, user_id: str) -> str | None:
+    pref = _get_preference(db, user_id)
+    if not pref:
+        return None
+    # Broker data default is the canonical broker preference. Keep the legacy
+    # search field as a migration fallback for older installs/API callers.
+    return pref.preferred_default_account_id or pref.preferred_search_account_id
+
+
 def _candidate_order(
     accounts: list[BrokerAccount],
     preferred_account_id: str | None,
@@ -96,8 +105,7 @@ def _default_account_summaries(
             .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
         ).all()
     )
-    pref = _get_preference(db, user_id)
-    preferred_account_id = pref.preferred_default_account_id if pref else None
+    preferred_account_id = _preferred_default_account_id(db, user_id)
     if preferred_account_id and not any(row.id == preferred_account_id for row in accounts):
         preferred_account_id = None
     if preferred_account_id is None:
@@ -145,8 +153,7 @@ def _search_account_summaries(
             .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
         ).all()
     )
-    pref = _get_preference(db, user_id)
-    preferred_account_id = pref.preferred_search_account_id if pref else None
+    preferred_account_id = _preferred_default_account_id(db, user_id)
     if preferred_account_id and not any(row.id == preferred_account_id for row in accounts):
         preferred_account_id = None
     if preferred_account_id is None:
@@ -199,8 +206,7 @@ def _search_account_summaries(
 
 
 def list_broker_accounts_with_preferences(db: Session, user_id: str) -> list[BrokerAccountOut]:
-    preferred = _get_preference(db, user_id)
-    preferred_account_id = preferred.preferred_search_account_id if preferred else None
+    preferred_account_id = _preferred_default_account_id(db, user_id)
     accounts = list(
         db.scalars(
             select(BrokerAccount)
@@ -225,8 +231,7 @@ def broker_account_with_preference(
     acc: BrokerAccount,
 ) -> BrokerAccountOut:
     _clear_stale_session_error_if_active(db, acc)
-    preferred = _get_preference(db, acc.user_id)
-    preferred_account_id = preferred.preferred_search_account_id if preferred else None
+    preferred_account_id = _preferred_default_account_id(db, acc.user_id)
     if preferred_account_id is None and acc.is_active:
         preferred_account_id = _default_preferred_account_id(
             list(
@@ -268,9 +273,11 @@ def update_broker_data_search_config(
     if pref is None:
         pref = UserBrokerDataPreference(
             user_id=user_id,
+            preferred_default_account_id=preferred_account_id,
             preferred_search_account_id=preferred_account_id,
         )
     else:
+        pref.preferred_default_account_id = preferred_account_id
         pref.preferred_search_account_id = preferred_account_id
     db.add(pref)
     db.commit()
@@ -304,9 +311,11 @@ def update_broker_data_default_config(
         pref = UserBrokerDataPreference(
             user_id=user_id,
             preferred_default_account_id=preferred_account_id,
+            preferred_search_account_id=preferred_account_id,
         )
     else:
         pref.preferred_default_account_id = preferred_account_id
+        pref.preferred_search_account_id = preferred_account_id
     db.add(pref)
     db.commit()
     return get_broker_data_default_config(db, user_id)
@@ -328,8 +337,7 @@ def get_effective_default_broker_account(
     if not accounts:
         return None
 
-    pref = _get_preference(db, user_id)
-    preferred_account_id = pref.preferred_default_account_id if pref else None
+    preferred_account_id = _preferred_default_account_id(db, user_id)
     if preferred_account_id is None and not broker_code:
         preferred_account_id = _default_data_preferred_account_id(accounts)
     ordered = _candidate_order(accounts, preferred_account_id)
@@ -359,8 +367,7 @@ def get_stream_default_broker_account(
     if not accounts:
         return None
 
-    pref = _get_preference(db, user_id)
-    preferred_account_id = pref.preferred_default_account_id if pref else None
+    preferred_account_id = _preferred_default_account_id(db, user_id)
     if preferred_account_id is None and not broker_code:
         preferred_account_id = _default_data_preferred_account_id(accounts)
     ordered = _candidate_order(accounts, preferred_account_id)
@@ -428,8 +435,7 @@ def search_instruments_for_user(
             .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
         ).all()
     )
-    preferred = _get_preference(db, user_id)
-    preferred_account_id = preferred.preferred_search_account_id if preferred else None
+    preferred_account_id = _preferred_default_account_id(db, user_id)
     if preferred_account_id is None:
         preferred_account_id = _default_preferred_account_id(accounts)
     ordered = _candidate_order(accounts, preferred_account_id)
