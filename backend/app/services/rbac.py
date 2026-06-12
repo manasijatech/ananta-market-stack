@@ -17,12 +17,21 @@ from db.models import (
     Role,
     RolePermission,
     User,
+    UserAlphaApiCredential,
+    UserLlmModel,
+    UserLlmProviderCredential,
+    UserMcpServerConfig,
     Workspace,
     WorkspaceMember,
 )
 
 WORKSPACE_MANAGE_MEMBERS = "workspace.manage_members"
 WORKSPACE_MANAGE_ROLES = "workspace.manage_roles"
+SETTINGS_MANAGE_LLM = "settings.manage_llm"
+SETTINGS_MANAGE_ALPHA = "settings.manage_alpha"
+SETTINGS_MANAGE_MCP = "settings.manage_mcp"
+SETTINGS_VIEW_LLM_USAGE = "settings.view_llm_usage"
+SETTINGS_USE_MCP = "settings.use_mcp"
 BROKER_VIEW = "broker.view"
 BROKER_USE_DATA = "broker.use_data"
 BROKER_MANAGE_SESSIONS = "broker.manage_sessions"
@@ -47,8 +56,11 @@ BUILTIN_ROLE_PERMISSIONS: dict[str, list[str]] = {
         "alerts.manage",
         "watchlists.view",
         "watchlists.manage",
-        "settings.manage_llm",
-        "settings.manage_alpha",
+        SETTINGS_MANAGE_LLM,
+        SETTINGS_MANAGE_ALPHA,
+        SETTINGS_MANAGE_MCP,
+        SETTINGS_VIEW_LLM_USAGE,
+        SETTINGS_USE_MCP,
         ORDERS_TRADE,
     ],
     "operator": [
@@ -59,6 +71,8 @@ BUILTIN_ROLE_PERMISSIONS: dict[str, list[str]] = {
         "alerts.manage",
         "watchlists.view",
         "watchlists.manage",
+        SETTINGS_VIEW_LLM_USAGE,
+        SETTINGS_USE_MCP,
     ],
     "viewer": [
         BROKER_VIEW,
@@ -88,6 +102,7 @@ def ensure_principal(db: Session, user: User) -> Principal:
         membership = _bootstrap_membership(db, user)
     _ensure_builtin_roles(db, membership.workspace_id)
     _ensure_owned_account_grants(db, membership.workspace_id, user.id)
+    reconcile_workspace_shared_configs(db, membership.workspace_id)
     db.commit()
     db.refresh(membership)
     workspace = db.get(Workspace, membership.workspace_id)
@@ -111,6 +126,14 @@ def require_workspace_permission(principal: Principal, permission: str) -> None:
         return
     if permission not in principal.permissions:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient permissions")
+
+
+def has_workspace_permission(principal: Principal, permission: str) -> bool:
+    if principal.membership.status != "active":
+        return False
+    if principal.is_admin:
+        return True
+    return permission in principal.permissions
 
 
 def accessible_broker_accounts(db: Session, principal: Principal) -> list[BrokerAccount]:
@@ -472,6 +495,35 @@ def reconcile_workspace_members(db: Session, workspace_id: str) -> None:
         db.commit()
 
 
+def reconcile_workspace_shared_configs(db: Session, workspace_id: str) -> None:
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None:
+        return
+    members = list(
+        db.scalars(
+            select(WorkspaceMember)
+            .where(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.status == "active")
+            .order_by(WorkspaceMember.created_at.asc(), WorkspaceMember.id.asc())
+        ).all()
+    )
+    if not members:
+        return
+    owner_user_id = workspace_config_owner_user_id(
+        db,
+        workspace.created_by_user_id or members[0].user_id,
+    )
+    active_user_ids = [member.user_id for member in members]
+    source_user_ids = [user_id for user_id in active_user_ids if user_id != owner_user_id]
+    changed = False
+
+    changed = _reconcile_owner_alpha_config(db, owner_user_id, source_user_ids) or changed
+    changed = _reconcile_owner_llm_config(db, owner_user_id, source_user_ids) or changed
+    changed = _reconcile_owner_mcp_config(db, owner_user_id, source_user_ids) or changed
+
+    if changed:
+        db.commit()
+
+
 def reconcile_workspace_account_grants(db: Session, workspace_id: str, *, account_id: str | None = None) -> None:
     _ensure_builtin_roles(db, workspace_id)
     reconcile_workspace_members(db, workspace_id)
@@ -530,6 +582,150 @@ def reconcile_workspace_account_grants(db: Session, workspace_id: str, *, accoun
         db.commit()
 
 
+def _reconcile_owner_alpha_config(db: Session, owner_user_id: str, source_user_ids: list[str]) -> bool:
+    owner_row = db.get(UserAlphaApiCredential, owner_user_id)
+    if owner_row is not None and owner_row.api_key_cipher:
+        return False
+    for source_user_id in source_user_ids:
+        source_row = db.get(UserAlphaApiCredential, source_user_id)
+        if source_row is None or not source_row.api_key_cipher:
+            continue
+        if owner_row is None:
+            owner_row = UserAlphaApiCredential(user_id=owner_user_id)
+        owner_row.api_key_cipher = source_row.api_key_cipher
+        owner_row.is_enabled = source_row.is_enabled
+        owner_row.account_json = source_row.account_json
+        db.add(owner_row)
+        return True
+    return False
+
+
+def _reconcile_owner_llm_config(db: Session, owner_user_id: str, source_user_ids: list[str]) -> bool:
+    changed = False
+    owner_credentials = {
+        row.provider: row
+        for row in db.scalars(
+            select(UserLlmProviderCredential).where(UserLlmProviderCredential.user_id == owner_user_id)
+        ).all()
+    }
+    owner_models = {
+        (row.provider, row.model_id)
+        for row in db.scalars(select(UserLlmModel).where(UserLlmModel.user_id == owner_user_id)).all()
+    }
+
+    for source_user_id in source_user_ids:
+        for source_credential in db.scalars(
+            select(UserLlmProviderCredential)
+            .where(UserLlmProviderCredential.user_id == source_user_id)
+            .order_by(UserLlmProviderCredential.created_at.asc(), UserLlmProviderCredential.id.asc())
+        ).all():
+            owner_credential = owner_credentials.get(source_credential.provider)
+            if owner_credential is None:
+                owner_credential = UserLlmProviderCredential(
+                    id=str(uuid.uuid4()),
+                    user_id=owner_user_id,
+                    provider=source_credential.provider,
+                    api_key_cipher=source_credential.api_key_cipher,
+                    is_enabled=source_credential.is_enabled,
+                )
+                db.add(owner_credential)
+                owner_credentials[source_credential.provider] = owner_credential
+                changed = True
+                continue
+            if not owner_credential.api_key_cipher and source_credential.api_key_cipher:
+                owner_credential.api_key_cipher = source_credential.api_key_cipher
+                owner_credential.is_enabled = source_credential.is_enabled
+                db.add(owner_credential)
+                changed = True
+
+        for source_model in db.scalars(
+            select(UserLlmModel)
+            .where(UserLlmModel.user_id == source_user_id)
+            .order_by(UserLlmModel.created_at.asc(), UserLlmModel.id.asc())
+        ).all():
+            model_key = (source_model.provider, source_model.model_id)
+            if model_key in owner_models:
+                continue
+            db.add(
+                UserLlmModel(
+                    id=str(uuid.uuid4()),
+                    user_id=owner_user_id,
+                    provider=source_model.provider,
+                    model_id=source_model.model_id,
+                    label=source_model.label,
+                    is_enabled=source_model.is_enabled,
+                )
+            )
+            owner_models.add(model_key)
+            changed = True
+
+    return changed
+
+
+def _reconcile_owner_mcp_config(db: Session, owner_user_id: str, source_user_ids: list[str]) -> bool:
+    owner_rows = list(
+        db.scalars(
+            select(UserMcpServerConfig)
+            .where(UserMcpServerConfig.user_id == owner_user_id)
+            .order_by(UserMcpServerConfig.created_at.asc(), UserMcpServerConfig.id.asc())
+        ).all()
+    )
+    owner_keys = {
+        ((row.name or "").strip().lower(), (row.url or "").strip(), row.transport)
+        for row in owner_rows
+    }
+    changed = False
+
+    for source_user_id in source_user_ids:
+        source_rows = list(
+            db.scalars(
+                select(UserMcpServerConfig)
+                .where(UserMcpServerConfig.user_id == source_user_id)
+                .order_by(UserMcpServerConfig.created_at.asc(), UserMcpServerConfig.id.asc())
+            ).all()
+        )
+        if not source_rows:
+            continue
+        for row in source_rows:
+            dedupe_key = ((row.name or "").strip().lower(), (row.url or "").strip(), row.transport)
+            if dedupe_key in owner_keys:
+                continue
+            db.add(
+                UserMcpServerConfig(
+                    id=str(uuid.uuid4()),
+                    user_id=owner_user_id,
+                    is_enabled=row.is_enabled,
+                    use_by_default=row.use_by_default,
+                    name=row.name,
+                    url=row.url,
+                    transport=row.transport,
+                    api_key_cipher=row.api_key_cipher,
+                    api_key_header_name=row.api_key_header_name,
+                    api_key_prefix=row.api_key_prefix,
+                    oauth_access_token_cipher=row.oauth_access_token_cipher,
+                    oauth_refresh_token_cipher=row.oauth_refresh_token_cipher,
+                    oauth_token_expires_at=row.oauth_token_expires_at,
+                    oauth_client_id=row.oauth_client_id,
+                    oauth_client_secret_cipher=row.oauth_client_secret_cipher,
+                    oauth_auth_metadata_json=row.oauth_auth_metadata_json,
+                    oauth_state="",
+                    oauth_code_verifier_cipher="",
+                    oauth_redirect_uri=row.oauth_redirect_uri,
+                    oauth_scope=row.oauth_scope,
+                    oauth_authorized_at=row.oauth_authorized_at,
+                    oauth_last_error=row.oauth_last_error,
+                    inventory_json=row.inventory_json,
+                    inventory_checked_at=row.inventory_checked_at,
+                    inventory_error=row.inventory_error,
+                    extra_headers_json=row.extra_headers_json,
+                    timeout_seconds=row.timeout_seconds,
+                )
+            )
+            owner_keys.add(dedupe_key)
+            changed = True
+    return changed
+
+
 def _role_permissions(db: Session, workspace_id: str, role_name: str) -> set[str]:
     role = db.scalar(select(Role).where(Role.workspace_id == workspace_id, Role.name == role_name))
     if role is None:
@@ -569,6 +765,44 @@ def _ensure_not_last_admin(db: Session, workspace_id: str, *, excluding_user_id:
     ) or 0
     if remaining <= 0:
         raise HTTPException(status_code=400, detail="cannot remove the last active admin")
+
+
+def workspace_config_owner_user_id(db: Session, user_id: str) -> str:
+    membership = _primary_membership(db, user_id)
+    if membership is None:
+        return user_id
+    workspace = db.get(Workspace, membership.workspace_id)
+    if workspace and workspace.created_by_user_id:
+        created_by_member = db.scalar(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == membership.workspace_id,
+                WorkspaceMember.user_id == workspace.created_by_user_id,
+                WorkspaceMember.status == "active",
+            )
+        )
+        if created_by_member is not None:
+            return workspace.created_by_user_id
+    admin_member = db.scalar(
+        select(WorkspaceMember)
+        .where(
+            WorkspaceMember.workspace_id == membership.workspace_id,
+            WorkspaceMember.status == "active",
+            WorkspaceMember.role == "admin",
+        )
+        .order_by(WorkspaceMember.created_at.asc(), WorkspaceMember.id.asc())
+    )
+    if admin_member is not None:
+        return admin_member.user_id
+    return membership.user_id
+
+
+def user_has_workspace_permission(db: Session, user_id: str, permission: str) -> bool:
+    membership = _primary_membership(db, user_id)
+    if membership is None or membership.status != "active":
+        return False
+    if membership.role == "admin":
+        return True
+    return permission in _role_permissions(db, membership.workspace_id, membership.role)
 
 
 def _normalize_broker_permissions(permissions: list[str]) -> list[str]:

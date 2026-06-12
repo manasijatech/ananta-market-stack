@@ -35,6 +35,7 @@ from app.services import alpha_websocket
 from app.services import broker_data_preferences
 from app.services import llm_config
 from app.services import mcp_config
+from app.services import rbac
 from app.services.rbac import Principal
 from db.models import User
 from db.session import get_db
@@ -42,19 +43,30 @@ from db.session import get_db
 router = APIRouter()
 
 
+def _mcp_read_allowed(principal: Principal) -> bool:
+    return rbac.has_workspace_permission(principal, rbac.SETTINGS_USE_MCP) or rbac.has_workspace_permission(
+        principal, rbac.SETTINGS_MANAGE_MCP
+    )
+
+
 @router.get("", response_model=SystemConfigOut)
 def get_system_config(
     db: Session = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ) -> SystemConfigOut:
+    mcp_server = McpServerConfigOut()
+    mcp_servers: list[McpServerConfigOut] = []
+    if _mcp_read_allowed(principal):
+        mcp_server = mcp_config.get_mcp_server_config(db, principal.user.id)
+        mcp_servers = mcp_config.list_mcp_server_configs(db, principal.user.id)
     return SystemConfigOut(
         broker_data_default=broker_data_preferences.get_broker_data_default_config(db, principal.user.id, principal),
         broker_data_search=broker_data_preferences.get_broker_data_search_config(db, principal.user.id, principal),
         llm_providers=llm_config.list_provider_configs(db, principal.user.id),
         alpha_api=alpha_config.get_alpha_api_config(db, principal.user.id),
         alpha_websocket=alpha_websocket.alpha_ws_config_out(db, principal.user.id),
-        mcp_server=mcp_config.get_mcp_server_config(db, principal.user.id),
-        mcp_servers=mcp_config.list_mcp_server_configs(db, principal.user.id),
+        mcp_server=mcp_server,
+        mcp_servers=mcp_servers,
     )
 
 
@@ -101,19 +113,20 @@ def update_broker_search_config(
 @router.get("/alpha", response_model=AlphaApiConfigOut)
 def get_alpha_api_config(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> AlphaApiConfigOut:
-    return alpha_config.get_alpha_api_config(db, user.id)
+    return alpha_config.get_alpha_api_config(db, principal.user.id)
 
 
 @router.put("/alpha", response_model=AlphaApiConfigOut)
 def upsert_alpha_api_credential(
     body: AlphaApiCredentialUpsertIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> AlphaApiConfigOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_ALPHA)
     try:
-        return alpha_config.upsert_alpha_api_credential(db, user.id, body)
+        return alpha_config.upsert_alpha_api_credential(db, principal.user.id, body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -121,9 +134,10 @@ def upsert_alpha_api_credential(
 @router.delete("/alpha", response_model=AlphaApiConfigOut)
 def delete_alpha_api_credential(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> AlphaApiConfigOut:
-    return alpha_config.delete_alpha_api_credential(db, user.id)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_ALPHA)
+    return alpha_config.delete_alpha_api_credential(db, principal.user.id)
 
 
 @router.get("/alpha/websocket", response_model=AlphaWebSocketConfigOut)
@@ -161,10 +175,10 @@ def update_alpha_websocket_config(
 @router.get("/alpha/key", response_model=AlphaApiKeyOut)
 def get_alpha_api_key(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> AlphaApiKeyOut:
     try:
-        return AlphaApiKeyOut(api_key=alpha_config.get_alpha_api_key(db, user.id))
+        return AlphaApiKeyOut(api_key=alpha_config.get_alpha_api_key(db, principal.user.id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -192,9 +206,9 @@ def search_instruments(
 @router.get("/llm/providers", response_model=list[LlmProviderConfigOut])
 def list_llm_providers(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> list[LlmProviderConfigOut]:
-    return llm_config.list_provider_configs(db, user.id)
+    return llm_config.list_provider_configs(db, principal.user.id)
 
 
 @router.put("/llm/providers/{provider}", response_model=LlmProviderConfigOut)
@@ -202,28 +216,31 @@ def upsert_llm_provider_credential(
     provider: LlmProvider,
     body: LlmProviderCredentialUpsertIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> LlmProviderConfigOut:
-    return llm_config.upsert_provider_credential(db, user.id, provider, body)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
+    return llm_config.upsert_provider_credential(db, principal.user.id, provider, body)
 
 
 @router.delete("/llm/providers/{provider}", response_model=list[LlmProviderConfigOut])
 def delete_llm_provider_credential(
     provider: LlmProvider,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> list[LlmProviderConfigOut]:
-    return llm_config.delete_provider_credential(db, user.id, provider)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
+    return llm_config.delete_provider_credential(db, principal.user.id, provider)
 
 
 @router.post("/llm/models", response_model=list[LlmProviderConfigOut])
 def add_llm_model(
     body: LlmModelCreateIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> list[LlmProviderConfigOut]:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
     try:
-        return llm_config.add_provider_model(db, user.id, body)
+        return llm_config.add_provider_model(db, principal.user.id, body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -232,35 +249,43 @@ def add_llm_model(
 def delete_llm_model(
     model_row_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> list[LlmProviderConfigOut]:
-    return llm_config.delete_provider_model(db, user.id, model_row_id)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
+    return llm_config.delete_provider_model(db, principal.user.id, model_row_id)
 
 
 @router.get("/mcp", response_model=McpServerConfigOut)
 def get_mcp_server_config(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
-    return mcp_config.get_mcp_server_config(db, user.id)
+    rbac.require_active_member(principal)
+    if not _mcp_read_allowed(principal):
+        raise HTTPException(status_code=403, detail="MCP is not available for your workspace role.")
+    return mcp_config.get_mcp_server_config(db, principal.user.id)
 
 
 @router.get("/mcp/servers", response_model=list[McpServerConfigOut])
 def list_mcp_server_configs(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> list[McpServerConfigOut]:
-    return mcp_config.list_mcp_server_configs(db, user.id)
+    rbac.require_active_member(principal)
+    if not _mcp_read_allowed(principal):
+        raise HTTPException(status_code=403, detail="MCP is not available for your workspace role.")
+    return mcp_config.list_mcp_server_configs(db, principal.user.id)
 
 
 @router.put("/mcp", response_model=McpServerConfigOut)
 def update_mcp_server_config(
     body: McpServerConfigUpdateIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
     try:
-        return mcp_config.upsert_mcp_server_config(db, user.id, body)
+        return mcp_config.upsert_mcp_server_config(db, principal.user.id, body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -269,10 +294,11 @@ def update_mcp_server_config(
 def create_mcp_server_config(
     body: McpServerConfigUpdateIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
     try:
-        return mcp_config.create_mcp_server_config(db, user.id, body)
+        return mcp_config.create_mcp_server_config(db, principal.user.id, body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -282,10 +308,11 @@ def update_mcp_server_config_by_id(
     server_id: str,
     body: McpServerConfigUpdateIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
     try:
-        return mcp_config.upsert_mcp_server_config(db, user.id, body, server_id=server_id)
+        return mcp_config.upsert_mcp_server_config(db, principal.user.id, body, server_id=server_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -293,48 +320,53 @@ def update_mcp_server_config_by_id(
 @router.delete("/mcp/key", response_model=McpServerConfigOut)
 def clear_mcp_server_api_key(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
-    return mcp_config.clear_mcp_api_key(db, user.id)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
+    return mcp_config.clear_mcp_api_key(db, principal.user.id)
 
 
 @router.delete("/mcp/servers/{server_id}/key", response_model=McpServerConfigOut)
 def clear_mcp_server_api_key_by_id(
     server_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
-    return mcp_config.clear_mcp_server_api_key(db, user.id, server_id)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
+    return mcp_config.clear_mcp_server_api_key(db, principal.user.id, server_id)
 
 
 @router.delete("/mcp", response_model=McpServerConfigOut)
 def delete_mcp_server_config(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
-    return mcp_config.delete_mcp_server_config(db, user.id)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
+    return mcp_config.delete_mcp_server_config(db, principal.user.id)
 
 
 @router.delete("/mcp/servers/{server_id}", response_model=McpServerConfigOut)
 def delete_mcp_server_config_by_id(
     server_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
-    return mcp_config.delete_mcp_server_config_by_id(db, user.id, server_id)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
+    return mcp_config.delete_mcp_server_config_by_id(db, principal.user.id, server_id)
 
 
 @router.post("/mcp/oauth/start", response_model=McpOAuthStartOut)
 def start_mcp_oauth(
     body: McpOAuthStartIn | None = None,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpOAuthStartOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
     try:
         return asyncio.run(
             mcp_config.start_mcp_oauth(
                 db,
-                user.id,
+                principal.user.id,
                 body.redirect_uri if body else None,
                 body.server_id if body else None,
             )
@@ -396,10 +428,11 @@ def complete_mcp_oauth_callback(
 def complete_mcp_oauth(
     body: McpOAuthCompleteIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
     try:
-        asyncio.run(mcp_config.complete_mcp_oauth(db, body.state, body.code, user.id))
+        asyncio.run(mcp_config.complete_mcp_oauth(db, body.state, body.code, principal.user.id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -407,33 +440,36 @@ def complete_mcp_oauth(
             status_code=400,
             detail=f"Could not complete MCP authentication: {mcp_config.describe_exception(exc)}",
         ) from exc
-    return mcp_config.get_mcp_server_config(db, user.id)
+    return mcp_config.get_mcp_server_config(db, principal.user.id)
 
 
 @router.delete("/mcp/oauth", response_model=McpServerConfigOut)
 def clear_mcp_oauth(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
-    return mcp_config.clear_mcp_oauth(db, user.id)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
+    return mcp_config.clear_mcp_oauth(db, principal.user.id)
 
 
 @router.delete("/mcp/servers/{server_id}/oauth", response_model=McpServerConfigOut)
 def clear_mcp_oauth_by_id(
     server_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpServerConfigOut:
-    return mcp_config.clear_mcp_server_oauth(db, user.id, server_id)
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
+    return mcp_config.clear_mcp_server_oauth(db, principal.user.id, server_id)
 
 
 @router.post("/mcp/inventory/refresh", response_model=McpInventoryRefreshOut)
 def refresh_mcp_inventory(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpInventoryRefreshOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
     try:
-        config = asyncio.run(mcp_config.refresh_mcp_inventory(db, user.id))
+        config = asyncio.run(mcp_config.refresh_mcp_inventory(db, principal.user.id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return McpInventoryRefreshOut(config=config, refreshed=True)
@@ -443,10 +479,11 @@ def refresh_mcp_inventory(
 def refresh_mcp_inventory_by_id(
     server_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> McpInventoryRefreshOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_MCP)
     try:
-        config = asyncio.run(mcp_config.refresh_mcp_inventory(db, user.id, server_id))
+        config = asyncio.run(mcp_config.refresh_mcp_inventory(db, principal.user.id, server_id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return McpInventoryRefreshOut(config=config, refreshed=True)

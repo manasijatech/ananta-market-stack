@@ -52,7 +52,13 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         items: [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
             { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
-            { href: "/llm-usage", label: "LLM Usage", icon: IconBrain },
+            {
+                href: "/llm-usage",
+                label: "LLM Usage",
+                icon: IconBrain,
+                requiredPermission: "settings.view_llm_usage",
+                hideWhenUnauthorized: true
+            },
             { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
         ]
     },

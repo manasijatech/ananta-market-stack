@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { PageHeader, Shell } from "@/components/brokers/ui";
 import { AccessGrantEditor } from "@/components/settings/access-grant-editor";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { canManageWorkspaceAccess } from "@/lib/rbac";
 import { getBrokerAccounts } from "@/service/actions/broker";
@@ -16,7 +16,7 @@ import {
     updateWorkspaceMemberRole
 } from "@/service/actions/rbac";
 import type { BrokerAccount } from "@/service/types/broker";
-import type { BrokerAccountGrant, WorkspaceMember } from "@/service/types/rbac";
+import type { BrokerAccountGrant, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
 
 function memberLabel(member: WorkspaceMember): string {
     return member.display_name || member.auth_name || member.email || "Name missing";
@@ -43,6 +43,26 @@ function permissionSummary(grant: BrokerAccountGrant): string {
         return "No access";
     }
     return grant.permissions.map((permission) => permissionLabel(permission)).join(", ");
+}
+
+const workspaceCapabilityLabels: Record<string, string> = {
+    "workspace.manage_members": "Approve members and assign roles",
+    "settings.manage_alpha": "Manage the shared Manasija Alpha API key",
+    "settings.manage_llm": "Manage shared LLM provider keys and saved models",
+    "settings.manage_mcp": "Manage shared MCP servers and authentication",
+    "settings.view_llm_usage": "Open the LLM usage dashboard",
+    "settings.use_mcp": "Use the shared MCP servers in broker chat",
+    "alerts.manage": "Create and manage alerts",
+    "alerts.view": "View alerts workspace",
+    "watchlists.manage": "Manage watchlists",
+    "watchlists.view": "View watchlists"
+};
+
+function workspaceCapabilitySummary(role: RoleDefinition): string[] {
+    return role.permissions
+        .filter((permission) => permission in workspaceCapabilityLabels)
+        .map((permission) => workspaceCapabilityLabels[permission])
+        .sort((left, right) => left.localeCompare(right));
 }
 
 async function approveMemberAction(formData: FormData) {
@@ -105,6 +125,16 @@ export default async function AccessSettingsPage() {
                 }
             />
 
+            <Alert className="mb-6" variant="warning">
+                <AlertTitle>Shared workspace setup lives in Settings and LLM Usage</AlertTitle>
+                <AlertDescription>
+                    Admins configure the shared Alpha API key in <Link className="underline" href="/settings#alpha">Settings → Alpha</Link>, shared LLM providers in{" "}
+                    <Link className="underline" href="/settings#llm">Settings → LLM</Link>, shared MCP servers in{" "}
+                    <Link className="underline" href="/settings#mcp">Settings → MCP</Link>, and usage visibility through the{" "}
+                    <Link className="underline" href="/llm-usage">LLM Usage</Link> page. Role changes below control who can open or use those shared features.
+                </AlertDescription>
+            </Alert>
+
             <section className="grid gap-4 border border-border bg-card p-5">
                 <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                     <div>
@@ -164,6 +194,54 @@ export default async function AccessSettingsPage() {
                             </form>
                         </div>
                     ))}
+                </div>
+            </section>
+
+            <section className="mt-6 grid gap-4 border border-border bg-card p-5">
+                <div>
+                    <p className="type-step-eyebrow">Workspace capabilities</p>
+                    <h2 className="mt-2 text-2xl font-semibold">What each role can do</h2>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                        These role capabilities control shared setup areas like Alpha, LLM providers, MCP, and the LLM usage dashboard. Existing users are reconciled automatically when roles or workspace defaults change.
+                    </p>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-3">
+                    {roles.map((role) => {
+                        const capabilities = workspaceCapabilitySummary(role);
+                        return (
+                            <div className="grid gap-3 border border-border bg-background p-4" key={role.name}>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="text-lg font-semibold">{role.label}</div>
+                                    <span className="border border-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                                        {role.is_builtin ? "Built-in" : "Custom"}
+                                    </span>
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                    {role.name === "admin"
+                                        ? "Full workspace setup and access control."
+                                        : role.name === "operator"
+                                          ? "Uses the shared workspace setup and can open the LLM usage dashboard."
+                                          : role.name === "viewer"
+                                            ? "Consumes granted broker data without shared setup access."
+                                            : "Role-specific capability set."}
+                                </div>
+                                {capabilities.length ? (
+                                    <div className="grid gap-2">
+                                        {capabilities.map((capability) => (
+                                            <div className="border border-border bg-card px-3 py-2 text-sm" key={capability}>
+                                                {capability}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <Alert>
+                                        <AlertDescription>No workspace-level capabilities assigned.</AlertDescription>
+                                    </Alert>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             </section>
 

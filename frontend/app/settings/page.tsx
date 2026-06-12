@@ -1,20 +1,23 @@
 import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warning-modal";
 import { PageHeader, Shell } from "@/components/brokers/ui";
+import { hasRbacPermission } from "@/lib/rbac";
 import { SettingsSections } from "@/components/settings/settings-sections";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getAlertChannels, getLiveStreamsStatus, getLiveSubscriptions } from "@/service/actions/alerts";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
+import { getRbacMe } from "@/service/actions/rbac";
 import { getWatchlists } from "@/service/actions/watchlist";
 
 export default async function SettingsPage() {
-    const [config, alertChannels, accounts, subscriptions, streamStatus, watchlists] = await Promise.all([
+    const [config, alertChannels, accounts, subscriptions, streamStatus, watchlists, principal] = await Promise.all([
         getSystemConfig(),
         getAlertChannels(),
         getBrokerAccounts(),
         getLiveSubscriptions(),
         getLiveStreamsStatus(),
-        getWatchlists()
+        getWatchlists(),
+        getRbacMe().catch(() => null)
     ]);
     let creditWarningMessage: string | null = null;
     const metadataRows = await getAlphaSymbolMetadata(subscriptions.map((item) => item.symbol)).catch((caught) => {
@@ -36,6 +39,12 @@ export default async function SettingsPage() {
                     accounts={accounts}
                     alertChannels={alertChannels}
                     config={config}
+                    permissions={{
+                        canManageAlpha: hasRbacPermission(principal, "settings.manage_alpha"),
+                        canManageLlm: hasRbacPermission(principal, "settings.manage_llm"),
+                        canManageMcp: hasRbacPermission(principal, "settings.manage_mcp"),
+                        canUseMcp: hasRbacPermission(principal, "settings.use_mcp")
+                    }}
                     streamStatus={streamStatus}
                     subscriptions={subscriptions}
                     symbolMetadata={symbolMetadata}
