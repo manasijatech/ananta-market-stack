@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { PageHeader, Shell } from "@/components/brokers/ui";
-import { AccessGrantEditor } from "@/components/settings/access-grant-editor";
+import { BrokerSharingPanel } from "@/components/settings/broker-sharing-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canManageWorkspaceAccess } from "@/lib/rbac";
 import { getBrokerAccounts } from "@/service/actions/broker";
 import {
@@ -30,19 +31,20 @@ function memberSubtitle(member: WorkspaceMember): string {
     return "Ask this user to add a name during signup.";
 }
 
-function permissionLabel(permission: string): string {
-    if (permission === "broker.view") return "View account";
-    if (permission === "broker.use_data") return "Use portfolio and market data";
-    if (permission === "broker.manage_sessions") return "Refresh sessions";
-    if (permission === "broker.manage_credentials") return "Edit credentials";
-    return "Delete account";
+function memberInitials(member: WorkspaceMember): string {
+    const label = memberLabel(member);
+    const parts = label.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return label.slice(0, 2).toUpperCase();
 }
 
-function permissionSummary(grant: BrokerAccountGrant): string {
-    if (!grant.permissions.length) {
-        return "No access";
+function sentenceCase(value: string): string {
+    if (!value) {
+        return value;
     }
-    return grant.permissions.map((permission) => permissionLabel(permission)).join(", ");
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 
 const workspaceCapabilityLabels: Record<string, string> = {
@@ -114,191 +116,159 @@ export default async function AccessSettingsPage() {
 
     return (
         <Shell>
-            <PageHeader
-                eyebrow="Workspace access"
-                title="Access and broker sharing"
-                description="Approve people, assign clear roles, and share broker accounts without exposing raw ids or reconnecting credentials."
-                action={
-                    <Button asChild variant="secondary">
-                        <Link href="/settings">Back to Settings</Link>
-                    </Button>
-                }
-            />
+            <div className="grid w-full max-w-5xl min-w-0 gap-8">
+                <PageHeader
+                    eyebrow="Workspace access"
+                    title="Access and broker sharing"
+                    description="Approve people, assign clear roles, and share broker accounts without exposing raw ids or reconnecting credentials."
+                />
 
-            <Alert className="mb-6" variant="warning">
-                <AlertTitle>Shared workspace setup lives in Settings and LLM Usage</AlertTitle>
-                <AlertDescription>
-                    Admins configure the shared Alpha API key in <Link className="underline" href="/settings#alpha">Settings → Alpha</Link>, shared LLM providers in{" "}
-                    <Link className="underline" href="/settings#llm">Settings → LLM</Link>, shared MCP servers in{" "}
-                    <Link className="underline" href="/settings#mcp">Settings → MCP</Link>, and usage visibility through the{" "}
-                    <Link className="underline" href="/llm-usage">LLM Usage</Link> page. Role changes below control who can open or use those shared features.
-                </AlertDescription>
-            </Alert>
+                <Alert variant="warning">
+                    <AlertTitle>Shared workspace setup lives in Settings and LLM Usage</AlertTitle>
+                    <AlertDescription>
+                        Admins configure the shared Alpha API key in <Link className="underline" href="/settings#alpha">Settings → Alpha</Link>, shared LLM providers in{" "}
+                        <Link className="underline" href="/settings#llm">Settings → LLM</Link>, shared MCP servers in{" "}
+                        <Link className="underline" href="/settings#mcp">Settings → MCP</Link>, and usage visibility through the{" "}
+                        <Link className="underline" href="/llm-usage">LLM Usage</Link> page. Role changes below control who can open or use those shared features.
+                    </AlertDescription>
+                </Alert>
 
-            <section className="grid gap-4 border border-border bg-card p-5">
-                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <section className="grid gap-4 border border-border bg-card p-5">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                        <div>
+                            <p className="type-step-eyebrow">Members</p>
+                            <h2 className="mt-2 text-2xl font-semibold">Who can use this workspace</h2>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                Use roles for general access first, then add broker-account grants only where you need tighter control.
+                            </p>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                            {members.length} member{members.length === 1 ? "" : "s"} in this workspace
+                        </div>
+                    </div>
+
+                    <div className="grid">
+                        {members.map((member) => (
+                            <div
+                                className="grid gap-3 border-t border-border py-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center"
+                                key={member.user_id}
+                            >
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#E6E6E6] text-sm font-medium text-[#4A4540] dark:bg-[#2A2A2A] dark:text-[#B8B8B8]">
+                                        {memberInitials(member)}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                            <div className="truncate font-semibold">{memberLabel(member)}</div>
+                                            <span className="rounded-[10px] bg-[#EAF3DE] px-2 py-1 text-xs font-medium tracking-normal text-[#3B6D11]">
+                                                {sentenceCase(member.status)}
+                                            </span>
+                                            <span className="rounded-[10px] bg-[#FAEEDA] px-2 py-1 text-xs font-medium tracking-normal text-[#854F0B]">
+                                                {sentenceCase(roles.find((role) => role.name === member.role)?.label ?? member.role)}
+                                            </span>
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">{member.email || memberSubtitle(member)}</div>
+                                    </div>
+                                </div>
+
+                                <form action={member.status === "pending" ? approveMemberAction : updateRoleAction} className="flex flex-wrap gap-2 lg:justify-end">
+                                    <input name="user_id" type="hidden" value={member.user_id} />
+                                    <select
+                                        className="h-10 min-w-40 border border-border bg-background px-3 py-2 text-sm"
+                                        name="role"
+                                        defaultValue={member.status === "pending" ? viewerDefault : member.role}
+                                    >
+                                        {roles.map((role) => (
+                                            <option key={role.name} value={role.name}>
+                                                {role.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Button className="rounded-[var(--radius)] font-medium normal-case tracking-normal" type="submit">
+                                        {member.status === "pending" ? "Approve" : "Update role"}
+                                    </Button>
+                                </form>
+
+                                <form action={disableMemberAction} className="lg:justify-self-end">
+                                    <input name="user_id" type="hidden" value={member.user_id} />
+                                    <Button
+                                        className="border-none bg-transparent font-medium normal-case tracking-normal text-[color:var(--color-text-tertiary,var(--text-muted))] hover:bg-[#FCEBEB] hover:text-[#A32D2D]"
+                                        disabled={member.user_id === me.user_id}
+                                        type="submit"
+                                        variant="ghost"
+                                    >
+                                        Disable
+                                    </Button>
+                                </form>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="border border-border bg-card p-5">
+                    <details>
+                        <summary className="cursor-pointer text-2xl font-semibold marker:content-['']">
+                            <span className="mr-2 text-muted-foreground">▸</span>What each role can do
+                        </summary>
+                        <div className="mt-4 grid gap-4">
+                            <div>
+                                <p className="type-step-eyebrow">Workspace capabilities</p>
+                                <p className="mt-2 text-sm text-muted-foreground">
+                                    These role capabilities control shared setup areas like Alpha, LLM providers, MCP, and the LLM usage dashboard. Existing users are reconciled automatically when roles or workspace defaults change.
+                                </p>
+                            </div>
+
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Role name</TableHead>
+                                        <TableHead>Description</TableHead>
+                                        <TableHead>Capabilities</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {roles.map((role) => {
+                                        const capabilities = workspaceCapabilitySummary(role);
+                                        return (
+                                            <TableRow key={role.name}>
+                                                <TableCell className="font-semibold">{role.label}</TableCell>
+                                                <TableCell className="text-muted-foreground">
+                                                    {role.name === "admin"
+                                                        ? "Full workspace setup and access control."
+                                                        : role.name === "operator"
+                                                          ? "Uses the shared workspace setup and can open the LLM usage dashboard."
+                                                          : role.name === "viewer"
+                                                            ? "Consumes granted broker data without shared setup access."
+                                                            : "Role-specific capability set."}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {capabilities.length ? (
+                                                        <span>{capabilities.join(", ")}</span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground">No workspace-level capabilities assigned.</span>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </details>
+                </section>
+
+                <section className="grid gap-4 border border-border bg-card p-5">
                     <div>
-                        <p className="type-step-eyebrow">Members</p>
-                        <h2 className="mt-2 text-2xl font-semibold">Who can use this workspace</h2>
+                        <p className="type-step-eyebrow">Broker accounts</p>
+                        <h2 className="mt-2 text-2xl font-semibold">Share specific accounts</h2>
                         <p className="mt-2 text-sm text-muted-foreground">
-                            Use roles for general access first, then add broker-account grants only where you need tighter control.
+                            Pick a person or a role from the list below, then choose exactly what they can do on that broker account.
                         </p>
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                        {members.length} member{members.length === 1 ? "" : "s"} in this workspace
-                    </div>
-                </div>
 
-                <div className="grid gap-3">
-                    {members.map((member) => (
-                        <div className="grid gap-4 border border-border bg-background p-4 lg:grid-cols-[minmax(0,1fr)_auto_auto]" key={member.user_id}>
-                            <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <div className="truncate text-lg font-semibold">{memberLabel(member)}</div>
-                                    <span className="border border-border px-2 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                                        {member.status}
-                                    </span>
-                                    <span className="border border-border px-2 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                                        {roles.find((role) => role.name === member.role)?.label ?? member.role}
-                                    </span>
-                                </div>
-                                <div className="mt-2 text-sm text-muted-foreground">{memberSubtitle(member)}</div>
-                                {!member.display_name && !member.auth_name ? (
-                                    <div className="mt-3 text-sm text-amber-700">
-                                        This member does not have a readable name yet. Ask them to use the name field when creating their account.
-                                    </div>
-                                ) : null}
-                            </div>
-
-                            <form action={member.status === "pending" ? approveMemberAction : updateRoleAction} className="flex flex-wrap gap-2 lg:justify-end">
-                                <input name="user_id" type="hidden" value={member.user_id} />
-                                <select
-                                    className="min-w-40 border border-border bg-background px-3 py-2 text-sm"
-                                    name="role"
-                                    defaultValue={member.status === "pending" ? viewerDefault : member.role}
-                                >
-                                    {roles.map((role) => (
-                                        <option key={role.name} value={role.name}>
-                                            {role.label}
-                                        </option>
-                                    ))}
-                                </select>
-                                <Button type="submit">{member.status === "pending" ? "Approve" : "Update role"}</Button>
-                            </form>
-
-                            <form action={disableMemberAction} className="lg:justify-self-end">
-                                <input name="user_id" type="hidden" value={member.user_id} />
-                                <Button disabled={member.user_id === me.user_id} type="submit" variant="secondary">
-                                    Disable
-                                </Button>
-                            </form>
-                        </div>
-                    ))}
-                </div>
-            </section>
-
-            <section className="mt-6 grid gap-4 border border-border bg-card p-5">
-                <div>
-                    <p className="type-step-eyebrow">Workspace capabilities</p>
-                    <h2 className="mt-2 text-2xl font-semibold">What each role can do</h2>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                        These role capabilities control shared setup areas like Alpha, LLM providers, MCP, and the LLM usage dashboard. Existing users are reconciled automatically when roles or workspace defaults change.
-                    </p>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-3">
-                    {roles.map((role) => {
-                        const capabilities = workspaceCapabilitySummary(role);
-                        return (
-                            <div className="grid gap-3 border border-border bg-background p-4" key={role.name}>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <div className="text-lg font-semibold">{role.label}</div>
-                                    <span className="border border-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                                        {role.is_builtin ? "Built-in" : "Custom"}
-                                    </span>
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                    {role.name === "admin"
-                                        ? "Full workspace setup and access control."
-                                        : role.name === "operator"
-                                          ? "Uses the shared workspace setup and can open the LLM usage dashboard."
-                                          : role.name === "viewer"
-                                            ? "Consumes granted broker data without shared setup access."
-                                            : "Role-specific capability set."}
-                                </div>
-                                {capabilities.length ? (
-                                    <div className="grid gap-2">
-                                        {capabilities.map((capability) => (
-                                            <div className="border border-border bg-card px-3 py-2 text-sm" key={capability}>
-                                                {capability}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <Alert>
-                                        <AlertDescription>No workspace-level capabilities assigned.</AlertDescription>
-                                    </Alert>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            </section>
-
-            <section className="mt-6 grid gap-4 border border-border bg-card p-5">
-                <div>
-                    <p className="type-step-eyebrow">Broker accounts</p>
-                    <h2 className="mt-2 text-2xl font-semibold">Share specific accounts</h2>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                        Pick a person or a role from the list below, then choose exactly what they can do on that broker account.
-                    </p>
-                </div>
-
-                <div className="grid gap-4">
-                    {accountGrants.map(({ account, grants }) => (
-                        <div className="grid gap-4 border border-border bg-background p-4" key={account.id}>
-                            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                                <div>
-                                    <div className="text-lg font-semibold">
-                                        {account.label} · {account.broker_code}
-                                    </div>
-                                    <div className="mt-1 text-sm text-muted-foreground">
-                                        Share this account without exposing credentials or internal identifiers.
-                                    </div>
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                    {grants.length} grant{grants.length === 1 ? "" : "s"} configured
-                                </div>
-                            </div>
-
-                            {grants.length ? (
-                                <div className="grid gap-3">
-                                    {grants.map((grant) => (
-                                        <div className="border border-border bg-card p-3" key={grant.id}>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className="font-semibold">{grant.subject_label}</span>
-                                                <span className="border border-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                                                    {grant.subject_type === "user" ? "Person" : "Role default"}
-                                                </span>
-                                            </div>
-                                            {grant.subject_subtitle ? (
-                                                <div className="mt-1 text-sm text-muted-foreground">{grant.subject_subtitle}</div>
-                                            ) : null}
-                                            <div className="mt-2 text-sm">{permissionSummary(grant)}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <Alert>
-                                    <AlertDescription>No extra grants yet. Only admins can currently use this account.</AlertDescription>
-                                </Alert>
-                            )}
-
-                            <AccessGrantEditor accountId={account.id} grants={grants} members={members} roles={roles} />
-                        </div>
-                    ))}
-                </div>
-            </section>
+                    <BrokerSharingPanel accountGrants={accountGrants} members={members} roles={roles} />
+                </section>
+            </div>
         </Shell>
     );
 }

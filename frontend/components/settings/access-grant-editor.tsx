@@ -87,12 +87,14 @@ export function AccessGrantEditor({
     accountId,
     grants,
     members,
-    roles
+    roles,
+    initialSubjectKey
 }: {
     accountId: string;
     grants: BrokerAccountGrant[];
     members: WorkspaceMember[];
     roles: RoleDefinition[];
+    initialSubjectKey?: string;
 }) {
     const router = useRouter();
     const [message, setMessage] = useState("");
@@ -102,7 +104,7 @@ export function AccessGrantEditor({
         () => new Map(grants.map((grant) => [`${grant.subject_type}:${grant.subject_id}`, grant])),
         [grants]
     );
-    const [selectedKey, setSelectedKey] = useState(subjectOptions[0]?.key ?? "");
+    const [selectedKey, setSelectedKey] = useState(initialSubjectKey ?? subjectOptions[0]?.key ?? "");
     const selectedSubject = subjectOptions.find((option) => option.key === selectedKey) ?? subjectOptions[0];
     const selectedGrant = selectedSubject ? grantsByKey.get(selectedSubject.key) : undefined;
 
@@ -119,6 +121,12 @@ export function AccessGrantEditor({
     }
 
     const [selectedPermissions, setSelectedPermissions] = useState<string[]>(derivePermissions(selectedKey));
+
+    useEffect(() => {
+        if (initialSubjectKey && initialSubjectKey !== selectedKey) {
+            setSelectedKey(initialSubjectKey);
+        }
+    }, [initialSubjectKey, selectedKey]);
 
     useEffect(() => {
         const fallbackKey = subjectOptions[0]?.key ?? "";
@@ -165,7 +173,7 @@ export function AccessGrantEditor({
     const effectivePermissions = normalizePermissions(selectedPermissions, selectedSubject?.isAdmin ?? false);
 
     return (
-        <div className="grid gap-4 border border-border bg-card p-4">
+        <div className="grid gap-4">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="grid gap-2">
                     <label className="text-sm font-semibold" htmlFor={`subject-${accountId}`}>
@@ -220,11 +228,11 @@ export function AccessGrantEditor({
                 </div>
             )}
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
                 {brokerPermissions.map((permission) => {
                     const checked = effectivePermissions.includes(permission);
                     return (
-                        <label className="flex items-start gap-3 border border-border bg-background p-3" key={permission}>
+                        <label className="flex items-center gap-3 border border-border bg-background p-3" key={permission}>
                             <Checkbox
                                 checked={checked}
                                 disabled={isPending || selectedSubject?.isAdmin}
@@ -232,7 +240,7 @@ export function AccessGrantEditor({
                             />
                             <span>
                                 <span className="block text-sm font-semibold">{permissionLabel(permission)}</span>
-                                <span className="block text-sm text-muted-foreground">{permission}</span>
+                                <span className="block font-mono text-xs text-muted-foreground">{permission}</span>
                             </span>
                         </label>
                     );
