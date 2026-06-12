@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatIstDateTime } from "@/lib/datetime";
+import { getRbacMe } from "@/service/actions/rbac";
+import type { RbacPrincipal } from "@/service/types/rbac";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { cn } from "@/lib/utils";
 
@@ -161,6 +163,14 @@ export function PrimaryLink({ href, children }: { href: string; children: React.
     );
 }
 
-export function Shell({ children }: { children: React.ReactNode }) {
-    return <WorkspaceShell>{children}</WorkspaceShell>;
+export async function Shell({ children }: { children: React.ReactNode }) {
+    let principal: RbacPrincipal | null = null;
+
+    try {
+        principal = await getRbacMe();
+    } catch {
+        principal = null;
+    }
+
+    return <WorkspaceShell principal={principal}>{children}</WorkspaceShell>;
 }

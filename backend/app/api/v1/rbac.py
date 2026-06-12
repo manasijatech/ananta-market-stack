@@ -180,6 +180,7 @@ def list_account_grants(
     account = db.get(BrokerAccount, account_id)
     if account is None or account.workspace_id != principal.workspace.id:
         raise HTTPException(status_code=404, detail="broker account not found")
+    rbac_svc.reconcile_workspace_account_grants(db, principal.workspace.id, account_id=account_id)
     grants = db.scalars(
         select(BrokerAccountGrant)
         .where(BrokerAccountGrant.account_id == account_id)
@@ -198,6 +199,7 @@ def upsert_account_grant(
     account = db.get(BrokerAccount, account_id)
     if account is None or account.workspace_id != principal.workspace.id:
         raise HTTPException(status_code=404, detail="broker account not found")
+    rbac_svc.reconcile_workspace_account_grants(db, principal.workspace.id, account_id=account_id)
     grant = rbac_svc.grant_account_permissions(
         db,
         principal=principal,
