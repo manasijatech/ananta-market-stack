@@ -12,15 +12,18 @@ class IndmoneyHTTP:
     def __init__(self, access_token: str) -> None:
         self.access_token = access_token
 
-    def request(
-        self, method: str, path: str, params: dict | None = None, json_body: Any = None
-    ) -> dict[str, Any]:
-        url = f"{BASE}{path}"
-        h = {
+    def _headers(self) -> dict[str, str]:
+        return {
             "Authorization": self.access_token,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
+
+    def request(
+        self, method: str, path: str, params: dict | None = None, json_body: Any = None
+    ) -> dict[str, Any]:
+        url = f"{BASE}{path}"
+        h = self._headers()
         c = get_httpx_client()
         if method == "GET":
             r = c.get(url, headers=h, params=params)
@@ -31,4 +34,14 @@ class IndmoneyHTTP:
         try:
             return r.json()
         except json.JSONDecodeError:
-            return {"status": "error", "message": r.text[:500]}
+            return {"status": "error", "message": r.text[:500], "http_status": r.status_code}
+
+    def request_text(self, path: str, params: dict | None = None) -> str:
+        url = f"{BASE}{path}"
+        c = get_httpx_client()
+        response = c.get(url, headers=self._headers(), params=params)
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"INDmoney {path} failed with {response.status_code}: {response.text[:500]}"
+            )
+        return response.text

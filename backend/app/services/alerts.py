@@ -2445,9 +2445,16 @@ def _subscription_sort_key(row: LiveSubscriptionOut) -> tuple[datetime, str]:
     return (row.updated_at or datetime.min, row.id)
 
 
-def _live_subscription_priority(row: LiveSubscriptionOut) -> tuple[int, str, str]:
-    source_priority = {"workflow": 0, "watchlist": 1, "ui": 2}.get(row.source_kind or "", 3)
-    return (source_priority, row.exchange or "", row.symbol)
+def _live_subscription_priority(row: LiveSubscriptionOut) -> tuple[int, float, str, str]:
+    source_priority = {
+        "ui": 0,
+        "workflow": 1,
+        "watchlist": 2,
+        "background_workflow": 3,
+        "manual": 4,
+    }.get(row.source_kind or "", 5)
+    updated_at = row.updated_at.timestamp() if row.updated_at else 0.0
+    return (source_priority, -updated_at, row.exchange or "", row.symbol)
 
 
 def _merged_source_label(rows: list[LiveSubscriptionOut]) -> str | None:
