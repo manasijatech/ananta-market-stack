@@ -22,6 +22,8 @@ class PrincipalOut(BaseModel):
 class WorkspaceMemberOut(BaseModel):
     user_id: str
     display_name: str | None = None
+    auth_name: str | None = None
+    email: str | None = None
     role: str
     status: str
     created_at: datetime
@@ -48,6 +50,8 @@ class BrokerAccountGrantOut(BaseModel):
     account_id: str
     subject_type: str
     subject_id: str
+    subject_label: str
+    subject_subtitle: str | None = None
     permissions: list[str]
     created_at: datetime
     updated_at: datetime
@@ -57,3 +61,7 @@ class BrokerAccountGrantUpdateIn(BaseModel):
     subject_type: str = Field(..., pattern="^(user|role)$")
     subject_id: str = Field(..., min_length=1, max_length=64)
     permissions: list[str] = Field(default_factory=list)
+
+
+class SignupStatusOut(BaseModel):
+    has_admin: bool

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_principal
@@ -14,6 +14,7 @@ from app.schemas.rbac import (
     MemberRoleUpdateIn,
     PrincipalOut,
     RoleOut,
+    SignupStatusOut,
     WorkspaceMemberOut,
     WorkspaceOut,
 )
@@ -22,6 +23,27 @@ from db.models import BrokerAccount, BrokerAccountGrant, Role, RolePermission, U
 from db.session import get_db
 
 router = APIRouter()
+
+
+def _auth_user_row(db: Session, user_id: str) -> dict[str, str | None]:
+    row = db.execute(
+        text('SELECT name, email FROM "user" WHERE id = :user_id'),
+        {"user_id": user_id},
+    ).mappings().first()
+    if row is None:
+        return {"name": None, "email": None}
+    return {
+        "name": str(row.get("name")) if row.get("name") else None,
+        "email": str(row.get("email")) if row.get("email") else None,
+    }
+
+
+def _member_label(db: Session, user_id: str) -> tuple[str, str | None]:
+    user = db.get(User, user_id)
+    auth_user = _auth_user_row(db, user_id)
+    label = (user.display_name if user and user.display_name else None) or auth_user["name"] or auth_user["email"] or "Name missing"
+    subtitle = auth_user["email"] or ("Ask this user to add their name during signup." if label == "Name missing" else None)
+    return label, subtitle
 
 
 def _principal_out(principal: rbac_svc.Principal) -> PrincipalOut:
@@ -37,9 +59,12 @@ def _principal_out(principal: rbac_svc.Principal) -> PrincipalOut:
 
 def _member_out(db: Session, member) -> WorkspaceMemberOut:
     user = db.get(User, member.user_id)
+    auth_user = _auth_user_row(db, member.user_id)
     return WorkspaceMemberOut(
         user_id=member.user_id,
         display_name=user.display_name if user else None,
+        auth_name=auth_user["name"],
+        email=auth_user["email"],
         role=member.role,
         status=member.status,
         created_at=member.created_at,
@@ -47,20 +72,39 @@ def _member_out(db: Session, member) -> WorkspaceMemberOut:
     )
 
 
-def _grant_out(grant: BrokerAccountGrant) -> BrokerAccountGrantOut:
+def _grant_out(db: Session, grant: BrokerAccountGrant) -> BrokerAccountGrantOut:
     try:
         permissions = json.loads(grant.permissions_json or "[]")
     except json.JSONDecodeError:
         permissions = []
+    if grant.subject_type == "user":
+        subject_label, subject_subtitle = _member_label(db, grant.subject_id)
+    else:
+        subject_label = grant.subject_id.title()
+        subject_subtitle = "Role default"
     return BrokerAccountGrantOut(
         id=grant.id,
         account_id=grant.account_id,
         subject_type=grant.subject_type,
         subject_id=grant.subject_id,
+        subject_label=subject_label,
+        subject_subtitle=subject_subtitle,
         permissions=[str(item) for item in permissions if isinstance(item, str)],
         created_at=grant.created_at,
         updated_at=grant.updated_at,
     )
+
+
+@router.get("/signup-status", response_model=SignupStatusOut)
+def signup_status(db: Session = Depends(get_db)) -> SignupStatusOut:
+    has_admin = bool(
+        db.execute(
+            text(
+                "SELECT 1 FROM workspace_members WHERE role = 'admin' AND status = 'active' LIMIT 1"
+            )
+        ).first()
+    )
+    return SignupStatusOut(has_admin=has_admin)
 
 
 @router.get("/me", response_model=PrincipalOut)
@@ -141,7 +185,7 @@ def list_account_grants(
         .where(BrokerAccountGrant.account_id == account_id)
         .order_by(BrokerAccountGrant.subject_type.asc(), BrokerAccountGrant.subject_id.asc())
     ).all()
-    return [_grant_out(grant) for grant in grants]
+    return [_grant_out(db, grant) for grant in grants]
 
 
 @router.put("/broker-accounts/{account_id}/grants", response_model=BrokerAccountGrantOut)
@@ -162,4 +206,4 @@ def upsert_account_grant(
         subject_id=body.subject_id,
         permissions=body.permissions,
     )
-    return _grant_out(grant)
+    return _grant_out(db, grant)

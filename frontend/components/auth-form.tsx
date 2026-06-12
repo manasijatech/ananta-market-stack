@@ -13,7 +13,7 @@ import { RippleButton } from "@/components/ui/ripple-button";
 
 type AuthMode = "sign-in" | "sign-up";
 
-export function AuthForm({ mode }: { mode: AuthMode }) {
+export function AuthForm({ mode, signUpNotice }: { mode: AuthMode; signUpNotice?: string | null }) {
     const router = useRouter();
     const { signIn, signUp } = useSession();
     const [error, setError] = useState("");
@@ -131,10 +131,9 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                 </Alert>
             ) : null}
 
-            {mode === "sign-up" ? (
+            {mode === "sign-up" && signUpNotice ? (
                 <div className="border border-primary/30 bg-primary/10 p-3 text-sm leading-6 text-muted-foreground">
-                    The first account created on this installation becomes the admin account. Later signups wait for
-                    admin approval before they can access broker data.
+                    {signUpNotice}
                 </div>
             ) : null}
 

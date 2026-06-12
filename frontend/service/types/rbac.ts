@@ -15,6 +15,8 @@ export interface RbacPrincipal {
 export interface WorkspaceMember {
     user_id: string;
     display_name?: string | null;
+    auth_name?: string | null;
+    email?: string | null;
     role: string;
     status: string;
     created_at: string;
@@ -33,7 +35,13 @@ export interface BrokerAccountGrant {
     account_id: string;
     subject_type: "user" | "role";
     subject_id: string;
+    subject_label: string;
+    subject_subtitle?: string | null;
     permissions: string[];
     created_at: string;
     updated_at: string;
+}
+
+export interface SignupStatus {
+    has_admin: boolean;
 }
