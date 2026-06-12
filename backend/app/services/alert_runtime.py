@@ -142,6 +142,67 @@ def _computed_quote_fields(raw: dict[str, Any], ltp: Any, ohlc: dict[str, Any]) 
     }
 
 
+def _quote_raw(payload: dict[str, Any]) -> dict[str, Any]:
+    detail = payload.get("detail") if isinstance(payload.get("detail"), dict) else {}
+    raw = detail.get("raw") if isinstance(detail.get("raw"), dict) else {}
+    return raw
+
+
+def _quote_has_change_context(payload: dict[str, Any]) -> bool:
+    raw = _quote_raw(payload)
+    ohlc = raw.get("ohlc") if isinstance(raw.get("ohlc"), dict) else {}
+    return any(
+        value not in (None, "")
+        for value in (
+            raw.get("day_change"),
+            raw.get("day_change_perc"),
+            raw.get("day_change_percentage"),
+            ohlc.get("close"),
+            payload.get("day_change"),
+            payload.get("day_change_perc"),
+        )
+    )
+
+
+def _merge_existing_quote_context(new_payload: dict[str, Any], existing_json: str | None) -> dict[str, Any]:
+    if _quote_has_change_context(new_payload) or not existing_json:
+        return new_payload
+    try:
+        existing_payload = json.loads(existing_json)
+    except (TypeError, json.JSONDecodeError):
+        return new_payload
+    if not isinstance(existing_payload, dict) or not _quote_has_change_context(existing_payload):
+        return new_payload
+
+    merged = dict(new_payload)
+    merged_detail = dict(merged.get("detail") if isinstance(merged.get("detail"), dict) else {})
+    merged_raw = dict(merged_detail.get("raw") if isinstance(merged_detail.get("raw"), dict) else {})
+    existing_raw = _quote_raw(existing_payload)
+    existing_ohlc = existing_raw.get("ohlc") if isinstance(existing_raw.get("ohlc"), dict) else {}
+    merged_ohlc = dict(merged_raw.get("ohlc") if isinstance(merged_raw.get("ohlc"), dict) else {})
+    for key in (
+        "day_change",
+        "day_change_perc",
+        "day_change_percentage",
+        "volume",
+        "upper_circuit_limit",
+        "lower_circuit_limit",
+        "week_52_high",
+        "week_52_low",
+        "depth",
+    ):
+        if merged_raw.get(key) in (None, "") and existing_raw.get(key) not in (None, ""):
+            merged_raw[key] = existing_raw.get(key)
+    for key in ("open", "high", "low", "close"):
+        if merged_ohlc.get(key) in (None, "") and existing_ohlc.get(key) not in (None, ""):
+            merged_ohlc[key] = existing_ohlc.get(key)
+    if merged_ohlc:
+        merged_raw["ohlc"] = merged_ohlc
+    merged_detail["raw"] = merged_raw
+    merged["detail"] = merged_detail
+    return merged
+
+
 def _instrument_scope_for_tick(db, workflow, tick: dict[str, Any]) -> dict[str, Any]:
     exchange = str(tick.get("exchange") or workflow.exchange or "").strip().upper()
     scope: dict[str, Any] = {
@@ -214,7 +275,7 @@ def _normalize_tick_payload(
 ) -> dict[str, Any]:
     detail = quote_payload.get("detail") or {}
     raw = detail.get("raw") if isinstance(detail, dict) else {}
-    ohlc = raw.get("ohlc") if isinstance(raw, dict) else {}
+    ohlc = raw.get("ohlc") if isinstance(raw, dict) and isinstance(raw.get("ohlc"), dict) else {}
     buy_top = _first_depth(raw, "buy") if isinstance(raw, dict) else {}
     sell_top = _first_depth(raw, "sell") if isinstance(raw, dict) else {}
     ltp = quote_payload.get("ltp")
@@ -327,9 +388,46 @@ def _quote_debug_sample(rows: list[dict[str, Any]], *, limit: int = 12) -> list[
     return rows[:limit]
 
 
-def _subscription_priority(row: LiveSymbolSubscription) -> tuple[int, str, str]:
-    source_priority = {"workflow": 0, "watchlist": 1, "ui": 2}.get(row.source_kind or "", 3)
-    return (source_priority, row.exchange or "", row.symbol)
+def _subscription_priority(row: LiveSymbolSubscription) -> tuple[int, float, str, str]:
+    source_priority = {
+        "ui": 0,
+        "workflow": 1,
+        "watchlist": 2,
+        "background_workflow": 3,
+        "manual": 4,
+    }.get(row.source_kind or "", 5)
+    updated_at = row.updated_at.timestamp() if row.updated_at else 0.0
+    return (source_priority, -updated_at, row.exchange or "", row.symbol)
+
+
+def _subscription_ref(row: LiveSymbolSubscription) -> dict[str, Any]:
+    try:
+        payload = json.loads(row.instrument_ref_json or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _order_duplicate_group(rows: list[LiveSymbolSubscription]) -> list[LiveSymbolSubscription]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            _subscription_priority(row),
+            -len(row.instrument_ref_json or "{}"),
+        ),
+    )
+
+
+def _instrument_for_group(rows: list[LiveSymbolSubscription]) -> dict[str, Any]:
+    representative = rows[0]
+    merged: dict[str, Any] = {}
+    for row in sorted(rows, key=lambda item: len(item.instrument_ref_json or "{}"), reverse=True):
+        for key, value in _subscription_ref(row).items():
+            if value not in (None, "") and key not in merged:
+                merged[key] = value
+    merged["symbol"] = representative.symbol
+    merged["exchange"] = representative.exchange
+    return merged
 
 
 def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> None:
@@ -598,8 +696,12 @@ def _apply_quote_results(
             continue
         any_valid_price = True
         valid_count += 1
-        for subscription_row in duplicate_rows:
-            subscription_row.last_quote_json = json.dumps(payload, default=str)
+        publish_payload = payload
+        for index, subscription_row in enumerate(duplicate_rows):
+            row_payload = _merge_existing_quote_context(payload, subscription_row.last_quote_json)
+            if index == 0:
+                publish_payload = row_payload
+            subscription_row.last_quote_json = json.dumps(row_payload, default=str)
             subscription_row.last_received_at = received_at
             subscription_row.health_status = "ok"
             subscription_row.health_reason = ""
@@ -611,7 +713,7 @@ def _apply_quote_results(
             symbols=symbols,
             connection_index=connection_index,
             chunk_rows=chunk_rows,
-            quote_payload=payload,
+            quote_payload=publish_payload,
             row=row,
         ))
     if rate_limited_count:
@@ -788,11 +890,10 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                         subscription.exchange,
                     )
                     unique_subscriptions.setdefault(unique_key, []).append(subscription)
-                for duplicate_rows in unique_subscriptions.values():
-                    duplicate_rows.sort(
-                        key=lambda item: len(item.instrument_ref_json or "{}"),
-                        reverse=True,
-                    )
+                unique_subscriptions = {
+                    key: _order_duplicate_group(duplicate_rows)
+                    for key, duplicate_rows in unique_subscriptions.items()
+                }
                 ordered_subscription_groups = sorted(
                     unique_subscriptions.values(),
                     key=lambda items: _subscription_priority(items[0]),
@@ -802,14 +903,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                     used_feed_fallback = False
                     chunk_groups = ordered_subscription_groups[start : start + 1000]
                     chunk_rows = [items[0] for items in chunk_groups]
-                    instruments = [
-                        {
-                            "symbol": row.symbol,
-                            "exchange": row.exchange,
-                            **json.loads(row.instrument_ref_json or "{}"),
-                        }
-                        for row in chunk_rows
-                    ]
+                    instruments = [_instrument_for_group(items) for items in chunk_groups]
                     live_adapter = get_live_price_adapter(acc.broker_code)
                     if live_adapter:
                         feed_result = await _apply_live_feed_results(
@@ -956,17 +1050,14 @@ def backfill_live_prices_for_user(user_id: str, *, source_kind: str | None = Non
             unique_subscriptions: dict[tuple[str, str | None], list[LiveSymbolSubscription]] = {}
             for subscription in subscriptions:
                 unique_subscriptions.setdefault((subscription.symbol, subscription.exchange), []).append(subscription)
+            unique_subscriptions = {
+                key: _order_duplicate_group(duplicate_rows)
+                for key, duplicate_rows in unique_subscriptions.items()
+            }
             ordered_groups = sorted(unique_subscriptions.values(), key=lambda items: _subscription_priority(items[0]))
             chunk_groups = ordered_groups[:1000]
             chunk_rows = [items[0] for items in chunk_groups]
-            instruments = [
-                {
-                    "symbol": row.symbol,
-                    "exchange": row.exchange,
-                    **json.loads(row.instrument_ref_json or "{}"),
-                }
-                for row in chunk_rows
-            ]
+            instruments = [_instrument_for_group(items) for items in chunk_groups]
             try:
                 quotes = broker_data.fetch_quotes(db, acc, instruments)
             except Exception as exc:
