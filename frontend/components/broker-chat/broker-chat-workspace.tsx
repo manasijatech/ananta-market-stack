@@ -1795,7 +1795,13 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         </span>
                         <span>Enter sends · Shift + Enter adds a line</span>
                         <span>Tool activity is shown inline in the thinking trace</span>
-                        <span>{useMcp ? "MCP enabled for this chat" : "MCP disabled"}</span>
+                        <span>
+                            {useMcp
+                                ? "MCP enabled for this chat"
+                                : availableMcpServers.length
+                                  ? "MCP disabled"
+                                  : "MCP unavailable for your role or this workspace"}
+                        </span>
                         {queueHealth ? (
                             <span>
                                 Queue {queueHealth.queue_name}: {queueHealth.queued_count} queued ·{" "}

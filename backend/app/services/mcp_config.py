@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.schemas.system_config import McpOAuthStartOut, McpServerConfigOut, McpServerConfigUpdateIn
+from app.services import rbac
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import User, UserMcpServerConfig
 
@@ -172,12 +173,14 @@ def config_to_schema(row: UserMcpServerConfig | None) -> McpServerConfigOut:
 
 def get_mcp_server_config(db: Session, user_id: str) -> McpServerConfigOut:
     _ensure_user(db, user_id)
-    return config_to_schema(_primary_mcp_server_row(db, user_id))
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    return config_to_schema(_primary_mcp_server_row(db, owner_user_id))
 
 
 def list_mcp_server_configs(db: Session, user_id: str) -> list[McpServerConfigOut]:
     _ensure_user(db, user_id)
-    return [config_to_schema(row) for row in _mcp_server_rows(db, user_id)]
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    return [config_to_schema(row) for row in _mcp_server_rows(db, owner_user_id)]
 
 
 def _mcp_server_rows(db: Session, user_id: str) -> list[UserMcpServerConfig]:
@@ -209,10 +212,15 @@ def upsert_mcp_server_config(
     server_id: str | None = None,
 ) -> McpServerConfigOut:
     _ensure_user(db, user_id)
-    row = _owned_mcp_server_row(db, user_id, server_id) if server_id else _primary_mcp_server_row(db, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = (
+        _owned_mcp_server_row(db, owner_user_id, server_id)
+        if server_id
+        else _primary_mcp_server_row(db, owner_user_id)
+    )
     now = _now()
     if row is None:
-        row = UserMcpServerConfig(id=str(uuid.uuid4()), user_id=user_id, created_at=now, updated_at=now)
+        row = UserMcpServerConfig(id=str(uuid.uuid4()), user_id=owner_user_id, created_at=now, updated_at=now)
 
     previous_url = row.url or ""
     row.is_enabled = payload.is_enabled
@@ -244,21 +252,24 @@ def create_mcp_server_config(
     payload: McpServerConfigUpdateIn,
 ) -> McpServerConfigOut:
     _ensure_user(db, user_id)
-    row = UserMcpServerConfig(id=str(uuid.uuid4()), user_id=user_id, created_at=_now(), updated_at=_now())
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = UserMcpServerConfig(id=str(uuid.uuid4()), user_id=owner_user_id, created_at=_now(), updated_at=_now())
     db.add(row)
     db.flush()
     return upsert_mcp_server_config(db, user_id, payload, server_id=row.id)
 
 
 def clear_mcp_api_key(db: Session, user_id: str) -> McpServerConfigOut:
-    row = _primary_mcp_server_row(db, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = _primary_mcp_server_row(db, owner_user_id)
     if row is None:
         return get_mcp_server_config(db, user_id)
     return clear_mcp_server_api_key(db, user_id, row.id)
 
 
 def clear_mcp_server_api_key(db: Session, user_id: str, server_id: str) -> McpServerConfigOut:
-    row = _owned_mcp_server_row(db, user_id, server_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = _owned_mcp_server_row(db, owner_user_id, server_id)
     row.api_key_cipher = ""
     row.updated_at = _now()
     db.add(row)
@@ -268,14 +279,16 @@ def clear_mcp_server_api_key(db: Session, user_id: str, server_id: str) -> McpSe
 
 
 def clear_mcp_oauth(db: Session, user_id: str) -> McpServerConfigOut:
-    row = _primary_mcp_server_row(db, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = _primary_mcp_server_row(db, owner_user_id)
     if row is None:
         return get_mcp_server_config(db, user_id)
     return clear_mcp_server_oauth(db, user_id, row.id)
 
 
 def clear_mcp_server_oauth(db: Session, user_id: str, server_id: str) -> McpServerConfigOut:
-    row = _owned_mcp_server_row(db, user_id, server_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = _owned_mcp_server_row(db, owner_user_id, server_id)
     _clear_oauth_state(row, clear_client=False)
     row.updated_at = _now()
     db.add(row)
@@ -285,14 +298,16 @@ def clear_mcp_server_oauth(db: Session, user_id: str, server_id: str) -> McpServ
 
 
 def delete_mcp_server_config(db: Session, user_id: str) -> McpServerConfigOut:
-    row = _primary_mcp_server_row(db, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = _primary_mcp_server_row(db, owner_user_id)
     if row is not None:
         return delete_mcp_server_config_by_id(db, user_id, row.id)
     return get_mcp_server_config(db, user_id)
 
 
 def delete_mcp_server_config_by_id(db: Session, user_id: str, server_id: str) -> McpServerConfigOut:
-    row = _owned_mcp_server_row(db, user_id, server_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = _owned_mcp_server_row(db, owner_user_id, server_id)
     db.delete(row)
     db.commit()
     return get_mcp_server_config(db, user_id)
@@ -339,8 +354,9 @@ def get_enabled_mcp_connections(
     user_id: str,
     selected_server_ids: list[str] | None = None,
 ) -> list[McpConnectionConfig]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     selected = {item for item in (selected_server_ids or []) if item}
-    rows = [row for row in _mcp_server_rows(db, user_id) if row.is_enabled and row.url]
+    rows = [row for row in _mcp_server_rows(db, owner_user_id) if row.is_enabled and row.url]
     if selected:
         rows = [row for row in rows if row.id in selected]
     else:
@@ -356,8 +372,9 @@ def stale_mcp_server_ids(
     *,
     max_age_seconds: int = 15 * 60,
 ) -> list[str]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     selected = {item for item in (selected_server_ids or []) if item}
-    rows = [row for row in _mcp_server_rows(db, user_id) if row.is_enabled and row.url]
+    rows = [row for row in _mcp_server_rows(db, owner_user_id) if row.is_enabled and row.url]
     if selected:
         rows = [row for row in rows if row.id in selected]
     return [
@@ -512,7 +529,12 @@ async def start_mcp_oauth(
     server_id: str | None = None,
 ) -> McpOAuthStartOut:
     _ensure_user(db, user_id)
-    row = _owned_mcp_server_row(db, user_id, server_id) if server_id else _primary_mcp_server_row(db, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = (
+        _owned_mcp_server_row(db, owner_user_id, server_id)
+        if server_id
+        else _primary_mcp_server_row(db, owner_user_id)
+    )
     if row is None or not row.url:
         raise ValueError("Save an MCP server URL before starting authentication.")
     url = _validate_url(row.url, required=True)
@@ -569,7 +591,7 @@ async def complete_mcp_oauth(db: Session, state: str, code: str, user_id: str | 
     row = db.query(UserMcpServerConfig).filter(UserMcpServerConfig.oauth_state == state).first()
     if row is None:
         raise ValueError("MCP OAuth state is invalid or expired.")
-    if user_id is not None and row.user_id != user_id:
+    if user_id is not None and row.user_id != rbac.workspace_config_owner_user_id(db, user_id):
         raise ValueError("MCP OAuth state does not belong to the current user.")
     auth_metadata = _json_loads(row.oauth_auth_metadata_json, {})
     token_endpoint = str(auth_metadata.get("token_endpoint") or "").strip()
@@ -650,7 +672,12 @@ def _dump_model(value: Any) -> Any:
 
 
 async def refresh_mcp_inventory(db: Session, user_id: str, server_id: str | None = None) -> McpServerConfigOut:
-    row = _owned_mcp_server_row(db, user_id, server_id) if server_id else _primary_mcp_server_row(db, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = (
+        _owned_mcp_server_row(db, owner_user_id, server_id)
+        if server_id
+        else _primary_mcp_server_row(db, owner_user_id)
+    )
     if row is None:
         raise ValueError("Save an MCP server before refreshing its capabilities.")
     if not row.url:
