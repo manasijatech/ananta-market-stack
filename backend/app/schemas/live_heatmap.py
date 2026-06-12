@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -56,6 +56,9 @@ class HeatmapSymbolOut(BaseModel):
 
 
 class HeatmapResponseOut(BaseModel):
+    scope: Literal["tracked", "watchlist", "portfolio_holdings"] = "tracked"
+    scope_label: str = "Tracked symbols"
+    selection_id: str | None = None
     broker_code: str | None = None
     account_id: str | None = None
     requested_limit: int

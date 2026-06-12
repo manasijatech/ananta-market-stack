@@ -77,11 +77,17 @@ database.exec(`
 `);
 
 const authBaseURL = process.env.BETTER_AUTH_URL ?? getPublicAppUrl();
+const localDevOrigins =
+    process.env.NODE_ENV === "production"
+        ? []
+        : Array.from({ length: 11 }, (_, index) => 3000 + index).flatMap((port) => [
+              `http://127.0.0.1:${port}`,
+              `http://localhost:${port}`
+          ]);
 const trustedOrigins = Array.from(
     new Set([
         authBaseURL,
-        "http://127.0.0.1:3000",
-        "http://localhost:3000",
+        ...localDevOrigins,
         ...String(process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
             .split(",")
             .map((origin) => origin.trim())
