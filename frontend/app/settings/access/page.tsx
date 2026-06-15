@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { PageHeader, Shell } from "@/components/brokers/ui";
 import { BrokerSharingPanel } from "@/components/settings/broker-sharing-panel";
+import { WorkspaceMemberRoleForm } from "@/components/settings/workspace-member-role-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -116,7 +117,7 @@ export default async function AccessSettingsPage() {
 
     return (
         <Shell>
-            <div className="grid w-full max-w-5xl min-w-0 gap-8">
+            <div className="grid w-full max-w-5xl min-w-0 gap-4 [&>header]:mb-0">
                 <PageHeader
                     eyebrow="Workspace access"
                     title="Access and broker sharing"
@@ -150,7 +151,7 @@ export default async function AccessSettingsPage() {
                     <div className="grid">
                         {members.map((member) => (
                             <div
-                                className="grid gap-3 border-t border-border py-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center"
+                                className="grid gap-3 border-t border-border py-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center"
                                 key={member.user_id}
                             >
                                 <div className="flex min-w-0 items-center gap-3">
@@ -171,25 +172,14 @@ export default async function AccessSettingsPage() {
                                     </div>
                                 </div>
 
-                                <form action={member.status === "pending" ? approveMemberAction : updateRoleAction} className="flex flex-wrap gap-2 lg:justify-end">
-                                    <input name="user_id" type="hidden" value={member.user_id} />
-                                    <select
-                                        className="h-10 min-w-40 border border-border bg-background px-3 py-2 text-sm"
-                                        name="role"
-                                        defaultValue={member.status === "pending" ? viewerDefault : member.role}
-                                    >
-                                        {roles.map((role) => (
-                                            <option key={role.name} value={role.name}>
-                                                {role.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <Button className="rounded-[var(--radius)] font-medium normal-case tracking-normal" type="submit">
-                                        {member.status === "pending" ? "Approve" : "Update role"}
-                                    </Button>
-                                </form>
+                                <WorkspaceMemberRoleForm
+                                    action={member.status === "pending" ? approveMemberAction : updateRoleAction}
+                                    member={member}
+                                    roles={roles}
+                                    viewerDefault={viewerDefault}
+                                />
 
-                                <form action={disableMemberAction} className="lg:justify-self-end">
+                                <form action={disableMemberAction} className="md:justify-self-end">
                                     <input name="user_id" type="hidden" value={member.user_id} />
                                     <Button
                                         className="border-none bg-transparent font-medium normal-case tracking-normal text-[color:var(--color-text-tertiary,var(--text-muted))] hover:bg-[#FCEBEB] hover:text-[#A32D2D]"
@@ -206,9 +196,9 @@ export default async function AccessSettingsPage() {
                 </section>
 
                 <section className="border border-border bg-card p-5">
-                    <details>
+                    <details className="group">
                         <summary className="cursor-pointer text-2xl font-semibold marker:content-['']">
-                            <span className="mr-2 text-muted-foreground">▸</span>What each role can do
+                            <span className="mr-2 inline-block text-muted-foreground transition-transform group-open:rotate-90">▸</span>What each role can do ?
                         </summary>
                         <div className="mt-4 grid gap-4">
                             <div>
