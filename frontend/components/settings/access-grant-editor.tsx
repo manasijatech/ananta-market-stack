@@ -6,6 +6,14 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectLabel,
+    SelectRoot,
+    SelectTrigger
+} from "@/components/ui/select";
 import { upsertBrokerAccountGrant } from "@/service/actions/rbac";
 import type { BrokerAccountGrant, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
 
@@ -50,6 +58,16 @@ function permissionSummary(permissions: string[]): string {
     return permissions
         .map((permission) => permissionLabel(permission as BrokerPermission))
         .join(", ");
+}
+
+function subjectSelectLabel(option?: SubjectOption): string {
+    if (!option) {
+        return "";
+    }
+    if (option.subtitle && option.group === "People") {
+        return `${option.label} - ${option.subtitle}`;
+    }
+    return option.label;
 }
 
 function normalizePermissions(permissions: string[], isAdmin: boolean): string[] {
@@ -179,29 +197,38 @@ export function AccessGrantEditor({
                     <label className="text-sm font-semibold" htmlFor={`subject-${accountId}`}>
                         Grant access to
                     </label>
-                    <select
-                        className="border border-border bg-background px-3 py-2 text-sm"
-                        id={`subject-${accountId}`}
-                        onChange={(event) => setSelectedKey(event.target.value)}
-                        value={selectedSubject?.key ?? ""}
-                    >
-                        {(["People", "Role defaults"] as const).map((group) => {
-                            const options = subjectOptions.filter((option) => option.group === group);
-                            if (!options.length) {
-                                return null;
-                            }
-                            return (
-                                <optgroup key={group} label={group}>
-                                    {options.map((option) => (
-                                        <option key={option.key} value={option.key}>
-                                            {option.label}
-                                            {option.subtitle && option.group === "People" ? ` - ${option.subtitle}` : ""}
-                                        </option>
-                                    ))}
-                                </optgroup>
-                            );
-                        })}
-                    </select>
+                    <SelectRoot onValueChange={setSelectedKey} value={selectedSubject?.key ?? ""}>
+                        <SelectTrigger id={`subject-${accountId}`}>
+                            <span className="min-w-0 truncate">
+                                {subjectSelectLabel(selectedSubject) || "Select person or role"}
+                            </span>
+                        </SelectTrigger>
+                        <SelectContent>
+                            {(["People", "Role defaults"] as const).map((group) => {
+                                const options = subjectOptions.filter((option) => option.group === group);
+                                if (!options.length) {
+                                    return null;
+                                }
+                                return (
+                                    <SelectGroup key={group}>
+                                        <SelectLabel>{group}</SelectLabel>
+                                        {options.map((option) => (
+                                            <SelectItem key={option.key} value={option.key}>
+                                                <span className="flex min-w-0 flex-col">
+                                                    <span className="truncate">{option.label}</span>
+                                                    {option.subtitle && option.group === "People" ? (
+                                                        <span className="truncate text-xs text-muted-foreground group-data-[highlighted]:text-primary-foreground/80">
+                                                            {option.subtitle}
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectGroup>
+                                );
+                            })}
+                        </SelectContent>
+                    </SelectRoot>
                     {selectedSubject?.subtitle ? (
                         <div className="text-sm text-muted-foreground">{selectedSubject.subtitle}</div>
                     ) : null}
@@ -228,20 +255,17 @@ export function AccessGrantEditor({
                 </div>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
                 {brokerPermissions.map((permission) => {
                     const checked = effectivePermissions.includes(permission);
                     return (
-                        <label className="flex items-center gap-3 border border-border bg-background p-3" key={permission}>
+                        <label className="flex items-center gap-3" key={permission}>
                             <Checkbox
                                 checked={checked}
                                 disabled={isPending || selectedSubject?.isAdmin}
                                 onCheckedChange={(value) => togglePermission(permission, value === true)}
                             />
-                            <span>
-                                <span className="block text-sm font-semibold">{permissionLabel(permission)}</span>
-                                <span className="block font-mono text-xs text-muted-foreground">{permission}</span>
-                            </span>
+                            <span className="text-sm font-semibold">{permissionLabel(permission)}</span>
                         </label>
                     );
                 })}
