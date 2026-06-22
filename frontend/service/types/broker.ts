@@ -8,6 +8,7 @@ export type SessionStatusValue = "pending" | "active" | "automation_ready" | "ac
 
 export interface BrokerAccount {
     id: string;
+    workspace_id?: string | null;
     user_id: string;
     broker_code: BrokerCode;
     label: string;
@@ -19,6 +20,8 @@ export interface BrokerAccount {
     automation_enabled: boolean;
     automation_mode?: string | null;
     is_preferred_instrument_search?: boolean;
+    access_permissions?: string[];
+    is_shared?: boolean;
     created_at: string;
     updated_at: string;
 }

@@ -17,7 +17,7 @@ from app.schemas.broker_chat import (
     BrokerChatSessionOut,
     BrokerChatSubmitIn,
 )
-from app.services import llm_config
+from app.services import llm_config, rbac
 from app.services.broker_chat_queue import (
     cancel_broker_chat_job,
     broker_chat_job_status,
@@ -111,8 +111,11 @@ def update_preference(
     pref.event_visibility = payload.event_visibility
     pref.include_tool_outputs = payload.include_tool_outputs
     pref.include_reasoning = payload.include_reasoning
-    pref.use_mcp = payload.use_mcp
-    pref.mcp_server_ids_json = json_dumps(payload.mcp_server_ids)
+    mcp_allowed = rbac.user_has_workspace_permission(db, user_id, rbac.SETTINGS_USE_MCP) or rbac.user_has_workspace_permission(
+        db, user_id, rbac.SETTINGS_MANAGE_MCP
+    )
+    pref.use_mcp = bool(payload.use_mcp and mcp_allowed)
+    pref.mcp_server_ids_json = json_dumps(payload.mcp_server_ids if mcp_allowed else [])
     db.add(pref)
     db.commit()
     db.refresh(pref)
@@ -210,8 +213,13 @@ def create_run(
         raise ValueError("A broker chat run is already active in this session. Stop it or wait for it to finish.")
     provider, model = _resolve_provider_model(db, user_id, payload, pref)
     now = utc_now()
-    use_mcp = pref.use_mcp if payload.use_mcp is None else payload.use_mcp
-    mcp_server_ids = payload.mcp_server_ids if payload.mcp_server_ids is not None else json_loads(pref.mcp_server_ids_json, [])
+    mcp_allowed = rbac.user_has_workspace_permission(db, user_id, rbac.SETTINGS_USE_MCP) or rbac.user_has_workspace_permission(
+        db, user_id, rbac.SETTINGS_MANAGE_MCP
+    )
+    requested_use_mcp = pref.use_mcp if payload.use_mcp is None else payload.use_mcp
+    use_mcp = bool(requested_use_mcp and mcp_allowed)
+    requested_server_ids = payload.mcp_server_ids if payload.mcp_server_ids is not None else json_loads(pref.mcp_server_ids_json, [])
+    mcp_server_ids = requested_server_ids if mcp_allowed else []
     run = BrokerChatRun(
         id=str(uuid.uuid4()),
         session_id=session.id,

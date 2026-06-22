@@ -13,6 +13,7 @@ from app.schemas.system_config import (
     LlmProviderConfigOut,
     LlmProviderCredentialUpsertIn,
 )
+from app.services import rbac
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import UserLlmModel, UserLlmProviderCredential
 
@@ -71,16 +72,17 @@ def provider_definition(provider: LlmProvider) -> dict[str, str]:
 
 
 def list_provider_configs(db: Session, user_id: str) -> list[LlmProviderConfigOut]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     credentials = list(
         db.scalars(
-            select(UserLlmProviderCredential).where(UserLlmProviderCredential.user_id == user_id)
+            select(UserLlmProviderCredential).where(UserLlmProviderCredential.user_id == owner_user_id)
         ).all()
     )
     credential_by_provider = {row.provider: row for row in credentials}
     models = list(
         db.scalars(
             select(UserLlmModel)
-            .where(UserLlmModel.user_id == user_id)
+            .where(UserLlmModel.user_id == owner_user_id)
             .order_by(UserLlmModel.provider.asc(), UserLlmModel.created_at.asc(), UserLlmModel.id.asc())
         ).all()
     )
@@ -117,23 +119,24 @@ def upsert_provider_credential(
     payload: LlmProviderCredentialUpsertIn,
 ) -> LlmProviderConfigOut:
     provider_definition(provider)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     row = db.scalars(
         select(UserLlmProviderCredential).where(
-            UserLlmProviderCredential.user_id == user_id,
+            UserLlmProviderCredential.user_id == owner_user_id,
             UserLlmProviderCredential.provider == provider,
         )
     ).first()
     if row is None:
         row = UserLlmProviderCredential(
             id=str(uuid.uuid4()),
-            user_id=user_id,
+            user_id=owner_user_id,
             provider=provider,
         )
     row.api_key_cipher = encrypt_value(payload.api_key)
     row.is_enabled = payload.is_enabled
     db.add(row)
     db.commit()
-    return next(item for item in list_provider_configs(db, user_id) if item.provider == provider)
+    return next(item for item in list_provider_configs(db, owner_user_id) if item.provider == provider)
 
 
 def delete_provider_credential(
@@ -141,16 +144,17 @@ def delete_provider_credential(
     user_id: str,
     provider: LlmProvider,
 ) -> list[LlmProviderConfigOut]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     row = db.scalars(
         select(UserLlmProviderCredential).where(
-            UserLlmProviderCredential.user_id == user_id,
+            UserLlmProviderCredential.user_id == owner_user_id,
             UserLlmProviderCredential.provider == provider,
         )
     ).first()
     if row is not None:
         db.delete(row)
         db.commit()
-    return list_provider_configs(db, user_id)
+    return list_provider_configs(db, owner_user_id)
 
 
 def add_provider_model(
@@ -159,11 +163,12 @@ def add_provider_model(
     payload: LlmModelCreateIn,
 ) -> list[LlmProviderConfigOut]:
     provider_definition(payload.provider)
-    if not provider_has_api_key(db, user_id, payload.provider):
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    if not provider_has_api_key(db, owner_user_id, payload.provider):
         raise ValueError(f"{payload.provider} API key must be configured before saving models")
     existing = db.scalars(
         select(UserLlmModel).where(
-            UserLlmModel.user_id == user_id,
+            UserLlmModel.user_id == owner_user_id,
             UserLlmModel.provider == payload.provider,
             UserLlmModel.model_id == payload.model_id,
         )
@@ -173,10 +178,10 @@ def add_provider_model(
         existing.is_enabled = payload.is_enabled
         db.add(existing)
         db.commit()
-        return list_provider_configs(db, user_id)
+        return list_provider_configs(db, owner_user_id)
     row = UserLlmModel(
         id=str(uuid.uuid4()),
-        user_id=user_id,
+        user_id=owner_user_id,
         provider=payload.provider,
         model_id=payload.model_id,
         label=payload.label,
@@ -184,15 +189,16 @@ def add_provider_model(
     )
     db.add(row)
     db.commit()
-    return list_provider_configs(db, user_id)
+    return list_provider_configs(db, owner_user_id)
 
 
 def delete_provider_model(db: Session, user_id: str, model_row_id: str) -> list[LlmProviderConfigOut]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     row = db.get(UserLlmModel, model_row_id)
-    if row is not None and row.user_id == user_id:
+    if row is not None and row.user_id == owner_user_id:
         db.delete(row)
         db.commit()
-    return list_provider_configs(db, user_id)
+    return list_provider_configs(db, owner_user_id)
 
 
 def get_provider_api_key(db: Session, user_id: str, provider: LlmProvider) -> str:
@@ -203,9 +209,10 @@ def get_provider_api_key(db: Session, user_id: str, provider: LlmProvider) -> st
     upgrades easier.
     """
 
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     row = db.scalars(
         select(UserLlmProviderCredential).where(
-            UserLlmProviderCredential.user_id == user_id,
+            UserLlmProviderCredential.user_id == owner_user_id,
             UserLlmProviderCredential.provider == provider,
             UserLlmProviderCredential.is_enabled.is_(True),
         )
@@ -216,9 +223,10 @@ def get_provider_api_key(db: Session, user_id: str, provider: LlmProvider) -> st
 
 
 def provider_has_api_key(db: Session, user_id: str, provider: LlmProvider) -> bool:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     row = db.scalars(
         select(UserLlmProviderCredential).where(
-            UserLlmProviderCredential.user_id == user_id,
+            UserLlmProviderCredential.user_id == owner_user_id,
             UserLlmProviderCredential.provider == provider,
             UserLlmProviderCredential.is_enabled.is_(True),
         )
@@ -227,10 +235,11 @@ def provider_has_api_key(db: Session, user_id: str, provider: LlmProvider) -> bo
 
 
 def list_provider_models(db: Session, user_id: str, provider: LlmProvider) -> list[UserLlmModel]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     return list(
         db.scalars(
             select(UserLlmModel).where(
-                UserLlmModel.user_id == user_id,
+                UserLlmModel.user_id == owner_user_id,
                 UserLlmModel.provider == provider,
                 UserLlmModel.is_enabled.is_(True),
             )

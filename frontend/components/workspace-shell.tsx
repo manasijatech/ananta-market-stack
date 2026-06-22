@@ -33,12 +33,16 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { hasRbacPermission } from "@/lib/rbac";
+import type { RbacPrincipal } from "@/service/types/rbac";
 
 type NavItem = {
     href: string;
     label: string;
     icon: TablerIcon;
     external?: boolean;
+    requiredPermission?: string;
+    hideWhenUnauthorized?: boolean;
 };
 
 const navGroups: { label: string; items: NavItem[] }[] = [
@@ -56,7 +60,13 @@ const navGroups: { label: string; items: NavItem[] }[] = [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
             { href: "/heatmap", label: "Heatmap", icon: IconLayoutGrid },
             { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
-            { href: "/llm-usage", label: "LLM Usage", icon: IconBrain },
+            {
+                href: "/llm-usage",
+                label: "LLM Usage",
+                icon: IconBrain,
+                requiredPermission: "settings.view_llm_usage",
+                hideWhenUnauthorized: true
+            },
             { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
         ]
     },
@@ -64,12 +74,17 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         label: "SETTINGS",
         items: [
             { href: "/settings", label: "Settings", icon: IconSettings2 },
+            {
+                href: "/settings/access",
+                label: "Access",
+                icon: IconSettings2,
+                requiredPermission: "workspace.manage_members",
+                hideWhenUnauthorized: true
+            },
             { href: "/docs", label: "Docs", icon: IconBook, external: true }
         ]
     }
 ];
-
-const navItems = navGroups.flatMap((group) => group.items);
 const ONBOARDING_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
 const ONBOARDING_PHASE_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
 const ONBOARDING_STEP_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-step";
@@ -192,6 +207,12 @@ function isNavItemActive(pathname: string, href: string) {
     if (href === "/dashboard") {
         return pathname === "/dashboard";
     }
+    if (href === "/settings") {
+        return pathname === "/settings";
+    }
+    if (href === "/settings/access") {
+        return pathname === "/settings/access" || pathname.startsWith("/settings/access/");
+    }
     if (href === "/market-intelligence") {
         return pathname.startsWith("/market-intelligence");
     }
@@ -218,6 +239,23 @@ function splitOnboardingRoute(route?: string) {
     return { path, hash: hash ? `#${hash}` : "" };
 }
 
+function visibleNavGroups(principal: RbacPrincipal | null | undefined) {
+    return navGroups
+        .map((group) => ({
+            ...group,
+            items: group.items.filter((item) => {
+                if (!item.requiredPermission) {
+                    return true;
+                }
+                if (hasRbacPermission(principal, item.requiredPermission)) {
+                    return true;
+                }
+                return !item.hideWhenUnauthorized;
+            })
+        }))
+        .filter((group) => group.items.length > 0);
+}
+
 function storedHeatmapHref() {
     try {
         const stored = parseStoredHeatmapFilters(localStorage.getItem(HEATMAP_FILTER_STORAGE_KEY) ?? undefined);
@@ -236,7 +274,16 @@ function storedHeatmapHref() {
     }
 }
 
-function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: string; closeOnSelect?: boolean }) {
+function NavigationGroups({
+    pathname,
+    principal,
+    closeOnSelect = false
+}: {
+    pathname: string;
+    principal?: RbacPrincipal | null;
+    closeOnSelect?: boolean;
+}) {
+    const groups = visibleNavGroups(principal);
     const [heatmapHref, setHeatmapHref] = useState("/heatmap");
 
     useEffect(() => {
@@ -248,7 +295,7 @@ function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: strin
 
     return (
         <nav className="grid gap-1" aria-label="Primary navigation">
-            {navGroups.map((group, groupIndex) => (
+            {groups.map((group, groupIndex) => (
                 <div className="grid gap-1" key={group.label}>
                     {groupIndex > 0 ? <Separator className="my-2" /> : null}
                     <div className="px-3 pt-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -296,7 +343,13 @@ function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: strin
     );
 }
 
-export function WorkspaceShell({ children }: { children: React.ReactNode }) {
+export function WorkspaceShell({
+    children,
+    principal = null
+}: {
+    children: React.ReactNode;
+    principal?: RbacPrincipal | null;
+}) {
     const pathname = usePathname();
     const router = useRouter();
     const { user, isLoading, signOut } = useSession();
@@ -305,7 +358,10 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     const [onboardingRun, setOnboardingRun] = useState(false);
     const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
     const [onboardingTargetCheck, setOnboardingTargetCheck] = useState(0);
-    const activeSection = useMemo(() => navItems.find((item) => isNavItemActive(pathname, item.href)), [pathname]);
+    const activeSection = useMemo(
+        () => visibleNavGroups(principal).flatMap((group) => group.items).find((item) => isNavItemActive(pathname, item.href)),
+        [pathname, principal]
+    );
 
     useEffect(() => {
         if (!isLoading && !user) {
@@ -598,7 +654,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                                     <BrandLogo imageClassName="max-w-full text-[1.5rem]" />
                                 </DialogHeader>
                                 <div className="min-h-0 overflow-y-auto px-3 py-4">
-                                    <NavigationGroups closeOnSelect pathname={pathname} />
+                                    <NavigationGroups closeOnSelect pathname={pathname} principal={principal} />
                                 </div>
                                 <div className="border-t border-border p-3">
                                     <div className="flex items-center gap-3 px-2 py-2">
@@ -642,7 +698,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                         <BrandLogo imageClassName="text-[1.5rem]" />
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-                        <NavigationGroups pathname={pathname} />
+                        <NavigationGroups pathname={pathname} principal={principal} />
                     </div>
                     <div className="mt-auto border-t border-border p-3">
                         <div className="flex items-center gap-3 px-2 py-2">

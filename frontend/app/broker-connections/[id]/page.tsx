@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { getBrokerAccount, getSessionStatus } from "@/service/actions/broker";
 import { BrokerDetailActions } from "@/components/brokers/broker-detail-actions";
 import { InstrumentSyncBanner } from "@/components/brokers/instrument-sync-banner";
@@ -17,7 +18,7 @@ import {
 } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { formatUserFacingError } from "@/lib/api-errors";
+import { formatUserFacingError, isMissingOrInaccessibleError, isPermissionDeniedError } from "@/lib/api-errors";
 import type { BrokerAccountDetail, SessionStatus } from "@/service/types/broker";
 
 type BrokerDetailPageProps = {
@@ -34,6 +35,17 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
         account = await getBrokerAccount(id);
         sessionStatus = await getSessionStatus(account.id, account.broker_code);
     } catch (caught) {
+        if (isPermissionDeniedError(caught) || isMissingOrInaccessibleError(caught)) {
+            return (
+                <AccessDeniedState
+                    title="Broker account access"
+                    description="Broker account details are only shown when that account is shared with your role."
+                    reason="This broker account is unavailable to your current role, or it is no longer shared with you."
+                    backHref="/broker-connections"
+                    backLabel="Back to broker connections"
+                />
+            );
+        }
         loadError = formatUserFacingError(caught, "Could not load this broker account.");
     }
 
@@ -143,7 +155,11 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
                         ) : null}
                     </div>
                     <div className="border-t border-border pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-                        <BrokerDetailActions accountId={account.id} verified={Boolean(account.last_verified_at)} />
+                        <BrokerDetailActions
+                            accountId={account.id}
+                            permissions={account.access_permissions ?? []}
+                            verified={Boolean(account.last_verified_at)}
+                        />
                     </div>
                 </section>
 

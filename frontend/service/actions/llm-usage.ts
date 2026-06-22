@@ -38,7 +38,13 @@ async function request<T>(path: string): Promise<T> {
     const response = await fetchFastApi(path);
     const payload = await parseJson(response);
     if (!response.ok) {
-        throw new Error(extractMessage(payload, "LLM usage request failed."));
+        throw new Error(
+            JSON.stringify({
+                status: response.status,
+                message: extractMessage(payload, "LLM usage request failed."),
+                fieldErrors: {}
+            })
+        );
     }
     return payload as T;
 }
