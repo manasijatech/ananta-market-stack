@@ -35,7 +35,7 @@ export function AuthShell({
                 />
                 <div className="absolute inset-x-0 bottom-0 -z-10 h-[58%] bg-gradient-to-t from-background/88 via-background/44 to-transparent dark:from-background/92 dark:via-background/46" />
                 <div className="absolute inset-x-0 top-0 z-10 h-[3px] bg-primary" />
-                <BrandLogo imageClassName="h-14 w-96 max-w-full drop-shadow-[0_1px_10px_var(--background)]" />
+                <BrandLogo imageClassName="max-w-full text-[2.1rem] drop-shadow-[0_1px_10px_var(--background)] min-[560px]:text-[2.45rem]" />
                 <div className="max-w-[720px]">
                     <p className="mb-3.5 font-mono text-[11px] font-extrabold uppercase tracking-[0.18em] text-primary">
                         {eyebrow}
