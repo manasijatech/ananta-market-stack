@@ -322,7 +322,13 @@ def fetch_quotes_for_account(
     push_redis: bool = True,
 ) -> list[QuoteRow]:
     client = get_client_for_account(acc, resolver=SQLiteInstrumentResolver(db, acc.broker_code))
-    raw_list = [m.model_dump(exclude_none=True) for m in instruments]
+    from app.services import broker_data
+
+    raw_list = broker_data.hydrate_instruments(
+        db,
+        acc,
+        [m.model_dump(exclude_none=True) for m in instruments],
+    )
     rows = client.fetch_quotes(raw_list)
     out: list[QuoteRow] = []
     for r in rows:

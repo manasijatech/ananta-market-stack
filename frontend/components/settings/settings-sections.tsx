@@ -42,7 +42,7 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
         value: "broker-data",
         label: "Broker Data",
         title: "Broker data",
-        description: "Choose default broker accounts for broker-backed data and symbol search."
+        description: "Choose the default broker account used for broker-backed data and symbol search."
     },
     {
         value: "alpha",

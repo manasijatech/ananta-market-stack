@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { CircleHelpIcon } from "lucide-react";
 import {
     addLlmProviderModel,
@@ -14,11 +14,11 @@ import {
     deleteAlphaApiCredential,
     deleteLlmProviderCredential,
     deleteLlmProviderModel,
+    getBrokerDataSearchConfig,
     refreshMcpInventoryById,
     refreshMcpInventory,
     startMcpOAuth,
     updateBrokerDataDefaultConfig,
-    updateBrokerDataSearchConfig,
     updateMcpServerConfig,
     upsertAlphaApiCredential,
     upsertLlmProviderCredential
@@ -222,11 +222,9 @@ export function SystemConfigPanel({
     const [selectedDefaultAccountId, setSelectedDefaultAccountId] = useState(
         initialConfig.broker_data_default.preferred_default_account_id ?? ""
     );
-    const [selectedAccountId, setSelectedAccountId] = useState(
-        initialConfig.broker_data_search.preferred_search_account_id ?? ""
-    );
     const [defaultBrokerError, setDefaultBrokerError] = useState("");
-    const [brokerError, setBrokerError] = useState("");
+    const [isDefaultBrokerSaving, setIsDefaultBrokerSaving] = useState(false);
+    const defaultBrokerSaveIdRef = useRef(0);
     const [alphaApiKey, setAlphaApiKey] = useState("");
     const [alphaError, setAlphaError] = useState("");
     const [mcpServers, setMcpServers] = useState(
@@ -331,28 +329,36 @@ export function SystemConfigPanel({
         }));
     }
 
-    function saveBrokerPreference() {
-        setBrokerError("");
-        startTransition(async () => {
-            try {
-                const next = await updateBrokerDataSearchConfig(selectedAccountId || null);
-                setConfig((current) => ({ ...current, broker_data_search: next }));
-            } catch (caught) {
-                setBrokerError(parseActionError(caught).message);
-            }
-        });
-    }
-
-    function saveDefaultBrokerPreference() {
+    async function autosaveDefaultBrokerPreference(accountId: string) {
+        const saveId = defaultBrokerSaveIdRef.current + 1;
+        const previousAccountId = selectedDefaultAccountId;
+        defaultBrokerSaveIdRef.current = saveId;
+        setSelectedDefaultAccountId(accountId);
         setDefaultBrokerError("");
-        startTransition(async () => {
-            try {
-                const next = await updateBrokerDataDefaultConfig(selectedDefaultAccountId || null);
-                setConfig((current) => ({ ...current, broker_data_default: next }));
-            } catch (caught) {
+        setIsDefaultBrokerSaving(true);
+        try {
+            const nextDefault = await updateBrokerDataDefaultConfig(accountId || null);
+            if (defaultBrokerSaveIdRef.current === saveId) {
+                setConfig((current) => ({
+                    ...current,
+                    broker_data_default: nextDefault
+                }));
+                setSelectedDefaultAccountId(nextDefault.preferred_default_account_id ?? "");
+            }
+            const nextSearch = await getBrokerDataSearchConfig();
+            if (defaultBrokerSaveIdRef.current === saveId) {
+                setConfig((current) => ({ ...current, broker_data_search: nextSearch }));
+            }
+        } catch (caught) {
+            if (defaultBrokerSaveIdRef.current === saveId) {
+                setSelectedDefaultAccountId(previousAccountId);
                 setDefaultBrokerError(parseActionError(caught).message);
             }
-        });
+        } finally {
+            if (defaultBrokerSaveIdRef.current === saveId) {
+                setIsDefaultBrokerSaving(false);
+            }
+        }
     }
 
     function saveAlphaApiKey() {
@@ -599,16 +605,19 @@ export function SystemConfigPanel({
             {showBrokerData ? (
                 <>
             <section className="border border-border p-4">
-                <div className="text-sm font-bold">Default broker for broker data</div>
+                <div className="text-sm font-bold">Default broker</div>
                 <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
-                    Background subscriptions and broker-backed market data use this broker first. If the selected broker
-                    is not verified or its session is inactive, the backend falls back to the next verified active
-                    session.
+                    Background subscriptions, broker-backed market data, and symbol search use this broker first. If
+                    the selected broker is unavailable for a specific task, the backend falls back to the next eligible
+                    active account.
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                     <Select
                         className="h-9 min-w-[240px] max-w-sm border border-input bg-background px-3 text-sm"
-                        onChange={(event) => setSelectedDefaultAccountId(event.target.value)}
+                        disabled={isDefaultBrokerSaving || !config.broker_data_default.accounts.length}
+                        onChange={(event) => {
+                            void autosaveDefaultBrokerPreference(event.target.value);
+                        }}
                         value={selectedDefaultAccountId}
                     >
                         {config.broker_data_default.accounts.map((account) => (
@@ -617,17 +626,11 @@ export function SystemConfigPanel({
                             </option>
                         ))}
                     </Select>
-                    <Button
-                        disabled={isPending || !config.broker_data_default.accounts.length}
-                        onClick={saveDefaultBrokerPreference}
-                        type="button"
-                    >
-                        {isPending ? "Saving..." : "Save"}
-                    </Button>
                 </div>
+                {isDefaultBrokerSaving ? <div className="mt-3 text-xs text-muted-foreground">Saving default broker...</div> : null}
                 {config.broker_data_default.effective_default_account_id ? (
                     <div className="mt-3 text-xs text-muted-foreground">
-                        Effective broker data account:{" "}
+                        Effective broker account:{" "}
                         {config.broker_data_default.accounts.find(
                             (item) => item.account_id === config.broker_data_default.effective_default_account_id
                         )?.label ?? config.broker_data_default.effective_default_account_id}
@@ -639,40 +642,6 @@ export function SystemConfigPanel({
                     </div>
                 ) : null}
                 {defaultBrokerError ? <div className="mt-3 text-sm text-destructive">{defaultBrokerError}</div> : null}
-            </section>
-
-            <section className="border border-border p-4">
-                <div className="text-sm font-bold">Default symbol-search broker</div>
-                <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
-                    The selected broker cache is used first for symbol search. If it is unavailable, search falls back
-                    to the next available synced broker without blocking the UI.
-                </p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Select
-                        className="h-9 min-w-[240px] max-w-sm border border-input bg-background px-3 text-sm"
-                        onChange={(event) => setSelectedAccountId(event.target.value)}
-                        value={selectedAccountId}
-                    >
-                        {config.broker_data_search.accounts.map((account) => (
-                            <option key={account.account_id} value={account.account_id}>
-                                {account.label} · {account.broker_code}
-                            </option>
-                        ))}
-                    </Select>
-                    <Button disabled={isPending} onClick={saveBrokerPreference} type="button">
-                        {isPending ? "Saving..." : "Save"}
-                    </Button>
-                </div>
-                {config.broker_data_search.effective_search_account_id ? (
-                    <div className="mt-3 text-xs text-muted-foreground">
-                        Effective search account:{" "}
-                        {config.broker_data_search.accounts.find(
-                            (item) => item.account_id === config.broker_data_search.effective_search_account_id
-                        )?.label ?? config.broker_data_search.effective_search_account_id}
-                        {config.broker_data_search.fallback_used ? " · fallback active right now" : ""}
-                    </div>
-                ) : null}
-                {brokerError ? <div className="mt-3 text-sm text-destructive">{brokerError}</div> : null}
             </section>
 
             <section className="grid gap-2.5">

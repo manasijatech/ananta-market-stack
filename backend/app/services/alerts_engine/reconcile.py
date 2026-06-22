@@ -137,31 +137,35 @@ def _watchlist_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
 def _workflow_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
     desired: list[DesiredSubscription] = []
     workflows = db.scalars(
-        select(AlertWorkflow).where(AlertWorkflow.user_id == user_id, AlertWorkflow.status == "active")
+        select(AlertWorkflow).where(AlertWorkflow.user_id == user_id, AlertWorkflow.status.in_(["active", "inactive"]))
     ).all()
     for workflow in workflows:
         try:
             dsl = AlertWorkflowDsl(**_json_loads(workflow.workflow_dsl_json))
+            if workflow.status != "active" and dsl.workflow_type != "market_data":
+                continue
             workflow_ast = ensure_workflow_ast(dsl)
             symbols = resolve_universe(db, user_id, workflow_ast.target_universe)
         except Exception:
-            workflow.last_runtime_error = "Could not resolve workflow target universe"
-            workflow.deployment_status = "error"
-            db.add(workflow)
+            if workflow.status == "active":
+                workflow.last_runtime_error = "Could not resolve workflow target universe"
+                workflow.deployment_status = "error"
+                db.add(workflow)
             continue
         account_id, broker_code = _resolve_account(db, user_id, workflow.account_id, workflow.broker_code)
-        if account_id and (workflow.account_id != account_id or workflow.broker_code != broker_code):
+        if workflow.status == "active" and account_id and (workflow.account_id != account_id or workflow.broker_code != broker_code):
             workflow.account_id = account_id
             workflow.broker_code = broker_code
             workflow.deployment_status = "healed"
             workflow.last_runtime_error = None
             workflow.updated_at = _now()
             db.add(workflow)
-        elif not account_id:
+        elif workflow.status == "active" and not account_id:
             workflow.deployment_status = "action_required"
             workflow.last_runtime_error = "No verified active broker account is available for this workflow."
             workflow.updated_at = _now()
             db.add(workflow)
+        source_kind = "workflow" if workflow.status == "active" else "background_workflow"
         for symbol in symbols:
             ref = symbol.instrument_ref or InstrumentRef(symbol=symbol.symbol, exchange=symbol.exchange)
             desired.append(
@@ -173,10 +177,10 @@ def _workflow_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
                     symbol=symbol.symbol,
                     exchange=symbol.exchange,
                     instrument_ref=ref,
-                    source_kind="workflow",
-                    source_type=symbol.source_type,
+                    source_kind=source_kind,
+                    source_type=symbol.source_type if workflow.status == "active" else "inactive_workflow",
                     source_id=symbol.source_id,
-                    source_label=symbol.source_label,
+                    source_label=symbol.source_label if workflow.status == "active" else f"{workflow.name} (inactive)",
                     owner_kind="workflow",
                     owner_id=workflow.id,
                 )
@@ -259,7 +263,7 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
     managed_rows = db.scalars(
         select(LiveSymbolSubscription).where(
             LiveSymbolSubscription.user_id == user_id,
-            LiveSymbolSubscription.source_kind.in_(["watchlist", "workflow"]),
+            LiveSymbolSubscription.source_kind.in_(["watchlist", "workflow", "background_workflow"]),
         )
     ).all()
     for row in managed_rows:
