@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
+from app.services.rbac import Principal, ensure_principal
 from db.models import User
 from db.session import get_db
 
@@ -23,3 +24,10 @@ def get_current_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+def get_current_principal(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Principal:
+    return ensure_principal(db, user)

@@ -5,7 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user
+from app.deps import get_current_principal
 from app.schemas.llm_usage import (
     LlmUsageEventsPageOut,
     LlmUsageFilterOut,
@@ -14,7 +14,8 @@ from app.schemas.llm_usage import (
     LlmUsageTimeseriesOut,
 )
 from app.services import llm_usage as llm_usage_svc
-from db.models import User
+from app.services import rbac
+from app.services.rbac import Principal
 from db.session import get_db
 
 router = APIRouter()
@@ -60,11 +61,12 @@ def get_llm_usage_overview(
     request_kind: str | None = Query(default=None, description="Optional backend request-kind filter."),
     api_surface: str | None = Query(default=None, description="Optional SDK API surface filter."),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> LlmUsageOverviewOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_VIEW_LLM_USAGE)
     return llm_usage_svc.usage_overview(
         db,
-        user.id,
+        principal.user.id,
         filters=_filters(
             date_from=date_from,
             date_to=date_to,
@@ -99,11 +101,12 @@ def get_llm_usage_timeseries(
     request_kind: str | None = Query(default=None, description="Optional backend request-kind filter."),
     api_surface: str | None = Query(default=None, description="Optional SDK API surface filter."),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> LlmUsageTimeseriesOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_VIEW_LLM_USAGE)
     return llm_usage_svc.usage_timeseries(
         db,
-        user.id,
+        principal.user.id,
         filters=_filters(
             date_from=date_from,
             date_to=date_to,
@@ -136,11 +139,12 @@ def get_llm_usage_events(
     request_kind: str | None = Query(default=None, description="Optional backend request-kind filter."),
     api_surface: str | None = Query(default=None, description="Optional SDK API surface filter."),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: Principal = Depends(get_current_principal),
 ) -> LlmUsageEventsPageOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_VIEW_LLM_USAGE)
     return llm_usage_svc.list_usage_events(
         db,
-        user.id,
+        principal.user.id,
         filters=_filters(
             date_from=date_from,
             date_to=date_to,

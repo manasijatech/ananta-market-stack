@@ -1,3 +1,5 @@
+import { AccessDeniedState } from "@/components/access/access-denied-state";
+import { parseActionError } from "@/components/brokers/action-error";
 import { LlmUsageDashboard, buildLlmUsageFilterOptions } from "@/components/llm-usage/llm-usage-dashboard";
 import { LLM_USAGE_ALL_FILTER_VALUE } from "@/lib/llm-usage-filters";
 import {
@@ -41,13 +43,35 @@ export default async function LlmUsagePage({ searchParams }: LlmUsagePageProps) 
     };
     const granularity = parseGranularity(params.granularity);
 
-    const [overview, timeseries, events, filterOptionsOverview, filterOptionsEvents] = await Promise.all([
-        getLlmUsageOverview(filters),
-        getLlmUsageTimeseries(filters, granularity),
-        getLlmUsageEvents(filters, 100),
-        getLlmUsageOverview({}),
-        getLlmUsageEvents({}, 500)
-    ]);
+    let overview;
+    let timeseries;
+    let events;
+    let filterOptionsOverview;
+    let filterOptionsEvents;
+
+    try {
+        [overview, timeseries, events, filterOptionsOverview, filterOptionsEvents] = await Promise.all([
+            getLlmUsageOverview(filters),
+            getLlmUsageTimeseries(filters, granularity),
+            getLlmUsageEvents(filters, 100),
+            getLlmUsageOverview({}),
+            getLlmUsageEvents({}, 500)
+        ]);
+    } catch (caught) {
+        const parsed = parseActionError(caught);
+        if (parsed.status === 403) {
+            return (
+                <AccessDeniedState
+                    title="LLM usage not available"
+                    description="This workspace role cannot open the LLM usage dashboard."
+                    reason="Ask a workspace admin to grant LLM usage visibility if you need to inspect provider and workflow consumption."
+                    backHref="/dashboard"
+                    backLabel="Go to dashboard"
+                />
+            );
+        }
+        throw caught;
+    }
     const filterOptions = buildLlmUsageFilterOptions(filterOptionsOverview, filterOptionsEvents);
 
     return (

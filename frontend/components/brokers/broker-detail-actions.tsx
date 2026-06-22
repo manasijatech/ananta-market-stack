@@ -8,10 +8,24 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
-export function BrokerDetailActions({ accountId, verified }: { accountId: string; verified: boolean }) {
+export function BrokerDetailActions({
+    accountId,
+    verified,
+    permissions = []
+}: {
+    accountId: string;
+    verified: boolean;
+    permissions?: string[];
+}) {
     const router = useRouter();
     const [message, setMessage] = useState("");
     const [isPending, startTransition] = useTransition();
+    const canManageSessions = permissions.includes("broker.manage_sessions");
+    const canUseData = permissions.includes("broker.use_data");
+    const canDelete = permissions.includes("broker.delete");
+    const verifyDisabledReason = "You need session-management access on this broker account to verify or refresh it.";
+    const dataDisabledReason = "You need portfolio and market-data access on this broker account to open the data tools.";
+    const deleteDisabledReason = "Only users with delete access can remove this broker account.";
 
     function verify() {
         setMessage("");
@@ -48,17 +62,44 @@ export function BrokerDetailActions({ accountId, verified }: { accountId: string
         <div>
             <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-muted-foreground">Account actions</h2>
             <div className="mt-4 flex flex-wrap gap-3">
-                <Button disabled={isPending} onClick={verify} type="button">
-                    Verify
-                </Button>
-                {verified ? (
-                    <Button asChild disabled={isPending} type="button" variant="outline">
-                        <Link href={`/broker-connections/${accountId}/data-test`}>Test data APIs</Link>
+                {canManageSessions ? (
+                    <Button disabled={isPending} onClick={verify} type="button">
+                        Verify
                     </Button>
+                ) : (
+                    <span title={verifyDisabledReason}>
+                        <Button disabled type="button">
+                            Verify
+                        </Button>
+                    </span>
+                )}
+                {verified ? (
+                    canUseData ? (
+                        <Button asChild disabled={isPending} type="button" variant="outline">
+                            <Link href={`/broker-connections/${accountId}/data-test`}>Test data APIs</Link>
+                        </Button>
+                    ) : (
+                        <span title={dataDisabledReason}>
+                            <Button disabled type="button" variant="outline">
+                                Test data APIs
+                            </Button>
+                        </span>
+                    )
                 ) : null}
-                <Button disabled={isPending} onClick={remove} type="button" variant="destructive">
-                    Delete
-                </Button>
+                {canDelete ? (
+                    <Button disabled={isPending} onClick={remove} type="button" variant="destructive">
+                        Delete
+                    </Button>
+                ) : (
+                    <span title={deleteDisabledReason}>
+                        <Button disabled type="button" variant="destructive">
+                            Delete
+                        </Button>
+                    </span>
+                )}
+                {!canManageSessions && !canUseData && !canDelete ? (
+                    <p className="text-sm text-muted-foreground">You currently have view-only access to this broker account.</p>
+                ) : null}
             </div>
             {message ? (
                 <Alert className="mt-4">

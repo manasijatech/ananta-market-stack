@@ -20,6 +20,8 @@ from app.schemas.broker import (
 )
 from app.services import broker_data
 from app.services import broker_sessions as broker_session_svc
+from app.services import rbac
+from app.services.rbac import Principal
 from broker.core.instrument_store import latest_sync_run
 from db.models import BrokerAccount, BrokerHoldingsSnapshot, UserBrokerDataPreference
 from db.session import SessionLocal
@@ -97,14 +99,18 @@ def _candidate_order(
 def _default_account_summaries(
     db: Session,
     user_id: str,
+    principal: Principal | None = None,
 ) -> tuple[list[BrokerDataDefaultAccountOut], str | None, str | None]:
-    accounts = list(
-        db.scalars(
-            select(BrokerAccount)
-            .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-            .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-        ).all()
-    )
+    if principal is not None:
+        accounts = [row for row in rbac.accessible_broker_accounts(db, principal) if row.is_active]
+    else:
+        accounts = list(
+            db.scalars(
+                select(BrokerAccount)
+                .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+                .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+            ).all()
+        )
     preferred_account_id = _preferred_default_account_id(db, user_id)
     if preferred_account_id and not any(row.id == preferred_account_id for row in accounts):
         preferred_account_id = None
@@ -145,14 +151,18 @@ def _default_account_summaries(
 def _search_account_summaries(
     db: Session,
     user_id: str,
+    principal: Principal | None = None,
 ) -> tuple[list[BrokerDataSearchAccountOut], str | None, str | None]:
-    accounts = list(
-        db.scalars(
-            select(BrokerAccount)
-            .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-            .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-        ).all()
-    )
+    if principal is not None:
+        accounts = [row for row in rbac.accessible_broker_accounts(db, principal) if row.is_active]
+    else:
+        accounts = list(
+            db.scalars(
+                select(BrokerAccount)
+                .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+                .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+            ).all()
+        )
     preferred_account_id = _preferred_default_account_id(db, user_id)
     if preferred_account_id and not any(row.id == preferred_account_id for row in accounts):
         preferred_account_id = None
@@ -205,15 +215,38 @@ def _search_account_summaries(
     return summaries, preferred_account_id, effective_account_id
 
 
-def list_broker_accounts_with_preferences(db: Session, user_id: str) -> list[BrokerAccountOut]:
+def _attach_access_metadata(
+    db: Session,
+    out: BrokerAccountOut,
+    acc: BrokerAccount,
+    principal: Principal | None,
+) -> BrokerAccountOut:
+    if principal is None:
+        out.access_permissions = []
+        out.is_shared = False
+        return out
+    permissions = sorted(rbac.account_permissions(db, principal, acc))
+    out.access_permissions = permissions
+    out.is_shared = acc.user_id != principal.user.id
+    return out
+
+
+def list_broker_accounts_with_preferences(
+    db: Session,
+    user_id: str,
+    principal: Principal | None = None,
+) -> list[BrokerAccountOut]:
     preferred_account_id = _preferred_default_account_id(db, user_id)
-    accounts = list(
-        db.scalars(
-            select(BrokerAccount)
-            .where(BrokerAccount.user_id == user_id)
-            .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-        ).all()
-    )
+    if principal is not None:
+        accounts = rbac.accessible_broker_accounts(db, principal)
+    else:
+        accounts = list(
+            db.scalars(
+                select(BrokerAccount)
+                .where(BrokerAccount.user_id == user_id)
+                .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+            ).all()
+        )
     default_preferred = preferred_account_id or _default_preferred_account_id(
         [row for row in accounts if row.is_active]
     )
@@ -222,13 +255,14 @@ def list_broker_accounts_with_preferences(db: Session, user_id: str) -> list[Bro
         _clear_stale_session_error_if_active(db, row)
         out = BrokerAccountOut.model_validate(row)
         out.is_preferred_instrument_search = row.id == default_preferred
-        result.append(out)
+        result.append(_attach_access_metadata(db, out, row, principal))
     return result
 
 
 def broker_account_with_preference(
     db: Session,
     acc: BrokerAccount,
+    principal: Principal | None = None,
 ) -> BrokerAccountOut:
     _clear_stale_session_error_if_active(db, acc)
     preferred_account_id = _preferred_default_account_id(db, acc.user_id)
@@ -244,11 +278,15 @@ def broker_account_with_preference(
         )
     out = BrokerAccountOut.model_validate(acc)
     out.is_preferred_instrument_search = acc.id == preferred_account_id
-    return out
+    return _attach_access_metadata(db, out, acc, principal)
 
 
-def get_broker_data_search_config(db: Session, user_id: str) -> BrokerDataSearchConfigOut:
-    accounts, preferred_account_id, effective_account_id = _search_account_summaries(db, user_id)
+def get_broker_data_search_config(
+    db: Session,
+    user_id: str,
+    principal: Principal | None = None,
+) -> BrokerDataSearchConfigOut:
+    accounts, preferred_account_id, effective_account_id = _search_account_summaries(db, user_id, principal)
     return BrokerDataSearchConfigOut(
         preferred_search_account_id=preferred_account_id,
         effective_search_account_id=effective_account_id,
@@ -263,11 +301,15 @@ def update_broker_data_search_config(
     db: Session,
     user_id: str,
     payload: BrokerDataSearchConfigUpdateIn,
+    principal: Principal | None = None,
 ) -> BrokerDataSearchConfigOut:
     preferred_account_id = payload.preferred_search_account_id
     if preferred_account_id:
         acc = db.get(BrokerAccount, preferred_account_id)
-        if not acc or acc.user_id != user_id or not acc.is_active:
+        if principal is not None:
+            if not acc or not acc.is_active or rbac.BROKER_USE_DATA not in rbac.account_permissions(db, principal, acc):
+                raise ValueError("preferred search broker account not found")
+        elif not acc or acc.user_id != user_id or not acc.is_active:
             raise ValueError("preferred search broker account not found")
     pref = _get_preference(db, user_id)
     if pref is None:
@@ -281,11 +323,15 @@ def update_broker_data_search_config(
         pref.preferred_search_account_id = preferred_account_id
     db.add(pref)
     db.commit()
-    return get_broker_data_search_config(db, user_id)
+    return get_broker_data_search_config(db, user_id, principal)
 
 
-def get_broker_data_default_config(db: Session, user_id: str) -> BrokerDataDefaultConfigOut:
-    accounts, preferred_account_id, effective_account_id = _default_account_summaries(db, user_id)
+def get_broker_data_default_config(
+    db: Session,
+    user_id: str,
+    principal: Principal | None = None,
+) -> BrokerDataDefaultConfigOut:
+    accounts, preferred_account_id, effective_account_id = _default_account_summaries(db, user_id, principal)
     return BrokerDataDefaultConfigOut(
         preferred_default_account_id=preferred_account_id,
         effective_default_account_id=effective_account_id,
@@ -300,11 +346,15 @@ def update_broker_data_default_config(
     db: Session,
     user_id: str,
     payload: BrokerDataDefaultConfigUpdateIn,
+    principal: Principal | None = None,
 ) -> BrokerDataDefaultConfigOut:
     preferred_account_id = payload.preferred_default_account_id
     if preferred_account_id:
         acc = db.get(BrokerAccount, preferred_account_id)
-        if not acc or acc.user_id != user_id or not acc.is_active:
+        if principal is not None:
+            if not acc or not acc.is_active or rbac.BROKER_USE_DATA not in rbac.account_permissions(db, principal, acc):
+                raise ValueError("preferred default broker account not found")
+        elif not acc or acc.user_id != user_id or not acc.is_active:
             raise ValueError("preferred default broker account not found")
     pref = _get_preference(db, user_id)
     if pref is None:
@@ -318,7 +368,7 @@ def update_broker_data_default_config(
         pref.preferred_search_account_id = preferred_account_id
     db.add(pref)
     db.commit()
-    return get_broker_data_default_config(db, user_id)
+    return get_broker_data_default_config(db, user_id, principal)
 
 
 def get_effective_default_broker_account(
@@ -427,14 +477,18 @@ def search_instruments_for_user(
     exchange: str | None = None,
     segment: str | None = None,
     limit: int = 50,
+    principal: Principal | None = None,
 ) -> list[InstrumentSearchRow]:
-    accounts = list(
-        db.scalars(
-            select(BrokerAccount)
-            .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-            .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-        ).all()
-    )
+    if principal is not None:
+        accounts = [row for row in rbac.accessible_broker_accounts(db, principal) if row.is_active]
+    else:
+        accounts = list(
+            db.scalars(
+                select(BrokerAccount)
+                .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
+                .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+            ).all()
+        )
     preferred_account_id = _preferred_default_account_id(db, user_id)
     if preferred_account_id is None:
         preferred_account_id = _default_preferred_account_id(accounts)

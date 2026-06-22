@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.schemas.system_config import AlphaApiConfigOut, AlphaApiCredentialUpsertIn
+from app.services import rbac
 from app.services.alpha_websocket import fetch_alpha_account
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import UserAlphaApiCredential
@@ -18,7 +19,8 @@ def _build_api_key_hint(api_key: str) -> str | None:
 
 
 def get_alpha_api_config(db: Session, user_id: str) -> AlphaApiConfigOut:
-    row = db.get(UserAlphaApiCredential, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = db.get(UserAlphaApiCredential, owner_user_id)
     return AlphaApiConfigOut(
         has_api_key=bool(row and row.api_key_cipher),
         api_key_hint=_build_api_key_hint(decrypt_value(row.api_key_cipher))
@@ -59,9 +61,10 @@ def upsert_alpha_api_credential(
         account = asyncio.run(fetch_alpha_account(payload.api_key))
     except Exception as exc:
         raise ValueError(f"Could not verify Manasija Alpha API account: {exc}") from exc
-    row = db.get(UserAlphaApiCredential, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = db.get(UserAlphaApiCredential, owner_user_id)
     if row is None:
-        row = UserAlphaApiCredential(user_id=user_id)
+        row = UserAlphaApiCredential(user_id=owner_user_id)
     row.api_key_cipher = encrypt_value(payload.api_key)
     row.is_enabled = payload.is_enabled
     row.account_json = json.dumps(account, default=str)
@@ -69,21 +72,23 @@ def upsert_alpha_api_credential(
     row.account_error = None
     db.add(row)
     db.commit()
-    return get_alpha_api_config(db, user_id)
+    return get_alpha_api_config(db, owner_user_id)
 
 
 def delete_alpha_api_credential(db: Session, user_id: str) -> AlphaApiConfigOut:
-    row = db.get(UserAlphaApiCredential, user_id)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = db.get(UserAlphaApiCredential, owner_user_id)
     if row is not None:
         db.delete(row)
         db.commit()
-    return get_alpha_api_config(db, user_id)
+    return get_alpha_api_config(db, owner_user_id)
 
 
 def get_alpha_api_key(db: Session, user_id: str) -> str:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     row = db.scalars(
         select(UserAlphaApiCredential).where(
-            UserAlphaApiCredential.user_id == user_id,
+            UserAlphaApiCredential.user_id == owner_user_id,
             UserAlphaApiCredential.is_enabled.is_(True),
         )
     ).first()

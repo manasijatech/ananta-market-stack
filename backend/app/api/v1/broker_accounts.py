@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.deps import get_current_user
+from app.deps import get_current_principal
 from app.schemas.broker import (
     BrokerSessionStatusOut,
     BrokerAccountCreate,
@@ -26,19 +26,17 @@ from app.schemas.broker import (
 from app.services import broker_accounts as ba_svc
 from app.services import broker_data_preferences as bdp_svc
 from app.services import broker_sessions as bs_svc
+from app.services import rbac
 from app.services.instrument_sync_jobs import build_verify_out
 from broker.core.registry import BROKER_CODES
-from db.models import BrokerAccount, User
+from db.models import BrokerAccount
 from db.session import get_db
 
 router = APIRouter()
 
 
-def _get_owned_account(db: Session, user_id: str, account_id: str) -> BrokerAccount:
-    acc = db.get(BrokerAccount, account_id)
-    if not acc or acc.user_id != user_id:
-        raise HTTPException(status_code=404, detail="broker account not found")
-    return acc
+def _get_account(db: Session, principal: rbac.Principal, account_id: str, permission: str) -> BrokerAccount:
+    return rbac.get_broker_account_for_permission(db, principal, account_id, permission)
 
 
 @router.post("", response_model=BrokerAccountOut)
@@ -98,7 +96,7 @@ def create_broker_account(
         },
     ),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> BrokerAccountOut:
     """
     **Add a new broker account.**
@@ -115,9 +113,17 @@ def create_broker_account(
     """
     if payload.broker not in BROKER_CODES:
         raise HTTPException(status_code=400, detail="unknown broker")
+    rbac.require_workspace_permission(principal, rbac.BROKER_MANAGE_CREDENTIALS)
     try:
-        created = ba_svc.create_broker_account(db, user.id, payload)
-        return bdp_svc.broker_account_with_preference(db, created)
+        created = ba_svc.create_broker_account(
+            db,
+            principal.user.id,
+            payload,
+            workspace_id=principal.workspace.id,
+        )
+        rbac.create_creator_account_grant(db, principal, created)
+        db.commit()
+        return bdp_svc.broker_account_with_preference(db, created, principal)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -125,20 +131,20 @@ def create_broker_account(
 @router.get("", response_model=list[BrokerAccountOut])
 def list_broker_accounts(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> list[BrokerAccountOut]:
     """
     **List all broker accounts for the current user.**
 
     Returns basic metadata and session status. Does NOT return sensitive credentials.
     """
-    return bdp_svc.list_broker_accounts_with_preferences(db, user.id)
+    return bdp_svc.list_broker_accounts_with_preferences(db, principal.user.id, principal)
 
 
 @router.post("/maintenance/run", response_model=VerifyOut)
 def run_maintenance_now(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """
     **Manually trigger session maintenance.**
@@ -148,7 +154,15 @@ def run_maintenance_now(
     - Attempts automated token refreshes (if `totp_secret` is present and broker supports it).
     - Updates `session_status` and expiry hints.
     """
-    count = bs_svc.run_user_maintenance(db, user.id)
+    rbac.require_workspace_permission(principal, rbac.BROKER_MANAGE_SESSIONS)
+    accounts = [
+        account
+        for account in rbac.accessible_broker_accounts(db, principal)
+        if account.is_active and rbac.BROKER_MANAGE_SESSIONS in rbac.account_permissions(db, principal, account)
+    ]
+    for account in accounts:
+        bs_svc.process_account_maintenance(db, account)
+    count = len(accounts)
     return VerifyOut(ok=True, message=f"Processed {count} broker account(s)")
 
 
@@ -156,17 +170,21 @@ def run_maintenance_now(
 def get_broker_account(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> BrokerAccountOut:
     """**Fetch metadata for a specific broker account ID.**"""
-    return bdp_svc.broker_account_with_preference(db, _get_owned_account(db, user.id, account_id))
+    return bdp_svc.broker_account_with_preference(
+        db,
+        _get_account(db, principal, account_id, rbac.BROKER_VIEW),
+        principal,
+    )
 
 
 @router.delete("/{account_id}", status_code=204)
 def delete_broker_account(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> None:
     """
     **Remove a broker account.**
@@ -174,7 +192,7 @@ def delete_broker_account(
     Removes the broker account without deleting workflows, notifications, or
     subscription intent that previously referenced it.
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_DELETE)
     ba_svc.delete_broker_account_safely(db, acc)
 
 
@@ -182,7 +200,7 @@ def delete_broker_account(
 def verify_broker_account(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """
     **Test connectivity to the broker.**
@@ -190,7 +208,7 @@ def verify_broker_account(
     Attempts a simple request (like profile fetch) to confirm that 
     the current access tokens/credentials are valid.
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     ok, msg = ba_svc.verify_account(db, acc)
     return build_verify_out(db, acc, ok, msg or "")
 
@@ -200,7 +218,7 @@ def post_quotes(
     account_id: str,
     body: QuoteRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> list[QuoteRow]:
     """
     **Fetch real-time quotes for a batch of instruments.**
@@ -212,7 +230,7 @@ def post_quotes(
     - **Redis Cache**: Successful quotes are cached in Redis with a TTL (default 120s).
     - **Freshness**: Updates `ltp` and detail dictionary for current-session analysis.
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_USE_DATA)
     try:
         return ba_svc.fetch_quotes_for_account(db, acc, body.instruments, push_redis=True)
     except Exception as e:
@@ -224,7 +242,7 @@ def session_zerodha(
     account_id: str,
     body: SessionZerodhaIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """
     **Exchange Zerodha request_token for an access_token.**
@@ -232,7 +250,7 @@ def session_zerodha(
     Official flow: Redirect user to Zerodha login -> extract `request_token` 
     from URL -> POST here to enable trading for the day.
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "zerodha":
         raise HTTPException(status_code=400, detail="account is not zerodha")
     ok, err = ba_svc.apply_zerodha_session(db, acc, body.request_token)
@@ -243,10 +261,10 @@ def session_zerodha(
 def zerodha_session_status(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> ZerodhaSessionStatusOut:
     """**Retrieve current Zerodha session status.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_VIEW)
     if acc.broker_code != "zerodha":
         raise HTTPException(status_code=400, detail="account is not zerodha")
     try:
@@ -259,7 +277,7 @@ def zerodha_session_status(
 def zerodha_session_refresh_experimental(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> SessionZerodhaRefreshOut:
     """
     **Experimental: Automate Zerodha web login.**
@@ -267,7 +285,7 @@ def zerodha_session_refresh_experimental(
     Requires Zerodha `user_id`, `password`, and `totp_secret` to be stored. 
     Mimics web login to avoid manual redirect flows. **Use with caution.**
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "zerodha":
         raise HTTPException(status_code=400, detail="account is not zerodha")
     refreshed, err = bs_svc.refresh_zerodha_session_experimental(db, acc)
@@ -280,10 +298,10 @@ def zerodha_session_refresh_experimental(
 def upstox_session_status(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> BrokerSessionStatusOut:
     """**Fetch Upstox session status and OAuth login URL.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_VIEW)
     if acc.broker_code != "upstox":
         raise HTTPException(status_code=400, detail="account is not upstox")
     return bs_svc.get_broker_session_status(acc)
@@ -294,14 +312,14 @@ def session_upstox(
     account_id: str,
     body: SessionUpstoxIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """
     **Exchange Upstox authorization_code for an access_token.**
 
     Exchange the code returned by the OAuth redirect flow for a trading token.
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "upstox":
         raise HTTPException(status_code=400, detail="account is not upstox")
     ok, err = ba_svc.apply_upstox_session(db, acc, body.authorization_code)
@@ -312,7 +330,7 @@ def session_upstox(
 def upstox_request_token(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> SessionUpstoxRequestOut:
     """
     **Trigger official semi-automated Upstox approval request.**
@@ -320,7 +338,7 @@ def upstox_request_token(
     Users will receive an approval request in the Upstox app or WhatsApp. 
     Once approved, the token will be delivered to our webhook.
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "upstox":
         raise HTTPException(status_code=400, detail="account is not upstox")
     result, err = bs_svc.request_upstox_access_token(db, acc)
@@ -342,14 +360,14 @@ def session_angel(
     account_id: str,
     body: SessionAngelIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """
     **Execute manual Angel SmartAPI login.**
 
     Supply client_code (if different), 4-digit PIN, and active TOTP.
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "angel":
         raise HTTPException(status_code=400, detail="account is not angel")
     ok, err = ba_svc.apply_angel_session(
@@ -362,10 +380,10 @@ def session_angel(
 def angel_session_status(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> BrokerSessionStatusOut:
     """**Fetch Angel session and automation status.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_VIEW)
     if acc.broker_code != "angel":
         raise HTTPException(status_code=400, detail="account is not angel")
     return bs_svc.get_broker_session_status(acc)
@@ -375,10 +393,10 @@ def angel_session_status(
 def angel_session_refresh(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """**Try official automated TOTP-based Angel refresh.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "angel":
         raise HTTPException(status_code=400, detail="account is not angel")
     ok, err = bs_svc.refresh_angel_session(db, acc)
@@ -390,10 +408,10 @@ def session_dhan(
     account_id: str,
     body: SessionDhanIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """**Consume official Dhan consent `token_id`.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "dhan":
         raise HTTPException(status_code=400, detail="account is not dhan")
     ok, err = ba_svc.apply_dhan_session(db, acc, body.token_id)
@@ -404,10 +422,10 @@ def session_dhan(
 def dhan_session_status(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> BrokerSessionStatusOut:
     """**Fetch Dhan session status.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_VIEW)
     if acc.broker_code != "dhan":
         raise HTTPException(status_code=400, detail="account is not dhan")
     return bs_svc.get_broker_session_status(acc)
@@ -417,10 +435,10 @@ def dhan_session_status(
 def dhan_session_refresh(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """**Try official automated Dhan token generation/refresh via Pin + TOTP.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "dhan":
         raise HTTPException(status_code=400, detail="account is not dhan")
     ok, err = bs_svc.refresh_dhan_session(db, acc)
@@ -431,10 +449,10 @@ def dhan_session_refresh(
 def dhan_session_start(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> SessionStartOut:
     """**Generate a Dhan consent login URL.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "dhan":
         raise HTTPException(status_code=400, detail="account is not dhan")
     try:
@@ -448,10 +466,10 @@ def session_kotak(
     account_id: str,
     body: SessionKotakIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """**Execute manual Kotak Neo TOTP login.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "kotak":
         raise HTTPException(status_code=400, detail="account is not kotak")
     ok, err = ba_svc.apply_kotak_session(
@@ -464,10 +482,10 @@ def session_kotak(
 def kotak_session_status(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> BrokerSessionStatusOut:
     """**Fetch Kotak session status.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_VIEW)
     if acc.broker_code != "kotak":
         raise HTTPException(status_code=400, detail="account is not kotak")
     return bs_svc.get_broker_session_status(acc)
@@ -477,10 +495,10 @@ def kotak_session_status(
 def kotak_session_refresh(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """**Try official automated Kotak refresh via MPIN + TOTP.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "kotak":
         raise HTTPException(status_code=400, detail="account is not kotak")
     ok, err = bs_svc.refresh_kotak_session(db, acc)
@@ -492,7 +510,7 @@ def session_groww(
     account_id: str,
     body: SessionGrowwIn | None = None,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """
     **Manual or automated Groww session update.**
@@ -500,7 +518,7 @@ def session_groww(
     Supply a fresh Bearer token or let the backend attempt TOTP-based 
     login if configured.
     """
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "groww":
         raise HTTPException(status_code=400, detail="account is not groww")
     ok, err = bs_svc.refresh_groww_session(db, acc, body)
@@ -511,10 +529,10 @@ def session_groww(
 def groww_session_status(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> BrokerSessionStatusOut:
     """**Fetch Groww session status.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_VIEW)
     if acc.broker_code != "groww":
         raise HTTPException(status_code=400, detail="account is not groww")
     return bs_svc.get_broker_session_status(acc)
@@ -524,10 +542,10 @@ def groww_session_status(
 def indmoney_session_status(
     account_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> BrokerSessionStatusOut:
     """**Fetch INDmoney session status.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_VIEW)
     if acc.broker_code != "indmoney":
         raise HTTPException(status_code=400, detail="account is not indmoney")
     return bs_svc.get_broker_session_status(acc)
@@ -538,10 +556,10 @@ def session_indmoney(
     account_id: str,
     body: SessionIndmoneyIn,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
     """**Update INDmoney session token manually.**"""
-    acc = _get_owned_account(db, user.id, account_id)
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "indmoney":
         raise HTTPException(status_code=400, detail="account is not indmoney")
     ok, err = bs_svc.update_indmoney_access_token(db, acc, body.access_token)
