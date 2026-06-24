@@ -853,6 +853,12 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
         except Exception:
             pass
         try:
+            from app.services.deployment_updates import run_deployment_update_check_once
+
+            run_deployment_update_check_once(force=initial_cycle)
+        except Exception:
+            pass
+        try:
             run_daily_maintenance_once()
         except Exception:
             pass
