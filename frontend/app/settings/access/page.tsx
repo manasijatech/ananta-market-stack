@@ -2,15 +2,14 @@ import Link from "next/link";
 import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { PageHeader, Shell } from "@/components/brokers/ui";
 import { BrokerSharingPanel } from "@/components/settings/broker-sharing-panel";
+import { WorkspaceMemberActions } from "@/components/settings/workspace-member-actions";
 import { WorkspaceMemberRoleForm } from "@/components/settings/workspace-member-role-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { canManageWorkspaceAccess } from "@/lib/rbac";
 import { getBrokerAccounts } from "@/service/actions/broker";
 import {
     approveWorkspaceMember,
-    disableWorkspaceMember,
     getBrokerAccountGrants,
     getRbacMe,
     getWorkspaceMembers,
@@ -21,7 +20,7 @@ import type { BrokerAccount } from "@/service/types/broker";
 import type { BrokerAccountGrant, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
 
 function memberLabel(member: WorkspaceMember): string {
-    return member.display_name || member.auth_name || member.email || "Name missing";
+    return member.display_name || member.auth_name || member.email || "Unnamed member";
 }
 
 function memberSubtitle(member: WorkspaceMember): string {
@@ -76,11 +75,6 @@ async function approveMemberAction(formData: FormData) {
 async function updateRoleAction(formData: FormData) {
     "use server";
     await updateWorkspaceMemberRole(String(formData.get("user_id") ?? ""), String(formData.get("role") ?? "viewer"));
-}
-
-async function disableMemberAction(formData: FormData) {
-    "use server";
-    await disableWorkspaceMember(String(formData.get("user_id") ?? ""));
 }
 
 type AccountWithGrants = {
@@ -179,17 +173,7 @@ export default async function AccessSettingsPage() {
                                     viewerDefault={viewerDefault}
                                 />
 
-                                <form action={disableMemberAction} className="md:justify-self-end">
-                                    <input name="user_id" type="hidden" value={member.user_id} />
-                                    <Button
-                                        className="border-none bg-transparent font-medium normal-case tracking-normal text-[color:var(--color-text-tertiary,var(--text-muted))] hover:bg-[#FCEBEB] hover:text-[#A32D2D]"
-                                        disabled={member.user_id === me.user_id}
-                                        type="submit"
-                                        variant="ghost"
-                                    >
-                                        Disable
-                                    </Button>
-                                </form>
+                                <WorkspaceMemberActions currentUserId={me.user_id} member={member} />
                             </div>
                         ))}
                     </div>

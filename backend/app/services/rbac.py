@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from db.models import (
@@ -97,19 +98,30 @@ class Principal:
 
 
 def ensure_principal(db: Session, user: User) -> Principal:
-    membership = _primary_membership(db, user.id)
-    if membership is None:
-        membership = _bootstrap_membership(db, user)
-    _ensure_builtin_roles(db, membership.workspace_id)
-    _ensure_owned_account_grants(db, membership.workspace_id, user.id)
-    reconcile_workspace_shared_configs(db, membership.workspace_id)
-    db.commit()
-    db.refresh(membership)
-    workspace = db.get(Workspace, membership.workspace_id)
-    if workspace is None:
-        raise HTTPException(status_code=500, detail="workspace not found")
-    permissions = frozenset(_role_permissions(db, membership.workspace_id, membership.role))
-    return Principal(user=user, workspace=workspace, membership=membership, permissions=permissions)
+    for attempt in range(2):
+        try:
+            membership = _primary_membership(db, user.id)
+            if membership is None:
+                membership = _bootstrap_membership(db, user)
+            else:
+                _repair_orphaned_admin_access(db, membership)
+            _ensure_builtin_roles(db, membership.workspace_id)
+            _ensure_owned_account_grants(db, membership.workspace_id, user.id)
+            reconcile_workspace_shared_configs(db, membership.workspace_id)
+            db.commit()
+            db.refresh(membership)
+            workspace = db.get(Workspace, membership.workspace_id)
+            if workspace is None:
+                raise HTTPException(status_code=500, detail="workspace not found")
+            permissions = frozenset(_role_permissions(db, membership.workspace_id, membership.role))
+            return Principal(user=user, workspace=workspace, membership=membership, permissions=permissions)
+        except IntegrityError:
+            db.rollback()
+            if attempt == 0:
+                continue
+            raise
+
+    raise HTTPException(status_code=500, detail="workspace membership bootstrap failed")
 
 
 def require_active_member(principal: Principal) -> None:
@@ -324,6 +336,8 @@ def set_member_role(db: Session, principal: Principal, user_id: str, role: str) 
 
 def disable_member(db: Session, principal: Principal, user_id: str) -> WorkspaceMember:
     require_workspace_permission(principal, WORKSPACE_MANAGE_MEMBERS)
+    if user_id == principal.user.id:
+        raise HTTPException(status_code=400, detail="cannot disable yourself")
     member = _member_or_404(db, principal.workspace.id, user_id)
     if member.role == "admin":
         _ensure_not_last_admin(db, principal.workspace.id, excluding_user_id=user_id)
@@ -335,16 +349,32 @@ def disable_member(db: Session, principal: Principal, user_id: str) -> Workspace
     return member
 
 
+def remove_member(db: Session, principal: Principal, user_id: str) -> None:
+    require_workspace_permission(principal, WORKSPACE_MANAGE_MEMBERS)
+    if user_id == principal.user.id:
+        raise HTTPException(status_code=400, detail="cannot remove yourself")
+    member = _member_or_404(db, principal.workspace.id, user_id)
+    if member.role == "admin" and member.status == "active":
+        _ensure_not_last_admin(db, principal.workspace.id, excluding_user_id=user_id)
+    _purge_member_access(db, principal.workspace.id, member)
+    audit(db, principal=principal, action="member.remove", resource_type="user", resource_id=user_id, metadata={})
+    db.commit()
+
+
 def list_members(db: Session, principal: Principal) -> list[WorkspaceMember]:
     require_workspace_permission(principal, WORKSPACE_MANAGE_MEMBERS)
     reconcile_workspace_members(db, principal.workspace.id)
-    return list(
+    members = list(
         db.scalars(
             select(WorkspaceMember)
             .where(WorkspaceMember.workspace_id == principal.workspace.id)
             .order_by(WorkspaceMember.created_at.asc(), WorkspaceMember.id.asc())
         ).all()
     )
+    auth_users = _auth_user_rows(db, [member.user_id for member in members])
+    if auth_users is None:
+        return members
+    return [member for member in members if member.user_id in auth_users]
 
 
 def audit(
@@ -377,12 +407,49 @@ def _primary_membership(db: Session, user_id: str) -> WorkspaceMember | None:
     )
 
 
+def _installation_has_active_admin(db: Session) -> bool:
+    return bool(
+        db.scalar(
+            select(func.count())
+            .select_from(WorkspaceMember)
+            .where(WorkspaceMember.role == "admin", WorkspaceMember.status == "active")
+        )
+    )
+
+
+def _repair_orphaned_admin_access(db: Session, membership: WorkspaceMember) -> None:
+    if _installation_has_active_admin(db):
+        return
+    if membership.status != "pending":
+        return
+    membership.role = "admin"
+    membership.status = "active"
+    db.add(membership)
+    db.flush()
+
+
+def repair_installation_without_admin(db: Session) -> int:
+    if _installation_has_active_admin(db):
+        return 0
+
+    membership = db.scalars(
+        select(WorkspaceMember)
+        .where(WorkspaceMember.status == "pending")
+        .order_by(WorkspaceMember.created_at.asc(), WorkspaceMember.id.asc())
+    ).first()
+    if membership is None:
+        return 0
+
+    membership.role = "admin"
+    membership.status = "active"
+    db.add(membership)
+    db.commit()
+    return 1
+
+
 def _bootstrap_membership(db: Session, user: User) -> WorkspaceMember:
     owns_accounts = db.scalar(select(func.count()).select_from(BrokerAccount).where(BrokerAccount.user_id == user.id)) or 0
-    active_member_count = db.scalar(
-        select(func.count()).select_from(WorkspaceMember).where(WorkspaceMember.status == "active")
-    ) or 0
-    if owns_accounts or active_member_count == 0:
+    if owns_accounts or not _installation_has_active_admin(db):
         workspace = Workspace(
             id=str(uuid.uuid4()),
             name=(user.display_name or "Default workspace").strip() or "Default workspace",
@@ -480,11 +547,17 @@ def reconcile_workspace_members(db: Session, workspace_id: str) -> None:
     if not members:
         return
     auth_users = _auth_user_rows(db, [member.user_id for member in members])
+    if auth_users is None:
+        return
     changed = False
     for member in members:
-        user = db.get(User, member.user_id)
         auth_user = auth_users.get(member.user_id)
-        if user is None or auth_user is None:
+        if auth_user is None:
+            _purge_member_access(db, workspace_id, member)
+            changed = True
+            continue
+        user = db.get(User, member.user_id)
+        if user is None:
             continue
         auth_name = auth_user.get("name")
         if auth_name and not user.display_name:
@@ -752,6 +825,21 @@ def _member_or_404(db: Session, workspace_id: str, user_id: str) -> WorkspaceMem
     return member
 
 
+def _purge_member_access(db: Session, workspace_id: str, member: WorkspaceMember) -> None:
+    grants = list(
+        db.scalars(
+            select(BrokerAccountGrant).where(
+                BrokerAccountGrant.workspace_id == workspace_id,
+                BrokerAccountGrant.subject_type == "user",
+                BrokerAccountGrant.subject_id == member.user_id,
+            )
+        ).all()
+    )
+    for grant in grants:
+        db.delete(grant)
+    db.delete(member)
+
+
 def _ensure_not_last_admin(db: Session, workspace_id: str, *, excluding_user_id: str) -> None:
     remaining = db.scalar(
         select(func.count())
@@ -846,15 +934,18 @@ def _ensure_admin_role_grant(db: Session, workspace_id: str, account_id: str) ->
     return False
 
 
-def _auth_user_rows(db: Session, user_ids: list[str]) -> dict[str, dict[str, str | None]]:
+def _auth_user_rows(db: Session, user_ids: list[str]) -> dict[str, dict[str, str | None]] | None:
     if not user_ids:
         return {}
     placeholders = ", ".join(f":user_id_{index}" for index in range(len(user_ids)))
     params = {f"user_id_{index}": user_id for index, user_id in enumerate(user_ids)}
-    rows = db.execute(
-        text(f'SELECT id, name, email FROM "user" WHERE id IN ({placeholders})'),
-        params,
-    ).mappings().all()
+    try:
+        rows = db.execute(
+            text(f'SELECT id, name, email FROM "user" WHERE id IN ({placeholders})'),
+            params,
+        ).mappings().all()
+    except OperationalError:
+        return None
     return {
         str(row["id"]): {
             "name": str(row.get("name")) if row.get("name") else None,

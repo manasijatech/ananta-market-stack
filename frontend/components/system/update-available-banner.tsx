@@ -30,9 +30,10 @@ export function UpdateAvailableBanner() {
             try {
                 const nextStatus = await getDeploymentUpdateStatus();
                 setStatus(nextStatus);
-                setDismissed(isDismissed(nextStatus));
+                setDismissed(nextStatus ? isDismissed(nextStatus) : false);
             } catch {
                 setStatus(null);
+                setDismissed(false);
             }
         });
     }, []);

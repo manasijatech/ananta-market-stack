@@ -70,6 +70,16 @@ export async function disableWorkspaceMember(userId: string): Promise<WorkspaceM
     return result;
 }
 
+export async function removeWorkspaceMember(userId: string): Promise<void> {
+    const response = await fetchFastApi(`/rbac/members/${userId}/remove`, {
+        method: "POST"
+    });
+    if (!response.ok) {
+        await readResponse(response);
+    }
+    revalidatePath("/settings/access");
+}
+
 export async function getBrokerAccountGrants(accountId: string): Promise<BrokerAccountGrant[]> {
     return request<BrokerAccountGrant[]>(`/rbac/broker-accounts/${accountId}/grants`);
 }

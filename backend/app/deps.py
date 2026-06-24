@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import Depends, Header
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.services.rbac import Principal, ensure_principal
@@ -21,7 +22,14 @@ def get_current_user(
         return user
     user = User(id=user_id, display_name=None)
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        user = db.get(User, user_id)
+        if user:
+            return user
+        raise
     db.refresh(user)
     return user
 
