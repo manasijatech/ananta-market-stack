@@ -69,13 +69,12 @@ Set the local frontend environment values:
 ```env
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
-MARKET_STACK_PUBLIC_APP_URL=http://localhost:3000
-MARKET_STACK_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
-MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 BETTER_AUTH_SECRET=
 BETTER_AUTH_URL=http://localhost:3000
 BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
+
+If you run the backend on a non-default port, change only `NEXT_PUBLIC_API_BASE_URL`; Next.js server actions use that same value unless `MARKET_STACK_API_INTERNAL_URL` is explicitly set.
 
 Generate `BETTER_AUTH_SECRET`:
 
@@ -118,7 +117,7 @@ The repository is split into two apps:
 - `frontend/` - Next.js app with Better Auth, broker account screens, integration guides, session workflows, quotes, portfolio views, alerts workspace, and alert channel settings.
 - `backend/` - FastAPI service with broker account persistence, encrypted credential storage, broker session helpers, unified portfolio/order endpoints, alert workflow APIs, SQLite, Alembic, and Redis-backed workers.
 
-The frontend talks to the backend through the configured API base URL. In Docker, server-side frontend calls use `http://backend:8000/api/v1` inside the Compose network while browser-facing websocket/testing URLs use `http://localhost:8000/api/v1` by default.
+The frontend talks to the backend through `NEXT_PUBLIC_API_BASE_URL`. In Docker, server-side frontend calls use `http://backend:8000/api/v1` automatically while browser-facing websocket/testing URLs use `NEXT_PUBLIC_API_BASE_URL` by default.
 
 Server actions add `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` headers from the Better Auth session. In backend-only development, missing `X-User-Id` falls back to `local-dev-user`.
 

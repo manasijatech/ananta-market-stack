@@ -59,12 +59,10 @@ Set:
 ```env
 PORT=3000
 NEXT_PUBLIC_APP_URL=https://your-railway-domain
-MARKET_STACK_PUBLIC_APP_URL=https://your-railway-domain
 APP_PUBLIC_BASE_URL=https://your-railway-domain
 BETTER_AUTH_URL=https://your-railway-domain
 BETTER_AUTH_TRUSTED_ORIGINS=https://your-railway-domain
 NEXT_PUBLIC_API_BASE_URL=/api/v1
-MARKET_STACK_PUBLIC_API_BASE_URL=/api/v1
 MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 ```
 
