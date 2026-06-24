@@ -1,13 +1,38 @@
 "use client";
 
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { BrandLogo } from "@/components/brand-logo";
 import { useSession } from "@/components/session-provider";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { resolvePostAuthRoute } from "@/service/actions/auth-routing";
 
 export default function PendingApprovalPage() {
     const router = useRouter();
     const { signOut } = useSession();
+    const [error, setError] = useState("");
+    const [isChecking, startTransition] = useTransition();
+
+    function checkAccess() {
+        setError("");
+        startTransition(async () => {
+            try {
+                const route = await resolvePostAuthRoute();
+                router.replace(route);
+            } catch (caught) {
+                setError(
+                    caught instanceof Error
+                        ? caught.message
+                        : "Could not verify workspace access. Confirm the backend API is running."
+                );
+            }
+        });
+    }
+
+    useEffect(() => {
+        checkAccess();
+    }, []);
 
     async function onSignOut() {
         await signOut();
@@ -24,9 +49,14 @@ export default function PendingApprovalPage() {
                     An admin needs to approve your account and assign broker access before you can use this workspace.
                     Existing broker accounts stay connected; you do not need to add credentials again.
                 </p>
+                {error ? (
+                    <Alert className="mt-6" variant="destructive">
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                ) : null}
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                    <Button onClick={() => router.refresh()} type="button">
-                        Check again
+                    <Button disabled={isChecking} onClick={checkAccess} type="button">
+                        {isChecking ? "Checking..." : "Check again"}
                     </Button>
                     <Button onClick={onSignOut} type="button" variant="secondary">
                         Sign out

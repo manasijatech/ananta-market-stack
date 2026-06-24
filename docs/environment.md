@@ -10,9 +10,7 @@ This page summarizes the main environment variables used by Ananta Market Stack.
 | `BACKEND_PORT` | `8000` | Host port for the backend container. |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Browser-facing frontend URL. |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000/api/v1` | Browser-facing backend API base URL. |
-| `MARKET_STACK_PUBLIC_APP_URL` | `http://localhost:3000` | Runtime-friendly public frontend URL for server-rendered flows. |
-| `MARKET_STACK_PUBLIC_API_BASE_URL` | `http://localhost:8000/api/v1` | Runtime-friendly public backend API URL. |
-| `MARKET_STACK_API_INTERNAL_URL` | `http://backend:8000/api/v1` | Internal frontend-to-backend URL inside Docker Compose. |
+| `MARKET_STACK_API_INTERNAL_URL` | `http://backend:8000/api/v1` in Docker Compose | Optional internal frontend-to-backend URL for server actions. |
 | `APP_PUBLIC_BASE_URL` | `http://localhost:8000` | Backend public URL used by backend API links and fallback session flows. |
 | `CREDENTIAL_ENCRYPTION_KEY` | empty | Optional first-run seed for broker credential encryption. Generated if empty in Docker. |
 | `BETTER_AUTH_SECRET` | empty | Optional first-run seed for auth signing. Generated if empty in Docker. |
@@ -52,10 +50,10 @@ This page summarizes the main environment variables used by Ananta Market Stack.
 | `BETTER_AUTH_TRUSTED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated trusted frontend origins. |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Browser-facing frontend URL. |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000/api/v1` | Browser-facing backend API URL. |
-| `MARKET_STACK_PUBLIC_APP_URL` | `http://localhost:3000` | Runtime-friendly public frontend URL. |
-| `MARKET_STACK_PUBLIC_API_BASE_URL` | `http://localhost:8000/api/v1` | Runtime-friendly public backend API URL. |
-| `MARKET_STACK_API_INTERNAL_URL` | `http://backend:8000/api/v1` in Docker | Internal backend URL used by frontend server actions. |
+| `MARKET_STACK_API_INTERNAL_URL` | `NEXT_PUBLIC_API_BASE_URL` locally, `http://backend:8000/api/v1` in Docker | Optional internal backend URL used by frontend server actions. |
 | `MANASIJA_API_BASE_URL` | `https://developers.manasija.in` | Base URL for Manasija developer APIs. |
+
+`MARKET_STACK_PUBLIC_APP_URL` and `MARKET_STACK_PUBLIC_API_BASE_URL` are still accepted as compatibility aliases, but new installs should prefer `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_API_BASE_URL`.
 
 ## Broker Callback URLs
 
@@ -69,9 +67,9 @@ Deployment shape matters:
 Use these broker-facing callback URLs:
 
 ```text
-Zerodha redirect URL: <MARKET_STACK_PUBLIC_APP_URL>/broker-connections
-Upstox OAuth redirect URI: <MARKET_STACK_PUBLIC_APP_URL>/broker-connections
-Upstox notifier webhook: <MARKET_STACK_PUBLIC_APP_URL>/api/broker-callbacks/upstox/notifier
+Zerodha redirect URL: <NEXT_PUBLIC_APP_URL>/broker-connections
+Upstox OAuth redirect URI: <NEXT_PUBLIC_APP_URL>/broker-connections
+Upstox notifier webhook: <NEXT_PUBLIC_APP_URL>/api/broker-callbacks/upstox/notifier
 ```
 
 The Upstox OAuth redirect URI must also be saved in the Ananta Market Stack Upstox broker account. It must match the broker console value exactly.
@@ -80,9 +78,8 @@ For local Docker Compose:
 
 ```env
 APP_PUBLIC_BASE_URL=http://localhost:8000
-MARKET_STACK_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-MARKET_STACK_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 ```
 
 Broker console values for local Docker Compose:
@@ -97,9 +94,8 @@ For production, use your real backend domain:
 
 ```env
 APP_PUBLIC_BASE_URL=https://your-backend-domain.example
-MARKET_STACK_PUBLIC_APP_URL=https://your-frontend-domain.example
+NEXT_PUBLIC_APP_URL=https://your-frontend-domain.example
 NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
-MARKET_STACK_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
 ```
 
 Broker console values for split-domain production:
@@ -114,11 +110,9 @@ For the published Docker image, the frontend and backend share one public port. 
 
 ```env
 NEXT_PUBLIC_APP_URL=https://your-app-domain.example
-MARKET_STACK_PUBLIC_APP_URL=https://your-app-domain.example
 BETTER_AUTH_URL=https://your-app-domain.example
 APP_PUBLIC_BASE_URL=https://your-app-domain.example
 NEXT_PUBLIC_API_BASE_URL=/api/v1
-MARKET_STACK_PUBLIC_API_BASE_URL=/api/v1
 MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 ```
 

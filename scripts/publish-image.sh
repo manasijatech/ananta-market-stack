@@ -53,7 +53,11 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Building $local_tag"
-docker build -t "$local_tag" .
+docker build \
+  --build-arg "BUILD_SHA=$(git rev-parse HEAD 2>/dev/null || echo local)" \
+  --build-arg "BUILD_VERSION=$version" \
+  --build-arg "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t "$local_tag" .
 
 echo "Smoke testing $local_tag"
 cleanup

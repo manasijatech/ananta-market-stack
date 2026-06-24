@@ -29,6 +29,7 @@ import {
     parseStoredHeatmapFilters
 } from "@/components/heatmap/heatmap-filter-state";
 import { useSession } from "@/components/session-provider";
+import { UpdateAvailableBanner } from "@/components/system/update-available-banner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -733,6 +734,7 @@ export function WorkspaceShell({
                     </div>
                 </header>
                 <div className="min-w-0 px-4 pb-6 pt-[calc(4rem+1.5rem+3px)] min-[760px]:px-8 min-[980px]:px-10 min-[980px]:pb-10 min-[980px]:pt-[7.5rem]">
+                    <UpdateAvailableBanner />
                     {children}
                 </div>
             </div>

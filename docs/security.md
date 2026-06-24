@@ -63,7 +63,7 @@ For production:
 Before exposing a self-hosted instance publicly:
 
 - Use HTTPS for frontend and backend domains.
-- Set `BETTER_AUTH_URL`, `BETTER_AUTH_TRUSTED_ORIGINS`, `NEXT_PUBLIC_APP_URL`, `MARKET_STACK_PUBLIC_APP_URL`, and backend API URL variables to real production domains.
+- Set `BETTER_AUTH_URL`, `BETTER_AUTH_TRUSTED_ORIGINS`, `NEXT_PUBLIC_APP_URL`, and `NEXT_PUBLIC_API_BASE_URL` to real production domains.
 - Keep backend access private unless browser-facing websocket features require a public backend URL.
 - Restrict access with normal infrastructure controls such as firewall rules, reverse proxy policy, RBAC, and secret management.
 - Back up data and config volumes before updates or secret rotation.

@@ -30,16 +30,24 @@ RUN python -m venv /opt/venv \
 
 FROM python:3.12-slim AS runtime
 
+ARG BUILD_SHA=local
+ARG BUILD_VERSION=
+ARG BUILD_DATE=
+
 LABEL org.opencontainers.image.title="Ananta Market Stack" \
     org.opencontainers.image.description="Self-hosted trading and market-data workspace." \
-    org.opencontainers.image.source="https://github.com/manasijatech/ananta-market-stack"
+    org.opencontainers.image.source="https://github.com/manasijatech/ananta-market-stack" \
+    org.opencontainers.image.revision="${BUILD_SHA}" \
+    org.opencontainers.image.version="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/backend \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_ENV=production \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    MARKET_STACK_BUILD_SHA="${BUILD_SHA}" \
+    MARKET_STACK_BUILD_VERSION="${BUILD_VERSION}"
 
 WORKDIR /app
 
@@ -54,6 +62,9 @@ COPY --from=frontend-builder /app/frontend/.next/standalone /app/frontend
 COPY --from=frontend-builder /app/frontend/.next/static /app/frontend/.next/static
 COPY --from=frontend-builder /app/frontend/public /app/frontend/public
 COPY docker/ananta-market-stack-entrypoint.sh /usr/local/bin/ananta-market-stack
+
+RUN printf '{"sha":"%s","version":"%s","built_at":"%s"}\n' \
+        "$BUILD_SHA" "$BUILD_VERSION" "$BUILD_DATE" > /app/BUILD_INFO.json
 
 RUN sed -i 's/\r$//' /usr/local/bin/ananta-market-stack \
     && chmod +x /usr/local/bin/ananta-market-stack \
