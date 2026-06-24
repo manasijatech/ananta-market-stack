@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RippleButton } from "@/components/ui/ripple-button";
+import { resolvePostAuthRoute } from "@/service/actions/auth-routing";
 
 type AuthMode = "sign-in" | "sign-up";
 
@@ -50,13 +51,7 @@ export function AuthForm({ mode, signUpNotice }: { mode: AuthMode; signUpNotice?
             } else {
                 await signIn({ email, password, rememberMe });
             }
-            const rbacResponse = await fetch("/api/rbac/me", { cache: "no-store" });
-            if (rbacResponse.ok) {
-                const rbac = (await rbacResponse.json()) as { status?: string };
-                router.replace(rbac.status === "active" ? "/dashboard" : "/pending-approval");
-            } else {
-                router.replace("/pending-approval");
-            }
+            router.replace(await resolvePostAuthRoute());
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : "Something went wrong.");
         } finally {

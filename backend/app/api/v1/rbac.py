@@ -4,6 +4,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_principal
@@ -26,10 +27,13 @@ router = APIRouter()
 
 
 def _auth_user_row(db: Session, user_id: str) -> dict[str, str | None]:
-    row = db.execute(
-        text('SELECT name, email FROM "user" WHERE id = :user_id'),
-        {"user_id": user_id},
-    ).mappings().first()
+    try:
+        row = db.execute(
+            text('SELECT name, email FROM "user" WHERE id = :user_id'),
+            {"user_id": user_id},
+        ).mappings().first()
+    except OperationalError:
+        return {"name": None, "email": None}
     if row is None:
         return {"name": None, "email": None}
     return {
@@ -41,8 +45,10 @@ def _auth_user_row(db: Session, user_id: str) -> dict[str, str | None]:
 def _member_label(db: Session, user_id: str) -> tuple[str, str | None]:
     user = db.get(User, user_id)
     auth_user = _auth_user_row(db, user_id)
-    label = (user.display_name if user and user.display_name else None) or auth_user["name"] or auth_user["email"] or "Name missing"
-    subtitle = auth_user["email"] or ("Ask this user to add their name during signup." if label == "Name missing" else None)
+    if not auth_user["email"] and not auth_user["name"] and (user is None or not user.display_name):
+        return "Removed account", None
+    label = (user.display_name if user and user.display_name else None) or auth_user["name"] or auth_user["email"] or "Unnamed member"
+    subtitle = auth_user["email"] or ("Ask this user to add their name during signup." if label == "Unnamed member" else None)
     return label, subtitle
 
 
@@ -147,6 +153,15 @@ def disable_member(
     principal: rbac_svc.Principal = Depends(get_current_principal),
 ) -> WorkspaceMemberOut:
     return _member_out(db, rbac_svc.disable_member(db, principal, user_id))
+
+
+@router.post("/members/{user_id}/remove", status_code=204)
+def remove_member(
+    user_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac_svc.Principal = Depends(get_current_principal),
+) -> None:
+    rbac_svc.remove_member(db, principal, user_id)
 
 
 @router.get("/roles", response_model=list[RoleOut])
