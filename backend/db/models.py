@@ -985,6 +985,22 @@ class SystemMaintenanceLog(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
+class SystemDeploymentState(Base):
+    __tablename__ = "system_deployment_state"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    running_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    running_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    running_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    latest_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    update_available: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
 class UserWatchlist(Base):
     __tablename__ = "user_watchlists"
     __table_args__ = (

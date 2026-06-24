@@ -81,6 +81,7 @@ jobs:
             echo "tags<<EOF"
             printf '%s\n' "$tags"
             echo "EOF"
+            echo "version=$version"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build smoke-test image
@@ -90,6 +91,10 @@ jobs:
           file: Dockerfile
           load: true
           tags: ananta-market-stack-smoke:ci
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_VERSION=${{ steps.image-tags.outputs.version }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
 
       - name: Smoke test image
         run: |
@@ -115,5 +120,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.image-tags.outputs.tags }}
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_VERSION=${{ steps.image-tags.outputs.version }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
           provenance: true
           sbom: true

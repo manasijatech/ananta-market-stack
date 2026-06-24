@@ -146,6 +146,38 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="SYSTEM_REDIS_REBUILD_ON_STARTUP",
     )
+    deployment_update_checks_enabled: bool = Field(
+        default=True,
+        validation_alias="DEPLOYMENT_UPDATE_CHECKS_ENABLED",
+    )
+    deployment_update_check_interval_seconds: int = Field(
+        default=12 * 60 * 60,
+        validation_alias="DEPLOYMENT_UPDATE_CHECK_INTERVAL_SECONDS",
+    )
+    deployment_update_check_timeout_seconds: float = Field(
+        default=20.0,
+        validation_alias="DEPLOYMENT_UPDATE_CHECK_TIMEOUT_SECONDS",
+    )
+    deployment_image_repository: str = Field(
+        default="ghcr.io/manasijatech/ananta-market-stack",
+        validation_alias="DEPLOYMENT_IMAGE_REPOSITORY",
+    )
+    deployment_image_tag: str = Field(
+        default="latest",
+        validation_alias="DEPLOYMENT_IMAGE_TAG",
+    )
+    market_stack_build_sha: str | None = Field(
+        default=None,
+        validation_alias="MARKET_STACK_BUILD_SHA",
+    )
+    market_stack_build_version: str | None = Field(
+        default=None,
+        validation_alias="MARKET_STACK_BUILD_VERSION",
+    )
+    market_stack_image_digest: str | None = Field(
+        default=None,
+        validation_alias="MARKET_STACK_IMAGE_DIGEST",
+    )
 
     # Fernet key (urlsafe base64 32-byte). Required for production; see AGENTS.md.
     credential_encryption_key: str | None = None
