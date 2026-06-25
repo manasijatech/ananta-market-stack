@@ -630,8 +630,7 @@ export function WorkspaceShell({
                 }}
                 tooltipComponent={OnboardingTooltip}
             />
-            <div className="fixed inset-x-0 top-0 z-[80] h-[3px] bg-primary" />
-            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background pt-[3px] min-[980px]:hidden">
+            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background min-[980px]:hidden">
                 <div className="flex min-h-16 items-center justify-between gap-3 px-4">
                     <div className="flex min-w-0 items-center gap-3">
                         <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -725,7 +724,7 @@ export function WorkspaceShell({
                         </div>
                     </div>
                 </header>
-                <div className="min-w-0 px-4 pb-6 pt-[calc(4rem+1.5rem+3px)] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-[5.5rem]">
+                <div className="min-w-0 px-4 pb-6 pt-[5.5rem] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10">
                     <UpdateAvailableBanner />
                     {children}
                 </div>

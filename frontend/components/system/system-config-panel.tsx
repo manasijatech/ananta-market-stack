@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { formatIstDateTime } from "@/lib/datetime";
 import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
@@ -614,20 +614,18 @@ export function SystemConfigPanel({
                     active account.
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Select
+                    <SimpleSelect
                         className="h-9 min-w-[240px] max-w-sm border border-input bg-background px-3 text-sm"
                         disabled={isDefaultBrokerSaving || !config.broker_data_default.accounts.length}
-                        onChange={(event) => {
-                            void autosaveDefaultBrokerPreference(event.target.value);
+                        onValueChange={(accountId) => {
+                            void autosaveDefaultBrokerPreference(accountId);
                         }}
+                        options={config.broker_data_default.accounts.map((account) => ({
+                            value: account.account_id,
+                            label: `${account.label} · ${account.broker_code}`
+                        }))}
                         value={selectedDefaultAccountId}
-                    >
-                        {config.broker_data_default.accounts.map((account) => (
-                            <option key={account.account_id} value={account.account_id}>
-                                {account.label} · {account.broker_code}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                 </div>
                 {isDefaultBrokerSaving ? <div className="mt-3 text-xs text-muted-foreground">Saving default broker...</div> : null}
                 {config.broker_data_default.effective_default_account_id ? (
@@ -871,22 +869,20 @@ export function SystemConfigPanel({
                         </div>
                     ) : null}
                     <div className="mb-4 flex flex-wrap items-center gap-2">
-                        <Select
+                        <SimpleSelect
                             className="h-9 min-w-[260px]"
-                            onChange={(event) => {
-                                const next = mcpServers.find((server) => server.id === event.target.value);
-                                setSelectedMcpServerId(event.target.value);
+                            onValueChange={(serverId) => {
+                                const next = mcpServers.find((server) => server.id === serverId);
+                                setSelectedMcpServerId(serverId);
                                 setMcpApiKey("");
                                 setMcpExtraHeadersText(JSON.stringify(next?.extra_headers ?? {}, null, 2));
                             }}
+                            options={mcpServers.map((server, index) => ({
+                                value: server.id ?? "",
+                                label: server.name || server.url || `MCP server ${index + 1}`
+                            }))}
                             value={mcpConfig.id ?? ""}
-                        >
-                            {mcpServers.map((server, index) => (
-                                <option key={server.id ?? `mcp-${index}`} value={server.id ?? ""}>
-                                    {server.name || server.url || `MCP server ${index + 1}`}
-                                </option>
-                            ))}
-                        </Select>
+                        />
                         <Button
                             disabled={mcpReadOnly || isPending}
                             onClick={addMcpServer}
@@ -960,31 +956,33 @@ export function SystemConfigPanel({
                             placeholder="https://mcp.testing.manasija.in/"
                             value={mcpConfig.url}
                         />
-                        <Select
+                        <SimpleSelect
                             className="h-9"
                             disabled={mcpReadOnly}
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ transport: event.target.value as "streamable_http" | "sse" })
+                            onValueChange={(transport) =>
+                                patchSelectedMcpServer({ transport: transport as "streamable_http" | "sse" })
                             }
+                            options={[
+                                { value: "streamable_http", label: "Streamable HTTP" },
+                                { value: "sse", label: "SSE" }
+                            ]}
                             value={mcpConfig.transport}
-                        >
-                            <option value="streamable_http">Streamable HTTP</option>
-                            <option value="sse">SSE</option>
-                        </Select>
+                        />
                     </div>
 
                     <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[180px_minmax(220px,1fr)]">
-                        <Select
+                        <SimpleSelect
                             className="h-9"
                             disabled={mcpReadOnly}
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ auth_mode: event.target.value as "oauth" | "api_key" })
+                            onValueChange={(authMode) =>
+                                patchSelectedMcpServer({ auth_mode: authMode as "oauth" | "api_key" })
                             }
+                            options={[
+                                { value: "oauth", label: "OAuth / browser authentication" },
+                                { value: "api_key", label: "Bearer API key fallback" }
+                            ]}
                             value={mcpConfig.auth_mode ?? "oauth"}
-                        >
-                            <option value="oauth">OAuth / browser authentication</option>
-                            <option value="api_key">Bearer API key fallback</option>
-                        </Select>
+                        />
                         <div className="flex flex-wrap gap-2">
                             <Button
                                 disabled={mcpReadOnly || isPending || !mcpConfig.url}

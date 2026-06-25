@@ -1,25 +1,34 @@
 "use client";
 
 import { Star } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useGithubStars } from "@/hooks/use-github-stars";
 import { formatStarCount, GITHUB_REPO_URL } from "@/lib/github";
 import { cn } from "@/lib/utils";
 
+/** External link showing the public GitHub repository star count. */
 export function GithubStarButton({ className }: { className?: string }) {
     const { data: stars } = useGithubStars();
 
     return (
-        <Button asChild className={cn(className)} variant="outline">
-            <a href={GITHUB_REPO_URL} rel="noopener noreferrer" target="_blank">
-                <Star className="size-4" />
-                Star
-                {typeof stars === "number" ? (
-                    <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
-                        {formatStarCount(stars)}
-                    </span>
-                ) : null}
-            </a>
-        </Button>
+        <Badge
+            aria-label={
+                typeof stars === "number"
+                    ? `Star on GitHub (${formatStarCount(stars)} stars)`
+                    : "Star on GitHub"
+            }
+            className={cn("gap-1.5", className)}
+            render={<a href={GITHUB_REPO_URL} rel="noopener noreferrer" target="_blank" />}
+            size="lg"
+            variant="outline"
+        >
+            <Star className="size-3.5" />
+            Star
+            {typeof stars === "number" ? (
+                <Badge size="sm" variant="secondary">
+                    {formatStarCount(stars)}
+                </Badge>
+            ) : null}
+        </Badge>
     );
 }

@@ -6,6 +6,7 @@ import { fetchGithubStars } from "@/lib/queries/github-stars";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
+/** Cached GitHub star count for the public repo link button. */
 export function useGithubStars() {
     return useQuery({
         queryKey: queryKeys.github.stars(),

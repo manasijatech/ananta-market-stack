@@ -9,6 +9,9 @@ export type AlertNotificationTrayData = {
     items: AlertNotification[];
 };
 
+/**
+ * Loads unread alert tray data via parallel server actions.
+ */
 export async function fetchAlertNotificationTray(): Promise<AlertNotificationTrayData> {
     const [count, notifications] = await Promise.all([
         getAlertUnreadCount(),

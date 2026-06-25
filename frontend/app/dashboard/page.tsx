@@ -18,7 +18,8 @@ import {
     type DashboardTone,
     type SetupChecklistItem
 } from "@/components/dashboard/dashboard-ui";
-import { PageHeader, Shell, isBrokerAccountReady } from "@/components/brokers/ui";
+import { PageHeader, isBrokerAccountReady } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import { formatIstDateTime } from "@/lib/datetime";
 import { formatLlmCost, requestKindDisplay } from "@/lib/llm-usage";

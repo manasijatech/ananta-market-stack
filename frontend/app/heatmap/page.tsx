@@ -8,7 +8,8 @@ import {
 } from "@/components/heatmap/heatmap-filter-state";
 import { HeatmapFilters } from "@/components/heatmap/heatmap-filters";
 import { HeatmapMeasuredGrid } from "@/components/heatmap/heatmap-measured-grid";
-import { brokerNames, Shell } from "@/components/brokers/ui";
+import { brokerNames } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { typography } from "@/lib/typography";

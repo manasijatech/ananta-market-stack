@@ -1,5 +1,6 @@
 import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warning-modal";
-import { PageHeader, Shell } from "@/components/brokers/ui";
+import { PageHeader } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { hasRbacPermission } from "@/lib/rbac";
 import { SettingsSections } from "@/components/settings/settings-sections";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";

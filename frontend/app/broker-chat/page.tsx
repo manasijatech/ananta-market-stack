@@ -1,5 +1,5 @@
 import { BrokerChatWorkspace } from "@/components/broker-chat/broker-chat-workspace";
-import { Shell } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { getSystemConfig } from "@/service/actions/broker";
 import { getBrokerChatConfig, getBrokerChatRuns, getBrokerChatSessions } from "@/service/actions/broker-chat";
 

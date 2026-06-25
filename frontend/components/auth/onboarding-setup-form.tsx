@@ -7,6 +7,9 @@ import {
     authFormCardClassName,
     authFormInputClassName,
     authFormInputGroupClassName,
+    authFormInputGroupButtonClassName,
+    authFormInputGroupInputClassName,
+    authFormInputInvalidClassName,
     authFormPrimaryButtonClassName,
     getPasswordChecks,
     getPasswordStrength
@@ -132,12 +135,12 @@ export function OnboardingSetupForm() {
                                 placeholder="Your full name"
                                 value={name}
                                 disabled={isPending}
-                                className={authFormInputClassName}
+                                className={cn(authFormInputClassName, fieldErrors.name && authFormInputInvalidClassName)}
                                 onChange={(event) => {
                                     setName(event.target.value);
                                     setFieldErrors((current) => ({ ...current, name: undefined }));
                                 }}
-                                aria-invalid={!!fieldErrors.name}
+                                aria-invalid={fieldErrors.name ? true : undefined}
                             />
                             <FieldError>{fieldErrors.name}</FieldError>
                         </Field>
@@ -152,19 +155,24 @@ export function OnboardingSetupForm() {
                                 placeholder="you@company.com"
                                 value={email}
                                 disabled={isPending}
-                                className={authFormInputClassName}
+                                className={cn(authFormInputClassName, fieldErrors.email && authFormInputInvalidClassName)}
                                 onChange={(event) => {
                                     setEmail(event.target.value);
                                     setFieldErrors((current) => ({ ...current, email: undefined }));
                                 }}
-                                aria-invalid={!!fieldErrors.email}
+                                aria-invalid={fieldErrors.email ? true : undefined}
                             />
                             <FieldError>{fieldErrors.email}</FieldError>
                         </Field>
 
                         <Field data-invalid={!!fieldErrors.password}>
                             <FieldLabel htmlFor="onboarding-password">Password</FieldLabel>
-                            <InputGroup className={authFormInputGroupClassName}>
+                            <InputGroup
+                                className={cn(
+                                    authFormInputGroupClassName,
+                                    fieldErrors.password && authFormInputInvalidClassName,
+                                )}
+                            >
                                 <InputGroupInput
                                     id="onboarding-password"
                                     name="password"
@@ -173,18 +181,18 @@ export function OnboardingSetupForm() {
                                     placeholder="At least 8 characters"
                                     value={password}
                                     disabled={isPending}
-                                    className="h-12 px-4 text-base placeholder:text-muted-foreground/90"
+                                    className={authFormInputGroupInputClassName}
                                     onChange={(event) => {
                                         setPassword(event.target.value);
                                         setFieldErrors((current) => ({ ...current, password: undefined }));
                                     }}
-                                    aria-invalid={!!fieldErrors.password}
+                                    aria-invalid={fieldErrors.password ? true : undefined}
                                 />
                                 <InputGroupAddon align="inline-end">
                                     <InputGroupButton
                                         type="button"
                                         size="icon-sm"
-                                        className="size-9 text-muted-foreground hover:text-foreground"
+                                        className={authFormInputGroupButtonClassName}
                                         aria-label={isPasswordVisible ? "Hide password" : "Show password"}
                                         onClick={() => setIsPasswordVisible((current) => !current)}
                                     >

@@ -8,6 +8,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
+/** Dismissible banner for unread broker connection notifications. */
 export function NotificationsBanner() {
     const { data: notifications = [] } = useBrokerNotifications();
     const markRead = useMarkBrokerNotificationRead();

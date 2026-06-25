@@ -15,6 +15,9 @@ import { type FormEvent, useMemo, useState } from "react";
 import {
     authFormInputClassName,
     authFormInputGroupClassName,
+    authFormInputGroupButtonClassName,
+    authFormInputGroupInputClassName,
+    authFormInputInvalidClassName,
     authFormPrimaryButtonClassName,
     getPasswordChecks,
     getPasswordStrength
@@ -280,7 +283,7 @@ export function AccessRequestForm() {
 
                             disabled={isPending}
 
-                            className={authFormInputClassName}
+                            className={cn(authFormInputClassName, fieldErrors.name && authFormInputInvalidClassName)}
 
                             onChange={(event) => {
 
@@ -290,7 +293,7 @@ export function AccessRequestForm() {
 
                             }}
 
-                            aria-invalid={!!fieldErrors.name}
+                            aria-invalid={fieldErrors.name ? true : undefined}
 
                         />
 
@@ -320,7 +323,7 @@ export function AccessRequestForm() {
 
                             disabled={isPending}
 
-                            className={authFormInputClassName}
+                            className={cn(authFormInputClassName, fieldErrors.email && authFormInputInvalidClassName)}
 
                             onChange={(event) => {
 
@@ -330,7 +333,7 @@ export function AccessRequestForm() {
 
                             }}
 
-                            aria-invalid={!!fieldErrors.email}
+                            aria-invalid={fieldErrors.email ? true : undefined}
 
                         />
 
@@ -344,7 +347,12 @@ export function AccessRequestForm() {
 
                         <FieldLabel htmlFor="access-request-password">Password</FieldLabel>
 
-                        <InputGroup className={authFormInputGroupClassName}>
+                        <InputGroup
+                            className={cn(
+                                authFormInputGroupClassName,
+                                fieldErrors.password && authFormInputInvalidClassName,
+                            )}
+                        >
 
                             <InputGroupInput
 
@@ -362,7 +370,7 @@ export function AccessRequestForm() {
 
                                 disabled={isPending}
 
-                                    className="h-10 px-3.5 text-sm placeholder:text-muted-foreground/90"
+                                className={authFormInputGroupInputClassName}
 
                                 onChange={(event) => {
 
@@ -372,7 +380,7 @@ export function AccessRequestForm() {
 
                                 }}
 
-                                aria-invalid={!!fieldErrors.password}
+                                aria-invalid={fieldErrors.password ? true : undefined}
 
                             />
 
@@ -384,7 +392,7 @@ export function AccessRequestForm() {
 
                                     size="icon-sm"
 
-                                    className="size-9 text-muted-foreground hover:text-foreground"
+                                    className={authFormInputGroupButtonClassName}
 
                                     aria-label={isPasswordVisible ? "Hide password" : "Show password"}
 

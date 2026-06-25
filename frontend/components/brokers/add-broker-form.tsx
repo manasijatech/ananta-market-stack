@@ -3,16 +3,27 @@
 import { BookOpen } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { createBrokerAccount } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { BrokerLogo, brokerNames } from "@/components/brokers/ui";
 import { brokerGuides } from "@/service/broker-guides";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import type { BrokerCode, CreateBrokerAccountPayload, FieldErrors } from "@/service/types/broker";
 
@@ -104,7 +115,7 @@ function makePayload(
     }
 }
 
-function Field({
+function BrokerField({
     name,
     label,
     error,
@@ -125,14 +136,14 @@ function Field({
     const autocomplete = name.includes("totp") ? "one-time-code" : type === "password" ? "new-password" : "off";
 
     return (
-        <div className="grid gap-2">
-            <Label htmlFor={inputName}>
+        <Field data-invalid={Boolean(error)}>
+            <FieldLabel htmlFor={inputName}>
                 {label}
-                {optional ? <span className="font-normal text-muted-foreground">(optional)</span> : null}
-            </Label>
+                {optional ? <span className="font-normal text-muted-foreground"> (optional)</span> : null}
+            </FieldLabel>
             <Input
-                autoComplete={autocomplete}
                 aria-invalid={Boolean(error)}
+                autoComplete={autocomplete}
                 data-1p-ignore="true"
                 data-form-type="other"
                 data-lpignore="true"
@@ -142,9 +153,9 @@ function Field({
                 required={!optional}
                 type={type}
             />
-            {description ? <span className="text-xs text-muted-foreground">{description}</span> : null}
-            {error ? <span className="text-xs font-semibold text-destructive">{error}</span> : null}
-        </div>
+            {description ? <FieldDescription>{description}</FieldDescription> : null}
+            {error ? <FieldError>{error}</FieldError> : null}
+        </Field>
     );
 }
 
@@ -152,43 +163,79 @@ function BrokerGuidePanel({ broker }: { broker: BrokerCode }) {
     const guide = brokerGuides[broker];
 
     return (
-        <div className=" border bg-muted/40 p-4">
-            <div className="flex flex-col gap-3 min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between">
-                <div>
-                    <p className="text-sm font-medium text-muted-foreground">{guide.summary}</p>
-                    <div className="mt-4 grid gap-3 min-[720px]:grid-cols-2">
-                        <div>
-                            <h3 className="text-xs font-extrabold uppercase text-muted-foreground">Required here</h3>
-                            <ul className="mt-2 grid gap-1.5 text-sm">
-                                {guide.required.map((item) => (
-                                    <li className="flex gap-2" key={item}>
-                                        <span className="mt-2 size-1.5 shrink-0 bg-primary" />
-                                        <span>{item}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                        <div>
-                            <h3 className="text-xs font-extrabold uppercase text-muted-foreground">Setup notes</h3>
-                            <ul className="mt-2 grid gap-1.5 text-sm">
-                                {guide.notes.map((item) => (
-                                    <li className="flex gap-2" key={item}>
-                                        <span className="mt-2 size-1.5 shrink-0 bg-primary" />
-                                        <span>{item}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
+        <Card className="bg-muted/30 shadow-none">
+            <CardPanel className="flex flex-col gap-4 p-4">
+                <p className="text-sm text-muted-foreground">{guide.summary}</p>
+                <div className="grid gap-4 min-[720px]:grid-cols-2">
+                    <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Required here
+                        </h3>
+                        <ul className="mt-2 flex flex-col gap-1.5 text-sm">
+                            {guide.required.map((item) => (
+                                <li className="flex gap-2" key={item}>
+                                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
+                                    <span>{item}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Setup notes
+                        </h3>
+                        <ul className="mt-2 flex flex-col gap-1.5 text-sm">
+                            {guide.notes.map((item) => (
+                                <li className="flex gap-2" key={item}>
+                                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
+                                    <span>{item}</span>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
                 </div>
-                <Button asChild size="sm" variant="outline">
-                    <Link href={`/docs/${broker}`} target="_blank" rel="noreferrer">
-                        Docs
-                        <BookOpen className="size-3.5" />
-                    </Link>
-                </Button>
-            </div>
-        </div>
+            </CardPanel>
+        </Card>
+    );
+}
+
+function BrokerSelector({
+    broker,
+    onSelect,
+    supportedBrokers
+}: {
+    broker: BrokerCode;
+    onSelect: (code: BrokerCode) => void;
+    supportedBrokers: BrokerCode[];
+}) {
+    return (
+        <nav aria-label="Choose broker" className="flex flex-col gap-2" data-onboarding="broker-selector">
+            {supportedBrokers.map((code) => {
+                const isSelected = broker === code;
+
+                return (
+                    <Card
+                        className={cn(
+                            "w-full shadow-none transition-colors",
+                            isSelected && "border-primary ring-1 ring-primary/25"
+                        )}
+                        key={code}
+                        render={
+                            <button
+                                aria-pressed={isSelected}
+                                onClick={() => onSelect(code)}
+                                type="button"
+                            />
+                        }
+                    >
+                        <CardPanel className="flex items-center gap-3 p-3">
+                            <BrokerLogo broker={code} className="size-10" imageClassName="size-8" />
+                            <span className="font-semibold">{brokerNames[code]}</span>
+                        </CardPanel>
+                    </Card>
+                );
+            })}
+        </nav>
     );
 }
 
@@ -227,158 +274,44 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
     }
 
     return (
-        <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-            <aside className="grid gap-3 self-start" data-onboarding="broker-selector">
-                {supportedBrokers.map((code) => (
-                    <Button
-                        className={cn(
-                            "h-auto justify-start border bg-card p-4 text-left transition hover:border-primary/40",
-                            broker === code && "border-primary bg-[var(--accent-glow)] text-primary"
-                        )}
-                        key={code}
-                        onClick={() => setBroker(code)}
-                        variant="ghost"
-                        type="button"
-                    >
-                        <div className="flex items-center gap-3">
-                            <BrokerLogo broker={code} className="h-12 w-16" />
-                            <div>
-                                <span className="block text-lg font-bold">{brokerNames[code]}</span>
-                            </div>
-                        </div>
-                    </Button>
-                ))}
-            </aside>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)] lg:items-start">
+            <BrokerSelector broker={broker} onSelect={setBroker} supportedBrokers={supportedBrokers} />
 
-            <Card>
-                <CardHeader>
-                    <p className="text-sm font-bold uppercase text-primary">Add {selectedName}</p>
-                    <CardTitle className="text-2xl">Broker credentials</CardTitle>
-                    <CardDescription>
-                        Secrets are encrypted by the FastAPI backend before storage. Use the built-in docs for broker
-                        setup.
-                    </CardDescription>
-                </CardHeader>
+            <CardFrame className="min-w-0">
+                <CardFrameHeader>
+                    <CardFrameTitle className="text-lg font-semibold">Broker credentials</CardFrameTitle>
+                    <CardFrameDescription className="leading-6">
+                        Add {selectedName}. Secrets are encrypted by the FastAPI backend before storage.
+                    </CardFrameDescription>
+                    <CardFrameAction>
+                        <Badge
+                            render={
+                                <Link href={`/docs/${broker}`} rel="noreferrer" target="_blank" />
+                            }
+                            variant="outline"
+                        >
+                            <BookOpen data-icon="inline-start" />
+                            Docs
+                        </Badge>
+                    </CardFrameAction>
+                </CardFrameHeader>
+                <Card>
+                    <CardPanel>
+                        <Form
+                            autoComplete="off"
+                            className="flex flex-col gap-4"
+                            data-form-type="other"
+                            onSubmit={onSubmit}
+                        >
+                            <BrokerGuidePanel broker={broker} />
 
-                <CardContent>
-                    <form autoComplete="off" className="grid gap-4" data-form-type="other" onSubmit={onSubmit}>
-                        <BrokerGuidePanel broker={broker} />
-                        <Field error={fieldErrors.label} label="Account label" name="label" />
+                            <FieldGroup>
+                                <BrokerField error={fieldErrors.label} label="Account label" name="label" />
 
-                        {broker === "zerodha" ? (
-                            <>
-                                <Field error={fieldErrors.api_key} label="API key" name="api_key" />
-                                <Field
-                                    error={fieldErrors.api_secret}
-                                    label="API secret"
-                                    name="api_secret"
-                                    type="password"
-                                />
-                            </>
-                        ) : null}
-
-                        {broker === "upstox" ? (
-                            <>
-                                <Field error={fieldErrors.api_key} label="API key" name="api_key" />
-                                <Field
-                                    error={fieldErrors.api_secret}
-                                    label="API secret"
-                                    name="api_secret"
-                                    type="password"
-                                />
-                                <Field
-                                    key={defaultBrokerRedirectUrl}
-                                    error={fieldErrors.redirect_uri}
-                                    label="Redirect URI"
-                                    name="redirect_uri"
-                                    defaultValue={defaultBrokerRedirectUrl}
-                                    description="Use the same URL in the Upstox developer app. The backend must exchange the code with this exact value."
-                                />
-                            </>
-                        ) : null}
-
-                        {broker === "angel" ? (
-                            <>
-                                <Field error={fieldErrors.api_key} label="API key" name="api_key" />
-                                <Field error={fieldErrors.client_code} label="Client code" name="client_code" />
-                                <Field error={fieldErrors.pin} label="PIN" name="pin" type="password" />
-                                <Field
-                                    error={fieldErrors.totp_secret}
-                                    label="TOTP secret"
-                                    name="totp_secret"
-                                    optional
-                                />
-                            </>
-                        ) : null}
-
-                        {broker === "dhan" ? (
-                            <>
-                                <Field error={fieldErrors.app_id} label="API key" name="app_id" />
-                                <Field
-                                    error={fieldErrors.app_secret}
-                                    label="API secret"
-                                    name="app_secret"
-                                    type="password"
-                                />
-                                <Field error={fieldErrors.client_id} label="Client ID" name="client_id" />
-                                <Field error={fieldErrors.pin} label="PIN" name="pin" optional type="password" />
-                                <Field
-                                    error={fieldErrors.totp_secret}
-                                    label="TOTP secret"
-                                    name="totp_secret"
-                                    optional
-                                />
-                            </>
-                        ) : null}
-
-                        {broker === "kotak" ? (
-                            <>
-                                <Field error={fieldErrors.ucc} label="UCC" name="ucc" />
-                                <Field
-                                    error={fieldErrors.portal_access_token}
-                                    label="Portal access token"
-                                    name="portal_access_token"
-                                    type="password"
-                                />
-                                <Field
-                                    error={fieldErrors.mobile_number}
-                                    label="Mobile number"
-                                    name="mobile_number"
-                                    optional
-                                />
-                                <Field error={fieldErrors.mpin} label="MPIN" name="mpin" optional type="password" />
-                                <Field
-                                    error={fieldErrors.totp_secret}
-                                    label="TOTP secret"
-                                    name="totp_secret"
-                                    optional
-                                />
-                            </>
-                        ) : null}
-
-                        {broker === "groww" ? (
-                            <>
-                                <div className="flex flex-wrap gap-2">
-                                    {(["approval", "totp", "token"] as GrowwMode[]).map((mode) => (
-                                        <Button
-                                            size="sm"
-                                            variant={growwMode === mode ? "default" : "outline"}
-                                            key={mode}
-                                            onClick={() => setGrowwMode(mode)}
-                                            type="button"
-                                        >
-                                            {mode === "approval"
-                                                ? "API approval"
-                                                : mode === "totp"
-                                                  ? "TOTP"
-                                                  : "Access token"}
-                                        </Button>
-                                    ))}
-                                </div>
-                                {growwMode === "approval" ? (
+                                {broker === "zerodha" ? (
                                     <>
-                                        <Field error={fieldErrors.api_key} label="API key" name="api_key" />
-                                        <Field
+                                        <BrokerField error={fieldErrors.api_key} label="API key" name="api_key" />
+                                        <BrokerField
                                             error={fieldErrors.api_secret}
                                             label="API secret"
                                             name="api_secret"
@@ -386,54 +319,183 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                         />
                                     </>
                                 ) : null}
-                                {growwMode === "totp" ? (
+
+                                {broker === "upstox" ? (
                                     <>
-                                        <Field
-                                            error={fieldErrors.totp_token}
-                                            label="TOTP API key"
-                                            name="totp_token"
+                                        <BrokerField error={fieldErrors.api_key} label="API key" name="api_key" />
+                                        <BrokerField
+                                            error={fieldErrors.api_secret}
+                                            label="API secret"
+                                            name="api_secret"
                                             type="password"
                                         />
-                                        <Field
-                                            error={fieldErrors.totp_secret}
-                                            label="TOTP secret"
-                                            name="totp_secret"
-                                            type="password"
+                                        <BrokerField
+                                            key={defaultBrokerRedirectUrl}
+                                            defaultValue={defaultBrokerRedirectUrl}
+                                            description="Use the same URL in the Upstox developer app. The backend must exchange the code with this exact value."
+                                            error={fieldErrors.redirect_uri}
+                                            label="Redirect URI"
+                                            name="redirect_uri"
                                         />
                                     </>
                                 ) : null}
-                                {growwMode === "token" ? (
-                                    <Field
+
+                                {broker === "angel" ? (
+                                    <>
+                                        <BrokerField error={fieldErrors.api_key} label="API key" name="api_key" />
+                                        <BrokerField
+                                            error={fieldErrors.client_code}
+                                            label="Client code"
+                                            name="client_code"
+                                        />
+                                        <BrokerField error={fieldErrors.pin} label="PIN" name="pin" type="password" />
+                                        <BrokerField
+                                            error={fieldErrors.totp_secret}
+                                            label="TOTP secret"
+                                            name="totp_secret"
+                                            optional
+                                        />
+                                    </>
+                                ) : null}
+
+                                {broker === "dhan" ? (
+                                    <>
+                                        <BrokerField error={fieldErrors.app_id} label="API key" name="app_id" />
+                                        <BrokerField
+                                            error={fieldErrors.app_secret}
+                                            label="API secret"
+                                            name="app_secret"
+                                            type="password"
+                                        />
+                                        <BrokerField
+                                            error={fieldErrors.client_id}
+                                            label="Client ID"
+                                            name="client_id"
+                                        />
+                                        <BrokerField
+                                            error={fieldErrors.pin}
+                                            label="PIN"
+                                            name="pin"
+                                            optional
+                                            type="password"
+                                        />
+                                        <BrokerField
+                                            error={fieldErrors.totp_secret}
+                                            label="TOTP secret"
+                                            name="totp_secret"
+                                            optional
+                                        />
+                                    </>
+                                ) : null}
+
+                                {broker === "kotak" ? (
+                                    <>
+                                        <BrokerField error={fieldErrors.ucc} label="UCC" name="ucc" />
+                                        <BrokerField
+                                            error={fieldErrors.portal_access_token}
+                                            label="Portal access token"
+                                            name="portal_access_token"
+                                            type="password"
+                                        />
+                                        <BrokerField
+                                            error={fieldErrors.mobile_number}
+                                            label="Mobile number"
+                                            name="mobile_number"
+                                            optional
+                                        />
+                                        <BrokerField
+                                            error={fieldErrors.mpin}
+                                            label="MPIN"
+                                            name="mpin"
+                                            optional
+                                            type="password"
+                                        />
+                                        <BrokerField
+                                            error={fieldErrors.totp_secret}
+                                            label="TOTP secret"
+                                            name="totp_secret"
+                                            optional
+                                        />
+                                    </>
+                                ) : null}
+
+                                {broker === "groww" ? (
+                                    <>
+                                        <ToggleGroup
+                                            onValueChange={(value) => {
+                                                if (value.length === 1) {
+                                                    setGrowwMode(value[0] as GrowwMode);
+                                                }
+                                            }}
+                                            size="sm"
+                                            value={[growwMode]}
+                                            variant="outline"
+                                        >
+                                            <ToggleGroupItem value="approval">API approval</ToggleGroupItem>
+                                            <ToggleGroupItem value="totp">TOTP</ToggleGroupItem>
+                                            <ToggleGroupItem value="token">Access token</ToggleGroupItem>
+                                        </ToggleGroup>
+                                        {growwMode === "approval" ? (
+                                            <>
+                                                <BrokerField error={fieldErrors.api_key} label="API key" name="api_key" />
+                                                <BrokerField
+                                                    error={fieldErrors.api_secret}
+                                                    label="API secret"
+                                                    name="api_secret"
+                                                    type="password"
+                                                />
+                                            </>
+                                        ) : null}
+                                        {growwMode === "totp" ? (
+                                            <>
+                                                <BrokerField
+                                                    error={fieldErrors.totp_token}
+                                                    label="TOTP API key"
+                                                    name="totp_token"
+                                                    type="password"
+                                                />
+                                                <BrokerField
+                                                    error={fieldErrors.totp_secret}
+                                                    label="TOTP secret"
+                                                    name="totp_secret"
+                                                    type="password"
+                                                />
+                                            </>
+                                        ) : null}
+                                        {growwMode === "token" ? (
+                                            <BrokerField
+                                                error={fieldErrors.access_token}
+                                                label="Access token"
+                                                name="access_token"
+                                                type="password"
+                                            />
+                                        ) : null}
+                                    </>
+                                ) : null}
+
+                                {broker === "indmoney" ? (
+                                    <BrokerField
                                         error={fieldErrors.access_token}
                                         label="Access token"
                                         name="access_token"
                                         type="password"
                                     />
                                 ) : null}
-                            </>
-                        ) : null}
+                            </FieldGroup>
 
-                        {broker === "indmoney" ? (
-                            <Field
-                                error={fieldErrors.access_token}
-                                label="Access token"
-                                name="access_token"
-                                type="password"
-                            />
-                        ) : null}
+                            {message ? (
+                                <Alert variant="destructive">
+                                    <AlertDescription>{message}</AlertDescription>
+                                </Alert>
+                            ) : null}
 
-                        {message ? (
-                            <Alert variant="destructive">
-                                <AlertDescription>{message}</AlertDescription>
-                            </Alert>
-                        ) : null}
-
-                        <Button className="mt-2 min-h-11 w-full font-extrabold" disabled={isPending} type="submit">
-                            {isPending ? "Saving..." : `Add ${selectedName}`}
-                        </Button>
-                    </form>
-                </CardContent>
-            </Card>
+                            <Button className="min-h-11 w-full font-semibold" disabled={isPending} type="submit">
+                                {isPending ? "Saving..." : `Add ${selectedName}`}
+                            </Button>
+                        </Form>
+                    </CardPanel>
+                </Card>
+            </CardFrame>
         </div>
     );
 }
