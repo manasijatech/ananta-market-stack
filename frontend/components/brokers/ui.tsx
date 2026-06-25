@@ -8,6 +8,7 @@ import { getRbacMe } from "@/service/actions/rbac";
 import type { RbacPrincipal } from "@/service/types/rbac";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { cn } from "@/lib/utils";
+import { typography } from "@/lib/typography";
 
 export const brokerNames: Record<BrokerCode, string> = {
     angel: "Angel One",
@@ -144,11 +145,9 @@ export function PageHeader({
     return (
         <header className="mb-6 flex min-w-0 flex-col justify-between gap-5 border-b border-border pb-5 min-[760px]:mb-8 min-[860px]:flex-row min-[860px]:items-end min-[860px]:pb-6">
             <div className="min-w-0">
-                <p className="type-page-eyebrow mb-3">{eyebrow}</p>
-                <h1 className="break-words text-[clamp(30px,10vw,58px)] font-semibold leading-none tracking-normal">
-                    {title}
-                </h1>
-                <p className="type-body mt-4 max-w-2xl text-muted-foreground">{description}</p>
+                <p className={cn(typography.eyebrow, "mb-3")}>{eyebrow}</p>
+                <h1 className={cn(typography.h1, "break-words")}>{title}</h1>
+                <p className={cn(typography.lead, "mt-4 max-w-2xl")}>{description}</p>
             </div>
             {action ? <div className="flex w-full flex-col min-[520px]:w-auto">{action}</div> : null}
         </header>

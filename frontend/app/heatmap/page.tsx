@@ -11,6 +11,8 @@ import { HeatmapMeasuredGrid } from "@/components/heatmap/heatmap-measured-grid"
 import { brokerNames, Shell } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { typography } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 import { getBrokerAccounts } from "@/service/actions/broker";
 import { getLiveHeatmap } from "@/service/actions/heatmap";
 import { getWatchlists } from "@/service/actions/watchlist";
@@ -305,10 +307,8 @@ export default async function HeatmapPage({
         <Shell>
             <div className="flex h-[calc(100dvh-7.25rem)] min-h-0 min-w-0 flex-col overflow-hidden min-[980px]:h-[calc(100dvh-10rem)]">
                 <header className={`shrink-0 border-b border-border ${isDenseHeatmap ? "mb-2 pb-2" : "mb-3 pb-3"}`}>
-                    <p className={`type-page-eyebrow ${isDenseHeatmap ? "mb-1 text-[10px]" : "mb-2"}`}>Intelligence</p>
-                    <h1 className="truncate text-[clamp(30px,6vw,48px)] font-semibold leading-none tracking-normal text-foreground">
-                        Heatmap
-                    </h1>
+                    <p className={cn(typography.eyebrow, isDenseHeatmap ? "mb-1" : "mb-2")}>Intelligence</p>
+                    <h1 className={cn(typography.h1, "truncate text-3xl lg:text-4xl")}>Heatmap</h1>
                 </header>
 
                 <section className="mb-2 flex min-w-0 shrink-0 flex-col gap-2 border border-border bg-card/80 p-2 min-[980px]:flex-row min-[980px]:items-end">
