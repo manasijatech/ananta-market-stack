@@ -16,6 +16,7 @@ import {
     TableRow
 } from "@/components/ui/table";
 import type { RoleDefinition } from "@/service/types/rbac";
+import { typography } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
 const workspaceCapabilityLabels: Record<string, string> = {
@@ -65,7 +66,7 @@ export function RolePermissionsPanel({ roles }: { roles: RoleDefinition[] }) {
             <CollapsibleTrigger
                 className={cn(
                     "flex min-h-10 w-full items-center justify-between gap-3 px-1 text-left",
-                    "text-[15px] font-medium text-foreground",
+                    typography.sectionTitle,
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 )}
             >

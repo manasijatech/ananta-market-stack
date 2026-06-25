@@ -232,11 +232,11 @@ export function PageHeader({
 	action?: React.ReactNode;
 }) {
 	return (
-		<header className="mb-6 flex min-w-0 flex-col justify-between gap-5 border-b border-border pb-5 min-[760px]:mb-8 min-[860px]:flex-row min-[860px]:items-end min-[860px]:pb-6">
+		<header className="mb-6 flex min-w-0 flex-col justify-between gap-5 border-b border-border pb-5 min-[860px]:flex-row min-[860px]:items-end">
 			<div className="min-w-0">
-				<p className={cn(typography.eyebrow, "mb-3")}>{eyebrow}</p>
-				<h1 className={cn(typography.h1, "break-words")}>{title}</h1>
-				<p className={cn(typography.lead, "mt-4 max-w-2xl")}>{description}</p>
+				<p className={cn(typography.pageEyebrow, "mb-3")}>{eyebrow}</p>
+				<h1 className={cn(typography.pageTitle, "break-words")}>{title}</h1>
+				<p className={typography.pageLead}>{description}</p>
 			</div>
 			{action ? (
 				<div className="flex w-full flex-col min-[520px]:w-auto">{action}</div>
