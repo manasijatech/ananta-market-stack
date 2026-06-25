@@ -1,6 +1,6 @@
 "use server";
 
-import { getRbacMe } from "@/service/actions/rbac";
+import { getRbacMe, getSignupStatus } from "@/service/actions/rbac";
 
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 400;
@@ -9,6 +9,11 @@ function delay(ms: number): Promise<void> {
     return new Promise((resolve) => {
         setTimeout(resolve, ms);
     });
+}
+
+export async function getUnauthenticatedAuthRoute(): Promise<"/auth/onboarding" | "/auth/sign-in"> {
+    const signupStatus = await getSignupStatus().catch(() => ({ has_admin: false }));
+    return signupStatus.has_admin ? "/auth/sign-in" : "/auth/onboarding";
 }
 
 export async function resolvePostAuthRoute(): Promise<"/dashboard" | "/pending-approval"> {

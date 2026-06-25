@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { FieldDescription } from "@/components/ui/field";
 
 type AuthShellProps = {
 	children: React.ReactNode;
@@ -26,24 +25,6 @@ export function AuthShell({ children }: AuthShellProps) {
 				</Link>
 
 				{children}
-
-				<FieldDescription className="px-6 text-center">
-					By continuing, you agree to our{" "}
-					<Link
-						href="/terms"
-						className="underline underline-offset-4 hover:text-foreground"
-					>
-						Terms of Service
-					</Link>{" "}
-					and{" "}
-					<Link
-						href="/privacy"
-						className="underline underline-offset-4 hover:text-foreground"
-					>
-						Privacy Policy
-					</Link>
-					.
-				</FieldDescription>
 			</div>
 		</main>
 	);
