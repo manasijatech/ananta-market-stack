@@ -1,43 +1,35 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { BrandLogo } from "@/components/brand-logo";
 import { useSession } from "@/components/session-provider";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { resolvePostAuthRoute } from "@/service/actions/auth-routing";
+import { usePostAuthRoute } from "@/hooks/use-post-auth-route";
 
 export default function PendingApprovalPage() {
     const router = useRouter();
     const { signOut } = useSession();
-    const [error, setError] = useState("");
-    const [isChecking, startTransition] = useTransition();
-
-    function checkAccess() {
-        setError("");
-        startTransition(async () => {
-            try {
-                const route = await resolvePostAuthRoute();
-                router.replace(route);
-            } catch (caught) {
-                setError(
-                    caught instanceof Error
-                        ? caught.message
-                        : "Could not verify workspace access. Confirm the backend API is running."
-                );
-            }
-        });
-    }
+    const { data: route, error, isFetching, refetch } = usePostAuthRoute();
 
     useEffect(() => {
-        checkAccess();
-    }, []);
+        if (route === "/dashboard") {
+            router.replace("/dashboard");
+        }
+    }, [route, router]);
 
     async function onSignOut() {
         await signOut();
         router.replace("/auth/sign-in");
     }
+
+    const errorMessage =
+        error instanceof Error
+            ? error.message
+            : error
+              ? "Could not verify workspace access. Confirm the backend API is running."
+              : "";
 
     return (
         <main className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -49,14 +41,14 @@ export default function PendingApprovalPage() {
                     An admin needs to approve your account and assign broker access before you can use this workspace.
                     Existing broker accounts stay connected; you do not need to add credentials again.
                 </p>
-                {error ? (
+                {errorMessage ? (
                     <Alert className="mt-6" variant="destructive">
-                        <AlertDescription>{error}</AlertDescription>
+                        <AlertDescription>{errorMessage}</AlertDescription>
                     </Alert>
                 ) : null}
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                    <Button disabled={isChecking} onClick={checkAccess} type="button">
-                        {isChecking ? "Checking..." : "Check again"}
+                    <Button disabled={isFetching} onClick={() => void refetch()} type="button">
+                        {isFetching ? "Checking..." : "Check again"}
                     </Button>
                     <Button onClick={onSignOut} type="button" variant="secondary">
                         Sign out

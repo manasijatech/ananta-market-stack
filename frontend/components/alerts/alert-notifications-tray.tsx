@@ -2,21 +2,14 @@
 
 import Link from "next/link";
 import { Bell } from "lucide-react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-    getAlertNotifications,
-    getAlertUnreadCount,
-    markAlertNotificationRead,
-    readAllAlertNotifications
-} from "@/service/actions/alerts";
+    useAlertNotificationTray,
+    useMarkAlertNotificationRead,
+    useReadAllAlertNotifications
+} from "@/hooks/use-alert-notifications";
 import { Button } from "@/components/ui/button";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
-import { subscribeToAlertNotificationStream } from "@/lib/alert-notification-stream";
-import type { AlertNotification } from "@/service/types/alerts";
-
-function sseSupported() {
-    return typeof window !== "undefined" && "EventSource" in window;
-}
 
 function llmOutput(payload: Record<string, unknown>) {
     const analysis = payload.llm_analysis;
@@ -26,60 +19,15 @@ function llmOutput(payload: Record<string, unknown>) {
 }
 
 export function AlertNotificationsTray() {
-    const [items, setItems] = useState<AlertNotification[]>([]);
-    const [unreadCount, setUnreadCount] = useState(0);
+    const { data } = useAlertNotificationTray();
+    const markRead = useMarkAlertNotificationRead();
+    const markAllRead = useReadAllAlertNotifications();
     const [open, setOpen] = useState(false);
     const trayRef = useRef<HTMLDivElement | null>(null);
-    const [isPending, startTransition] = useTransition();
 
-    useEffect(() => {
-        let cancelled = false;
-        let fallbackTimer: number | undefined;
-
-        async function load() {
-            const [count, notifications] = await Promise.all([
-                getAlertUnreadCount(),
-                getAlertNotifications({ unread_only: true, limit: 8 })
-            ]);
-            if (cancelled) return;
-            setUnreadCount(count.unread_count);
-            setItems(notifications);
-        }
-
-        startTransition(async () => {
-            await load();
-        });
-
-        function startPolling() {
-            fallbackTimer = window.setInterval(() => {
-                startTransition(async () => {
-                    await load();
-                });
-            }, 15000);
-        }
-
-        let unsubscribe: () => void = () => {};
-        if (sseSupported()) {
-            unsubscribe = subscribeToAlertNotificationStream((payloadText) => {
-                try {
-                    const payload = JSON.parse(payloadText) as AlertNotification;
-                    if (cancelled) return;
-                    setItems((current) => [payload, ...current.filter((item) => item.id !== payload.id)].slice(0, 8));
-                    setUnreadCount((current) => current + (payload.is_read ? 0 : 1));
-                } catch {
-                    return;
-                }
-            });
-        } else {
-            startPolling();
-        }
-
-        return () => {
-            cancelled = true;
-            unsubscribe();
-            if (fallbackTimer) window.clearInterval(fallbackTimer);
-        };
-    }, []);
+    const items = data?.items ?? [];
+    const unreadCount = data?.unreadCount ?? 0;
+    const isPending = markRead.isPending || markAllRead.isPending;
 
     useEffect(() => {
         if (!open) return;
@@ -102,22 +50,6 @@ export function AlertNotificationsTray() {
         };
     }, [open]);
 
-    function markRead(id: string) {
-        startTransition(async () => {
-            await markAlertNotificationRead(id);
-            setItems((current) => current.filter((item) => item.id !== id));
-            setUnreadCount((current) => Math.max(0, current - 1));
-        });
-    }
-
-    function markAllRead() {
-        startTransition(async () => {
-            await readAllAlertNotifications();
-            setItems([]);
-            setUnreadCount(0);
-        });
-    }
-
     return (
         <div className="relative" ref={trayRef}>
             <Button onClick={() => setOpen((current) => !current)} type="button" variant="outline">
@@ -137,7 +69,7 @@ export function AlertNotificationsTray() {
                         <div className="flex items-center gap-2">
                             <Button
                                 disabled={!items.length || isPending}
-                                onClick={markAllRead}
+                                onClick={() => markAllRead.mutate()}
                                 size="sm"
                                 type="button"
                                 variant="outline"
@@ -162,7 +94,12 @@ export function AlertNotificationsTray() {
                                             </AlertLlmMarkdown>
                                         ) : null}
                                     </div>
-                                    <Button onClick={() => markRead(item.id)} size="sm" type="button" variant="ghost">
+                                    <Button
+                                        onClick={() => markRead.mutate(item.id)}
+                                        size="sm"
+                                        type="button"
+                                        variant="ghost"
+                                    >
                                         Read
                                     </Button>
                                 </div>
