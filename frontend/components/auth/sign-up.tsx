@@ -10,7 +10,7 @@ import { Eye, EyeOff } from "lucide-react"
 import { type SyntheticEvent, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Field,
   FieldDescription,
@@ -171,10 +171,11 @@ export function SignUp({
 
   return (
     <Card className={cn("w-full max-w-sm", className)}>
-      <CardHeader>
-        <CardTitle className="text-xl font-semibold">
-          {localization.auth.signUp}
-        </CardTitle>
+      <CardHeader className="text-center">
+        <CardTitle className="text-xl">Create your account</CardTitle>
+        <CardDescription>
+          Set up your email login before connecting broker APIs
+        </CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -445,11 +446,23 @@ export function SignUp({
                 )}
 
                 <div className="flex flex-col gap-3">
-                  <Button type="submit" disabled={isPending}>
+                  <Button type="submit" disabled={isPending} className="w-full">
                     {signUpEmailPending && <Spinner />}
 
                     {localization.auth.signUp}
                   </Button>
+
+                  {emailAndPassword?.enabled ? (
+                    <FieldDescription className="text-center">
+                      {localization.auth.alreadyHaveAnAccount}{" "}
+                      <Link
+                        href={`${basePaths.auth}/${viewPaths.auth.signIn}`}
+                        className="underline underline-offset-4"
+                      >
+                        {localization.auth.signIn}
+                      </Link>
+                    </FieldDescription>
+                  ) : null}
 
                   {plugins.flatMap((plugin) =>
                     (plugin.authButtons ?? []).map((AuthButton, index) => (
@@ -478,20 +491,6 @@ export function SignUp({
             </>
           )}
         </div>
-
-        {emailAndPassword?.enabled && (
-          <div className="flex flex-col gap-3 items-center w-full mt-4">
-            <FieldDescription className="text-center">
-              {localization.auth.alreadyHaveAnAccount}{" "}
-              <Link
-                href={`${basePaths.auth}/${viewPaths.auth.signIn}`}
-                className="underline underline-offset-4"
-              >
-                {localization.auth.signIn}
-              </Link>
-            </FieldDescription>
-          </div>
-        )}
       </CardContent>
     </Card>
   )
