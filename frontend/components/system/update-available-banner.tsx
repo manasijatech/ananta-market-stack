@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { getDeploymentUpdateStatus } from "@/service/actions/deployment";
+import { useDeploymentUpdateStatus } from "@/hooks/use-deployment-update";
 import type { DeploymentUpdateStatus } from "@/service/types/deployment";
 
 const DISMISS_STORAGE_PREFIX = "deployment-update-banner-dismissed:";
@@ -21,22 +21,14 @@ function isDismissed(status: DeploymentUpdateStatus): boolean {
 }
 
 export function UpdateAvailableBanner() {
-    const [status, setStatus] = useState<DeploymentUpdateStatus | null>(null);
+    const { data: status, isPending } = useDeploymentUpdateStatus();
     const [dismissed, setDismissed] = useState(false);
-    const [isPending, startTransition] = useTransition();
 
     useEffect(() => {
-        startTransition(async () => {
-            try {
-                const nextStatus = await getDeploymentUpdateStatus();
-                setStatus(nextStatus);
-                setDismissed(nextStatus ? isDismissed(nextStatus) : false);
-            } catch {
-                setStatus(null);
-                setDismissed(false);
-            }
-        });
-    }, []);
+        if (status) {
+            setDismissed(isDismissed(status));
+        }
+    }, [status]);
 
     function dismiss() {
         if (!status) {
