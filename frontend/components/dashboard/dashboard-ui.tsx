@@ -2,13 +2,15 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { TablerIcon } from "@tabler/icons-react";
 import { IconArrowRight, IconCircleCheck } from "@tabler/icons-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import {
     Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -34,6 +36,13 @@ export function dashboardToneClasses(tone: DashboardTone) {
     return "border-border bg-secondary text-muted-foreground";
 }
 
+function dashboardToneBadgeVariant(tone: DashboardTone): NonNullable<BadgeProps["variant"]> {
+    if (tone === "good") return "success";
+    if (tone === "danger") return "error";
+    if (tone === "warn") return "warning";
+    return "secondary";
+}
+
 export function EmptyStateLine({ children }: { children: ReactNode }) {
     return <p className={typography.muted}>{children}</p>;
 }
@@ -50,11 +59,13 @@ export function MetricPanel({
     className?: string;
 }) {
     return (
-        <div className={cn("rounded-lg border border-border/80 bg-background/40 p-4", className)}>
-            <p className={typography.muted}>{label}</p>
-            <p className={cn(typography.h3, "mt-2")}>{value}</p>
-            {hint ? <p className={cn(typography.muted, "mt-1 leading-5")}>{hint}</p> : null}
-        </div>
+        <Card className={cn("border-border/80 bg-background/40 shadow-none", className)}>
+            <CardPanel className="p-4">
+                <p className={typography.muted}>{label}</p>
+                <p className={cn(typography.h3, "mt-2")}>{value}</p>
+                {hint ? <p className={cn(typography.muted, "mt-1 leading-5")}>{hint}</p> : null}
+            </CardPanel>
+        </Card>
     );
 }
 
@@ -135,41 +146,43 @@ export function DashboardModuleCard({
     children: ReactNode;
 }) {
     return (
-        <Card className="group/card h-full shadow-sm ring-border/50 [--card-spacing:--spacing(6)]">
-            <CardHeader className="gap-3 pb-0">
-                <Link
-                    className="flex items-start justify-between gap-4 rounded-lg outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50"
-                    href={href}
-                >
-                    <div className="min-w-0 flex-1 py-1">
-                        <CardTitle className={cn(typography.h4, "flex items-center gap-2")}>
-                            <span className="truncate">{title}</span>
-                            <IconArrowRight
-                                className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/card:opacity-100"
-                                stroke={1.8}
-                            />
-                        </CardTitle>
-                        <CardDescription className="mt-1.5 leading-7">{description}</CardDescription>
-                    </div>
+        <CardFrame className="group/card h-full">
+            <CardFrameHeader>
+                <CardFrameTitle className={typography.h4}>
+                    <Link
+                        className="inline-flex items-center gap-2 outline-none transition-colors hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50"
+                        href={href}
+                    >
+                        <span className="truncate">{title}</span>
+                        <IconArrowRight
+                            className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/card:opacity-100"
+                            stroke={1.8}
+                        />
+                    </Link>
+                </CardFrameTitle>
+                <CardFrameDescription className="leading-7">{description}</CardFrameDescription>
+                <CardFrameAction>
                     <span
                         className={cn(
-                            "flex size-10 shrink-0 items-center justify-center rounded-lg border",
+                            "flex size-10 items-center justify-center rounded-lg border",
                             dashboardToneClasses(tone)
                         )}
                     >
                         <Icon stroke={1.8} />
                     </span>
-                </Link>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4 pt-4">
-                {children}
-                {error ? (
-                    <p className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">
-                        {error}
-                    </p>
-                ) : null}
-            </CardContent>
-        </Card>
+                </CardFrameAction>
+            </CardFrameHeader>
+            <Card>
+                <CardPanel className="flex flex-col gap-4">
+                    {children}
+                    {error ? (
+                        <p className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">
+                            {error}
+                        </p>
+                    ) : null}
+                </CardPanel>
+            </Card>
+        </CardFrame>
     );
 }
 
@@ -185,60 +198,64 @@ export function SetupChecklist({
     const progress = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
 
     return (
-        <Card className="shadow-sm ring-border/50 [--card-spacing:--spacing(6)]">
-            <CardHeader className="gap-4">
-                <div>
-                    <CardTitle className={typography.h4}>Complete setup ({completedCount}/{totalCount})</CardTitle>
-                    <CardDescription className="mt-1.5 leading-7">
-                        Finish these steps to unlock broker data, market intelligence, alerts, and LLM workflows.
-                    </CardDescription>
-                </div>
-                <ProgressTrack
-                    detail={`${completedCount} of ${totalCount} done`}
-                    label="Workspace readiness"
-                    value={progress}
-                />
-            </CardHeader>
-            <CardContent className="flex flex-col gap-1 pt-0">
-                {items.map((item, index) => (
-                    <div key={item.id}>
-                        <Link
-                            className="group/setup-item flex items-center gap-4 rounded-lg px-2 py-3 transition-colors hover:bg-muted/30"
-                            href={item.href}
-                        >
-                            <span
-                                className={cn(
-                                    "flex size-10 shrink-0 items-center justify-center rounded-lg border",
-                                    item.complete ? dashboardToneClasses("good") : dashboardToneClasses("muted")
-                                )}
-                            >
-                                {item.complete ? <IconCircleCheck stroke={1.8} /> : <item.icon stroke={1.8} />}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                                <p className={typography.small}>{item.label}</p>
-                                <p className={cn(typography.muted, "mt-0.5")}>{item.description}</p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                                <Badge
-                                    className={cn(
-                                        "rounded-full border",
-                                        item.complete ? dashboardToneClasses("good") : dashboardToneClasses("muted")
-                                    )}
-                                    variant="outline"
+        <CardFrame>
+            <CardFrameHeader>
+                <CardFrameTitle className={typography.h4}>
+                    Complete setup ({completedCount}/{totalCount})
+                </CardFrameTitle>
+                <CardFrameDescription className="leading-7">
+                    Finish these steps to unlock broker data, market intelligence, alerts, and LLM workflows.
+                </CardFrameDescription>
+            </CardFrameHeader>
+            <Card>
+                <CardPanel className="flex flex-col gap-4">
+                    <ProgressTrack
+                        detail={`${completedCount} of ${totalCount} done`}
+                        label="Workspace readiness"
+                        value={progress}
+                    />
+                    <div className="flex flex-col gap-1">
+                        {items.map((item, index) => (
+                            <div key={item.id}>
+                                <Link
+                                    className="group/setup-item flex items-center gap-4 rounded-lg px-2 py-3 transition-colors hover:bg-muted/30"
+                                    href={item.href}
                                 >
-                                    {item.complete ? "Done" : "Pending"}
-                                </Badge>
-                                <IconArrowRight
-                                    className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover/setup-item:opacity-100"
-                                    stroke={1.8}
-                                />
+                                    <span
+                                        className={cn(
+                                            "flex size-10 shrink-0 items-center justify-center rounded-lg border",
+                                            item.complete
+                                                ? dashboardToneClasses("good")
+                                                : dashboardToneClasses("muted")
+                                        )}
+                                    >
+                                        {item.complete ? (
+                                            <IconCircleCheck stroke={1.8} />
+                                        ) : (
+                                            <item.icon stroke={1.8} />
+                                        )}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className={typography.small}>{item.label}</p>
+                                        <p className={cn(typography.muted, "mt-0.5")}>{item.description}</p>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-2">
+                                        <Badge variant={item.complete ? "success" : "secondary"}>
+                                            {item.complete ? "Done" : "Pending"}
+                                        </Badge>
+                                        <IconArrowRight
+                                            className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover/setup-item:opacity-100"
+                                            stroke={1.8}
+                                        />
+                                    </div>
+                                </Link>
+                                {index < items.length - 1 ? <Separator /> : null}
                             </div>
-                        </Link>
-                        {index < items.length - 1 ? <Separator /> : null}
+                        ))}
                     </div>
-                ))}
-            </CardContent>
-        </Card>
+                </CardPanel>
+            </Card>
+        </CardFrame>
     );
 }
 
@@ -255,9 +272,7 @@ export function IntegrationRow({
         <>
             <div className="flex items-center justify-between gap-3 py-2.5 text-sm">
                 <span className="text-muted-foreground">{label}</span>
-                <Badge className={cn("rounded-full border", dashboardToneClasses(tone))} variant="outline">
-                    {value}
-                </Badge>
+                <Badge variant={dashboardToneBadgeVariant(tone)}>{value}</Badge>
             </div>
             <Separator />
         </>

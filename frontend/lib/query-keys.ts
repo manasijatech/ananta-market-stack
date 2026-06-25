@@ -1,3 +1,8 @@
+/**
+ * Hierarchical React Query keys for the frontend.
+ *
+ * Prefer factory functions over inline arrays so invalidation stays consistent.
+ */
 export const queryKeys = {
     github: {
         all: ["github"] as const,

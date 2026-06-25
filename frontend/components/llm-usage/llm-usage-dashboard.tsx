@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { IconActivity, IconAlertTriangle, IconBrain, IconClock, IconCoins, IconRefresh } from "@tabler/icons-react";
-import { PageHeader, Shell, StatusBadge } from "@/components/brokers/ui";
+import { PageHeader, StatusBadge } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

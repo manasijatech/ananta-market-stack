@@ -16,6 +16,12 @@ type SessionContextValue = {
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
+/**
+ * Bridges Better Auth UI session state with app-level sign-in helpers.
+ *
+ * Prefer Better Auth UI hooks (`useSignInEmail`, etc.) in auth forms.
+ * Use {@link useSession} elsewhere for the current user and sign-out.
+ */
 export function SessionProvider({ children }: { children: React.ReactNode }) {
     const queryClient = useQueryClient();
     const session = useAuthSession(authClient);
@@ -75,6 +81,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/** Returns the current user and auth actions from {@link SessionProvider}. */
 export function useSession() {
     const context = useContext(SessionContext);
     if (!context) {

@@ -20,6 +20,7 @@ function isDismissed(status: DeploymentUpdateStatus): boolean {
     return window.sessionStorage.getItem(dismissKey(status)) === "1";
 }
 
+/** Self-hosted deployment update notice, dismissible per image digest. */
 export function UpdateAvailableBanner() {
     const { data: status, isPending } = useDeploymentUpdateStatus();
     const [dismissed, setDismissed] = useState(false);

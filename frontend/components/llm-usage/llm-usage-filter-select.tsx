@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { SelectContent, SelectItem, SelectRoot, SelectTrigger } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { LLM_USAGE_ALL_FILTER_VALUE, type LlmUsageFilterOption } from "@/lib/llm-usage-filters";
 
 type LlmUsageFilterSelectProps = {
@@ -41,7 +41,7 @@ export function LlmUsageFilterSelect({
             <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                 {label}
             </span>
-            <SelectRoot name={name} onValueChange={setSelectedValue} value={selectedValue}>
+            <Select name={name} onValueChange={(value) => setSelectedValue(value ?? "")} value={selectedValue}>
                 <SelectTrigger>
                     <span className="min-w-0 truncate">{selectedLabel}</span>
                 </SelectTrigger>
@@ -61,7 +61,7 @@ export function LlmUsageFilterSelect({
                         </SelectItem>
                     ))}
                 </SelectContent>
-            </SelectRoot>
+            </Select>
         </label>
     );
 }

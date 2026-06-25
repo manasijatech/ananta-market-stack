@@ -4,7 +4,7 @@ import { authMutationKeys } from "@better-auth-ui/core";
 import { useAuth, useFetchOptions, useSignInEmail } from "@better-auth-ui/react";
 import { useIsMutating } from "@tanstack/react-query";
 import { type SyntheticEvent, useState } from "react";
-import { authFormInputClassName, authFormPrimaryButtonClassName } from "@/components/auth/auth-form-styles";
+import { authFormInputClassName, authFormInputInvalidClassName, authFormPrimaryButtonClassName } from "@/components/auth/auth-form-styles";
 import { ProviderButtons, type SocialLayout } from "@/components/auth/provider-buttons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,6 +12,7 @@ import { Field, FieldError, FieldGroup, FieldLabel, FieldSeparator } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 export type SignInFormProps = {
     socialLayout?: SocialLayout;
@@ -100,7 +101,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                                 placeholder={localization.auth.emailPlaceholder}
                                 required
                                 disabled={isPending}
-                                className={authFormInputClassName}
+                                className={cn(authFormInputClassName, fieldErrors.email && authFormInputInvalidClassName)}
                                 onChange={() => setFieldErrors((prev) => ({ ...prev, email: undefined }))}
                                 onInvalid={(event) => {
                                     event.preventDefault();
@@ -112,7 +113,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                                             : localization.auth.invalidEmail
                                     }));
                                 }}
-                                aria-invalid={!!fieldErrors.email}
+                                aria-invalid={fieldErrors.email ? true : undefined}
                             />
                             <FieldError>{fieldErrors.email}</FieldError>
                         </Field>
@@ -144,7 +145,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                                 minLength={emailAndPassword.minPasswordLength}
                                 maxLength={emailAndPassword.maxPasswordLength}
                                 disabled={isPending}
-                                className={authFormInputClassName}
+                                className={cn(authFormInputClassName, fieldErrors.password && authFormInputInvalidClassName)}
                                 onInvalid={(event) => {
                                     event.preventDefault();
                                     const element = event.target as HTMLInputElement;
@@ -159,7 +160,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                                               : localization.auth.tooLong.replace("{{max}}", String(max))
                                     }));
                                 }}
-                                aria-invalid={!!fieldErrors.password}
+                                aria-invalid={fieldErrors.password ? true : undefined}
                             />
                             <FieldError>{fieldErrors.password}</FieldError>
                         </Field>

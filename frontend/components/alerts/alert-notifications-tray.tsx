@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell } from "lucide-react";
+import { Bell, BellOff, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
     useAlertNotificationTray,
@@ -9,6 +9,13 @@ import {
     useReadAllAlertNotifications
 } from "@/hooks/use-alert-notifications";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+    Card,
+    CardDescription,
+    CardPanel,
+    CardTitle
+} from "@/components/ui/card";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 
 function llmOutput(payload: Record<string, unknown>) {
@@ -18,8 +25,35 @@ function llmOutput(payload: Record<string, unknown>) {
     return typeof output === "string" ? output : "";
 }
 
+function AlertTrayEmptyState() {
+    return (
+        <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
+            <BellOff className="size-4 text-muted-foreground" aria-hidden />
+            <div className="space-y-0.5">
+                <p className="text-sm font-medium text-foreground">You&apos;re all caught up</p>
+                <p className="max-w-[220px] text-xs leading-5 text-muted-foreground">
+                    Unread alerts from your workflows will appear here.
+                </p>
+            </div>
+            <Button render={<Link href="/alerts-workspace" />} size="sm" variant="outline">
+                Set up alerts
+            </Button>
+        </div>
+    );
+}
+
+function AlertTrayLoadingState() {
+    return (
+        <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            <p className="text-xs">Loading alerts…</p>
+        </div>
+    );
+}
+
+/** Header dropdown for unread user alert notifications with SSE-backed updates. */
 export function AlertNotificationsTray() {
-    const { data } = useAlertNotificationTray();
+    const { data, isPending: isLoadingTray, isError, refetch } = useAlertNotificationTray();
     const markRead = useMarkAlertNotificationRead();
     const markAllRead = useReadAllAlertNotifications();
     const [open, setOpen] = useState(false);
@@ -27,7 +61,7 @@ export function AlertNotificationsTray() {
 
     const items = data?.items ?? [];
     const unreadCount = data?.unreadCount ?? 0;
-    const isPending = markRead.isPending || markAllRead.isPending;
+    const isMutationPending = markRead.isPending || markAllRead.isPending;
 
     useEffect(() => {
         if (!open) return;
@@ -52,49 +86,68 @@ export function AlertNotificationsTray() {
 
     return (
         <div className="relative" ref={trayRef}>
-            <Button onClick={() => setOpen((current) => !current)} type="button" variant="outline">
-                <Bell className="size-4" />
+            <Button
+                className="inline-flex items-center gap-2"
+                onClick={() => setOpen((current) => !current)}
+                type="button"
+                variant="outline"
+            >
+                <Bell className="size-4 shrink-0" />
                 Alerts
-                {unreadCount ? (
-                    <span className="type-meta bg-primary px-2 py-0.5 text-primary-foreground">{unreadCount}</span>
+                {unreadCount > 0 ? (
+                    <Badge size="sm" variant="secondary">
+                        {unreadCount}
+                    </Badge>
                 ) : null}
             </Button>
             {open ? (
-                <div className="absolute right-0 top-12 z-30 w-[360px] border border-border bg-background p-4 ">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                        <div>
-                            <div className="type-section-title">User alerts</div>
-                            <div className="type-meta">{unreadCount} unread</div>
+                <Card className="absolute right-0 top-11 z-30 w-80 overflow-hidden rounded-xl shadow-lg">
+                    <div className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5">
+                        <div className="min-w-0">
+                            <CardTitle className="text-sm font-semibold leading-none">Alerts</CardTitle>
+                            <CardDescription className="text-xs">
+                                {unreadCount === 0 ? "No unread alerts" : `${unreadCount} unread`}
+                            </CardDescription>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                disabled={!items.length || isPending}
-                                onClick={() => markAllRead.mutate()}
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                            >
-                                Read all
-                            </Button>
-                            <Button asChild size="sm" type="button">
-                                <Link href="/alerts-workspace">Open</Link>
-                            </Button>
-                        </div>
+                        <Button
+                            className="h-7 shrink-0 px-2 text-xs"
+                            disabled={!items.length || isMutationPending}
+                            onClick={() => markAllRead.mutate()}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                        >
+                            Read all
+                        </Button>
                     </div>
-                    <div className="grid max-h-[360px] gap-3 overflow-y-auto pr-1">
+                    <CardPanel className="max-h-80 divide-y divide-border overflow-y-auto p-0">
+                        {isLoadingTray && !items.length ? <AlertTrayLoadingState /> : null}
+                        {isError ? (
+                            <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
+                                <p className="text-xs text-destructive">Could not load alerts.</p>
+                                <Button onClick={() => void refetch()} size="sm" type="button" variant="outline">
+                                    Retry
+                                </Button>
+                            </div>
+                        ) : null}
                         {items.map((item) => (
-                            <div className=" border border-border p-3" key={item.id}>
-                                <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                        <div className="type-section-title">{item.title}</div>
-                                        <div className="type-help mt-1 text-muted-foreground">{item.message}</div>
+                            <div className="px-3.5 py-2.5 hover:bg-muted/40" key={item.id}>
+                                <div className="flex items-start gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium leading-snug text-foreground">
+                                            {item.title}
+                                        </p>
+                                        <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                            {item.message}
+                                        </p>
                                         {llmOutput(item.payload) ? (
-                                            <AlertLlmMarkdown className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">
+                                            <AlertLlmMarkdown className="mt-1.5 border-l border-primary/40 pl-2 text-xs leading-5 text-muted-foreground">
                                                 {llmOutput(item.payload)}
                                             </AlertLlmMarkdown>
                                         ) : null}
                                     </div>
                                     <Button
+                                        className="h-auto shrink-0 px-1.5 py-0.5 text-xs text-muted-foreground"
                                         onClick={() => markRead.mutate(item.id)}
                                         size="sm"
                                         type="button"
@@ -105,11 +158,9 @@ export function AlertNotificationsTray() {
                                 </div>
                             </div>
                         ))}
-                        {!items.length ? (
-                            <div className="type-body py-6 text-muted-foreground">No unread user alerts.</div>
-                        ) : null}
-                    </div>
-                </div>
+                        {!items.length && !isLoadingTray && !isError ? <AlertTrayEmptyState /> : null}
+                    </CardPanel>
+                </Card>
             ) : null}
         </div>
     );

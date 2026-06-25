@@ -20,6 +20,11 @@ function sseSupported() {
     return typeof window !== "undefined" && "EventSource" in window;
 }
 
+/**
+ * Loads the alert notification tray with live updates.
+ *
+ * Uses SSE when available; falls back to polling every 15 seconds otherwise.
+ */
 export function useAlertNotificationTray() {
     const queryClient = useQueryClient();
     const query = useQuery({
@@ -62,6 +67,7 @@ export function useAlertNotificationTray() {
     return query;
 }
 
+/** Marks a single alert notification as read with optimistic tray cache updates. */
 export function useMarkAlertNotificationRead() {
     const queryClient = useQueryClient();
 
@@ -85,6 +91,7 @@ export function useMarkAlertNotificationRead() {
     });
 }
 
+/** Marks all alert notifications as read and clears the tray cache. */
 export function useReadAllAlertNotifications() {
     const queryClient = useQueryClient();
 

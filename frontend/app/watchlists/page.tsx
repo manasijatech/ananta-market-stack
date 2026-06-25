@@ -1,5 +1,5 @@
 import { WatchlistsManager } from "@/components/watchlists/watchlists-manager";
-import { Shell } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getSystemConfig } from "@/service/actions/broker";
 import { getWatchlists } from "@/service/actions/watchlist";

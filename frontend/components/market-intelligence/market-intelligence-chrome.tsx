@@ -23,7 +23,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from "@/components/ui/select";
 import { getAlphaAlerts } from "@/service/actions/alpha/alerts";
 import { getAlphaAnnouncements } from "@/service/actions/alpha/announcements";
 import { getAlphaConcalls } from "@/service/actions/alpha/concalls";
@@ -272,6 +278,12 @@ export function MarketIntelligenceChrome({
         [selectedWatchlist, streamSymbols]
     );
     const filterLabel = selectedWatchlist ? selectedWatchlist.name : "All watchlists";
+    const selectedWatchlistLabel =
+        selectedWatchlistId === ALL_WATCHLISTS_ID
+            ? `All watchlists (${allSymbolsCount} symbols)`
+            : selectedWatchlist
+              ? `${selectedWatchlist.name} (${selectedWatchlist.symbols.length})`
+              : "Select watchlist";
     const symbolModeActive = Boolean(committedSymbol);
     const visibleSymbols = symbolModeActive ? [committedSymbol] : activeSymbols;
 
@@ -685,26 +697,47 @@ export function MarketIntelligenceChrome({
 
             {watchlistGroups.length ? (
                 <div className="mb-5 flex flex-col gap-2 text-xs text-muted-foreground min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
-                    <label className="flex min-w-0 flex-1 items-center gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
                         <Filter className="size-4 shrink-0 text-primary" />
                         <span className="shrink-0 font-semibold uppercase tracking-[0.16em] text-primary">
                             Watchlist
                         </span>
                         <Select
-                            aria-label="Filter market intelligence by watchlist"
-                            className="h-9 max-w-sm rounded-none text-xs"
                             disabled={isLoadingFilter || symbolModeActive}
-                            onChange={(event) => setSelectedWatchlistId(event.target.value)}
+                            onValueChange={(value) => {
+                                if (value) setSelectedWatchlistId(value);
+                            }}
                             value={selectedWatchlistId}
                         >
-                            <option value={ALL_WATCHLISTS_ID}>All watchlists ({allSymbolsCount} symbols)</option>
-                            {watchlistGroups.map((group) => (
-                                <option key={group.id} value={group.id}>
-                                    {group.name} ({group.symbols.length})
-                                </option>
-                            ))}
+                            <SelectTrigger
+                                aria-label="Filter market intelligence by watchlist"
+                                className="h-9 min-w-[min(100%,14rem)] max-w-sm bg-background text-xs"
+                                size="sm"
+                            >
+                                <SelectValue placeholder="Select watchlist">{selectedWatchlistLabel}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent alignItemWithTrigger={false} className="min-w-[var(--anchor-width)]">
+                                <SelectItem className="group py-2" value={ALL_WATCHLISTS_ID}>
+                                    <span className="flex min-w-0 flex-col gap-0.5">
+                                        <span className="truncate font-medium">All watchlists</span>
+                                        <span className="truncate text-xs text-muted-foreground group-data-[highlighted]:text-accent-foreground/80">
+                                            {allSymbolsCount} symbols
+                                        </span>
+                                    </span>
+                                </SelectItem>
+                                {watchlistGroups.map((group) => (
+                                    <SelectItem className="group py-2" key={group.id} value={group.id}>
+                                        <span className="flex min-w-0 flex-col gap-0.5">
+                                            <span className="truncate font-medium">{group.name}</span>
+                                            <span className="truncate text-xs text-muted-foreground group-data-[highlighted]:text-accent-foreground/80">
+                                                {group.symbols.length} symbol{group.symbols.length === 1 ? "" : "s"}
+                                            </span>
+                                        </span>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
                         </Select>
-                    </label>
+                    </div>
                     <span>
                         {symbolModeActive
                             ? "Single symbol mode active"
