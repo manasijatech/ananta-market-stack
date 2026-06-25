@@ -7,6 +7,7 @@ Create Date: 2026-05-19 13:05:00.000000
 
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 
@@ -18,6 +19,11 @@ depends_on: Union[str, Sequence[str], None] = None
 NAMING_CONVENTION = {
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
 }
+
+
+def _has_table(table_name: str) -> bool:
+    inspector = sa.inspect(op.get_bind())
+    return table_name in inspector.get_table_names()
 
 
 def _replace_account_fk(table_name: str) -> None:
@@ -40,12 +46,17 @@ def _replace_account_fk(table_name: str) -> None:
 
 
 def upgrade() -> None:
+    if not _has_table("broker_accounts"):
+        return
+
     for table_name in (
         "alert_workflows",
         "live_symbol_subscriptions",
         "user_alert_notifications",
         "broker_notifications",
     ):
+        if not _has_table(table_name):
+            continue
         _replace_account_fk(table_name)
 
 
