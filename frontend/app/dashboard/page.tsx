@@ -340,7 +340,7 @@ function SettingsOverviewCard({ data }: { data: DashboardData["systemConfig"] })
         >
             <ApiStat label="LLM keys" value={formatNumber(llmProviders.length)} />
             <ApiStat label="Models" value={formatNumber(enabledModels)} />
-            <ApiStat label="Alpha API" value={alphaReady ? "Ready" : "Off"} />
+            <ApiStat label="Drishti API" value={alphaReady ? "Ready" : "Off"} />
             <ApiStat label="MCP servers" value={formatNumber(mcpServers.length)} />
             <ApiStat label="Default data" value={config?.broker_data_default.effective_default_account_id ? "Set" : "None"} />
             <ApiStat label="Search fallback" value={config?.broker_data_search.fallback_used ? "Yes" : "No"} />

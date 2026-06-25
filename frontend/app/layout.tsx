@@ -7,7 +7,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
     title: "Ananta Market Stack",
-    description: "Secure multi-broker trading workspace"
+    description: "Secure multi-broker trading workspace",
+    icons: {
+        icon: "/logo-mark.svg",
+        shortcut: "/logo-mark.svg",
+        apple: "/logo-mark.svg"
+    }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

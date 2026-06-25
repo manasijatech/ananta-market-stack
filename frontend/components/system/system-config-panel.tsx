@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { CircleHelpIcon } from "lucide-react";
 import {
@@ -39,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { formatIstDateTime } from "@/lib/datetime";
+import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
 
 type ProviderDraftState = {
@@ -706,11 +708,11 @@ export function SystemConfigPanel({
                 {section === "all" ? (
                 <div>
                     <div className="flex items-center gap-2">
-                        <div className="text-sm font-bold">Manasija Alpha API</div>
+                        <div className="text-sm font-bold">Drishti API</div>
                         <Dialog>
                             <DialogTrigger asChild>
                                 <Button
-                                    aria-label="Manasija Alpha API help"
+                                    aria-label="Drishti API help"
                                     className="size-6 border-transparent bg-transparent p-0 text-muted-foreground hover:bg-transparent hover:text-primary"
                                     size="icon"
                                     type="button"
@@ -721,9 +723,9 @@ export function SystemConfigPanel({
                             </DialogTrigger>
                             <DialogContent className="max-w-lg p-0">
                                 <DialogHeader className="border-b border-border px-5 py-4 pr-14">
-                                    <DialogTitle>Manasija Alpha API</DialogTitle>
+                                    <DialogTitle>Drishti API</DialogTitle>
                                     <DialogDescription>
-                                        This key connects Ananta Market Stack to Manasija Alpha market intelligence services.
+                                        This key connects Ananta Market Stack to Drishti market intelligence services.
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
@@ -733,14 +735,26 @@ export function SystemConfigPanel({
                                     </p>
                                     <p>
                                         The key is saved server-side and shown here only as a masked hint. Replace it
-                                        when the key rotates, or clear it to disable Alpha-backed intelligence calls.
+                                        when the key rotates, or clear it to disable Drishti-backed intelligence calls.
+                                    </p>
+                                    <p>
+                                        Don&apos;t have a key yet?{" "}
+                                        <Link
+                                            className="font-medium text-primary underline underline-offset-2"
+                                            href={DRISHTI_API_SIGNUP_URL}
+                                            rel="noopener noreferrer"
+                                            target="_blank"
+                                        >
+                                            Create one at drishti.manasija.in
+                                        </Link>
+                                        .
                                     </p>
                                 </div>
                             </DialogContent>
                         </Dialog>
                     </div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
-                        Store the Alpha API key used for market intelligence, company metadata, announcements, concalls,
+                        Store the Drishti API key used for market intelligence, company metadata, announcements, concalls,
                         and daily summaries.
                     </p>
                 </div>
@@ -748,8 +762,22 @@ export function SystemConfigPanel({
                 <div className="border border-border p-4" data-onboarding="manasija-alpha-api-input-section">
                     {alphaReadOnly ? (
                         <div className="mb-4 border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                            This Manasija Alpha key is shared for the whole workspace. You can use the configured
+                            This Drishti API key is shared for the whole workspace. You can use the configured
                             services, but only an allowed admin can change this setup.
+                        </div>
+                    ) : null}
+                    {!config.alpha_api.has_api_key ? (
+                        <div className="mb-4 border border-primary/30 bg-primary/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                            Don&apos;t have a Drishti API key yet?{" "}
+                            <Link
+                                className="font-medium text-primary underline underline-offset-2"
+                                href={DRISHTI_API_SIGNUP_URL}
+                                rel="noopener noreferrer"
+                                target="_blank"
+                            >
+                                Create one at drishti.manasija.in
+                            </Link>
+                            , then paste it below.
                         </div>
                     ) : null}
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -790,8 +818,8 @@ export function SystemConfigPanel({
                             onChange={(event) => setAlphaApiKey(event.target.value)}
                             placeholder={
                                 config.alpha_api.has_api_key
-                                    ? "Replace saved Manasija Alpha API key"
-                                    : "Add Manasija Alpha API key"
+                                    ? "Replace saved Drishti API key"
+                                    : "Add Drishti API key"
                             }
                             type="password"
                             value={alphaApiKey}
@@ -799,7 +827,7 @@ export function SystemConfigPanel({
                         <Button
                             disabled={alphaReadOnly || isPending || !alphaApiKey.trim()}
                             onClick={saveAlphaApiKey}
-                            title={alphaReadOnly ? "Only a workspace admin can update the shared Alpha key." : undefined}
+                            title={alphaReadOnly ? "Only a workspace admin can update the shared Drishti API key." : undefined}
                             type="button"
                         >
                             Save key
@@ -807,7 +835,7 @@ export function SystemConfigPanel({
                         <Button
                             disabled={alphaReadOnly || isPending || !config.alpha_api.has_api_key}
                             onClick={clearAlphaApiKey}
-                            title={alphaReadOnly ? "Only a workspace admin can clear the shared Alpha key." : undefined}
+                            title={alphaReadOnly ? "Only a workspace admin can clear the shared Drishti API key." : undefined}
                             type="button"
                             variant="ghost"
                         >

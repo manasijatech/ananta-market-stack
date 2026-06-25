@@ -173,7 +173,7 @@ const onboardingSteps: OnboardingStep[] = [
             <div className="grid gap-3 text-left">
                 <p>Use this Settings navigation item after your broker connection is active.</p>
                 <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
-                    The next step will take you to the Alpha API credential section.
+                    The next step will take you to the Drishti API credential section.
                 </p>
             </div>
         ),
@@ -184,12 +184,12 @@ const onboardingSteps: OnboardingStep[] = [
     {
         target: ALPHA_API_TARGET,
         route: "/settings#alpha",
-        title: "Manasija Alpha API",
+        title: "Drishti API",
         content: (
             <div className="grid gap-3 text-left">
-                <p>Add or replace the Manasija Alpha API key here.</p>
+                <p>Add or replace the Drishti API key here.</p>
                 <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
-                    This enables Alpha-backed market intelligence, metadata, announcements, concalls, and summaries.
+                    This enables Drishti-backed market intelligence, metadata, announcements, concalls, and summaries.
                 </p>
             </div>
         ),

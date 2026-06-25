@@ -37,16 +37,8 @@ export function OnboardingShell({ children }: OnboardingShellProps) {
 				<div className="grid w-full items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:gap-16 xl:gap-20">
 					<aside className="hidden flex-col justify-center gap-10 lg:flex">
 						<div className="space-y-4">
-							<Link
-								href="/"
-								className="inline-flex items-center gap-3 font-medium"
-							>
-								<div className="flex size-9 items-center justify-center rounded-lg bg-primary text-base font-bold text-primary-foreground shadow-sm shadow-primary/20">
-									/
-								</div>
-								<div className="space-y-1">
-									<BrandLogo imageClassName="text-2xl" />
-								</div>
+							<Link href="/" className="inline-flex font-medium">
+								<BrandLogo imageClassName="text-xl" />
 							</Link>
 							<div className="space-y-2">
 								<h1 className="text-3xl font-semibold tracking-tight text-foreground">
@@ -94,14 +86,8 @@ export function OnboardingShell({ children }: OnboardingShellProps) {
 
 					<div className="mx-auto flex w-full max-w-[480px] flex-col gap-6 lg:mx-0 lg:max-w-none">
 						<div className="space-y-2 text-center lg:hidden">
-							<Link
-								href="/"
-								className="inline-flex items-center justify-center gap-2 font-medium"
-							>
-								<div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-									/
-								</div>
-								<BrandLogo imageClassName="text-lg" />
+							<Link href="/" className="inline-flex justify-center font-medium">
+								<BrandLogo imageClassName="text-base" />
 							</Link>
 							<p className="text-sm text-muted-foreground">
 								Create your administrator account

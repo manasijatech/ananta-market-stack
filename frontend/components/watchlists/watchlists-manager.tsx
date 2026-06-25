@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
 import { AlertTriangle, Check, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getLivePricesWebSocketConfig, touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
@@ -35,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
+import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 
 function parseSymbols(input: string): string[] {
     return Array.from(
@@ -1089,9 +1091,18 @@ export function WatchlistsManager({
                 <Dialog open={showAlphaConfigPrompt} onOpenChange={setShowAlphaConfigPrompt}>
                     <DialogContent className="w-[calc(100vw-2rem)] max-w-[425px] gap-4 p-6">
                         <DialogHeader className="pr-8">
-                            <DialogTitle>Manasija Alpha API required</DialogTitle>
+                            <DialogTitle>Drishti API key required</DialogTitle>
                             <DialogDescription>
-                                Add a Manasija Alpha API key in Settings before creating watchlists.
+                                Add a Drishti API key in Settings before creating watchlists. Don&apos;t have one yet?{" "}
+                                <Link
+                                    className="font-medium text-primary underline underline-offset-2"
+                                    href={DRISHTI_API_SIGNUP_URL}
+                                    rel="noopener noreferrer"
+                                    target="_blank"
+                                >
+                                    Create one at drishti.manasija.in
+                                </Link>
+                                .
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter>

@@ -1,5 +1,5 @@
 import { AuthSignUpView } from "@/components/auth/auth-views";
-import { AuthShell } from "@/components/auth-shell";
+import { AuthSplitLayout } from "@/components/auth/auth-split-layout";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
@@ -20,12 +20,9 @@ export default async function SignUpPage() {
         redirect("/auth/onboarding");
     }
 
-    const signUpNotice =
-        "An admin account already exists for this installation. New signups stay pending until an admin approves access.";
-
     return (
-        <AuthShell>
-            <AuthSignUpView signUpNotice={signUpNotice} />
-        </AuthShell>
+        <AuthSplitLayout panel="approval">
+            <AuthSignUpView />
+        </AuthSplitLayout>
     );
 }
