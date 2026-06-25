@@ -23,7 +23,7 @@ export function proxy(request: NextRequest) {
         return redirectTo(request, hasSession ? "/dashboard" : "/auth/sign-in");
     }
 
-    if (hasSession && (pathname === "/auth/sign-in" || pathname === "/auth/sign-up")) {
+    if (hasSession && (pathname === "/auth/sign-in" || pathname === "/auth/sign-up" || pathname === "/auth/onboarding")) {
         return redirectTo(request, "/dashboard");
     }
 
@@ -31,5 +31,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ["/", "/auth/sign-in", "/auth/sign-up"]
+    matcher: ["/", "/auth/sign-in", "/auth/sign-up", "/auth/onboarding"]
 };

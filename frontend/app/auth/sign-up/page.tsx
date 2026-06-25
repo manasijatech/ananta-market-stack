@@ -15,9 +15,13 @@ export default async function SignUpPage() {
     }
 
     const signupStatus = await getSignupStatus().catch(() => ({ has_admin: false }));
-    const signUpNotice = signupStatus.has_admin
-        ? "An admin account already exists for this installation. New signups stay pending until an admin approves access."
-        : "The first account created on this installation becomes the admin account. Later signups wait for admin approval before they can access broker data.";
+
+    if (!signupStatus.has_admin) {
+        redirect("/auth/onboarding");
+    }
+
+    const signUpNotice =
+        "An admin account already exists for this installation. New signups stay pending until an admin approves access.";
 
     return (
         <AuthShell>

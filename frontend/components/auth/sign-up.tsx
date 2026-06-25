@@ -35,6 +35,12 @@ export type SignUpProps = {
   className?: string
   socialLayout?: SocialLayout
   socialPosition?: "top" | "bottom"
+  hideSignInLink?: boolean
+  title?: string
+  description?: string
+  namePlaceholder?: string
+  emailPlaceholder?: string
+  passwordPlaceholder?: string
 }
 
 /**
@@ -54,7 +60,13 @@ export type SignUpProps = {
 export function SignUp({
   className,
   socialLayout,
-  socialPosition = "bottom"
+  socialPosition = "bottom",
+  hideSignInLink = false,
+  title = "Create your account",
+  description = "Set up your email login before connecting broker APIs",
+  namePlaceholder,
+  emailPlaceholder,
+  passwordPlaceholder
 }: SignUpProps) {
   const {
     additionalFields,
@@ -172,10 +184,8 @@ export function SignUp({
   return (
     <Card className={cn("w-full max-w-sm", className)}>
       <CardHeader className="text-center">
-        <CardTitle className="text-xl">Create your account</CardTitle>
-        <CardDescription>
-          Set up your email login before connecting broker APIs
-        </CardDescription>
+        <CardTitle className="text-xl">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -206,7 +216,7 @@ export function SignUp({
                       name="name"
                       type="text"
                       autoComplete="name"
-                      placeholder={localization.auth.namePlaceholder}
+                      placeholder={namePlaceholder ?? localization.auth.namePlaceholder}
                       required
                       disabled={isPending}
                       onChange={() => {
@@ -238,7 +248,7 @@ export function SignUp({
                     name="email"
                     type="email"
                     autoComplete="email"
-                    placeholder={localization.auth.emailPlaceholder}
+                    placeholder={emailPlaceholder ?? localization.auth.emailPlaceholder}
                     required
                     disabled={isPending}
                     onChange={() => {
@@ -294,7 +304,7 @@ export function SignUp({
                           password: undefined
                         }))
                       }}
-                      placeholder={localization.auth.passwordPlaceholder}
+                      placeholder={passwordPlaceholder ?? localization.auth.passwordPlaceholder}
                       required
                       minLength={emailAndPassword?.minPasswordLength}
                       maxLength={emailAndPassword?.maxPasswordLength}
@@ -452,7 +462,7 @@ export function SignUp({
                     {localization.auth.signUp}
                   </Button>
 
-                  {emailAndPassword?.enabled ? (
+                  {emailAndPassword?.enabled && !hideSignInLink ? (
                     <FieldDescription className="text-center">
                       {localization.auth.alreadyHaveAnAccount}{" "}
                       <Link

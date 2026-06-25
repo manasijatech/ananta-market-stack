@@ -2,6 +2,7 @@
 
 import { SignIn } from "@/components/auth/sign-in";
 import { SignUp } from "@/components/auth/sign-up";
+import { OnboardingSetupForm } from "@/components/auth/onboarding-setup-form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function AuthSignInView() {
@@ -19,4 +20,8 @@ export function AuthSignUpView({ signUpNotice }: { signUpNotice?: string | null 
             <SignUp />
         </div>
     );
+}
+
+export function AuthOnboardingView() {
+    return <OnboardingSetupForm />;
 }
