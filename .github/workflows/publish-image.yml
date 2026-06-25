@@ -68,9 +68,7 @@ jobs:
               echo "Version must use MAJOR.MINOR.PATCH format, for example 0.1.0." >&2
               exit 1
             fi
-            major="${version%%.*}"
-            minor="${version%.*}"
-            tags="${tags}"$'\n'"${IMAGE_NAME}:${version}"$'\n'"${IMAGE_NAME}:${minor}"$'\n'"${IMAGE_NAME}:${major}"
+            tags="${tags}"$'\n'"${IMAGE_NAME}:${version}"
           fi
 
           if [ "$publish_latest" = "true" ]; then
