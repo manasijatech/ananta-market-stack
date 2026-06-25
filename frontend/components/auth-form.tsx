@@ -10,9 +10,61 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RippleButton } from "@/components/ui/ripple-button";
-import { resolvePostAuthRoute } from "@/service/actions/auth-routing";
 
 type AuthMode = "sign-in" | "sign-up";
+
+type RbacSnapshot = {
+    status?: string;
+};
+
+const POST_AUTH_ATTEMPTS = 10;
+
+function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, ms);
+    });
+}
+
+async function fetchCurrentSession() {
+    const response = await fetch("/api/auth/get-session", {
+        cache: "no-store",
+        credentials: "include"
+    });
+    if (!response.ok) {
+        return null;
+    }
+    return (await response.json()) as unknown;
+}
+
+async function fetchRbacSnapshot(): Promise<RbacSnapshot | null> {
+    const response = await fetch("/api/rbac/me", {
+        cache: "no-store",
+        credentials: "include"
+    });
+
+    if (response.status === 401) {
+        return null;
+    }
+    if (!response.ok) {
+        throw new Error("Could not verify workspace access yet.");
+    }
+    return (await response.json()) as RbacSnapshot;
+}
+
+async function resolvePostAuthRoute(): Promise<"/dashboard" | "/pending-approval"> {
+    for (let attempt = 0; attempt < POST_AUTH_ATTEMPTS; attempt += 1) {
+        const session = await fetchCurrentSession();
+        if (session) {
+            const rbac = await fetchRbacSnapshot();
+            if (rbac?.status) {
+                return rbac.status === "active" ? "/dashboard" : "/pending-approval";
+            }
+        }
+        await delay(250 + attempt * 150);
+    }
+
+    return "/dashboard";
+}
 
 export function AuthForm({ mode, signUpNotice }: { mode: AuthMode; signUpNotice?: string | null }) {
     const router = useRouter();
@@ -51,7 +103,9 @@ export function AuthForm({ mode, signUpNotice }: { mode: AuthMode; signUpNotice?
             } else {
                 await signIn({ email, password, rememberMe });
             }
-            router.replace(await resolvePostAuthRoute());
+            const nextRoute = await resolvePostAuthRoute();
+            router.replace(nextRoute);
+            router.refresh();
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : "Something went wrong.");
         } finally {
