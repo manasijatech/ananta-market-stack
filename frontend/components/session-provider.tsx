@@ -14,16 +14,23 @@ type SessionContextValue = {
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 async function fetchSessionSnapshot(): Promise<AuthSession | null> {
-    const response = await fetch("/api/auth/get-session", {
-        cache: "no-store",
-        credentials: "include"
-    });
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 3000);
+    try {
+        const response = await fetch("/api/auth/get-session", {
+            cache: "no-store",
+            credentials: "include",
+            signal: controller.signal
+        });
 
-    if (!response.ok) {
-        throw new Error("Could not verify the current session.");
+        if (!response.ok) {
+            throw new Error("Could not verify the current session.");
+        }
+
+        return (await response.json()) as AuthSession | null;
+    } finally {
+        window.clearTimeout(timeout);
     }
-
-    return (await response.json()) as AuthSession | null;
 }
 
 async function clearStaleSessionCookies() {
