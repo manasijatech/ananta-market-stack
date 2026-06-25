@@ -1,14 +1,32 @@
 import Link from "next/link";
-import { IconActivity, IconAlertTriangle, IconBrain, IconClock, IconCoins, IconRefresh } from "@tabler/icons-react";
-import { PageHeader, StatusBadge } from "@/components/brokers/ui";
+import { Suspense, type ReactNode } from "react";
+import {
+    IconActivity,
+    IconArrowRight,
+    IconBrain,
+    IconChartBar,
+    IconCoins,
+    IconInfoCircle,
+    IconSearch,
+    IconShieldCheck
+} from "@tabler/icons-react";
+import { PageHeader } from "@/components/brokers/ui";
 import { Shell } from "@/components/brokers/shell";
+import { LlmUsageFilterBar, type LlmUsageFilterOptions } from "@/components/llm-usage/llm-usage-filter-bar";
+import { MetricInfoTooltip } from "@/components/llm-usage/llm-usage-metric-info-tooltip";
+import { StatCard, StatValueMuted, tableHeadClassName } from "@/components/llm-usage/llm-usage-stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { LlmUsageFilterSelect } from "@/components/llm-usage/llm-usage-filter-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatIstDateTime } from "@/lib/datetime";
-import type { LlmUsageFilterOption } from "@/lib/llm-usage-filters";
+import { typography } from "@/lib/typography";
+import { cn } from "@/lib/utils";
+import {
+    allBreakdownTablesEmpty,
+    hasActiveLlmUsageFilters,
+    isLlmUsageEmpty,
+    type LlmUsageFilterOption
+} from "@/lib/llm-usage-filters";
 import {
     apiSurfaceDisplay,
     eventWorkflowDisplayName,
@@ -28,6 +46,8 @@ import type {
     LlmUsageTotals
 } from "@/service/types/llm-usage";
 
+export type { LlmUsageFilterOptions };
+
 type LlmUsageDashboardProps = {
     overview: LlmUsageOverview;
     timeseries: LlmUsageTimeseries;
@@ -35,14 +55,6 @@ type LlmUsageDashboardProps = {
     filterOptions: LlmUsageFilterOptions;
     filters: LlmUsageFilters;
     granularity: LlmUsageGranularity;
-};
-
-type LlmUsageFilterOptions = {
-    providers: LlmUsageFilterOption[];
-    models: LlmUsageFilterOption[];
-    workflows: LlmUsageFilterOption[];
-    requestKinds: LlmUsageFilterOption[];
-    apiSurfaces: LlmUsageFilterOption[];
 };
 
 const tokenFormatter = new Intl.NumberFormat("en-IN");
@@ -63,26 +75,19 @@ const DEFAULT_API_SURFACE_OPTIONS: LlmUsageFilterOption[] = [
     { value: "agents_sdk", label: "Agents SDK", detail: "agents_sdk" }
 ];
 
+const SPARSE_BUCKET_THRESHOLD = 4;
+const PROVIDER_COST_TOOLTIP =
+    "Cost is only reported when the upstream provider includes it in the API response. provider_cost_total only includes cost returned by the provider.";
+const TOKENS_TOOLTIP = "Some providers do not expose cache, reasoning, or cost fields in every response.";
+const WORKFLOW_TABLE_TOOLTIP = "Historical workflow usage is retained in the ledger after a workflow is deleted.";
+const PERIOD_TOOLTIP = "Daily snapshots are updated at write time when requests complete.";
+
 function compactNumber(value: number): string {
     return new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 function formatTokens(value: number): string {
     return tokenFormatter.format(value || 0);
-}
-
-function successRate(totals: LlmUsageTotals): string {
-    if (!totals.request_count) return "0%";
-    return `${Math.round((totals.success_count / totals.request_count) * 100)}%`;
-}
-
-function errorRate(totals: LlmUsageTotals): string {
-    if (!totals.request_count) return "0%";
-    return `${Math.round((totals.error_count / totals.request_count) * 100)}%`;
-}
-
-function cleanFilter(value?: string | null): string {
-    return value ?? "";
 }
 
 function labelOrEmpty(value?: string | null): string {
@@ -99,7 +104,10 @@ function addOption(options: Map<string, LlmUsageFilterOption>, option: LlmUsageF
     options.set(value, { ...option, value });
 }
 
-export function buildLlmUsageFilterOptions(overview: LlmUsageOverview, events: LlmUsageEventsPage): LlmUsageFilterOptions {
+export function buildLlmUsageFilterOptions(
+    overview: LlmUsageOverview,
+    events: LlmUsageEventsPage
+): LlmUsageFilterOptions {
     const providers = new Map<string, LlmUsageFilterOption>();
     const models = new Map<string, LlmUsageFilterOption>();
     const workflows = new Map<string, LlmUsageFilterOption>();
@@ -181,91 +189,19 @@ export function buildLlmUsageFilterOptions(overview: LlmUsageOverview, events: L
     };
 }
 
-function MetricTile({
-    label,
-    value,
-    detail,
-    icon: Icon
-}: {
-    label: string;
-    value: string;
-    detail: string;
-    icon: typeof IconActivity;
-}) {
+function UsageEmptyNotice() {
     return (
-        <div className="min-w-0 border border-border p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                    {label}
-                </p>
-                <Icon className="size-4 shrink-0 text-primary" stroke={1.8} />
-            </div>
-            <div className="break-words text-3xl font-semibold leading-none tracking-normal">{value}</div>
-            <p className="mt-2 text-sm text-muted-foreground">{detail}</p>
+        <div className="flex items-center gap-2.5 rounded-md border-l-[3px] border-l-blue-400 bg-card px-3.5 py-2.5">
+            <IconInfoCircle aria-hidden className="size-4 shrink-0 text-blue-400" />
+            <p className="text-[13px] text-foreground">
+                No usage data yet — LLM activity appears here once workflows start running.
+            </p>
         </div>
     );
 }
 
-function FilterForm({
-    filters,
-    filterOptions,
-    granularity
-}: {
-    filters: LlmUsageFilters;
-    filterOptions: LlmUsageFilterOptions;
-    granularity: LlmUsageGranularity;
-}) {
-    return (
-        <form className="grid gap-3 border border-border p-4 min-[900px]:grid-cols-8" action="/llm-usage">
-            <label className="grid gap-1">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                    From
-                </span>
-                <Input defaultValue={cleanFilter(filters.date_from)} name="date_from" type="date" />
-            </label>
-            <label className="grid gap-1">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                    To
-                </span>
-                <Input defaultValue={cleanFilter(filters.date_to)} name="date_to" type="date" />
-            </label>
-            <LlmUsageFilterSelect label="Provider" name="provider" options={filterOptions.providers} value={filters.provider} />
-            <div className="min-[900px]:col-span-2">
-                <LlmUsageFilterSelect label="Model" name="model_id" options={filterOptions.models} value={filters.model_id} />
-            </div>
-            <div className="min-[900px]:col-span-2">
-                <LlmUsageFilterSelect label="Workflow" name="workflow_id" options={filterOptions.workflows} value={filters.workflow_id} />
-            </div>
-            <LlmUsageFilterSelect
-                includeAll={false}
-                label="Bucket"
-                name="granularity"
-                options={[
-                    { label: "Daily", value: "daily" },
-                    { label: "Weekly", value: "weekly" },
-                    { label: "Monthly", value: "monthly" }
-                ]}
-                value={granularity}
-            />
-            <div className="min-[900px]:col-span-2">
-                <LlmUsageFilterSelect label="Request kind" name="request_kind" options={filterOptions.requestKinds} value={filters.request_kind} />
-            </div>
-            <div className="min-[900px]:col-span-2">
-                <LlmUsageFilterSelect label="API surface" name="api_surface" options={filterOptions.apiSurfaces} value={filters.api_surface} />
-            </div>
-            <div className="flex items-end gap-2 min-[900px]:col-span-4">
-                <Button className="min-h-10" type="submit">
-                    Apply filters
-                </Button>
-                <Button asChild className="min-h-10" type="button" variant="secondary">
-                    <Link href="/llm-usage">Clear</Link>
-                </Button>
-            </div>
-        </form>
-    );
-}
-
 function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
+    const zeroState = isLlmUsageEmpty(overview);
     const cachedDetail = metricReportingLabel(
         overview.totals.cached_tokens,
         overview.totals.cached_tokens_reported_count,
@@ -278,113 +214,121 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
         overview.totals.request_count,
         "Reasoning"
     );
+    const hasRequests = overview.totals.request_count > 0;
+    const costReported = overview.totals.priced_request_count > 0;
+
     return (
-        <section className="grid gap-3 min-[760px]:grid-cols-2 min-[1180px]:grid-cols-4">
-            <MetricTile
+        <section className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-4">
+            <StatCard
                 detail={`${formatTokens(overview.totals.prompt_tokens)} input / ${formatTokens(overview.totals.completion_tokens)} output`}
                 icon={IconActivity}
                 label="Requests"
+                mutedIcon={zeroState}
                 value={formatTokens(overview.totals.request_count)}
             />
-            <MetricTile
-                detail={`${successRate(overview.totals)} success, ${errorRate(overview.totals)} error`}
-                icon={IconAlertTriangle}
+            <StatCard
+                detail={hasRequests ? `${Math.round((overview.totals.success_count / overview.totals.request_count) * 100)}% success, ${Math.round((overview.totals.error_count / overview.totals.request_count) * 100)}% error` : "No requests in range"}
+                icon={IconShieldCheck}
                 label="Reliability"
-                value={`${formatTokens(overview.totals.success_count)} / ${formatTokens(overview.totals.error_count)}`}
+                mutedIcon={zeroState}
+                value={hasRequests ? `${formatTokens(overview.totals.success_count)} / ${formatTokens(overview.totals.error_count)}` : "—"}
             />
-            <MetricTile
+            <StatCard
                 detail={`${cachedDetail}, ${reasoningDetail}`}
                 icon={IconBrain}
+                infoTooltip={<MetricInfoTooltip content={TOKENS_TOOLTIP} />}
                 label="Tokens"
+                mutedIcon={zeroState}
                 value={formatTokens(overview.totals.total_tokens)}
             />
-            <MetricTile
+            <StatCard
                 detail={`${formatTokens(overview.totals.priced_request_count)} priced requests`}
                 icon={IconCoins}
+                infoTooltip={<MetricInfoTooltip content={PROVIDER_COST_TOOLTIP} />}
                 label="Provider cost"
-                value={formatLlmCost(overview.totals.provider_cost_total, overview.totals.priced_request_count)}
+                mutedIcon={zeroState}
+                value={costReported ? formatLlmCost(overview.totals.provider_cost_total, overview.totals.priced_request_count) : undefined}
+                valueNode={costReported ? undefined : <StatValueMuted>Not reported</StatValueMuted>}
             />
         </section>
     );
 }
 
-function PeriodGrid({ overview }: { overview: LlmUsageOverview }) {
-    const periods = [
-        { label: "Today", totals: overview.today },
-        { label: "Current week", totals: overview.current_week },
-        { label: "Current month", totals: overview.current_month }
-    ];
+function PeriodCard({ label, totals }: { label: string; totals: LlmUsageTotals }) {
     return (
-        <section className="grid gap-3 min-[760px]:grid-cols-3">
-            {periods.map((period) => (
-                <div className="border border-border p-4" key={period.label}>
-                    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                        {period.label}
-                    </p>
-                    <div className="mt-3 flex items-end justify-between gap-3">
-                        <div className="text-2xl font-semibold leading-none">{formatTokens(period.totals.request_count)}</div>
-                        <div className="text-right text-xs text-muted-foreground">
-                            {formatTokens(period.totals.total_tokens)} tokens
-                        </div>
-                    </div>
-                    <div className="mt-4 h-2 bg-secondary">
-                        <div
-                            className="h-full bg-primary"
-                            style={{
-                                width: `${period.totals.request_count ? Math.max((period.totals.success_count / period.totals.request_count) * 100, 4) : 0}%`
-                            }}
-                        />
-                    </div>
-                </div>
-            ))}
+        <div className="min-w-0 rounded-md border border-border bg-card p-4">
+            <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+            <div className="mt-3 text-[22px] font-medium leading-none">{formatTokens(totals.total_tokens)}</div>
+            <p className="mt-1 text-[11px] text-muted-foreground">tokens</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+                {formatTokens(totals.request_count)} request{totals.request_count === 1 ? "" : "s"}
+            </p>
+        </div>
+    );
+}
+
+function PeriodGrid({ overview }: { overview: LlmUsageOverview }) {
+    return (
+        <section className="grid gap-3">
+            <div className="flex items-center gap-2">
+                <p className={typography.sectionEyebrow}>Time windows</p>
+                <MetricInfoTooltip content={PERIOD_TOOLTIP} />
+            </div>
+            <div className="grid gap-3 min-[900px]:grid-cols-3">
+                <PeriodCard label="Today" totals={overview.today} />
+                <PeriodCard label="This week" totals={overview.current_week} />
+                <PeriodCard label="This month" totals={overview.current_month} />
+            </div>
         </section>
     );
 }
 
 function UsageChart({ buckets }: { buckets: LlmUsageTimeBucket[] }) {
     const maxTokens = Math.max(...buckets.map((bucket) => bucket.total_tokens), 0);
-    const isSparse = buckets.length <= 3;
+    const bucketCount = buckets.length;
+    const isSparse = bucketCount > 0 && bucketCount < SPARSE_BUCKET_THRESHOLD;
+
+    let emptyMessage: string | null = null;
+    if (bucketCount === 0) {
+        emptyMessage = "No data for this filter range.";
+    } else if (isSparse) {
+        emptyMessage = "Limited data — expand date range for a fuller trend.";
+    }
+
     return (
-        <section className="border border-border p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                    <div className="type-section-title">Usage trend</div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {isSparse ? "Only a few usage buckets exist in this slice." : "Token volume by selected bucket."}
-                    </p>
-                </div>
-                <IconClock className="size-5 text-primary" stroke={1.8} />
+        <section className="rounded-md border border-border bg-card p-4">
+            <div className="mb-4">
+                <h2 className={typography.sectionTitle}>Usage trend</h2>
+                {!emptyMessage ? (
+                    <p className={cn(typography.sectionLead, "mt-1")}>Token volume by selected bucket.</p>
+                ) : null}
             </div>
-            {buckets.length ? (
-                <div
-                    className={`flex h-56 items-end gap-3 overflow-x-auto border-t border-border pt-4 ${
-                        isSparse ? "justify-start" : ""
-                    }`}
-                >
+
+            {emptyMessage ? (
+                <div className="flex min-h-40 items-center justify-center border-t border-border/50 pt-4">
+                    <p className="text-[13px] text-muted-foreground">{emptyMessage}</p>
+                </div>
+            ) : (
+                <div className="flex min-h-40 items-end gap-3 overflow-x-auto border-t border-border/50 pt-4">
                     {buckets.map((bucket) => {
                         const height = maxTokens ? Math.max((bucket.total_tokens / maxTokens) * 100, 3) : 0;
                         return (
-                            <div
-                                className={`flex flex-col items-center gap-2 ${isSparse ? "w-20 shrink-0" : "min-w-16 flex-1"}`}
-                                key={bucket.bucket_key}
-                            >
-                                <div className="flex h-40 w-full items-end">
+                            <div className="flex min-w-16 flex-1 flex-col items-center gap-2" key={bucket.bucket_key}>
+                                <div className="flex h-32 w-full items-end">
                                     <div
                                         className="mx-auto w-10 bg-primary/80 transition-colors hover:bg-primary"
                                         title={`${bucket.bucket_label}: ${formatTokens(bucket.total_tokens)} tokens`}
                                         style={{ height: `${height}%` }}
                                     />
                                 </div>
-                                <div className="w-full truncate text-center font-mono text-[10px] text-muted-foreground">
+                                <div className="w-full truncate text-center text-[11px] text-muted-foreground">
                                     {bucket.bucket_label}
                                 </div>
-                                <div className="text-center text-xs font-semibold">{compactNumber(bucket.total_tokens)}</div>
+                                <div className="text-center text-[13px] font-medium">{compactNumber(bucket.total_tokens)}</div>
                             </div>
                         );
                     })}
                 </div>
-            ) : (
-                <div className="border-t border-border pt-4 text-sm text-muted-foreground">No usage buckets in this slice.</div>
             )}
         </section>
     );
@@ -394,26 +338,31 @@ function GroupTable({
     title,
     description,
     rows,
-    kind
+    kind,
+    headerTooltip
 }: {
     title: string;
     description: string;
     rows: LlmUsageGroup[];
     kind: "provider" | "model" | "workflow" | "request";
+    headerTooltip?: ReactNode;
 }) {
     return (
-        <section className="border border-border p-4">
+        <section className="rounded-md border border-border bg-card p-4">
             <div className="mb-4">
-                <div className="type-section-title">{title}</div>
-                <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+                <div className="flex items-center gap-2">
+                    <h2 className={typography.sectionTitle}>{title}</h2>
+                    {headerTooltip}
+                </div>
+                <p className={cn(typography.sectionLead, "mt-1")}>{description}</p>
             </div>
             <Table>
                 <TableHeader>
-                    <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead className="text-right">Requests</TableHead>
-                        <TableHead className="text-right">Tokens</TableHead>
-                        <TableHead className="text-right">Cost</TableHead>
+                    <TableRow className="hover:bg-transparent">
+                        <TableHead className={tableHeadClassName()}>Name</TableHead>
+                        <TableHead className={tableHeadClassName("text-right")}>Requests</TableHead>
+                        <TableHead className={tableHeadClassName("text-right")}>Tokens</TableHead>
+                        <TableHead className={tableHeadClassName("text-right")}>Cost</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -433,24 +382,28 @@ function GroupTable({
                                   ? labelOrEmpty(row.provider)
                                   : kind === "request"
                                     ? row.request_kind || ""
-                                  : row.last_request_at
-                                    ? formatIstDateTime(row.last_request_at)
-                                    : "";
+                                    : row.last_request_at
+                                      ? formatIstDateTime(row.last_request_at)
+                                      : "";
                         return (
                             <TableRow key={`${name}-${index}`}>
-                                <TableCell>
-                                    <div className="max-w-[260px] truncate font-semibold">{name}</div>
-                                    {sub ? <div className="mt-1 max-w-[260px] truncate text-xs text-muted-foreground">{sub}</div> : null}
+                                <TableCell className="text-[13px]">
+                                    <div className="max-w-[260px] truncate font-medium">{name}</div>
+                                    {sub ? (
+                                        <div className="mt-1 max-w-[260px] truncate text-xs text-muted-foreground">{sub}</div>
+                                    ) : null}
                                 </TableCell>
-                                <TableCell className="text-right">{formatTokens(row.request_count)}</TableCell>
-                                <TableCell className="text-right">{formatTokens(row.total_tokens)}</TableCell>
-                                <TableCell className="text-right">{formatLlmCost(row.provider_cost_total, row.priced_request_count)}</TableCell>
+                                <TableCell className="text-right text-[13px]">{formatTokens(row.request_count)}</TableCell>
+                                <TableCell className="text-right text-[13px]">{formatTokens(row.total_tokens)}</TableCell>
+                                <TableCell className="text-right text-[13px]">
+                                    {formatLlmCost(row.provider_cost_total, row.priced_request_count)}
+                                </TableCell>
                             </TableRow>
                         );
                     })}
                     {!rows.length ? (
                         <TableRow>
-                            <TableCell className="text-muted-foreground" colSpan={4}>
+                            <TableCell className="py-8 text-center text-[13px] italic text-muted-foreground" colSpan={4}>
                                 No rows in this slice.
                             </TableCell>
                         </TableRow>
@@ -461,64 +414,126 @@ function GroupTable({
     );
 }
 
-function RecentEvents({ events }: { events: LlmUsageEventsPage }) {
+function BreakdownEmptyState() {
     return (
-        <section className="border border-border p-4">
-            <div className="mb-4 flex flex-col justify-between gap-3 min-[760px]:flex-row min-[760px]:items-end">
-                <div>
-                    <div className="type-section-title">Recent request ledger</div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        Raw tracked calls with provider usage metadata and captured workflow context.
-                    </p>
-                </div>
-                <StatusBadge>{events.items.length} rows</StatusBadge>
+        <section className="rounded-md border border-border bg-card px-6 py-10">
+            <div className="mx-auto flex max-w-md flex-col items-center text-center">
+                <IconChartBar aria-hidden className="mb-3 size-6 text-muted-foreground" />
+                <h2 className="text-sm font-medium text-foreground">No breakdown data</h2>
+                <p className="mt-1 text-[13px] text-muted-foreground">
+                    Run workflows with LLM steps to see usage by provider, model, and workflow.
+                </p>
+                <Button className="mt-4" render={<Link href="/alerts-workspace" />} variant="ghost">
+                    Go to Alerts Workspace
+                    <IconArrowRight aria-hidden className="size-4" />
+                </Button>
+            </div>
+        </section>
+    );
+}
+
+function BreakdownGrid({ overview }: { overview: LlmUsageOverview }) {
+    if (allBreakdownTablesEmpty(overview)) {
+        return <BreakdownEmptyState />;
+    }
+
+    return (
+        <div className="grid gap-5 min-[900px]:grid-cols-2">
+            <GroupTable
+                description="Requests grouped by upstream provider."
+                kind="provider"
+                rows={overview.by_provider}
+                title="Providers"
+            />
+            <GroupTable
+                description="Top provider + model combinations."
+                kind="model"
+                rows={overview.by_model}
+                title="Models"
+            />
+            <GroupTable
+                description="LLM usage per workflow."
+                headerTooltip={<MetricInfoTooltip content={WORKFLOW_TABLE_TOOLTIP} />}
+                kind="workflow"
+                rows={overview.top_workflows}
+                title="Top workflows"
+            />
+            <GroupTable
+                description="Usage by request type."
+                kind="request"
+                rows={overview.request_kinds}
+                title="Request kinds"
+            />
+        </div>
+    );
+}
+
+function RecentEvents({
+    events,
+    hasActiveFilters
+}: {
+    events: LlmUsageEventsPage;
+    hasActiveFilters: boolean;
+}) {
+    const emptyMessage = hasActiveFilters
+        ? "No results for current filters — try clearing some filters."
+        : "No LLM calls recorded yet. Calls appear here once a workflow with an LLM step runs.";
+
+    return (
+        <section className="rounded-md border border-border bg-card p-4">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+                <h2 className={typography.sectionTitle}>Recent request ledger</h2>
+                <Badge size="sm" variant="secondary">
+                    {events.items.length} row{events.items.length === 1 ? "" : "s"}
+                </Badge>
             </div>
             <Table>
                 <TableHeader>
-                    <TableRow>
-                        <TableHead>Completed</TableHead>
-                        <TableHead>Provider</TableHead>
-                        <TableHead>Workflow</TableHead>
-                        <TableHead className="text-right">Tokens</TableHead>
-                        <TableHead className="text-right">Latency</TableHead>
-                        <TableHead>Status</TableHead>
+                    <TableRow className="hover:bg-transparent">
+                        <TableHead className={tableHeadClassName()}>Completed</TableHead>
+                        <TableHead className={tableHeadClassName()}>Provider</TableHead>
+                        <TableHead className={tableHeadClassName()}>Workflow</TableHead>
+                        <TableHead className={tableHeadClassName("text-right")}>Tokens</TableHead>
+                        <TableHead className={tableHeadClassName("text-right")}>Latency</TableHead>
+                        <TableHead className={tableHeadClassName()}>Status</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {events.items.map((event) => (
                         <TableRow key={event.id}>
-                            <TableCell className="whitespace-nowrap text-muted-foreground">
+                            <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground">
                                 {formatIstDateTime(event.completed_at)}
                             </TableCell>
-                            <TableCell>
-                                <div className="font-semibold">{event.provider}</div>
+                            <TableCell className="text-[13px]">
+                                <div className="font-medium">{event.provider}</div>
                                 <div className="mt-1 max-w-[220px] truncate text-xs text-muted-foreground">{event.model_id}</div>
                             </TableCell>
-                            <TableCell>
-                                <div className="max-w-[240px] truncate font-semibold">{eventWorkflowDisplayName(event)}</div>
+                            <TableCell className="text-[13px]">
+                                <div className="max-w-[240px] truncate font-medium">{eventWorkflowDisplayName(event)}</div>
                                 <div className="mt-1 max-w-[240px] truncate text-xs text-muted-foreground">
-                                    {requestKindDisplay(event.request_kind, event.request_kind_label)} / {apiSurfaceDisplay(event.api_surface, event.api_surface_label)}
+                                    {requestKindDisplay(event.request_kind, event.request_kind_label)} /{" "}
+                                    {apiSurfaceDisplay(event.api_surface, event.api_surface_label)}
                                 </div>
-                                <div className="mt-1 max-w-[240px] truncate text-[11px] text-muted-foreground">
-                                    {event.request_kind} / {event.api_surface}
-                                </div>
-                                {event.error ? <div className="mt-1 max-w-[240px] truncate text-xs text-[var(--danger)]">{event.error}</div> : null}
+                                {event.error ? (
+                                    <div className="mt-1 max-w-[240px] truncate text-xs text-destructive">{event.error}</div>
+                                ) : null}
                             </TableCell>
-                            <TableCell className="text-right">{formatTokens(event.total_tokens)}</TableCell>
-                            <TableCell className="text-right">{event.latency_ms == null ? "n/a" : `${event.latency_ms} ms`}</TableCell>
+                            <TableCell className="text-right text-[13px]">{formatTokens(event.total_tokens)}</TableCell>
+                            <TableCell className="text-right text-[13px]">
+                                {event.latency_ms == null ? "n/a" : `${event.latency_ms} ms`}
+                            </TableCell>
                             <TableCell>
-                                <Badge
-                                    variant={event.status === "success" ? "default" : "destructive"}
-                                >
-                                    {event.status}
-                                </Badge>
+                                <Badge variant={event.status === "success" ? "default" : "destructive"}>{event.status}</Badge>
                             </TableCell>
                         </TableRow>
                     ))}
                     {!events.items.length ? (
                         <TableRow>
-                            <TableCell className="text-muted-foreground" colSpan={6}>
-                                No tracked LLM calls match the current filters.
+                            <TableCell className="py-10 text-center" colSpan={6}>
+                                <div className="flex flex-col items-center gap-2">
+                                    <IconSearch aria-hidden className="size-5 text-muted-foreground" />
+                                    <p className="text-[13px] text-muted-foreground">{emptyMessage}</p>
+                                </div>
                             </TableCell>
                         </TableRow>
                     ) : null}
@@ -528,66 +543,46 @@ function RecentEvents({ events }: { events: LlmUsageEventsPage }) {
     );
 }
 
-export function LlmUsageDashboard({ overview, timeseries, events, filterOptions, filters, granularity }: LlmUsageDashboardProps) {
+function FilterBarFallback() {
+    return <div className="h-28 animate-pulse rounded-md border border-border bg-card" />;
+}
+
+export function LlmUsageDashboard({
+    overview,
+    timeseries,
+    events,
+    filterOptions,
+    filters,
+    granularity
+}: LlmUsageDashboardProps) {
+    const showEmptyNotice = isLlmUsageEmpty(overview) && !hasActiveLlmUsageFilters(filters, granularity);
+    const activeFilters = hasActiveLlmUsageFilters(filters, granularity);
+
     return (
         <Shell>
             <PageHeader
-                action={
-                    <Button asChild className="min-h-11">
-                        <Link href="/llm-usage">
-                            <IconRefresh className="size-4" stroke={1.8} />
-                            Refresh
-                        </Link>
-                    </Button>
-                }
                 description="Monitor provider calls, token volume, provider-reported cost, and workflow-level LLM activity."
                 eyebrow="Operations"
                 title="LLM Usage"
             />
+
             <div className="grid gap-5">
-                <FilterForm filterOptions={filterOptions} filters={filters} granularity={granularity} />
+                <Suspense fallback={<FilterBarFallback />}>
+                    <LlmUsageFilterBar
+                        filterOptions={filterOptions}
+                        filters={filters}
+                        generatedAt={overview.generated_at}
+                        granularity={granularity}
+                    />
+                </Suspense>
+
+                {showEmptyNotice ? <UsageEmptyNotice /> : null}
+
                 <TotalsGrid overview={overview} />
                 <PeriodGrid overview={overview} />
                 <UsageChart buckets={timeseries.buckets} />
-                <div className="grid gap-5 min-[1180px]:grid-cols-2">
-                    <GroupTable
-                        description="Requests grouped by upstream provider."
-                        kind="provider"
-                        rows={overview.by_provider}
-                        title="Providers"
-                    />
-                    <GroupTable
-                        description="Provider and model combinations with the highest usage."
-                        kind="model"
-                        rows={overview.by_model}
-                        title="Models"
-                    />
-                    <GroupTable
-                        description="Workflow identities are retained in the usage ledger."
-                        kind="workflow"
-                        rows={overview.top_workflows}
-                        title="Top workflows"
-                    />
-                    <GroupTable
-                        description="Backend request categories for alert analysis and feed triggers."
-                        kind="request"
-                        rows={overview.request_kinds}
-                        title="Request kinds"
-                    />
-                </div>
-                <RecentEvents events={events} />
-                {overview.notes.length ? (
-                    <section className="border border-border p-4">
-                        <div className="type-section-title">Ledger notes</div>
-                        <ul className="mt-3 grid gap-2 text-sm text-muted-foreground">
-                            {overview.notes.map((note) => (
-                                <li className="border-l-2 border-primary pl-3" key={note}>
-                                    {note}
-                                </li>
-                            ))}
-                        </ul>
-                    </section>
-                ) : null}
+                <BreakdownGrid overview={overview} />
+                <RecentEvents events={events} hasActiveFilters={activeFilters} />
             </div>
         </Shell>
     );

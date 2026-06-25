@@ -13,6 +13,20 @@ export const typography = {
     small: "text-sm leading-none font-medium",
     muted: "text-sm text-muted-foreground",
     eyebrow: "text-sm font-medium text-muted-foreground",
+    /** Workspace page chrome — eyebrow above the title */
+    pageEyebrow: "text-xs font-medium text-muted-foreground",
+    /** Workspace page chrome — primary page title */
+    pageTitle: "text-[22px] font-medium tracking-normal text-foreground text-balance",
+    /** Workspace page chrome — subtitle below the title */
+    pageLead: "mt-2 max-w-2xl text-[13px] leading-relaxed text-muted-foreground",
+    /** Section label (e.g. MEMBERS, BROKER ACCOUNTS) */
+    sectionEyebrow: "text-[11px] font-medium uppercase tracking-[0.07em] text-muted-foreground",
+    /** Compact uppercase label for stat cards and filter fields */
+    statLabel: "text-[11px] font-medium uppercase tracking-[0.05em] text-muted-foreground",
+    /** Section heading within a page */
+    sectionTitle: "text-[15px] font-medium text-foreground",
+    /** Section description within a page */
+    sectionLead: "text-[13px] text-muted-foreground",
     inlineCode:
         "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold",
     blockquote: "mt-6 border-l-2 pl-6 italic",
