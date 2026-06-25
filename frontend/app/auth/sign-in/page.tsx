@@ -1,5 +1,5 @@
 import { AuthSignInView } from "@/components/auth/auth-views";
-import { AuthShell } from "@/components/auth-shell";
+import { AuthSplitLayout } from "@/components/auth/auth-split-layout";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
@@ -21,8 +21,8 @@ export default async function SignInPage() {
     }
 
     return (
-        <AuthShell>
+        <AuthSplitLayout>
             <AuthSignInView />
-        </AuthShell>
+        </AuthSplitLayout>
     );
 }

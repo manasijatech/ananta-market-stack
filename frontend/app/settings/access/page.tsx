@@ -49,7 +49,7 @@ function sentenceCase(value: string): string {
 
 const workspaceCapabilityLabels: Record<string, string> = {
     "workspace.manage_members": "Approve members and assign roles",
-    "settings.manage_alpha": "Manage the shared Manasija Alpha API key",
+    "settings.manage_alpha": "Manage the shared Drishti API key",
     "settings.manage_llm": "Manage shared LLM provider keys and saved models",
     "settings.manage_mcp": "Manage shared MCP servers and authentication",
     "settings.view_llm_usage": "Open the LLM usage dashboard",
@@ -121,7 +121,7 @@ export default async function AccessSettingsPage() {
                 <Alert variant="warning">
                     <AlertTitle>Shared workspace setup lives in Settings and LLM Usage</AlertTitle>
                     <AlertDescription>
-                        Admins configure the shared Alpha API key in <Link className="underline" href="/settings#alpha">Settings → Alpha</Link>, shared LLM providers in{" "}
+                        Admins configure the shared Drishti API key in <Link className="underline" href="/settings#alpha">Settings → Drishti</Link>, shared LLM providers in{" "}
                         <Link className="underline" href="/settings#llm">Settings → LLM</Link>, shared MCP servers in{" "}
                         <Link className="underline" href="/settings#mcp">Settings → MCP</Link>, and usage visibility through the{" "}
                         <Link className="underline" href="/llm-usage">LLM Usage</Link> page. Role changes below control who can open or use those shared features.

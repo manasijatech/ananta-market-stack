@@ -3,6 +3,14 @@
 import { useAuth, useSignUpEmail } from "@better-auth-ui/react";
 import { IconCheck, IconEye, IconEyeOff } from "@tabler/icons-react";
 import { type FormEvent, useMemo, useState } from "react";
+import {
+    authFormCardClassName,
+    authFormInputClassName,
+    authFormInputGroupClassName,
+    authFormPrimaryButtonClassName,
+    getPasswordChecks,
+    getPasswordStrength
+} from "@/components/auth/auth-form-styles";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -15,44 +23,6 @@ import {
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-
-const onboardingInputClassName =
-    "h-12 rounded-lg border-border/80 bg-background/50 px-4 text-base shadow-none placeholder:text-muted-foreground/90 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-[var(--accent-glow)] dark:bg-[var(--bg-elevated)]/50";
-
-const onboardingInputGroupClassName =
-    "h-12 rounded-lg border-border/80 bg-background/50 shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-primary has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-[var(--accent-glow)] dark:bg-[var(--bg-elevated)]/50";
-
-type PasswordChecks = {
-    length: boolean;
-    number: boolean;
-    uppercase: boolean;
-};
-
-function getPasswordChecks(password: string): PasswordChecks {
-    return {
-        length: password.length >= 8,
-        number: /\d/.test(password),
-        uppercase: /[A-Z]/.test(password)
-    };
-}
-
-function getPasswordStrength(checks: PasswordChecks): { label: string; percent: number; tone: string } {
-    const score = [checks.length, checks.number, checks.uppercase].filter(Boolean).length;
-
-    if (score === 0) {
-        return { label: "Enter a password", percent: 0, tone: "bg-border" };
-    }
-
-    if (score === 1) {
-        return { label: "Weak", percent: 33, tone: "bg-destructive/80" };
-    }
-
-    if (score === 2) {
-        return { label: "Fair", percent: 66, tone: "bg-primary/70" };
-    }
-
-    return { label: "Strong", percent: 100, tone: "bg-primary" };
-}
 
 function RequirementRow({ met, label }: { met: boolean; label: string }) {
     return (
@@ -120,7 +90,7 @@ export function OnboardingSetupForm() {
     }
 
     return (
-        <Card className="gap-0 overflow-hidden rounded-xl border-border bg-[var(--bg-elevated)] py-0 shadow-[0_18px_48px_-28px_rgba(0,0,0,0.65)]">
+        <Card className={authFormCardClassName}>
             <CardHeader className="gap-4 border-b border-[var(--border-subtle)] px-6 py-6">
                 <div className="space-y-3 rounded-lg border border-[var(--border-subtle)] bg-background/40 p-4 dark:bg-background/20">
                     <div className="space-y-1">
@@ -162,7 +132,7 @@ export function OnboardingSetupForm() {
                                 placeholder="Your full name"
                                 value={name}
                                 disabled={isPending}
-                                className={onboardingInputClassName}
+                                className={authFormInputClassName}
                                 onChange={(event) => {
                                     setName(event.target.value);
                                     setFieldErrors((current) => ({ ...current, name: undefined }));
@@ -182,7 +152,7 @@ export function OnboardingSetupForm() {
                                 placeholder="you@company.com"
                                 value={email}
                                 disabled={isPending}
-                                className={onboardingInputClassName}
+                                className={authFormInputClassName}
                                 onChange={(event) => {
                                     setEmail(event.target.value);
                                     setFieldErrors((current) => ({ ...current, email: undefined }));
@@ -194,7 +164,7 @@ export function OnboardingSetupForm() {
 
                         <Field data-invalid={!!fieldErrors.password}>
                             <FieldLabel htmlFor="onboarding-password">Password</FieldLabel>
-                            <InputGroup className={onboardingInputGroupClassName}>
+                            <InputGroup className={authFormInputGroupClassName}>
                                 <InputGroupInput
                                     id="onboarding-password"
                                     name="password"
@@ -262,7 +232,7 @@ export function OnboardingSetupForm() {
                         <Button
                             type="submit"
                             disabled={isPending}
-                            className="h-12 w-full rounded-lg bg-primary text-base font-semibold text-primary-foreground shadow-md shadow-primary/25 transition-all duration-200 hover:-translate-y-px hover:bg-[color-mix(in_srgb,var(--accent)_92%,white)] hover:shadow-lg hover:shadow-primary/30 active:translate-y-0 active:shadow-md"
+                            className={authFormPrimaryButtonClassName}
                         >
                             {isPending ? <Spinner /> : null}
                             Create workspace

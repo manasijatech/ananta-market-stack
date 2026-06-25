@@ -49,7 +49,7 @@ class LlmModelCreateIn(BaseModel):
 
 
 class AlphaApiConfigOut(BaseModel):
-    label: str = "Manasija Alpha API"
+    label: str = "Drishti API"
     has_api_key: bool = False
     api_key_hint: str | None = None
     is_enabled: bool = False
