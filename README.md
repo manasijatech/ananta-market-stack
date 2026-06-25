@@ -100,7 +100,7 @@ Use `docker compose down -v` only when you intentionally want to delete Docker-m
 - [Published Docker image](docs/docker-image.md) - fastest single-image setup, Railway settings, safe updates, backups, and manual/GitHub publishing.
 - [Self-hosting guide](docs/self-hosting.md) - source/Compose setup, production domains, generated secrets, Redis, backups, and troubleshooting.
 - [Environment reference](docs/environment.md) - required domain/auth/API variables for Docker, Railway, broker callbacks, Redis, and hosted API settings.
-- [Development setup](docs/development.md) - manual backend/frontend setup, local env files, workers, migrations, and checks.
+- [Development setup](docs/development.md) - native or Docker Compose Watch dev, local env files, workers, migrations, and checks.
 - [API overview](docs/api-overview.md) - route groups, local OpenAPI docs, and hosted API documentation links.
 - [Security notes](docs/security.md) - encrypted broker credentials, secrets, backups, Redis, and production hardening.
 - [Contributing](CONTRIBUTING.md) - contribution workflow, checks, migrations, and compatibility expectations.
