@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="en" suppressHydrationWarning className={cn("font-sans", inter.variable)}>
-            <body suppressHydrationWarning>
+            <body className="font-sans" suppressHydrationWarning>
                 <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
                     <Providers>
                         <SessionProvider>

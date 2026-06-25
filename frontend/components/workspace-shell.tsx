@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
     IconBook,
     IconBellRinging,
@@ -15,6 +15,7 @@ import {
     IconMessageCircle,
     IconNews,
     IconSettings2,
+    IconShieldLock,
     IconWallet
 } from "@tabler/icons-react";
 import type { TablerIcon } from "@tabler/icons-react";
@@ -22,6 +23,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { EVENTS, Joyride, STATUS, type EventData, type Step, type TooltipRenderProps } from "react-joyride";
 import { AlertNotificationsTray } from "@/components/alerts/alert-notifications-tray";
 import { BrandLogo } from "@/components/brand-logo";
+import { GithubStarButton } from "@/components/github-star-button";
 import {
     HEATMAP_FILTER_CHANGE_EVENT,
     HEATMAP_FILTER_STORAGE_KEY,
@@ -33,8 +35,8 @@ import { UpdateAvailableBanner } from "@/components/system/update-available-bann
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
 import { hasRbacPermission } from "@/lib/rbac";
+import { cn } from "@/lib/utils";
 import type { RbacPrincipal } from "@/service/types/rbac";
 
 type NavItem = {
@@ -48,7 +50,7 @@ type NavItem = {
 
 const navGroups: { label: string; items: NavItem[] }[] = [
     {
-        label: "MAIN",
+        label: "Main",
         items: [
             { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
             { href: "/broker-connections", label: "Broker Connections", icon: IconWallet },
@@ -56,11 +58,18 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         ]
     },
     {
-        label: "INTELLIGENCE",
+        label: "Intelligence",
         items: [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
             { href: "/heatmap", label: "Heatmap", icon: IconLayoutGrid },
             { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
+            { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
+        ]
+    },
+    {
+        label: "Settings",
+        items: [
+            { href: "/settings", label: "Settings", icon: IconSettings2 },
             {
                 href: "/llm-usage",
                 label: "LLM Usage",
@@ -68,17 +77,10 @@ const navGroups: { label: string; items: NavItem[] }[] = [
                 requiredPermission: "settings.view_llm_usage",
                 hideWhenUnauthorized: true
             },
-            { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
-        ]
-    },
-    {
-        label: "SETTINGS",
-        items: [
-            { href: "/settings", label: "Settings", icon: IconSettings2 },
             {
                 href: "/settings/access",
                 label: "Access",
-                icon: IconSettings2,
+                icon: IconShieldLock,
                 requiredPermission: "workspace.manage_members",
                 hideWhenUnauthorized: true
             },
@@ -295,25 +297,22 @@ function NavigationGroups({
     }, []);
 
     return (
-        <nav className="grid gap-1" aria-label="Primary navigation">
-            {groups.map((group, groupIndex) => (
-                <div className="grid gap-1" key={group.label}>
-                    {groupIndex > 0 ? <Separator className="my-2" /> : null}
-                    <div className="px-3 pt-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                        {group.label}
-                    </div>
+        <nav className="flex flex-col gap-6 py-2" aria-label="Primary navigation">
+            {groups.map((group) => (
+                <div className="flex flex-col gap-0.5" key={group.label}>
+                    <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{group.label}</p>
                     {group.items.map((item) => {
                         const Icon = item.icon;
                         const active = isNavItemActive(pathname, item.href);
                         const href = item.href === "/heatmap" ? heatmapHref : item.href;
                         const link = (
                             <Link
-                                className={[
-                                    "flex h-10 min-w-0 items-center gap-3 border-l-2 px-3 text-sm font-semibold uppercase tracking-[0.04em] transition-colors duration-100 ease-out",
+                                className={cn(
+                                    "flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium transition-colors",
                                     active
-                                        ? "border-l-primary text-primary"
-                                        : "border-l-transparent text-muted-foreground hover:border-l-primary/50 hover:text-foreground"
-                                ].join(" ")}
+                                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                                        : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                                )}
                                 data-onboarding={
                                     item.href === "/broker-connections"
                                         ? "broker-connections-nav"
@@ -324,9 +323,11 @@ function NavigationGroups({
                                 href={href}
                                 key={item.href}
                             >
-                                <Icon className="size-4 shrink-0" stroke={1.8} />
+                                <Icon className="size-4 shrink-0 opacity-80" stroke={1.75} />
                                 <span className="truncate">{item.label}</span>
-                                {item.external ? <IconExternalLink className="size-3 shrink-0" stroke={1.8} /> : null}
+                                {item.external ? (
+                                    <IconExternalLink className="ml-auto size-3.5 shrink-0 opacity-50" stroke={1.75} />
+                                ) : null}
                             </Link>
                         );
 
@@ -359,10 +360,6 @@ export function WorkspaceShell({
     const [onboardingRun, setOnboardingRun] = useState(false);
     const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
     const [onboardingTargetCheck, setOnboardingTargetCheck] = useState(0);
-    const activeSection = useMemo(
-        () => visibleNavGroups(principal).flatMap((group) => group.items).find((item) => isNavItemActive(pathname, item.href)),
-        [pathname, principal]
-    );
 
     useEffect(() => {
         if (!isLoading && !user) {
@@ -584,7 +581,7 @@ export function WorkspaceShell({
     if (isLoading || !user) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
-                <div className="border-l-2 border-primary px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <div className="border-l-2 border-primary px-4 py-2 text-sm font-medium text-muted-foreground">
                     Checking session...
                 </div>
             </main>
@@ -657,12 +654,12 @@ export function WorkspaceShell({
                                 <div className="min-h-0 overflow-y-auto px-3 py-4">
                                     <NavigationGroups closeOnSelect pathname={pathname} principal={principal} />
                                 </div>
-                                <div className="border-t border-border p-3">
-                                    <div className="flex items-center gap-3 px-2 py-2">
-                                        <span className="flex size-8 shrink-0 items-center justify-center !rounded-full border border-border bg-secondary font-mono text-[11px] font-bold text-secondary-foreground">
+                                <div className="border-t border-border p-2">
+                                    <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+                                        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
                                             {initials(user.name, user.email)}
                                         </span>
-                                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground">
+                                        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                                             {user.email}
                                         </span>
                                         <Button
@@ -679,36 +676,30 @@ export function WorkspaceShell({
                                 </div>
                             </DialogContent>
                         </Dialog>
-                        <div className="min-w-0">
-                            <BrandLogo imageClassName="text-[1.35rem]" />
-                            <div className="mt-0.5 truncate font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                {activeSection?.label ?? "Workspace"}
-                            </div>
-                        </div>
+                        <BrandLogo imageClassName="text-[1.35rem]" />
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
+                        <GithubStarButton />
                         <AlertNotificationsTray />
                         <ThemeToggle />
                     </div>
                 </div>
             </header>
 
-            <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-[252px] min-[980px]:overflow-hidden">
+            <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-60 min-[980px]:overflow-hidden">
                 <div className="flex h-full w-full flex-col border-r border-border">
-                    <div className="flex h-18 items-center border-b border-border px-5 min-[980px]:h-20">
-                        <BrandLogo imageClassName="text-[1.5rem]" />
+                    <div className="flex h-16 items-center px-4">
+                        <BrandLogo imageClassName="text-[1.35rem]" />
                     </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+                    <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
                         <NavigationGroups pathname={pathname} principal={principal} />
                     </div>
-                    <div className="mt-auto border-t border-border p-3">
-                        <div className="flex items-center gap-3 px-2 py-2">
-                            <span className="flex size-8 shrink-0 items-center justify-center !rounded-full border border-border bg-secondary font-mono text-[11px] font-bold text-secondary-foreground">
+                    <div className="mt-auto border-t border-border p-2">
+                        <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
                                 {initials(user.name, user.email)}
                             </span>
-                            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground">
-                                {user.email}
-                            </span>
+                            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{user.email}</span>
                             <Button
                                 aria-label="Sign out"
                                 className="size-8 shrink-0 text-muted-foreground hover:text-primary"
@@ -724,16 +715,17 @@ export function WorkspaceShell({
                 </div>
             </aside>
 
-            <div className="min-[980px]:pl-[252px]">
-                <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-[252px] min-[980px]:flex min-[980px]:h-20 min-[980px]:items-center min-[980px]:px-10 min-[980px]:py-0">
+            <div className="min-[980px]:pl-60">
+                <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-60 min-[980px]:flex min-[980px]:h-16 min-[980px]:items-center min-[980px]:px-8 min-[980px]:py-0">
                     <div className="flex w-full items-center justify-end">
-                        <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <GithubStarButton />
                             <AlertNotificationsTray />
                             <ThemeToggle />
                         </div>
                     </div>
                 </header>
-                <div className="min-w-0 px-4 pb-6 pt-[calc(4rem+1.5rem+3px)] min-[760px]:px-8 min-[980px]:px-10 min-[980px]:pb-10 min-[980px]:pt-[7.5rem]">
+                <div className="min-w-0 px-4 pb-6 pt-[calc(4rem+1.5rem+3px)] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-[5.5rem]">
                     <UpdateAvailableBanner />
                     {children}
                 </div>

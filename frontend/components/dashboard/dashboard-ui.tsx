@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { typography } from "@/lib/typography";
 
 export type DashboardTone = "good" | "warn" | "danger" | "muted";
 
@@ -34,7 +35,7 @@ export function dashboardToneClasses(tone: DashboardTone) {
 }
 
 export function EmptyStateLine({ children }: { children: ReactNode }) {
-    return <p className="text-sm leading-6 text-muted-foreground">{children}</p>;
+    return <p className={typography.muted}>{children}</p>;
 }
 
 export function MetricPanel({
@@ -50,9 +51,9 @@ export function MetricPanel({
 }) {
     return (
         <div className={cn("rounded-lg border border-border/80 bg-background/40 p-4", className)}>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
-            {hint ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</p> : null}
+            <p className={typography.muted}>{label}</p>
+            <p className={cn(typography.h3, "mt-2")}>{value}</p>
+            {hint ? <p className={cn(typography.muted, "mt-1 leading-5")}>{hint}</p> : null}
         </div>
     );
 }
@@ -71,8 +72,8 @@ export function ProgressTrack({
     return (
         <div className="flex flex-col gap-2">
             <div className="flex items-end justify-between gap-3">
-                <p className="text-sm font-medium text-foreground">{label}</p>
-                <p className="text-sm text-muted-foreground">{detail}</p>
+                <p className={typography.small}>{label}</p>
+                <p className={typography.muted}>{detail}</p>
             </div>
             <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
@@ -105,12 +106,12 @@ export function ActivityRow({
                 <Icon stroke={1.8} />
             </span>
             <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">{title}</p>
-                <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+                <p className={cn(typography.small, "truncate")}>{title}</p>
+                <p className={cn(typography.muted, "truncate")}>{subtitle}</p>
             </div>
             <div className="shrink-0 text-right">
-                <p className="text-[11px] text-muted-foreground">{meta}</p>
-                <p className={cn("text-sm font-medium", valueClassName)}>{value}</p>
+                <p className={typography.muted}>{meta}</p>
+                <p className={cn(typography.small, valueClassName)}>{value}</p>
             </div>
         </div>
     );
@@ -141,14 +142,14 @@ export function DashboardModuleCard({
                     href={href}
                 >
                     <div className="min-w-0 flex-1 py-1">
-                        <CardTitle className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+                        <CardTitle className={cn(typography.h4, "flex items-center gap-2")}>
                             <span className="truncate">{title}</span>
                             <IconArrowRight
                                 className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/card:opacity-100"
                                 stroke={1.8}
                             />
                         </CardTitle>
-                        <CardDescription className="mt-1.5 text-sm leading-6">{description}</CardDescription>
+                        <CardDescription className="mt-1.5 leading-7">{description}</CardDescription>
                     </div>
                     <span
                         className={cn(
@@ -187,10 +188,8 @@ export function SetupChecklist({
         <Card className="shadow-sm ring-border/50 [--card-spacing:--spacing(6)]">
             <CardHeader className="gap-4">
                 <div>
-                    <CardTitle className="text-xl font-semibold tracking-tight">
-                        Complete setup ({completedCount}/{totalCount})
-                    </CardTitle>
-                    <CardDescription className="mt-1.5 text-sm leading-6">
+                    <CardTitle className={typography.h4}>Complete setup ({completedCount}/{totalCount})</CardTitle>
+                    <CardDescription className="mt-1.5 leading-7">
                         Finish these steps to unlock broker data, market intelligence, alerts, and LLM workflows.
                     </CardDescription>
                 </div>
@@ -216,8 +215,8 @@ export function SetupChecklist({
                                 {item.complete ? <IconCircleCheck stroke={1.8} /> : <item.icon stroke={1.8} />}
                             </span>
                             <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-foreground">{item.label}</p>
-                                <p className="mt-0.5 text-sm text-muted-foreground">{item.description}</p>
+                                <p className={typography.small}>{item.label}</p>
+                                <p className={cn(typography.muted, "mt-0.5")}>{item.description}</p>
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
                                 <Badge
