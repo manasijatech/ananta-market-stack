@@ -1,18 +1,26 @@
-import Link from "next/link";
-import type { ReactNode } from "react";
 import {
-    IconAlertTriangle,
-    IconArrowRight,
     IconBellRinging,
+    IconBolt,
     IconBrain,
     IconBuildingBank,
     IconChartBar,
-    IconCircleCheck,
+    IconCircleX,
     IconPlugConnected,
     IconSettings2
 } from "@tabler/icons-react";
-import { PageHeader, Shell, StatusBadge, isBrokerAccountReady } from "@/components/brokers/ui";
-import { Button } from "@/components/ui/button";
+import {
+    ActivityRow,
+    DashboardModuleCard,
+    EmptyStateLine,
+    MetricPanel,
+    ProgressTrack,
+    SetupChecklist,
+    type DashboardTone,
+    type SetupChecklistItem
+} from "@/components/dashboard/dashboard-ui";
+import { PageHeader, Shell, isBrokerAccountReady } from "@/components/brokers/ui";
+import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
+import { formatIstDateTime } from "@/lib/datetime";
 import { formatLlmCost, requestKindDisplay } from "@/lib/llm-usage";
 import {
     getAlertHistory,
@@ -30,8 +38,6 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { withServerFetchRetry } from "@/lib/server-fetch-retry";
 
 export const dynamic = "force-dynamic";
-
-type Tone = "good" | "warn" | "danger" | "muted";
 
 type LoadResult<T> = {
     data: T;
@@ -64,6 +70,11 @@ function compactNumber(value: number): string {
     return compactFormatter.format(value || 0);
 }
 
+function percent(numerator: number, denominator: number): number {
+    if (!denominator) return 0;
+    return Math.round((numerator / denominator) * 100);
+}
+
 function settled<T>(result: PromiseSettledResult<T>, fallback: T): LoadResult<T> {
     if (result.status === "fulfilled") return { data: result.value };
     const parsed = parseActionError(result.reason);
@@ -78,77 +89,61 @@ function isFreshSetupError(result: LoadResult<unknown>): boolean {
     return Boolean(result.error && result.status && result.status >= 500);
 }
 
-function toneClasses(tone: Tone) {
-    if (tone === "good") return "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]";
-    if (tone === "danger") return "border-[var(--danger)] bg-[var(--danger-subtle)] text-[var(--danger)]";
-    if (tone === "warn")
-        return "border-primary bg-[var(--accent-subtle)] text-[var(--accent-dim)] dark:text-[var(--accent)]";
-    return "border-border bg-secondary text-muted-foreground";
-}
-
-function successRate(successCount: number, requestCount: number): string {
-    if (!requestCount) return "0%";
-    return `${Math.round((successCount / requestCount) * 100)}%`;
-}
-
 function firstRuntimeError(workflows: AlertWorkflow[]): string | null {
     return workflows.find((workflow) => workflow.last_runtime_error)?.last_runtime_error ?? null;
 }
 
-function ApiStat({ label, value }: { label: string; value: string }) {
-    return (
-        <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-3">
-            <div className="type-step-eyebrow">{label}</div>
-            <div className="mt-2 truncate text-2xl font-semibold leading-none">{value}</div>
-        </div>
-    );
+function integrationState(config: SystemConfig | null) {
+    const llmProviders = config?.llm_providers.filter((provider) => provider.is_enabled && provider.has_api_key) ?? [];
+    const alphaReady = Boolean(config?.alpha_api.is_enabled && config.alpha_api.has_api_key);
+    const mcpServers = config
+        ? [config.mcp_server, ...config.mcp_servers].filter(
+              (server) => server.is_enabled && (server.oauth_authenticated || server.has_api_key)
+          )
+        : [];
+    const defaultBrokerReady = Boolean(config?.broker_data_default.effective_default_account_id);
+
+    return { llmProviders, alphaReady, mcpServers, defaultBrokerReady };
 }
 
-function DashboardCard({
-    href,
-    label,
-    title,
-    description,
-    tone,
-    icon: Icon,
-    error,
-    children
-}: {
-    href: string;
-    label: string;
-    title: string;
-    description: string;
-    tone: Tone;
-    icon: typeof IconBuildingBank;
-    error?: string;
-    children: ReactNode;
-}) {
-    return (
-        <section className="flex h-full min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-5">
-            <div className="flex min-w-0 items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <p className="type-step-eyebrow">{label}</p>
-                    <h2 className="mt-2 text-2xl font-semibold leading-tight">{title}</h2>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-                </div>
-                <span className={`flex size-10 shrink-0 items-center justify-center border ${toneClasses(tone)}`}>
-                    <Icon className="size-5" stroke={1.8} />
-                </span>
-            </div>
-            <div className="grid gap-3 min-[560px]:grid-cols-3">{children}</div>
-            {error ? (
-                <p className="line-clamp-2 border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] p-3 text-sm text-[var(--danger)]">
-                    {error}
-                </p>
-            ) : null}
-            <Button asChild className="mt-auto min-h-10 w-full justify-between" variant="secondary">
-                <Link href={href}>
-                    Open {title}
-                    <IconArrowRight className="size-4" stroke={1.8} />
-                </Link>
-            </Button>
-        </section>
-    );
+function getSetupItems(data: DashboardData): SetupChecklistItem[] {
+    const { llmProviders, alphaReady, mcpServers } = integrationState(data.systemConfig.data);
+    const hasBroker = data.accounts.data.length > 0;
+
+    return [
+        {
+            id: "broker",
+            label: "Connect a broker",
+            description: "Link a broker account for live data, orders, and portfolio context.",
+            href: "/broker-connections",
+            complete: hasBroker,
+            icon: IconBuildingBank
+        },
+        {
+            id: "drishti",
+            label: "Add Drishti API key",
+            description: "Enable market intelligence, symbol metadata, and watchlist enrichment.",
+            href: "/settings#alpha",
+            complete: alphaReady,
+            icon: IconChartBar
+        },
+        {
+            id: "llm",
+            label: "Configure LLM providers",
+            description: "Store provider keys for broker chat and alert analysis.",
+            href: "/settings#llm",
+            complete: llmProviders.length > 0,
+            icon: IconBrain
+        },
+        {
+            id: "mcp",
+            label: "Connect MCP servers",
+            description: "Optional hosted tools for broker chat when MCP is enabled.",
+            href: "/settings#mcp",
+            complete: mcpServers.length > 0,
+            icon: IconPlugConnected
+        }
+    ];
 }
 
 async function loadDashboardData(): Promise<DashboardData> {
@@ -190,26 +185,61 @@ function BrokerOverviewCard({ data }: { data: DashboardData["accounts"] }) {
     const readyAccounts = data.data.filter(isBrokerAccountReady);
     const attentionAccounts = data.data.filter((account) => account.last_error || !isBrokerAccountReady(account));
     const automationAccounts = data.data.filter((account) => account.automation_enabled);
-    const startup = isFreshSetupError(data) && data.data.length === 0;
-    const tone: Tone = startup ? "muted" : data.error ? "danger" : attentionAccounts.length ? "warn" : readyAccounts.length ? "good" : "muted";
-    const cardError = startup
-        ? "No broker accounts yet. Add a broker connection to begin setup."
-        : data.error;
+    const tone: DashboardTone = data.error
+        ? "danger"
+        : attentionAccounts.length
+          ? "warn"
+          : readyAccounts.length
+            ? "good"
+            : "muted";
+    const hasSignal =
+        data.data.length > 0 || attentionAccounts.length > 0 || automationAccounts.length > 0 || Boolean(data.error);
+    const readyPct = percent(readyAccounts.length, data.data.length);
 
     return (
-        <DashboardCard
-            description="Session readiness, verification, and automation coverage across connected broker accounts."
-            error={cardError}
+        <DashboardModuleCard
+            description="Session readiness and automation coverage across connected broker accounts."
+            error={data.error}
             href="/broker-connections"
             icon={IconBuildingBank}
-            label="Broker API"
             title="Broker Connections"
             tone={tone}
         >
-            <ApiStat label="Ready" value={`${formatNumber(readyAccounts.length)} / ${formatNumber(data.data.length)}`} />
-            <ApiStat label="Needs action" value={formatNumber(attentionAccounts.length)} />
-            <ApiStat label="Automation" value={formatNumber(automationAccounts.length)} />
-        </DashboardCard>
+            {hasSignal ? (
+                <>
+                    {data.data.length > 0 ? (
+                        <ProgressTrack
+                            detail={`${formatNumber(readyAccounts.length)} of ${formatNumber(data.data.length)} ready`}
+                            label="Account readiness"
+                            value={readyPct}
+                        />
+                    ) : null}
+                    {(readyAccounts.length > 0 || automationAccounts.length > 0) && (
+                        <div className="grid gap-3 min-[480px]:grid-cols-2">
+                            {readyAccounts.length > 0 || data.data.length > 0 ? (
+                                <MetricPanel
+                                    hint="Verified sessions available for broker-backed data"
+                                    label="Ready accounts"
+                                    value={`${formatNumber(readyAccounts.length)} / ${formatNumber(data.data.length)}`}
+                                />
+                            ) : null}
+                            {automationAccounts.length > 0 ? (
+                                <MetricPanel
+                                    hint="Accounts with scheduled session maintenance enabled"
+                                    label="Automation"
+                                    value={formatNumber(automationAccounts.length)}
+                                />
+                            ) : null}
+                        </div>
+                    )}
+                    {attentionAccounts.length > 0 ? (
+                        <MetricPanel label="Needs action" value={formatNumber(attentionAccounts.length)} />
+                    ) : null}
+                </>
+            ) : (
+                <EmptyStateLine>No broker accounts connected yet.</EmptyStateLine>
+            )}
+        </DashboardModuleCard>
     );
 }
 
@@ -238,12 +268,13 @@ function AlertsOverviewCard({
         unreadAlerts.error ||
         alertRuns.error ||
         liveStreams.error;
-    const serviceUnavailable =
-        [activeWorkflows, inactiveWorkflows, unreadAlerts, alertRuns, liveStreams].some(isFreshSetupError);
+    const serviceUnavailable = [activeWorkflows, inactiveWorkflows, unreadAlerts, alertRuns, liveStreams].some(
+        isFreshSetupError
+    );
     const cardError = serviceUnavailable
         ? "Alerts and live streams will appear after the workspace finishes starting."
         : error;
-    const tone: Tone = serviceUnavailable
+    const tone: DashboardTone = serviceUnavailable
         ? "muted"
         : error
           ? "danger"
@@ -252,27 +283,77 @@ function AlertsOverviewCard({
             : activeWorkflows.data.length
               ? "good"
               : "muted";
+    const recentRuns = alertRuns.data.slice(0, 4);
+    const hasSignal =
+        activeWorkflows.data.length > 0 ||
+        unreadAlerts.data > 0 ||
+        alertRuns.data.length > 0 ||
+        runtimeIssues.length > 0 ||
+        desiredSubscriptions > 0 ||
+        Boolean(cardError);
 
     return (
-        <DashboardCard
+        <DashboardModuleCard
             description={
                 firstRuntimeError(allWorkflows) ||
-                "Workflow state, recent evaluation matches, alert inbox pressure, and live subscription coverage."
+                "Workflow evaluations, alert inbox pressure, and live subscription coverage."
             }
             error={cardError}
             href="/alerts-workspace"
             icon={IconBellRinging}
-            label="Alert APIs"
             title="Alerts Workspace"
             tone={tone}
         >
-            <ApiStat label="Active" value={formatNumber(activeWorkflows.data.length)} />
-            <ApiStat label="Unread" value={formatNumber(unreadAlerts.data)} />
-            <ApiStat label="Streams" value={formatNumber(desiredSubscriptions)} />
-            <ApiStat label="Recent matches" value={`${formatNumber(matchedRuns)} / ${formatNumber(alertRuns.data.length)}`} />
-            <ApiStat label="Inactive" value={formatNumber(inactiveWorkflows.data.length)} />
-            <ApiStat label="Runtime issues" value={formatNumber(runtimeIssues.length)} />
-        </DashboardCard>
+            {hasSignal ? (
+                <>
+                    {(activeWorkflows.data.length > 0 ||
+                        unreadAlerts.data > 0 ||
+                        desiredSubscriptions > 0 ||
+                        runtimeIssues.length > 0) && (
+                        <div className="grid gap-3 min-[480px]:grid-cols-2">
+                            {activeWorkflows.data.length > 0 ? (
+                                <MetricPanel label="Active workflows" value={formatNumber(activeWorkflows.data.length)} />
+                            ) : null}
+                            {unreadAlerts.data > 0 ? (
+                                <MetricPanel label="Unread alerts" value={formatNumber(unreadAlerts.data)} />
+                            ) : null}
+                            {desiredSubscriptions > 0 ? (
+                                <MetricPanel label="Live streams" value={formatNumber(desiredSubscriptions)} />
+                            ) : null}
+                            {runtimeIssues.length > 0 ? (
+                                <MetricPanel label="Runtime issues" value={formatNumber(runtimeIssues.length)} />
+                            ) : null}
+                        </div>
+                    )}
+                    {alertRuns.data.length > 0 ? (
+                        <ProgressTrack
+                            detail={`${formatNumber(matchedRuns)} matched of ${formatNumber(alertRuns.data.length)}`}
+                            label="Recent evaluation matches"
+                            value={percent(matchedRuns, alertRuns.data.length)}
+                        />
+                    ) : null}
+                    {recentRuns.length > 0 ? (
+                        <div className="flex flex-col gap-1">
+                            {recentRuns.map((run) => (
+                                <ActivityRow
+                                    icon={run.matched ? IconBolt : IconCircleX}
+                                    key={run.id}
+                                    meta={formatIstDateTime(run.created_at, "—")}
+                                    subtitle={run.reason}
+                                    title={run.rendered_title}
+                                    value={run.matched ? "Matched" : "No match"}
+                                    valueClassName={run.matched ? "text-[var(--success)]" : "text-muted-foreground"}
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <EmptyStateLine>No recent workflow evaluations yet.</EmptyStateLine>
+                    )}
+                </>
+            ) : (
+                <EmptyStateLine>No alert activity yet. Create a workflow to start monitoring.</EmptyStateLine>
+            )}
+        </DashboardModuleCard>
     );
 }
 
@@ -284,147 +365,176 @@ function LlmOverviewCard({ data }: { data: DashboardData["llmOverview"] }) {
         : "None";
     const requests = overview?.totals.request_count ?? 0;
     const errors = overview?.totals.error_count ?? 0;
-    const tone: Tone = data.error ? "danger" : errors ? "warn" : requests ? "good" : "muted";
+    const successCount = overview?.totals.success_count ?? 0;
+    const todayRequests = overview?.today.request_count ?? 0;
+    const tone: DashboardTone = data.error ? "danger" : errors ? "warn" : "good";
 
     return (
-        <DashboardCard
+        <DashboardModuleCard
             description={`Top provider: ${topProvider}. Top request kind: ${topKind}.`}
             error={data.error}
             href="/llm-usage"
             icon={IconBrain}
-            label="LLM Usage API"
             title="LLM Usage"
             tone={tone}
         >
-            <ApiStat label="Requests" value={formatNumber(requests)} />
-            <ApiStat label="Tokens" value={compactNumber(overview?.totals.total_tokens ?? 0)} />
-            <ApiStat label="Success" value={successRate(overview?.totals.success_count ?? 0, requests)} />
-            <ApiStat label="Today" value={formatNumber(overview?.today.request_count ?? 0)} />
-            <ApiStat
-                label="Cost"
-                value={formatLlmCost(overview?.totals.provider_cost_total ?? 0, overview?.totals.priced_request_count ?? 0)}
+            <div className="grid gap-3 min-[480px]:grid-cols-2">
+                <MetricPanel label="Total requests" value={formatNumber(requests)} />
+                <MetricPanel label="Tokens used" value={compactNumber(overview?.totals.total_tokens ?? 0)} />
+            </div>
+            <ProgressTrack
+                detail={`${formatNumber(successCount)} successful`}
+                label="Success rate"
+                value={percent(successCount, requests)}
             />
-            <ApiStat label="Errors" value={formatNumber(errors)} />
-        </DashboardCard>
+            {todayRequests > 0 ? (
+                <ProgressTrack
+                    detail={`${formatNumber(todayRequests)} today`}
+                    label="Today's share"
+                    value={percent(todayRequests, requests)}
+                />
+            ) : null}
+            {(errors > 0 || (overview?.totals.provider_cost_total ?? 0) > 0) && (
+                <div className="grid gap-3 min-[480px]:grid-cols-2">
+                    {errors > 0 ? <MetricPanel label="Errors" value={formatNumber(errors)} /> : null}
+                    {(overview?.totals.provider_cost_total ?? 0) > 0 ? (
+                        <MetricPanel
+                            label="Estimated cost"
+                            value={formatLlmCost(
+                                overview?.totals.provider_cost_total ?? 0,
+                                overview?.totals.priced_request_count ?? 0
+                            )}
+                        />
+                    ) : null}
+                </div>
+            )}
+        </DashboardModuleCard>
     );
 }
 
-function SettingsOverviewCard({ data }: { data: DashboardData["systemConfig"] }) {
+function SettingsAttentionCard({ data }: { data: DashboardData["systemConfig"] }) {
     const config = data.data;
-    const llmProviders = config?.llm_providers.filter((provider) => provider.is_enabled && provider.has_api_key) ?? [];
-    const enabledModels =
-        config?.llm_providers.reduce((total, provider) => {
-            return total + provider.models.filter((model) => model.is_enabled).length;
-        }, 0) ?? 0;
-    const alphaReady = Boolean(config?.alpha_api.is_enabled && config.alpha_api.has_api_key);
-    const mcpServers = config
-        ? [config.mcp_server, ...config.mcp_servers].filter(
-              (server) => server.is_enabled && (server.oauth_authenticated || server.has_api_key)
-          )
-        : [];
-    const defaultAccount =
-        config?.broker_data_default.accounts.find((account) => account.is_effective)?.label ??
-        config?.broker_data_default.effective_default_account_id ??
-        "None";
-    const tone: Tone = data.error ? "danger" : llmProviders.length || alphaReady || mcpServers.length ? "good" : "muted";
+    const { llmProviders, alphaReady, mcpServers } = integrationState(config);
+    const pendingItems = [
+        !alphaReady && "Drishti API key",
+        llmProviders.length === 0 && "LLM providers",
+        mcpServers.length === 0 && "MCP servers",
+        !config?.broker_data_default.effective_default_account_id && "Default broker data"
+    ].filter(Boolean) as string[];
+    const tone: DashboardTone = data.error ? "danger" : pendingItems.length ? "warn" : "good";
 
     return (
-        <DashboardCard
-            description={`Default broker: ${defaultAccount}. Provider credentials and data connectors are summarized from system config.`}
+        <DashboardModuleCard
+            description={
+                pendingItems.length
+                    ? `${pendingItems.join(", ")} still need attention in workspace settings.`
+                    : "Review shared workspace credentials and defaults."
+            }
             error={data.error}
             href="/settings"
             icon={IconSettings2}
-            label="Config APIs"
             title="Settings"
             tone={tone}
         >
-            <ApiStat label="LLM keys" value={formatNumber(llmProviders.length)} />
-            <ApiStat label="Models" value={formatNumber(enabledModels)} />
-            <ApiStat label="Drishti API" value={alphaReady ? "Ready" : "Off"} />
-            <ApiStat label="MCP servers" value={formatNumber(mcpServers.length)} />
-            <ApiStat label="Default data" value={config?.broker_data_default.effective_default_account_id ? "Set" : "None"} />
-            <ApiStat label="Search fallback" value={config?.broker_data_search.fallback_used ? "Yes" : "No"} />
-        </DashboardCard>
+            <div className="flex flex-col gap-2 text-sm">
+                {!alphaReady ? (
+                    <EmptyStateLine>
+                        Drishti API key is missing.{" "}
+                        <a className="font-medium text-primary underline underline-offset-2" href={DRISHTI_API_SIGNUP_URL}>
+                            Create one at drishti.manasija.in
+                        </a>{" "}
+                        or add it in Settings.
+                    </EmptyStateLine>
+                ) : null}
+                {pendingItems.length > 0 ? (
+                    <ul className="list-inside list-disc text-muted-foreground">
+                        {pendingItems.map((item) => (
+                            <li key={item}>{item}</li>
+                        ))}
+                    </ul>
+                ) : (
+                    <EmptyStateLine>All core integrations are configured.</EmptyStateLine>
+                )}
+            </div>
+        </DashboardModuleCard>
     );
 }
 
-function SnapshotBar({ data }: { data: DashboardData }) {
-    const readyAccounts = data.accounts.data.filter(isBrokerAccountReady).length;
-    const streamsOk = Boolean(data.liveStreams.data?.redis_ok);
-    const llmRequestsToday = data.llmOverview.data?.today.request_count ?? 0;
-    const unreadAlerts = data.unreadAlerts.data;
-    const degradedApis = [
-        data.accounts,
-        data.activeWorkflows,
-        data.inactiveWorkflows,
-        data.unreadAlerts,
-        data.alertRuns,
-        data.liveStreams,
-        data.llmOverview,
-        data.systemConfig
-    ].filter((result) => result.error && !isFreshSetupError(result)).length;
+function shouldShowAlertsCard(data: DashboardData): boolean {
+    const allWorkflows = [...data.activeWorkflows.data, ...data.inactiveWorkflows.data];
+    const runtimeIssues = allWorkflows.filter(
+        (workflow) => workflow.last_runtime_error || workflow.deployment_status === "error"
+    );
 
     return (
-        <section className="grid gap-3 border border-border bg-card p-4 min-[820px]:grid-cols-4">
-            <div className="flex items-center gap-3">
-                <StatusBadge className={toneClasses(readyAccounts ? "good" : "muted")}>
-                    <IconCircleCheck className="mr-1 size-3" stroke={1.8} />
-                    {formatNumber(readyAccounts)}
-                </StatusBadge>
-                <span className="text-sm text-muted-foreground">broker accounts ready</span>
-            </div>
-            <div className="flex items-center gap-3">
-                <StatusBadge className={toneClasses(streamsOk ? "good" : "warn")}>
-                    <IconPlugConnected className="mr-1 size-3" stroke={1.8} />
-                    {streamsOk ? "online" : "check"}
-                </StatusBadge>
-                <span className="text-sm text-muted-foreground">live stream cache</span>
-            </div>
-            <div className="flex items-center gap-3">
-                <StatusBadge className={toneClasses(unreadAlerts ? "warn" : "muted")}>
-                    <IconAlertTriangle className="mr-1 size-3" stroke={1.8} />
-                    {formatNumber(unreadAlerts)}
-                </StatusBadge>
-                <span className="text-sm text-muted-foreground">unread alerts</span>
-            </div>
-            <div className="flex items-center gap-3">
-                <StatusBadge className={toneClasses(degradedApis ? "danger" : "good")}>
-                    <IconChartBar className="mr-1 size-3" stroke={1.8} />
-                    {formatNumber(llmRequestsToday)}
-                </StatusBadge>
-                <span className="text-sm text-muted-foreground">
-                    LLM calls today{degradedApis ? ` · ${degradedApis} API gaps` : ""}
-                </span>
-            </div>
-        </section>
+        data.activeWorkflows.data.length > 0 ||
+        data.unreadAlerts.data > 0 ||
+        data.alertRuns.data.length > 0 ||
+        runtimeIssues.length > 0 ||
+        (data.liveStreams.data?.desired_subscriptions.length ?? 0) > 0 ||
+        Boolean(
+            data.activeWorkflows.error ||
+                data.inactiveWorkflows.error ||
+                data.unreadAlerts.error ||
+                data.alertRuns.error ||
+                data.liveStreams.error
+        )
     );
+}
+
+function shouldShowLlmCard(data: DashboardData): boolean {
+    const requests = data.llmOverview.data?.totals.request_count ?? 0;
+    const errors = data.llmOverview.data?.totals.error_count ?? 0;
+    return requests > 0 || errors > 0 || Boolean(data.llmOverview.error);
+}
+
+function shouldShowSettingsCard(data: DashboardData): boolean {
+    if (data.systemConfig.error) return true;
+    const { llmProviders, alphaReady, mcpServers, defaultBrokerReady } = integrationState(data.systemConfig.data);
+    return !alphaReady || llmProviders.length === 0 || mcpServers.length === 0 || !defaultBrokerReady;
+}
+
+function shouldShowBrokerCard(data: DashboardData): boolean {
+    return data.accounts.data.length > 0 || Boolean(data.accounts.error);
 }
 
 export default async function DashboardPage() {
     const data = await loadDashboardData();
+    const setupItems = getSetupItems(data);
+    const completedSetupCount = setupItems.filter((item) => item.complete).length;
+    const setupComplete = completedSetupCount === setupItems.length;
 
     return (
         <Shell>
             <PageHeader
                 eyebrow="Workspace"
                 title="Dashboard"
-                description="Monitor broker readiness, user alerting, live market workflow infrastructure, and LLM usage from one workspace."
+                description="Monitor broker readiness, alerting, live streams, and LLM usage from one workspace."
             />
 
-            <div className="grid gap-5">
-                <SnapshotBar data={data} />
-                <section className="grid gap-4 min-[1180px]:grid-cols-2">
-                    <BrokerOverviewCard data={data.accounts} />
-                    <AlertsOverviewCard
-                        activeWorkflows={data.activeWorkflows}
-                        alertRuns={data.alertRuns}
-                        inactiveWorkflows={data.inactiveWorkflows}
-                        liveStreams={data.liveStreams}
-                        unreadAlerts={data.unreadAlerts}
+            <div className="flex flex-col gap-8">
+                {!setupComplete ? (
+                    <SetupChecklist
+                        completedCount={completedSetupCount}
+                        items={setupItems}
+                        totalCount={setupItems.length}
                     />
-                    <LlmOverviewCard data={data.llmOverview} />
-                    <SettingsOverviewCard data={data.systemConfig} />
-                </section>
+                ) : (
+                    <section className="grid gap-5 min-[1180px]:grid-cols-2">
+                        {shouldShowBrokerCard(data) ? <BrokerOverviewCard data={data.accounts} /> : null}
+                        {shouldShowAlertsCard(data) ? (
+                            <AlertsOverviewCard
+                                activeWorkflows={data.activeWorkflows}
+                                alertRuns={data.alertRuns}
+                                inactiveWorkflows={data.inactiveWorkflows}
+                                liveStreams={data.liveStreams}
+                                unreadAlerts={data.unreadAlerts}
+                            />
+                        ) : null}
+                        {shouldShowLlmCard(data) ? <LlmOverviewCard data={data.llmOverview} /> : null}
+                        {shouldShowSettingsCard(data) ? <SettingsAttentionCard data={data.systemConfig} /> : null}
+                    </section>
+                )}
             </div>
         </Shell>
     );
