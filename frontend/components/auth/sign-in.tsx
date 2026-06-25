@@ -6,7 +6,7 @@ import { useIsMutating } from "@tanstack/react-query"
 import { type SyntheticEvent, useState } from "react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Field,
@@ -113,10 +113,9 @@ export function SignIn({
 
   return (
     <Card className={cn("w-full max-w-sm", className)}>
-      <CardHeader>
-        <CardTitle className="text-xl font-semibold">
-          {localization.auth.signIn}
-        </CardTitle>
+      <CardHeader className="text-center">
+        <CardTitle className="text-xl">Welcome back</CardTitle>
+        <CardDescription>Sign in with your email and password to continue</CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -174,7 +173,18 @@ export function SignIn({
                 </Field>
 
                 <Field data-invalid={!!fieldErrors.password}>
-                  <Label htmlFor="password">{localization.auth.password}</Label>
+                  <div className="flex items-center">
+                    <Label htmlFor="password">{localization.auth.password}</Label>
+
+                    {emailAndPassword?.enabled && emailAndPassword?.forgotPassword ? (
+                      <Link
+                        href={`${basePaths.auth}/${viewPaths.auth.forgotPassword}`}
+                        className="ml-auto text-sm underline-offset-4 hover:underline"
+                      >
+                        {localization.auth.forgotPasswordLink}
+                      </Link>
+                    ) : null}
+                  </div>
 
                   <Input
                     id="password"
@@ -247,11 +257,23 @@ export function SignIn({
                 )}
 
                 <div className="flex flex-col gap-3">
-                  <Button type="submit" disabled={isPending}>
+                  <Button type="submit" disabled={isPending} className="w-full">
                     {signInEmailPending && <Spinner />}
 
                     {localization.auth.signIn}
                   </Button>
+
+                  {emailAndPassword?.enabled ? (
+                    <FieldDescription className="text-center">
+                      {localization.auth.needToCreateAnAccount}{" "}
+                      <Link
+                        href={`${basePaths.auth}/${viewPaths.auth.signUp}`}
+                        className="underline underline-offset-4"
+                      >
+                        {localization.auth.signUp}
+                      </Link>
+                    </FieldDescription>
+                  ) : null}
 
                   {plugins.flatMap((plugin) =>
                     (plugin.authButtons ?? []).map((AuthButton, index) => (
@@ -278,29 +300,6 @@ export function SignIn({
                 <ProviderButtons socialLayout={socialLayout} />
               )}
             </>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-3 items-center w-full mt-4">
-          {emailAndPassword?.enabled && emailAndPassword?.forgotPassword && (
-            <Link
-              href={`${basePaths.auth}/${viewPaths.auth.forgotPassword}`}
-              className="self-center text-sm underline-offset-4 hover:underline"
-            >
-              {localization.auth.forgotPasswordLink}
-            </Link>
-          )}
-
-          {emailAndPassword?.enabled && (
-            <FieldDescription className="text-center">
-              {localization.auth.needToCreateAnAccount}{" "}
-              <Link
-                href={`${basePaths.auth}/${viewPaths.auth.signUp}`}
-                className="underline underline-offset-4"
-              >
-                {localization.auth.signUp}
-              </Link>
-            </FieldDescription>
           )}
         </div>
       </CardContent>

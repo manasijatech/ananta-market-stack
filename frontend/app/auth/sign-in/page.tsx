@@ -1,4 +1,4 @@
-import { AuthForm } from "@/components/auth-form";
+import { AuthSignInView } from "@/components/auth/auth-views";
 import { AuthShell } from "@/components/auth-shell";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -14,15 +14,8 @@ export default async function SignInPage() {
     }
 
     return (
-        <AuthShell
-            eyebrow="Welcome back"
-            title="Sign in"
-            subtitle="Use your email and password to continue."
-            footerText="New to Ananta Market Stack?"
-            footerHref="/auth/sign-up"
-            footerAction="Create an account"
-        >
-            <AuthForm mode="sign-in" />
+        <AuthShell>
+            <AuthSignInView />
         </AuthShell>
     );
 }

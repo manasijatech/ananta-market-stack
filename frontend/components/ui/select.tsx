@@ -187,4 +187,5 @@ export {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
+  Select as SelectRoot
 }

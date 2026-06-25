@@ -1,5 +1,8 @@
 "use client";
 
+import { authQueryKeys } from "@better-auth-ui/core";
+import { useSession as useAuthSession } from "@better-auth-ui/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useMemo } from "react";
 import { authClient, type AuthUser, type SignInInput, type SignUpInput } from "@/lib/auth-client";
 
@@ -14,8 +17,13 @@ type SessionContextValue = {
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-    const session = authClient.useSession();
+    const queryClient = useQueryClient();
+    const session = useAuthSession(authClient);
     const user = session.data?.user ?? null;
+
+    const refreshSession = useCallback(async () => {
+        await queryClient.invalidateQueries({ queryKey: authQueryKeys.session });
+    }, [queryClient]);
 
     const signIn = useCallback(
         async (input: SignInInput) => {
@@ -29,9 +37,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                 throw new Error(error.message ?? "Could not sign in.");
             }
 
-            await session.refetch();
+            await refreshSession();
         },
-        [session]
+        [refreshSession]
     );
 
     const signUp = useCallback(
@@ -46,9 +54,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                 throw new Error(error.message ?? "Could not create account.");
             }
 
-            await session.refetch();
+            await refreshSession();
         },
-        [session]
+        [refreshSession]
     );
 
     const signOut = useCallback(async () => {
@@ -56,8 +64,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (error) {
             throw new Error(error.message ?? "Could not sign out.");
         }
-        await session.refetch();
-    }, []);
+        await refreshSession();
+    }, [refreshSession]);
 
     const value = useMemo(
         () => ({ user, isLoading: session.isPending, signIn, signUp, signOut }),
