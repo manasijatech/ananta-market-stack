@@ -97,7 +97,7 @@ function firstRuntimeError(workflows: AlertWorkflow[]): string | null {
 
 function ApiStat({ label, value }: { label: string; value: string }) {
     return (
-        <div className="min-w-0 border border-border bg-background px-3 py-3">
+        <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-3">
             <div className="type-step-eyebrow">{label}</div>
             <div className="mt-2 truncate text-2xl font-semibold leading-none">{value}</div>
         </div>
@@ -124,7 +124,7 @@ function DashboardCard({
     children: ReactNode;
 }) {
     return (
-        <section className="flex h-full min-w-0 flex-col gap-4 border border-border bg-card p-5">
+        <section className="flex h-full min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-5">
             <div className="flex min-w-0 items-start justify-between gap-4">
                 <div className="min-w-0">
                     <p className="type-step-eyebrow">{label}</p>
