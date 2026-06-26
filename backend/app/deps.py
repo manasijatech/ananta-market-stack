@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,7 +10,10 @@ from db.session import get_db
 
 
 def _header_user_id(x_user_id: str | None = Header(None, alias="X-User-Id")) -> str:
-    return (x_user_id or "").strip() or "local-dev-user"
+    user_id = (x_user_id or "").strip()
+    if user_id:
+        return user_id
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
 
 
 def get_current_user(

@@ -50,3 +50,11 @@ export async function fetchFastApi(path: string, init: RequestInit = {}): Promis
         cache: init.cache ?? "no-store"
     });
 }
+
+export async function fetchFastApiPublic(path: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(`${apiBaseUrl}${path}`, {
+        ...init,
+        headers: init.headers,
+        cache: init.cache ?? "no-store"
+    });
+}

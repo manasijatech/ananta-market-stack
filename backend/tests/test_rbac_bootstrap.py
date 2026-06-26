@@ -1,9 +1,19 @@
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.deps import _header_user_id
 from app.services import rbac
 from db.models import User, Workspace, WorkspaceMember
 from db.session import Base
+
+
+def test_missing_user_header_is_rejected():
+    with pytest.raises(HTTPException) as caught:
+        _header_user_id(None)
+
+    assert getattr(caught.value, "status_code", None) == 401
 
 
 def test_bootstrap_membership_makes_first_user_admin():
@@ -233,4 +243,34 @@ def test_reconcile_workspace_members_removes_orphan_members():
     rbac.reconcile_workspace_members(db, workspace.id)
 
     assert db.scalar(select(func.count()).select_from(WorkspaceMember)) == 0
+    db.close()
+
+
+def test_missing_workspace_row_is_recreated_for_existing_member():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+
+    user = User(id="user-1", display_name="Recovered User")
+    db.add(user)
+    db.add(
+        WorkspaceMember(
+            id="member-1",
+            workspace_id="workspace-missing",
+            user_id=user.id,
+            role="admin",
+            status="active",
+        )
+    )
+    db.commit()
+
+    principal = rbac.ensure_principal(db, user)
+    workspace = db.get(Workspace, "workspace-missing")
+
+    assert workspace is not None
+    assert workspace.created_by_user_id == user.id
+    assert principal.workspace.id == "workspace-missing"
+    assert principal.membership.role == "admin"
+    assert principal.membership.status == "active"
     db.close()
