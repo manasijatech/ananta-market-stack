@@ -11,6 +11,7 @@ import {
     DialogContent,
     DialogDescription,
     DialogHeader,
+    DialogPanel,
     DialogTitle,
     DialogTrigger
 } from "@/components/ui/dialog";
@@ -326,12 +327,13 @@ function SetupGuide({ guide }: { guide: ChannelGuide }) {
                     <CircleHelpIcon className="size-4" />
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl overflow-y-auto p-0">
-                <DialogHeader className="border-b border-border px-6 py-5 pr-14">
+            <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl">
+                <DialogHeader>
                     <DialogTitle>{guide.title}</DialogTitle>
                     <DialogDescription>{guide.summary}</DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-6 px-6 py-5 text-sm">
+                <DialogPanel>
+                    <div className="grid gap-6 text-sm">
                     <section className="grid gap-3">
                         <div className="font-semibold text-foreground">Fields</div>
                         <div className="grid gap-2">
@@ -360,6 +362,7 @@ function SetupGuide({ guide }: { guide: ChannelGuide }) {
                         </ul>
                     </section>
                 </div>
+                </DialogPanel>
             </DialogContent>
         </Dialog>
     );

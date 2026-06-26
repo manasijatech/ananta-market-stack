@@ -130,11 +130,16 @@ export function InputGroupText({
 
 export function InputGroupInput({
   className,
+  inputClassName,
   ...props
 }: InputProps): React.ReactElement {
+  const resolvedInputClassName =
+    typeof className === "string" ? cn(className, inputClassName) : inputClassName;
+
   return (
     <Input
-      inputClassName={className}
+      className={typeof className === "function" ? className : undefined}
+      inputClassName={resolvedInputClassName}
       unstyled
       {...props}
       data-slot="input-group-control"

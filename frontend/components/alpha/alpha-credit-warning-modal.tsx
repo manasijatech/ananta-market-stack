@@ -16,6 +16,7 @@ import {
     DialogDescription,
     DialogFooter,
     DialogHeader,
+    DialogPanel,
     DialogTitle
 } from "@/components/ui/dialog";
 
@@ -58,8 +59,8 @@ export function AlphaCreditWarningModal() {
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogContent className="w-[min(92vw,480px)] gap-0 overflow-hidden p-0">
-                <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+            <DialogContent className="max-w-[480px]">
+                <DialogHeader>
                     <div className="flex items-start gap-3">
                         <span className="flex size-9 shrink-0 items-center justify-center border border-[var(--accent)] bg-[var(--accent-subtle)] text-primary">
                             <AlertTriangle className="size-4" />
@@ -73,17 +74,17 @@ export function AlphaCreditWarningModal() {
                         </div>
                     </div>
                 </DialogHeader>
-                <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
-                    <p>{message}</p>
-                    <p>
-                        Add credits to your Drishti account or update the Drishti API key in Settings, then try
-                        the request again.
-                    </p>
-                </div>
-                <DialogFooter className="border-t border-border px-5 py-4">
-                    <DialogClose asChild>
-                        <Button type="button">Got it</Button>
-                    </DialogClose>
+                <DialogPanel>
+                    <div className="grid gap-3 text-sm leading-6 text-muted-foreground">
+                        <p>{message}</p>
+                        <p>
+                            Add credits to your Drishti account or update the Drishti API key in Settings, then try
+                            the request again.
+                        </p>
+                    </div>
+                </DialogPanel>
+                <DialogFooter>
+                    <DialogClose render={<Button type="button" variant="ghost" />}>Got it</DialogClose>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

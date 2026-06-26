@@ -12,6 +12,7 @@ import { brokerNames } from "@/components/brokers/ui";
 import { Shell } from "@/components/brokers/shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { formatUserFacingError } from "@/lib/api-errors";
 import { typography } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { getBrokerAccounts } from "@/service/actions/broker";
@@ -138,12 +139,12 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
 
     return (
         <article
-            className={`group relative isolate flex h-full min-h-0 min-w-0 overflow-visible border text-white shadow-sm outline-none transition-transform duration-150 hover:z-20 ${dense ? "p-1" : "p-1.5"} ${heatmapTileClass(index, item.day_change_perc, dense)}`}
+            className={`group relative isolate flex h-full min-h-0 min-w-0 overflow-visible rounded-lg border text-white shadow-sm outline-none transition-transform duration-150 hover:z-20 ${dense ? "p-1" : "p-1.5"} ${heatmapTileClass(index, item.day_change_perc, dense)}`}
             data-heatmap-tile
             style={tone}
         >
-            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(0,0,0,0.1))]" />
-            <div className="pointer-events-none absolute inset-0 opacity-0 ring-2 ring-white/40 transition-opacity group-hover:opacity-100" />
+            <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(0,0,0,0.1))]" />
+            <div className="pointer-events-none absolute inset-0 rounded-lg opacity-0 ring-2 ring-white/40 transition-opacity group-hover:opacity-100" />
 
             <div className={`relative flex min-h-0 w-full flex-col justify-between overflow-hidden transition-opacity duration-150 group-hover:opacity-0 ${dense ? "gap-1" : "gap-1.5"}`}>
                 <div className="flex min-h-0 items-start justify-between gap-1.5">
@@ -160,7 +161,7 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
                     {item.logo ? (
                         <img alt="" className={`${dense ? "size-4.5" : "size-6"} shrink-0 object-contain`} draggable={false} src={item.logo} />
                     ) : (
-                        <div className={`flex shrink-0 items-center justify-center border border-white/24 bg-black/12 ${dense ? "size-5" : "size-6"}`}>
+                        <div className={`flex shrink-0 items-center justify-center rounded-lg border border-white/24 bg-black/12 ${dense ? "size-5" : "size-6"}`}>
                             <span className="font-mono text-[8px] font-bold text-white/88">{symbolInitials(item.symbol)}</span>
                         </div>
                     )}
@@ -182,7 +183,7 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
             </div>
 
             <div
-                className="pointer-events-none absolute left-[var(--heatmap-hover-left,0px)] top-[var(--heatmap-hover-top,0px)] z-10 flex min-h-[var(--heatmap-hover-min-height,100%)] w-[var(--heatmap-hover-width,100%)] flex-col overflow-visible border border-white/30 bg-inherit p-3 opacity-0 shadow-2xl ring-1 ring-black/25 transition-[opacity,left,top] duration-150 group-hover:opacity-100"
+                className="pointer-events-none absolute left-[var(--heatmap-hover-left,0px)] top-[var(--heatmap-hover-top,0px)] z-10 flex min-h-[var(--heatmap-hover-min-height,100%)] w-[var(--heatmap-hover-width,100%)] flex-col overflow-visible rounded-lg border border-white/30 bg-inherit p-3 opacity-0 shadow-2xl ring-1 ring-black/25 transition-[opacity,left,top] duration-150 group-hover:opacity-100"
                 data-heatmap-hover-card
             >
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.12),rgba(0,0,0,0.12))]" />
@@ -196,7 +197,7 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
                     {item.logo ? (
                         <img alt="" className="size-9 shrink-0 object-contain" draggable={false} src={item.logo} />
                     ) : (
-                        <div className="flex size-9 shrink-0 items-center justify-center border border-white/24 bg-black/14">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/24 bg-black/14">
                             <span className="font-mono text-xs font-bold text-white/90">{symbolInitials(item.symbol)}</span>
                         </div>
                     )}
@@ -217,11 +218,11 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
                 </dl>
 
                 <div className="relative mt-auto flex flex-wrap gap-1.5 pt-3 text-xs font-semibold text-white/84">
-                    {item.sector ? <span className="border border-white/22 bg-black/16 px-2 py-1">{item.sector}</span> : null}
-                    {item.industry ? <span className="border border-white/22 bg-black/16 px-2 py-1">{item.industry}</span> : null}
-                    {item.theme ? <span className="border border-white/22 bg-black/16 px-2 py-1">{item.theme}</span> : null}
+                    {item.sector ? <span className="rounded-lg border border-white/22 bg-black/16 px-2 py-1">{item.sector}</span> : null}
+                    {item.industry ? <span className="rounded-lg border border-white/22 bg-black/16 px-2 py-1">{item.industry}</span> : null}
+                    {item.theme ? <span className="rounded-lg border border-white/22 bg-black/16 px-2 py-1">{item.theme}</span> : null}
                     {item.source_kinds.slice(0, 2).map((sourceKind) => (
-                        <span className="border border-white/22 bg-black/16 px-2 py-1" key={sourceKind}>
+                        <span className="rounded-lg border border-white/22 bg-black/16 px-2 py-1" key={sourceKind}>
                             {sourceKind}
                         </span>
                     ))}
@@ -287,7 +288,7 @@ export default async function HeatmapPage({
                 account_id: scope === "portfolio_holdings" ? effectiveAccountId : null
             });
         } catch (caught) {
-            heatmapError = caught instanceof Error ? caught.message : "Could not load heatmap.";
+            heatmapError = formatUserFacingError(caught, "Could not load heatmap.");
         }
     }
 
@@ -312,7 +313,7 @@ export default async function HeatmapPage({
                     <h1 className={cn(typography.pageTitle, "truncate")}>Heatmap</h1>
                 </header>
 
-                <section className="mb-2 flex min-w-0 shrink-0 flex-col gap-2 border border-border bg-card/80 p-2 min-[980px]:flex-row min-[980px]:items-end">
+                <section className="mb-2 flex min-w-0 shrink-0 flex-col gap-2 rounded-lg border border-border bg-card/80 p-2 min-[980px]:flex-row min-[980px]:items-end">
                     <div className="flex min-w-0 flex-1 flex-col gap-2">
                         <HeatmapFilters
                             accounts={accounts}
@@ -333,23 +334,23 @@ export default async function HeatmapPage({
 
                     {heatmap ? (
                         <div className="flex min-w-0 flex-[1_1_auto] flex-wrap items-center justify-start gap-1 text-[11px] min-[980px]:justify-end">
-                            <span className="min-w-0 truncate border border-border bg-background px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            <span className="min-w-0 truncate rounded-lg border border-border bg-background px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                                 {heatmap.scope_label}
                             </span>
-                            <span className="border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
+                            <span className="rounded-lg border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
                                 {heatmap.returned_count}/{heatmap.tracked_symbol_count} live
                             </span>
-                            <span className="inline-flex items-center gap-1 border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
+                            <span className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
                                 <RadioTower className="size-3" aria-hidden="true" />
                                 {heatmap.broker_code ? `${heatmap.broker_code} · ${days}d` : `${days}d`}
                             </span>
-                            <span className="border border-[var(--success)] bg-[var(--success-subtle)] px-2 py-1 font-semibold text-[var(--success)]">
+                            <span className="rounded-lg border border-[var(--success)] bg-[var(--success-subtle)] px-2 py-1 font-semibold text-[var(--success)]">
                                 {advancingCount} up
                             </span>
-                            <span className="border border-[var(--danger)] bg-[var(--danger-subtle)] px-2 py-1 font-semibold text-[var(--danger)]">
+                            <span className="rounded-lg border border-[var(--danger)] bg-[var(--danger-subtle)] px-2 py-1 font-semibold text-[var(--danger)]">
                                 {decliningCount} down
                             </span>
-                            <span className="border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
+                            <span className="rounded-lg border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
                                 {neutralCount} flat
                             </span>
                         </div>
@@ -363,7 +364,7 @@ export default async function HeatmapPage({
                 ) : null}
 
                 {!loadError && !canLoadHeatmap ? (
-                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center border border-dashed border-border bg-card/40 p-8 text-center">
+                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/40 p-8 text-center">
                         <p className="text-lg font-semibold">{sourceEmptyMessage(scope)}</p>
                         <p className="mt-2 text-sm text-muted-foreground">
                             {scope === "watchlist" ? "Watchlists become available after you add symbols." : null}
@@ -397,7 +398,7 @@ export default async function HeatmapPage({
                         ) : null}
 
                         {!cards.length ? (
-                            <div className="flex min-h-0 flex-col items-center justify-center border border-dashed border-border bg-card/40 p-8 text-center">
+                            <div className="flex min-h-0 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/40 p-8 text-center">
                                 <Grid2X2 className="mx-auto mb-3 size-8 text-muted-foreground" aria-hidden="true" />
                                 <p className="text-lg font-semibold">{noQuotableSymbolsTitle(scope, heatmap.scope_label)}</p>
                                 <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">

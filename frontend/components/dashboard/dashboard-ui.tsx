@@ -59,10 +59,10 @@ export function MetricPanel({
     className?: string;
 }) {
     return (
-        <Card className={cn("border-border/80 bg-background/40 shadow-none", className)}>
+        <Card className={cn("border-border bg-card", className)}>
             <CardPanel className="p-4">
                 <p className={typography.muted}>{label}</p>
-                <p className={cn(typography.h3, "mt-2")}>{value}</p>
+                <p className={cn(typography.h3, "mt-2 font-mono tabular-nums")}>{value}</p>
                 {hint ? <p className={cn(typography.muted, "mt-1 leading-5")}>{hint}</p> : null}
             </CardPanel>
         </Card>
@@ -122,7 +122,7 @@ export function ActivityRow({
             </div>
             <div className="shrink-0 text-right">
                 <p className={typography.muted}>{meta}</p>
-                <p className={cn(typography.small, valueClassName)}>{value}</p>
+                <p className={cn(typography.small, "font-mono tabular-nums", valueClassName)}>{value}</p>
             </div>
         </div>
     );

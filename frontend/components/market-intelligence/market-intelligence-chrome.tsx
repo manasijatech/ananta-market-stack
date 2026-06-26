@@ -25,7 +25,7 @@ import {
     type MarketIntelligenceSocketState
 } from "@/components/market-intelligence/market-intelligence-live-feed";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogPanel, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
     Select,
     SelectContent,
@@ -261,8 +261,8 @@ export function MarketIntelligenceChrome({
             <PageHeader
                 action={
                     !isLoadingBrokerConfig && !defaultBrokerAccount ? (
-                        <Badge size="sm" variant="warning">
-                            No broker ⚠
+                        <Badge className="w-fit shrink-0" size="sm" variant="warning">
+                            No broker
                         </Badge>
                     ) : null
                 }
@@ -273,7 +273,7 @@ export function MarketIntelligenceChrome({
 
             <div className="mb-4 flex min-w-0 flex-col gap-3 border-b border-border/50 pb-3 min-[920px]:flex-row min-[920px]:items-center min-[920px]:justify-between">
                 <nav
-                    className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 min-[920px]:flex-wrap min-[920px]:overflow-visible"
+                    className="-mx-1 flex min-w-0 snap-x snap-mandatory gap-1 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] min-[920px]:flex-wrap min-[920px]:overflow-visible [&::-webkit-scrollbar]:hidden"
                     aria-label="Market intelligence sections"
                 >
                     {marketIntelligenceSections.map((item) => {
@@ -283,7 +283,7 @@ export function MarketIntelligenceChrome({
                             <button
                                 aria-current={active ? "page" : undefined}
                                 className={cn(
-                                    "inline-flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2 text-sm transition-colors",
+                                    "inline-flex min-h-11 shrink-0 snap-start items-center gap-1.5 border-b-2 px-2.5 py-2 text-sm transition-colors sm:min-h-0",
                                     active
                                         ? "border-primary font-medium text-foreground"
                                         : "border-transparent text-muted-foreground hover:text-foreground"
@@ -300,7 +300,7 @@ export function MarketIntelligenceChrome({
                 </nav>
 
                 <div className="flex min-w-0 items-center gap-2 min-[920px]:w-[min(42vw,420px)] min-[920px]:shrink-0">
-                    <Search className="size-4 shrink-0 text-muted-foreground" />
+                    <Search className="hidden size-4 shrink-0 text-muted-foreground min-[480px]:block" />
                     <FeedSearchInput onChange={setFeedSearch} placeholder="Search symbol" value={feedSearch} />
                     <Dialog>
                         <DialogTrigger
@@ -314,27 +314,29 @@ export function MarketIntelligenceChrome({
                                 </button>
                             }
                         />
-                        <DialogContent className="max-w-xl p-6">
+                        <DialogContent className="max-w-xl">
                             <DialogHeader>
                                 <DialogTitle>Understanding Market Intelligence</DialogTitle>
                             </DialogHeader>
-                            <div className="grid gap-4 text-sm leading-6 text-muted-foreground">
-                                {intelligenceHelpItems.map((item) => (
-                                    <section className="grid gap-1" key={item.title}>
-                                        <h3 className="text-sm font-semibold leading-5 text-foreground">
-                                            {item.title}
-                                        </h3>
-                                        <p>{item.body}</p>
-                                    </section>
-                                ))}
-                            </div>
+                            <DialogPanel>
+                                <div className="grid gap-4 text-sm leading-6 text-muted-foreground">
+                                    {intelligenceHelpItems.map((item) => (
+                                        <section className="grid gap-1" key={item.title}>
+                                            <h3 className="text-sm font-semibold leading-5 text-foreground">
+                                                {item.title}
+                                            </h3>
+                                            <p>{item.body}</p>
+                                        </section>
+                                    ))}
+                                </div>
+                            </DialogPanel>
                         </DialogContent>
                     </Dialog>
                 </div>
             </div>
 
             {watchlistGroups.length ? (
-                <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+                <div className="mb-4 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground min-[640px]:flex-row min-[640px]:flex-wrap min-[640px]:items-center min-[640px]:gap-x-3 min-[640px]:gap-y-2">
                     <WatchlistScopeTooltip historyLimit={ALPHA_SYMBOL_LIMIT} symbolCount={allSymbolsCount}>
                         <Select
                             disabled={isLoadingFilter}
@@ -345,7 +347,7 @@ export function MarketIntelligenceChrome({
                         >
                             <SelectTrigger
                                 aria-label="Filter market intelligence by watchlist"
-                                className="h-8 min-w-[min(100%,14rem)] max-w-sm bg-background text-xs"
+                                className="h-9 w-full min-w-0 bg-background text-xs min-[640px]:h-8 min-[640px]:max-w-sm min-[640px]:w-auto"
                                 size="sm"
                             >
                                 <SelectValue placeholder="Select watchlist">{selectedWatchlistLabel}</SelectValue>
@@ -373,10 +375,10 @@ export function MarketIntelligenceChrome({
                         </Select>
                     </WatchlistScopeTooltip>
 
-                    <span className="text-border">·</span>
+                    <span className="hidden text-border min-[640px]:inline">·</span>
                     <LiveStatusPill state={socketState} />
-                    <span className="text-border">·</span>
-                    <span>
+                    <span className="hidden text-border min-[640px]:inline">·</span>
+                    <span className="min-w-0">
                         {marketIntelligenceProducts.length} products · {activeSymbols.length} symbols
                         {isLoadingFilter ? " · Loading…" : ""}
                     </span>

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { AlphaCreditWarningModal } from "@/components/alpha/alpha-credit-warning-modal";
 import { Providers } from "@/components/providers";
 import { SessionProvider } from "@/components/session-provider";
@@ -21,6 +21,12 @@ export const metadata: Metadata = {
         shortcut: "/logo-mark.svg",
         apple: "/logo-mark.svg"
     }
+};
+
+export const viewport: Viewport = {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

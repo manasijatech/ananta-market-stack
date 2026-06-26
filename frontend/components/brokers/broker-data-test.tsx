@@ -610,7 +610,7 @@ export function BrokerDataTest({
                         </Button>
                     ))}
                 </div>
-                <div className="mt-3 border border-border p-3">
+                <div className="mt-3 rounded-lg border border-border p-3">
                     <div className="text-sm font-bold">{MARKET_MODE_COPY[marketMode].title}</div>
                     <div className="mt-1 text-sm text-muted-foreground">{MARKET_MODE_COPY[marketMode].description}</div>
                     <div className="mt-2 text-xs text-muted-foreground">
@@ -932,7 +932,7 @@ export function BrokerDataTest({
                 <div className="mt-4 grid max-h-[28rem] gap-3 overflow-y-auto pr-1">
                     {wsMessages.map((message, index) => (
                         <pre
-                            className="overflow-x-auto border border-border bg-muted/30 p-3 text-xs"
+                            className="overflow-x-auto rounded-lg border border-border bg-muted/30 p-3 text-xs"
                             key={`${index}-${JSON.stringify(message).slice(0, 24)}`}
                         >
                             {pretty(message)}
@@ -951,7 +951,7 @@ export function BrokerDataTest({
                 description="Raw payloads returned by the backend or broker."
             >
                 {isPending ? (
-                    <div className="border border-border bg-muted/30 p-4">
+                    <div className="rounded-lg border border-border bg-muted/30 p-4">
                         <Skeleton className="h-4 w-48" />
                         <Skeleton className="mt-3 h-4 w-full" />
                         <Skeleton className="mt-2 h-4 w-5/6" />
@@ -959,7 +959,7 @@ export function BrokerDataTest({
                         <Skeleton className="mt-2 h-4 w-4/5" />
                     </div>
                 ) : (
-                    <pre className="overflow-x-auto border border-border bg-muted/30 p-4 text-xs">
+                    <pre className="overflow-x-auto rounded-lg border border-border bg-muted/30 p-4 text-xs">
                         {responseBody || "{}"}
                     </pre>
                 )}

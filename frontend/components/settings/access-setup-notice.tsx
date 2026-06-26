@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 export function AccessSetupNotice() {
     return (
-        <Collapsible className="rounded-md border-l-[3px] border-l-blue-400 bg-card py-2.5 pr-3.5 pl-3.5">
+        <Collapsible className="rounded-lg border-l-[3px] border-l-blue-400 bg-card py-2.5 pr-3.5 pl-3.5">
             <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                     <IconInfoCircle aria-hidden className="size-4 shrink-0 text-blue-400" />

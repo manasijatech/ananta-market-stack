@@ -9,7 +9,7 @@ export function AuthLoading({ mode = "sign-in" }: { mode?: "sign-in" | "sign-up"
                     <Skeleton className="h-5 w-28" />
                 </div>
 
-                <div className="rounded-xl border bg-card p-6 shadow-sm">
+                <div className="rounded-lg border border-border bg-card p-6">
                     <div className="space-y-2 text-center">
                         <Skeleton className="mx-auto h-6 w-36" />
                         <Skeleton className="mx-auto h-4 w-56" />

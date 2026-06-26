@@ -89,6 +89,14 @@ Prefer pinned image tags in docs and deployment templates:
 ghcr.io/manasijatech/ananta-market-stack:0.1.0
 ```
 
+Publish only these tag shapes:
+
+- exact semver, for example `0.1.6`
+- commit pin, for example `sha-3f4a92c`
+- optional `latest` for explicitly floating deployments
+
+Do not publish floating major or minor aliases such as `0` or `0.1`.
+
 Use `latest` only for testing or explicitly floating deployments.
 
 ## Package Visibility

@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 function DashboardCardSkeleton() {
     return (
-        <Card className="h-full shadow-sm ring-border/50 [--card-spacing:--spacing(6)]">
+        <Card className="h-full [--card-spacing:--spacing(6)]">
             <CardHeader className="gap-3 pb-0">
                 <div className="flex items-start justify-between gap-4">
                     <div className="w-full max-w-md">
@@ -30,7 +30,7 @@ export default function DashboardLoading() {
         <LoadingShell
             header={<HeaderSkeleton eyebrowWidth="w-24" titleWidth="w-72" descriptionWidth="w-full max-w-3xl" />}
         >
-            <Card className="shadow-sm ring-border/50 [--card-spacing:--spacing(6)]">
+            <Card className="[--card-spacing:--spacing(6)]">
                 <CardHeader className="gap-4">
                     <Skeleton className="h-7 w-56" />
                     <Skeleton className="h-4 w-full max-w-2xl" />

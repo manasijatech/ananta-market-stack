@@ -29,7 +29,7 @@ export function AccessDeniedState({
             />
             <Card className="max-w-3xl">
                 <CardHeader>
-                    <div className="mb-4 flex size-12 items-center justify-center border border-border bg-card">
+                    <div className="mb-4 flex size-12 items-center justify-center rounded-lg border border-border bg-card">
                         <LockKeyhole className="size-5 text-muted-foreground" />
                     </div>
                     <CardTitle className="text-2xl">You do not have access to this page</CardTitle>

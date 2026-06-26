@@ -235,7 +235,7 @@ export function AccessGrantEditor({
                 </div>
                 <div className="grid gap-2">
                     <div className="text-sm font-semibold">Saved access for this selection</div>
-                    <div className="border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
+                    <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
                         {selectedGrant
                             ? permissionSummary(normalizePermissions(selectedGrant.permissions, selectedSubject?.isAdmin ?? false))
                             : permissionSummary(effectivePermissions)}

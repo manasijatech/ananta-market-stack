@@ -85,14 +85,34 @@ services:
       - ./backend/data:/shared-data
     develop:
       watch:
-        - path: ./frontend
-          target: /app
+        # Watch source dirs only — not ./frontend root (avoids node_modules FD exhaustion on macOS).
+        - path: ./frontend/app
+          target: /app/app
           action: sync
-          ignore:
-            - node_modules/
-            - .next/
-            - data/
-            - "*.tsbuildinfo"
+        - path: ./frontend/components
+          target: /app/components
+          action: sync
+        - path: ./frontend/lib
+          target: /app/lib
+          action: sync
+        - path: ./frontend/hooks
+          target: /app/hooks
+          action: sync
+        - path: ./frontend/service
+          target: /app/service
+          action: sync
+        - path: ./frontend/public
+          target: /app/public
+          action: sync
+        - path: ./frontend/content
+          target: /app/content
+          action: sync
+        - path: ./frontend/scripts
+          target: /app/scripts
+          action: sync
+        - path: ./frontend/middleware.ts
+          target: /app/middleware.ts
+          action: sync
         - path: ./frontend/package.json
           action: rebuild
         - path: ./frontend/package-lock.json
@@ -105,6 +125,12 @@ services:
           action: sync+restart
         - path: ./frontend/tsconfig.json
           target: /app/tsconfig.json
+          action: sync+restart
+        - path: ./frontend/eslint.config.mjs
+          target: /app/eslint.config.mjs
+          action: sync+restart
+        - path: ./frontend/components.json
+          target: /app/components.json
           action: sync+restart
         - path: ./frontend/.env.local
           target: /app/.env.local
