@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { toast } from "sonner";
 import { IconBan, IconDotsVertical, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
