@@ -25,12 +25,13 @@ class IndmoneyHTTP:
         url = f"{BASE}{path}"
         h = self._headers()
         c = get_httpx_client()
-        if method == "GET":
+        normalized_method = method.upper()
+        if normalized_method == "GET" and json_body is None:
             r = c.get(url, headers=h, params=params)
-        elif method == "POST":
+        elif normalized_method == "POST":
             r = c.post(url, headers=h, json=json_body, params=params)
         else:
-            r = c.request(method, url, headers=h, json=json_body, params=params)
+            r = c.request(normalized_method, url, headers=h, json=json_body, params=params)
         try:
             return r.json()
         except json.JSONDecodeError:

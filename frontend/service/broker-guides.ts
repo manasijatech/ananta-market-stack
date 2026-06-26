@@ -192,25 +192,45 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
     zerodha: {
         broker: "zerodha",
         title: "Zerodha Kite Connect Setup",
-        summary: "Connect Zerodha with Kite Connect API key and API secret, then authorize the session from Ananta Market Stack.",
-        required: ["Account label", "API key", "API secret"],
+        summary: "Connect Zerodha with the normal Kite redirect flow, or add optional web-login automation credentials for daily refresh.",
+        required: ["Account label", "API key", "API secret", "Optional automation bundle if you want auto refresh"],
         setupSteps: [
             "Create or open your Kite Connect app.",
             "Copy the API key and API secret.",
             "Set the app redirect URL to http://localhost:3000/broker-connections for local development.",
+            "Choose API-only mode or optional web-login automation mode.",
+            "If using automation, keep Zerodha user ID, password, and TOTP secret ready.",
             "Save the credentials in Ananta Market Stack."
         ],
         formMapping: [
             { label: "API key", field: "api_key", note: "Kite Connect API key." },
-            { label: "API secret", field: "api_secret", note: "Kite Connect API secret." }
+            { label: "API secret", field: "api_secret", note: "Kite Connect API secret." },
+            {
+                label: "Login user ID",
+                field: "login_user_id",
+                note: "Optional Zerodha user ID for experimental web-login automation."
+            },
+            {
+                label: "Login password",
+                field: "login_password",
+                note: "Optional Zerodha password for experimental web-login automation."
+            },
+            {
+                label: "TOTP secret",
+                field: "totp_secret",
+                note: "Optional Base32 authenticator secret for experimental automation."
+            }
         ],
         sessionSteps: [
-            "Open the broker detail page after saving credentials.",
+            "In API-only mode, open the broker detail page after saving credentials.",
             "Open the Zerodha login URL shown in the session panel.",
-            "After authorization, Ananta Market Stack reads the request_token from /broker-connections and connects the account automatically."
+            "After authorization, Ananta Market Stack reads the request_token from /broker-connections and connects the account automatically.",
+            "In automation mode, the backend can also attempt refresh using the stored user ID, password, and TOTP secret."
         ],
         notes: [
             "Zerodha sessions usually need fresh authorization each trading day.",
+            "The automation path is experimental because it depends on Zerodha web-login behavior.",
+            "The TOTP secret is not the same as the current 6-digit OTP.",
             "Use http://localhost:3000 before and after broker login."
         ]
     }
