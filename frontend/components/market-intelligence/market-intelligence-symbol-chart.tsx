@@ -59,6 +59,16 @@ type AggregatedMarker = {
     time: UTCTimestamp;
 };
 
+type HoveredCandle = {
+    time: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume?: number | null;
+    interval: string;
+};
+
 const RANGE_PRESETS: RangePreset[] = [
     {
         id: "1D",
@@ -78,22 +88,22 @@ const RANGE_PRESETS: RangePreset[] = [
     {
         id: "3M",
         label: "3M",
-        request: { history_days: 90, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 1 },
+        request: { history_days: 90, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 0 },
     },
     {
         id: "6M",
         label: "6M",
-        request: { history_days: 180, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 1 },
+        request: { history_days: 180, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 0 },
     },
     {
         id: "1Y",
         label: "1Y",
-        request: { history_days: 365, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 1 },
+        request: { history_days: 365, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 0 },
     },
     {
         id: "5Y",
         label: "5Y",
-        request: { history_days: 1825, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 1 },
+        request: { history_days: 1825, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 0 },
     },
 ];
 
@@ -193,7 +203,7 @@ function mergeLiveQuote(
             low: ltp,
             close: ltp,
             volume: Number.isFinite(volume) ? volume : null,
-            interval: "1minute",
+            interval,
         });
     }
     return {
@@ -305,6 +315,11 @@ function formatPrice(value: number | null | undefined): string {
     return value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 }
 
+function formatVolume(value: number | null | undefined): string {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+    return value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+}
+
 export function MarketIntelligenceSymbolChart({
     account,
     feeds,
@@ -326,12 +341,14 @@ export function MarketIntelligenceSymbolChart({
     const [rangeLoading, setRangeLoading] = useState(false);
     const [rangeError, setRangeError] = useState("");
     const [selectedMarker, setSelectedMarker] = useState<AggregatedMarker | null>(null);
+    const [hoveredCandle, setHoveredCandle] = useState<HoveredCandle | null>(null);
     const metadata = symbolMetadata[symbol];
     const chartRef = useRef<IChartApi | null>(null);
     const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
     const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
     const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
     const aggregatedMarkersRef = useRef<AggregatedMarker[]>([]);
+    const candlesRef = useRef<MarketChartSnapshot["candles"]>([]);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const fittedRef = useRef(false);
 
@@ -340,6 +357,7 @@ export function MarketIntelligenceSymbolChart({
         setLiveSnapshot(state.snapshot);
         setRangeError("");
         setSelectedMarker(null);
+        setHoveredCandle(state.snapshot?.candles.at(-1) ?? null);
         fittedRef.current = false;
     }, [state.snapshot, symbol]);
 
@@ -351,6 +369,9 @@ export function MarketIntelligenceSymbolChart({
     useEffect(() => {
         aggregatedMarkersRef.current = aggregatedMarkers;
     }, [aggregatedMarkers]);
+    useEffect(() => {
+        candlesRef.current = snapshot?.candles ?? [];
+    }, [snapshot?.candles]);
 
     async function loadRange(nextRangeId: RangePreset["id"]) {
         if (!account?.account_id || !instrument) return;
@@ -367,6 +388,7 @@ export function MarketIntelligenceSymbolChart({
                 ...nextRange.request,
             });
             setLiveSnapshot(nextSnapshot);
+            setHoveredCandle(nextSnapshot.candles.at(-1) ?? null);
             fittedRef.current = false;
         } catch (caught) {
             setRangeError(parseActionError(caught).message);
@@ -428,11 +450,28 @@ export function MarketIntelligenceSymbolChart({
                 const match = aggregatedMarkersRef.current.find((item) => item.time === param.time);
                 setSelectedMarker(match ?? null);
             });
+            chartRef.current.subscribeCrosshairMove((param: MouseEventParams<Time>) => {
+                if (!param.time) {
+                    setHoveredCandle(candlesRef.current.at(-1) ?? null);
+                    return;
+                }
+                const epochSeconds = typeof param.time === "number" ? param.time : null;
+                const isoTime = epochSeconds ? new Date(epochSeconds * 1000).toISOString() : null;
+                if (!isoTime) {
+                    setHoveredCandle(candlesRef.current.at(-1) ?? null);
+                    return;
+                }
+                const candle = candlesRef.current.find((item) => item.time === isoTime);
+                setHoveredCandle(candle ?? candlesRef.current.at(-1) ?? null);
+            });
         }
     }, []);
 
     useEffect(() => {
         if (!snapshot?.candles.length) return;
+        if (!hoveredCandle) {
+            setHoveredCandle(snapshot.candles.at(-1) ?? null);
+        }
         candleSeriesRef.current?.setData(
             snapshot.candles.map((item) => ({
                 time: toChartTime(item.time),
@@ -579,6 +618,23 @@ export function MarketIntelligenceSymbolChart({
                         No broker candle history is available for this symbol yet.
                     </div>
                 ) : null}
+            </div>
+
+            <div className="grid gap-3 border-t border-border/40 bg-background/35 px-4 py-3 text-sm min-[820px]:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(90px,1fr))]">
+                <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Candle</p>
+                    <p className="mt-1 truncate font-medium text-foreground">
+                        {readableDate(hoveredCandle?.time ?? snapshot?.last_price_time ?? null)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        Interval {hoveredCandle?.interval ?? activeRange.request.intraday_interval ?? activeRange.request.daily_interval}
+                    </p>
+                </div>
+                <Metric label="Open" value={formatPrice(hoveredCandle?.open)} />
+                <Metric label="High" value={formatPrice(hoveredCandle?.high)} />
+                <Metric label="Low" value={formatPrice(hoveredCandle?.low)} />
+                <Metric label="Close" value={formatPrice(hoveredCandle?.close)} />
+                <Metric label="Volume" value={formatVolume(hoveredCandle?.volume)} />
             </div>
 
             <div className="border-t border-border/60 px-4 py-3">

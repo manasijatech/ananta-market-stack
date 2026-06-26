@@ -348,11 +348,15 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
 
     now_utc = _utc_now()
     now_ist = now_utc.astimezone(IST)
-    intraday_lookback_days = max(1, int(payload.get("intraday_lookback_days") or 1))
-    intraday_start_ist = (now_ist.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=intraday_lookback_days - 1))
-    intraday_from_utc = intraday_start_ist.astimezone(UTC)
+    intraday_lookback_days = max(0, int(payload.get("intraday_lookback_days") or 0))
+    intraday_from_utc: datetime | None = None
+    if intraday_lookback_days > 0:
+        intraday_start_ist = (
+            now_ist.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=intraday_lookback_days - 1)
+        )
+        intraday_from_utc = intraday_start_ist.astimezone(UTC)
     daily_from_utc = (now_ist.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=max(1, int(payload.get("history_days") or 90)))).astimezone(UTC)
-    daily_to_utc = intraday_from_utc - timedelta(seconds=1)
+    daily_to_utc = (intraday_from_utc - timedelta(seconds=1)) if intraday_from_utc else now_utc
     daily_interval = str(payload.get("daily_interval") or "day")
     intraday_interval = str(payload.get("intraday_interval") or "1minute")
 
@@ -391,43 +395,45 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
             )
             cache_status.fetched_daily = True
 
-    intraday_candles = _load_cached_candles(
-        db,
-        broker_code=acc.broker_code,
-        symbol=symbol,
-        exchange=exchange,
-        interval=intraday_interval,
-        from_time=intraday_from_utc,
-        to_time=now_utc,
-    )
-    latest_intraday_time = intraday_candles[-1].time if intraday_candles else None
-    if intraday_candles and latest_intraday_time and now_utc - latest_intraday_time <= INTRADAY_CACHE_STALE_AFTER:
-        cache_status.used_cached_intraday = True
-    else:
-        intraday_candles = _fetch_historical_candles(
+    intraday_candles: list[NormalizedCandle] = []
+    if intraday_from_utc is not None:
+        intraday_candles = _load_cached_candles(
             db,
-            acc,
-            instrument=instrument,
+            broker_code=acc.broker_code,
+            symbol=symbol,
+            exchange=exchange,
             interval=intraday_interval,
             from_time=intraday_from_utc,
             to_time=now_utc,
         )
-        if intraday_candles:
-            _replace_cached_candles(
+        latest_intraday_time = intraday_candles[-1].time if intraday_candles else None
+        if intraday_candles and latest_intraday_time and now_utc - latest_intraday_time <= INTRADAY_CACHE_STALE_AFTER:
+            cache_status.used_cached_intraday = True
+        else:
+            intraday_candles = _fetch_historical_candles(
                 db,
-                broker_code=acc.broker_code,
-                symbol=symbol,
-                exchange=exchange,
+                acc,
+                instrument=instrument,
                 interval=intraday_interval,
                 from_time=intraday_from_utc,
                 to_time=now_utc,
-                candles=intraday_candles,
             )
-            cache_status.fetched_intraday = True
+            if intraday_candles:
+                _replace_cached_candles(
+                    db,
+                    broker_code=acc.broker_code,
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=intraday_interval,
+                    from_time=intraday_from_utc,
+                    to_time=now_utc,
+                    candles=intraday_candles,
+                )
+                cache_status.fetched_intraday = True
 
     latest_quote: QuoteRow | None = None
     last_price_time: datetime | None = None
-    if payload.get("include_live_quote", True):
+    if payload.get("include_live_quote", True) and intraday_from_utc is not None:
         quote_rows = broker_data.fetch_quotes(db, acc, [instrument])
         if quote_rows:
             latest_quote = quote_rows[0]
@@ -450,7 +456,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
                 low=candle.low,
                 close=candle.close,
                 volume=candle.volume,
-                interval=intraday_interval if candle.time >= intraday_from_utc else daily_interval,
+                interval=intraday_interval if intraday_from_utc is not None and candle.time >= intraday_from_utc else daily_interval,
             )
             for candle in combined
         ],
