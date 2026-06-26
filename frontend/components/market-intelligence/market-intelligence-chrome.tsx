@@ -20,6 +20,7 @@ import {
     MarketIntelligenceLiveFeed,
     StateMessage
 } from "@/components/market-intelligence/market-intelligence-live-feed";
+import { MarketIntelligenceSymbolChart } from "@/components/market-intelligence/market-intelligence-symbol-chart";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -31,14 +32,12 @@ import { getAlphaEarnings } from "@/service/actions/alpha/earnings";
 import { getAlphaNews } from "@/service/actions/alpha/news";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
-import { getBrokerDataDefaultConfig, getDataQuotes, searchBrokerInstruments } from "@/service/actions/broker";
+import { getBrokerDataDefaultConfig, getMarketChartData, searchBrokerInstruments } from "@/service/actions/broker";
 import type {
     BrokerDataDefaultAccount,
     InstrumentRef,
     InstrumentSearchRow,
-    JsonObject,
-    JsonValue,
-    QuoteResponse
+    MarketChartSnapshot,
 } from "@/service/types/broker";
 import { getAlphaCreditWarningMessage, notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import {
@@ -93,10 +92,10 @@ const intelligenceHelpItems = [
 
 const ALL_WATCHLISTS_ID = "__all_watchlists__";
 
-type BrokerQuoteState = {
+type BrokerChartState = {
     error: string;
     isLoading: boolean;
-    quote: QuoteResponse | null;
+    snapshot: MarketChartSnapshot | null;
 };
 
 function isoDateDaysAgo(days: number): string {
@@ -115,10 +114,6 @@ function metadataBySymbol(items: AlphaSymbolMetadata[]) {
         if (symbol) acc[symbol] = item;
         return acc;
     }, {});
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
@@ -145,42 +140,6 @@ function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
 
 function manualInstrument(symbol: string): InstrumentRef {
     return { symbol: symbol.trim().toUpperCase() };
-}
-
-function displayValue(value: JsonValue | undefined): string {
-    if (typeof value === "string" || typeof value === "number") return String(value);
-    return "-";
-}
-
-function displayRaw(raw: JsonObject, keys: string[]): string {
-    for (const key of keys) {
-        const value = raw[key];
-        if (typeof value === "string" || typeof value === "number") return String(value);
-    }
-    const ohlc = raw.ohlc;
-    if (isJsonObject(ohlc)) {
-        for (const key of keys) {
-            const value = ohlc[key];
-            if (typeof value === "string" || typeof value === "number") return String(value);
-        }
-    }
-    return "-";
-}
-
-function quoteRaw(row: QuoteResponse): JsonObject {
-    return isJsonObject(row.detail.raw) ? row.detail.raw : row.detail;
-}
-
-function quoteFieldRows(row: QuoteResponse) {
-    const raw = quoteRaw(row);
-    return [
-        ["Open", displayRaw(raw, ["open", "open_price"])],
-        ["High", displayRaw(raw, ["high", "high_price"])],
-        ["Low", displayRaw(raw, ["low", "low_price"])],
-        ["Close", displayRaw(raw, ["close", "close_price"])],
-        ["Volume", displayRaw(raw, ["volume", "volume_traded"])],
-        ["Time", displayRaw(raw, ["timestamp", "last_trade_time"])]
-    ] as const;
 }
 
 function defaultAccountLabel(account: BrokerDataDefaultAccount | null): string {
@@ -259,10 +218,10 @@ export function MarketIntelligenceChrome({
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [symbolError, setSymbolError] = useState("");
     const [isLoadingSymbolFeed, setIsLoadingSymbolFeed] = useState(false);
-    const [quoteState, setQuoteState] = useState<BrokerQuoteState>({
+    const [chartState, setChartState] = useState<BrokerChartState>({
         error: "",
         isLoading: false,
-        quote: null
+        snapshot: null
     });
     const activeSection =
         marketIntelligenceSections.find((item) => item.id === activeSectionId) ?? marketIntelligenceSections[0];
@@ -429,47 +388,53 @@ export function MarketIntelligenceChrome({
 
     useEffect(() => {
         if (!committedSymbol || !committedInstrument) {
-            setQuoteState({ error: "", isLoading: false, quote: null });
+            setChartState({ error: "", isLoading: false, snapshot: null });
             return;
         }
         if (isLoadingBrokerConfig) {
-            setQuoteState({ error: "", isLoading: true, quote: null });
+            setChartState({ error: "", isLoading: true, snapshot: null });
             return;
         }
         if (!defaultBrokerAccount) {
-            setQuoteState({
+            setChartState({
                 error: brokerConfigError || "No active default broker account is available for price data.",
                 isLoading: false,
-                quote: null
+                snapshot: null
             });
             return;
         }
         if (!defaultBrokerAccount.session_active) {
-            setQuoteState({
+            setChartState({
                 error: "The default broker session is not active. Activate it to load price data.",
                 isLoading: false,
-                quote: null
+                snapshot: null
             });
             return;
         }
 
         let cancelled = false;
-        setQuoteState({ error: "", isLoading: true, quote: null });
+        setChartState({ error: "", isLoading: true, snapshot: null });
         void (async () => {
             try {
-                const rows = await getDataQuotes(defaultBrokerAccount.account_id, { instruments: [committedInstrument] });
+                const snapshot = await getMarketChartData(defaultBrokerAccount.account_id, {
+                    instrument: committedInstrument,
+                    history_days: 90,
+                    daily_interval: "day",
+                    intraday_interval: "1minute",
+                    include_live_quote: true
+                });
                 if (cancelled) return;
-                setQuoteState({
-                    error: rows.length ? "" : "No broker quote returned for this symbol.",
+                setChartState({
+                    error: snapshot.candles.length ? "" : "No broker chart data returned for this symbol.",
                     isLoading: false,
-                    quote: rows[0] ?? null
+                    snapshot
                 });
             } catch (caught) {
                 if (cancelled) return;
-                setQuoteState({
+                setChartState({
                     error: parseActionError(caught).message,
                     isLoading: false,
-                    quote: null
+                    snapshot: null
                 });
             }
         })();
@@ -521,7 +486,7 @@ export function MarketIntelligenceChrome({
         setSuggestionMetadata({});
         setShowSuggestions(false);
         setSymbolError("");
-        setQuoteState({ error: "", isLoading: false, quote: null });
+        setChartState({ error: "", isLoading: false, snapshot: null });
         if (selectedWatchlistId === ALL_WATCHLISTS_ID) {
             setFeeds(initialFeeds);
             setActiveMetadata(symbolMetadata);
@@ -679,7 +644,14 @@ export function MarketIntelligenceChrome({
 
             {symbolModeActive ? (
                 <div className="mb-5">
-                    <BrokerQuotePanel account={defaultBrokerAccount} state={quoteState} symbol={committedSymbol} />
+                    <MarketIntelligenceSymbolChart
+                        account={defaultBrokerAccount}
+                        feeds={feeds}
+                        instrument={committedInstrument}
+                        state={chartState}
+                        symbol={committedSymbol}
+                        symbolMetadata={activeMetadata}
+                    />
                 </div>
             ) : null}
 
@@ -734,48 +706,6 @@ export function MarketIntelligenceChrome({
             ) : null}
             {children}
         </>
-    );
-}
-
-function BrokerQuotePanel({
-    account,
-    state,
-    symbol
-}: {
-    account: BrokerDataDefaultAccount | null;
-    state: BrokerQuoteState;
-    symbol: string;
-}) {
-    const quote = state.quote;
-    return (
-        <section className="border-l-2 border-primary px-4 py-3">
-            <div className="flex min-w-0 flex-col gap-2 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
-                <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Broker price</p>
-                    <h2 className="mt-1 truncate text-lg font-semibold text-foreground">{symbol}</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">{defaultAccountLabel(account)}</p>
-                </div>
-                <div className="text-left min-[760px]:text-right">
-                    <p className="text-xs text-muted-foreground">{state.isLoading ? "Fetching quote..." : "LTP"}</p>
-                    <strong className="block text-3xl font-semibold text-foreground">
-                        {quote ? displayValue(quote.ltp) : "-"}
-                    </strong>
-                </div>
-            </div>
-            {state.error ? <p className="mt-3 text-sm text-destructive">{state.error}</p> : null}
-            {quote ? (
-                <dl className="mt-4 grid gap-2 text-sm text-muted-foreground min-[620px]:grid-cols-3">
-                    {quoteFieldRows(quote).map(([label, value]) => (
-                        <div className="min-w-0" key={label}>
-                            <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                                {label}
-                            </dt>
-                            <dd className="mt-1 truncate text-foreground">{value}</dd>
-                        </div>
-                    ))}
-                </dl>
-            ) : null}
-        </section>
     );
 }
 
