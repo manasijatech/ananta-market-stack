@@ -21,7 +21,7 @@ export function BrandLogo({
     return (
         <span
             role="img"
-            aria-label="Ananta Market Stack"
+            aria-label="Ananta"
             className={cn(
                 "inline-flex min-w-0 items-center gap-[0.4em] text-[1.25rem] [--logo-mark-height:1.3em] [--word-mark-height:1em]",
                 imageClassName,

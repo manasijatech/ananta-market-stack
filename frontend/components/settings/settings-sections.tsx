@@ -5,6 +5,7 @@ import { ChannelSettings } from "@/components/alerts/channel-settings";
 import { StreamManager } from "@/components/alerts/stream-manager";
 import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager";
 import { SystemConfigPanel } from "@/components/system/system-config-panel";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AlertChannel, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import type { BrokerAccount, SystemConfig } from "@/service/types/broker";
@@ -33,6 +34,7 @@ type SettingsSectionsProps = {
     streamStatus: LiveStreamsStatus;
     symbolMetadata: ComponentProps<typeof SubscriptionsManager>["symbolMetadata"];
     watchlists: Watchlist[];
+    openRouterModels: OpenRouterModel[];
 };
 
 const sections: Array<{ value: SettingsSection; label: string; title: string; description: string }> = [
@@ -96,7 +98,8 @@ export function SettingsSections({
     subscriptions,
     streamStatus,
     symbolMetadata,
-    watchlists
+    watchlists,
+    openRouterModels
 }: SettingsSectionsProps) {
     const visibleSections = useMemo(
         () => sections.filter((section) => section.value !== "mcp" || permissions.canUseMcp || permissions.canManageMcp),
@@ -152,7 +155,12 @@ export function SettingsSections({
                 <SystemConfigPanel initialConfig={config} permissions={permissions} section="mcp" />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="llm">
-                <SystemConfigPanel initialConfig={config} permissions={permissions} section="llm" />
+                <SystemConfigPanel
+                    initialConfig={config}
+                    openRouterModels={openRouterModels}
+                    permissions={permissions}
+                    section="llm"
+                />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="live-subscriptions">
                 <SubscriptionsManager

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Inbox, ListChecks, Loader2, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, Inbox, ListChecks, Loader2, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import { addLiveSubscription, deleteLiveSubscriptions } from "@/service/actions/alerts";
 import {
     refreshAlphaWebSocketAccount,
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { SimpleSelect } from "@/components/ui/simple-select";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { INDIA_TIME_ZONE, formatIstDateTime, parseApiDate } from "@/lib/datetime";
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
@@ -226,7 +227,7 @@ export function SubscriptionsManager({
             nextSymbolCount > liveSymbolLimit
         ) {
             setError(
-                `This Ananta Market Stack plan allows ${liveSymbolLimit} live symbols. Your selected scope currently resolves to about ${nextSymbolCount}.`
+                `This Ananta plan allows ${liveSymbolLimit} live symbols. Your selected scope currently resolves to about ${nextSymbolCount}.`
             );
             return;
         }
@@ -282,18 +283,25 @@ export function SubscriptionsManager({
         return symbols.size;
     }
 
+    const scopeSummary =
+        alphaWsConfig.scope_mode === "full_market"
+            ? "Full market"
+            : alphaWsConfig.scope_mode === "alerts_and_watchlists"
+              ? "Alert subscriptions + watchlists"
+              : "Alert subscriptions only";
+
     return (
-        <div className="grid max-w-5xl gap-4">
+        <div className="grid w-full gap-4">
             {error ? (
                 <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">
                     {error}
                 </div>
             ) : null}
-            <div className="border border-border p-3">
-                <div className="mb-3 flex items-start justify-between gap-3">
-                    <div>
+            <Collapsible className="border border-border p-3" defaultOpen={false}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
                         <div className="text-base font-semibold leading-5 text-foreground">
-                            Ananta Market Stack websocket subscriptions
+                            Ananta websocket subscriptions
                         </div>
                         <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
                             Backend worker status: {alphaWsConfig.status}
@@ -302,7 +310,7 @@ export function SubscriptionsManager({
                                 : ""}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                            Ananta Market Stack plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"} ·{" "}
+                            Ananta plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"} ·{" "}
                             {alphaWsConfig.scope_mode === "full_market"
                                 ? "full market"
                                 : `${activeLiveSymbols}${typeof liveSymbolLimit === "number" ? ` / ${liveSymbolLimit}` : ""} live symbols`}
@@ -310,178 +318,196 @@ export function SubscriptionsManager({
                                 ? ` · ${alphaWsConfig.monthly_unique_symbol_limit} unique/month`
                                 : ""}
                         </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                            Scope: {scopeSummary} · {alphaWsConfig.effective_products.length} products
+                        </div>
                     </div>
-                    <Button disabled={isPending} onClick={refreshAlphaEntitlements} type="button" variant="outline">
-                        <RefreshCw className="mr-2 size-4" />
-                        Refresh plan
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button disabled={isPending} onClick={refreshAlphaEntitlements} type="button" variant="outline">
+                            <RefreshCw className="mr-2 size-4" />
+                            Refresh plan
+                        </Button>
+                        <CollapsibleTrigger className="group inline-flex h-9 items-center gap-2 border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-[var(--accent-glow)]">
+                            <SlidersHorizontal className="size-4" />
+                            Configure feed
+                            <ChevronDown className="size-4 transition-transform group-data-[panel-open]:rotate-180" />
+                        </CollapsibleTrigger>
+                    </div>
                 </div>
                 {alphaWsConfig.last_error ? (
-                    <div className="mb-3 border-l-2 border-destructive px-3 py-2 text-sm text-destructive">
+                    <div className="mt-3 border-l-2 border-destructive px-3 py-2 text-sm text-destructive">
                         {alphaWsConfig.last_error}
                     </div>
                 ) : null}
-                <div className="grid max-w-2xl gap-5">
-                    <div className="max-w-sm">
-                        <div className="type-step-eyebrow">Products from account</div>
-                        <div className="mt-3 grid gap-2">
-                            {enabledAddons.map((addon) => (
-                                <Label className="flex items-center gap-2 text-sm" key={addon.product}>
-                                    <Checkbox
-                                        checked={alphaWsConfig.products.includes(addon.product)}
-                                        onCheckedChange={(checked) =>
-                                            toggleAlphaProduct(addon.product, Boolean(checked))
-                                        }
-                                    />
-                                    <span>
-                                        {addon.product} · {addon.tier ?? "tier unknown"}
-                                    </span>
-                                </Label>
-                            ))}
-                            {!enabledAddons.length ? (
-                                <div className="type-body text-muted-foreground">
-                                    No websocket addons were found for the saved key.
+                <CollapsibleContent>
+                    <div className="@container mt-4 border-t border-border pt-4">
+                        <div className="grid gap-6 @lg:grid-cols-2 @3xl:grid-cols-3">
+                            <div>
+                                <div className="type-step-eyebrow">Products from account</div>
+                                <div className="mt-3 grid gap-2">
+                                    {enabledAddons.map((addon) => (
+                                        <Label className="flex items-center gap-2 text-sm" key={addon.product}>
+                                            <Checkbox
+                                                checked={alphaWsConfig.products.includes(addon.product)}
+                                                onCheckedChange={(checked) =>
+                                                    toggleAlphaProduct(addon.product, Boolean(checked))
+                                                }
+                                            />
+                                            <span>
+                                                {addon.product} · {addon.tier ?? "tier unknown"}
+                                            </span>
+                                        </Label>
+                                    ))}
+                                    {!enabledAddons.length ? (
+                                        <div className="type-body text-muted-foreground">
+                                            No websocket addons were found for the saved key.
+                                        </div>
+                                    ) : null}
                                 </div>
-                            ) : null}
-                        </div>
-                    </div>
-                    <div>
-                        <div className="type-step-eyebrow">Symbol scope</div>
-                        <div className="mt-3 grid max-w-md gap-2 text-sm">
-                            <Label className="flex items-start gap-2">
-                                <input
-                                    checked={alphaWsConfig.scope_mode === "alert_subscriptions"}
-                                    className="mt-1 accent-[var(--primary)]"
-                                    name="alpha-symbol-scope"
-                                    onChange={() =>
-                                        setAlphaWsConfig((current) => ({
-                                            ...current,
-                                            scope_mode: "alert_subscriptions",
-                                            full_market: false
-                                        }))
-                                    }
-                                    type="radio"
-                                />
-                                <span>
-                                    <span className="block font-semibold text-foreground">
-                                        Alert subscriptions only
-                                    </span>
-                                    <span className="block text-[12px] leading-5 text-muted-foreground">
-                                        Use only symbols added on this page.
-                                    </span>
-                                </span>
-                            </Label>
-                            <Label className="flex items-start gap-2">
-                                <input
-                                    checked={alphaWsConfig.scope_mode === "alerts_and_watchlists"}
-                                    className="mt-1 accent-[var(--primary)]"
-                                    name="alpha-symbol-scope"
-                                    onChange={() =>
-                                        setAlphaWsConfig((current) => ({
-                                            ...current,
-                                            scope_mode: "alerts_and_watchlists",
-                                            full_market: false
-                                        }))
-                                    }
-                                    type="radio"
-                                />
-                                <span>
-                                    <span className="block font-semibold text-foreground">
-                                        Alert subscriptions + watchlists
-                                    </span>
-                                    <span className="block text-[12px] leading-5 text-muted-foreground">
-                                        Include selected watchlists below with alert subscriptions.
-                                    </span>
-                                </span>
-                            </Label>
-                            <Label
-                                className={`flex items-start gap-2 ${alphaWsConfig.full_market_allowed ? "" : "opacity-50"}`}
-                            >
-                                <input
-                                    checked={alphaWsConfig.scope_mode === "full_market"}
-                                    className="mt-1 accent-[var(--primary)]"
-                                    disabled={!alphaWsConfig.full_market_allowed}
-                                    name="alpha-symbol-scope"
-                                    onChange={() =>
-                                        setAlphaWsConfig((current) => ({
-                                            ...current,
-                                            scope_mode: "full_market",
-                                            full_market: true
-                                        }))
-                                    }
-                                    type="radio"
-                                />
-                                <span>
-                                    <span className="block font-semibold text-foreground">Full market</span>
-                                    <span className="block text-[12px] leading-5 text-muted-foreground">
-                                        Use full-market products when your plan allows it.
-                                    </span>
-                                </span>
-                            </Label>
-                        </div>
-                        <div className="mt-3 text-xs text-muted-foreground">
-                            Effective: {alphaWsConfig.effective_products.length} products /{" "}
-                            {alphaWsConfig.scope_mode === "full_market" ? "full-feed" : `${activeLiveSymbols} symbols`}
-                        </div>
-                        {fullMarketProducts.length ? (
-                            <div className="mt-1 text-xs text-muted-foreground">
-                                Full-market products: {fullMarketProducts.join(", ")}
                             </div>
-                        ) : null}
-                    </div>
-                    <div>
-                        <div className="type-step-eyebrow">Watchlists</div>
-                        <Label className="mt-3 flex items-center gap-2 text-sm">
-                            <Checkbox
-                                checked={alphaWsConfig.include_all_watchlists}
-                                disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists"}
-                                onCheckedChange={(checked) =>
-                                    setAlphaWsConfig((current) => ({
-                                        ...current,
-                                        include_all_watchlists: Boolean(checked)
-                                    }))
-                                }
-                            />
-                            All watchlists
-                        </Label>
-                        <div className="mt-2 grid max-h-40 gap-2 overflow-auto">
-                            {watchlists.map((watchlist) => (
-                                <Label className="flex items-center gap-2 text-sm" key={watchlist.id}>
+                            <div>
+                                <div className="type-step-eyebrow">Symbol scope</div>
+                                <div className="mt-3 grid gap-2 text-sm">
+                                    <Label className="flex items-start gap-2">
+                                        <input
+                                            checked={alphaWsConfig.scope_mode === "alert_subscriptions"}
+                                            className="mt-1 accent-[var(--primary)]"
+                                            name="alpha-symbol-scope"
+                                            onChange={() =>
+                                                setAlphaWsConfig((current) => ({
+                                                    ...current,
+                                                    scope_mode: "alert_subscriptions",
+                                                    full_market: false
+                                                }))
+                                            }
+                                            type="radio"
+                                        />
+                                        <span>
+                                            <span className="block font-semibold text-foreground">
+                                                Alert subscriptions only
+                                            </span>
+                                            <span className="block text-[12px] leading-5 text-muted-foreground">
+                                                Use only symbols added on this page.
+                                            </span>
+                                        </span>
+                                    </Label>
+                                    <Label className="flex items-start gap-2">
+                                        <input
+                                            checked={alphaWsConfig.scope_mode === "alerts_and_watchlists"}
+                                            className="mt-1 accent-[var(--primary)]"
+                                            name="alpha-symbol-scope"
+                                            onChange={() =>
+                                                setAlphaWsConfig((current) => ({
+                                                    ...current,
+                                                    scope_mode: "alerts_and_watchlists",
+                                                    full_market: false
+                                                }))
+                                            }
+                                            type="radio"
+                                        />
+                                        <span>
+                                            <span className="block font-semibold text-foreground">
+                                                Alert subscriptions + watchlists
+                                            </span>
+                                            <span className="block text-[12px] leading-5 text-muted-foreground">
+                                                Include selected watchlists below with alert subscriptions.
+                                            </span>
+                                        </span>
+                                    </Label>
+                                    <Label
+                                        className={`flex items-start gap-2 ${alphaWsConfig.full_market_allowed ? "" : "opacity-50"}`}
+                                    >
+                                        <input
+                                            checked={alphaWsConfig.scope_mode === "full_market"}
+                                            className="mt-1 accent-[var(--primary)]"
+                                            disabled={!alphaWsConfig.full_market_allowed}
+                                            name="alpha-symbol-scope"
+                                            onChange={() =>
+                                                setAlphaWsConfig((current) => ({
+                                                    ...current,
+                                                    scope_mode: "full_market",
+                                                    full_market: true
+                                                }))
+                                            }
+                                            type="radio"
+                                        />
+                                        <span>
+                                            <span className="block font-semibold text-foreground">Full market</span>
+                                            <span className="block text-[12px] leading-5 text-muted-foreground">
+                                                Use full-market products when your plan allows it.
+                                            </span>
+                                        </span>
+                                    </Label>
+                                </div>
+                                <div className="mt-3 text-xs text-muted-foreground">
+                                    Effective: {alphaWsConfig.effective_products.length} products /{" "}
+                                    {alphaWsConfig.scope_mode === "full_market"
+                                        ? "full-feed"
+                                        : `${activeLiveSymbols} symbols`}
+                                </div>
+                                {fullMarketProducts.length ? (
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                        Full-market products: {fullMarketProducts.join(", ")}
+                                    </div>
+                                ) : null}
+                            </div>
+                            <div>
+                                <div className="type-step-eyebrow">Watchlists</div>
+                                <Label className="mt-3 flex items-center gap-2 text-sm">
                                     <Checkbox
-                                        checked={alphaWsConfig.watchlist_ids.includes(watchlist.id)}
-                                        disabled={
-                                            alphaWsConfig.scope_mode !== "alerts_and_watchlists" ||
-                                            alphaWsConfig.include_all_watchlists
+                                        checked={alphaWsConfig.include_all_watchlists}
+                                        disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists"}
+                                        onCheckedChange={(checked) =>
+                                            setAlphaWsConfig((current) => ({
+                                                ...current,
+                                                include_all_watchlists: Boolean(checked)
+                                            }))
                                         }
-                                        onCheckedChange={(checked) => toggleWatchlist(watchlist.id, Boolean(checked))}
                                     />
-                                    <span>
-                                        {watchlist.name} · {watchlist.items.length || watchlist.symbols.length}
-                                    </span>
+                                    All watchlists
                                 </Label>
-                            ))}
-                            {!watchlists.length ? (
-                                <Empty className="py-8">
-                                    <EmptyHeader>
-                                        <EmptyMedia variant="icon">
-                                            <ListChecks />
-                                        </EmptyMedia>
-                                        <EmptyTitle>No watchlists available</EmptyTitle>
-                                        <EmptyDescription>
-                                            Create a watchlist to include its symbols in the live scope.
-                                        </EmptyDescription>
-                                    </EmptyHeader>
-                                </Empty>
-                            ) : null}
+                                <div className="mt-2 grid max-h-64 gap-2 overflow-auto">
+                                    {watchlists.map((watchlist) => (
+                                        <Label className="flex items-center gap-2 text-sm" key={watchlist.id}>
+                                            <Checkbox
+                                                checked={alphaWsConfig.watchlist_ids.includes(watchlist.id)}
+                                                disabled={
+                                                    alphaWsConfig.scope_mode !== "alerts_and_watchlists" ||
+                                                    alphaWsConfig.include_all_watchlists
+                                                }
+                                                onCheckedChange={(checked) =>
+                                                    toggleWatchlist(watchlist.id, Boolean(checked))
+                                                }
+                                            />
+                                            <span>
+                                                {watchlist.name} · {watchlist.items.length || watchlist.symbols.length}
+                                            </span>
+                                        </Label>
+                                    ))}
+                                    {!watchlists.length ? (
+                                        <Empty className="py-8">
+                                            <EmptyHeader>
+                                                <EmptyMedia variant="icon">
+                                                    <ListChecks />
+                                                </EmptyMedia>
+                                                <EmptyTitle>No watchlists available</EmptyTitle>
+                                                <EmptyDescription>
+                                                    Create a watchlist to include its symbols in the live scope.
+                                                </EmptyDescription>
+                                            </EmptyHeader>
+                                        </Empty>
+                                    ) : null}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="mt-5 border-t border-border pt-3">
+                            <Button disabled={isPending} onClick={saveAlphaWebSocketConfig} type="button">
+                                Save websocket config
+                            </Button>
                         </div>
                     </div>
-                    <div className="mt-5 border-t border-border pt-3">
-                        <Button disabled={isPending} onClick={saveAlphaWebSocketConfig} type="button">
-                            Save websocket config
-                        </Button>
-                    </div>
-                </div>
-            </div>
+                </CollapsibleContent>
+            </Collapsible>
             <div className=" border border-border p-3">
                 <div className="mb-3 flex items-center justify-between gap-3">
                     <div>
@@ -596,7 +622,8 @@ export function SubscriptionsManager({
                     </div>
                 ) : null}
             </div>
-            <div className="grid gap-2">
+            <div className="@container">
+                <div className="grid gap-2 @2xl:grid-cols-2">
                 {items.map((item) => {
                     const metadata = symbolMetadata[item.symbol.toUpperCase()];
                     const companyName = metadata?.company_name?.trim();
@@ -646,7 +673,7 @@ export function SubscriptionsManager({
                     );
                 })}
                 {!items.length ? (
-                    <Empty className="py-10">
+                    <Empty className="py-10 @2xl:col-span-2">
                         <EmptyHeader>
                             <EmptyMedia variant="icon">
                                 <Inbox />
@@ -658,6 +685,7 @@ export function SubscriptionsManager({
                         </EmptyHeader>
                     </Empty>
                 ) : null}
+                </div>
             </div>
         </div>
     );

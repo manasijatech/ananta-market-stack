@@ -6,6 +6,7 @@ import { WorkflowLlmUsagePanel } from "@/components/llm-usage/workflow-llm-usage
 import { getAlertPresets, getAlertWorkflow, getAlertWorkflowRuns } from "@/service/actions/alerts";
 import { getAlphaAnnouncementCategories } from "@/service/actions/alpha/announcements";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
+import { getOpenRouterModels } from "@/service/actions/llm-models";
 import { getWorkflowLlmUsageSummary } from "@/service/actions/llm-usage";
 import { getWatchlists } from "@/service/actions/watchlist";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
@@ -17,19 +18,21 @@ type WorkflowDetailPageProps = {
 export default async function WorkflowDetailPage({ params }: WorkflowDetailPageProps) {
     const { id } = await params;
     let creditWarningMessage: string | null = null;
-    const [accounts, workflow, runs, llmUsage, watchlists, presets, systemConfig, announcementCategories] = await Promise.all([
-        getBrokerAccounts(),
-        getAlertWorkflow(id),
-        getAlertWorkflowRuns(id, 100),
-        getWorkflowLlmUsageSummary(id),
-        getWatchlists(),
-        getAlertPresets(),
-        getSystemConfig(),
-        getAlphaAnnouncementCategories().catch((caught) => {
-            creditWarningMessage = getAlphaCreditWarningMessage(caught);
-            return [];
-        })
-    ]);
+    const [accounts, workflow, runs, llmUsage, watchlists, presets, systemConfig, announcementCategories, openRouterModels] =
+        await Promise.all([
+            getBrokerAccounts(),
+            getAlertWorkflow(id),
+            getAlertWorkflowRuns(id, 100),
+            getWorkflowLlmUsageSummary(id),
+            getWatchlists(),
+            getAlertPresets(),
+            getSystemConfig(),
+            getAlphaAnnouncementCategories().catch((caught) => {
+                creditWarningMessage = getAlphaCreditWarningMessage(caught);
+                return [];
+            }),
+            getOpenRouterModels()
+        ]);
 
     return (
         <div className="grid gap-8">
@@ -40,6 +43,7 @@ export default async function WorkflowDetailPage({ params }: WorkflowDetailPageP
                 announcementCategories={announcementCategories}
                 initialWorkflow={workflow}
                 llmProviders={systemConfig.llm_providers}
+                openRouterModels={openRouterModels}
                 presets={presets}
                 watchlists={watchlists}
             />

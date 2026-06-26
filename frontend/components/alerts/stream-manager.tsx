@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
-import { CheckCircle2, Radio, Server } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode, type UIEvent } from "react";
+import { CheckCircle2, ChevronDown, Radio, Server } from "lucide-react";
 import { getLivePricesWebSocketConfig, getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
 import type { LivePriceTick, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -421,6 +422,33 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     );
 }
 
+function CollapsibleSection({
+    title,
+    count,
+    defaultOpen,
+    children
+}: {
+    title: string;
+    count: string;
+    defaultOpen?: boolean;
+    children: ReactNode;
+}) {
+    return (
+        <Collapsible defaultOpen={defaultOpen} className="grid gap-3 border border-border">
+            <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/60">
+                <div className="flex items-center gap-2">
+                    <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 group-data-[panel-open]:rotate-180" />
+                    <span className="type-section-title">{title}</span>
+                </div>
+                <span className="type-meta whitespace-nowrap text-muted-foreground">{count}</span>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+                <div className="grid gap-3 px-4 pb-4">{children}</div>
+            </CollapsibleContent>
+        </Collapsible>
+    );
+}
+
 export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsStatus }) {
     const [status, setStatus] = useState(initialStatus);
     const [reconcileNotice, setReconcileNotice] = useState("");
@@ -442,8 +470,11 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
         });
     }
 
+    const readyBrokerCount = status.broker_statuses.filter((broker) => broker.session_active).length;
+    const sessionSymbolCount = status.active_sessions.reduce((total, session) => total + session.symbol_count, 0);
+
     return (
-        <div className="grid min-w-0 max-w-full gap-6">
+        <div className="grid min-w-0 max-w-full gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border border-border p-4">
                 <div>
                     <div className="type-section-title">{status.worker_mode}</div>
@@ -465,66 +496,85 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
 
             <LivePricesPanel status={status} />
 
-            <section className="grid gap-3">
-                <div className="type-section-title">Broker readiness</div>
-                {status.broker_statuses.map((broker) => (
-                    <div className=" border border-border p-4" key={`${broker.account_id}-${broker.broker_code}`}>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <div className="type-section-title">
-                                    {broker.label} · {broker.broker_code}
+            <CollapsibleSection
+                title="Broker readiness"
+                count={`${status.broker_statuses.length} brokers · ${readyBrokerCount} ready`}
+                defaultOpen
+            >
+                {status.broker_statuses.length ? (
+                    <div className="@container">
+                        <div className="grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
+                            {status.broker_statuses.map((broker) => (
+                                <div
+                                    className="border border-border p-4"
+                                    key={`${broker.account_id}-${broker.broker_code}`}
+                                >
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <div className="type-section-title">
+                                                {broker.label} · {broker.broker_code}
+                                            </div>
+                                            <div className="type-help mt-1 text-muted-foreground">
+                                                {broker.session_active ? "Ready to stream" : "Action required"} ·{" "}
+                                                {broker.desired_symbol_count} desired symbols ·{" "}
+                                                {broker.active_worker_sessions} worker sessions
+                                            </div>
+                                        </div>
+                                        <div className="type-meta text-muted-foreground">
+                                            {broker.session_status ?? "pending"}
+                                            {broker.automation_mode ? ` · ${broker.automation_mode}` : ""}
+                                        </div>
+                                    </div>
+                                    <div className="type-help mt-3 text-muted-foreground">
+                                        {broker.session_active
+                                            ? "Stored broker session looks usable. Live workers can attach without re-verification from this status call."
+                                            : broker.guidance ||
+                                              broker.last_error ||
+                                              "Broker verification or token refresh is still required before live data can attach."}
+                                    </div>
+                                    {broker.last_error && !broker.session_active ? (
+                                        <div className="type-meta mt-2 text-[var(--danger)]">{broker.last_error}</div>
+                                    ) : null}
                                 </div>
-                                <div className="type-help mt-1 text-muted-foreground">
-                                    {broker.session_active ? "Ready to stream" : "Action required"} ·{" "}
-                                    {broker.desired_symbol_count} desired symbols · {broker.active_worker_sessions}{" "}
-                                    worker sessions
-                                </div>
-                            </div>
-                            <div className="type-meta text-muted-foreground">
-                                {broker.session_status ?? "pending"}
-                                {broker.automation_mode ? ` · ${broker.automation_mode}` : ""}
-                            </div>
+                            ))}
                         </div>
-                        <div className="type-help mt-3 text-muted-foreground">
-                            {broker.session_active
-                                ? "Stored broker session looks usable. Live workers can attach without re-verification from this status call."
-                                : broker.guidance ||
-                                  broker.last_error ||
-                                  "Broker verification or token refresh is still required before live data can attach."}
-                        </div>
-                        {broker.last_error && !broker.session_active ? (
-                            <div className="type-meta mt-2 text-[var(--danger)]">{broker.last_error}</div>
-                        ) : null}
                     </div>
-                ))}
-                {!status.broker_statuses.length ? (
+                ) : (
                     <div className="type-body text-muted-foreground">
                         No broker-linked subscriptions yet. Subscriptions can still exist before broker verification is
                         completed.
                     </div>
-                ) : null}
-            </section>
+                )}
+            </CollapsibleSection>
 
-            <section className="grid gap-3">
-                <div className="type-section-title">Worker sessions</div>
-                {status.active_sessions.map((session) => (
-                    <div
-                        className=" border border-border p-4"
-                        key={`${session.user_id}-${session.account_id}-${session.broker_code}-${session.connection_index}`}
-                    >
-                        <div className="type-section-title">
-                            {session.broker_code} · {session.account_id} · Connection {session.connection_index}
-                        </div>
-                        <div className="type-help mt-1 text-muted-foreground">
-                            {session.connected ? "Connected" : "Disconnected"} · {session.adapter} ·{" "}
-                            {session.symbol_count}/{session.capacity} symbols
-                        </div>
-                        <div className="type-meta mt-2 text-muted-foreground">
-                            Symbols: {session.symbols.join(", ") || "None"}
+            <CollapsibleSection
+                title="Worker sessions"
+                count={`${status.active_sessions.length} active · ${sessionSymbolCount} symbols`}
+            >
+                {status.active_sessions.length ? (
+                    <div className="@container">
+                        <div className="grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
+                            {status.active_sessions.map((session) => (
+                                <div
+                                    className="border border-border p-4"
+                                    key={`${session.user_id}-${session.account_id}-${session.broker_code}-${session.connection_index}`}
+                                >
+                                    <div className="type-section-title">
+                                        {session.broker_code} · {session.account_id} · Connection{" "}
+                                        {session.connection_index}
+                                    </div>
+                                    <div className="type-help mt-1 text-muted-foreground">
+                                        {session.connected ? "Connected" : "Disconnected"} · {session.adapter} ·{" "}
+                                        {session.symbol_count}/{session.capacity} symbols
+                                    </div>
+                                    <div className="type-meta mt-2 text-muted-foreground">
+                                        Symbols: {session.symbols.join(", ") || "None"}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
-                ))}
-                {!status.active_sessions.length ? (
+                ) : (
                     <Empty className="py-8">
                         <EmptyHeader>
                             <EmptyMedia variant="icon">
@@ -536,38 +586,47 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                             </EmptyDescription>
                         </EmptyHeader>
                     </Empty>
-                ) : null}
-            </section>
+                )}
+            </CollapsibleSection>
 
-            <section className="grid gap-3">
-                <div className="type-section-title">Inactive subscriptions</div>
+            <CollapsibleSection
+                title="Inactive subscriptions"
+                count={`${status.inactive_subscriptions.length} inactive`}
+            >
                 <div className="type-help text-muted-foreground">
                     These do not consume stream-manager capacity. They remain visible only so ownership issues can be
                     reviewed or cleaned up.
                 </div>
-                {status.inactive_subscriptions.map((subscription) => (
-                    <div className=" border border-border p-4" key={subscription.id}>
-                        <div className="type-section-title">{subscription.symbol}</div>
-                        <div className="type-meta text-muted-foreground">
-                            {subscription.exchange ?? "-"} · {subscription.broker_code ?? "-"} · {subscription.status} ·{" "}
-                            {subscription.source_kind}
+                {status.inactive_subscriptions.length ? (
+                    <div className="@container">
+                        <div className="grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
+                            {status.inactive_subscriptions.map((subscription) => (
+                                <div className="border border-border p-4" key={subscription.id}>
+                                    <div className="type-section-title">{subscription.symbol}</div>
+                                    <div className="type-meta text-muted-foreground">
+                                        {subscription.exchange ?? "-"} · {subscription.broker_code ?? "-"} ·{" "}
+                                        {subscription.status} · {subscription.source_kind}
+                                    </div>
+                                    <div className="type-help mt-1 text-muted-foreground">
+                                        {[
+                                            subscription.source_type,
+                                            subscription.source_label || subscription.source_id,
+                                            subscription.owner_kind,
+                                            subscription.health_status
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" · ")}
+                                    </div>
+                                    {subscription.health_reason ? (
+                                        <div className="type-meta mt-1 text-[var(--danger)]">
+                                            {subscription.health_reason}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ))}
                         </div>
-                        <div className="type-help mt-1 text-muted-foreground">
-                            {[
-                                subscription.source_type,
-                                subscription.source_label || subscription.source_id,
-                                subscription.owner_kind,
-                                subscription.health_status
-                            ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                        </div>
-                        {subscription.health_reason ? (
-                            <div className="type-meta mt-1 text-[var(--danger)]">{subscription.health_reason}</div>
-                        ) : null}
                     </div>
-                ))}
-                {!status.inactive_subscriptions.length ? (
+                ) : (
                     <Empty className="py-8">
                         <EmptyHeader>
                             <EmptyMedia variant="icon">
@@ -579,8 +638,8 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                             </EmptyDescription>
                         </EmptyHeader>
                     </Empty>
-                ) : null}
-            </section>
+                )}
+            </CollapsibleSection>
         </div>
     );
 }

@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
+import { LlmModelPicker } from "@/components/system/llm-model-picker";
 import { ShimmeringText } from "@/components/ui/shimmering-text";
 import { Textarea } from "@/components/ui/textarea";
 import { useChatAutoScroll } from "@/hooks/use-chat-auto-scroll";
@@ -40,6 +41,7 @@ import {
     submitBrokerChatRun,
     updateBrokerChatConfig
 } from "@/service/actions/broker-chat";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
 import type { LlmProvider, LlmProviderConfig, McpServerConfig } from "@/service/types/broker";
 import type {
     BrokerChatEvent,
@@ -55,6 +57,7 @@ type Props = {
     initialSessions: BrokerChatSession[];
     initialRuns: BrokerChatRun[];
     llmProviders: LlmProviderConfig[];
+    openRouterModels: OpenRouterModel[];
     mcpServer: McpServerConfig;
     mcpServers: McpServerConfig[];
 };
@@ -845,7 +848,15 @@ function UserMessage({ text }: { text: string }) {
     );
 }
 
-export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSessions, llmProviders, mcpServer, mcpServers }: Props) {
+export function BrokerChatWorkspace({
+    initialConfig,
+    initialRuns,
+    initialSessions,
+    llmProviders,
+    openRouterModels,
+    mcpServer,
+    mcpServers
+}: Props) {
     const { user } = useSession();
     const [sessions, setSessions] = useState(() => sortSessions(initialSessions));
     const [runs, setRuns] = useState(() => mergeRuns([], initialRuns));
@@ -1718,18 +1729,27 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             </Label>
                             <Label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold uppercase text-muted-foreground min-[820px]:max-w-sm">
                                 Model
-                                <SimpleSelect
-                                    className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
-                                    disabled={!selectedModels.length}
-                                    onValueChange={setModel}
-                                    options={selectedModels.map((item) => ({
-                                        value: item.model_id,
-                                        label: item.label || item.model_id
-                                    }))}
-                                    placeholder="Select model"
-                                    size="sm"
-                                    value={model}
-                                />
+                                {provider ? (
+                                    <LlmModelPicker
+                                        models={openRouterModels}
+                                        onSelect={(id) => setModel(id)}
+                                        provider={provider}
+                                        value={model}
+                                    />
+                                ) : (
+                                    <SimpleSelect
+                                        className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
+                                        disabled
+                                        onValueChange={setModel}
+                                        options={selectedModels.map((item) => ({
+                                            value: item.model_id,
+                                            label: item.label || item.model_id
+                                        }))}
+                                        placeholder="Select model"
+                                        size="sm"
+                                        value={model}
+                                    />
+                                )}
                             </Label>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-[1120px]:ml-auto">
                                 <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
