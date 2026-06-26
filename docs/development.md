@@ -21,6 +21,15 @@ Run the full stack in Docker with hot reload via [Compose Watch](https://docs.do
 cp .env.dev.example .env.dev
 ```
 
+<details>
+<summary>PowerShell first-time setup</summary>
+
+```powershell
+Copy-Item .env.dev.example .env.dev
+```
+
+</details>
+
 Generate a stable `BETTER_AUTH_SECRET` in `.env.dev` (recommended):
 
 ```bash
