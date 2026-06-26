@@ -375,6 +375,43 @@ class HistoricalRequest(BaseModel):
     to_date: datetime
 
 
+class MarketChartRequest(BaseModel):
+    instrument: InstrumentRef
+    history_days: int = Field(default=90, ge=1, le=1825)
+    daily_interval: str = Field(default="day")
+    intraday_interval: str = Field(default="1minute")
+    intraday_lookback_days: int = Field(default=1, ge=0, le=30)
+    include_live_quote: bool = Field(default=True)
+
+
+class MarketChartCandleOut(BaseModel):
+    time: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None = None
+    interval: str
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class MarketChartCacheStatusOut(BaseModel):
+    used_cached_daily: bool = False
+    used_cached_intraday: bool = False
+    fetched_daily: bool = False
+    fetched_intraday: bool = False
+
+
+class MarketChartSnapshotOut(BaseModel):
+    broker_code: str
+    symbol: str
+    exchange: str | None = None
+    candles: list[MarketChartCandleOut] = Field(default_factory=list)
+    latest_quote: QuoteRow | None = None
+    last_price_time: datetime | None = None
+    cache_status: MarketChartCacheStatusOut = Field(default_factory=MarketChartCacheStatusOut)
+
+
 class OptionChainRequest(BaseModel):
     symbol: str
     exchange: str = "NSE"

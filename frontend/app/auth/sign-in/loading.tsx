@@ -1,5 +1,3 @@
-import { AuthLoading } from "@/components/auth-loading";
+import { SignInLoading } from "@/components/auth/auth-split-loading";
 
-export default function SignInLoading() {
-    return <AuthLoading mode="sign-in" />;
-}
+export default SignInLoading;

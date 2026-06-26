@@ -1,5 +1,8 @@
 "use client";
 
+import { authQueryKeys } from "@better-auth-ui/core";
+import { useSession as useAuthSession } from "@better-auth-ui/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { authClient, type AuthSession, type AuthUser, type SignInInput, type SignUpInput } from "@/lib/auth-client";
 
@@ -41,8 +44,15 @@ async function clearStaleSessionCookies() {
     }).catch(() => undefined);
 }
 
+/**
+ * Bridges Better Auth UI session state with app-level sign-in helpers.
+ *
+ * Prefer Better Auth UI hooks (`useSignInEmail`, etc.) in auth forms.
+ * Use {@link useSession} elsewhere for the current user and sign-out.
+ */
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-    const session = authClient.useSession();
+    const queryClient = useQueryClient();
+    const session = useAuthSession(authClient);
     const [fallbackSession, setFallbackSession] = useState<AuthSession | null | undefined>(undefined);
 
     useEffect(() => {
@@ -79,6 +89,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const user = effectiveSession?.user ?? null;
     const isLoading = session.isPending && fallbackSession === undefined;
 
+    const refreshSession = useCallback(async () => {
+        await queryClient.invalidateQueries({ queryKey: authQueryKeys.session });
+    }, [queryClient]);
+
+    const syncFallbackSession = useCallback(async () => {
+        try {
+            setFallbackSession(await fetchSessionSnapshot());
+        } catch {
+            // Query invalidation already updated auth state; snapshot sync is best-effort.
+        }
+    }, []);
+
     const signIn = useCallback(
         async (input: SignInInput) => {
             const { error } = await authClient.signIn.email({
@@ -91,14 +113,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                 throw new Error(error.message ?? "Could not sign in.");
             }
 
-            await session.refetch();
-            try {
-                setFallbackSession(await fetchSessionSnapshot());
-            } catch {
-                // Refetch already updated auth state; snapshot sync is best-effort.
-            }
+            await refreshSession();
+            await syncFallbackSession();
         },
-        [session]
+        [refreshSession, syncFallbackSession]
     );
 
     const signUp = useCallback(
@@ -113,14 +131,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
                 throw new Error(error.message ?? "Could not create account.");
             }
 
-            await session.refetch();
-            try {
-                setFallbackSession(await fetchSessionSnapshot());
-            } catch {
-                // Refetch already updated auth state; snapshot sync is best-effort.
-            }
+            await refreshSession();
+            await syncFallbackSession();
         },
-        [session]
+        [refreshSession, syncFallbackSession]
     );
 
     const signOut = useCallback(async () => {
@@ -128,9 +142,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (error) {
             throw new Error(error.message ?? "Could not sign out.");
         }
-        await session.refetch();
+        await refreshSession();
         setFallbackSession(null);
-    }, [session]);
+    }, [refreshSession]);
 
     const value = useMemo(
         () => ({ user, isLoading, signIn, signUp, signOut }),
@@ -140,6 +154,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/** Returns the current user and auth actions from {@link SessionProvider}. */
 export function useSession() {
     const context = useContext(SessionContext);
     if (!context) {

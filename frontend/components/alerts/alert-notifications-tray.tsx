@@ -1,22 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { Bell } from "lucide-react";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { Bell, BellOff, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import {
-    getAlertNotifications,
-    getAlertUnreadCount,
-    markAlertNotificationRead,
-    readAllAlertNotifications
-} from "@/service/actions/alerts";
+    useAlertNotificationTray,
+    useMarkAlertNotificationRead,
+    useReadAllAlertNotifications
+} from "@/hooks/use-alert-notifications";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+    Card,
+    CardDescription,
+    CardPanel,
+    CardTitle
+} from "@/components/ui/card";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
-import { subscribeToAlertNotificationStream } from "@/lib/alert-notification-stream";
-import type { AlertNotification } from "@/service/types/alerts";
-
-function sseSupported() {
-    return typeof window !== "undefined" && "EventSource" in window;
-}
 
 function llmOutput(payload: Record<string, unknown>) {
     const analysis = payload.llm_analysis;
@@ -25,61 +25,43 @@ function llmOutput(payload: Record<string, unknown>) {
     return typeof output === "string" ? output : "";
 }
 
+function AlertTrayEmptyState() {
+    return (
+        <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
+            <BellOff className="size-4 text-muted-foreground" aria-hidden />
+            <div className="space-y-0.5">
+                <p className="text-sm font-medium text-foreground">You&apos;re all caught up</p>
+                <p className="max-w-[220px] text-xs leading-5 text-muted-foreground">
+                    Unread alerts from your workflows will appear here.
+                </p>
+            </div>
+            <Button render={<Link href="/alerts-workspace" />} size="sm" variant="outline">
+                Set up alerts
+            </Button>
+        </div>
+    );
+}
+
+function AlertTrayLoadingState() {
+    return (
+        <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            <p className="text-xs">Loading alerts…</p>
+        </div>
+    );
+}
+
+/** Header dropdown for unread user alert notifications with SSE-backed updates. */
 export function AlertNotificationsTray() {
-    const [items, setItems] = useState<AlertNotification[]>([]);
-    const [unreadCount, setUnreadCount] = useState(0);
+    const { data, isPending: isLoadingTray, isError, refetch } = useAlertNotificationTray();
+    const markRead = useMarkAlertNotificationRead();
+    const markAllRead = useReadAllAlertNotifications();
     const [open, setOpen] = useState(false);
     const trayRef = useRef<HTMLDivElement | null>(null);
-    const [isPending, startTransition] = useTransition();
 
-    useEffect(() => {
-        let cancelled = false;
-        let fallbackTimer: number | undefined;
-
-        async function load() {
-            const [count, notifications] = await Promise.all([
-                getAlertUnreadCount(),
-                getAlertNotifications({ unread_only: true, limit: 8 })
-            ]);
-            if (cancelled) return;
-            setUnreadCount(count.unread_count);
-            setItems(notifications);
-        }
-
-        startTransition(async () => {
-            await load();
-        });
-
-        function startPolling() {
-            fallbackTimer = window.setInterval(() => {
-                startTransition(async () => {
-                    await load();
-                });
-            }, 15000);
-        }
-
-        let unsubscribe: () => void = () => {};
-        if (sseSupported()) {
-            unsubscribe = subscribeToAlertNotificationStream((payloadText) => {
-                try {
-                    const payload = JSON.parse(payloadText) as AlertNotification;
-                    if (cancelled) return;
-                    setItems((current) => [payload, ...current.filter((item) => item.id !== payload.id)].slice(0, 8));
-                    setUnreadCount((current) => current + (payload.is_read ? 0 : 1));
-                } catch {
-                    return;
-                }
-            });
-        } else {
-            startPolling();
-        }
-
-        return () => {
-            cancelled = true;
-            unsubscribe();
-            if (fallbackTimer) window.clearInterval(fallbackTimer);
-        };
-    }, []);
+    const items = data?.items ?? [];
+    const unreadCount = data?.unreadCount ?? 0;
+    const isMutationPending = markRead.isPending || markAllRead.isPending;
 
     useEffect(() => {
         if (!open) return;
@@ -102,77 +84,83 @@ export function AlertNotificationsTray() {
         };
     }, [open]);
 
-    function markRead(id: string) {
-        startTransition(async () => {
-            await markAlertNotificationRead(id);
-            setItems((current) => current.filter((item) => item.id !== id));
-            setUnreadCount((current) => Math.max(0, current - 1));
-        });
-    }
-
-    function markAllRead() {
-        startTransition(async () => {
-            await readAllAlertNotifications();
-            setItems([]);
-            setUnreadCount(0);
-        });
-    }
-
     return (
         <div className="relative" ref={trayRef}>
-            <Button onClick={() => setOpen((current) => !current)} type="button" variant="outline">
-                <Bell className="size-4" />
+            <Button
+                className="inline-flex items-center gap-2"
+                onClick={() => setOpen((current) => !current)}
+                type="button"
+                variant="outline"
+            >
+                <Bell className="size-4 shrink-0" />
                 Alerts
-                {unreadCount ? (
-                    <span className="type-meta bg-primary px-2 py-0.5 text-primary-foreground">{unreadCount}</span>
+                {unreadCount > 0 ? (
+                    <Badge size="sm" variant="secondary">
+                        {unreadCount}
+                    </Badge>
                 ) : null}
             </Button>
             {open ? (
-                <div className="absolute right-0 top-12 z-30 w-[360px] border border-border bg-background p-4 ">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                        <div>
-                            <div className="type-section-title">User alerts</div>
-                            <div className="type-meta">{unreadCount} unread</div>
+                <Card className="absolute right-0 top-11 z-30 w-80 overflow-hidden rounded-xl shadow-lg">
+                    <div className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5">
+                        <div className="min-w-0">
+                            <CardTitle className="text-sm font-semibold leading-none">Alerts</CardTitle>
+                            <CardDescription className="text-xs">
+                                {unreadCount === 0 ? "No unread alerts" : `${unreadCount} unread`}
+                            </CardDescription>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                disabled={!items.length || isPending}
-                                onClick={markAllRead}
-                                size="sm"
-                                type="button"
-                                variant="outline"
-                            >
-                                Read all
-                            </Button>
-                            <Button asChild size="sm" type="button">
-                                <Link href="/alerts-workspace">Open</Link>
-                            </Button>
-                        </div>
+                        <Button
+                            className="h-7 shrink-0 px-2 text-xs"
+                            disabled={!items.length || isMutationPending}
+                            onClick={() => markAllRead.mutate()}
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                        >
+                            Read all
+                        </Button>
                     </div>
-                    <div className="grid max-h-[360px] gap-3 overflow-y-auto pr-1">
+                    <CardPanel className="max-h-80 divide-y divide-border overflow-y-auto p-0">
+                        {isLoadingTray && !items.length ? <AlertTrayLoadingState /> : null}
+                        {isError ? (
+                            <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
+                                <p className="text-xs text-destructive">Could not load alerts.</p>
+                                <Button onClick={() => void refetch()} size="sm" type="button" variant="outline">
+                                    Retry
+                                </Button>
+                            </div>
+                        ) : null}
                         {items.map((item) => (
-                            <div className=" border border-border p-3" key={item.id}>
-                                <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                        <div className="type-section-title">{item.title}</div>
-                                        <div className="type-help mt-1 text-muted-foreground">{item.message}</div>
+                            <div className="px-3.5 py-2.5 hover:bg-muted/40" key={item.id}>
+                                <div className="flex items-start gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium leading-snug text-foreground">
+                                            {item.title}
+                                        </p>
+                                        <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                            {item.message}
+                                        </p>
                                         {llmOutput(item.payload) ? (
-                                            <AlertLlmMarkdown className="mt-2 border-l-2 border-primary pl-2 text-xs text-muted-foreground">
+                                            <AlertLlmMarkdown className="mt-1.5 border-l border-primary/40 pl-2 text-xs leading-5 text-muted-foreground">
                                                 {llmOutput(item.payload)}
                                             </AlertLlmMarkdown>
                                         ) : null}
                                     </div>
-                                    <Button onClick={() => markRead(item.id)} size="sm" type="button" variant="ghost">
+                                    <Button
+                                        className="h-auto shrink-0 px-1.5 py-0.5 text-xs text-muted-foreground"
+                                        onClick={() => markRead.mutate(item.id)}
+                                        size="sm"
+                                        type="button"
+                                        variant="ghost"
+                                    >
                                         Read
                                     </Button>
                                 </div>
                             </div>
                         ))}
-                        {!items.length ? (
-                            <div className="type-body py-6 text-muted-foreground">No unread user alerts.</div>
-                        ) : null}
-                    </div>
-                </div>
+                        {!items.length && !isLoadingTray && !isError ? <AlertTrayEmptyState /> : null}
+                    </CardPanel>
+                </Card>
             ) : null}
         </div>
     );
