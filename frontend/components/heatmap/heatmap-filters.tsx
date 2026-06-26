@@ -10,7 +10,7 @@ import {
     parseStoredHeatmapFilters,
     type StoredHeatmapFilters
 } from "@/components/heatmap/heatmap-filter-state";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { HeatmapScope } from "@/service/types/heatmap";
 import type { Watchlist } from "@/service/types/watchlist";
@@ -114,11 +114,10 @@ export function HeatmapFilters({
                 <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     Heatmap source
                 </span>
-                <Select
+                <SimpleSelect
                     aria-label="Select heatmap source"
                     className="h-8 border-border bg-background px-2 text-xs font-semibold"
-                    onChange={(event) => {
-                        const nextScope = event.target.value as HeatmapScope;
+                    onValueChange={(nextScope) => {
                         replaceSearch((params) => {
                             params.set("scope", nextScope);
                             if (nextScope === "watchlist") {
@@ -147,17 +146,19 @@ export function HeatmapFilters({
                             }
                             writeStoredFilters({
                                 accountId: params.get("account_id") || currentAccountId || undefined,
-                                scope: nextScope,
+                                scope: nextScope as HeatmapScope,
                                 watchlistId: params.get("watchlist_id") || currentWatchlistId || undefined
                             });
                         });
                     }}
+                    options={[
+                        { value: "tracked", label: "Tracked symbols" },
+                        { value: "watchlist", label: "Watchlist" },
+                        { value: "portfolio_holdings", label: "Portfolio holdings" }
+                    ]}
+                    size="sm"
                     value={currentScope}
-                >
-                    <option value="tracked">Tracked symbols</option>
-                    <option value="watchlist">Watchlist</option>
-                    <option value="portfolio_holdings">Portfolio holdings</option>
-                </Select>
+                />
             </div>
 
             {currentScope === "watchlist" ? (
@@ -165,32 +166,32 @@ export function HeatmapFilters({
                     <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                         Watchlist
                     </span>
-                    <Select
+                    <SimpleSelect
                         aria-label="Select watchlist"
                         className="h-8 border-border bg-background px-2 text-xs font-semibold"
                         disabled={!watchlists.length}
-                        onChange={(event) => {
+                        onValueChange={(watchlistId) => {
                             replaceSearch((params) => {
-                                params.set("watchlist_id", event.target.value);
+                                params.set("watchlist_id", watchlistId);
                                 writeStoredFilters({
                                     accountId: currentAccountId || undefined,
                                     scope: currentScope,
-                                    watchlistId: event.target.value || undefined
+                                    watchlistId: watchlistId || undefined
                                 });
                             });
                         }}
+                        options={
+                            watchlists.length
+                                ? watchlists.map((watchlist) => ({
+                                      value: watchlist.id,
+                                      label: `${watchlist.name} (${watchlist.items.length || watchlist.symbols.length})`
+                                  }))
+                                : [{ value: "", label: "No watchlists available", disabled: true }]
+                        }
+                        placeholder="Select watchlist"
+                        size="sm"
                         value={currentWatchlistId}
-                    >
-                        {watchlists.length ? (
-                            watchlists.map((watchlist) => (
-                                <option key={watchlist.id} value={watchlist.id}>
-                                    {watchlist.name} ({watchlist.items.length || watchlist.symbols.length})
-                                </option>
-                            ))
-                        ) : (
-                            <option value="">No watchlists available</option>
-                        )}
-                    </Select>
+                    />
                 </div>
             ) : null}
 
@@ -199,32 +200,32 @@ export function HeatmapFilters({
                     <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                         Broker account
                     </span>
-                    <Select
+                    <SimpleSelect
                         aria-label="Select broker account"
                         className="h-8 border-border bg-background px-2 text-xs font-semibold"
                         disabled={!accounts.length}
-                        onChange={(event) => {
+                        onValueChange={(accountId) => {
                             replaceSearch((params) => {
-                                params.set("account_id", event.target.value);
+                                params.set("account_id", accountId);
                                 writeStoredFilters({
-                                    accountId: event.target.value || undefined,
+                                    accountId: accountId || undefined,
                                     scope: currentScope,
                                     watchlistId: currentWatchlistId || undefined
                                 });
                             });
                         }}
+                        options={
+                            accounts.length
+                                ? accounts.map((account) => ({
+                                      value: account.id,
+                                      label: labelForAccount(account)
+                                  }))
+                                : [{ value: "", label: "No broker accounts available", disabled: true }]
+                        }
+                        placeholder="Select account"
+                        size="sm"
                         value={currentAccountId}
-                    >
-                        {accounts.length ? (
-                            accounts.map((account) => (
-                                <option key={account.id} value={account.id}>
-                                    {labelForAccount(account)}
-                                </option>
-                            ))
-                        ) : (
-                            <option value="">No broker accounts available</option>
-                        )}
-                    </Select>
+                    />
                 </div>
             ) : null}
 

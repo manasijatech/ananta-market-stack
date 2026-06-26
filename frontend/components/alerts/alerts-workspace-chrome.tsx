@@ -2,8 +2,10 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { AlertsNav } from "@/components/alerts/alerts-nav";
 import { PageHeader, PrimaryLink } from "@/components/brokers/ui";
+import { Button } from "@/components/ui/button";
 
 type HeaderConfig = {
     eyebrow: string;
@@ -28,7 +30,16 @@ function headerForRoute(pathname: string, status: string | null): HeaderConfig {
             title: "Alerts Workspace",
             description:
                 "Create, run, and review live market workflows, user alerts, and outbound channels from one workspace.",
-            action: <PrimaryLink href="/alerts-workspace/workflows/new">+ New workflow</PrimaryLink>
+            action: (
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button render={<Link href="/alerts-workspace/templates" />} variant="ghost">
+                        Browse templates
+                    </Button>
+                    <Button render={<Link href="/alerts-workspace/workflows/new" />}>
+                        Create workflow
+                    </Button>
+                </div>
+            )
         };
     }
 
@@ -92,31 +103,14 @@ export function AlertsWorkspaceChrome({ children }: { children: React.ReactNode 
         ...routeHeader,
         ...(override?.pathname === pathname ? override.header : null)
     };
-    const compactAlertsHeader = pathname.startsWith("/alerts-workspace");
-
     return (
         <HeaderOverrideContext.Provider value={setHeaderOverride}>
-            {compactAlertsHeader ? (
-                <header className="alerts-workspace-chrome-header mb-4 flex min-w-0 flex-col justify-between gap-4 border-b border-border pb-4 min-[860px]:flex-row min-[860px]:items-end">
-                    <div className="min-w-0">
-                        <p className="type-page-eyebrow mb-2">{header.eyebrow}</p>
-                        <h1 className="break-words text-[clamp(26px,9vw,38px)] font-semibold leading-none tracking-normal">
-                            {header.title}
-                        </h1>
-                        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{header.description}</p>
-                    </div>
-                    {header.action ? (
-                        <div className="flex w-full flex-col min-[520px]:w-auto">{header.action}</div>
-                    ) : null}
-                </header>
-            ) : (
-                <PageHeader
-                    eyebrow={header.eyebrow}
-                    title={header.title}
-                    description={header.description}
-                    action={header.action}
-                />
-            )}
+            <PageHeader
+                action={header.action}
+                description={header.description}
+                eyebrow={header.eyebrow}
+                title={header.title}
+            />
             <AlertsNav />
             {children}
         </HeaderOverrideContext.Provider>

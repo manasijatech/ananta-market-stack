@@ -1,0 +1,112 @@
+name: ananta-market-stack-dev
+
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./data/app.db}
+      APP_PUBLIC_BASE_URL: ${APP_PUBLIC_BASE_URL:-http://localhost:${BACKEND_PORT:-8000}}
+      MANASIJA_API_BASE_URL: ${MANASIJA_API_BASE_URL:-https://developers.manasija.in}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ""
+      APP_DEBUG: ${APP_DEBUG:-true}
+      ALLOW_INSECURE_DEV_CREDENTIALS: ${ALLOW_INSECURE_DEV_CREDENTIALS:-true}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      ENABLE_IN_PROCESS_ALERT_WORKERS: ${ENABLE_IN_PROCESS_ALERT_WORKERS:-true}
+      ENABLE_IN_PROCESS_ALPHA_WS_WORKER: ${ENABLE_IN_PROCESS_ALPHA_WS_WORKER:-true}
+      ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER: ${ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER:-true}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend/data:/app/data
+    develop:
+      watch:
+        - path: ./backend
+          target: /app
+          action: sync
+          ignore:
+            - .venv/
+            - venv/
+            - data/
+            - __pycache__/
+            - "**/*.pyc"
+            - .pytest_cache/
+            - .mypy_cache/
+            - .ruff_cache/
+            - "*.db"
+            - "*.db-*"
+        - path: ./backend/requirements.txt
+          action: rebuild
+        - path: ./backend/.env
+          target: /app/.env
+          action: sync+restart
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.dev
+    depends_on:
+      - backend
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://127.0.0.1:${BACKEND_PORT:-8000}/api/v1}
+      MARKET_STACK_API_INTERNAL_URL: http://backend:8000/api/v1
+      MANASIJA_API_BASE_URL: ${MANASIJA_API_BASE_URL:-https://developers.manasija.in}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-docker-dev-secret-change-me}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:${FRONTEND_PORT:-3000},http://127.0.0.1:${FRONTEND_PORT:-3000}}
+      AUTH_DATABASE_PATH: /shared-data/app.db
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./backend/data:/shared-data
+    develop:
+      watch:
+        - path: ./frontend
+          target: /app
+          action: sync
+          ignore:
+            - node_modules/
+            - .next/
+            - data/
+            - "*.tsbuildinfo"
+        - path: ./frontend/package.json
+          action: rebuild
+        - path: ./frontend/package-lock.json
+          action: rebuild
+        - path: ./frontend/next.config.ts
+          target: /app/next.config.ts
+          action: sync+restart
+        - path: ./frontend/postcss.config.mjs
+          target: /app/postcss.config.mjs
+          action: sync+restart
+        - path: ./frontend/tsconfig.json
+          target: /app/tsconfig.json
+          action: sync+restart
+        - path: ./frontend/.env.local
+          target: /app/.env.local
+          action: sync+restart
+    restart: unless-stopped

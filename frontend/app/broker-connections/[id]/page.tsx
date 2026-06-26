@@ -12,10 +12,10 @@ import {
     formatDate,
     isBrokerAccountReady,
     PageHeader,
-    Shell,
     StatusBadge,
     statusTone
 } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { formatUserFacingError, isMissingOrInaccessibleError, isPermissionDeniedError } from "@/lib/api-errors";

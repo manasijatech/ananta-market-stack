@@ -168,8 +168,8 @@ async function readResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
         const fallback =
             response.status >= 500
-                ? "The Manasija Alpha API is unavailable. Please try again."
-                : "Alpha API request failed.";
+                ? "The Drishti API is unavailable. Please try again."
+                : "Drishti API request failed.";
         throw new Error(
             JSON.stringify({
                 status: response.status,
@@ -189,7 +189,7 @@ export async function getAlphaApiKey() {
         throw new Error(
             JSON.stringify({
                 status: response.status,
-                message: extractMessage(payload, "Manasija Alpha API key is not configured. Add it in Settings."),
+                message: extractMessage(payload, "Drishti API key is not configured. Add it in Settings."),
                 fieldErrors: {}
             })
         );
@@ -199,7 +199,7 @@ export async function getAlphaApiKey() {
         throw new Error(
             JSON.stringify({
                 status: 400,
-                message: "Manasija Alpha API key is not configured. Add it in Settings.",
+                message: "Drishti API key is not configured. Add it in Settings.",
                 fieldErrors: {}
             })
         );
@@ -220,8 +220,8 @@ function parseSdkError(error: unknown): never {
     if (error instanceof DrishtiApiError) {
         const fallback =
             error.statusCode >= 500
-                ? "The Manasija Alpha API is unavailable. Please try again."
-                : "Alpha API request failed.";
+                ? "The Drishti API is unavailable. Please try again."
+                : "Drishti API request failed.";
         throw new Error(
             JSON.stringify({
                 status: error.statusCode,
@@ -258,7 +258,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
         throw new Error(
             JSON.stringify({
                 status: 502,
-                message: "Could not reach the Manasija Alpha API.",
+                message: "Could not reach the Drishti API.",
                 fieldErrors: {}
             })
         );

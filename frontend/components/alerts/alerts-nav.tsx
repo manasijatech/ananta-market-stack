@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { typography } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 const items = [
     { href: "/alerts-workspace", label: "Overview" },
     { href: "/alerts-workspace/workflows", label: "Active Workflows" },
-    { href: "/alerts-workspace/workflows?status=inactive", label: "Inactive Workflows" },
-    { href: "/alerts-workspace/workflows/new", label: "Create Workflow" },
-    { href: "/alerts-workspace/templates", label: "Templates" }
+    { href: "/alerts-workspace/workflows?status=inactive", label: "Inactive Workflows" }
 ];
 
 export function AlertsNav() {
@@ -17,7 +17,7 @@ export function AlertsNav() {
 
     return (
         <nav
-            className="alerts-workspace-nav -mx-4 mb-4 flex min-w-0 gap-1.5 overflow-x-auto px-4 pb-1 min-[760px]:mx-0 min-[760px]:flex-wrap min-[760px]:overflow-visible min-[760px]:px-0 min-[760px]:pb-0"
+            className="alerts-workspace-nav -mx-4 mb-4 flex min-w-0 gap-4 overflow-x-auto border-b border-border px-4 pb-0 min-[760px]:mx-0 min-[760px]:overflow-visible min-[760px]:px-0"
             aria-label="Alerts workspace"
         >
             {items.map((item) => {
@@ -36,11 +36,13 @@ export function AlertsNav() {
                 })();
                 return (
                     <Link
-                        className={
+                        className={cn(
+                            typography.small,
+                            "shrink-0 whitespace-nowrap border-b-2 px-1 pb-2.5 transition-colors",
                             active
-                                ? "shrink-0 whitespace-nowrap border border-primary bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground min-[760px]:text-sm"
-                                : "shrink-0 whitespace-nowrap border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:text-foreground min-[760px]:text-sm"
-                        }
+                                ? "border-primary text-foreground"
+                                : "border-transparent text-muted-foreground hover:text-foreground"
+                        )}
                         href={item.href}
                         key={item.href}
                     >

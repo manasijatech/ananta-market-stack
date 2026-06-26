@@ -2,9 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
+import { toast } from "sonner";
+import { IconBan, IconDotsVertical, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import {
+    Menu,
+    MenuItem,
+    MenuPopup,
+    MenuTrigger
+} from "@/components/ui/menu";
 import { disableWorkspaceMember, removeWorkspaceMember } from "@/service/actions/rbac";
 import type { WorkspaceMember } from "@/service/types/rbac";
+import { cn } from "@/lib/utils";
 
 type WorkspaceMemberActionsProps = {
     currentUserId: string;
@@ -16,6 +25,10 @@ export function WorkspaceMemberActions({ currentUserId, member }: WorkspaceMembe
     const [isPending, startTransition] = useTransition();
     const isSelf = member.user_id === currentUserId;
 
+    if (isSelf) {
+        return <span aria-hidden className="size-8" />;
+    }
+
     function refresh() {
         startTransition(() => {
             router.refresh();
@@ -23,10 +36,11 @@ export function WorkspaceMemberActions({ currentUserId, member }: WorkspaceMembe
     }
 
     function onDisable() {
-        if (isSelf) {
-            return;
-        }
-        if (!window.confirm(`Disable ${member.email || member.auth_name || "this member"}? They will lose workspace access until re-approved.`)) {
+        if (
+            !window.confirm(
+                `Disable ${member.email || member.auth_name || "this member"}? They will lose workspace access until re-approved.`
+            )
+        ) {
             return;
         }
         startTransition(async () => {
@@ -36,9 +50,6 @@ export function WorkspaceMemberActions({ currentUserId, member }: WorkspaceMembe
     }
 
     function onRemove() {
-        if (isSelf) {
-            return;
-        }
         if (!window.confirm(`Remove ${member.email || member.auth_name || "this member"} from this workspace?`)) {
             return;
         }
@@ -48,20 +59,39 @@ export function WorkspaceMemberActions({ currentUserId, member }: WorkspaceMembe
         });
     }
 
-    if (isSelf) {
-        return <span className="text-sm text-muted-foreground">You</span>;
-    }
-
     return (
-        <div className="flex flex-wrap items-center justify-end gap-2">
-            {member.status !== "disabled" ? (
-                <Button disabled={isPending} onClick={onDisable} size="sm" type="button" variant="outline">
-                    Disable
-                </Button>
-            ) : null}
-            <Button disabled={isPending} onClick={onRemove} size="sm" type="button" variant="destructive">
-                Remove
-            </Button>
-        </div>
+        <Menu>
+            <MenuTrigger
+                render={
+                    <Button
+                        aria-label="Member actions"
+                        className="size-8"
+                        disabled={isPending}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                    >
+                        <IconDotsVertical className="size-4" />
+                    </Button>
+                }
+            />
+            <MenuPopup align="end" className="min-w-48">
+                {member.status !== "disabled" ? (
+                    <MenuItem
+                        className="text-warning-foreground focus:text-warning-foreground"
+                        closeOnClick
+                        disabled={isPending}
+                        onClick={onDisable}
+                    >
+                        <IconBan className={cn("size-4 text-warning-foreground")} />
+                        Disable account
+                    </MenuItem>
+                ) : null}
+                <MenuItem closeOnClick disabled={isPending} onClick={onRemove} variant="destructive">
+                    <IconTrash className="size-4" />
+                    Remove from workspace
+                </MenuItem>
+            </MenuPopup>
+        </Menu>
     );
 }
