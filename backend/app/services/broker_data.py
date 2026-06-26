@@ -522,11 +522,11 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
         ),
         "option_chain": DataCapabilityItem(
             supported=acc.broker_code in {"groww", "dhan"},
-            guidance="Option chain is currently wired for Groww and Dhan.",
+            guidance="Option chain is currently wired for Groww and Dhan. INDstocks documents the endpoints but the live API still returns route-missing responses.",
         ),
         "greeks": DataCapabilityItem(
             supported=acc.broker_code == "groww",
-            guidance="Greeks are currently derived from Groww option chain responses.",
+            guidance="Greeks are currently derived from Groww option chain responses. INDstocks still advertises these endpoints as coming soon and the live API returns 404.",
         ),
         "stream": DataCapabilityItem(supported=True, guidance="WebSocket v1 is an on-demand test manager that uses a uniform read-only flow."),
     }

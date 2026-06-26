@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { BrokerCode, CreateBrokerAccountPayload, FieldErrors } from "@/service/types/broker";
 
+type ZerodhaMode = "official" | "automation";
 type GrowwMode = "approval" | "totp" | "token";
 
 const fallbackBrokerRedirectUrl = "http://localhost:3000/broker-connections";
@@ -36,6 +37,7 @@ function nullableField(formData: FormData, key: string): string | null {
 function makePayload(
     broker: BrokerCode,
     formData: FormData,
+    zerodhaMode: ZerodhaMode,
     growwMode: GrowwMode,
     defaultBrokerRedirectUrl: string
 ): CreateBrokerAccountPayload {
@@ -46,7 +48,10 @@ function makePayload(
                 broker,
                 label,
                 api_key: stringField(formData, "api_key"),
-                api_secret: stringField(formData, "api_secret")
+                api_secret: stringField(formData, "api_secret"),
+                login_user_id: zerodhaMode === "automation" ? nullableField(formData, "login_user_id") : null,
+                login_password: zerodhaMode === "automation" ? nullableField(formData, "login_password") : null,
+                totp_secret: zerodhaMode === "automation" ? nullableField(formData, "totp_secret") : null
             };
         case "upstox":
             return {
@@ -195,6 +200,7 @@ function BrokerGuidePanel({ broker }: { broker: BrokerCode }) {
 export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCode[] }) {
     const router = useRouter();
     const [broker, setBroker] = useState<BrokerCode>(supportedBrokers[0] ?? "zerodha");
+    const [zerodhaMode, setZerodhaMode] = useState<ZerodhaMode>("official");
     const [growwMode, setGrowwMode] = useState<GrowwMode>("approval");
     const [isPending, startTransition] = useTransition();
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -210,7 +216,7 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
     function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
-        const payload = makePayload(broker, formData, growwMode, defaultBrokerRedirectUrl);
+        const payload = makePayload(broker, formData, zerodhaMode, growwMode, defaultBrokerRedirectUrl);
         setFieldErrors({});
         setMessage("");
 
@@ -267,6 +273,19 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
 
                         {broker === "zerodha" ? (
                             <>
+                                <div className="flex flex-wrap gap-2">
+                                    {(["official", "automation"] as ZerodhaMode[]).map((mode) => (
+                                        <Button
+                                            size="sm"
+                                            variant={zerodhaMode === mode ? "default" : "outline"}
+                                            key={mode}
+                                            onClick={() => setZerodhaMode(mode)}
+                                            type="button"
+                                        >
+                                            {mode === "official" ? "API only" : "Web login automation"}
+                                        </Button>
+                                    ))}
+                                </div>
                                 <Field error={fieldErrors.api_key} label="API key" name="api_key" />
                                 <Field
                                     error={fieldErrors.api_secret}
@@ -274,6 +293,30 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                     name="api_secret"
                                     type="password"
                                 />
+                                {zerodhaMode === "automation" ? (
+                                    <>
+                                        <Field
+                                            error={fieldErrors.login_user_id}
+                                            label="Login user ID"
+                                            name="login_user_id"
+                                            description="Zerodha user ID used for the optional automated web-login flow."
+                                        />
+                                        <Field
+                                            error={fieldErrors.login_password}
+                                            label="Login password"
+                                            name="login_password"
+                                            type="password"
+                                            description="Stored encrypted and used only for optional automated refresh."
+                                        />
+                                        <Field
+                                            error={fieldErrors.totp_secret}
+                                            label="TOTP secret"
+                                            name="totp_secret"
+                                            type="password"
+                                            description="Base32 authenticator secret, not the current 6-digit OTP."
+                                        />
+                                    </>
+                                ) : null}
                             </>
                         ) : null}
 

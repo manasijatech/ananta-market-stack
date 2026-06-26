@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 from io import StringIO
 from typing import Any
 
@@ -10,6 +11,19 @@ from broker.indmoney.http_api import IndmoneyHTTP
 
 _INSTRUMENT_SOURCES = ("equity", "fno", "index")
 _QUOTE_BATCH_SIZE = 100
+_HISTORICAL_INTERVALS = {
+    "minute": "1minute",
+    "1minute": "1minute",
+    "3minute": "3minute",
+    "5minute": "5minute",
+    "10minute": "10minute",
+    "15minute": "15minute",
+    "30minute": "30minute",
+    "60minute": "60minute",
+    "hour": "60minute",
+    "day": "1day",
+    "1day": "1day",
+}
 
 
 def _clean_text(value: Any) -> str | None:
@@ -71,6 +85,20 @@ def _float_value(value: Any) -> float | None:
         return float(str(value).replace(",", ""))
     except (TypeError, ValueError):
         return None
+
+
+def _historical_interval(value: Any) -> str:
+    normalized = str(value or "1day").strip().lower().replace(" ", "")
+    return _HISTORICAL_INTERVALS.get(normalized, normalized or "1day")
+
+
+def _epoch_millis(value: Any) -> int:
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        raw = str(value or "").strip()
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    return int(dt.timestamp() * 1000)
 
 
 def _depth_rows(block: dict[str, Any], scrip: str) -> dict[str, list[dict[str, Any]]]:
@@ -274,12 +302,11 @@ def fetch_historical(
         return unsupported_operation("indmoney", "historical requires indmoney_scrip_code")
     return http.request(
         "GET",
-        "/market/history/candles",
+        f"/market/historical/{_historical_interval(request.get('interval'))}",
         {
-            "scrip-code": scrip,
-            "interval": request.get("interval", "day"),
-            "from": str(request["from_date"]),
-            "to": str(request["to_date"]),
+            "scrip-codes": scrip,
+            "start_time": _epoch_millis(request["from_date"]),
+            "end_time": _epoch_millis(request["to_date"]),
         },
         None,
     )
@@ -287,6 +314,10 @@ def fetch_historical(
 
 def stream_capabilities() -> dict[str, Any]:
     return {
-        "websocket_enabled": False,
-        "guidance": "INDmoney websocket support is not wired in this repo yet. Use read-only polling via the test websocket layer.",
+        "websocket_enabled": True,
+        "guidance": (
+            "Ananta Market Stack websocket v1 supports INDmoney through the uniform read-only quote "
+            "poller. INDstocks also exposes native price and order-update websocket endpoints if you "
+            "need broker-direct streaming."
+        ),
     }

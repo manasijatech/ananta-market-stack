@@ -5,6 +5,7 @@ from typing import Any
 from broker.core.data_features import unsupported_operation
 from broker.core.instruments import DefaultInstrumentResolver, InstrumentResolver
 from broker.indmoney import funds as ifunds
+from broker.indmoney import margin as imargin
 from broker.indmoney import market_data as imd
 from broker.indmoney import orders as iorders
 from broker.indmoney.http_api import IndmoneyHTTP
@@ -21,11 +22,11 @@ class IndmoneyClient:
         self._http = IndmoneyHTTP(access_token)
 
     def verify_connection(self) -> tuple[bool, str]:
-        r = ifunds.funds(self._http)
+        r = ifunds.user_profile(self._http)
         return (True, "") if r and not r.get("status") == "error" else (False, str(r))
 
     def user_profile(self) -> dict[str, Any]:
-        return ifunds.funds(self._http)
+        return ifunds.user_profile(self._http)
 
     def order_book(self) -> dict[str, Any]:
         return iorders.order_book(self._http)
@@ -61,8 +62,7 @@ class IndmoneyClient:
         return iorders.close_all_positions(self._http, self.resolver)
 
     def calculate_margin(self, positions: list[dict[str, Any]]) -> dict[str, Any]:
-        _ = positions
-        return {"status": "error", "message": "use indmoney native margin payload"}
+        return imargin.calculate_margin(self._http, positions)
 
     def fetch_quotes(self, instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return imd.fetch_quotes(self._http, instruments)
