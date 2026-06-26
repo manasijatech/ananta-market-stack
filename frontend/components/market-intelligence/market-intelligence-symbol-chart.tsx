@@ -1,6 +1,7 @@
 "use client";
 
 import {
+    isBusinessDay,
     CandlestickSeries,
     ColorType,
     HistogramSeries,
@@ -145,6 +146,22 @@ function toChartTime(value: string): UTCTimestamp {
     return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp;
 }
 
+function chartTimeToIso(value: Time): string | null {
+    if (typeof value === "number") {
+        return new Date(value * 1000).toISOString();
+    }
+    if (isBusinessDay(value)) {
+        const month = String(value.month).padStart(2, "0");
+        const day = String(value.day).padStart(2, "0");
+        return new Date(`${value.year}-${month}-${day}T00:00:00.000Z`).toISOString();
+    }
+    if (typeof value === "string") {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+    }
+    return null;
+}
+
 function dayKeyFromDate(value: string): string | null {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return null;
@@ -204,6 +221,7 @@ function mergeLiveQuote(
             close: ltp,
             volume: Number.isFinite(volume) ? volume : null,
             interval,
+            raw_payload: raw,
         });
     }
     return {
@@ -318,6 +336,11 @@ function formatPrice(value: number | null | undefined): string {
 function formatVolume(value: number | null | undefined): string {
     if (typeof value !== "number" || !Number.isFinite(value)) return "-";
     return value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+}
+
+function candleMatchesTime(candle: HoveredCandle, isoTime: string): boolean {
+    if (candle.time === isoTime) return true;
+    return dayKeyFromDate(candle.time) === dayKeyFromDate(isoTime);
 }
 
 export function MarketIntelligenceSymbolChart({
@@ -455,13 +478,12 @@ export function MarketIntelligenceSymbolChart({
                     setHoveredCandle(candlesRef.current.at(-1) ?? null);
                     return;
                 }
-                const epochSeconds = typeof param.time === "number" ? param.time : null;
-                const isoTime = epochSeconds ? new Date(epochSeconds * 1000).toISOString() : null;
+                const isoTime = chartTimeToIso(param.time);
                 if (!isoTime) {
                     setHoveredCandle(candlesRef.current.at(-1) ?? null);
                     return;
                 }
-                const candle = candlesRef.current.find((item) => item.time === isoTime);
+                const candle = candlesRef.current.find((item) => candleMatchesTime(item, isoTime));
                 setHoveredCandle(candle ?? candlesRef.current.at(-1) ?? null);
             });
         }

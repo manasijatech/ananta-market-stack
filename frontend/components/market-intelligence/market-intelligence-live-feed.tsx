@@ -210,12 +210,6 @@ function insightToMarkdown(value: JsonValue | undefined | null): string {
     return String(value);
 }
 
-function initialSocketLabel(state: SocketState) {
-    if (state === "live") return "Live via full-market websocket";
-    if (state === "connecting") return "Connecting full-market websocket";
-    return "Websocket offline";
-}
-
 function itemKey(item: unknown): string {
     if (!isRecord(item)) return JSON.stringify(item);
     const directId = item.id ?? item._id;
@@ -312,8 +306,8 @@ export function MarketIntelligenceLiveFeed({
 }) {
     const [feeds, setFeeds] = useState(initialFeeds);
     const [liveUpdateCounts, setLiveUpdateCounts] = useState<Record<AlphaSection, number>>(emptyLiveUpdateCounts);
-    const [socketState, setSocketState] = useState<SocketState>("connecting");
-    const [socketError, setSocketError] = useState("");
+    const [, setSocketState] = useState<SocketState>("connecting");
+    const [, setSocketError] = useState("");
     const watchlistSymbols = useMemo(
         () => new Set(symbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean)),
         [symbols]
@@ -421,15 +415,6 @@ export function MarketIntelligenceLiveFeed({
 
     return (
         <div className="grid gap-5">
-            <div className="flex flex-col gap-2 py-1 text-xs text-muted-foreground min-[720px]:flex-row min-[720px]:items-center min-[720px]:justify-between">
-                <span className="font-semibold uppercase tracking-[0.16em] text-primary">
-                    {initialSocketLabel(socketState)}
-                </span>
-                <span>
-                    {marketIntelligenceProducts.length} products subscribed / {symbols.length} watchlist symbols
-                </span>
-            </div>
-            {socketError ? <StateMessage tone="error" message={socketError} /> : null}
             {liveUpdateCounts[activeSection] ? (
                 <LiveUpdateStrip
                     count={liveUpdateCounts[activeSection]}
