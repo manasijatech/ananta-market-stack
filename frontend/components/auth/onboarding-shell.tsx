@@ -41,7 +41,7 @@ export function OnboardingShell({ children }: OnboardingShellProps) {
 								<BrandLogo imageClassName="text-xl" />
 							</Link>
 							<div className="flex flex-col gap-2">
-								<h1 className="text-3xl font-semibold tracking-tight text-foreground">
+								<h1 className="text-3xl font-heading font-bold tracking-tight text-foreground">
 									Create your administrator account
 								</h1>
 								<p className="max-w-md text-base leading-relaxed text-muted-foreground">

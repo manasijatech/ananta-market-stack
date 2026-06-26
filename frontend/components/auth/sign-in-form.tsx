@@ -72,7 +72,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
     return (
         <div className="flex w-full flex-col gap-5">
             <div className="space-y-1.5">
-                <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+                <h1 className="text-2xl font-heading font-semibold tracking-tight">Sign in</h1>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                     Sign in to your workspace to manage broker connections and alerts.
                 </p>

@@ -6,7 +6,6 @@ import {
     IconBrain,
     IconChartBar,
     IconCoins,
-    IconInfoCircle,
     IconSearch,
     IconShieldCheck
 } from "@tabler/icons-react";
@@ -17,6 +16,7 @@ import { MetricInfoTooltip } from "@/components/llm-usage/llm-usage-metric-info-
 import { StatCard, StatValueMuted, tableHeadClassName } from "@/components/llm-usage/llm-usage-stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatIstDateTime } from "@/lib/datetime";
 import { typography } from "@/lib/typography";
@@ -191,12 +191,23 @@ export function buildLlmUsageFilterOptions(
 
 function UsageEmptyNotice() {
     return (
-        <div className="flex items-center gap-2.5 rounded-lg border-l-[3px] border-l-blue-400 bg-card px-3.5 py-2.5">
-            <IconInfoCircle aria-hidden className="size-4 shrink-0 text-blue-400" />
-            <p className="text-[13px] text-foreground">
-                No usage data yet — LLM activity appears here once workflows start running.
-            </p>
-        </div>
+        <Empty className="rounded-lg border border-border bg-card py-12 md:py-16">
+            <EmptyHeader>
+                <EmptyMedia variant="icon">
+                    <IconActivity />
+                </EmptyMedia>
+                <EmptyTitle>No usage yet</EmptyTitle>
+                <EmptyDescription>
+                    LLM activity appears here once a workflow with an LLM step runs.
+                </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+                <Button render={<Link href="/alerts-workspace/workflows/new" />}>
+                    <IconActivity className="size-4" />
+                    Create a workflow
+                </Button>
+            </EmptyContent>
+        </Empty>
     );
 }
 

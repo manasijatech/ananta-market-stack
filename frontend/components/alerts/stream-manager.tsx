@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
+import { CheckCircle2, Radio, Server } from "lucide-react";
 import { getLivePricesWebSocketConfig, getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
 import type { LivePriceTick, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type SocketState = "connecting" | "connected" | "disconnected" | "error";
@@ -397,7 +399,17 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                     </tbody>
                 </table>
                 {!visibleRows.length ? (
-                    <div className="type-body p-4 text-muted-foreground">No active desired symbols to display.</div>
+                    <Empty className="py-8">
+                        <EmptyHeader>
+                            <EmptyMedia variant="icon">
+                                <Radio />
+                            </EmptyMedia>
+                            <EmptyTitle>No live symbols</EmptyTitle>
+                            <EmptyDescription>
+                                Desired symbols stream here once subscriptions are active.
+                            </EmptyDescription>
+                        </EmptyHeader>
+                    </Empty>
                 ) : null}
                 {visibleRows.length < desiredRows.length ? (
                     <div className="border-t border-border p-3 text-center text-xs text-muted-foreground">
@@ -513,7 +525,17 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                     </div>
                 ))}
                 {!status.active_sessions.length ? (
-                    <div className="type-body text-muted-foreground">No active worker sessions yet.</div>
+                    <Empty className="py-8">
+                        <EmptyHeader>
+                            <EmptyMedia variant="icon">
+                                <Server />
+                            </EmptyMedia>
+                            <EmptyTitle>No active worker sessions yet</EmptyTitle>
+                            <EmptyDescription>
+                                Worker sessions appear here once a broker stream attaches.
+                            </EmptyDescription>
+                        </EmptyHeader>
+                    </Empty>
                 ) : null}
             </section>
 
@@ -546,7 +568,17 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                     </div>
                 ))}
                 {!status.inactive_subscriptions.length ? (
-                    <div className="type-body text-muted-foreground">No inactive or orphaned subscriptions.</div>
+                    <Empty className="py-8">
+                        <EmptyHeader>
+                            <EmptyMedia variant="icon">
+                                <CheckCircle2 />
+                            </EmptyMedia>
+                            <EmptyTitle>No inactive or orphaned subscriptions</EmptyTitle>
+                            <EmptyDescription>
+                                Everything is active — orphaned subscriptions would surface here for review.
+                            </EmptyDescription>
+                        </EmptyHeader>
+                    </Empty>
                 ) : null}
             </section>
         </div>

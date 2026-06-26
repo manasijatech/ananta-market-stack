@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Loader2, RefreshCw, Search } from "lucide-react";
+import { Inbox, ListChecks, Loader2, RefreshCw, Search } from "lucide-react";
 import { addLiveSubscription, deleteLiveSubscriptions } from "@/service/actions/alerts";
 import {
     refreshAlphaWebSocketAccount,
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { INDIA_TIME_ZONE, formatIstDateTime, parseApiDate } from "@/lib/datetime";
 
@@ -460,7 +461,17 @@ export function SubscriptionsManager({
                                 </Label>
                             ))}
                             {!watchlists.length ? (
-                                <div className="text-sm text-muted-foreground">No watchlists available.</div>
+                                <Empty className="py-8">
+                                    <EmptyHeader>
+                                        <EmptyMedia variant="icon">
+                                            <ListChecks />
+                                        </EmptyMedia>
+                                        <EmptyTitle>No watchlists available</EmptyTitle>
+                                        <EmptyDescription>
+                                            Create a watchlist to include its symbols in the live scope.
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
                             ) : null}
                         </div>
                     </div>
@@ -634,7 +645,19 @@ export function SubscriptionsManager({
                         </Label>
                     );
                 })}
-                {!items.length ? <div className="text-sm text-muted-foreground">No subscribed symbols yet.</div> : null}
+                {!items.length ? (
+                    <Empty className="py-10">
+                        <EmptyHeader>
+                            <EmptyMedia variant="icon">
+                                <Inbox />
+                            </EmptyMedia>
+                            <EmptyTitle>No subscribed symbols yet</EmptyTitle>
+                            <EmptyDescription>
+                                Search a broker instrument above to subscribe a symbol to live data.
+                            </EmptyDescription>
+                        </EmptyHeader>
+                    </Empty>
+                ) : null}
             </div>
         </div>
     );

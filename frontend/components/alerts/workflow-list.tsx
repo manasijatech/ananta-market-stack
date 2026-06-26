@@ -1,10 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { Plus, Workflow } from "lucide-react";
 import { deleteAlertWorkflow, setAlertWorkflowStatus } from "@/service/actions/alerts";
 import type { AlertWorkflow } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 function workflowScope(workflow: AlertWorkflow) {
     const targeting = workflow.workflow_dsl.targeting;
@@ -147,7 +150,25 @@ export function WorkflowList({ emptyMessage, workflows }: { emptyMessage: string
                     </div>
                 </div>
             ))}
-            {!workflows.length ? <div className="type-body text-muted-foreground">{emptyMessage}</div> : null}
+            {!workflows.length ? (
+                <Empty className="py-12">
+                    <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                            <Workflow />
+                        </EmptyMedia>
+                        <EmptyTitle>No workflows yet</EmptyTitle>
+                        <EmptyDescription>{emptyMessage}</EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyContent>
+                        <Button asChild>
+                            <Link href="/alerts-workspace/workflows/new">
+                                <Plus className="size-4" />
+                                Create workflow
+                            </Link>
+                        </Button>
+                    </EmptyContent>
+                </Empty>
+            ) : null}
         </section>
     );
 }

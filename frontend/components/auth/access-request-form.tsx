@@ -84,7 +84,7 @@ function RequestSubmittedSuccess({ onBackToSignIn }: { onBackToSignIn: () => voi
 
                 <div className="space-y-2">
 
-                    <h1 className="text-2xl font-semibold tracking-tight">Request submitted</h1>
+                    <h1 className="text-2xl font-heading font-semibold tracking-tight">Request submitted</h1>
 
                     <p className="text-sm leading-relaxed text-muted-foreground">
 
@@ -250,7 +250,7 @@ export function AccessRequestForm() {
 
 
             <div className="space-y-1.5">
-                <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
+                <h1 className="text-2xl font-heading font-semibold tracking-tight">Create account</h1>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                     Create your login credentials to request access to this workspace.
                 </p>
