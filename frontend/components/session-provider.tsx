@@ -94,7 +94,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             await session.refetch();
             try {
                 setFallbackSession(await fetchSessionSnapshot());
-            } catch {}
+            } catch {
+                // Refetch already updated auth state; snapshot sync is best-effort.
+            }
         },
         [session]
     );
@@ -114,7 +116,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             await session.refetch();
             try {
                 setFallbackSession(await fetchSessionSnapshot());
-            } catch {}
+            } catch {
+                // Refetch already updated auth state; snapshot sync is best-effort.
+            }
         },
         [session]
     );

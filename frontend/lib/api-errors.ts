@@ -33,7 +33,9 @@ export function formatUserFacingError(error: unknown, fallback = "Could not load
                 status = typeof record.status === "number" ? record.status : status;
                 message = typeof record.message === "string" ? record.message : message;
             }
-        } catch {}
+        } catch {
+            // Message is not nested JSON; keep the original parsed values.
+        }
     }
 
     if ((status && status >= 500) || /internal server error/i.test(message)) {
