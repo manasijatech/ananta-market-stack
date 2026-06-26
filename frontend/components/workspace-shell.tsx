@@ -368,7 +368,13 @@ export function WorkspaceShell({
     }, [isLoading, router, user]);
 
     useEffect(() => {
-        if (isLoading || !user) {
+        if (!isLoading && user && principal && principal.status !== "active" && pathname !== "/pending-approval") {
+            router.replace("/pending-approval");
+        }
+    }, [isLoading, pathname, principal, router, user]);
+
+    useEffect(() => {
+        if (isLoading || !user || (principal && principal.status !== "active")) {
             return;
         }
 
@@ -402,7 +408,7 @@ export function WorkspaceShell({
                     : 0
             );
         }
-    }, [isLoading, pathname, user]);
+    }, [isLoading, pathname, principal, user]);
 
     useEffect(() => {
         function handleOnboardingReset() {

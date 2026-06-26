@@ -105,6 +105,7 @@ def ensure_principal(db: Session, user: User) -> Principal:
                 membership = _bootstrap_membership(db, user)
             else:
                 _repair_orphaned_admin_access(db, membership)
+            workspace = _ensure_workspace_row(db, membership, user)
             _ensure_builtin_roles(db, membership.workspace_id)
             _ensure_owned_account_grants(db, membership.workspace_id, user.id)
             reconcile_workspace_shared_configs(db, membership.workspace_id)
@@ -112,7 +113,7 @@ def ensure_principal(db: Session, user: User) -> Principal:
             db.refresh(membership)
             workspace = db.get(Workspace, membership.workspace_id)
             if workspace is None:
-                raise HTTPException(status_code=500, detail="workspace not found")
+                raise HTTPException(status_code=500, detail="workspace not found after repair")
             permissions = frozenset(_role_permissions(db, membership.workspace_id, membership.role))
             return Principal(user=user, workspace=workspace, membership=membership, permissions=permissions)
         except IntegrityError:
@@ -426,6 +427,21 @@ def _repair_orphaned_admin_access(db: Session, membership: WorkspaceMember) -> N
     membership.status = "active"
     db.add(membership)
     db.flush()
+
+
+def _ensure_workspace_row(db: Session, membership: WorkspaceMember, user: User) -> Workspace:
+    workspace = db.get(Workspace, membership.workspace_id)
+    if workspace is not None:
+        return workspace
+
+    workspace = Workspace(
+        id=membership.workspace_id,
+        name=(user.display_name or "Recovered workspace").strip() or "Recovered workspace",
+        created_by_user_id=user.id,
+    )
+    db.add(workspace)
+    db.flush()
+    return workspace
 
 
 def repair_installation_without_admin(db: Session) -> int:

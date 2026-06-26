@@ -15,43 +15,46 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
     angel: {
         broker: "angel",
         title: "Angel One SmartAPI Setup",
-        summary: "Connect Angel One with SmartAPI app key, client code, PIN, and TOTP.",
-        required: ["Account label", "API key", "Client code", "PIN"],
+        summary: "Connect Angel One with a manual TOTP flow, or store PIN plus TOTP secret for automated SmartAPI refresh.",
+        required: ["Account label", "API key", "Client code", "Choose manual or automation mode"],
         setupSteps: [
             "Create or open your Angel One SmartAPI app.",
             "Copy the API key from the app.",
-            "Keep client code, PIN, and current TOTP ready.",
-            "Store TOTP secret only if you want automated refresh."
+            "Choose manual TOTP or stored-TOTP automation mode.",
+            "Keep client code, PIN, and current TOTP ready for manual sessions.",
+            "Store PIN and TOTP secret only if you want automated refresh."
         ],
         formMapping: [
             { label: "API key", field: "api_key", note: "SmartAPI application key." },
             { label: "Client code", field: "client_code", note: "Angel One user or client ID." },
-            { label: "PIN", field: "pin", note: "Angel One login PIN. Stored encrypted by the backend." },
+            { label: "PIN", field: "pin", note: "Stored only in automation mode. Manual mode asks for PIN during session refresh." },
             {
                 label: "TOTP secret",
                 field: "totp_secret",
-                note: "Optional automation secret, not the current 6-digit OTP."
+                note: "Automation-only secret, not the current 6-digit OTP."
             }
         ],
         sessionSteps: [
-            "Open the broker detail page after saving credentials.",
+            "In manual mode, open the broker detail page after saving credentials.",
             "Enter client code, PIN, and the current 6-digit TOTP.",
-            "Submit the session form to generate broker session tokens."
+            "Submit the session form to generate broker session tokens.",
+            "In automation mode, the backend can attempt refresh using the stored PIN and TOTP secret."
         ],
         notes: [
             "The current 6-digit TOTP is not the same as the TOTP secret.",
-            "Store the TOTP secret only if you need automation."
+            "Store PIN and TOTP secret only if you need automation."
         ]
     },
     dhan: {
         broker: "dhan",
         title: "Dhan API Setup",
-        summary: "Connect Dhan with API key, API secret, client ID, and optional automation credentials.",
-        required: ["Account label", "API key", "API secret", "Client ID"],
+        summary: "Connect Dhan with manual consent, or store PIN plus TOTP secret for the official automation path.",
+        required: ["Account label", "API key", "API secret", "Client ID", "Choose consent or automation mode"],
         setupSteps: [
             "Enable Dhan API access.",
             "Copy the API key, API secret, and client ID.",
             "Set up static IP allowlisting if Dhan requires it.",
+            "Choose manual consent or TOTP automation mode.",
             "Add PIN and TOTP secret only if you want automated refresh."
         ],
         formMapping: [
@@ -62,9 +65,10 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
             { label: "TOTP secret", field: "totp_secret", note: "Optional QR/authenticator secret for automation." }
         ],
         sessionSteps: [
-            "Use the broker detail page to start the Dhan consent flow.",
+            "In manual consent mode, use the broker detail page to start the Dhan consent flow.",
             "Complete Dhan login and 2FA in the opened page.",
-            "Paste the returned token_id into the Dhan session form."
+            "Paste the returned token_id into the Dhan session form.",
+            "In automation mode, the backend can attempt refresh using stored client_id, PIN, and TOTP secret."
         ],
         notes: [
             "Manual consent avoids storing PIN and TOTP secret.",
@@ -126,11 +130,12 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
     kotak: {
         broker: "kotak",
         title: "Kotak Neo Setup",
-        summary: "Connect Kotak Neo with UCC and portal access token, then create sessions with mobile, TOTP, and MPIN.",
-        required: ["Account label", "UCC", "Portal access token"],
+        summary: "Connect Kotak Neo with manual session entry, or store mobile number, MPIN, and TOTP secret for automated session rebuilds.",
+        required: ["Account label", "UCC", "Portal access token", "Choose manual or automation mode"],
         setupSteps: [
             "Enable Kotak Neo Trade API access.",
             "Copy your UCC and portal access token.",
+            "Choose manual session or stored TOTP plus MPIN automation mode.",
             "Keep registered mobile number, MPIN, and current TOTP ready.",
             "Store mobile number, MPIN, and TOTP secret only if you want automated refresh."
         ],
@@ -144,15 +149,16 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
             {
                 label: "Mobile number",
                 field: "mobile_number",
-                note: "Optional at creation; required during session login."
+                note: "Stored only in automation mode. Manual mode asks for it during session login."
             },
-            { label: "MPIN", field: "mpin", note: "Optional at creation; used for session login or automation." },
-            { label: "TOTP secret", field: "totp_secret", note: "Optional automation secret." }
+            { label: "MPIN", field: "mpin", note: "Stored only in automation mode; manual mode asks for it during session login." },
+            { label: "TOTP secret", field: "totp_secret", note: "Automation-only secret." }
         ],
         sessionSteps: [
-            "Open the broker detail page after account creation.",
+            "In manual mode, open the broker detail page after account creation.",
             "Enter registered mobile number, current 6-digit TOTP, and MPIN.",
-            "Submit the session form to create a trading session."
+            "Submit the session form to create a trading session.",
+            "In automation mode, the backend can rebuild the session using stored mobile number, MPIN, and TOTP secret."
         ],
         notes: [
             "Portal access token and trade session credentials are separate pieces of the Kotak flow.",
@@ -192,25 +198,45 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
     zerodha: {
         broker: "zerodha",
         title: "Zerodha Kite Connect Setup",
-        summary: "Connect Zerodha with Kite Connect API key and API secret, then authorize the session from Ananta Market Stack.",
-        required: ["Account label", "API key", "API secret"],
+        summary: "Connect Zerodha with the normal Kite redirect flow, or add optional web-login automation credentials for daily refresh.",
+        required: ["Account label", "API key", "API secret", "Optional automation bundle if you want auto refresh"],
         setupSteps: [
             "Create or open your Kite Connect app.",
             "Copy the API key and API secret.",
             "Set the app redirect URL to http://localhost:3000/broker-connections for local development.",
+            "Choose API-only mode or optional web-login automation mode.",
+            "If using automation, keep Zerodha user ID, password, and TOTP secret ready.",
             "Save the credentials in Ananta Market Stack."
         ],
         formMapping: [
             { label: "API key", field: "api_key", note: "Kite Connect API key." },
-            { label: "API secret", field: "api_secret", note: "Kite Connect API secret." }
+            { label: "API secret", field: "api_secret", note: "Kite Connect API secret." },
+            {
+                label: "Login user ID",
+                field: "login_user_id",
+                note: "Optional Zerodha user ID for experimental web-login automation."
+            },
+            {
+                label: "Login password",
+                field: "login_password",
+                note: "Optional Zerodha password for experimental web-login automation."
+            },
+            {
+                label: "TOTP secret",
+                field: "totp_secret",
+                note: "Optional Base32 authenticator secret for experimental automation."
+            }
         ],
         sessionSteps: [
-            "Open the broker detail page after saving credentials.",
+            "In API-only mode, open the broker detail page after saving credentials.",
             "Open the Zerodha login URL shown in the session panel.",
-            "After authorization, Ananta Market Stack reads the request_token from /broker-connections and connects the account automatically."
+            "After authorization, Ananta Market Stack reads the request_token from /broker-connections and connects the account automatically.",
+            "In automation mode, the backend can also attempt refresh using the stored user ID, password, and TOTP secret."
         ],
         notes: [
             "Zerodha sessions usually need fresh authorization each trading day.",
+            "The automation path is experimental because it depends on Zerodha web-login behavior.",
+            "The TOTP secret is not the same as the current 6-digit OTP.",
             "Use http://localhost:3000 before and after broker login."
         ]
     }

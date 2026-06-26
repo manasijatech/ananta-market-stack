@@ -39,8 +39,6 @@ fi
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-minor="${version%.*}"
-major="${version%%.*}"
 sha_tag="sha-$(git rev-parse --short HEAD 2>/dev/null || echo local)"
 local_tag="ananta-market-stack:publish-${version}"
 container_name="ananta-market-stack-publish-smoke"
@@ -78,8 +76,6 @@ cleanup
 
 tags=(
   "$image:$version"
-  "$image:$minor"
-  "$image:$major"
   "$image:$sha_tag"
 )
 

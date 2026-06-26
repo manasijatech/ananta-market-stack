@@ -26,8 +26,17 @@ export function parseActionError(error: unknown): ParsedActionError {
                       )
                   )
                 : {};
+        const message = typeof record.message === "string" ? record.message : fallback;
+        if (message.trim().startsWith("{")) {
+            const nested = parseActionError(new Error(message));
+            return {
+                message: nested.message || message,
+                fieldErrors: Object.keys(nested.fieldErrors).length ? nested.fieldErrors : fieldErrors,
+                status: nested.status ?? (typeof record.status === "number" ? record.status : undefined)
+            };
+        }
         return {
-            message: typeof record.message === "string" ? record.message : fallback,
+            message,
             fieldErrors,
             status: typeof record.status === "number" ? record.status : undefined
         };

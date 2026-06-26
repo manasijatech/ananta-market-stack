@@ -12,6 +12,7 @@ import { brokerNames } from "@/components/brokers/ui";
 import { Shell } from "@/components/brokers/shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { formatUserFacingError } from "@/lib/api-errors";
 import { typography } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { getBrokerAccounts } from "@/service/actions/broker";
@@ -287,7 +288,7 @@ export default async function HeatmapPage({
                 account_id: scope === "portfolio_holdings" ? effectiveAccountId : null
             });
         } catch (caught) {
-            heatmapError = caught instanceof Error ? caught.message : "Could not load heatmap.";
+            heatmapError = formatUserFacingError(caught, "Could not load heatmap.");
         }
     }
 

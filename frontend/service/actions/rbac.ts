@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { fetchFastApi } from "@/lib/fastapi";
+import { fetchFastApi, fetchFastApiPublic } from "@/lib/fastapi";
 import type { BrokerAccountGrant, RbacPrincipal, RoleDefinition, SignupStatus, WorkspaceMember } from "@/service/types/rbac";
 
 async function readResponse<T>(response: Response): Promise<T> {
@@ -33,7 +33,8 @@ export async function getRbacMe(): Promise<RbacPrincipal> {
 }
 
 export async function getSignupStatus(): Promise<SignupStatus> {
-    return request<SignupStatus>("/rbac/signup-status");
+    const response = await fetchFastApiPublic("/rbac/signup-status");
+    return readResponse<SignupStatus>(response);
 }
 
 export async function getWorkspaceMembers(): Promise<WorkspaceMember[]> {

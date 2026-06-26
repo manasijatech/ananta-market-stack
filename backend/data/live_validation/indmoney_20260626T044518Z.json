@@ -1,0 +1,61 @@
+{
+  "validated_at": "2026-06-26T04:45:20.766623+00:00",
+  "account_id": "95dec115-dd84-4974-9051-10b34c8a8e87",
+  "broker_code": "indmoney",
+  "instrument": {
+    "symbol": "RELIANCE",
+    "exchange": "NSE",
+    "segment": "E",
+    "indmoney_scrip_code": "NSE_2885"
+  },
+  "results": {
+    "verify_connection": {
+      "ok": true,
+      "summary": "[true, \"\"]"
+    },
+    "user_profile": {
+      "ok": true,
+      "summary": "{\"status\": \"success\", \"data\": {\"user_id\": \"22426162\", \"email\": \"shaunf1801@gmail.com\", \"first_name\": \"Shaun\", \"last_name\": \"Furtado\", \"demat_id\": \"1209550050192765\", \"is_nse_onboarded\": true, \"is_bse_onboarded\": true, \"is_nse_fno_onboarded\": true, \"is_bse_fno_onboarded\": true, \"ucc\": \"0LDO63RE97\", \"is_ddpi_active\": false}}"
+    },
+    "funds": {
+      "ok": true,
+      "summary": "{\"status\": \"success\", \"data\": {\"sod_balance\": 0, \"pledge_received\": 0, \"pledge_remained\": 0, \"detailed_avl_balance\": {\"option_sell\": 0, \"future\": 0, \"option_buy\": 0, \"comm_option_buy\": 0, \"eq_mis\": 0, \"eq_cnc\": 0, \"eq_mtf\": 0}, \"withdrawal_balance\": 0, \"funds_added\": 0, \"funds_withdrawn\": 0, \"realized_pnl\": 0, \"unrealized_pnl\": 0, \"brokerage\": 0, \"eq_charges\": 0, \"fno_charges\": 0}}"
+    },
+    "order_book": {
+      "ok": true,
+      "summary": "{\"status\": \"success\", \"data\": null}"
+    },
+    "trade_book": {
+      "ok": true,
+      "summary": "{\"status\": \"success\", \"data\": null}"
+    },
+    "positions": {
+      "ok": true,
+      "summary": "{\"status\": \"success\", \"data\": []}"
+    },
+    "holdings": {
+      "ok": true,
+      "summary": "{\"status\": \"success\", \"data\": []}"
+    },
+    "quotes": {
+      "ok": true,
+      "summary": "[{\"symbol\": \"RELIANCE\", \"exchange\": \"NSE\", \"indmoney_scrip_code\": \"NSE_2885\", \"ltp\": 1318.1, \"raw\": {\"live_price\": 1318.1, \"day_change\": 4.5, \"day_change_percentage\": 0.34, \"day_low\": 1314.6, \"day_high\": 1328, \"day_open\": 1318, \"prev_close\": 1313.6, \"52week_high\": 1611.8, \"52week_low\": 1253.2, \"upper_circuit\": 1444.9, \"lower_circuit\": 1182.3, \"market_depth\": {\"NSE_2885\": {\"aggregate\": {\"total_buy\": \"1,055\", \"total_sell\": \"0.00\", \"buy_percentage\": 100, \"sell_percentage\": 0}, \"depth\": [{\"buy\": {\"quantity\": \"1,055\", \"price\": \"1,318.10\"}, \"sell\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}}, {\"buy\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}, \"sell\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}}, {\"buy\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}, \"sell\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}}, {\"buy\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}, \"sell\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}}, {\"buy\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}, \"sell\": {\"quantity\": \"0.00\", \"price\": \"0.00\"}}]}}, \"volume\": 12694362.0, \"day_change_perc\": 0.34, \"upper_circuit_limit\": 1444.9, \"lower_circuit_limit\": 1182.3, \"week_52_high\": 1611.8, \"week_52_low\": 1253.2, \"ohlc\": {\"open\": 1318.0, \"high\": 1328.0, \"low\": 1314.6, \"close\": 1313.6}..."
+    },
+    "historical": {
+      "ok": true,
+      "summary": "{\"success\": true, \"data\": {\"NSE_2885\": {\"candles\": [{\"ts\": 1782362760, \"o\": 1327.7, \"h\": 1327.9, \"l\": 1327.2, \"c\": 1327.2, \"v\": 32036}, {\"ts\": 1782362820, \"o\": 1327.2, \"h\": 1327.2, \"l\": 1326.6, \"c\": 1326.8, \"v\": 19958}, {\"ts\": 1782362880, \"o\": 1326.6, \"h\": 1326.8, \"l\": 1325.8, \"c\": 1325.9, \"v\": 15332}, {\"ts\": 1782362940, \"o\": 1325.9, \"h\": 1326.5, \"l\": 1325.6, \"c\": 1326.4, \"v\": 14768}, {\"ts\": 1782363000, \"o\": 1326.4, \"h\": 1326.4, \"l\": 1325.8, \"c\": 1326, \"v\": 24074}, {\"ts\": 1782363060, \"o\": 1326, \"h\": 1326.1, \"l\": 1325.2, \"c\": 1325.6, \"v\": 13158}, {\"ts\": 1782363120, \"o\": 1325.5, \"h\": 1325.5, \"l\": 1325, \"c\": 1325.1, \"v\": 7312}, {\"ts\": 1782363180, \"o\": 1325.1, \"h\": 1325.8, \"l\": 1324.8, \"c\": 1324.9, \"v\": 162446}, {\"ts\": 1782363240, \"o\": 1324.9, \"h\": 1325.5, \"l\": 1324.4, \"c\": 1325.5, \"v\": 18060}, {\"ts\": 1782363300, \"o\": 1325.2, \"h\": 1326.1, \"l\": 1325, \"c\": 1325.9, \"v\": 30118}, {\"ts\": 1782363360, \"o\": 1325.9, \"h\": 1326.3, \"l\": 1325.2, \"c\": 1325.7, \"v\": 25334}, {\"ts\": 1782363420, \"o\": 1325.7, \"h\": 1325.7, \"l\": 1325.1, \"c\": 1325.5, \"v\": 3085}, {\"ts\": 1782363480, \"o\": 1325.2, \"h\": 1325.5, \"l\": 1324.4, \"c\": 1324.9, \"v\": 7186}, {\"ts\": 1782363540, \"o\": 1325, \"h\": 1325, \"l\": 1323.8, \"c\": 1324.4,..."
+    },
+    "margin": {
+      "ok": true,
+      "summary": "{\"status\": \"success\", \"data\": {\"total_margin\": 1321.89, \"span_margin\": 0, \"hedge_benefit\": 0, \"exposure_margin\": 0, \"available_balance\": 0, \"var_margin\": 0, \"insufficient_balance\": 0, \"delivery_margin\": 0, \"brokerage\": 0, \"charges\": {\"stt\": 1.31, \"exchange_charges\": 0.03, \"stamp_duty\": 0.19, \"sebi_turn_over_charges\": 0, \"brokerage\": 2, \"gst\": 0.36, \"IPFTCharges\": 0, \"total_charges\": 3.89}}}"
+    },
+    "price_ws": {
+      "ok": true,
+      "summary": "connected and subscribed; no price event arrived within timeout"
+    },
+    "order_ws": {
+      "ok": true,
+      "summary": "connected and subscribed; no order update arrived within timeout"
+    }
+  }
+}
