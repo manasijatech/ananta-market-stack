@@ -380,7 +380,7 @@ class MarketChartRequest(BaseModel):
     history_days: int = Field(default=90, ge=1, le=1825)
     daily_interval: str = Field(default="day")
     intraday_interval: str = Field(default="1minute")
-    intraday_lookback_days: int = Field(default=1, ge=1, le=30)
+    intraday_lookback_days: int = Field(default=1, ge=0, le=30)
     include_live_quote: bool = Field(default=True)
 
 
