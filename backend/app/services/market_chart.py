@@ -348,10 +348,11 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
 
     now_utc = _utc_now()
     now_ist = now_utc.astimezone(IST)
-    today_start_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_utc = today_start_ist.astimezone(UTC)
-    daily_from_utc = (today_start_ist - timedelta(days=max(5, int(payload.get("history_days") or 90)))).astimezone(UTC)
-    daily_to_utc = today_start_utc - timedelta(seconds=1)
+    intraday_lookback_days = max(1, int(payload.get("intraday_lookback_days") or 1))
+    intraday_start_ist = (now_ist.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=intraday_lookback_days - 1))
+    intraday_from_utc = intraday_start_ist.astimezone(UTC)
+    daily_from_utc = (now_ist.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=max(1, int(payload.get("history_days") or 90)))).astimezone(UTC)
+    daily_to_utc = intraday_from_utc - timedelta(seconds=1)
     daily_interval = str(payload.get("daily_interval") or "day")
     intraday_interval = str(payload.get("intraday_interval") or "1minute")
 
@@ -396,7 +397,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
         symbol=symbol,
         exchange=exchange,
         interval=intraday_interval,
-        from_time=today_start_utc,
+        from_time=intraday_from_utc,
         to_time=now_utc,
     )
     latest_intraday_time = intraday_candles[-1].time if intraday_candles else None
@@ -408,7 +409,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
             acc,
             instrument=instrument,
             interval=intraday_interval,
-            from_time=today_start_utc,
+            from_time=intraday_from_utc,
             to_time=now_utc,
         )
         if intraday_candles:
@@ -418,7 +419,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
                 symbol=symbol,
                 exchange=exchange,
                 interval=intraday_interval,
-                from_time=today_start_utc,
+                from_time=intraday_from_utc,
                 to_time=now_utc,
                 candles=intraday_candles,
             )
@@ -449,7 +450,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
                 low=candle.low,
                 close=candle.close,
                 volume=candle.volume,
-                interval=intraday_interval if candle.time >= today_start_utc else daily_interval,
+                interval=intraday_interval if candle.time >= intraday_from_utc else daily_interval,
             )
             for candle in combined
         ],
