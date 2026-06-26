@@ -42,11 +42,11 @@ function redirectTo(request: NextRequest, pathname: string): NextResponse {
 }
 
 /**
- * Edge middleware for coarse session routing.
+ * Edge proxy for coarse session routing.
  *
  * RBAC-aware redirects (active vs pending) are handled in server components via {@link requireActiveWorkspace}.
  */
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
     const { pathname } = request.nextUrl;
     const hasSession = hasSessionCookie(request);
 

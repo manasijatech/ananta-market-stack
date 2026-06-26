@@ -10,7 +10,6 @@ import { SessionPanel } from "@/components/brokers/session-panel";
 import {
     brokerNames,
     formatDate,
-    isBrokerAccountReady,
     PageHeader,
     StatusBadge,
     statusTone
@@ -74,9 +73,6 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
         );
     }
 
-    const ready =
-        isBrokerAccountReady(account) ||
-        (account.is_active && Boolean(account.last_verified_at) && sessionStatus.session_active);
     const showInstrumentSync = sessionStatus.session_active || Boolean(account.last_verified_at);
 
     return (
@@ -103,7 +99,6 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
             <div className="grid gap-8">
                 <section
                     className="grid gap-8 border-y border-border py-7 lg:grid-cols-[1fr_300px]"
-                    data-onboarding={ready ? "active-broker-ready" : undefined}
                 >
                     <div>
                         <div className="flex flex-wrap gap-2">

@@ -293,7 +293,7 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                 </div>
             </div>
             <div
-                className="relative left-1/2 max-h-[32rem] w-[70vw] max-w-[70vw] min-w-0 -translate-x-1/2 overflow-y-auto overflow-x-hidden border border-border bg-card shadow-sm"
+                className="relative left-1/2 max-h-[32rem] w-[70vw] max-w-[70vw] min-w-0 -translate-x-1/2 overflow-y-auto overflow-x-hidden rounded-lg border border-border bg-card shadow-sm"
                 onScroll={handleTableScroll}
             >
                 <table className="w-full table-fixed border-separate border-spacing-0 text-left text-xs">

@@ -23,7 +23,7 @@ export function StatCard({
     infoTooltip?: ReactNode;
 }) {
     return (
-        <div className="min-w-0 rounded-md border border-border bg-card p-4">
+        <div className="min-w-0 rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-start justify-between gap-2">
                 <p className={statLabelClassName}>{label}</p>
                 <div className="flex items-center gap-1">

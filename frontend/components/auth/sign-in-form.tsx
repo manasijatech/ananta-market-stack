@@ -4,7 +4,7 @@ import { authMutationKeys } from "@better-auth-ui/core";
 import { useAuth, useFetchOptions, useSignInEmail } from "@better-auth-ui/react";
 import { useIsMutating } from "@tanstack/react-query";
 import { type SyntheticEvent, useState } from "react";
-import { authFormInputClassName, authFormInputInvalidClassName, authFormPrimaryButtonClassName } from "@/components/auth/auth-form-styles";
+import { authFormPrimaryButtonClassName } from "@/components/auth/auth-form-styles";
 import { ProviderButtons, type SocialLayout } from "@/components/auth/provider-buttons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,7 +12,6 @@ import { Field, FieldError, FieldGroup, FieldLabel, FieldSeparator } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
 
 export type SignInFormProps = {
     socialLayout?: SocialLayout;
@@ -101,7 +100,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                                 placeholder={localization.auth.emailPlaceholder}
                                 required
                                 disabled={isPending}
-                                className={cn(authFormInputClassName, fieldErrors.email && authFormInputInvalidClassName)}
+                                size="lg"
                                 onChange={() => setFieldErrors((prev) => ({ ...prev, email: undefined }))}
                                 onInvalid={(event) => {
                                     event.preventDefault();
@@ -145,7 +144,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                                 minLength={emailAndPassword.minPasswordLength}
                                 maxLength={emailAndPassword.maxPasswordLength}
                                 disabled={isPending}
-                                className={cn(authFormInputClassName, fieldErrors.password && authFormInputInvalidClassName)}
+                                size="lg"
                                 onInvalid={(event) => {
                                     event.preventDefault();
                                     const element = event.target as HTMLInputElement;
@@ -180,7 +179,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                     </FieldGroup>
 
                     <div className="space-y-5">
-                        <Button type="submit" disabled={isPending} className={authFormPrimaryButtonClassName}>
+                        <Button type="submit" disabled={isPending} size="lg" className={authFormPrimaryButtonClassName}>
                             {signInEmailPending ? <Spinner /> : null}
                             {localization.auth.signIn}
                         </Button>

@@ -191,7 +191,7 @@ export function buildLlmUsageFilterOptions(
 
 function UsageEmptyNotice() {
     return (
-        <div className="flex items-center gap-2.5 rounded-md border-l-[3px] border-l-blue-400 bg-card px-3.5 py-2.5">
+        <div className="flex items-center gap-2.5 rounded-lg border-l-[3px] border-l-blue-400 bg-card px-3.5 py-2.5">
             <IconInfoCircle aria-hidden className="size-4 shrink-0 text-blue-400" />
             <p className="text-[13px] text-foreground">
                 No usage data yet — LLM activity appears here once workflows start running.
@@ -256,7 +256,7 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
 
 function PeriodCard({ label, totals }: { label: string; totals: LlmUsageTotals }) {
     return (
-        <div className="min-w-0 rounded-md border border-border bg-card p-4">
+        <div className="min-w-0 rounded-lg border border-border bg-card p-4">
             <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
             <div className="mt-3 text-[22px] font-medium leading-none">{formatTokens(totals.total_tokens)}</div>
             <p className="mt-1 text-[11px] text-muted-foreground">tokens</p>
@@ -296,7 +296,7 @@ function UsageChart({ buckets }: { buckets: LlmUsageTimeBucket[] }) {
     }
 
     return (
-        <section className="rounded-md border border-border bg-card p-4">
+        <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-4">
                 <h2 className={typography.sectionTitle}>Usage trend</h2>
                 {!emptyMessage ? (
@@ -348,7 +348,7 @@ function GroupTable({
     headerTooltip?: ReactNode;
 }) {
     return (
-        <section className="rounded-md border border-border bg-card p-4">
+        <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-4">
                 <div className="flex items-center gap-2">
                     <h2 className={typography.sectionTitle}>{title}</h2>
@@ -416,7 +416,7 @@ function GroupTable({
 
 function BreakdownEmptyState() {
     return (
-        <section className="rounded-md border border-border bg-card px-6 py-10">
+        <section className="rounded-lg border border-border bg-card px-6 py-10">
             <div className="mx-auto flex max-w-md flex-col items-center text-center">
                 <IconChartBar aria-hidden className="mb-3 size-6 text-muted-foreground" />
                 <h2 className="text-sm font-medium text-foreground">No breakdown data</h2>
@@ -480,7 +480,7 @@ function RecentEvents({
         : "No LLM calls recorded yet. Calls appear here once a workflow with an LLM step runs.";
 
     return (
-        <section className="rounded-md border border-border bg-card p-4">
+        <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-4 flex flex-wrap items-center gap-2">
                 <h2 className={typography.sectionTitle}>Recent request ledger</h2>
                 <Badge size="sm" variant="secondary">
@@ -544,7 +544,7 @@ function RecentEvents({
 }
 
 function FilterBarFallback() {
-    return <div className="h-28 animate-pulse rounded-md border border-border bg-card" />;
+    return <div className="h-28 animate-pulse rounded-lg border border-border bg-card" />;
 }
 
 export function LlmUsageDashboard({

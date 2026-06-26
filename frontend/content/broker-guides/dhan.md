@@ -1,6 +1,9 @@
 # Dhan API Setup
 
-Ananta Market Stack connects Dhan with API key, API secret, and your Dhan client ID. PIN and TOTP secret are optional and are used for automation.
+Ananta Market Stack supports two Dhan setup styles:
+
+- manual consent, where you complete Dhan login and paste the returned `token_id`
+- TOTP automation, where the backend stores PIN and TOTP secret for the official automation path
 
 ## What You Need
 
@@ -18,16 +21,26 @@ Ananta Market Stack connects Dhan with API key, API secret, and your Dhan client
 2. Generate or copy the API key and API secret.
 3. Copy your Dhan client ID.
 4. Set up static IP allowlisting if Dhan requires it.
-5. Keep PIN and TOTP secret ready only if you want automated refresh.
+5. Decide whether you want manual consent or TOTP automation.
+6. Keep PIN and TOTP secret ready only if you want automated refresh.
+
+## Option 1: Manual Consent
+
+Use this when you want to avoid storing PIN and TOTP secret and are fine completing the Dhan consent flow when needed.
+
+## Option 2: TOTP Automation
+
+Use this when you want the backend to attempt token generation with stored PIN and TOTP secret.
 
 ## Add Dhan In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
 3. Select **Dhan**.
-4. Paste API key, API secret, and client ID.
-5. Add PIN and TOTP secret only if you want automation.
-6. Save the broker account.
+4. Choose **Manual consent** or **TOTP automation**.
+5. Paste API key, API secret, and client ID.
+6. If you chose automation, also paste PIN and TOTP secret.
+7. Save the broker account.
 
 ## Connect The Session
 

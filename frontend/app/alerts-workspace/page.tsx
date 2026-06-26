@@ -113,7 +113,7 @@ function StatCard({
     statusDot?: Tone;
 }) {
     return (
-        <div className="min-w-0 rounded-md bg-muted/50 px-4 py-3">
+        <div className="min-w-0 rounded-lg bg-muted/50 px-4 py-3">
             <div className={cn(typography.muted, "flex items-center gap-1.5")}>
                 {statusDot ? (
                     <span
@@ -148,7 +148,7 @@ function PanelSection({
 
 function BrokerBanner() {
     return (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/20 bg-warning/8 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/20 bg-warning/8 px-4 py-3">
             <p className="type-body text-sm">
                 <span aria-hidden="true" className="mr-1.5">
                     ⚠
@@ -176,7 +176,7 @@ type SetupStep = {
 
 function SetupChecklist({ steps }: { steps: SetupStep[] }) {
     return (
-        <section className="min-h-[120px] rounded-md border border-border bg-card p-5">
+        <section className="min-h-[120px] rounded-lg border border-border bg-card p-5">
             <h2 className="type-section-title">Get started</h2>
             <p className="type-help mt-1">Complete these steps to start monitoring live market data.</p>
             <ol className="mt-5 grid gap-4">
@@ -298,7 +298,7 @@ function StreamReadinessPanel({ streamStatus }: { streamStatus: LiveStreamsStatu
                 </div>
                 {sortedBrokers.slice(0, 3).map((broker) => (
                     <div
-                        className="min-w-0 rounded-md border border-border bg-background p-3"
+                        className="min-w-0 rounded-lg border border-border bg-background p-3"
                         key={`${broker.broker_code}-${broker.account_id}`}
                     >
                         <div className="flex items-start justify-between gap-2">
@@ -336,14 +336,14 @@ function QuickActionsPanel({ enabledChannels }: { enabledChannels: number }) {
         <PanelSection label="Quick actions">
             <div className="grid gap-2">
                 <Link
-                    className={cn(typography.small, "flex min-w-0 items-center gap-3 rounded-md border border-border bg-background px-3 py-2.5 transition-colors hover:bg-muted/50")}
+                    className={cn(typography.small, "flex min-w-0 items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 transition-colors hover:bg-muted/50")}
                     href="/alerts-workspace/workflows/new"
                 >
                     <IconBolt className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
                     <span className="truncate">Create workflow</span>
                 </Link>
                 <Link
-                    className={cn(typography.small, "flex min-w-0 items-center gap-3 rounded-md border border-border bg-background px-3 py-2.5 transition-colors hover:bg-muted/50")}
+                    className={cn(typography.small, "flex min-w-0 items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 transition-colors hover:bg-muted/50")}
                     href="/alerts-workspace/templates"
                 >
                     <IconChecklist className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
@@ -380,7 +380,7 @@ function WorkflowCoverage({ workflows, runs }: { workflows: AlertWorkflow[]; run
                     const latestRun = latestRunForWorkflow(runs, workflow.id);
                     return (
                         <Link
-                            className="group min-w-0 border border-border bg-card p-3 transition-colors duration-100 hover:border-foreground/20"
+                            className="group min-w-0 rounded-lg border border-border bg-card p-3 transition-colors duration-100 hover:border-foreground/20"
                             href={`/alerts-workspace/workflows/${workflow.id}`}
                             key={workflow.id}
                         >

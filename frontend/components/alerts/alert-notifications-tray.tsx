@@ -87,21 +87,27 @@ export function AlertNotificationsTray() {
     return (
         <div className="relative" ref={trayRef}>
             <Button
-                className="inline-flex items-center gap-2"
+                aria-label={unreadCount > 0 ? `Alerts (${unreadCount} unread)` : "Alerts"}
+                className="relative size-9 shrink-0 px-0 sm:h-9 sm:w-auto sm:px-3"
                 onClick={() => setOpen((current) => !current)}
                 type="button"
                 variant="outline"
             >
                 <Bell className="size-4 shrink-0" />
-                Alerts
+                <span className="hidden sm:inline">Alerts</span>
                 {unreadCount > 0 ? (
-                    <Badge size="sm" variant="secondary">
+                    <Badge className="hidden sm:inline-flex" size="sm" variant="secondary">
                         {unreadCount}
                     </Badge>
                 ) : null}
+                {unreadCount > 0 ? (
+                    <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground sm:hidden">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                ) : null}
             </Button>
             {open ? (
-                <Card className="absolute right-0 top-11 z-30 w-80 overflow-hidden rounded-xl shadow-lg">
+                <Card className="absolute right-0 top-11 z-30 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl shadow-lg sm:w-80">
                     <div className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5">
                         <div className="min-w-0">
                             <CardTitle className="text-sm font-semibold leading-none">Alerts</CardTitle>

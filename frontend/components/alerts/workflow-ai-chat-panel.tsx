@@ -125,7 +125,7 @@ function PanelDropdown({
             <button
                 aria-expanded={open}
                 aria-haspopup="listbox"
-                className="flex h-8 w-full min-w-0 items-center justify-between gap-2 border border-input bg-background px-3 text-left text-xs text-foreground outline-none transition-colors hover:border-primary focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-left text-xs text-foreground outline-none transition-colors hover:border-primary focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={() => setOpen((current) => !current)}
                 onKeyDown={(event) => {
                     if (event.key === "Escape") {
@@ -142,7 +142,7 @@ function PanelDropdown({
             {open ? (
                 <div
                     className={cn(
-                        "absolute left-0 right-0 z-[90] max-h-64 overflow-y-auto border border-border bg-popover p-1 text-popover-foreground shadow-xl",
+                        "absolute left-0 right-0 z-[90] max-h-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl",
                         menuDirection === "up" ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]"
                     )}
                     role="listbox"
@@ -370,18 +370,18 @@ function buildTimelineItems(events: AlertWorkflowChatEvent[], run: AlertWorkflow
 
 function TimelineTool({ collapsed, item }: { collapsed: boolean; item: Extract<TimelineItem, { kind: "tool" }> }) {
     return (
-        <details className="group border border-border bg-secondary/20 px-2.5 py-2 text-xs" open={!collapsed}>
+        <details className="group rounded-lg border border-border bg-secondary/20 px-2.5 py-2 text-xs" open={!collapsed}>
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
                 <span className="truncate">{item.toolName}</span>
                 <span>{item.status}</span>
             </summary>
             {item.arguments ? (
-                <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
+                <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
                     {compactJson(item.arguments)}
                 </pre>
             ) : null}
             {item.output ? (
-                <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
+                <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background/70 p-2 font-mono text-[10px] leading-4 text-muted-foreground">
                     {compactJson(item.output)}
                 </pre>
             ) : null}
@@ -391,7 +391,7 @@ function TimelineTool({ collapsed, item }: { collapsed: boolean; item: Extract<T
 
 function TimelineSnapshot({ item }: { item: Extract<TimelineItem, { kind: "snapshot" }> }) {
     return (
-        <div className="flex items-center justify-between gap-2 border border-border bg-secondary/20 px-2.5 py-2 text-xs text-muted-foreground">
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-secondary/20 px-2.5 py-2 text-xs text-muted-foreground">
             <span className="truncate">
                 Snapshot {item.version ? `v${item.version}` : ""} {item.status}: {item.label}
             </span>
@@ -425,9 +425,9 @@ function SnapshotDock({
                         <summary className="cursor-pointer list-none hover:text-foreground">
                             Show {history.length} older snapshot{history.length === 1 ? "" : "s"}
                         </summary>
-                        <div className="mt-2 grid max-h-72 gap-1 overflow-auto border border-border bg-secondary/10 p-2">
+                        <div className="mt-2 grid max-h-72 gap-1 overflow-auto rounded-lg border border-border bg-secondary/10 p-2">
                             {history.map((snapshot) => (
-                                <div className="flex items-center justify-between gap-2 border border-border bg-background px-2 py-1.5" key={snapshot.id}>
+                                <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background px-2 py-1.5" key={snapshot.id}>
                                     <div className="min-w-0">
                                         <div className="truncate text-xs font-medium">{snapshot.label}</div>
                                         <div className="font-mono text-[10px] text-muted-foreground">
@@ -451,7 +451,7 @@ function SnapshotDock({
                     </details>
                 ) : null}
             </div>
-            <div className="grid gap-2 border border-border bg-background p-3">
+            <div className="grid gap-2 rounded-lg border border-border bg-background p-3">
                 <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                         <div className="truncate text-sm font-semibold">{latest.label}</div>
@@ -860,7 +860,7 @@ export function WorkflowAiChatPanel({
 
             <div className="min-h-0 overflow-y-auto px-4 py-4" ref={bodyRef}>
                 {error ? (
-                    <div className="mb-3 border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-xs text-[var(--danger)]">
+                    <div className="mb-3 rounded-lg border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-xs text-[var(--danger)]">
                         {error}
                     </div>
                 ) : null}
@@ -875,11 +875,11 @@ export function WorkflowAiChatPanel({
                             return (
                                 <div className="grid gap-3" key={run.id}>
                                     <div className="flex justify-end">
-                                        <div className="max-w-[86%] border border-border bg-secondary/50 px-3 py-2 text-sm leading-6 text-foreground">
+                                        <div className="max-w-[86%] rounded-lg border border-border bg-secondary/50 px-3 py-2 text-sm leading-6 text-foreground">
                                             {run.message}
                                         </div>
                                     </div>
-                                    <div className="grid gap-2 border border-border bg-background px-3 py-3">
+                                    <div className="grid gap-2 rounded-lg border border-border bg-background px-3 py-3">
                                         <div className="flex flex-wrap items-center justify-between gap-2">
                                             <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                                                 {run.status}
@@ -921,7 +921,7 @@ export function WorkflowAiChatPanel({
                             );
                         })
                     ) : (
-                        <div className="grid gap-3 border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+                        <div className="grid gap-3 rounded-lg border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
                             <div className="font-semibold text-foreground">Start with a request.</div>
                             <div>
                                 Example: “Create a rolling price-volume breakout for my test watchlist and use Discord.”
@@ -939,7 +939,7 @@ export function WorkflowAiChatPanel({
             </div>
 
             <div className="border-t border-border bg-background px-4 py-3">
-                <div className="border border-input bg-background transition-colors focus-within:border-ring">
+                <div className="rounded-lg border border-input bg-background transition-colors focus-within:border-ring">
                     <Textarea
                         className="min-h-[98px] resize-none rounded-none border-0 bg-transparent px-3 py-3 text-sm shadow-none outline-none focus-visible:border-transparent"
                         disabled={isSending || busy}

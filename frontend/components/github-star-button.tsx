@@ -17,17 +17,20 @@ export function GithubStarButton({ className }: { className?: string }) {
                     ? `Star on GitHub (${formatStarCount(stars)} stars)`
                     : "Star on GitHub"
             }
-            className={cn("gap-1.5", className)}
+            className={cn("max-w-full gap-1.5", className)}
             render={<a href={GITHUB_REPO_URL} rel="noopener noreferrer" target="_blank" />}
             size="lg"
             variant="outline"
         >
-            <Star className="size-3.5" />
-            Star
+            <Star className="size-3.5 shrink-0" />
+            <span className="hidden min-[480px]:inline">Star</span>
             {typeof stars === "number" ? (
-                <Badge size="sm" variant="secondary">
+                <Badge className="hidden min-[480px]:inline-flex" size="sm" variant="secondary">
                     {formatStarCount(stars)}
                 </Badge>
+            ) : null}
+            {typeof stars === "number" ? (
+                <span className="sr-only min-[480px]:hidden">{formatStarCount(stars)} stars</span>
             ) : null}
         </Badge>
     );

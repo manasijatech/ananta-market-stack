@@ -529,7 +529,7 @@ export function SubscriptionsManager({
                         ) : null}
                         {showSuggestions && symbolSearch.trim() ? (
                             <div
-                                className="absolute z-20 mt-1 max-h-72 w-full overflow-auto border border-border bg-popover"
+                                className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover"
                                 id="subscription-symbol-suggestions"
                                 role="listbox"
                             >
