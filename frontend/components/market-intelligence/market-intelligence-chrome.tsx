@@ -243,7 +243,10 @@ export function MarketIntelligenceChrome({
     );
     const filterLabel = selectedWatchlist ? selectedWatchlist.name : "All watchlists";
     const symbolModeActive = Boolean(committedSymbol);
-    const visibleSymbols = symbolModeActive ? [committedSymbol] : activeSymbols;
+    const visibleSymbols = useMemo(
+        () => (symbolModeActive ? [committedSymbol] : activeSymbols),
+        [activeSymbols, committedSymbol, symbolModeActive]
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -504,6 +507,10 @@ export function MarketIntelligenceChrome({
         }
     }
 
+    function handleFeedSymbolClick(symbol: string) {
+        commitSymbol(symbol, manualInstrument(symbol));
+    }
+
     return (
         <>
             <AlphaCreditWarningTrigger message={creditWarningMessage} />
@@ -686,9 +693,9 @@ export function MarketIntelligenceChrome({
                                 </Select>
                             </label>
                         </WatchlistScopeTooltip>
-                        <span className="text-border">·</span>
-                        <LiveStatusPill state={socketState} />
-                        <span className="text-border">·</span>
+                        {!symbolModeActive ? <span className="text-border">·</span> : null}
+                        {!symbolModeActive ? <LiveStatusPill state={socketState} /> : null}
+                        {!symbolModeActive ? <span className="text-border">·</span> : null}
                         <span>
                             {symbolModeActive
                                 ? "Single symbol mode active"
@@ -731,9 +738,10 @@ export function MarketIntelligenceChrome({
             {!error && visibleSymbols.length ? (
                 <MarketIntelligenceLiveFeed
                     activeSection={activeSection.id}
+                    enableLiveUpdates={!symbolModeActive}
                     feedSearch={feedSearch}
                     initialFeeds={feeds}
-                    onFeedSearchSymbol={setFeedSearch}
+                    onFeedSearchSymbol={handleFeedSymbolClick}
                     onSocketStateChange={setSocketState}
                     symbolMetadata={activeMetadata}
                     symbols={visibleSymbols}
