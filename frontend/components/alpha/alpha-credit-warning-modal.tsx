@@ -68,7 +68,7 @@ export function AlphaCreditWarningModal() {
                         <div className="grid gap-1">
                             <DialogTitle>Drishti credits required</DialogTitle>
                             <DialogDescription>
-                                Ananta Market Stack could not complete this Drishti API request because the account has
+                                Ananta could not complete this Drishti API request because the account has
                                 insufficient credits.
                             </DialogDescription>
                         </div>

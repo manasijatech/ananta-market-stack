@@ -11,7 +11,9 @@ import {
     Square
 } from "lucide-react";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
+import { LlmModelPicker } from "@/components/system/llm-model-picker";
 import { useSession } from "@/components/session-provider";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
@@ -496,13 +498,15 @@ export function WorkflowAiChatPanel({
     disabled,
     getEditorPayload,
     llmProviders,
-    onWorkflowApplied
+    onWorkflowApplied,
+    openRouterModels
 }: {
     currentWorkflowId?: string | null;
     disabled?: boolean;
     getEditorPayload: () => Record<string, unknown>;
     llmProviders: LlmProviderConfig[];
     onWorkflowApplied: (workflow: AlertWorkflow) => void;
+    openRouterModels: OpenRouterModel[];
 }) {
     const { user } = useSession();
     const enabledProviders = useMemo(
@@ -970,15 +974,26 @@ export function WorkflowAiChatPanel({
                                 placeholder="Provider"
                                 value={provider}
                             />
-                            <PanelDropdown
-                                className="min-w-[132px] flex-[1_1_150px] max-w-[190px]"
-                                emptyLabel="No models"
-                                menuDirection="up"
-                                onValueChange={setModel}
-                                options={modelOptions}
-                                placeholder="Model"
-                                value={model}
-                            />
+                            {provider ? (
+                                <div className="min-w-[132px] flex-[1_1_150px] max-w-[190px]">
+                                    <LlmModelPicker
+                                        models={openRouterModels}
+                                        onSelect={(id) => setModel(id)}
+                                        provider={provider}
+                                        value={model}
+                                    />
+                                </div>
+                            ) : (
+                                <PanelDropdown
+                                    className="min-w-[132px] flex-[1_1_150px] max-w-[190px]"
+                                    emptyLabel="No models"
+                                    menuDirection="up"
+                                    onValueChange={setModel}
+                                    options={modelOptions}
+                                    placeholder="Model"
+                                    value={model}
+                                />
+                            )}
                             {busy ? (
                                 <Button
                                     aria-label="Stop workflow chat run"

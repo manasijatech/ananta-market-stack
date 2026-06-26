@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
-import { CircleHelpIcon } from "lucide-react";
+import { ChevronDownIcon, CircleHelpIcon } from "lucide-react";
 import {
     addLlmProviderModel,
     clearMcpOAuthById,
@@ -26,8 +26,10 @@ import {
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Button } from "@/components/ui/button";
+import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
     Dialog,
     DialogContent,
@@ -43,6 +45,8 @@ import { SimpleSelect } from "@/components/ui/simple-select";
 import { formatIstDateTime } from "@/lib/datetime";
 import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
+import { LlmModelPicker } from "@/components/system/llm-model-picker";
 
 type ProviderDraftState = {
     apiKey: string;
@@ -144,7 +148,7 @@ const PROVIDER_SETUP_GUIDES: Record<
         notes: [
             "OpenRouter model IDs normally look like provider/model-name.",
             "If a model fails, check credits, model availability, and whether the model needs a paid account.",
-            "OpenRouter is useful when you want to switch model providers without changing Ananta Market Stack code."
+            "OpenRouter is useful when you want to switch model providers without changing Ananta code."
         ]
     },
     gemini: {
@@ -192,7 +196,7 @@ const PROVIDER_SETUP_GUIDES: Record<
         ],
         modelExamples: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
         notes: [
-            "Ananta Market Stack uses Anthropic through Claude's OpenAI-compatible Chat Completions endpoint.",
+            "Ananta uses Anthropic through Claude's OpenAI-compatible Chat Completions endpoint.",
             "Prompt caching, citations, PDF processing, and full extended-thinking features need Anthropic's native API.",
             "For broker chat, Claude runs through the Agents SDK Chat Completions model path."
         ]
@@ -210,10 +214,12 @@ function providerKey(provider: LlmProvider) {
 export function SystemConfigPanel({
     initialConfig,
     section = "all",
-    permissions
+    permissions,
+    openRouterModels = []
 }: {
     initialConfig: SystemConfig;
     section?: SystemConfigPanelSection;
+    openRouterModels?: OpenRouterModel[];
     permissions: {
         canManageAlpha: boolean;
         canManageLlm: boolean;
@@ -252,6 +258,12 @@ export function SystemConfigPanel({
             ])
         )
     );
+    // Progressive disclosure: collapse providers by default, open the first one
+    // that still needs setup so the user is guided to a single next step.
+    const [openLlmProviders, setOpenLlmProviders] = useState<string[]>(() => {
+        const firstUnconfigured = initialConfig.llm_providers.find((provider) => !provider.has_api_key);
+        return firstUnconfigured ? [firstUnconfigured.provider] : [];
+    });
     const [isPending, startTransition] = useTransition();
     const alphaReadOnly = !permissions.canManageAlpha;
     const llmReadOnly = !permissions.canManageLlm;
@@ -724,7 +736,7 @@ export function SystemConfigPanel({
                                 <DialogHeader>
                                     <DialogTitle>Drishti API</DialogTitle>
                                     <DialogDescription>
-                                        This key connects Ananta Market Stack to Drishti market intelligence services.
+                                        This key connects Ananta to Drishti market intelligence services.
                                     </DialogDescription>
                                 </DialogHeader>
                                 <DialogPanel>
@@ -854,7 +866,7 @@ export function SystemConfigPanel({
             ) : null}
 
             {showMcp ? (
-            <section className="grid gap-4">
+            <section className="@container grid gap-4">
                 {section === "all" ? (
                 <div>
                     <div className="text-base font-semibold tracking-tight">Hosted MCP servers</div>
@@ -944,168 +956,216 @@ export function SystemConfigPanel({
                         </Label>
                     </div>
 
-                    <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_180px]">
-                        <Input
-                            className="h-9 text-sm"
-                            disabled={mcpReadOnly}
-                            onChange={(event) => patchSelectedMcpServer({ name: event.target.value })}
-                            placeholder="Display name"
-                            value={mcpConfig.name ?? ""}
-                        />
-                        <Input
-                            className="h-9 text-sm"
-                            disabled={mcpReadOnly}
-                            onChange={(event) => patchSelectedMcpServer({ url: event.target.value })}
-                            placeholder="https://mcp.testing.manasija.in/"
-                            value={mcpConfig.url}
-                        />
-                        <SimpleSelect
-                            className="h-9"
-                            disabled={mcpReadOnly}
-                            onValueChange={(transport) =>
-                                patchSelectedMcpServer({ transport: transport as "streamable_http" | "sse" })
-                            }
-                            options={[
-                                { value: "streamable_http", label: "Streamable HTTP" },
-                                { value: "sse", label: "SSE" }
-                            ]}
-                            value={mcpConfig.transport}
-                        />
-                    </div>
-
-                    <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[180px_minmax(220px,1fr)]">
-                        <SimpleSelect
-                            className="h-9"
-                            disabled={mcpReadOnly}
-                            onValueChange={(authMode) =>
-                                patchSelectedMcpServer({ auth_mode: authMode as "oauth" | "api_key" })
-                            }
-                            options={[
-                                { value: "oauth", label: "OAuth / browser authentication" },
-                                { value: "api_key", label: "Bearer API key fallback" }
-                            ]}
-                            value={mcpConfig.auth_mode ?? "oauth"}
-                        />
-                        <div className="flex flex-wrap gap-2">
-                            <Button
-                                disabled={mcpReadOnly || isPending || !mcpConfig.url}
-                                onClick={startMcpAuthentication}
-                                title={mcpReadOnly ? "Only a workspace admin can authenticate shared MCP servers." : undefined}
-                                type="button"
-                                variant="outline"
-                            >
-                                Authenticate MCP
-                            </Button>
-                            <Button
-                                disabled={mcpReadOnly || isPending || !mcpConfig.oauth_authenticated}
-                                onClick={clearMcpAuthentication}
-                                title={mcpReadOnly ? "Only a workspace admin can clear shared MCP authentication." : undefined}
-                                type="button"
-                                variant="outline"
-                            >
-                                Clear OAuth
-                            </Button>
-                            <Button
-                                disabled={mcpReadOnly || isPending || !mcpConfig.url}
-                                onClick={refreshMcpCapabilities}
-                                title={mcpReadOnly ? "Only a workspace admin can refresh shared MCP tools." : undefined}
-                                type="button"
-                            >
-                                Refresh tools
-                            </Button>
+                    <div className="@container mt-4">
+                        <div className="grid gap-3 @lg:grid-cols-2">
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-medium text-muted-foreground">Display name</Label>
+                                <Input
+                                    className="h-9 text-sm"
+                                    disabled={mcpReadOnly}
+                                    onChange={(event) => patchSelectedMcpServer({ name: event.target.value })}
+                                    placeholder="Display name"
+                                    value={mcpConfig.name ?? ""}
+                                />
+                            </div>
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs font-medium text-muted-foreground">Transport</Label>
+                                <SimpleSelect
+                                    className="h-9"
+                                    disabled={mcpReadOnly}
+                                    onValueChange={(transport) =>
+                                        patchSelectedMcpServer({ transport: transport as "streamable_http" | "sse" })
+                                    }
+                                    options={[
+                                        { value: "streamable_http", label: "Streamable HTTP" },
+                                        { value: "sse", label: "SSE" }
+                                    ]}
+                                    value={mcpConfig.transport}
+                                />
+                            </div>
+                            <div className="grid gap-1.5 @lg:col-span-2">
+                                <Label className="text-xs font-medium text-muted-foreground">Server URL</Label>
+                                <Input
+                                    className="h-9 text-sm"
+                                    disabled={mcpReadOnly}
+                                    onChange={(event) => patchSelectedMcpServer({ url: event.target.value })}
+                                    placeholder="https://mcp.testing.manasija.in/"
+                                    value={mcpConfig.url}
+                                />
+                            </div>
                         </div>
                     </div>
 
-                    <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[minmax(220px,1fr)_180px_140px]">
-                        <Input
-                            autoComplete="off"
-                            className="h-9 text-sm"
-                            data-1p-ignore="true"
-                            data-form-type="other"
-                            data-lpignore="true"
-                            disabled={mcpReadOnly}
-                            onChange={(event) => setMcpApiKey(event.target.value)}
-                            placeholder={mcpConfig.has_api_key ? "Replace MCP API key" : "Add MCP API key"}
-                            type="password"
-                            value={mcpApiKey}
-                        />
-                        <Input
-                            className="h-9 text-sm"
-                            disabled={mcpReadOnly}
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ api_key_header_name: event.target.value })
-                            }
-                            placeholder="Authorization"
-                            value={mcpConfig.api_key_header_name}
-                        />
-                        <Input
-                            className="h-9 text-sm"
-                            disabled={mcpReadOnly}
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ api_key_prefix: event.target.value })
-                            }
-                            placeholder="Bearer"
-                            value={mcpConfig.api_key_prefix}
-                        />
-                    </div>
-
-                    <div className="mt-3 grid gap-2 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
-                        <div className="font-semibold text-foreground">
-                            MCP capabilities · {(mcpConfig.inventory.tools ?? []).length} tools ·{" "}
-                            {(mcpConfig.inventory.prompts ?? []).length} prompts ·{" "}
-                            {(mcpConfig.inventory.resources ?? []).length} resources
-                        </div>
-                        {(mcpConfig.inventory.tools ?? []).length ? (
-                            <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">
-                                {(mcpConfig.inventory.tools ?? []).map((tool, index) => (
-                                    <Badge key={`${String(tool.name || "tool")}-${index}`} variant="secondary">
-                                        {tool.name}
-                                    </Badge>
-                                ))}
+                    <Collapsible className="mt-4 border-t border-border pt-3">
+                        <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 text-left text-sm font-semibold text-foreground">
+                            <span>Authentication</span>
+                            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-180" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <div className="@container grid gap-3 pt-3">
+                                <div className="grid gap-3 @lg:grid-cols-2">
+                                    <div className="grid gap-1.5">
+                                        <Label className="text-xs font-medium text-muted-foreground">Auth mode</Label>
+                                        <SimpleSelect
+                                            className="h-9"
+                                            disabled={mcpReadOnly}
+                                            onValueChange={(authMode) =>
+                                                patchSelectedMcpServer({ auth_mode: authMode as "oauth" | "api_key" })
+                                            }
+                                            options={[
+                                                { value: "oauth", label: "OAuth / browser authentication" },
+                                                { value: "api_key", label: "Bearer API key fallback" }
+                                            ]}
+                                            value={mcpConfig.auth_mode ?? "oauth"}
+                                        />
+                                    </div>
+                                    <div className="flex flex-wrap items-end gap-2">
+                                        <Button
+                                            disabled={mcpReadOnly || isPending || !mcpConfig.url}
+                                            onClick={startMcpAuthentication}
+                                            title={mcpReadOnly ? "Only a workspace admin can authenticate shared MCP servers." : undefined}
+                                            type="button"
+                                            variant="outline"
+                                        >
+                                            Authenticate MCP
+                                        </Button>
+                                        <Button
+                                            disabled={mcpReadOnly || isPending || !mcpConfig.oauth_authenticated}
+                                            onClick={clearMcpAuthentication}
+                                            title={mcpReadOnly ? "Only a workspace admin can clear shared MCP authentication." : undefined}
+                                            type="button"
+                                            variant="outline"
+                                        >
+                                            Clear OAuth
+                                        </Button>
+                                        <Button
+                                            disabled={mcpReadOnly || isPending || !mcpConfig.url}
+                                            onClick={refreshMcpCapabilities}
+                                            title={mcpReadOnly ? "Only a workspace admin can refresh shared MCP tools." : undefined}
+                                            type="button"
+                                        >
+                                            Refresh tools
+                                        </Button>
+                                    </div>
+                                </div>
+                                <div className="grid gap-3 @lg:grid-cols-2">
+                                    <div className="grid gap-1.5">
+                                        <Label className="text-xs font-medium text-muted-foreground">API key</Label>
+                                        <Input
+                                            autoComplete="off"
+                                            className="h-9 text-sm"
+                                            data-1p-ignore="true"
+                                            data-form-type="other"
+                                            data-lpignore="true"
+                                            disabled={mcpReadOnly}
+                                            onChange={(event) => setMcpApiKey(event.target.value)}
+                                            placeholder={mcpConfig.has_api_key ? "Replace MCP API key" : "Add MCP API key"}
+                                            type="password"
+                                            value={mcpApiKey}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs font-medium text-muted-foreground">Header name</Label>
+                                            <Input
+                                                className="h-9 text-sm"
+                                                disabled={mcpReadOnly}
+                                                onChange={(event) =>
+                                                    patchSelectedMcpServer({ api_key_header_name: event.target.value })
+                                                }
+                                                placeholder="Authorization"
+                                                value={mcpConfig.api_key_header_name}
+                                            />
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs font-medium text-muted-foreground">Prefix</Label>
+                                            <Input
+                                                className="h-9 text-sm"
+                                                disabled={mcpReadOnly}
+                                                onChange={(event) =>
+                                                    patchSelectedMcpServer({ api_key_prefix: event.target.value })
+                                                }
+                                                placeholder="Bearer"
+                                                value={mcpConfig.api_key_prefix}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        ) : (
-                            <div>No MCP tools cached yet. Authenticate, then refresh tools.</div>
-                        )}
-                        {(mcpConfig.inventory.prompts ?? []).length || (mcpConfig.inventory.resources ?? []).length ? (
-                            <div>
-                                Context: {(mcpConfig.inventory.prompts ?? []).map((item) => item.name).filter(Boolean).join(", ") || "no prompts"} ·{" "}
-                                {(mcpConfig.inventory.resources ?? [])
-                                    .map((item) => item.name || item.uri)
-                                    .filter(Boolean)
-                                    .join(", ") || "no resources"}
-                            </div>
-                        ) : null}
-                        {mcpConfig.inventory.errors && Object.keys(mcpConfig.inventory.errors).length ? (
-                            <div className="text-warning-foreground">
-                                Inventory notes:{" "}
-                                {Object.entries(mcpConfig.inventory.errors)
-                                    .map(([key, value]) => `${key}: ${value}`)
-                                    .join(" · ")}
-                            </div>
-                        ) : null}
-                    </div>
+                        </CollapsibleContent>
+                    </Collapsible>
 
-                    <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[140px_minmax(260px,1fr)]">
-                        <Input
-                            className="h-9 text-sm"
-                            disabled={mcpReadOnly}
-                            min={1}
-                            max={120}
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ timeout_seconds: Number(event.target.value || 15) })
-                            }
-                            type="number"
-                            value={mcpConfig.timeout_seconds}
-                        />
-                    </div>
-
-                    <textarea
-                        className="mt-3 min-h-24 w-full border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-primary"
-                        disabled={mcpReadOnly}
-                        onChange={(event) => setMcpExtraHeadersText(event.target.value)}
-                        placeholder='{"X-Workspace": "ananta-market-stack"}'
-                        value={mcpExtraHeadersText}
-                    />
+                    <Collapsible className="mt-3 border-t border-border pt-3">
+                        <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 text-left text-sm font-semibold text-foreground">
+                            <span>Advanced</span>
+                            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-180" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <div className="@container grid gap-3 pt-3">
+                                <div className="grid gap-3 @lg:grid-cols-2">
+                                    <div className="grid gap-1.5">
+                                        <Label className="text-xs font-medium text-muted-foreground">Timeout (seconds)</Label>
+                                        <Input
+                                            className="h-9 text-sm"
+                                            disabled={mcpReadOnly}
+                                            min={1}
+                                            max={120}
+                                            onChange={(event) =>
+                                                patchSelectedMcpServer({ timeout_seconds: Number(event.target.value || 15) })
+                                            }
+                                            type="number"
+                                            value={mcpConfig.timeout_seconds}
+                                        />
+                                    </div>
+                                    <div className="grid gap-1.5">
+                                        <Label className="text-xs font-medium text-muted-foreground">Extra headers (JSON)</Label>
+                                        <textarea
+                                            className="min-h-24 w-full border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-primary"
+                                            disabled={mcpReadOnly}
+                                            onChange={(event) => setMcpExtraHeadersText(event.target.value)}
+                                            placeholder='{"X-Workspace": "ananta-market-stack"}'
+                                            value={mcpExtraHeadersText}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid gap-2 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                                    <div className="font-semibold text-foreground">
+                                        MCP capabilities · {(mcpConfig.inventory.tools ?? []).length} tools ·{" "}
+                                        {(mcpConfig.inventory.prompts ?? []).length} prompts ·{" "}
+                                        {(mcpConfig.inventory.resources ?? []).length} resources
+                                    </div>
+                                    {(mcpConfig.inventory.tools ?? []).length ? (
+                                        <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                                            {(mcpConfig.inventory.tools ?? []).map((tool, index) => (
+                                                <Badge key={`${String(tool.name || "tool")}-${index}`} variant="secondary">
+                                                    {tool.name}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div>No MCP tools cached yet. Authenticate, then refresh tools.</div>
+                                    )}
+                                    {(mcpConfig.inventory.prompts ?? []).length || (mcpConfig.inventory.resources ?? []).length ? (
+                                        <div>
+                                            Context: {(mcpConfig.inventory.prompts ?? []).map((item) => item.name).filter(Boolean).join(", ") || "no prompts"} ·{" "}
+                                            {(mcpConfig.inventory.resources ?? [])
+                                                .map((item) => item.name || item.uri)
+                                                .filter(Boolean)
+                                                .join(", ") || "no resources"}
+                                        </div>
+                                    ) : null}
+                                    {mcpConfig.inventory.errors && Object.keys(mcpConfig.inventory.errors).length ? (
+                                        <div className="text-warning-foreground">
+                                            Inventory notes:{" "}
+                                            {Object.entries(mcpConfig.inventory.errors)
+                                                .map(([key, value]) => `${key}: ${value}`)
+                                                .join(" · ")}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            </div>
+                        </CollapsibleContent>
+                    </Collapsible>
 
                     <div className="mt-3 flex flex-wrap gap-2">
                         <Button
@@ -1147,7 +1207,7 @@ export function SystemConfigPanel({
             ) : null}
 
             {showLlm ? (
-            <section className="grid gap-4">
+            <section className="@container grid gap-4">
                 {llmReadOnly ? (
                     <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
                         These provider keys and models are shared across the workspace. You can use the configured
@@ -1164,35 +1224,48 @@ export function SystemConfigPanel({
                     </p>
                 </div>
                 ) : null}
+                <Accordion
+                    className="overflow-hidden rounded-lg border border-border"
+                    multiple={false}
+                    onValueChange={(value) => setOpenLlmProviders(value as string[])}
+                    value={openLlmProviders}
+                >
                 {config.llm_providers.map((provider) => (
-                    <div className="rounded-lg border border-border p-4" key={provider.provider}>
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                                <div className="flex items-center gap-2.5">
-                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center">
-                                        <img
-                                            alt={PROVIDER_LOGOS[provider.provider].alt}
-                                            className={`${PROVIDER_LOGOS[provider.provider].imageClassName} object-contain`}
-                                            draggable={false}
-                                            src={PROVIDER_LOGOS[provider.provider].src}
-                                        />
-                                    </span>
-                                    <div className="text-base font-semibold leading-none tracking-tight">
-                                        {provider.label}
-                                    </div>
-                                </div>
-                                <div className="mt-1 text-xs text-muted-foreground">{provider.base_url}</div>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <Badge
-                                        className={
-                                            provider.has_api_key
-                                                ? "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]"
-                                                : "border-destructive bg-destructive/10 text-destructive"
-                                        }
-                                        variant="outline"
-                                    >
-                                        {provider.has_api_key ? "Key saved" : "Key missing"}
-                                    </Badge>
+                    <AccordionItem className="@container px-4" key={provider.provider} value={provider.provider}>
+                        <AccordionTrigger className="items-center gap-3 py-3">
+                            <span className="flex size-7 shrink-0 items-center justify-center">
+                                <img
+                                    alt={PROVIDER_LOGOS[provider.provider].alt}
+                                    className={`${PROVIDER_LOGOS[provider.provider].imageClassName} object-contain`}
+                                    draggable={false}
+                                    src={PROVIDER_LOGOS[provider.provider].src}
+                                />
+                            </span>
+                            <span className="min-w-0 flex-1 text-left">
+                                <span className="block font-heading text-sm font-semibold tracking-tight text-foreground">
+                                    {provider.label}
+                                </span>
+                                <span className="block text-xs font-normal text-muted-foreground">
+                                    {provider.has_api_key
+                                        ? `Connected${provider.models.length ? ` · ${provider.models.length} model${provider.models.length === 1 ? "" : "s"}` : ""}`
+                                        : "Not connected"}
+                                </span>
+                            </span>
+                            <Badge
+                                className={
+                                    provider.has_api_key
+                                        ? "border-[var(--success)] bg-[var(--success-subtle)] font-normal text-[var(--success)]"
+                                        : "font-normal text-muted-foreground"
+                                }
+                                variant="outline"
+                            >
+                                {provider.has_api_key ? "Connected" : "Connect"}
+                            </Badge>
+                        </AccordionTrigger>
+                        <AccordionPanel className="grid gap-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <span className="text-xs text-muted-foreground">{provider.base_url}</span>
                                     {provider.api_key_hint ? (
                                         <span className="font-mono text-xs font-semibold text-foreground">
                                             {provider.api_key_hint}
@@ -1204,7 +1277,6 @@ export function SystemConfigPanel({
                                         </span>
                                     ) : null}
                                 </div>
-                            </div>
                             <Dialog>
                                 <DialogTrigger asChild>
                                     <Button
@@ -1282,7 +1354,7 @@ export function SystemConfigPanel({
                             </Dialog>
                         </div>
 
-                        <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(220px,1fr)_auto_auto]">
+                        <div className="mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_auto_auto]">
                             <Input
                                 autoComplete="off"
                                 className="h-9 text-sm"
@@ -1316,31 +1388,54 @@ export function SystemConfigPanel({
                             </Button>
                         </div>
 
-                        <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(180px,0.8fr)_minmax(160px,0.7fr)_auto]">
-                            <Input
-                                className="h-9 text-sm"
-                                disabled={llmReadOnly}
-                                onChange={(event) => updateDraft(provider.provider, { modelId: event.target.value })}
-                                placeholder="Model id"
-                                value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
-                            />
-                            <Input
-                                className="h-9 text-sm"
-                                disabled={llmReadOnly}
-                                onChange={(event) => updateDraft(provider.provider, { label: event.target.value })}
-                                placeholder="Optional label"
-                                value={drafts[providerKey(provider.provider)]?.label ?? ""}
-                            />
-                            <Button
-                                disabled={llmReadOnly || isPending || !(drafts[providerKey(provider.provider)]?.modelId ?? "").trim()}
-                                onClick={() => addModel(provider.provider)}
-                                title={llmReadOnly ? "Only a workspace admin can add shared models." : undefined}
-                                type="button"
-                                variant="outline"
-                            >
-                                Add model
-                            </Button>
-                        </div>
+                        {provider.has_api_key ? (
+                            <div className="mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_minmax(140px,0.6fr)_auto]">
+                                {openRouterModels.length ? (
+                                    <LlmModelPicker
+                                        disabled={llmReadOnly}
+                                        models={openRouterModels}
+                                        onSelect={(modelId, modelName) =>
+                                            updateDraft(provider.provider, {
+                                                modelId,
+                                                label: drafts[providerKey(provider.provider)]?.label || modelName
+                                            })
+                                        }
+                                        provider={provider.provider}
+                                        value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
+                                    />
+                                ) : (
+                                    <Input
+                                        className="h-9 text-sm"
+                                        disabled={llmReadOnly}
+                                        onChange={(event) =>
+                                            updateDraft(provider.provider, { modelId: event.target.value })
+                                        }
+                                        placeholder="Model id"
+                                        value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
+                                    />
+                                )}
+                                <Input
+                                    className="h-9 text-sm"
+                                    disabled={llmReadOnly}
+                                    onChange={(event) => updateDraft(provider.provider, { label: event.target.value })}
+                                    placeholder="Optional label"
+                                    value={drafts[providerKey(provider.provider)]?.label ?? ""}
+                                />
+                                <Button
+                                    disabled={llmReadOnly || isPending || !(drafts[providerKey(provider.provider)]?.modelId ?? "").trim()}
+                                    onClick={() => addModel(provider.provider)}
+                                    title={llmReadOnly ? "Only a workspace admin can add shared models." : undefined}
+                                    type="button"
+                                    variant="outline"
+                                >
+                                    Add model
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="mt-4 rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+                                Save your {provider.label} API key above, then pick a model from the catalog.
+                            </div>
+                        )}
 
                         <div className="mt-4 grid gap-2">
                             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved models</div>
@@ -1376,8 +1471,10 @@ export function SystemConfigPanel({
                         {providerErrors[provider.provider] ? (
                             <div className="mt-3 text-sm text-destructive">{providerErrors[provider.provider]}</div>
                         ) : null}
-                    </div>
+                        </AccordionPanel>
+                    </AccordionItem>
                 ))}
+                </Accordion>
             </section>
             ) : null}
         </div>

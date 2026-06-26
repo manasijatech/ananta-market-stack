@@ -61,6 +61,8 @@ import { SimpleSelect } from "@/components/ui/simple-select";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 import { WorkflowAiChatPanel } from "@/components/alerts/workflow-ai-chat-panel";
+import { LlmModelPicker } from "@/components/system/llm-model-picker";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
 import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
 import { formatMarketCap, formatMarketCapInCrores } from "@/lib/market-cap";
@@ -1310,6 +1312,7 @@ export function WorkflowEditor({
     announcementCategories = [],
     initialWorkflow,
     llmProviders = [],
+    openRouterModels = [],
     presets = [],
     watchlists = []
 }: {
@@ -1317,6 +1320,7 @@ export function WorkflowEditor({
     announcementCategories?: string[];
     initialWorkflow?: AlertWorkflow | null;
     llmProviders?: LlmProviderConfig[];
+    openRouterModels?: OpenRouterModel[];
     presets?: Array<Record<string, unknown>>;
     watchlists?: Watchlist[];
 }) {
@@ -3481,13 +3485,13 @@ export function WorkflowEditor({
                                     }}
                                     options={[
                                         { value: "market_data", label: "Broker market data trigger" },
-                                        { value: "alpha_feed", label: "Ananta Market Stack websocket feed trigger" }
+                                        { value: "alpha_feed", label: "Ananta websocket feed trigger" }
                                     ]}
                                     value={workflowType}
                                 />
                                 <HelpText>
                                     {workflowType === "alpha_feed"
-                                        ? "This workflow analyzes stored Ananta Market Stack websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
+                                        ? "This workflow analyzes stored Ananta websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
                                         : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
                                 </HelpText>
                             </Label>
@@ -3750,7 +3754,7 @@ export function WorkflowEditor({
                             <StepHeader
                                 step={feedTriggerStep}
                                 title="Feed trigger"
-                                description="Choose which Ananta Market Stack websocket products and symbol scopes can create alerts before optional trigger LLM classification runs."
+                                description="Choose which Ananta websocket products and symbol scopes can create alerts before optional trigger LLM classification runs."
                             />
                             <div className="grid max-w-3xl gap-4 min-[900px]:grid-cols-2">
                                 <div>
@@ -3789,7 +3793,7 @@ export function WorkflowEditor({
                                     />
                                     <HelpText>
                                         Events are only available for symbols currently subscribed by the background
-                                        Ananta Market Stack websocket worker unless full-market is enabled for the chosen
+                                        Ananta websocket worker unless full-market is enabled for the chosen
                                         products.
                                     </HelpText>
                                 </div>
@@ -3999,17 +4003,27 @@ export function WorkflowEditor({
                                         placeholder="Select provider"
                                         value={feedProvider}
                                     />
-                                    <SimpleSelect
-                                        className="h-10 border border-input bg-background px-3 text-sm"
-                                        disabled={!feedTriggerLlmEnabled}
-                                        onValueChange={setFeedModelId}
-                                        options={selectedFeedModels.map((model) => ({
-                                            value: model.model_id,
-                                            label: model.label || model.model_id
-                                        }))}
-                                        placeholder="Select model"
-                                        value={feedModelId}
-                                    />
+                                    {feedProvider ? (
+                                        <LlmModelPicker
+                                            disabled={!feedTriggerLlmEnabled}
+                                            models={openRouterModels}
+                                            onSelect={(id) => setFeedModelId(id)}
+                                            provider={feedProvider}
+                                            value={feedModelId}
+                                        />
+                                    ) : (
+                                        <SimpleSelect
+                                            className="h-10 border border-input bg-background px-3 text-sm"
+                                            disabled
+                                            onValueChange={setFeedModelId}
+                                            options={selectedFeedModels.map((model) => ({
+                                                value: model.model_id,
+                                                label: model.label || model.model_id
+                                            }))}
+                                            placeholder="Select model"
+                                            value={feedModelId}
+                                        />
+                                    )}
                                 </div>
                                 <HelpText>
                                     {feedTriggerLlmEnabled
@@ -4883,17 +4897,27 @@ export function WorkflowEditor({
                             <HelpText>Uses the encrypted provider key from Settings.</HelpText>
                         </div>
                         <div className="grid gap-2">
-                            <SimpleSelect
-                                className="h-10 border border-input bg-background px-3 text-sm"
-                                disabled={!llmEnabled || !selectedLlmModels.length}
-                                onValueChange={setLlmModelId}
-                                options={selectedLlmModels.map((model) => ({
-                                    value: model.model_id,
-                                    label: model.label || model.model_id
-                                }))}
-                                placeholder="Select model"
-                                value={llmModelId}
-                            />
+                            {llmProvider ? (
+                                <LlmModelPicker
+                                    disabled={!llmEnabled}
+                                    models={openRouterModels}
+                                    onSelect={(id) => setLlmModelId(id)}
+                                    provider={llmProvider}
+                                    value={llmModelId}
+                                />
+                            ) : (
+                                <SimpleSelect
+                                    className="h-10 border border-input bg-background px-3 text-sm"
+                                    disabled
+                                    onValueChange={setLlmModelId}
+                                    options={selectedLlmModels.map((model) => ({
+                                        value: model.model_id,
+                                        label: model.label || model.model_id
+                                    }))}
+                                    placeholder="Select model"
+                                    value={llmModelId}
+                                />
+                            )}
                             <HelpText>Saved enabled models for the selected provider.</HelpText>
                         </div>
                         <div className="grid gap-2">
@@ -5426,6 +5450,7 @@ export function WorkflowEditor({
                 getEditorPayload={() => workflowPayload() as Record<string, unknown>}
                 llmProviders={llmProviders}
                 onWorkflowApplied={applyWorkflowToEditor}
+                openRouterModels={openRouterModels}
             />
         </div>
     );

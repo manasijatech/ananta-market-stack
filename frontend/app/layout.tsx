@@ -16,7 +16,7 @@ const rethinkHeading = Rethink_Sans({ subsets: ["latin"], variable: "--font-head
 const rethinkSans = Rethink_Sans({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-    title: "Ananta Market Stack",
+    title: "Ananta",
     description: "Secure multi-broker trading workspace",
     icons: {
         icon: "/logo-mark.svg",

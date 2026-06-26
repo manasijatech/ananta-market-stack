@@ -3,6 +3,7 @@ import { WorkflowEditor } from "@/components/alerts/workflow-editor";
 import { getAlertPresets, getAlertTemplates } from "@/service/actions/alerts";
 import { getAlphaAnnouncementCategories } from "@/service/actions/alpha/announcements";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
+import { getOpenRouterModels } from "@/service/actions/llm-models";
 import { getWatchlists } from "@/service/actions/watchlist";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
 
@@ -13,17 +14,19 @@ type NewWorkflowPageProps = {
 export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageProps) {
     const params = await searchParams;
     let creditWarningMessage: string | null = null;
-    const [accounts, templates, watchlists, presets, systemConfig, announcementCategories] = await Promise.all([
-        getBrokerAccounts(),
-        getAlertTemplates(),
-        getWatchlists(),
-        getAlertPresets(),
-        getSystemConfig(),
-        getAlphaAnnouncementCategories().catch((caught) => {
-            creditWarningMessage = getAlphaCreditWarningMessage(caught);
-            return [];
-        })
-    ]);
+    const [accounts, templates, watchlists, presets, systemConfig, announcementCategories, openRouterModels] =
+        await Promise.all([
+            getBrokerAccounts(),
+            getAlertTemplates(),
+            getWatchlists(),
+            getAlertPresets(),
+            getSystemConfig(),
+            getAlphaAnnouncementCategories().catch((caught) => {
+                creditWarningMessage = getAlphaCreditWarningMessage(caught);
+                return [];
+            }),
+            getOpenRouterModels()
+        ]);
     const template = templates.find((item) => item.id === params?.template);
     const initialWorkflow = template
         ? {
@@ -56,6 +59,7 @@ export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageP
                 announcementCategories={announcementCategories}
                 initialWorkflow={initialWorkflow}
                 llmProviders={systemConfig.llm_providers}
+                openRouterModels={openRouterModels}
                 presets={presets}
                 watchlists={watchlists}
             />
