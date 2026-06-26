@@ -38,7 +38,6 @@ import {
     bulletsFromMarkdown,
     classifyAlertSeverity,
     classifyAnnouncementType,
-    companyDetail,
     firstSentence,
     formatFeedTimestamp,
     itemKey,

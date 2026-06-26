@@ -17,6 +17,7 @@ import {
 } from "lightweight-charts";
 import { LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import { parseActionError } from "@/components/brokers/action-error";
 import { brokerNames } from "@/components/brokers/ui";
 import { useSession } from "@/components/session-provider";
@@ -43,7 +44,7 @@ type BrokerChartState = {
 type MarkerSection = "news" | "announcements" | "earnings" | "concalls" | "alerts";
 
 type RangePreset = {
-    id: "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y";
+    id: "1D" | "5D" | "1M" | "3M" | "6M" | "1Y";
     label: string;
     request: Omit<MarketChartRequest, "instrument" | "include_live_quote">;
 };
@@ -68,6 +69,19 @@ type HoveredCandle = {
     close: number;
     volume?: number | null;
     interval: string;
+};
+
+type ChartPalette = {
+    background: string;
+    border: string;
+    crosshair: string;
+    down: string;
+    grid: string;
+    overlay: string;
+    text: string;
+    up: string;
+    volumeDown: string;
+    volumeUp: string;
 };
 
 const RANGE_PRESETS: RangePreset[] = [
@@ -100,12 +114,7 @@ const RANGE_PRESETS: RangePreset[] = [
         id: "1Y",
         label: "1Y",
         request: { history_days: 365, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 0 },
-    },
-    {
-        id: "5Y",
-        label: "5Y",
-        request: { history_days: 1825, daily_interval: "day", intraday_interval: "day", intraday_lookback_days: 0 },
-    },
+    }
 ];
 
 const sectionTone = {
@@ -343,6 +352,64 @@ function candleMatchesTime(candle: HoveredCandle, isoTime: string): boolean {
     return dayKeyFromDate(candle.time) === dayKeyFromDate(isoTime);
 }
 
+function cssVar(name: string, fallback: string): string {
+    if (typeof window === "undefined") return fallback;
+    const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+}
+
+function toRgba(value: string, alpha: number): string {
+    const normalized = value.trim();
+    if (normalized.startsWith("#")) {
+        const hex = normalized.slice(1);
+        const fullHex =
+            hex.length === 3
+                ? hex
+                      .split("")
+                      .map((part) => `${part}${part}`)
+                      .join("")
+                : hex;
+        if (fullHex.length === 6) {
+            const red = Number.parseInt(fullHex.slice(0, 2), 16);
+            const green = Number.parseInt(fullHex.slice(2, 4), 16);
+            const blue = Number.parseInt(fullHex.slice(4, 6), 16);
+            return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+        }
+    }
+
+    const rgbMatch = normalized.match(/^rgba?\(([^)]+)\)$/i);
+    if (rgbMatch) {
+        const [red, green, blue] = rgbMatch[1].split(",").map((part) => part.trim());
+        if (red && green && blue) {
+            return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+        }
+    }
+
+    return normalized;
+}
+
+function readChartPalette(): ChartPalette {
+    const background = cssVar("--card", "#ffffff");
+    const text = cssVar("--foreground", "#171717");
+    const border = cssVar("--border", "rgba(0, 0, 0, 0.1)");
+    const primary = cssVar("--primary", "#ffcd2e");
+    const success = cssVar("--success", "#10b981");
+    const warning = cssVar("--warning", "#f59e0b");
+
+    return {
+        background,
+        border: toRgba(border, 0.85),
+        crosshair: toRgba(primary, 0.32),
+        down: warning,
+        grid: toRgba(border, 0.45),
+        overlay: toRgba(background, 0.86),
+        text,
+        up: success,
+        volumeDown: toRgba(warning, 0.24),
+        volumeUp: toRgba(success, 0.24)
+    };
+}
+
 export function MarketIntelligenceSymbolChart({
     account,
     feeds,
@@ -359,6 +426,7 @@ export function MarketIntelligenceSymbolChart({
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
 }) {
     const { user } = useSession();
+    const { resolvedTheme } = useTheme();
     const [activeRangeId, setActiveRangeId] = useState<RangePreset["id"]>("3M");
     const [liveSnapshot, setLiveSnapshot] = useState<MarketChartSnapshot | null>(state.snapshot);
     const [rangeLoading, setRangeLoading] = useState(false);
@@ -389,6 +457,7 @@ export function MarketIntelligenceSymbolChart({
     const latestPrice = snapshot?.latest_quote?.ltp ?? null;
     const activeRange = RANGE_PRESETS.find((item) => item.id === activeRangeId) ?? RANGE_PRESETS[3];
     const aggregatedMarkers = useMemo(() => buildAggregatedMarkers(snapshot, feeds), [feeds, snapshot]);
+    const chartPalette = useMemo(() => readChartPalette(), [resolvedTheme]);
     useEffect(() => {
         aggregatedMarkersRef.current = aggregatedMarkers;
     }, [aggregatedMarkers]);
@@ -427,42 +496,42 @@ export function MarketIntelligenceSymbolChart({
             chartRef.current = createChart(container, {
                 autoSize: true,
                 layout: {
-                    background: { type: ColorType.Solid, color: "#f7f3ea" },
-                    textColor: "#5a5348",
+                    background: { type: ColorType.Solid, color: chartPalette.background },
+                    textColor: chartPalette.text
                 },
                 grid: {
-                    vertLines: { color: "rgba(163, 124, 49, 0.08)" },
-                    horzLines: { color: "rgba(163, 124, 49, 0.08)" },
+                    vertLines: { color: chartPalette.grid },
+                    horzLines: { color: chartPalette.grid }
                 },
                 rightPriceScale: {
-                    borderColor: "rgba(163, 124, 49, 0.16)",
+                    borderColor: chartPalette.border
                 },
                 timeScale: {
-                    borderColor: "rgba(163, 124, 49, 0.16)",
+                    borderColor: chartPalette.border,
                     timeVisible: true,
                     secondsVisible: false,
-                    rightOffset: 6,
+                    rightOffset: 6
                 },
                 crosshair: {
-                    vertLine: { color: "rgba(161, 98, 7, 0.24)" },
-                    horzLine: { color: "rgba(161, 98, 7, 0.24)" },
-                },
+                    vertLine: { color: chartPalette.crosshair },
+                    horzLine: { color: chartPalette.crosshair }
+                }
             });
             candleSeriesRef.current = chartRef.current.addSeries(CandlestickSeries, {
-                upColor: "#18946b",
-                downColor: "#b45309",
-                wickUpColor: "#18946b",
-                wickDownColor: "#b45309",
+                upColor: chartPalette.up,
+                downColor: chartPalette.down,
+                wickUpColor: chartPalette.up,
+                wickDownColor: chartPalette.down,
                 borderVisible: false,
                 priceLineVisible: false,
-                lastValueVisible: true,
+                lastValueVisible: true
             });
             volumeSeriesRef.current = chartRef.current.addSeries(HistogramSeries, {
                 priceFormat: { type: "volume" },
-                priceScaleId: "",
+                priceScaleId: ""
             });
             volumeSeriesRef.current.priceScale().applyOptions({
-                scaleMargins: { top: 0.82, bottom: 0 },
+                scaleMargins: { top: 0.82, bottom: 0 }
             });
             markersRef.current = createSeriesMarkers(candleSeriesRef.current, []);
             chartRef.current.subscribeClick((param: MouseEventParams<Time>) => {
@@ -487,7 +556,38 @@ export function MarketIntelligenceSymbolChart({
                 setHoveredCandle(candle ?? candlesRef.current.at(-1) ?? null);
             });
         }
-    }, []);
+    }, [chartPalette]);
+
+    useEffect(() => {
+        const chart = chartRef.current;
+        if (!chart) return;
+        chart.applyOptions({
+            layout: {
+                background: { type: ColorType.Solid, color: chartPalette.background },
+                textColor: chartPalette.text
+            },
+            grid: {
+                vertLines: { color: chartPalette.grid },
+                horzLines: { color: chartPalette.grid }
+            },
+            rightPriceScale: {
+                borderColor: chartPalette.border
+            },
+            timeScale: {
+                borderColor: chartPalette.border
+            },
+            crosshair: {
+                vertLine: { color: chartPalette.crosshair },
+                horzLine: { color: chartPalette.crosshair }
+            }
+        });
+        candleSeriesRef.current?.applyOptions({
+            upColor: chartPalette.up,
+            downColor: chartPalette.down,
+            wickUpColor: chartPalette.up,
+            wickDownColor: chartPalette.down
+        });
+    }, [chartPalette]);
 
     useEffect(() => {
         if (!snapshot?.candles.length) return;
@@ -509,7 +609,7 @@ export function MarketIntelligenceSymbolChart({
                 .map((item) => ({
                     time: toChartTime(item.time),
                     value: item.volume as number,
-                    color: item.close >= item.open ? "rgba(24, 148, 107, 0.24)" : "rgba(180, 83, 9, 0.24)",
+                    color: item.close >= item.open ? chartPalette.volumeUp : chartPalette.volumeDown
                 }))
         );
         markersRef.current?.setMarkers(aggregatedMarkers.map((item) => item.marker));
@@ -517,7 +617,7 @@ export function MarketIntelligenceSymbolChart({
             chartRef.current?.timeScale().fitContent();
             fittedRef.current = true;
         }
-    }, [aggregatedMarkers, snapshot]);
+    }, [aggregatedMarkers, chartPalette.volumeDown, chartPalette.volumeUp, snapshot]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -578,8 +678,8 @@ export function MarketIntelligenceSymbolChart({
     }, []);
 
     return (
-        <section className="overflow-hidden border border-border/70 bg-[linear-gradient(180deg,#fbf8f1,#f4efe4)]">
-            <div className="border-b border-border/60 px-4 py-4">
+        <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5">
+            <div className="border-b border-border/60 bg-[color-mix(in_srgb,var(--card),var(--primary)_3%)] px-4 py-4">
                 <div className="flex flex-col gap-4 min-[980px]:flex-row min-[980px]:items-start min-[980px]:justify-between">
                     <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Broker chart</p>
@@ -609,10 +709,10 @@ export function MarketIntelligenceSymbolChart({
                             type="button"
                             onClick={() => void loadRange(range.id)}
                             className={cn(
-                                "h-8 min-w-11 border px-3 text-xs font-semibold uppercase tracking-[0.14em] transition-colors",
+                                "h-8 min-w-11 rounded-md border px-3 text-xs font-semibold uppercase tracking-[0.14em] transition-colors",
                                 range.id === activeRangeId
                                     ? "border-primary bg-primary text-primary-foreground"
-                                    : "border-border/70 bg-background/65 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                                    : "border-border/70 bg-background text-muted-foreground hover:border-primary/40 hover:bg-accent/40 hover:text-foreground"
                             )}
                             disabled={rangeLoading}
                         >
@@ -625,24 +725,33 @@ export function MarketIntelligenceSymbolChart({
             <div className="relative">
                 <div className="h-[460px] w-full" ref={containerRef} />
                 {(state.isLoading || rangeLoading) && (
-                    <div className="absolute inset-0 flex items-center justify-center gap-3 bg-[#f7f3ea]/85 text-sm text-muted-foreground">
+                    <div
+                        className="absolute inset-0 flex items-center justify-center gap-3 text-sm text-muted-foreground backdrop-blur-[2px]"
+                        style={{ backgroundColor: chartPalette.overlay }}
+                    >
                         <LoaderCircle className="size-4 animate-spin" />
                         Loading {activeRange.label} chart...
                     </div>
                 )}
                 {!state.isLoading && !rangeLoading && (state.error || rangeError) ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-[#f7f3ea]/85 px-6 text-center text-sm text-destructive">
+                    <div
+                        className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-destructive backdrop-blur-[2px]"
+                        style={{ backgroundColor: chartPalette.overlay }}
+                    >
                         {state.error || rangeError}
                     </div>
                 ) : null}
                 {!state.isLoading && !rangeLoading && !(state.error || rangeError) && !snapshot?.candles.length ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-[#f7f3ea]/85 px-6 text-center text-sm text-muted-foreground">
+                    <div
+                        className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-muted-foreground backdrop-blur-[2px]"
+                        style={{ backgroundColor: chartPalette.overlay }}
+                    >
                         No broker candle history is available for this symbol yet.
                     </div>
                 ) : null}
             </div>
 
-            <div className="grid gap-3 border-t border-border/40 bg-background/35 px-4 py-3 text-sm min-[820px]:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(90px,1fr))]">
+            <div className="grid gap-3 border-t border-border/40 bg-[color-mix(in_srgb,var(--background),var(--card)_35%)] px-4 py-3 text-sm min-[820px]:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(90px,1fr))]">
                 <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Candle</p>
                     <p className="mt-1 truncate font-medium text-foreground">
@@ -665,7 +774,7 @@ export function MarketIntelligenceSymbolChart({
                     <span>Markers are grouped by day. Click a marker bubble to inspect the linked items.</span>
                 </div>
                 {selectedMarker ? (
-                    <div className="mt-3 border border-border/70 bg-background/80 p-4">
+                    <div className="mt-3 rounded-xl border border-border/70 bg-card p-4 shadow-xs/5">
                         <div className="flex items-center justify-between gap-3">
                             <div>
                                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Selected event day</p>
@@ -699,7 +808,7 @@ export function MarketIntelligenceSymbolChart({
                                 <button
                                     key={`${marker.time}-${index}`}
                                     type="button"
-                                    className="border border-border/70 bg-background/70 px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                                    className="rounded-lg border border-border/70 bg-background px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/40 hover:text-foreground"
                                     onClick={() => setSelectedMarker(marker)}
                                 >
                                     <span className="block font-semibold text-foreground">

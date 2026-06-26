@@ -126,7 +126,6 @@ export interface OrganizationInvitationEmailProps {
  */
 export const OrganizationInvitationEmail = ({
   url,
-  email,
   inviterName,
   inviterEmail,
   organizationName,

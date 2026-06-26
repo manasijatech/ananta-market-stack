@@ -10,7 +10,6 @@ import {
 } from "@/components/brokers/ui";
 import { Shell } from "@/components/brokers/shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import type { BrokerAccount } from "@/service/types/broker";
 import { canManageBrokerCredentials } from "@/lib/rbac";
 import {
@@ -18,7 +17,6 @@ import {
 	isPermissionDeniedError,
 } from "@/lib/api-errors";
 import { getRbacMe } from "@/service/actions/rbac";
-import Link from "next/link";
 
 export default async function BrokersPage() {
 	let accounts: BrokerAccount[] = [];
@@ -45,9 +43,6 @@ export default async function BrokersPage() {
 	}
 
 	const canAddBroker = canManageBrokerCredentials(principal);
-	const addBrokerReason = canAddBroker
-		? ""
-		: "Only admins or members with credential-management access can add broker accounts.";
 
 	return (
 		<Shell>
