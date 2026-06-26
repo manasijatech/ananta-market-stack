@@ -27,6 +27,7 @@ from broker.core.redis_cache import _redis_client
 from db.models import AlphaSymbolMetadataCache, AlphaWebSocketEvent, BrokerAccount, LiveSymbolSubscription
 
 HeatmapScope = Literal["tracked", "watchlist", "portfolio_holdings"]
+_TRANSIENT_TRACKED_UI_SOURCE_TYPES = {"heatmap", "symbol_search"}
 
 
 @dataclass
@@ -305,6 +306,14 @@ def _resolve_tracked_source(
             LiveSymbolSubscription.broker_code == account.broker_code,
         )
     ).all()
+    rows = [
+        row
+        for row in rows
+        if not (
+            row.source_kind == "ui"
+            and (row.source_type or "").strip().lower() in _TRANSIENT_TRACKED_UI_SOURCE_TYPES
+        )
+    ]
     selected_rows = _pick_live_rows(rows)
     source_rows = [
         _build_source_row(

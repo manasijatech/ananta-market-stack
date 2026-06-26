@@ -1,6 +1,9 @@
 # Kotak Neo Setup
 
-Ananta Market Stack connects Kotak Neo with UCC and portal access token. Sessions use mobile number, TOTP, and MPIN.
+Ananta Market Stack supports two Kotak Neo setup styles:
+
+- manual session entry, where you enter mobile number, live TOTP, and MPIN during refresh
+- stored TOTP plus MPIN automation, where the backend stores those values for session rebuilds
 
 ## What You Need
 
@@ -8,26 +11,36 @@ Ananta Market Stack connects Kotak Neo with UCC and portal access token. Session
 | --- | --- |
 | UCC | Kotak Unique Client Code |
 | Portal access token | Kotak Neo portal access token |
-| Mobile number | Optional at setup, required for session login |
-| MPIN | Optional at setup, required for session login |
-| TOTP secret | Optional authenticator or QR secret for automation |
+| Mobile number | Only for automation mode |
+| MPIN | Only for automation mode |
+| TOTP secret | Only for automation mode |
 
 ## Before You Start
 
 1. Enable [Kotak Neo Trade API access](https://www.kotakneo.com/platform/kotak-neo-trade-api/) for your account.
 2. Copy your UCC.
 3. Generate or copy the portal access token.
-4. Keep registered mobile number, MPIN, and current TOTP ready.
-5. Keep TOTP secret ready only if you want automation.
+4. Decide whether you want manual session entry or stored automation.
+5. Keep registered mobile number, MPIN, and current TOTP ready.
+6. Keep TOTP secret ready only if you want automation.
+
+## Option 1: Manual Session
+
+Use this when you want to keep mobile number, MPIN, and TOTP secret out of stored broker credentials.
+
+## Option 2: Stored TOTP + MPIN
+
+Use this when you want the backend to rebuild sessions using stored mobile number, MPIN, and TOTP secret.
 
 ## Add Kotak Neo In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
 3. Select **Kotak Neo**.
-4. Paste UCC and portal access token.
-5. Add mobile number, MPIN, and TOTP secret only if you want automated refresh.
-6. Save the broker account.
+4. Choose **Manual session** or **Stored TOTP + MPIN**.
+5. Paste UCC and portal access token.
+6. If you chose automation, also paste mobile number, MPIN, and TOTP secret.
+7. Save the broker account.
 
 ## Connect The Session
 
