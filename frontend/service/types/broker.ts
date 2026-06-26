@@ -274,6 +274,7 @@ export interface MarketChartRequest {
     history_days?: number;
     daily_interval?: string;
     intraday_interval?: string;
+    intraday_lookback_days?: number;
     include_live_quote?: boolean;
 }
 
