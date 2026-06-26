@@ -17,10 +17,17 @@ import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warni
 import { parseActionError } from "@/components/brokers/action-error";
 import { brokerNames, PageHeader } from "@/components/brokers/ui";
 import {
+    FeedSearchInput,
+    LiveStatusPill,
+    WatchlistScopeTooltip
+} from "@/components/market-intelligence/market-intelligence-feed-primitives";
+import {
     MarketIntelligenceLiveFeed,
-    StateMessage
+    StateMessage,
+    type MarketIntelligenceSocketState
 } from "@/components/market-intelligence/market-intelligence-live-feed";
 import { MarketIntelligenceSymbolChart } from "@/components/market-intelligence/market-intelligence-symbol-chart";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -37,11 +44,13 @@ import type {
     BrokerDataDefaultAccount,
     InstrumentRef,
     InstrumentSearchRow,
-    MarketChartSnapshot,
+    MarketChartSnapshot
 } from "@/service/types/broker";
 import { getAlphaCreditWarningMessage, notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
+import { cn } from "@/lib/utils";
 import {
     ALPHA_SYMBOL_LIMIT,
+    marketIntelligenceProducts,
     emptyMarketIntelligenceFeeds,
     marketIntelligenceSections,
     type AlphaSection,
@@ -209,6 +218,8 @@ export function MarketIntelligenceChrome({
     const [isLoadingBrokerConfig, setIsLoadingBrokerConfig] = useState(true);
     const [filterError, setFilterError] = useState("");
     const [isLoadingFilter, setIsLoadingFilter] = useState(false);
+    const [feedSearch, setFeedSearch] = useState("");
+    const [socketState, setSocketState] = useState<MarketIntelligenceSocketState>("connecting");
     const [searchText, setSearchText] = useState("");
     const [committedSymbol, setCommittedSymbol] = useState("");
     const [committedInstrument, setCommittedInstrument] = useState<InstrumentRef | null>(null);
@@ -321,15 +332,15 @@ export function MarketIntelligenceChrome({
                     if (cancelled) return;
                     setSuggestions(rows);
                     setShowSuggestions(true);
-                    const symbols = Array.from(
+                    const symbolsToLoad = Array.from(
                         new Set(rows.map((row) => row.symbol.trim().toUpperCase()).filter(Boolean))
                     );
-                    if (!symbols.length) {
+                    if (!symbolsToLoad.length) {
                         setSuggestionMetadata({});
                         return;
                     }
                     try {
-                        const metadata = await getAlphaSymbolMetadata(symbols);
+                        const metadata = await getAlphaSymbolMetadata(symbolsToLoad);
                         if (cancelled) return;
                         setSuggestionMetadata(metadataBySymbol(metadata));
                     } catch (caught) {
@@ -497,47 +508,55 @@ export function MarketIntelligenceChrome({
         <>
             <AlphaCreditWarningTrigger message={creditWarningMessage} />
             <PageHeader
+                action={
+                    !isLoadingBrokerConfig && !defaultBrokerAccount ? (
+                        <Badge size="sm" variant="warning">
+                            No broker
+                        </Badge>
+                    ) : null
+                }
+                description={activeSection.description}
                 eyebrow="Alpha intelligence"
                 title="Market Intelligence"
-                description={activeSection.description}
             />
 
-            <div className="mb-5 flex min-w-0 flex-col gap-3 min-[920px]:flex-row min-[920px]:items-center min-[920px]:justify-between">
+            <div className="mb-4 flex min-w-0 flex-col gap-3 border-b border-border/50 pb-3 min-[920px]:flex-row min-[920px]:items-center min-[920px]:justify-between">
                 <nav
-                    className="-mx-4 flex min-w-0 gap-1.5 overflow-x-auto px-4 pb-1 min-[920px]:mx-0 min-[920px]:flex-wrap min-[920px]:overflow-visible min-[920px]:px-0 min-[920px]:pb-0"
                     aria-label="Market intelligence sections"
+                    className="-mx-1 flex min-w-0 gap-1 overflow-x-auto px-1 min-[920px]:flex-wrap min-[920px]:overflow-visible"
                 >
                     {marketIntelligenceSections.map((item) => {
                         const active = item.id === activeSection.id;
                         const Icon = sectionChrome[item.id].icon;
                         return (
-                            <Button
-                                className={[
-                                    "shrink-0 whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em]",
-                                    active ? "" : "text-muted-foreground hover:text-foreground"
-                                ].join(" ")}
+                            <button
+                                aria-current={active ? "page" : undefined}
+                                className={cn(
+                                    "inline-flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2 text-sm transition-colors",
+                                    active
+                                        ? "border-primary font-medium text-foreground"
+                                        : "border-transparent text-muted-foreground hover:text-foreground"
+                                )}
                                 key={item.id}
                                 onClick={() => setActiveSectionId(item.id)}
-                                size="sm"
                                 type="button"
-                                aria-pressed={active}
-                                variant={active ? "default" : "secondary"}
                             >
-                                <Icon className="size-3.5" />
+                                <Icon className="size-3.5 opacity-70" />
                                 {item.label}
-                            </Button>
+                            </button>
                         );
                     })}
                 </nav>
+
                 <form
-                    className="flex min-w-0 flex-col gap-2 min-[540px]:flex-row min-[540px]:items-center min-[920px]:w-[min(50vw,720px)] min-[920px]:shrink-0"
+                    className="flex min-w-0 flex-col gap-2 min-[640px]:flex-row min-[640px]:items-center min-[920px]:w-[min(52vw,720px)] min-[920px]:shrink-0"
                     onSubmit={submitSymbolSearch}
                 >
                     <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                         {isLoadingBrokerConfig ? "Loading broker..." : defaultAccountLabel(defaultBrokerAccount)}
                     </span>
                     <label className="relative min-w-0 flex-1">
-                        <span className="sr-only">Search symbol</span>
+                        <span className="sr-only">Search a symbol chart</span>
                         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
                             autoComplete="off"
@@ -548,7 +567,7 @@ export function MarketIntelligenceChrome({
                                 setShowSuggestions(true);
                             }}
                             onFocus={() => setShowSuggestions(true)}
-                            placeholder="Search a symbol"
+                            placeholder="Search a symbol chart"
                             value={searchText}
                         />
                         {showSuggestions && searchText.trim() ? (
@@ -556,45 +575,45 @@ export function MarketIntelligenceChrome({
                                 {isLoadingSuggestions ? (
                                     <div className="px-3 py-2 text-sm text-muted-foreground">Searching...</div>
                                 ) : null}
-                                {!isLoadingSuggestions && suggestions.length ? (
-                                    suggestions.map((row) => {
-                                        const metadata = suggestionMetadata[row.symbol.trim().toUpperCase()];
-                                        const company = metadata?.company_name ?? row.name;
-                                        const detail = [
-                                            row.exchange,
-                                            row.instrument_type,
-                                            row.trading_symbol,
-                                            metadata?.sector
-                                        ].filter(Boolean);
-                                        return (
-                                            <button
-                                                className="flex w-full min-w-0 items-center gap-3 border-b border-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-secondary"
-                                                key={`${row.account_id ?? "default"}-${row.exchange ?? ""}-${row.symbol}-${row.trading_symbol ?? ""}`}
-                                                onMouseDown={(event) => {
-                                                    event.preventDefault();
-                                                    commitSymbol(row.symbol, instrumentFromSearch(row));
-                                                }}
-                                                type="button"
-                                            >
-                                                <SymbolSearchLogo metadata={metadata} symbol={row.symbol} />
-                                                <span className="min-w-0 flex-1">
-                                                    <span className="block truncate text-sm font-semibold text-foreground">
-                                                        {row.symbol}
-                                                        {company ? (
-                                                            <span className="font-normal text-muted-foreground">
-                                                                {" "}
-                                                                / {company}
-                                                            </span>
-                                                        ) : null}
-                                                    </span>
-                                                    <span className="block truncate text-xs text-muted-foreground">
-                                                        {detail.join(" / ") || "Broker instrument"}
-                                                    </span>
-                                                </span>
-                                            </button>
-                                        );
-                                    })
-                                ) : null}
+                                {!isLoadingSuggestions && suggestions.length
+                                    ? suggestions.map((row) => {
+                                          const metadata = suggestionMetadata[row.symbol.trim().toUpperCase()];
+                                          const company = metadata?.company_name ?? row.name;
+                                          const detail = [
+                                              row.exchange,
+                                              row.instrument_type,
+                                              row.trading_symbol,
+                                              metadata?.sector
+                                          ].filter(Boolean);
+                                          return (
+                                              <button
+                                                  className="flex w-full min-w-0 items-center gap-3 border-b border-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-secondary"
+                                                  key={`${row.account_id ?? "default"}-${row.exchange ?? ""}-${row.symbol}-${row.trading_symbol ?? ""}`}
+                                                  onMouseDown={(event) => {
+                                                      event.preventDefault();
+                                                      commitSymbol(row.symbol, instrumentFromSearch(row));
+                                                  }}
+                                                  type="button"
+                                              >
+                                                  <SymbolSearchLogo metadata={metadata} symbol={row.symbol} />
+                                                  <span className="min-w-0 flex-1">
+                                                      <span className="block truncate text-sm font-semibold text-foreground">
+                                                          {row.symbol}
+                                                          {company ? (
+                                                              <span className="font-normal text-muted-foreground">
+                                                                  {" "}
+                                                                  / {company}
+                                                              </span>
+                                                          ) : null}
+                                                      </span>
+                                                      <span className="block truncate text-xs text-muted-foreground">
+                                                          {detail.join(" / ") || "Broker instrument"}
+                                                      </span>
+                                                  </span>
+                                              </button>
+                                          );
+                                      })
+                                    : null}
                                 {!isLoadingSuggestions && !suggestions.length ? (
                                     <div className="px-3 py-2 text-sm text-muted-foreground">
                                         Press search to use this symbol.
@@ -617,7 +636,7 @@ export function MarketIntelligenceChrome({
                         <DialogTrigger asChild>
                             <button
                                 aria-label="Learn about market intelligence"
-                                className="flex size-10 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-primary"
+                                className="flex size-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-primary"
                                 type="button"
                             >
                                 <Info className="size-4" />
@@ -642,6 +661,54 @@ export function MarketIntelligenceChrome({
                 </form>
             </div>
 
+            {watchlistGroups.length ? (
+                <div className="mb-4 flex min-w-0 flex-col gap-3 text-xs text-muted-foreground min-[920px]:flex-row min-[920px]:items-center min-[920px]:justify-between">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+                        <WatchlistScopeTooltip historyLimit={ALPHA_SYMBOL_LIMIT} symbolCount={allSymbolsCount}>
+                            <label className="flex min-w-0 items-center gap-2">
+                                <Filter className="size-4 shrink-0 text-primary" />
+                                <span className="shrink-0 font-semibold uppercase tracking-[0.16em] text-primary">
+                                    Watchlist
+                                </span>
+                                <Select
+                                    aria-label="Filter market intelligence by watchlist"
+                                    className="h-8 min-w-[min(100%,14rem)] max-w-sm bg-background text-xs"
+                                    disabled={isLoadingFilter || symbolModeActive}
+                                    onChange={(event) => setSelectedWatchlistId(event.target.value)}
+                                    value={selectedWatchlistId}
+                                >
+                                    <option value={ALL_WATCHLISTS_ID}>All watchlists ({allSymbolsCount} symbols)</option>
+                                    {watchlistGroups.map((group) => (
+                                        <option key={group.id} value={group.id}>
+                                            {group.name} ({group.symbols.length} symbols)
+                                        </option>
+                                    ))}
+                                </Select>
+                            </label>
+                        </WatchlistScopeTooltip>
+                        <span className="text-border">·</span>
+                        <LiveStatusPill state={socketState} />
+                        <span className="text-border">·</span>
+                        <span>
+                            {symbolModeActive
+                                ? "Single symbol mode active"
+                                : `${marketIntelligenceProducts.length} products · ${activeSymbols.length} symbols`}
+                            {isLoadingFilter ? " · Loading…" : ""}
+                            {!symbolModeActive && activeSymbols.length > ALPHA_SYMBOL_LIMIT
+                                ? ` · first ${ALPHA_SYMBOL_LIMIT} used for history`
+                                : ""}
+                        </span>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2 min-[920px]:w-[min(36vw,320px)] min-[920px]:shrink-0">
+                        <FeedSearchInput
+                            onChange={setFeedSearch}
+                            placeholder={symbolModeActive ? `Filter ${committedSymbol} feed` : `Filter ${filterLabel} feed`}
+                            value={feedSearch}
+                        />
+                    </div>
+                </div>
+            ) : null}
+
             {symbolModeActive ? (
                 <div className="mb-5">
                     <MarketIntelligenceSymbolChart
@@ -655,51 +722,19 @@ export function MarketIntelligenceChrome({
                 </div>
             ) : null}
 
-            {watchlistGroups.length ? (
-                <div className="mb-5 flex flex-col gap-2 text-xs text-muted-foreground min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
-                    <label className="flex min-w-0 flex-1 items-center gap-2">
-                        <Filter className="size-4 shrink-0 text-primary" />
-                        <span className="shrink-0 font-semibold uppercase tracking-[0.16em] text-primary">
-                            Watchlist
-                        </span>
-                        <Select
-                            aria-label="Filter market intelligence by watchlist"
-                            className="h-9 max-w-sm rounded-none text-xs"
-                            disabled={isLoadingFilter || symbolModeActive}
-                            onChange={(event) => setSelectedWatchlistId(event.target.value)}
-                            value={selectedWatchlistId}
-                        >
-                            <option value={ALL_WATCHLISTS_ID}>All watchlists ({allSymbolsCount} symbols)</option>
-                            {watchlistGroups.map((group) => (
-                                <option key={group.id} value={group.id}>
-                                    {group.name} ({group.symbols.length})
-                                </option>
-                            ))}
-                        </Select>
-                    </label>
-                    <span>
-                        {symbolModeActive
-                            ? "Single symbol mode active"
-                            : isLoadingFilter
-                              ? "Loading watchlist feed..."
-                              : `${filterLabel} / ${activeSymbols.length} symbols`}
-                        {!symbolModeActive && activeSymbols.length > ALPHA_SYMBOL_LIMIT
-                            ? ` / first ${ALPHA_SYMBOL_LIMIT} used for history`
-                            : ""}
-                    </span>
-                </div>
-            ) : null}
-
-            {error ? <StateMessage tone="error" message={error} /> : null}
-            {symbolError ? <StateMessage tone="error" message={symbolError} /> : null}
-            {filterError ? <StateMessage tone="error" message={filterError} /> : null}
+            {error ? <StateMessage message={error} tone="error" /> : null}
+            {symbolError ? <StateMessage message={symbolError} tone="error" /> : null}
+            {filterError ? <StateMessage message={filterError} tone="error" /> : null}
             {!error && !symbolModeActive && !symbols.length ? (
                 <StateMessage message="Add symbols to a watchlist to view Alpha market intelligence." />
             ) : null}
             {!error && visibleSymbols.length ? (
                 <MarketIntelligenceLiveFeed
                     activeSection={activeSection.id}
+                    feedSearch={feedSearch}
                     initialFeeds={feeds}
+                    onFeedSearchSymbol={setFeedSearch}
+                    onSocketStateChange={setSocketState}
                     symbolMetadata={activeMetadata}
                     symbols={visibleSymbols}
                 />

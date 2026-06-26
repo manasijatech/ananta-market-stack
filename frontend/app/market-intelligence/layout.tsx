@@ -1,5 +1,5 @@
 import { parseActionError } from "@/components/brokers/action-error";
-import { Shell } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { MarketIntelligenceChrome } from "@/components/market-intelligence/market-intelligence-chrome";
 import {
     ALPHA_SYMBOL_LIMIT,

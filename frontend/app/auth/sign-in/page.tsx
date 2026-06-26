@@ -1,28 +1,21 @@
-import { AuthForm } from "@/components/auth-form";
-import { AuthShell } from "@/components/auth-shell";
-import { headers } from "next/headers";
+import { AuthSignInView } from "@/components/auth/auth-views";
+import { AuthSplitLayout } from "@/components/auth/auth-split-layout";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { redirectIfAuthenticated } from "@/lib/auth-guards";
+import { getSignupStatus } from "@/service/actions/rbac";
 
 export default async function SignInPage() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
+    await redirectIfAuthenticated();
 
-    if (session?.user) {
-        redirect("/dashboard");
+    const signupStatus = await getSignupStatus().catch(() => ({ has_admin: false }));
+
+    if (!signupStatus.has_admin) {
+        redirect("/auth/onboarding");
     }
 
     return (
-        <AuthShell
-            eyebrow="Welcome back"
-            title="Sign in"
-            subtitle="Use your email and password to continue."
-            footerText="New to Ananta Market Stack?"
-            footerHref="/auth/sign-up"
-            footerAction="Create an account"
-        >
-            <AuthForm mode="sign-in" />
-        </AuthShell>
+        <AuthSplitLayout>
+            <AuthSignInView />
+        </AuthSplitLayout>
     );
 }
