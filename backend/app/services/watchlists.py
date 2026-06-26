@@ -142,7 +142,7 @@ def _ensure_alpha_api_configured(db: Session, user_id: str) -> None:
     if not config.has_api_key:
         raise HTTPException(
             status_code=400,
-            detail="Manasija Alpha API key is required. Add it in System Config before creating watchlists.",
+            detail="Drishti API key is required. Add it in Settings before creating watchlists.",
         )
 
 

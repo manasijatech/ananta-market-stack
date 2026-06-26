@@ -1,4 +1,5 @@
-import { PageHeader, Shell } from "@/components/brokers/ui";
+import { PageHeader } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 

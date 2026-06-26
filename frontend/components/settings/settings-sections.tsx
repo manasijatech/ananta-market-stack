@@ -46,9 +46,9 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
     },
     {
         value: "alpha",
-        label: "Alpha",
-        title: "Manasija Alpha",
-        description: "Manage the Alpha API key used for market intelligence and company data."
+        label: "Drishti",
+        title: "Drishti",
+        description: "Manage the Drishti API key used for market intelligence and company data."
     },
     {
         value: "mcp",
@@ -66,7 +66,7 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
         value: "live-subscriptions",
         label: "Subscriptions",
         title: "Live data subscriptions",
-        description: "Manage Alpha websocket products, symbol scope, watchlists, and reusable live subscriptions."
+        description: "Manage Drishti websocket products, symbol scope, watchlists, and reusable live subscriptions."
     },
     {
         value: "stream-manager",

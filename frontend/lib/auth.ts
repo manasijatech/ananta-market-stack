@@ -1,3 +1,11 @@
+/**
+ * Better Auth server configuration.
+ *
+ * Uses a local SQLite database for users, sessions, and credentials.
+ * Session cookies are prefixed with `ananta-market-stack`.
+ *
+ * @see https://www.better-auth.com/docs/installation
+ */
 import { mkdirSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -8,6 +16,7 @@ type SqliteDatabase = {
     exec(sql: string): unknown;
 };
 
+/** Resolves the SQLite path for standalone and dev runtimes. */
 function resolveDefaultAuthDatabasePath(): string {
     const cwd = process.cwd();
     const isStandaloneRuntime = cwd.endsWith(`${sep}.next${sep}standalone`);
@@ -77,6 +86,11 @@ database.exec(`
 `);
 
 const authBaseURL = process.env.BETTER_AUTH_URL ?? getPublicAppUrl();
+
+if (!process.env.BETTER_AUTH_SECRET && process.env.NODE_ENV === "production") {
+    throw new Error("BETTER_AUTH_SECRET is required in production.");
+}
+
 const localDevOrigins =
     process.env.NODE_ENV === "production"
         ? []
@@ -95,6 +109,7 @@ const trustedOrigins = Array.from(
     ])
 );
 
+/** Shared Better Auth instance for API routes and server session lookups. */
 export const auth = betterAuth({
     appName: "Ananta Market Stack",
     baseURL: authBaseURL,

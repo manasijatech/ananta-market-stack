@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { INDIA_TIME_ZONE, formatIstDateTime, parseApiDate } from "@/lib/datetime";
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
@@ -489,22 +489,20 @@ export function SubscriptionsManager({
                     </Button>
                 </div>
                 <div className="grid gap-3 min-[760px]:grid-cols-[240px_minmax(0,1fr)_96px]">
-                    <Select
+                    <SimpleSelect
                         className={`${inputBase} h-9 text-sm`}
-                        onChange={(event) => {
-                            setAccountId(event.target.value);
+                        onValueChange={(nextAccountId) => {
+                            setAccountId(nextAccountId);
                             setSymbolSearch("");
                             setSuggestions([]);
                             setActiveSuggestionIndex(-1);
                         }}
+                        options={accounts.map((account) => ({
+                            value: account.id,
+                            label: `${account.label} · ${account.broker_code}`
+                        }))}
                         value={accountId}
-                    >
-                        {accounts.map((account) => (
-                            <option key={account.id} value={account.id}>
-                                {account.label} · {account.broker_code}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                     <div className="relative" ref={searchWrapRef}>
                         <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
                         <Input

@@ -60,7 +60,7 @@ def upsert_alpha_api_credential(
     try:
         account = asyncio.run(fetch_alpha_account(payload.api_key))
     except Exception as exc:
-        raise ValueError(f"Could not verify Manasija Alpha API account: {exc}") from exc
+        raise ValueError(f"Could not verify Drishti API account: {exc}") from exc
     owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     row = db.get(UserAlphaApiCredential, owner_user_id)
     if row is None:
@@ -94,6 +94,6 @@ def get_alpha_api_key(db: Session, user_id: str) -> str:
     ).first()
     if row is None or not row.api_key_cipher:
         raise ValueError(
-            "Manasija Alpha API key is not configured. Add it in System Config."
+            "Drishti API key is not configured. Add it in Settings."
         )
     return decrypt_value(row.api_key_cipher)

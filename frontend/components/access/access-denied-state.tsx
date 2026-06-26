@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { LockKeyhole } from "lucide-react";
 import { BackButton } from "@/components/access/back-button";
-import { PageHeader, Shell } from "@/components/brokers/ui";
+import { PageHeader } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 

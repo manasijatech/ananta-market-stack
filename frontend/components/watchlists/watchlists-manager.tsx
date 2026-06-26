@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } from "react";
-import { AlertTriangle, Check, Loader2, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, CandlestickChart, Check, Loader2, Minus, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getLivePricesWebSocketConfig, touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
@@ -21,7 +22,16 @@ import type { LivePriceTick } from "@/service/types/alerts";
 import type { InstrumentSearchRow } from "@/service/types/broker";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist, WatchlistPresetCatalogEntry } from "@/service/types/watchlist";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle
+} from "@/components/ui/card";
 import {
     Dialog,
     DialogContent,
@@ -30,11 +40,34 @@ import {
     DialogHeader,
     DialogTitle
 } from "@/components/ui/dialog";
+import {
+    Empty,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableFooter,
+    TableHead,
+    TableHeader,
+    TableRow
+} from "@/components/ui/table";
+import { PageHeader } from "@/components/brokers/ui";
 import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
+import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
+import { formatMarketCap } from "@/lib/market-cap";
+import { typography } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 function parseSymbols(input: string): string[] {
     return Array.from(
@@ -110,11 +143,6 @@ function formatDate(value?: string | null): string {
     return formatIstDateTime(value, "-");
 }
 
-function formatMarketCap(value?: number | null): string {
-    if (typeof value !== "number" || Number.isNaN(value)) return "-";
-    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
-}
-
 function toNumber(value: unknown): number | null {
     if (typeof value === "number" && Number.isFinite(value)) return value;
     if (typeof value === "string" && value.trim()) {
@@ -141,8 +169,48 @@ function livePriceKey(row: { account_id?: string | null; broker_code?: string | 
 }
 
 function livePriceLabel(price: LivePriceTick | undefined): string {
-    if (price?.unavailable_reason && toNumber(price.ltp ?? price.last_price) === null) return "unavailable";
+    if (price?.unavailable_reason && toNumber(price.ltp ?? price.last_price) === null) return "—";
     return formatLivePrice(price?.ltp ?? price?.last_price);
+}
+
+function liveStateBadgeVariant(
+    state: "connecting" | "connected" | "disconnected" | "error"
+): NonNullable<BadgeProps["variant"]> {
+    if (state === "connected") return "success";
+    if (state === "connecting") return "warning";
+    if (state === "error") return "error";
+    return "secondary";
+}
+
+function liveStateLabel(state: "connecting" | "connected" | "disconnected" | "error"): string {
+    if (state === "connected") return "Live";
+    if (state === "connecting") return "Connecting";
+    if (state === "error") return "Live error";
+    return "Live offline";
+}
+
+function SymbolAvatar({
+    symbol,
+    logo,
+    className
+}: {
+    symbol: string;
+    logo?: string | null;
+    className?: string;
+}) {
+    if (logo) {
+        return <img alt="" className={cn("shrink-0 object-contain", className)} src={logo} />;
+    }
+    return (
+        <span
+            className={cn(
+                "flex shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground",
+                className
+            )}
+        >
+            {symbol.slice(0, 2)}
+        </span>
+    );
 }
 
 function normalizedInstrumentToken(value: string | null | undefined): string {
@@ -209,9 +277,66 @@ function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
     };
 }
 
-const inputBase =
-    " border-0 border-b border-input bg-transparent px-0 text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-0";
+function WatchlistTableColGroup({ hasActions }: { hasActions: boolean }) {
+    return (
+        <colgroup>
+            <col style={{ width: hasActions ? "15%" : "16%" }} />
+            <col style={{ width: hasActions ? "24%" : "26%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: hasActions ? "18%" : "20%" }} />
+            <col style={{ width: hasActions ? "11%" : "10%" }} />
+            {hasActions ? <col style={{ width: "4%" }} /> : null}
+        </colgroup>
+    );
+}
+
 const PRESET_PAGE_SIZE = 24;
+const WATCHLIST_EXCHANGES = ["NSE", "BSE"] as const;
+type WatchlistExchange = (typeof WATCHLIST_EXCHANGES)[number];
+
+function isWatchlistExchange(value: string): value is WatchlistExchange {
+    return WATCHLIST_EXCHANGES.includes(value as WatchlistExchange);
+}
+
+function ExchangeSelect({
+    id,
+    value,
+    onValueChange,
+    className,
+    "aria-label": ariaLabel = "Exchange"
+}: {
+    id?: string;
+    value: WatchlistExchange;
+    onValueChange: (value: WatchlistExchange) => void;
+    className?: string;
+    "aria-label"?: string;
+}) {
+    return (
+        <Select
+            onValueChange={(next) => {
+                if (next && isWatchlistExchange(next)) onValueChange(next);
+            }}
+            value={value}
+        >
+            <SelectTrigger
+                aria-label={ariaLabel}
+                className={cn("h-10 min-w-0 px-2.5 font-mono text-sm", className)}
+                id={id}
+            >
+                <span className="min-w-0 flex-1 truncate">{value}</span>
+            </SelectTrigger>
+            <SelectContent>
+                {WATCHLIST_EXCHANGES.map((option) => (
+                    <SelectItem key={option} value={option}>
+                        {option}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    );
+}
 
 export function WatchlistsManager({
     hasAlphaApiKey,
@@ -241,7 +366,7 @@ export function WatchlistsManager({
     const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
     const [searchLoading, setSearchLoading] = useState(false);
     const [showSuggestions, setShowSuggestions] = useState(false);
-    const [exchange, setExchange] = useState("NSE");
+    const [exchange, setExchange] = useState<WatchlistExchange>("NSE");
     const [presetQuery, setPresetQuery] = useState("");
     const [presetResults, setPresetResults] = useState<WatchlistPresetCatalogEntry[]>([]);
     const [presetLoading, setPresetLoading] = useState(false);
@@ -330,6 +455,8 @@ export function WatchlistsManager({
             ),
         [createSelectedInstruments, createSymbols]
     );
+    const createNameMissing = !createName.trim();
+    const createCanSubmit = !isPending && !createNameMissing;
     const canEditSelected = Boolean(selected?.is_editable);
 
     useEffect(() => {
@@ -1085,48 +1212,41 @@ export function WatchlistsManager({
     }
 
     return (
-        <section
-            className="-mx-4 -my-6 min-h-[calc(100dvh-67px)] bg-background text-foreground min-[760px]:-mx-8 min-[760px]:-my-8 min-[980px]:-mx-10 min-[980px]:-my-10 min-[980px]:h-[calc(100vh-80px)] min-[980px]:overflow-hidden"
-            style={{ fontFamily: '"DM Sans", "Suisse Intl", Inter, ui-sans-serif, system-ui, sans-serif' }}
-        >
-            <style>{`
- @keyframes watchlist-row-fade {
- from { opacity: 0; transform: translateY(3px); }
- to { opacity: 1; transform: translateY(0); }
- }
- .watchlist-data-row { animation: watchlist-row-fade 120ms ease-out both; }
- `}</style>
-            <div className="flex min-h-0 flex-col px-4 py-5 min-[760px]:h-full min-[760px]:px-8 min-[980px]:px-10">
-                {error ? (
-                    <div className="mb-3 border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-3 py-2 text-sm text-[var(--danger)]">
-                        {error}
-                    </div>
-                ) : null}
-                {notice ? (
-                    <div className="mb-3 border-l-2 border-primary bg-[var(--accent-glow)] px-3 py-2 text-sm text-primary">
-                        {notice}
-                    </div>
-                ) : null}
+        <section className="flex min-h-0 flex-col min-[980px]:h-[calc(100dvh-8rem)] min-[980px]:overflow-hidden">
+            {error ? (
+                <div className="mb-4 shrink-0 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    {error}
+                </div>
+            ) : null}
+            {notice ? (
+                <div className="mb-4 shrink-0 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
+                    {notice}
+                </div>
+            ) : null}
 
-                <header className="mb-6 flex min-w-0 flex-col gap-3 border-b border-border pb-5 min-[760px]:mb-7 min-[760px]:flex-row min-[760px]:items-end min-[760px]:justify-between">
-                    <div className="min-w-0">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-                            Market Workspace
-                        </div>
-                        <h1 className="mt-2 text-3xl font-semibold text-foreground min-[760px]:text-5xl">Watchlists</h1>
-                    </div>
-                    <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-                        Search instruments, maintain focused symbol lists, and keep broker-native identifiers attached
-                        to every selected ticker.
-                    </p>
-                </header>
+            <div className="shrink-0">
+                <PageHeader
+                    description="Search instruments, maintain focused symbol lists, and keep broker-native identifiers attached to every selected ticker."
+                    eyebrow="Market workspace"
+                    title="Watchlists"
+                />
+            </div>
 
                 <Dialog open={showAlphaConfigPrompt} onOpenChange={setShowAlphaConfigPrompt}>
                     <DialogContent className="w-[calc(100vw-2rem)] max-w-[425px] gap-4 p-6">
                         <DialogHeader className="pr-8">
-                            <DialogTitle>Manasija Alpha API required</DialogTitle>
+                            <DialogTitle>Drishti API key required</DialogTitle>
                             <DialogDescription>
-                                Add a Manasija Alpha API key in Settings before creating watchlists.
+                                Add a Drishti API key in Settings before creating watchlists. Don&apos;t have one yet?{" "}
+                                <Link
+                                    className="font-medium text-primary underline underline-offset-2"
+                                    href={DRISHTI_API_SIGNUP_URL}
+                                    rel="noopener noreferrer"
+                                    target="_blank"
+                                >
+                                    Create one at drishti.manasija.in
+                                </Link>
+                                .
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter>
@@ -1217,191 +1337,200 @@ export function WatchlistsManager({
                         }
                     }}
                 >
-                    <DialogContent className="max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1rem)] max-w-6xl overflow-y-auto p-0 min-[760px]:w-full min-[760px]:max-h-[calc(100vh-2.5rem)]">
-                        <DialogHeader className="border-b border-border px-4 py-5 pr-16 min-[760px]:px-8">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-                                New Watchlist
-                            </div>
-                            <DialogTitle className="mt-1 text-2xl font-semibold">Create Watchlist</DialogTitle>
+                    <DialogContent
+                        className={cn(
+                            "flex w-[min(100vw-2rem,36rem)] flex-col gap-0 overflow-hidden p-0",
+                            createParsedSymbols.length
+                                ? "max-h-[min(100dvh-2rem,42rem)]"
+                                : "max-h-[min(100dvh-2rem,26rem)]"
+                        )}
+                    >
+                        <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+                            <DialogTitle>Create watchlist</DialogTitle>
+                            <DialogDescription>Name your list, add symbols, then create.</DialogDescription>
                         </DialogHeader>
 
-                        <div className="space-y-7 px-4 py-5 min-[760px]:px-8 min-[760px]:py-6">
-                            <div>
-                                <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                    Watchlist Name
+                        <div className="min-h-0 flex-1 space-y-6 overflow-x-hidden overflow-y-auto px-5 py-4">
+                            <section className="grid gap-1.5">
+                                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                    1 · Name
+                                </p>
+                                <Label className="sr-only" htmlFor="create-watchlist-name">
+                                    Name
                                 </Label>
                                 <Input
-                                    className={`${inputBase} h-12 text-lg`}
+                                    autoFocus
+                                    className="h-10"
+                                    id="create-watchlist-name"
                                     maxLength={128}
                                     onChange={(event) => setCreateName(event.target.value)}
-                                    placeholder="Name"
+                                    placeholder="e.g. Tech stocks"
                                     value={createName}
                                 />
-                            </div>
+                                {createNameMissing ? (
+                                    <p className="text-xs text-muted-foreground">Required to create the watchlist.</p>
+                                ) : null}
+                            </section>
 
-                            <div className="grid gap-8 min-[980px]:grid-cols-[minmax(0,1fr)_22rem]">
-                                <div className="min-w-0">
-                                    <div className="grid gap-4 min-[760px]:grid-cols-[1fr_8rem]">
-                                        <div className="min-w-0">
-                                            <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                                Search Symbols
-                                            </Label>
-                                            <div>
-                                                <div className="relative">
-                                                    <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
-                                                    <Input
-                                                        aria-activedescendant={
-                                                            createActiveSuggestionIndex >= 0
-                                                                ? `create-watchlist-symbol-suggestion-${createActiveSuggestionIndex}`
-                                                                : undefined
-                                                        }
-                                                        aria-autocomplete="list"
-                                                        aria-controls="create-watchlist-symbol-suggestions"
-                                                        aria-expanded={
-                                                            showCreateSuggestions && createSearch.trim()
-                                                                ? "true"
-                                                                : "false"
-                                                        }
-                                                        className={`${inputBase} h-12 pl-7 pr-9 font-mono text-base uppercase`}
-                                                        onChange={(event) =>
-                                                            setCreateSearch(event.target.value.toUpperCase())
-                                                        }
-                                                        onFocus={() => {
-                                                            if (createSuggestions.length)
-                                                                setShowCreateSuggestions(true);
-                                                        }}
-                                                        onKeyDown={handleCreateSearchKeyDown}
-                                                        placeholder="SEARCH SYMBOL, TRADING SYMBOL, COMPANY"
-                                                        role="combobox"
-                                                        value={createSearch}
-                                                    />
-                                                    {createSearchLoading ? (
-                                                        <Loader2 className="absolute right-0 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-                                                    ) : null}
-                                                </div>
-                                                {showCreateSuggestions && createSearch.trim() ? (
-                                                    <div
-                                                        className="mt-3 max-h-[28rem] w-full overflow-auto border border-border bg-popover"
-                                                        id="create-watchlist-symbol-suggestions"
-                                                        role="listbox"
-                                                    >
-                                                        {createSuggestions.map((row, index) => {
-                                                            const metadata =
-                                                                createSuggestionMetadata[
-                                                                    row.symbol.trim().toUpperCase()
-                                                                ];
-                                                            return (
-                                                                <Button
-                                                                    aria-selected={
-                                                                        index === createActiveSuggestionIndex
-                                                                    }
-                                                                    className={[
-                                                                        "h-auto w-full justify-between gap-5 rounded-none border-b border-l-2 border-border px-4 py-3 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
-                                                                        index === createActiveSuggestionIndex
-                                                                            ? "border-l-primary bg-[var(--accent-glow)] text-foreground"
-                                                                            : "border-l-transparent bg-background/70 text-foreground"
-                                                                    ].join(" ")}
-                                                                    disabled={isPending}
-                                                                    id={`create-watchlist-symbol-suggestion-${index}`}
-                                                                    key={[
-                                                                        row.symbol,
-                                                                        row.exchange,
-                                                                        row.trading_symbol,
-                                                                        row.expiry
-                                                                    ].join(":")}
-                                                                    onClick={() => addCreateSearchedSymbol(row)}
-                                                                    onMouseEnter={() =>
-                                                                        setCreateActiveSuggestionIndex(index)
-                                                                    }
-                                                                    role="option"
-                                                                    variant="ghost"
-                                                                    type="button"
-                                                                >
-                                                                    <span className="flex min-w-0 items-center gap-4">
-                                                                        {metadata?.logo ? (
-                                                                            <img
-                                                                                alt=""
-                                                                                className="size-10 shrink-0 object-contain"
-                                                                                src={metadata.logo}
-                                                                            />
-                                                                        ) : (
-                                                                            <span className="flex size-10 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
-                                                                                {row.symbol.slice(0, 2)}
-                                                                            </span>
-                                                                        )}
-                                                                        <span className="min-w-0">
-                                                                            <span className="block font-mono text-base font-semibold">
-                                                                                {row.symbol}
-                                                                            </span>
-                                                                            <span className="block truncate text-xs text-muted-foreground">
-                                                                                {[
-                                                                                    metadata?.company_name ?? row.name,
-                                                                                    row.trading_symbol,
-                                                                                    row.account_label
-                                                                                ]
-                                                                                    .filter(Boolean)
-                                                                                    .join(" / ")}
-                                                                            </span>
-                                                                        </span>
-                                                                    </span>
-                                                                    <span className="shrink-0 font-mono text-xs uppercase text-primary">
-                                                                        {[row.exchange, row.instrument_type]
-                                                                            .filter(Boolean)
-                                                                            .join(" / ")}
-                                                                    </span>
-                                                                </Button>
-                                                            );
-                                                        })}
-                                                        {!createSuggestions.length && !createSearchLoading ? (
-                                                            <div className="px-3 py-3 text-sm text-muted-foreground">
-                                                                No matching instruments found.
-                                                            </div>
-                                                        ) : null}
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                                Exchange
-                                            </Label>
-                                            <Input
-                                                className={`${inputBase} h-12 font-mono text-base uppercase`}
-                                                onChange={(event) => setExchange(event.target.value.toUpperCase())}
-                                                placeholder="NSE"
-                                                value={exchange}
-                                            />
-                                        </div>
-                                    </div>
+                            <section className="space-y-3">
+                                <div>
+                                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                        2 · Add symbols
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Optional now — you can add more after creating.
+                                    </p>
                                 </div>
 
-                                <div className="min-w-0 border-l-0 border-border min-[980px]:border-l min-[980px]:pl-8">
-                                    <div className="mb-2 flex items-center justify-between gap-3">
-                                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                            Selected Symbols
-                                        </div>
-                                        <Button
-                                            className="inline-flex items-center gap-1 border-b border-border pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70 disabled:opacity-30"
-                                            disabled={isPending}
-                                            onClick={() => createCsvInputRef.current?.click()}
-                                            size="sm"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <Upload className="size-3" />
-                                            CSV
-                                        </Button>
+                                <div className="flex min-w-0 gap-2">
+                                    <div className="relative min-w-0 flex-1">
+                                        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                                         <Input
-                                            accept=".csv,text/csv"
-                                            className="hidden"
-                                            onChange={(event) => importCreateCsv(event.target.files?.[0] ?? null)}
-                                            ref={createCsvInputRef}
-                                            type="file"
+                                            aria-activedescendant={
+                                                createActiveSuggestionIndex >= 0
+                                                    ? `create-watchlist-symbol-suggestion-${createActiveSuggestionIndex}`
+                                                    : undefined
+                                            }
+                                            aria-autocomplete="list"
+                                            aria-controls="create-watchlist-symbol-suggestions"
+                                            aria-expanded={
+                                                showCreateSuggestions && createSearch.trim() ? "true" : "false"
+                                            }
+                                            aria-label="Search companies or tickers"
+                                            className="h-10 min-w-0 pl-9 pr-9 font-mono text-sm uppercase"
+                                            id="create-watchlist-search"
+                                            inputClassName="px-0"
+                                            onChange={(event) =>
+                                                setCreateSearch(event.target.value.toUpperCase())
+                                            }
+                                            onFocus={() => {
+                                                if (createSuggestions.length) setShowCreateSuggestions(true);
+                                            }}
+                                            onKeyDown={handleCreateSearchKeyDown}
+                                            placeholder="Search companies (e.g. TCS, Reliance)"
+                                            role="combobox"
+                                            value={createSearch}
                                         />
+                                        {createSearchLoading ? (
+                                            <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                                        ) : null}
                                     </div>
-                                    <div className="min-h-72 border border-border">
+                                    <ExchangeSelect
+                                        aria-label="Exchange"
+                                        className="w-[5.75rem] shrink-0"
+                                        id="create-watchlist-exchange"
+                                        onValueChange={setExchange}
+                                        value={exchange}
+                                    />
+                                </div>
+
+                                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                                    <p className="text-xs text-muted-foreground">
+                                        ↑↓ browse results · Enter to add · Esc closes
+                                    </p>
+                                    <Button
+                                        className="h-auto px-0 text-xs"
+                                        disabled={isPending}
+                                        onClick={() => createCsvInputRef.current?.click()}
+                                        type="button"
+                                        variant="link"
+                                    >
+                                        <Upload className="size-3.5" />
+                                        Import CSV
+                                    </Button>
+                                    <Input
+                                        accept=".csv,text/csv"
+                                        className="hidden"
+                                        onChange={(event) => importCreateCsv(event.target.files?.[0] ?? null)}
+                                        ref={createCsvInputRef}
+                                        type="file"
+                                    />
+                                </div>
+
+                                {showCreateSuggestions && createSearch.trim() ? (
+                                    <div
+                                        className="max-h-48 overflow-y-auto overflow-x-hidden rounded-lg border border-border bg-popover"
+                                        id="create-watchlist-symbol-suggestions"
+                                        role="listbox"
+                                    >
+                                        {createSuggestions.map((row, index) => {
+                                            const metadata =
+                                                createSuggestionMetadata[row.symbol.trim().toUpperCase()];
+                                            return (
+                                                <Button
+                                                    aria-selected={index === createActiveSuggestionIndex}
+                                                    className={cn(
+                                                        "w-full justify-between gap-4 rounded-none border-b px-3 py-2.5 text-left whitespace-normal last:border-b-0",
+                                                        index === createActiveSuggestionIndex
+                                                            ? "bg-muted"
+                                                            : "hover:bg-muted/60"
+                                                    )}
+                                                    disabled={isPending}
+                                                    id={`create-watchlist-symbol-suggestion-${index}`}
+                                                    key={[
+                                                        row.symbol,
+                                                        row.exchange,
+                                                        row.trading_symbol,
+                                                        row.expiry
+                                                    ].join(":")}
+                                                    onClick={() => addCreateSearchedSymbol(row)}
+                                                    onMouseEnter={() => setCreateActiveSuggestionIndex(index)}
+                                                    role="option"
+                                                    size="auto"
+                                                    type="button"
+                                                    variant="ghost"
+                                                >
+                                                    <span className="flex min-w-0 items-center gap-3">
+                                                        <SymbolAvatar
+                                                            className="size-8 rounded-md"
+                                                            logo={metadata?.logo}
+                                                            symbol={row.symbol}
+                                                        />
+                                                        <span className="min-w-0">
+                                                            <span className="block font-mono text-sm font-semibold">
+                                                                {row.symbol}
+                                                            </span>
+                                                            <span className="block truncate text-xs text-muted-foreground">
+                                                                {[
+                                                                    metadata?.company_name ?? row.name,
+                                                                    row.trading_symbol,
+                                                                    row.account_label
+                                                                ]
+                                                                    .filter(Boolean)
+                                                                    .join(" · ")}
+                                                            </span>
+                                                        </span>
+                                                    </span>
+                                                    <Badge size="sm" variant="outline">
+                                                        {[row.exchange, row.instrument_type]
+                                                            .filter(Boolean)
+                                                            .join(" · ")}
+                                                    </Badge>
+                                                </Button>
+                                            );
+                                        })}
+                                        {!createSuggestions.length && !createSearchLoading ? (
+                                            <div className="px-3 py-4 text-sm text-muted-foreground">
+                                                No matching instruments on {exchange}.
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-sm font-medium">Selected</p>
+                                        <Badge
+                                            className="gap-1"
+                                            variant={createParsedSymbols.length ? "secondary" : "outline"}
+                                        >
+                                            <CandlestickChart aria-hidden className="size-3" />
+                                            {createParsedSymbols.length}
+                                        </Badge>
+                                    </div>
+                                    <div className="overflow-hidden rounded-lg border border-border">
                                         {createParsedSymbols.length ? (
-                                            <div className="max-h-[32rem] divide-y divide-border overflow-auto">
+                                            <div className="max-h-44 divide-y divide-border overflow-y-auto overflow-x-hidden">
                                                 {createSelectedInstruments.map((row) => {
                                                     const metadata =
                                                         createSelectedMetadata[row.symbol.trim().toUpperCase()] ??
@@ -1413,108 +1542,104 @@ export function WatchlistsManager({
                                                         row.symbol;
                                                     return (
                                                         <div
-                                                            className="flex items-start justify-between gap-4 px-4 py-3"
+                                                            className="flex items-center justify-between gap-3 px-3 py-2"
                                                             key={createInstrumentKey(row)}
                                                         >
-                                                            <span className="flex min-w-0 items-center gap-3">
-                                                                {metadata?.logo ? (
-                                                                    <img
-                                                                        alt=""
-                                                                        className="size-9 shrink-0 object-contain"
-                                                                        src={metadata.logo}
-                                                                    />
-                                                                ) : (
-                                                                    <span className="flex size-9 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
-                                                                        {displayName.slice(0, 2)}
+                                                            <span className="flex min-w-0 items-center gap-2.5">
+                                                                <SymbolAvatar
+                                                                    className="size-7 rounded-md"
+                                                                    logo={metadata?.logo}
+                                                                    symbol={row.symbol}
+                                                                />
+                                                                <span className="min-w-0">
+                                                                    <span className="block truncate text-sm font-medium">
+                                                                        {displayName}
                                                                     </span>
-                                                                )}
-                                                                <span className="block truncate text-sm font-semibold text-foreground">
-                                                                    {displayName}
+                                                                    <span className="block truncate font-mono text-xs text-muted-foreground">
+                                                                        {row.symbol}
+                                                                    </span>
                                                                 </span>
                                                             </span>
                                                             <Button
                                                                 aria-label={`Remove ${displayName}`}
-                                                                className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                                                                className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
                                                                 onClick={() => removeCreateSearchedSymbol(row)}
-                                                                size="icon"
+                                                                size="icon-xs"
                                                                 type="button"
                                                                 variant="ghost"
                                                             >
-                                                                <X className="size-4" />
+                                                                <X className="size-3.5" />
                                                             </Button>
                                                         </div>
                                                     );
                                                 })}
                                                 {parseSymbols(createSymbols).map((symbol) => (
                                                     <div
-                                                        className="flex items-center justify-between gap-4 px-4 py-3"
+                                                        className="flex items-center gap-2.5 px-3 py-2"
                                                         key={`csv:${symbol}`}
                                                     >
-                                                        <span className="flex min-w-0 items-center gap-3">
-                                                            <span className="flex size-9 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
-                                                                {symbol.slice(0, 2)}
-                                                            </span>
-                                                            <span className="block truncate text-sm font-semibold text-foreground">
-                                                                {symbol}
-                                                            </span>
-                                                        </span>
+                                                        <SymbolAvatar
+                                                            className="size-7 rounded-md"
+                                                            symbol={symbol}
+                                                        />
+                                                        <span className="truncate text-sm font-medium">{symbol}</span>
+                                                        <Badge className="ml-auto" variant="outline">
+                                                            CSV
+                                                        </Badge>
                                                     </div>
                                                 ))}
                                             </div>
                                         ) : (
-                                            <div className="px-4 py-12 text-sm text-muted-foreground">
-                                                Search and select symbols to seed this watchlist.
+                                            <div className="px-4 py-4 text-sm leading-relaxed text-muted-foreground">
+                                                Search for companies like RELIANCE or TCS, or import a CSV to add
+                                                multiple symbols. You can add as many as you need — duplicates are
+                                                skipped and symbols can be removed before you create.
                                             </div>
                                         )}
                                     </div>
                                 </div>
-                            </div>
+                            </section>
                         </div>
 
-                        <DialogFooter className="items-stretch justify-between gap-4 border-t border-border px-4 py-5 min-[760px]:flex-row min-[760px]:items-center min-[760px]:px-8">
-                            <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                                {createParsedSymbols.length} symbols selected
-                            </span>
-                            <div className="flex items-center justify-end gap-3">
+                        <DialogFooter className="flex-col gap-3 border-t border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
+                            {createNameMissing ? (
+                                <p className="w-full text-sm text-muted-foreground sm:mr-auto">
+                                    Enter a watchlist name to continue.
+                                </p>
+                            ) : (
+                                <p className="w-full text-sm text-muted-foreground sm:mr-auto">
+                                    Step 3 · Review and create
+                                </p>
+                            )}
+                            <div className="flex w-full shrink-0 justify-end gap-2 sm:w-auto">
                                 <Button
-                                    className="h-auto border-b border-border px-0 pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70"
                                     disabled={isPending}
                                     onClick={resetCreateModal}
-                                    size="sm"
                                     type="button"
-                                    variant="ghost"
+                                    variant="outline"
                                 >
                                     Cancel
                                 </Button>
-                                <Button
-                                    className="border-b border-primary pb-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-30"
-                                    disabled={isPending || !createName.trim()}
-                                    onClick={create}
-                                    size="sm"
-                                    type="button"
-                                    variant="ghost"
-                                >
-                                    Create
+                                <Button disabled={!createCanSubmit} onClick={create} type="button">
+                                    {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                                    Create watchlist
                                 </Button>
                             </div>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
 
-                <div className="flex min-h-0 flex-1 flex-col gap-6 min-[760px]:gap-8 min-[980px]:grid min-[980px]:grid-cols-[320px_260px_minmax(0,1fr)] min-[980px]:gap-8">
-                    <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:order-2 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
-                        <div className="mb-4 flex items-center justify-between gap-3 shrink-0">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                Your Watchlists
-                            </div>
+                <div className="flex min-h-0 flex-1 flex-col gap-6 min-[980px]:grid min-[980px]:grid-cols-[minmax(0,240px)_minmax(0,260px)_minmax(0,1fr)] min-[980px]:gap-6 min-[980px]:overflow-hidden">
+                    <aside className="flex min-h-0 flex-col gap-3 min-[980px]:order-2 min-[980px]:overflow-hidden">
+                        <div className="flex shrink-0 items-center justify-between gap-3">
+                            <h2 className={typography.small}>Your watchlists</h2>
                             <Button
                                 aria-label="Create watchlist"
-                                className="size-8 border-transparent text-primary hover:border-primary"
                                 disabled={isPending}
                                 onClick={requestCreateWatchlist}
-                                size="icon"
+                                size="icon-sm"
                                 type="button"
-                                variant="ghost"
+                                variant="outline"
                             >
                                 <Plus className="size-4" />
                             </Button>
@@ -1522,16 +1647,18 @@ export function WatchlistsManager({
 
                         <nav
                             aria-label="Watchlists"
-                            className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto pr-1 min-[760px]:max-h-80 min-[980px]:max-h-none"
+                            className="flex min-h-0 flex-col gap-2 overflow-y-auto max-[979px]:max-h-64 min-[760px]:max-[979px]:max-h-80 min-[980px]:flex-1"
                         >
                             {watchlists.map((item) => {
                                 const active = item.id === selected?.id;
                                 return (
                                     <Button
-                                        className={[
-                                            "group relative h-auto min-h-11 w-full justify-between gap-4 border-l-2 px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
-                                            active ? "border-primary bg-[var(--accent-glow)]" : "border-transparent"
-                                        ].join(" ")}
+                                        className={cn(
+                                            "w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left whitespace-normal",
+                                            active
+                                                ? "border-primary/50 bg-primary/5"
+                                                : "border-border bg-card hover:bg-muted/40"
+                                        )}
                                         key={item.id}
                                         onClick={() => {
                                             setSelectedId(item.id);
@@ -1539,146 +1666,167 @@ export function WatchlistsManager({
                                             setError("");
                                             setNotice("");
                                         }}
+                                        size="auto"
                                         variant="ghost"
                                         type="button"
                                     >
-                                        <span
-                                            className={[
-                                                "absolute inset-y-0 left-0 w-0.5 origin-top scale-y-0 bg-primary transition-transform duration-100 ease-out group-hover:scale-y-100",
-                                                active ? "scale-y-100" : ""
-                                            ].join(" ")}
-                                        />
-                                        <span className="min-w-0">
+                                        <span className="min-w-0 text-left">
                                             <span
-                                                className={
-                                                    active
-                                                        ? "block truncate text-sm font-semibold text-foreground"
-                                                        : "block truncate text-sm font-medium text-muted-foreground"
-                                                }
+                                                className={cn(
+                                                    "block truncate text-sm leading-snug",
+                                                    active ? "font-medium text-foreground" : typography.muted
+                                                )}
                                             >
                                                 {item.name}
                                             </span>
-                                            <span className="mt-0.5 block font-mono text-[11px] uppercase text-muted-foreground">
-                                                {item.items.length.toString().padStart(2, "0")} symbols
+                                            <span className={cn(typography.muted, "mt-1 block leading-snug")}>
+                                                {item.items.length} symbol{item.items.length === 1 ? "" : "s"}
                                             </span>
                                         </span>
-                                        <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                                        <span className={cn(typography.muted, "shrink-0 self-center text-xs leading-snug")}>
                                             {formatDate(item.updated_at).split(",")[0]}
                                         </span>
                                     </Button>
                                 );
                             })}
                             {!watchlists.length ? (
-                                <div className="border-l-2 border-primary px-3 py-4 text-sm text-muted-foreground">
-                                    No watchlists yet.
-                                </div>
+                                <Card className="border-dashed shadow-none">
+                                    <Empty className="py-8">
+                                        <EmptyHeader>
+                                            <EmptyTitle className="text-base">No watchlists yet</EmptyTitle>
+                                            <EmptyDescription>
+                                                Create a list or add an index preset to get started.
+                                            </EmptyDescription>
+                                        </EmptyHeader>
+                                    </Empty>
+                                </Card>
                             ) : null}
                         </nav>
                     </aside>
 
-                    <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border pb-6 min-[980px]:order-1 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
-                        <div className="flex min-h-0 flex-1 flex-col border-t border-border pt-5 min-[980px]:border-t-0 min-[980px]:pt-0">
-                            <div className="mb-2 shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                Index Presets
-                            </div>
-                            <Input
-                                className={`${inputBase} h-9 text-xs`}
-                                onChange={(event) => setPresetQuery(event.target.value)}
-                                placeholder="Search Nifty indices"
-                                value={presetQuery}
-                            />
-                            <div
-                                className="mt-3 max-h-64 min-h-0 overflow-y-auto pr-1 min-[760px]:max-h-80 min-[980px]:max-h-none"
-                                onScroll={handlePresetScroll}
-                                ref={presetListRef}
-                            >
-                                <div className="space-y-2">
-                                    {presetResults.map((item) => (
-                                        <div
-                                            className="border-l-2 border-transparent px-3 py-2 transition-colors duration-100 ease-out hover:border-primary hover:bg-[var(--accent-glow)]"
-                                            key={item.id}
-                                        >
-                                            <div className="flex flex-col gap-2">
-                                                <div className="break-words text-sm font-medium leading-5 text-foreground">
-                                                    {item.name}
-                                                </div>
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                                                            {[
-                                                                item.trading_index_name,
-                                                                `${item.constituent_count} symbols`,
-                                                                item.sync_status
-                                                            ]
-                                                                .filter(Boolean)
-                                                                .join(" / ")}
-                                                        </div>
-                                                    </div>
-                                                    <Button
-                                                        className="shrink-0 border-b border-primary pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-opacity duration-100 ease-out hover:opacity-70 disabled:cursor-default disabled:opacity-40"
-                                                        disabled={isPending || item.is_added}
-                                                        onClick={() => addPreset(item)}
-                                                        size="sm"
-                                                        type="button"
-                                                        variant="ghost"
-                                                    >
-                                                        {item.is_added ? "Added" : "Add"}
-                                                    </Button>
-                                                </div>
+                    <aside className="flex min-h-0 flex-col gap-3 min-[980px]:order-1 min-[980px]:overflow-hidden">
+                        <h2 className={cn(typography.small, "shrink-0")}>Index presets</h2>
+                        <Input
+                            className="h-9 shrink-0"
+                            onChange={(event) => setPresetQuery(event.target.value)}
+                            placeholder="Search Nifty indices"
+                            value={presetQuery}
+                        />
+                        <div
+                            className="min-h-0 space-y-2 overflow-y-auto max-[979px]:max-h-64 min-[760px]:max-[979px]:max-h-80 min-[980px]:flex-1"
+                            onScroll={handlePresetScroll}
+                            ref={presetListRef}
+                        >
+                            {presetResults.map((item) => (
+                                <Card className="shadow-none" key={item.id}>
+                                    <div className="flex items-start justify-between gap-3 p-3">
+                                        <div className="min-w-0 flex-1">
+                                            <p className={cn(typography.small, "break-words")}>{item.name}</p>
+                                            <div className="mt-2">
+                                                <span
+                                                    className={cn(
+                                                        typography.muted,
+                                                        "inline-flex items-center gap-1 tabular-nums"
+                                                    )}
+                                                >
+                                                    <CandlestickChart aria-hidden className="size-3.5 shrink-0" />
+                                                    {item.constituent_count} symbol
+                                                    {item.constituent_count === 1 ? "" : "s"}
+                                                </span>
                                             </div>
                                         </div>
-                                    ))}
+                                        <Tooltip>
+                                                <TooltipTrigger
+                                                    render={
+                                                        item.is_added ? (
+                                                            <span className="inline-flex">
+                                                                <Button
+                                                                    disabled
+                                                                    size="icon-sm"
+                                                                    type="button"
+                                                                    variant="secondary"
+                                                                >
+                                                                    <Minus className="size-4" />
+                                                                </Button>
+                                                            </span>
+                                                        ) : (
+                                                            <Button
+                                                                disabled={isPending}
+                                                                onClick={() => addPreset(item)}
+                                                                size="icon-sm"
+                                                                type="button"
+                                                                variant="outline"
+                                                            >
+                                                                <Plus className="size-4" />
+                                                            </Button>
+                                                        )
+                                                    }
+                                                />
+                                                <TooltipPopup side="left">
+                                                    {item.is_added
+                                                        ? "Already in your watchlists"
+                                                        : "Add this index preset to your watchlists"}
+                                                </TooltipPopup>
+                                            </Tooltip>
+                                    </div>
+                                </Card>
+                            ))}
+                            {presetLoadingMore ? (
+                                <div className={cn(typography.muted, "flex items-center gap-2 px-1 py-2")}>
+                                    <Loader2 className="size-3.5 animate-spin" />
+                                    Loading more presets
                                 </div>
-                                {presetLoadingMore ? (
-                                    <div className="flex items-center gap-2 px-3 py-3 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                                        <Loader2 className="size-3 animate-spin" />
-                                        Loading more presets
-                                    </div>
-                                ) : null}
-                                {!presetResults.length ? (
-                                    <div className="px-3 py-3 text-sm text-muted-foreground">
-                                        {presetLoading
-                                            ? "Loading preset indices..."
-                                            : "No matching preset indices found."}
-                                    </div>
-                                ) : null}
-                            </div>
+                            ) : null}
+                            {!presetResults.length ? (
+                                <Card className="border-dashed shadow-none">
+                                    <Empty className="py-8">
+                                        <EmptyHeader>
+                                            <EmptyTitle className="text-base">
+                                                {presetLoading ? "Loading presets" : "No presets found"}
+                                            </EmptyTitle>
+                                            <EmptyDescription>
+                                                {presetLoading
+                                                    ? "Fetching index catalog…"
+                                                    : "Try a different search term."}
+                                            </EmptyDescription>
+                                        </EmptyHeader>
+                                    </Empty>
+                                </Card>
+                            ) : null}
                         </div>
                     </aside>
 
-                    <main className="flex min-h-0 min-w-0 flex-1 flex-col min-[980px]:order-3">
+                    <main className="flex min-h-0 min-w-0 flex-1 flex-col min-[980px]:order-3 min-[980px]:overflow-hidden">
                         {selected ? (
-                            <>
-                                <div className="mb-6 flex shrink-0 flex-col gap-4 border-b border-border pb-5 min-[760px]:mb-7 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between min-[760px]:border-b-0">
-                                    <div className="min-w-0 flex-1">
+                            <div className="flex min-h-0 flex-1 flex-col gap-4 min-[980px]:overflow-hidden">
+                                <CardFrame className="shrink-0">
+                                    <CardFrameHeader>
                                         {editingName ? (
-                                            <div className="flex max-w-2xl items-end gap-3">
+                                            <div className="col-span-2 flex w-full max-w-2xl items-center gap-2">
                                                 <Input
-                                                    className={`${inputBase} h-11 text-2xl font-semibold`}
+                                                    className="h-10 text-lg font-semibold"
                                                     maxLength={128}
                                                     onChange={(event) => setDraftName(event.target.value)}
                                                     value={draftName}
                                                 />
                                                 <Button
                                                     aria-label="Save watchlist name"
-                                                    className="size-9 text-primary hover:bg-[var(--accent-glow)]"
                                                     disabled={isPending || !draftName.trim()}
                                                     onClick={saveName}
-                                                    size="icon"
+                                                    size="icon-sm"
                                                     type="button"
-                                                    variant="ghost"
+                                                    variant="outline"
                                                 >
                                                     <Check className="size-4" />
                                                 </Button>
                                                 <Button
                                                     aria-label="Cancel rename"
-                                                    className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)]"
                                                     disabled={isPending}
                                                     onClick={() => {
                                                         setDraftName(selected.name);
                                                         setEditingName(false);
                                                     }}
-                                                    size="icon"
+                                                    size="icon-sm"
                                                     type="button"
                                                     variant="ghost"
                                                 >
@@ -1687,94 +1835,101 @@ export function WatchlistsManager({
                                             </div>
                                         ) : (
                                             <>
-                                                <div className="flex min-w-0 flex-wrap items-center gap-3">
-                                                    <h2 className="min-w-0 break-words text-2xl font-semibold text-foreground min-[760px]:truncate min-[760px]:text-4xl">
-                                                        {selected.name}
-                                                    </h2>
+                                                <CardFrameTitle className={cn(typography.h3, "flex flex-wrap items-center gap-2")}>
+                                                    <span className="min-w-0 break-words">{selected.name}</span>
                                                     {selected.kind === "preset" ? (
-                                                        <span className="border border-primary/30 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
-                                                            Preset
-                                                        </span>
+                                                        <Badge variant="outline">Preset</Badge>
                                                     ) : null}
-                                                </div>
-                                                <div className="mt-2 font-mono text-xs uppercase text-muted-foreground">
-                                                    {selected.items.length} symbols / updated{" "}
-                                                    {formatDate(selected.updated_at)} / live {liveState}
-                                                </div>
-                                                {selected.kind === "preset" ? (
-                                                    <div className="mt-2 text-xs text-muted-foreground">
-                                                        System-managed Nifty index constituents. This watchlist is
-                                                        read-only and refreshes daily in the background.
-                                                    </div>
-                                                ) : null}
+                                                    <Badge variant={liveStateBadgeVariant(liveState)}>
+                                                        <span
+                                                            aria-hidden="true"
+                                                            className={cn(
+                                                                "size-1.5 rounded-full",
+                                                                liveState === "connected"
+                                                                    ? "bg-emerald-500"
+                                                                    : liveState === "connecting"
+                                                                      ? "bg-amber-500"
+                                                                      : liveState === "error"
+                                                                        ? "bg-red-500"
+                                                                        : "bg-muted-foreground/64"
+                                                            )}
+                                                        />
+                                                        {liveStateLabel(liveState)}
+                                                    </Badge>
+                                                </CardFrameTitle>
+                                                <CardFrameDescription>
+                                                    {selected.items.length} symbol
+                                                    {selected.items.length === 1 ? "" : "s"}
+                                                </CardFrameDescription>
                                             </>
                                         )}
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        {selected.kind === "preset" ? (
-                                            <Button
-                                                aria-label="Refresh preset watchlist"
-                                                className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-primary"
-                                                disabled={isPending}
-                                                onClick={refreshSelectedPreset}
-                                                size="icon"
-                                                type="button"
-                                                variant="ghost"
-                                            >
-                                                <RefreshCw className="size-4" />
-                                            </Button>
-                                        ) : null}
-                                        {canEditSelected ? (
-                                            <Button
-                                                aria-label="Rename watchlist"
-                                                className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-primary"
-                                                disabled={isPending}
-                                                onClick={() => {
-                                                    setDraftName(selected.name);
-                                                    setEditingName(true);
-                                                }}
-                                                size="icon"
-                                                type="button"
-                                                variant="ghost"
-                                            >
-                                                <Pencil className="size-4" />
-                                            </Button>
-                                        ) : null}
-                                        <Button
-                                            aria-label="Delete watchlist"
-                                            className="size-9 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-destructive"
-                                            disabled={isPending}
-                                            onClick={() => setConfirmDelete(true)}
-                                            size="icon"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            <Trash2 className="size-4" />
-                                        </Button>
-                                    </div>
-                                </div>
+                                        <CardFrameAction>
+                                            <div className="flex items-center gap-1">
+                                                {selected.kind === "preset" ? (
+                                                    <Button
+                                                        aria-label="Refresh preset watchlist"
+                                                        disabled={isPending}
+                                                        onClick={refreshSelectedPreset}
+                                                        size="icon-sm"
+                                                        type="button"
+                                                        variant="ghost"
+                                                    >
+                                                        <RefreshCw className="size-4" />
+                                                    </Button>
+                                                ) : null}
+                                                {canEditSelected ? (
+                                                    <Button
+                                                        aria-label="Rename watchlist"
+                                                        disabled={isPending}
+                                                        onClick={() => {
+                                                            setDraftName(selected.name);
+                                                            setEditingName(true);
+                                                        }}
+                                                        size="icon-sm"
+                                                        type="button"
+                                                        variant="ghost"
+                                                    >
+                                                        <Pencil className="size-4" />
+                                                    </Button>
+                                                ) : null}
+                                                <Button
+                                                    aria-label="Delete watchlist"
+                                                    disabled={isPending}
+                                                    onClick={() => setConfirmDelete(true)}
+                                                    size="icon-sm"
+                                                    type="button"
+                                                    variant="ghost"
+                                                >
+                                                    <Trash2 className="size-4" />
+                                                </Button>
+                                            </div>
+                                        </CardFrameAction>
+                                    </CardFrameHeader>
+                                </CardFrame>
 
                                 {canEditSelected ? (
-                                    <div className="mb-7 shrink-0">
-                                        <div className="mb-3 flex flex-col gap-3 min-[760px]:flex-row min-[760px]:items-end">
-                                            <div className="min-w-0 flex-1">
-                                                <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                                    Add Symbol
+                                    <Card className="shrink-0 shadow-none">
+                                        <div className="grid gap-4 p-4 min-[760px]:grid-cols-[minmax(0,1fr)_5.5rem_auto]">
+                                            <div className="grid gap-1.5">
+                                                <Label className="text-sm font-medium" htmlFor="watchlist-symbol-search">
+                                                    Add symbol
                                                 </Label>
                                                 <div className="relative" ref={searchWrapRef}>
-                                                    <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
+                                                    <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                                                     <Input
-                                                        className={`${inputBase} h-11 pl-7 pr-9 font-mono text-sm uppercase`}
                                                         aria-activedescendant={
                                                             activeSuggestionIndex >= 0
                                                                 ? `watchlist-symbol-suggestion-${activeSuggestionIndex}`
                                                                 : undefined
                                                         }
                                                         aria-autocomplete="list"
+                                                        aria-controls="watchlist-symbol-suggestions"
                                                         aria-expanded={
                                                             showSuggestions && symbolSearch.trim() ? "true" : "false"
                                                         }
-                                                        aria-controls="watchlist-symbol-suggestions"
+                                                        className="h-10 pl-9 pr-9 font-mono text-sm uppercase"
+                                                        id="watchlist-symbol-search"
+                                                        inputClassName="px-0"
                                                         onChange={(event) =>
                                                             setSymbolSearch(event.target.value.toUpperCase())
                                                         }
@@ -1782,16 +1937,16 @@ export function WatchlistsManager({
                                                             if (suggestions.length) setShowSuggestions(true);
                                                         }}
                                                         onKeyDown={handleSearchKeyDown}
-                                                        placeholder="SEARCH SYMBOL, TRADING SYMBOL, COMPANY"
+                                                        placeholder="Search symbol or company"
                                                         role="combobox"
                                                         value={symbolSearch}
                                                     />
                                                     {searchLoading ? (
-                                                        <Loader2 className="absolute right-0 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                                                        <Loader2 className="absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
                                                     ) : null}
                                                     {showSuggestions && symbolSearch.trim() ? (
                                                         <div
-                                                            className="absolute z-20 mt-1 max-h-72 w-full overflow-auto border border-border bg-popover"
+                                                            className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover shadow-md"
                                                             id="watchlist-symbol-suggestions"
                                                             role="listbox"
                                                         >
@@ -1801,12 +1956,12 @@ export function WatchlistsManager({
                                                                 return (
                                                                     <Button
                                                                         aria-selected={index === activeSuggestionIndex}
-                                                                        className={[
-                                                                            "h-auto w-full justify-between gap-4 rounded-none border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
+                                                                        className={cn(
+                                                                            "w-full justify-between gap-4 rounded-none border-b px-3 py-2.5 text-left whitespace-normal last:border-b-0",
                                                                             index === activeSuggestionIndex
-                                                                                ? "border-l-primary bg-[var(--accent-glow)] text-foreground"
-                                                                                : "border-l-transparent bg-background/70 text-foreground"
-                                                                        ].join(" ")}
+                                                                                ? "bg-muted"
+                                                                                : "hover:bg-muted/60"
+                                                                        )}
                                                                         disabled={isPending}
                                                                         id={`watchlist-symbol-suggestion-${index}`}
                                                                         key={[
@@ -1820,21 +1975,16 @@ export function WatchlistsManager({
                                                                             setActiveSuggestionIndex(index)
                                                                         }
                                                                         role="option"
-                                                                        variant="ghost"
+                                                                        size="auto"
                                                                         type="button"
+                                                                        variant="ghost"
                                                                     >
                                                                         <span className="flex min-w-0 items-center gap-3">
-                                                                            {metadata?.logo ? (
-                                                                                <img
-                                                                                    alt=""
-                                                                                    className="size-8 shrink-0 object-contain"
-                                                                                    src={metadata.logo}
-                                                                                />
-                                                                            ) : (
-                                                                                <span className="flex size-8 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
-                                                                                    {row.symbol.slice(0, 2)}
-                                                                                </span>
-                                                                            )}
+                                                                            <SymbolAvatar
+                                                                                className="size-8 rounded-md"
+                                                                                logo={metadata?.logo}
+                                                                                symbol={row.symbol}
+                                                                            />
                                                                             <span className="min-w-0">
                                                                                 <span className="block font-mono text-sm font-semibold">
                                                                                     {row.symbol}
@@ -1847,15 +1997,15 @@ export function WatchlistsManager({
                                                                                         row.account_label
                                                                                     ]
                                                                                         .filter(Boolean)
-                                                                                        .join(" / ")}
+                                                                                        .join(" · ")}
                                                                                 </span>
                                                                             </span>
                                                                         </span>
-                                                                        <span className="shrink-0 font-mono text-xs uppercase text-primary">
+                                                                        <Badge size="sm" variant="outline">
                                                                             {[row.exchange, row.instrument_type]
                                                                                 .filter(Boolean)
-                                                                                .join(" / ")}
-                                                                        </span>
+                                                                                .join(" · ")}
+                                                                        </Badge>
                                                                     </Button>
                                                                 );
                                                             })}
@@ -1868,31 +2018,27 @@ export function WatchlistsManager({
                                                     ) : null}
                                                 </div>
                                             </div>
-                                            <div className="w-full min-[760px]:w-32">
-                                                <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                                            <div className="grid gap-1.5">
+                                                <Label className="text-sm font-medium" htmlFor="watchlist-exchange">
                                                     Exchange
                                                 </Label>
-                                                <Input
-                                                    className={`${inputBase} h-11 font-mono text-sm uppercase`}
-                                                    onChange={(event) => setExchange(event.target.value.toUpperCase())}
-                                                    placeholder="NSE"
+                                                <ExchangeSelect
+                                                    id="watchlist-exchange"
+                                                    onValueChange={setExchange}
                                                     value={exchange}
                                                 />
                                             </div>
-                                            <div className="w-full min-[760px]:w-auto">
-                                                <Label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                                                    CSV
-                                                </Label>
+                                            <div className="grid gap-1.5">
+                                                <Label className="text-sm font-medium">Import</Label>
                                                 <Button
-                                                    className="inline-flex h-11 items-center gap-2 border-b border-border pb-1 font-mono text-xs uppercase text-muted-foreground transition-opacity duration-100 ease-out hover:opacity-70 disabled:opacity-30"
+                                                    className="h-10 w-full"
                                                     disabled={isPending}
                                                     onClick={() => addCsvInputRef.current?.click()}
-                                                    size="sm"
                                                     type="button"
-                                                    variant="ghost"
+                                                    variant="outline"
                                                 >
                                                     <Upload className="size-4" />
-                                                    Import CSV
+                                                    CSV
                                                 </Button>
                                                 <Input
                                                     accept=".csv,text/csv"
@@ -1905,264 +2051,309 @@ export function WatchlistsManager({
                                                 />
                                             </div>
                                         </div>
-                                    </div>
+                                    </Card>
                                 ) : null}
 
-                                <div className="hidden min-h-0 flex-1 overflow-auto min-[760px]:block">
-                                    <Table className="min-w-[1040px] border-collapse text-left text-sm">
-                                        <TableHeader>
-                                            <TableRow className="border-y border-border text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                                                <TableHead className="py-2 pr-4 font-semibold">Ticker</TableHead>
-                                                <TableHead className="px-4 py-2 font-semibold">Company</TableHead>
-                                                <TableHead className="px-4 py-2 font-semibold">Exchange</TableHead>
-                                                <TableHead className="px-4 py-2 text-right font-semibold">
-                                                    Live price
-                                                </TableHead>
-                                                <TableHead className="px-4 py-2 text-right font-semibold">
-                                                    Change
-                                                </TableHead>
-                                                <TableHead className="px-4 py-2 font-semibold">Sector</TableHead>
-                                                <TableHead className="px-4 py-2 text-right font-semibold">
-                                                    Market cap
-                                                </TableHead>
-                                                <TableHead className="px-4 py-2 text-right font-semibold">
-                                                    Order
-                                                </TableHead>
-                                                <TableHead className="px-4 py-2 font-semibold">Added</TableHead>
-                                                <TableHead className="w-20 py-2 pl-4 text-right font-semibold">
-                                                    Actions
-                                                </TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {selected.items.map((item, index) => {
-                                                const metadata = watchlistMetadata[item.symbol.trim().toUpperCase()];
-                                                const price = livePrices[livePriceKey({ symbol: item.symbol })];
-                                                const change = toNumber(price?.change_pct ?? price?.day_change_perc);
-                                                return (
-                                                    <TableRow
-                                                        className="watchlist-data-row group border-b border-border text-foreground odd:bg-muted/40 hover:bg-[var(--bg-hover)]"
-                                                        key={item.id}
-                                                        style={{ animationDelay: `${Math.min(index * 18, 120)}ms` }}
+                                {selected.items.length ? (
+                                    <CardFrame className="watchlist-table-scroll hidden min-h-0 min-[760px]:flex min-[760px]:flex-1 min-[760px]:flex-col min-[760px]:overflow-hidden">
+                                        <div className="flex min-h-0 flex-1 flex-col overflow-x-auto">
+                                            <div className="flex min-h-0 min-w-[880px] flex-1 flex-col">
+                                                <div className="shrink-0 border-b border-border/60 bg-muted/25">
+                                                    <Table
+                                                        className="table-fixed"
+                                                        variant="card"
+                                                        render={<div className="w-full" />}
                                                     >
-                                                        <TableCell className="py-3 pr-4">
-                                                            <div className="flex items-center gap-3">
-                                                                {metadata?.logo ? (
-                                                                    <img
-                                                                        alt=""
-                                                                        className="size-8 shrink-0 object-contain"
-                                                                        src={metadata.logo}
+                                                        <WatchlistTableColGroup hasActions={canEditSelected} />
+                                                        <TableHeader className="[&_tr]:border-b-0">
+                                                            <TableRow>
+                                                                <TableHead>Ticker</TableHead>
+                                                                <TableHead>Company</TableHead>
+                                                                <TableHead>Exchange</TableHead>
+                                                                <TableHead className="text-right">Price</TableHead>
+                                                                <TableHead className="text-right">Change</TableHead>
+                                                                <TableHead>Sector</TableHead>
+                                                                <TableHead className="text-right">Mkt cap</TableHead>
+                                                                {canEditSelected ? (
+                                                                    <TableHead className="text-right">
+                                                                        <span className="sr-only">Actions</span>
+                                                                    </TableHead>
+                                                                ) : null}
+                                                            </TableRow>
+                                                        </TableHeader>
+                                                    </Table>
+                                                </div>
+                                                <ScrollArea className="min-h-0 flex-1" scrollbarGutter>
+                                                    <Table className="table-fixed" variant="card">
+                                                        <WatchlistTableColGroup hasActions={canEditSelected} />
+                                                        <TableBody>
+                                                {selected.items.map((item) => {
+                                                    const metadata =
+                                                        watchlistMetadata[item.symbol.trim().toUpperCase()];
+                                                    const price = livePrices[livePriceKey({ symbol: item.symbol })];
+                                                    const change = toNumber(
+                                                        price?.change_pct ?? price?.day_change_perc
+                                                    );
+                                                    const priceText = livePriceLabel(price);
+                                                    const priceUnavailable =
+                                                        priceText === "—" && Boolean(price?.unavailable_reason);
+                                                    return (
+                                                        <TableRow className="group" key={item.id}>
+                                                            <TableCell className="font-medium">
+                                                                <div className="flex items-center gap-3">
+                                                                    <SymbolAvatar
+                                                                        className="size-8 rounded-md"
+                                                                        logo={metadata?.logo}
+                                                                        symbol={item.symbol}
                                                                     />
+                                                                    <div className="min-w-0">
+                                                                        <div className="font-mono text-sm font-semibold">
+                                                                            {item.symbol}
+                                                                        </div>
+                                                                        {metadata?.scrip_code ? (
+                                                                            <div className="text-xs text-muted-foreground">
+                                                                                BSE {metadata.scrip_code}
+                                                                            </div>
+                                                                        ) : null}
+                                                                    </div>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className="max-w-[240px]">
+                                                                <div className="truncate font-medium">
+                                                                    {metadata?.company_name ?? "—"}
+                                                                </div>
+                                                                <div className="truncate text-xs text-muted-foreground">
+                                                                    {metadata?.basic_industry ??
+                                                                        metadata?.theme ??
+                                                                        "—"}
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className="text-muted-foreground">
+                                                                {item.exchange ?? "—"}
+                                                            </TableCell>
+                                                            <TableCell className="text-right tabular-nums">
+                                                                {priceUnavailable ? (
+                                                                    <Badge
+                                                                        size="sm"
+                                                                        title={price?.unavailable_reason ?? undefined}
+                                                                        variant="outline"
+                                                                    >
+                                                                        Unavailable
+                                                                    </Badge>
                                                                 ) : (
-                                                                    <span className="flex size-8 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
-                                                                        {item.symbol.slice(0, 2)}
+                                                                    <span
+                                                                        className="font-semibold"
+                                                                        title={price?.unavailable_reason ?? undefined}
+                                                                    >
+                                                                        {priceText}
                                                                     </span>
                                                                 )}
-                                                                <div className="min-w-0">
-                                                                    <div className="font-mono text-[15px] font-semibold text-foreground">
-                                                                        {item.symbol}
-                                                                    </div>
-                                                                    {metadata?.scrip_code ? (
-                                                                        <div className="font-mono text-[10px] uppercase text-muted-foreground">
-                                                                            BSE {metadata.scrip_code}
-                                                                        </div>
-                                                                    ) : null}
+                                                            </TableCell>
+                                                            <TableCell
+                                                                className={cn(
+                                                                    "text-right tabular-nums",
+                                                                    change === null
+                                                                        ? "text-muted-foreground"
+                                                                        : change >= 0
+                                                                          ? "text-[var(--success)]"
+                                                                          : "text-[var(--danger)]"
+                                                                )}
+                                                            >
+                                                                {formatLiveChange(change)}
+                                                            </TableCell>
+                                                            <TableCell className="max-w-[200px]">
+                                                                <div className="truncate">
+                                                                    {metadata?.sector ?? "—"}
                                                                 </div>
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell className="max-w-[260px] px-4 py-3">
-                                                            <div className="truncate text-sm font-medium text-foreground">
-                                                                {metadata?.company_name ?? "-"}
-                                                            </div>
-                                                            <div className="truncate text-xs text-muted-foreground">
-                                                                {metadata?.basic_industry ?? metadata?.theme ?? ""}
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">
-                                                            {item.exchange ?? "-"}
-                                                        </TableCell>
-                                                        <TableCell className="px-4 py-3 text-right font-mono text-sm font-semibold text-foreground">
-                                                            <span title={price?.unavailable_reason || undefined}>
-                                                                {livePriceLabel(price)}
-                                                            </span>
-                                                        </TableCell>
-                                                        <TableCell
-                                                            className={`px-4 py-3 text-right font-mono text-xs ${
-                                                                change === null
-                                                                    ? "text-muted-foreground"
-                                                                    : change >= 0
-                                                                      ? "text-[var(--success)]"
-                                                                      : "text-[var(--danger)]"
-                                                            }`}
-                                                        >
-                                                            {formatLiveChange(change)}
-                                                        </TableCell>
-                                                        <TableCell className="max-w-[220px] px-4 py-3">
-                                                            <div className="truncate text-xs font-medium text-foreground">
-                                                                {metadata?.sector ?? "-"}
-                                                            </div>
-                                                            <div className="truncate text-xs text-muted-foreground">
-                                                                {metadata?.industry ??
-                                                                    metadata?.macro_economic_indicator ??
-                                                                    ""}
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
-                                                            {formatMarketCap(metadata?.market_cap ?? null)}
-                                                        </TableCell>
-                                                        <TableCell className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
-                                                            {item.sort_order + 1}
-                                                        </TableCell>
-                                                        <TableCell className="px-4 py-3 font-mono text-xs uppercase text-muted-foreground">
-                                                            {formatDate(item.created_at)}
-                                                        </TableCell>
-                                                        <TableCell className="w-20 py-3 pl-4 text-right">
+                                                                <div className="truncate text-xs text-muted-foreground">
+                                                                    {metadata?.industry ??
+                                                                        metadata?.macro_economic_indicator ??
+                                                                        ""}
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className="text-right tabular-nums text-muted-foreground">
+                                                                {formatMarketCap(metadata?.market_cap ?? null)}
+                                                            </TableCell>
                                                             {canEditSelected ? (
-                                                                <Button
-                                                                    aria-label={`Remove ${item.symbol}`}
-                                                                    className="size-8 text-muted-foreground opacity-0 transition-all duration-100 ease-out hover:bg-[var(--accent-glow)] hover:text-destructive focus:opacity-100 group-hover:opacity-100"
-                                                                    disabled={isPending}
-                                                                    onClick={() =>
-                                                                        removeSymbol(item.symbol, item.exchange)
-                                                                    }
-                                                                    size="icon"
-                                                                    type="button"
-                                                                    variant="ghost"
-                                                                >
-                                                                    <Trash2 className="size-4" />
-                                                                </Button>
+                                                                <TableCell className="text-right">
+                                                                    <Button
+                                                                        aria-label={`Remove ${item.symbol}`}
+                                                                        className="opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                                                                        disabled={isPending}
+                                                                        onClick={() =>
+                                                                            removeSymbol(item.symbol, item.exchange)
+                                                                        }
+                                                                        size="icon-sm"
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                    >
+                                                                        <Trash2 className="size-4" />
+                                                                    </Button>
+                                                                </TableCell>
                                                             ) : null}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                );
-                                            })}
-                                        </TableBody>
-                                    </Table>
-                                </div>
-                                <div className="grid gap-3 min-[760px]:hidden">
-                                    {selected.items.map((item, index) => {
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                            </TableBody>
+                                            <TableFooter>
+                                                <TableRow>
+                                                    <TableCell colSpan={canEditSelected ? 8 : 7}>
+                                                        {selected.items.length} symbol
+                                                        {selected.items.length === 1 ? "" : "s"} in this watchlist
+                                                    </TableCell>
+                                                </TableRow>
+                                            </TableFooter>
+                                        </Table>
+                                                </ScrollArea>
+                                            </div>
+                                        </div>
+                                    </CardFrame>
+                                ) : (
+                                    <Card className="hidden min-h-[280px] shadow-none min-[760px]:flex">
+                                        <Empty className="py-16">
+                                            <EmptyHeader>
+                                                <EmptyMedia variant="icon">
+                                                    <Search />
+                                                </EmptyMedia>
+                                                <EmptyTitle>No symbols yet</EmptyTitle>
+                                                <EmptyDescription>
+                                                    {canEditSelected
+                                                        ? "Search above or import a CSV to add your first symbol."
+                                                        : "This preset has no constituents yet. Try refreshing the watchlist."}
+                                                </EmptyDescription>
+                                            </EmptyHeader>
+                                        </Empty>
+                                    </Card>
+                                )}
+
+                                <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto min-[760px]:hidden">
+                                    {selected.items.map((item) => {
                                         const metadata = watchlistMetadata[item.symbol.trim().toUpperCase()];
-                                        const company = metadata?.company_name ?? "-";
+                                        const company = metadata?.company_name ?? "—";
                                         const price = livePrices[livePriceKey({ symbol: item.symbol })];
                                         const change = toNumber(price?.change_pct ?? price?.day_change_perc);
+                                        const priceText = livePriceLabel(price);
                                         return (
-                                            <article
-                                                className="watchlist-data-row border border-border bg-card p-3"
-                                                key={item.id}
-                                                style={{ animationDelay: `${Math.min(index * 18, 120)}ms` }}
-                                            >
-                                                <div className="flex min-w-0 items-start justify-between gap-3">
-                                                    <div className="flex min-w-0 items-start gap-3">
-                                                        {metadata?.logo ? (
-                                                            <img
-                                                                alt=""
-                                                                className="size-9 shrink-0 object-contain"
-                                                                src={metadata.logo}
+                                            <Card className="shadow-none" key={item.id}>
+                                                <div className="p-4">
+                                                    <div className="flex min-w-0 items-start justify-between gap-3">
+                                                        <div className="flex min-w-0 items-start gap-3">
+                                                            <SymbolAvatar
+                                                                className="size-9 rounded-md"
+                                                                logo={metadata?.logo}
+                                                                symbol={item.symbol}
                                                             />
-                                                        ) : (
-                                                            <span className="flex size-9 shrink-0 items-center justify-center font-mono text-[10px] font-semibold text-muted-foreground">
-                                                                {item.symbol.slice(0, 2)}
-                                                            </span>
-                                                        )}
-                                                        <div className="min-w-0">
-                                                            <div className="font-mono text-base font-semibold text-foreground">
-                                                                {item.symbol}
-                                                            </div>
-                                                            <div className="mt-1 line-clamp-2 text-sm font-medium leading-5 text-foreground">
-                                                                {company}
-                                                            </div>
-                                                            <div className="mt-1 font-mono text-[11px] uppercase text-muted-foreground">
-                                                                {[
-                                                                    item.exchange ?? "-",
-                                                                    metadata?.sector ?? metadata?.industry
-                                                                ]
-                                                                    .filter(Boolean)
-                                                                    .join(" / ")}
+                                                            <div className="min-w-0">
+                                                                <div className="font-mono text-base font-semibold">
+                                                                    {item.symbol}
+                                                                </div>
+                                                                <div className="mt-1 line-clamp-2 text-sm font-medium">
+                                                                    {company}
+                                                                </div>
+                                                                <p className={cn(typography.muted, "mt-1")}>
+                                                                    {[item.exchange, metadata?.sector]
+                                                                        .filter(Boolean)
+                                                                        .join(" · ") || "—"}
+                                                                </p>
                                                             </div>
                                                         </div>
+                                                        {canEditSelected ? (
+                                                            <Button
+                                                                aria-label={`Remove ${item.symbol}`}
+                                                                disabled={isPending}
+                                                                onClick={() =>
+                                                                    removeSymbol(item.symbol, item.exchange)
+                                                                }
+                                                                size="icon-sm"
+                                                                type="button"
+                                                                variant="ghost"
+                                                            >
+                                                                <Trash2 className="size-4" />
+                                                            </Button>
+                                                        ) : null}
                                                     </div>
-                                                    {canEditSelected ? (
-                                                        <Button
-                                                            aria-label={`Remove ${item.symbol}`}
-                                                            className="size-8 shrink-0 text-muted-foreground hover:bg-[var(--accent-glow)] hover:text-destructive"
-                                                            disabled={isPending}
-                                                            onClick={() => removeSymbol(item.symbol, item.exchange)}
-                                                            size="icon"
-                                                            type="button"
-                                                            variant="ghost"
-                                                        >
-                                                            <Trash2 className="size-4" />
-                                                        </Button>
-                                                    ) : null}
+                                                    <dl className="mt-4 grid grid-cols-2 gap-3 border-t pt-4">
+                                                        <div>
+                                                            <dt className={typography.muted}>Price</dt>
+                                                            <dd className="mt-1 font-semibold tabular-nums">
+                                                                {priceText}
+                                                            </dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className={typography.muted}>Change</dt>
+                                                            <dd
+                                                                className={cn(
+                                                                    "mt-1 font-semibold tabular-nums",
+                                                                    change === null
+                                                                        ? "text-foreground"
+                                                                        : change >= 0
+                                                                          ? "text-[var(--success)]"
+                                                                          : "text-[var(--danger)]"
+                                                                )}
+                                                            >
+                                                                {formatLiveChange(change)}
+                                                            </dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className={typography.muted}>Market cap</dt>
+                                                            <dd className="mt-1 font-semibold tabular-nums">
+                                                                {formatMarketCap(metadata?.market_cap ?? null)}
+                                                            </dd>
+                                                        </div>
+                                                        <div>
+                                                            <dt className={typography.muted}>Added</dt>
+                                                            <dd className="mt-1 font-semibold">
+                                                                {formatDate(item.created_at).split(",")[0]}
+                                                            </dd>
+                                                        </div>
+                                                    </dl>
                                                 </div>
-                                                <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs">
-                                                    <div>
-                                                        <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">
-                                                            Live price
-                                                        </dt>
-                                                        <dd className="mt-1 font-mono font-semibold text-foreground">
-                                                            <span title={price?.unavailable_reason || undefined}>
-                                                                {livePriceLabel(price)}
-                                                            </span>
-                                                        </dd>
-                                                    </div>
-                                                    <div>
-                                                        <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">
-                                                            Change
-                                                        </dt>
-                                                        <dd
-                                                            className={`mt-1 font-mono font-semibold ${
-                                                                change === null
-                                                                    ? "text-foreground"
-                                                                    : change >= 0
-                                                                      ? "text-[var(--success)]"
-                                                                      : "text-[var(--danger)]"
-                                                            }`}
-                                                        >
-                                                            {formatLiveChange(change)}
-                                                        </dd>
-                                                    </div>
-                                                    <div>
-                                                        <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">
-                                                            Market cap
-                                                        </dt>
-                                                        <dd className="mt-1 font-mono font-semibold text-foreground">
-                                                            {formatMarketCap(metadata?.market_cap ?? null)}
-                                                        </dd>
-                                                    </div>
-                                                    <div>
-                                                        <dt className="font-mono uppercase tracking-[0.12em] text-muted-foreground">
-                                                            Added
-                                                        </dt>
-                                                        <dd className="mt-1 font-mono font-semibold text-foreground">
-                                                            {formatDate(item.created_at).split(",")[0]}
-                                                        </dd>
-                                                    </div>
-                                                </dl>
-                                            </article>
+                                            </Card>
                                         );
                                     })}
+                                    {!selected.items.length ? (
+                                        <Card className="border-dashed shadow-none">
+                                            <Empty className="py-12">
+                                                <EmptyHeader>
+                                                    <EmptyTitle className="text-base">No symbols yet</EmptyTitle>
+                                                    <EmptyDescription>
+                                                        {canEditSelected
+                                                            ? "Search above to add your first symbol."
+                                                            : "Try refreshing this preset watchlist."}
+                                                    </EmptyDescription>
+                                                </EmptyHeader>
+                                            </Empty>
+                                        </Card>
+                                    ) : null}
                                 </div>
-                                {!selected.items.length ? (
-                                    <div className="border-b border-border py-10 text-center text-sm text-muted-foreground">
-                                        Search above to add the first symbol.
-                                    </div>
-                                ) : null}
-                            </>
-                        ) : (
-                            <div className="border-l-2 border-primary px-5 py-12">
-                                <div className="text-2xl font-semibold text-foreground">
-                                    Create your first watchlist
-                                </div>
-                                <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-                                    Use the plus button in the sidebar to name a list, then search the instrument cache
-                                    to add symbols.
-                                </p>
                             </div>
+                        ) : (
+                            <Card className="border-dashed shadow-none">
+                                <Empty className="py-16">
+                                    <EmptyHeader>
+                                        <EmptyMedia variant="icon">
+                                            <Plus />
+                                        </EmptyMedia>
+                                        <EmptyTitle>Create your first watchlist</EmptyTitle>
+                                        <EmptyDescription>
+                                            Use the plus button in the sidebar to name a list, then search the instrument
+                                            cache to add symbols. You can also add an index preset from the left panel.
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                    <Button
+                                        className="mt-2"
+                                        onClick={requestCreateWatchlist}
+                                        type="button"
+                                        variant="outline"
+                                    >
+                                        <Plus className="size-4" />
+                                        New watchlist
+                                    </Button>
+                                </Empty>
+                            </Card>
                         )}
                     </main>
                 </div>
-            </div>
         </section>
     );
 }
