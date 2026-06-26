@@ -1297,7 +1297,7 @@ function StepHeader({
         <div className={cn("flex flex-wrap items-start justify-between gap-3", className)}>
             <div className="max-w-[760px]">
                 <div className="type-step-eyebrow">{step}</div>
-                <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">{title}</h2>
+                <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">{title}</h2>
                 <HelpText className="mt-1.5">{description}</HelpText>
             </div>
             {action}
@@ -4602,7 +4602,7 @@ export function WorkflowEditor({
                                 <div className="rounded-lg border border-border p-4 min-[1280px]:sticky min-[1280px]:top-4">
                                     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                                         <div className="max-w-[760px]">
-                                            <h2 className="text-xl font-semibold leading-6 text-foreground">
+                                            <h2 className="text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">
                                                 Validate target
                                             </h2>
                                             <HelpText className="mt-1.5">
@@ -4801,7 +4801,7 @@ export function WorkflowEditor({
                 <div className="grid gap-3 rounded-lg border border-border p-3">
                     <div className="max-w-[760px]">
                         <div className="type-step-eyebrow">{buildTriggerStep}</div>
-                        <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Build trigger</h2>
+                        <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">Build trigger</h2>
                         <HelpText className="mt-1.5">
                             Start with the rule logic first, then refine the outgoing alert content underneath it.
                         </HelpText>
@@ -4850,7 +4850,7 @@ export function WorkflowEditor({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="max-w-[760px]">
                         <div className="type-step-eyebrow">{optionalAnalysisStep}</div>
-                        <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Optional analysis</h2>
+                        <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">Optional analysis</h2>
                         <HelpText className="mt-1.5">
                             Post-trigger analysis is optional and stays tucked away until you need it.
                         </HelpText>
@@ -5122,7 +5122,7 @@ export function WorkflowEditor({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="max-w-[760px]">
                         <div className="type-step-eyebrow">{advancedDeploymentStep}</div>
-                        <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">
+                        <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">
                             Advanced script and deployment
                         </h2>
                         <HelpText className="mt-1.5">
@@ -5317,7 +5317,7 @@ export function WorkflowEditor({
             <div className="grid max-w-5xl gap-3 rounded-lg border border-border p-3">
                 <div>
                     <div className="type-step-eyebrow">{deliveryLifecycleStep}</div>
-                    <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Delivery and lifecycle</h2>
+                    <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">Delivery and lifecycle</h2>
                     <HelpText className="mt-1.5">
                         Choose where the alert goes, set the workflow state, and then save or test it.
                     </HelpText>

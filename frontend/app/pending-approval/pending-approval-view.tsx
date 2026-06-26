@@ -48,7 +48,7 @@ export function PendingApprovalView() {
             <section className="w-full max-w-xl rounded-lg border border-border bg-card p-8">
                 <BrandLogo />
                 <p className="mt-8 type-step-eyebrow">Approval required</p>
-                <h1 className="mt-3 text-3xl font-semibold">Your account is waiting for admin approval.</h1>
+                <h1 className="mt-3 text-3xl font-heading font-bold tracking-tight">Your account is waiting for admin approval.</h1>
                 <p className="mt-4 leading-7 text-muted-foreground">
                     An admin needs to approve your account and assign broker access before you can use this workspace.
                     Once a broker is connected, you won&apos;t need to re-enter those credentials.

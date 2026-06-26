@@ -1511,7 +1511,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 <div className="border-b border-border p-3">
                     <div className="flex flex-col gap-4 min-[900px]:flex-row min-[900px]:items-end min-[900px]:justify-between">
                         <div className="min-w-0">
-                            <h2 className="truncate text-xl font-semibold">
+                            <h2 className="truncate text-xl font-heading font-semibold tracking-tight">
                                 {activeSession?.title ?? "New broker chat"}
                             </h2>
                             <p className="mt-1 text-sm text-muted-foreground">
@@ -1564,7 +1564,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                         <p className="mt-5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
                                             Broker data assistant
                                         </p>
-                                        <h3 className="mt-2 text-2xl font-semibold tracking-normal">
+                                        <h3 className="mt-2 text-2xl font-heading font-semibold tracking-tight">
                                             Start with a portfolio or market question
                                         </h3>
                                         <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">

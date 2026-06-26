@@ -138,7 +138,7 @@ export function SettingsSections({
             </div>
 
             <div className="grid min-w-0 max-w-full gap-1">
-                <h2 className="text-xl font-semibold tracking-normal">{activeMeta.title}</h2>
+                <h2 className="text-xl font-heading font-semibold tracking-tight">{activeMeta.title}</h2>
                 <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{activeMeta.description}</p>
             </div>
 

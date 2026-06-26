@@ -1765,11 +1765,23 @@ export function WatchlistsManager({
                                 <Card className="border-dashed shadow-none">
                                     <Empty className="py-8">
                                         <EmptyHeader>
+                                            <EmptyMedia variant="icon">
+                                                <CandlestickChart />
+                                            </EmptyMedia>
                                             <EmptyTitle className="text-base">No watchlists yet</EmptyTitle>
                                             <EmptyDescription>
-                                                Create a list or add an index preset to get started.
+                                                Create a watchlist to track symbols and watch live prices.
                                             </EmptyDescription>
                                         </EmptyHeader>
+                                        <Button
+                                            className="mt-2"
+                                            onClick={requestCreateWatchlist}
+                                            type="button"
+                                            variant="outline"
+                                        >
+                                            <Plus className="size-4" />
+                                            New watchlist
+                                        </Button>
                                     </Empty>
                                 </Card>
                             ) : null}
@@ -2299,8 +2311,8 @@ export function WatchlistsManager({
                                                 <EmptyTitle>No symbols yet</EmptyTitle>
                                                 <EmptyDescription>
                                                     {canEditSelected
-                                                        ? "Search above or import a CSV to add your first symbol."
-                                                        : "This preset has no constituents yet. Try refreshing the watchlist."}
+                                                        ? "Search above to add symbols and track them live."
+                                                        : "This preset doesn't have any symbols yet."}
                                                 </EmptyDescription>
                                             </EmptyHeader>
                                         </Empty>
@@ -2403,11 +2415,14 @@ export function WatchlistsManager({
                                         <Card className="border-dashed shadow-none">
                                             <Empty className="py-12">
                                                 <EmptyHeader>
+                                                    <EmptyMedia variant="icon">
+                                                        <Search />
+                                                    </EmptyMedia>
                                                     <EmptyTitle className="text-base">No symbols yet</EmptyTitle>
                                                     <EmptyDescription>
                                                         {canEditSelected
-                                                            ? "Search above to add your first symbol."
-                                                            : "Try refreshing this preset watchlist."}
+                                                            ? "Search above to add symbols and track them live."
+                                                            : "This preset doesn't have any symbols yet."}
                                                     </EmptyDescription>
                                                 </EmptyHeader>
                                             </Empty>

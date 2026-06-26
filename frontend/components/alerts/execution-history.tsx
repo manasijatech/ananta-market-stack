@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { History } from "lucide-react";
 import type { AlertWorkflowRun } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 import { formatIstDateTime } from "@/lib/datetime";
 
@@ -110,7 +112,17 @@ export function ExecutionHistory({ runs }: { runs: AlertWorkflowRun[] }) {
                         </div>
                     );
                 })}
-                {!runs.length ? <div className="type-body text-muted-foreground">No execution history yet.</div> : null}
+                {!runs.length ? (
+                    <Empty className="py-8">
+                        <EmptyHeader>
+                            <EmptyMedia variant="icon">
+                                <History />
+                            </EmptyMedia>
+                            <EmptyTitle>No runs yet</EmptyTitle>
+                            <EmptyDescription>Run results appear here after your workflows execute.</EmptyDescription>
+                        </EmptyHeader>
+                    </Empty>
+                ) : null}
                 {hasMore ? <div className="h-4" ref={sentinelRef} /> : null}
             </div>
         </section>

@@ -43,8 +43,13 @@ function dashboardToneBadgeVariant(tone: DashboardTone): NonNullable<BadgeProps[
     return "secondary";
 }
 
-export function EmptyStateLine({ children }: { children: ReactNode }) {
-    return <p className={typography.muted}>{children}</p>;
+export function EmptyStateLine({ children, action }: { children: ReactNode; action?: ReactNode }) {
+    return (
+        <p className={typography.muted}>
+            {children}
+            {action ? <span className="ml-1.5">{action}</span> : null}
+        </p>
+    );
 }
 
 export function MetricPanel({

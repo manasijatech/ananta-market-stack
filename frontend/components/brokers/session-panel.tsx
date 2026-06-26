@@ -215,7 +215,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         <section className="border-t border-border py-8">
             <div className="flex flex-col justify-between gap-4 min-[760px]:flex-row min-[760px]:items-start">
                 <div>
-                    <h2 className="text-xl font-bold">Session status</h2>
+                    <h2 className="text-xl font-heading font-bold tracking-tight">Session status</h2>
                     <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{sessionStatus.guidance}</p>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold">
                         <Badge

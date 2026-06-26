@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
     IconBellRinging,
     IconBolt,
@@ -238,7 +239,15 @@ function BrokerOverviewCard({ data }: { data: DashboardData["accounts"] }) {
                     ) : null}
                 </>
             ) : (
-                <EmptyStateLine>No broker accounts connected yet.</EmptyStateLine>
+                <EmptyStateLine
+                    action={
+                        <Link className="font-medium text-primary underline underline-offset-2" href="/broker-connections">
+                            Connect a broker
+                        </Link>
+                    }
+                >
+                    No broker accounts connected yet.
+                </EmptyStateLine>
             )}
         </DashboardModuleCard>
     );
@@ -352,7 +361,18 @@ function AlertsOverviewCard({
                     )}
                 </>
             ) : (
-                <EmptyStateLine>No alert activity yet. Create a workflow to start monitoring.</EmptyStateLine>
+                <EmptyStateLine
+                    action={
+                        <Link
+                            className="font-medium text-primary underline underline-offset-2"
+                            href="/alerts-workspace/workflows/new"
+                        >
+                            Create a workflow
+                        </Link>
+                    }
+                >
+                    No alert activity yet. Create a workflow to start monitoring.
+                </EmptyStateLine>
             )}
         </DashboardModuleCard>
     );

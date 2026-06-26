@@ -327,7 +327,7 @@
     }
 
     .type-step-title {
-        @apply scroll-m-20 text-2xl font-semibold tracking-tight text-foreground;
+        @apply scroll-m-20 font-heading text-2xl font-bold tracking-tight text-foreground;
     }
 
     .type-step-description {
@@ -335,7 +335,7 @@
     }
 
     .type-section-title {
-        @apply scroll-m-20 text-xl font-semibold tracking-tight text-foreground;
+        @apply scroll-m-20 font-heading text-xl font-semibold tracking-tight text-foreground;
     }
 
     .type-label {
