@@ -1,4 +1,4 @@
-import { Shell } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BrokerGuideLoading() {

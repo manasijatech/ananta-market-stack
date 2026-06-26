@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { BrokerLogo, brokerNames, PageHeader, Shell } from "@/components/brokers/ui";
+import { BrokerLogo, brokerNames, PageHeader } from "@/components/brokers/ui";
+import { Shell } from "@/components/brokers/shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { brokerGuides } from "@/service/broker-guides";

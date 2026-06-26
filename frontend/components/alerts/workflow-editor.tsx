@@ -55,12 +55,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 import { WorkflowAiChatPanel } from "@/components/alerts/workflow-ai-chat-panel";
 import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
+import { formatMarketCap, formatMarketCapInCrores } from "@/lib/market-cap";
 import { cn } from "@/lib/utils";
 
 type EngineAction = "validate" | "compile" | "explain" | "samples" | "deploy";
@@ -514,11 +515,6 @@ function numberValue(value: unknown): number | null {
     return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function formatMarketCap(value?: number | null): string {
-    if (typeof value !== "number" || Number.isNaN(value)) return "-";
-    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
-}
-
 type MarketCapPresetId = "all" | "small" | "mid" | "large" | "mega";
 
 type MarketCapPreset = {
@@ -547,13 +543,7 @@ function clampMarketCapValue(value: number): number {
 }
 
 function formatMarketCapRangeValue(value: number): string {
-    if (value >= 100000) return `${trimTrailingNumber(value / 100000)}L Cr`;
-    if (value >= 1000) return `${trimTrailingNumber(value / 1000)}K Cr`;
-    return `${value.toFixed(0)} Cr`;
-}
-
-function trimTrailingNumber(value: number): string {
-    return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+    return formatMarketCapInCrores(value);
 }
 
 function marketCapValueToPosition(value: number): number {
@@ -3482,18 +3472,19 @@ export function WorkflowEditor({
                         <div className="grid max-w-3xl items-start gap-3 min-[760px]:grid-cols-[220px_minmax(0,360px)]">
                             <Label className="grid content-start self-start gap-2 text-sm">
                                 <FieldLabel>Workflow type</FieldLabel>
-                                <Select
+                                <SimpleSelect
                                     className="h-9 max-w-full border border-input bg-background px-3 text-sm"
-                                    onChange={(event) => {
-                                        const nextType = event.target.value as "market_data" | "alpha_feed";
-                                        setWorkflowType(nextType);
-                                        applyActivePeriodDefaults(nextType);
+                                    onValueChange={(nextType) => {
+                                        const typedType = nextType as "market_data" | "alpha_feed";
+                                        setWorkflowType(typedType);
+                                        applyActivePeriodDefaults(typedType);
                                     }}
+                                    options={[
+                                        { value: "market_data", label: "Broker market data trigger" },
+                                        { value: "alpha_feed", label: "Ananta Market Stack websocket feed trigger" }
+                                    ]}
                                     value={workflowType}
-                                >
-                                    <option value="market_data">Broker market data trigger</option>
-                                    <option value="alpha_feed">Ananta Market Stack websocket feed trigger</option>
-                                </Select>
+                                />
                                 <HelpText>
                                     {workflowType === "alpha_feed"
                                         ? "This workflow analyzes stored Ananta Market Stack websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
@@ -3780,20 +3771,22 @@ export function WorkflowEditor({
                                 </div>
                                 <div>
                                     <FieldLabel>Feed scope</FieldLabel>
-                                    <Select
+                                    <SimpleSelect
                                         className="mt-3 h-9 w-full border border-input bg-background px-3 text-sm"
-                                        onChange={(event) =>
-                                            setFeedSourceScope(event.target.value as typeof feedSourceScope)
+                                        onValueChange={(nextScope) =>
+                                            setFeedSourceScope(nextScope as typeof feedSourceScope)
                                         }
+                                        options={[
+                                            {
+                                                value: "current_alpha_subscription",
+                                                label: "Current configured Alpha subscription"
+                                            },
+                                            { value: "watchlists", label: "Specific watchlists" },
+                                            { value: "preset_lists", label: "Preset lists" },
+                                            { value: "full_market", label: "Full market feed" }
+                                        ]}
                                         value={feedSourceScope}
-                                    >
-                                        <option value="current_alpha_subscription">
-                                            Current configured Alpha subscription
-                                        </option>
-                                        <option value="watchlists">Specific watchlists</option>
-                                        <option value="preset_lists">Preset lists</option>
-                                        <option value="full_market">Full market feed</option>
-                                    </Select>
+                                    />
                                     <HelpText>
                                         Events are only available for symbols currently subscribed by the background
                                         Ananta Market Stack websocket worker unless full-market is enabled for the chosen
@@ -3995,32 +3988,28 @@ export function WorkflowEditor({
                                     </Label>
                                 </div>
                                 <div className="grid gap-2">
-                                    <Select
+                                    <SimpleSelect
                                         className="h-10 border border-input bg-background px-3 text-sm"
                                         disabled={!feedTriggerLlmEnabled}
-                                        onChange={(event) => setFeedProvider(event.target.value as LlmProvider | "")}
+                                        onValueChange={(nextProvider) => setFeedProvider(nextProvider as LlmProvider | "")}
+                                        options={enabledLlmProviders.map((provider) => ({
+                                            value: provider.provider,
+                                            label: provider.label
+                                        }))}
+                                        placeholder="Select provider"
                                         value={feedProvider}
-                                    >
-                                        <option value="">Select provider</option>
-                                        {enabledLlmProviders.map((provider) => (
-                                            <option key={provider.provider} value={provider.provider}>
-                                                {provider.label}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                    <Select
+                                    />
+                                    <SimpleSelect
                                         className="h-10 border border-input bg-background px-3 text-sm"
                                         disabled={!feedTriggerLlmEnabled}
-                                        onChange={(event) => setFeedModelId(event.target.value)}
+                                        onValueChange={setFeedModelId}
+                                        options={selectedFeedModels.map((model) => ({
+                                            value: model.model_id,
+                                            label: model.label || model.model_id
+                                        }))}
+                                        placeholder="Select model"
                                         value={feedModelId}
-                                    >
-                                        <option value="">Select model</option>
-                                        {selectedFeedModels.map((model) => (
-                                            <option key={model.id} value={model.model_id}>
-                                                {model.label || model.model_id}
-                                            </option>
-                                        ))}
-                                    </Select>
+                                    />
                                 </div>
                                 <HelpText>
                                     {feedTriggerLlmEnabled
@@ -4080,11 +4069,10 @@ export function WorkflowEditor({
                                     action={
                                         <Label className="grid max-w-[280px] gap-2 text-sm">
                                             <FieldLabel>Target mode</FieldLabel>
-                                            <Select
+                                            <SimpleSelect
                                                 className="h-9 border border-input bg-background px-3 text-sm"
-                                                onChange={(event) => {
-                                                    const nextMode = event.target
-                                                        .value as AlertWorkflowTargeting["mode"];
+                                                onValueChange={(nextModeValue) => {
+                                                    const nextMode = nextModeValue as AlertWorkflowTargeting["mode"];
                                                     setTargetMode(nextMode);
                                                     if (nextMode === "symbol_list" && targetEntries.length) {
                                                         const [firstTarget] = targetEntries;
@@ -4119,29 +4107,28 @@ export function WorkflowEditor({
                                                         setCommittedSymbolSearch(symbol);
                                                     }
                                                 }}
+                                                options={[
+                                                    { value: "single_symbol", label: "Single symbol" },
+                                                    { value: "symbol_list", label: "Symbol list" },
+                                                    { value: "preset_universe", label: "Watchlist universe" }
+                                                ]}
                                                 value={targetMode}
-                                            >
-                                                <option value="single_symbol">Single symbol</option>
-                                                <option value="symbol_list">Symbol list</option>
-                                                <option value="preset_universe">Watchlist universe</option>
-                                            </Select>
+                                            />
                                         </Label>
                                     }
                                 />
                                 <div className="grid gap-3">
                                     <Label className="grid max-w-sm gap-2 text-sm">
                                         <FieldLabel>Broker account</FieldLabel>
-                                        <Select
+                                        <SimpleSelect
                                             className="h-9 border border-input bg-background px-3 text-sm"
-                                            onChange={(event) => setAccountId(event.target.value)}
+                                            onValueChange={setAccountId}
+                                            options={accounts.map((account) => ({
+                                                value: account.id,
+                                                label: `${account.label} · ${account.broker_code}`
+                                            }))}
                                             value={accountId}
-                                        >
-                                            {accounts.map((account) => (
-                                                <option key={account.id} value={account.id}>
-                                                    {account.label} · {account.broker_code}
-                                                </option>
-                                            ))}
-                                        </Select>
+                                        />
                                         <HelpText>
                                             The broker account decides which instrument universe and quote API will be
                                             used.
@@ -4465,10 +4452,9 @@ export function WorkflowEditor({
                                                 <div className="grid content-start gap-4">
                                                     <div className="grid gap-2">
                                                         <FieldLabel>Watchlist</FieldLabel>
-                                                        <Select
+                                                        <SimpleSelect
                                                             className="h-10 border border-input bg-background px-3 text-sm"
-                                                            onChange={(event) => {
-                                                                const nextWatchlistId = event.target.value;
+                                                            onValueChange={(nextWatchlistId) => {
                                                                 const nextWatchlist = watchlists.find(
                                                                     (watchlist) => watchlist.id === nextWatchlistId
                                                                 );
@@ -4490,14 +4476,13 @@ export function WorkflowEditor({
                                                                     setCommittedSymbolSearch("");
                                                                 }
                                                             }}
+                                                            options={watchlists.map((watchlist) => ({
+                                                                value: watchlist.id,
+                                                                label: `${watchlist.name} · ${watchlist.items.length} symbols`
+                                                            }))}
+                                                            placeholder="Select watchlist"
                                                             value={selectedWatchlistId}
-                                                        >
-                                                            {watchlists.map((watchlist) => (
-                                                                <option key={watchlist.id} value={watchlist.id}>
-                                                                    {watchlist.name} · {watchlist.items.length} symbols
-                                                                </option>
-                                                            ))}
-                                                        </Select>
+                                                        />
                                                         {!watchlists.length ? (
                                                             <HelpText>
                                                                 Create a watchlist first, then return here to link it to
@@ -4883,40 +4868,32 @@ export function WorkflowEditor({
                 <>
                     <div className="grid max-w-3xl gap-3 min-[900px]:grid-cols-[180px_180px_80px_90px_80px]">
                         <div className="grid gap-2">
-                            <Select
+                            <SimpleSelect
                                 className="h-10 border border-input bg-background px-3 text-sm"
                                 disabled={!llmEnabled || !llmProviders.length}
-                                onChange={(event) => setLlmProvider(event.target.value as LlmProvider | "")}
+                                onValueChange={(nextProvider) => setLlmProvider(nextProvider as LlmProvider | "")}
+                                options={llmProviders.map((provider) => ({
+                                    value: provider.provider,
+                                    label: `${provider.label}${provider.has_api_key && provider.is_enabled ? "" : " · configure key"}`,
+                                    disabled: !provider.has_api_key || !provider.is_enabled
+                                }))}
+                                placeholder="Select provider"
                                 value={llmProvider}
-                            >
-                                <option value="">Select provider</option>
-                                {llmProviders.map((provider) => (
-                                    <option
-                                        disabled={!provider.has_api_key || !provider.is_enabled}
-                                        key={provider.provider}
-                                        value={provider.provider}
-                                    >
-                                        {provider.label}
-                                        {provider.has_api_key && provider.is_enabled ? "" : " · configure key"}
-                                    </option>
-                                ))}
-                            </Select>
+                            />
                             <HelpText>Uses the encrypted provider key from Settings.</HelpText>
                         </div>
                         <div className="grid gap-2">
-                            <Select
+                            <SimpleSelect
                                 className="h-10 border border-input bg-background px-3 text-sm"
                                 disabled={!llmEnabled || !selectedLlmModels.length}
-                                onChange={(event) => setLlmModelId(event.target.value)}
+                                onValueChange={setLlmModelId}
+                                options={selectedLlmModels.map((model) => ({
+                                    value: model.model_id,
+                                    label: model.label || model.model_id
+                                }))}
+                                placeholder="Select model"
                                 value={llmModelId}
-                            >
-                                <option value="">Select model</option>
-                                {selectedLlmModels.map((model) => (
-                                    <option key={model.id} value={model.model_id}>
-                                        {model.label || model.model_id}
-                                    </option>
-                                ))}
-                            </Select>
+                            />
                             <HelpText>Saved enabled models for the selected provider.</HelpText>
                         </div>
                         <div className="grid gap-2">
@@ -5357,14 +5334,15 @@ export function WorkflowEditor({
                                 Active workflows are evaluated by the alert worker. Inactive workflows stay saved but do
                                 not trigger.
                             </HelpText>
-                            <Select
+                            <SimpleSelect
                                 className="mt-3 h-9 max-w-[220px] border border-input bg-background px-3 text-sm"
-                                onChange={(event) => setStatus(event.target.value as "active" | "inactive")}
+                                onValueChange={(nextStatus) => setStatus(nextStatus as "active" | "inactive")}
+                                options={[
+                                    { value: "active", label: "Active" },
+                                    { value: "inactive", label: "Inactive" }
+                                ]}
                                 value={status}
-                            >
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                            </Select>
+                            />
                         </div>
                     </div>
                     <div className="border border-border p-3">
@@ -5738,14 +5716,15 @@ function RuleEditor({
                 <div className="grid items-start gap-3 min-[760px]:grid-cols-[150px_120px_120px]">
                     <div className="grid content-start self-start gap-2">
                         <FieldLabel>Match mode</FieldLabel>
-                        <Select
+                        <SimpleSelect
                             className="h-9 border border-input bg-background px-3 text-sm"
-                            onChange={(event) => setCombine(event.target.value as "all" | "any")}
+                            onValueChange={(nextCombine) => setCombine(nextCombine as "all" | "any")}
+                            options={[
+                                { value: "all", label: "All conditions" },
+                                { value: "any", label: "Any condition" }
+                            ]}
                             value={combine}
-                        >
-                            <option value="all">All conditions</option>
-                            <option value="any">Any condition</option>
-                        </Select>
+                        />
                         <HelpText>
                             `All` means every condition must match. `Any` means one matching condition is enough.
                         </HelpText>
@@ -5959,24 +5938,21 @@ function ConditionEditor({
             <div className="grid max-w-4xl gap-3 [grid-template-columns:repeat(auto-fit,minmax(132px,1fr))]">
                 <div className="grid min-w-0 gap-2">
                     <FieldLabel>Field</FieldLabel>
-                    <Select
+                    <SimpleSelect
                         className="h-9 border border-input bg-background px-3 text-sm"
-                        onChange={(event) => updateCondition(index, { field: event.target.value })}
+                        onValueChange={(field) => updateCondition(index, { field })}
+                        options={fieldOptions.map((item) => ({
+                            value: item.value,
+                            label: item.label
+                        }))}
                         value={condition.field}
-                    >
-                        {fieldOptions.map((item) => (
-                            <option key={item.value} value={item.value}>
-                                {item.label}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                 </div>
                 <div className="grid min-w-0 gap-2">
                     <FieldLabel>Operator</FieldLabel>
-                    <Select
+                    <SimpleSelect
                         className="h-9 border border-input bg-background px-3 text-sm"
-                        onChange={(event) => {
-                            const nextOperator = event.target.value;
+                        onValueChange={(nextOperator) => {
                             const nextConfig = { ...(condition.config ?? {}) };
                             if (nextOperator.startsWith("rolling_")) {
                                 nextConfig.baseline = nextConfig.baseline ?? "oldest";
@@ -6008,14 +5984,12 @@ function ConditionEditor({
                                       }
                             );
                         }}
+                        options={operatorOptions.map((item) => ({
+                            value: item.value,
+                            label: item.label
+                        }))}
                         value={condition.operator}
-                    >
-                        {operatorOptions.map((item) => (
-                            <option key={item.value} value={item.value}>
-                                {item.label}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                 </div>
                 <div className="grid min-w-0 gap-2">
                     <FieldLabel>Value</FieldLabel>
@@ -6028,18 +6002,16 @@ function ConditionEditor({
                 </div>
                 <div className="grid min-w-0 gap-2">
                     <FieldLabel>Compare to</FieldLabel>
-                    <Select
+                    <SimpleSelect
                         className="h-9 border border-input bg-background px-3 text-sm"
                         disabled={!usesCompareField}
-                        onChange={(event) => updateCondition(index, { compare_to: event.target.value || null })}
+                        onValueChange={(compareTo) => updateCondition(index, { compare_to: compareTo || null })}
+                        options={compareOptions.map((item) => ({
+                            value: item.value,
+                            label: item.label
+                        }))}
                         value={condition.compare_to ?? ""}
-                    >
-                        {compareOptions.map((item) => (
-                            <option key={item.value} value={item.value}>
-                                {item.label}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                 </div>
                 {isRollingOperator ? (
                     <div className="grid min-w-0 gap-2">
@@ -6062,17 +6034,15 @@ function ConditionEditor({
                 {isSpreadOperator ? (
                     <div className="grid min-w-0 gap-2">
                         <FieldLabel>Spread unit</FieldLabel>
-                        <Select
+                        <SimpleSelect
                             className="h-9 border border-input bg-background px-3 text-sm"
-                            onChange={(event) => updateConditionConfig("unit", event.target.value)}
+                            onValueChange={(unit) => updateConditionConfig("unit", unit)}
+                            options={spreadUnitOptions.map((item) => ({
+                                value: item.value,
+                                label: item.label
+                            }))}
                             value={String(config.unit ?? "bps")}
-                        >
-                            {spreadUnitOptions.map((item) => (
-                                <option key={item.value} value={item.value}>
-                                    {item.label}
-                                </option>
-                            ))}
-                        </Select>
+                        />
                     </div>
                 ) : null}
                 <div className="grid min-w-[112px] gap-2">
@@ -6093,17 +6063,15 @@ function ConditionEditor({
                         <>
                             <div className="grid gap-2">
                                 <FieldLabel>Rolling baseline</FieldLabel>
-                                <Select
+                                <SimpleSelect
                                     className="h-9 border border-input bg-background px-3 text-sm"
-                                    onChange={(event) => updateConditionConfig("baseline", event.target.value)}
+                                    onValueChange={(baseline) => updateConditionConfig("baseline", baseline)}
+                                    options={rollingBaselineOptions.map((item) => ({
+                                        value: item.value,
+                                        label: item.label
+                                    }))}
                                     value={String(config.baseline ?? "oldest")}
-                                >
-                                    {rollingBaselineOptions.map((item) => (
-                                        <option key={item.value} value={item.value}>
-                                            {item.label}
-                                        </option>
-                                    ))}
-                                </Select>
+                                />
                             </div>
                             <div className="grid gap-2">
                                 <FieldLabel>Min samples</FieldLabel>
@@ -6168,21 +6136,19 @@ function ConditionEditor({
             <div className="grid max-w-4xl gap-3 border border-border p-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]">
                 <div className="grid gap-2">
                     <FieldLabel>Trigger mode</FieldLabel>
-                    <Select
+                    <SimpleSelect
                         className="h-9 border border-input bg-background px-3 text-sm"
-                        onChange={(event) =>
+                        onValueChange={(triggerMode) =>
                             updateCondition(index, {
-                                trigger_mode: event.target.value as AlertCondition["trigger_mode"]
+                                trigger_mode: triggerMode as AlertCondition["trigger_mode"]
                             })
                         }
+                        options={triggerModeOptions.map((item) => ({
+                            value: item.value,
+                            label: item.label
+                        }))}
                         value={condition.trigger_mode ?? "level"}
-                    >
-                        {triggerModeOptions.map((item) => (
-                            <option key={item.value} value={item.value}>
-                                {item.label}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                 </div>
                 <div className="grid gap-2">
                     <FieldLabel>Hold seconds</FieldLabel>

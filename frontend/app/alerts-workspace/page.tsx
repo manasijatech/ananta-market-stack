@@ -1,21 +1,13 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import {
-    IconAlertTriangle,
-    IconBellRinging,
-    IconBolt,
-    IconChartBar,
-    IconChecklist,
-    IconCircleCheck,
-    IconPlayerPlay,
-    IconPlugConnected,
-    IconRoute,
-    IconSettings2
-} from "@tabler/icons-react";
+import { IconArrowRight, IconBolt, IconChecklist } from "@tabler/icons-react";
 import { AlertHistoryList } from "@/components/alerts/alert-history-list";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FeedSkeleton, StatGridSkeleton } from "@/components/ui/loading-skeletons";
 import { formatIstDateTime } from "@/lib/datetime";
+import { typography } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 import {
     getAlertChannels,
     getAlertHistory,
@@ -26,7 +18,6 @@ import {
 } from "@/service/actions/alerts";
 import type {
     AlertChannel,
-    AlertNotification,
     AlertWorkflow,
     AlertWorkflowRun,
     LiveBrokerAccountStatus,
@@ -37,12 +28,11 @@ export const dynamic = "force-dynamic";
 
 type Tone = "good" | "warn" | "danger" | "muted";
 
-function toneClasses(tone: Tone) {
-    if (tone === "good") return "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]";
-    if (tone === "danger") return "border-[var(--danger)] bg-[var(--danger-subtle)] text-[var(--danger)]";
-    if (tone === "warn")
-        return "border-primary bg-[var(--accent-subtle)] text-[var(--accent-dim)] dark:text-[var(--accent)]";
-    return "border-border bg-secondary text-muted-foreground";
+function statusDotClass(tone: Tone) {
+    if (tone === "good") return "bg-success";
+    if (tone === "danger") return "bg-destructive";
+    if (tone === "warn") return "bg-warning";
+    return "bg-muted-foreground/50";
 }
 
 function formatDateTime(value?: string | null) {
@@ -104,453 +94,376 @@ function brokerTone(status: LiveBrokerAccountStatus): Tone {
     return "good";
 }
 
-function buildAttentionItems({
-    activeWorkflows,
-    inactiveWorkflows,
-    unreadCount,
-    streamStatus
-}: {
-    activeWorkflows: AlertWorkflow[];
-    inactiveWorkflows: AlertWorkflow[];
-    unreadCount: number;
-    streamStatus: LiveStreamsStatus;
-}) {
-    const allWorkflows = [...activeWorkflows, ...inactiveWorkflows];
-    const brokenWorkflows = allWorkflows.filter(
-        (workflow) => workflow.last_runtime_error || workflow.deployment_status === "error"
-    );
-    const actionBrokers = streamStatus.broker_statuses.filter((broker) => broker.action_required || broker.last_error);
-    const items: Array<{ title: string; detail: string; href: string; label: string; tone: Tone }> = [];
-
-    if (!streamStatus.redis_ok) {
-        items.push({
-            title: "Stream cache degraded",
-            detail: streamStatus.redis_error || "Redis is not reporting healthy.",
-            href: "/settings#stream-manager",
-            label: "Inspect stream",
-            tone: "danger"
-        });
-    }
-
-    if (actionBrokers.length) {
-        items.push({
-            title: `${actionBrokers.length} broker ${actionBrokers.length === 1 ? "session" : "sessions"} need attention`,
-            detail: actionBrokers
-                .slice(0, 2)
-                .map((broker) => broker.label)
-                .join(", "),
-            href: "/broker-connections",
-            label: "Fix sessions",
-            tone: "danger"
-        });
-    }
-
-    if (brokenWorkflows.length) {
-        items.push({
-            title: `${brokenWorkflows.length} workflow ${brokenWorkflows.length === 1 ? "has" : "have"} runtime issues`,
-            detail: brokenWorkflows[0]?.last_runtime_error || "Open workflow details to review the latest failure.",
-            href: "/alerts-workspace/workflows",
-            label: "Review",
-            tone: "warn"
-        });
-    }
-
-    if (unreadCount > 0) {
-        items.push({
-            title: `${unreadCount} unread alert ${unreadCount === 1 ? "notification" : "notifications"}`,
-            detail: "Recent notifications are waiting in the alert inbox.",
-            href: "/alerts-workspace",
-            label: "Read alerts",
-            tone: "warn"
-        });
-    }
-
-    if (!activeWorkflows.length) {
-        items.push({
-            title: "No active workflows",
-            detail: inactiveWorkflows.length
-                ? "Activate a saved workflow or create a new live rule."
-                : "Start with a template or build your first market workflow.",
-            href: inactiveWorkflows.length
-                ? "/alerts-workspace/workflows?status=inactive"
-                : "/alerts-workspace/templates",
-            label: inactiveWorkflows.length ? "Activate" : "Use template",
-            tone: "muted"
-        });
-    }
-
-    return items.slice(0, 4);
+function brokerBadgeClasses(tone: Tone) {
+    if (tone === "good") return "border-success/20 bg-success/8 text-success-foreground";
+    if (tone === "danger") return "border-destructive/20 bg-destructive/8 text-destructive-foreground";
+    if (tone === "warn") return "border-warning/20 bg-warning/8 text-warning-foreground";
+    return "border-border bg-muted text-muted-foreground";
 }
 
-function MetricTile({
-    eyebrow,
+function StatCard({
+    label,
     value,
-    detail,
-    tone = "muted",
-    icon: Icon
+    subtext,
+    statusDot
 }: {
-    eyebrow: string;
+    label: string;
     value: string;
-    detail: string;
-    tone?: Tone;
-    icon: typeof IconBolt;
+    subtext: string;
+    statusDot?: Tone;
 }) {
     return (
-        <div className="min-w-0 border border-border bg-card p-3">
-            <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                    <div className="type-step-eyebrow">{eyebrow}</div>
-                    <div className="mt-2 truncate text-2xl font-semibold leading-none">{value}</div>
-                </div>
-                <span className={`flex size-8 shrink-0 items-center justify-center border ${toneClasses(tone)}`}>
-                    <Icon className="size-4" stroke={1.8} />
-                </span>
+        <div className="min-w-0 rounded-md bg-muted/50 px-4 py-3">
+            <div className={cn(typography.muted, "flex items-center gap-1.5")}>
+                {statusDot ? (
+                    <span
+                        aria-hidden="true"
+                        className={cn("size-1.5 shrink-0 rounded-full", statusDotClass(statusDot))}
+                    />
+                ) : null}
+                {label}
             </div>
-            <div className="type-meta mt-3 line-clamp-2">{detail}</div>
+            <p className={cn(typography.h3, "mt-2")}>{value}</p>
+            <p className={cn(typography.muted, "mt-1 leading-5")}>{subtext}</p>
         </div>
     );
 }
 
-function AttentionPanel({ items }: { items: ReturnType<typeof buildAttentionItems> }) {
-    return (
-        <section className="min-w-0 border border-border bg-card p-4">
-            <div className="flex items-center justify-between gap-4">
-                <div>
-                    <p className="type-step-eyebrow">Attention</p>
-                    <h2 className="type-section-title mt-1">What needs a look</h2>
-                </div>
-                <IconAlertTriangle className="size-5 text-primary" stroke={1.8} />
-            </div>
-            <div className="mt-4 grid gap-3">
-                {items.length ? (
-                    items.map((item) => (
-                        <div className="border border-border bg-background p-3" key={`${item.title}-${item.href}`}>
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <div className="type-label">{item.title}</div>
-                                    <div className="type-meta mt-1 line-clamp-2">{item.detail}</div>
-                                </div>
-                                <span
-                                    className={`mt-0.5 size-2 shrink-0 border ${toneClasses(item.tone)}`}
-                                    aria-hidden="true"
-                                />
-                            </div>
-                            <Link
-                                className="type-meta mt-3 inline-block font-semibold uppercase tracking-[0.12em] text-primary hover:text-foreground"
-                                href={item.href}
-                            >
-                                {item.label}
-                            </Link>
-                        </div>
-                    ))
-                ) : (
-                    <div className="border border-[var(--success)] bg-[var(--success-subtle)] p-4">
-                        <div className="flex items-center gap-3">
-                            <IconCircleCheck className="size-5 text-[var(--success)]" stroke={1.8} />
-                            <div>
-                                <div className="type-label text-[var(--success)]">Workspace is clear</div>
-                                <div className="type-meta mt-1 text-[var(--success)]">
-                                    No stream, workflow, or inbox issues in the current snapshot.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </section>
-    );
-}
-
-function CommandCenter({
-    activeWorkflows,
-    inactiveWorkflows,
-    runs,
-    notifications,
-    unreadCount,
-    streamStatus,
-    channels
+function PanelSection({
+    label,
+    children,
+    className
 }: {
-    activeWorkflows: AlertWorkflow[];
-    inactiveWorkflows: AlertWorkflow[];
-    runs: AlertWorkflowRun[];
-    notifications: AlertNotification[];
-    unreadCount: number;
-    streamStatus: LiveStreamsStatus;
-    channels: AlertChannel[];
+    label: string;
+    children: React.ReactNode;
+    className?: string;
 }) {
-    const matchedRuns = runs.filter((run) => run.matched).length;
-    const streamTone: Tone = streamStatus.redis_ok ? "good" : "danger";
-    const attentionItems = buildAttentionItems({ activeWorkflows, inactiveWorkflows, unreadCount, streamStatus });
-    const enabledChannels = enabledChannelCount(channels);
-
     return (
-        <div className="mb-6 grid min-w-0 gap-4 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
-            <section className="min-w-0 border border-border bg-card p-4 min-[760px]:p-5">
-                <div className="flex flex-col justify-between gap-4 min-[900px]:flex-row">
-                    <div className="min-w-0 max-w-3xl">
-                        <p className="type-step-eyebrow">Operational status</p>
-                        <h2 className="mt-2 text-[clamp(22px,2.4vw,30px)] font-semibold leading-tight">
-                            {activeWorkflows.length
-                                ? `${activeWorkflows.length} live workflow${activeWorkflows.length === 1 ? "" : "s"} watching the market.`
-                                : "No live workflows yet."}
-                        </h2>
-                        <p className="type-help mt-2 max-w-2xl text-muted-foreground">
-                            {runs.length
-                                ? `${matchedRuns} of the last ${runs.length} evaluations matched. ${notifications.length} recent notifications are available for review.`
-                                : "Create or activate a workflow to start seeing evaluation and alert history here."}
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap items-start gap-2 min-[900px]:justify-end">
-                        <Button asChild className="min-h-9 whitespace-nowrap">
-                            <Link href="/alerts-workspace/workflows/new">
-                                <IconBolt className="size-4" stroke={1.8} />
-                                New workflow
-                            </Link>
-                        </Button>
-                        <Button asChild className="min-h-9 whitespace-nowrap" variant="outline">
-                            <Link href="/settings#stream-manager">
-                                <IconPlugConnected className="size-4" stroke={1.8} />
-                                Stream settings
-                            </Link>
-                        </Button>
-                    </div>
-                </div>
-                <div className="mt-5 grid min-w-0 gap-3 min-[760px]:grid-cols-2 min-[1360px]:grid-cols-4">
-                    <MetricTile
-                        detail={`${inactiveWorkflows.length} inactive · ${activeWorkflows.filter((workflow) => workflow.last_runtime_error).length} runtime issues`}
-                        eyebrow="Workflows"
-                        icon={IconPlayerPlay}
-                        tone={activeWorkflows.length ? "good" : "warn"}
-                        value={String(activeWorkflows.length)}
-                    />
-                    <MetricTile
-                        detail={`${matchedRuns} matched · ${runs.length - matchedRuns} did not match in the loaded run history`}
-                        eyebrow="Match rate"
-                        icon={IconChartBar}
-                        tone={matchedRuns ? "good" : "muted"}
-                        value={percent(matchedRuns, runs.length)}
-                    />
-                    <MetricTile
-                        detail={`${notifications.length} recent alerts · ${enabledChannels} outbound channel${enabledChannels === 1 ? "" : "s"} enabled`}
-                        eyebrow="Alert inbox"
-                        icon={IconBellRinging}
-                        tone={unreadCount ? "warn" : "good"}
-                        value={String(unreadCount)}
-                    />
-                    <MetricTile
-                        detail={`${streamStatus.desired_subscriptions.length} desired symbols · ${streamStatus.active_sessions.length} active stream sessions`}
-                        eyebrow="Stream health"
-                        icon={IconRoute}
-                        tone={streamTone}
-                        value={streamStatus.redis_ok ? "Ready" : "Check"}
-                    />
-                </div>
-            </section>
-            <AttentionPanel items={attentionItems} />
-        </div>
-    );
-}
-
-function WorkflowCoverage({ workflows, runs }: { workflows: AlertWorkflow[]; runs: AlertWorkflowRun[] }) {
-    return (
-        <section className="min-w-0 border-y border-border py-4">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-                <div>
-                    <p className="type-step-eyebrow">Coverage</p>
-                    <h2 className="type-section-title mt-1">Active workflows</h2>
-                </div>
-                <Link
-                    className="type-meta font-semibold uppercase tracking-[0.12em] text-primary hover:text-foreground"
-                    href="/alerts-workspace/workflows"
-                >
-                    Manage all
-                </Link>
-            </div>
-            {workflows.length ? (
-                <div className="grid min-w-0 gap-3 min-[900px]:grid-cols-2 min-[1500px]:grid-cols-3 min-[1800px]:grid-cols-4">
-                    {workflows.slice(0, 4).map((workflow) => {
-                        const latestRun = latestRunForWorkflow(runs, workflow.id);
-                        return (
-                            <Link
-                                className="group min-w-0 border border-border bg-card p-3 transition-colors duration-100 hover:border-primary/70"
-                                href={`/alerts-workspace/workflows/${workflow.id}`}
-                                key={workflow.id}
-                            >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="type-section-title truncate">{workflow.name}</div>
-                                        <div className="type-meta mt-1 uppercase tracking-[0.12em] text-primary">
-                                            {workflow.workflow_dsl.workflow_type.replace("_", " ")}
-                                        </div>
-                                    </div>
-                                    <span
-                                        className={`border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${toneClasses(workflow.last_runtime_error ? "danger" : "good")}`}
-                                    >
-                                        {workflow.last_runtime_error ? "issue" : workflow.status}
-                                    </span>
-                                </div>
-                                <div className="mt-4 grid gap-2 text-sm">
-                                    <div className="flex min-w-0 justify-between gap-3">
-                                        <span className="text-muted-foreground">Target</span>
-                                        <span className="min-w-0 truncate text-right font-semibold">
-                                            {targetSummary(workflow)}
-                                        </span>
-                                    </div>
-                                    <div className="flex min-w-0 justify-between gap-3">
-                                        <span className="text-muted-foreground">Trigger</span>
-                                        <span className="min-w-0 truncate text-right font-semibold">
-                                            {triggerSummary(workflow)}
-                                        </span>
-                                    </div>
-                                    <div className="flex min-w-0 justify-between gap-3">
-                                        <span className="text-muted-foreground">Channels</span>
-                                        <span className="min-w-0 truncate text-right font-semibold">
-                                            {channelSummary(workflow)}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="type-meta mt-4 border-t border-border pt-3">
-                                    Last run:{" "}
-                                    {latestRun
-                                        ? formatDateTime(latestRun.created_at)
-                                        : formatDateTime(workflow.last_triggered_at)}
-                                </div>
-                            </Link>
-                        );
-                    })}
-                </div>
-            ) : (
-                <div className="border border-border bg-card p-5">
-                    <div className="flex flex-col gap-4 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
-                        <div>
-                            <h3 className="type-section-title">Start monitoring with a workflow</h3>
-                            <p className="type-help mt-1">
-                                Templates give you a faster first rule; custom workflows are better when the trigger
-                                logic is already clear.
-                            </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            <Button asChild variant="outline">
-                                <Link href="/alerts-workspace/templates">Browse templates</Link>
-                            </Button>
-                            <Button asChild>
-                                <Link href="/alerts-workspace/workflows/new">Create workflow</Link>
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+        <section className={cn("border-b border-border/50 pb-5 last:border-b-0 last:pb-0", className)}>
+            <p className="type-step-eyebrow">{label}</p>
+            <div className="mt-3">{children}</div>
         </section>
     );
 }
 
-function StreamReadiness({ streamStatus }: { streamStatus: LiveStreamsStatus }) {
+function BrokerBanner() {
+    return (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/20 bg-warning/8 px-4 py-3">
+            <p className="type-body text-sm">
+                <span aria-hidden="true" className="mr-1.5">
+                    ⚠
+                </span>
+                Broker account required — Connect a broker stream before workflows can evaluate live data.
+            </p>
+            <Link
+                className={cn(typography.small, "inline-flex shrink-0 items-center gap-1 hover:underline")}
+                href="/broker-connections"
+            >
+                Connect broker
+                <IconArrowRight className="size-3.5" stroke={1.8} />
+            </Link>
+        </div>
+    );
+}
+
+type SetupStep = {
+    title: string;
+    description: string;
+    href: string;
+    cta: string;
+    status: "incomplete-amber" | "incomplete" | "complete";
+};
+
+function SetupChecklist({ steps }: { steps: SetupStep[] }) {
+    return (
+        <section className="min-h-[120px] rounded-md border border-border bg-card p-5">
+            <h2 className="type-section-title">Get started</h2>
+            <p className="type-help mt-1">Complete these steps to start monitoring live market data.</p>
+            <ol className="mt-5 grid gap-4">
+                {steps.map((step, index) => (
+                    <li className="flex gap-3" key={step.title}>
+                        <span
+                            aria-hidden="true"
+                            className={cn(
+                                "mt-1.5 size-2 shrink-0 rounded-full",
+                                step.status === "complete"
+                                    ? "bg-success"
+                                    : step.status === "incomplete-amber"
+                                      ? "bg-warning"
+                                      : "bg-muted-foreground/40"
+                            )}
+                        />
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                <span className="type-meta">{index + 1}.</span>
+                                <span className="type-label">{step.title}</span>
+                                <Link
+                                    className={cn(typography.small, "inline-flex items-center gap-0.5 hover:underline")}
+                                    href={step.href}
+                                >
+                                    {step.cta}
+                                    <IconArrowRight className="size-3" stroke={1.8} />
+                                </Link>
+                            </div>
+                            <p className="type-help mt-0.5">{step.description}</p>
+                        </div>
+                    </li>
+                ))}
+            </ol>
+        </section>
+    );
+}
+
+function AttentionPanel({
+    unreadCount,
+    hasActiveWorkflows
+}: {
+    unreadCount: number;
+    hasActiveWorkflows: boolean;
+}) {
+    return (
+        <PanelSection label="Attention">
+            <div className="grid gap-3">
+                <div className="flex items-baseline justify-between gap-2">
+                    <span className="type-label">Alert inbox</span>
+                    {unreadCount > 0 ? (
+                        <Badge size="sm" variant="warning">
+                            {unreadCount} unread
+                        </Badge>
+                    ) : (
+                        <span className="type-meta">All read</span>
+                    )}
+                </div>
+                <p className="type-help">
+                    {unreadCount > 0
+                        ? `${unreadCount} notification${unreadCount === 1 ? "" : "s"} waiting for review.`
+                        : "No unread notifications in the current snapshot."}
+                </p>
+                <div className="flex flex-col gap-2 pt-1">
+                    <Button className="w-full" render={<Link href="/alerts-workspace/workflows/new" />}>
+                        <IconBolt className="size-4" stroke={1.8} />
+                        Create workflow
+                    </Button>
+                    {unreadCount > 0 ? (
+                        <Link
+                            className={cn(typography.small, "inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline")}
+                            href="/alerts-workspace"
+                        >
+                            Read alerts
+                            <IconArrowRight className="size-3.5" stroke={1.8} />
+                        </Link>
+                    ) : null}
+                    {!hasActiveWorkflows ? (
+                        <Link
+                            className={cn(typography.small, "inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline")}
+                            href="/alerts-workspace/templates"
+                        >
+                            Use template
+                            <IconArrowRight className="size-3.5" stroke={1.8} />
+                        </Link>
+                    ) : null}
+                </div>
+            </div>
+        </PanelSection>
+    );
+}
+
+function StreamReadinessPanel({ streamStatus }: { streamStatus: LiveStreamsStatus }) {
     const sortedBrokers = [...streamStatus.broker_statuses].sort((first, second) => {
         return Number(second.action_required) - Number(first.action_required);
     });
 
     return (
-        <section className="min-w-0 border border-border bg-card p-4">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <p className="type-step-eyebrow">Live data</p>
-                    <h2 className="type-section-title mt-1">Stream readiness</h2>
-                </div>
-                <Link
-                    className="type-meta font-semibold uppercase tracking-[0.12em] text-primary hover:text-foreground"
-                    href="/settings#stream-manager"
-                >
-                    Details
-                </Link>
-            </div>
+        <PanelSection label="Stream readiness">
             <div className="grid gap-3">
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(88px,1fr))] gap-2">
-                    <div className="min-w-0 border border-border bg-background p-3">
-                        <div className="type-step-eyebrow">Redis</div>
-                        <div
-                            className={`mt-2 inline-flex border px-2.5 py-1 text-sm font-semibold ${toneClasses(streamStatus.redis_ok ? "good" : "danger")}`}
+                <div className="grid grid-cols-3 gap-2">
+                    <div className="min-w-0">
+                        <div className="type-meta">Redis</div>
+                        <Badge
+                            className="mt-1.5"
+                            size="sm"
+                            variant={streamStatus.redis_ok ? "success" : "error"}
                         >
                             {streamStatus.redis_ok ? "Healthy" : "Degraded"}
-                        </div>
+                        </Badge>
                     </div>
-                    <div className="min-w-0 border border-border bg-background p-3">
-                        <div className="type-step-eyebrow">Desired symbols</div>
-                        <div className="mt-2 text-2xl font-semibold">{streamStatus.desired_subscriptions.length}</div>
+                    <div className="min-w-0">
+                        <div className="type-meta">Desired symbols</div>
+                        <p className={cn(typography.h4, "mt-1.5")}>{streamStatus.desired_subscriptions.length}</p>
                     </div>
-                    <div className="min-w-0 border border-border bg-background p-3">
-                        <div className="type-step-eyebrow">Worker sessions</div>
-                        <div className="mt-2 text-2xl font-semibold">{streamStatus.active_sessions.length}</div>
+                    <div className="min-w-0">
+                        <div className="type-meta">Worker sessions</div>
+                        <p className={cn(typography.h4, "mt-1.5")}>{streamStatus.active_sessions.length}</p>
                     </div>
                 </div>
-                <div className="grid gap-2">
-                    {sortedBrokers.slice(0, 4).map((broker) => (
-                        <div
-                            className="min-w-0 border border-border bg-background p-3"
-                            key={`${broker.broker_code}-${broker.account_id}`}
-                        >
-                            <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                    <div className="type-label truncate">{broker.label}</div>
-                                    <div className="type-meta mt-1">
-                                        {broker.broker_code} · {broker.desired_symbol_count} desired symbols
-                                    </div>
+                {sortedBrokers.slice(0, 3).map((broker) => (
+                    <div
+                        className="min-w-0 rounded-md border border-border bg-background p-3"
+                        key={`${broker.broker_code}-${broker.account_id}`}
+                    >
+                        <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                                <div className="type-label truncate">{broker.label}</div>
+                                <div className="type-meta mt-0.5">
+                                    {broker.broker_code} · {broker.desired_symbol_count} symbols
                                 </div>
-                                <span
-                                    className={`shrink-0 border px-2 py-1 text-center font-mono text-[10px] font-bold uppercase tracking-[0.12em] ${toneClasses(brokerTone(broker))}`}
-                                >
-                                    {broker.action_required ? "action" : broker.session_active ? "session" : "paused"}
-                                </span>
                             </div>
-                            <div className="type-meta mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                                <span>{broker.can_stream ? "Can stream" : "No stream"}</span>
-                                <span>{broker.active_worker_sessions} workers</span>
-                            </div>
+                            <span
+                                className={cn(
+                                    "shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium",
+                                    brokerBadgeClasses(brokerTone(broker))
+                                )}
+                            >
+                                {broker.action_required ? "Action" : broker.session_active ? "Session" : "Paused"}
+                            </span>
                         </div>
-                    ))}
-                    {!sortedBrokers.length ? (
-                        <div className="border border-border bg-background p-4">
-                            <div className="type-label">No broker stream accounts yet</div>
-                            <div className="type-help mt-1">
-                                Connect a broker account before relying on live market-data workflows.
-                            </div>
-                        </div>
-                    ) : null}
-                </div>
+                    </div>
+                ))}
+                <Link
+                    className={cn(typography.muted, "inline-flex items-center gap-1 text-xs hover:text-foreground hover:underline")}
+                    href="/settings#stream-manager"
+                >
+                    View stream diagnostics
+                    <IconArrowRight className="size-3" stroke={1.8} />
+                </Link>
             </div>
-        </section>
+        </PanelSection>
     );
 }
 
-function ActionRail() {
-    const actions = [
-        { href: "/alerts-workspace/workflows/new", label: "Create workflow", icon: IconBolt },
-        { href: "/alerts-workspace/templates", label: "Browse templates", icon: IconChecklist },
-        { href: "/settings#live-subscriptions", label: "Live data settings", icon: IconRoute },
-        { href: "/settings#alert-channels", label: "Delivery settings", icon: IconSettings2 }
-    ];
-
+function QuickActionsPanel({ enabledChannels }: { enabledChannels: number }) {
     return (
-        <section className="min-w-0 border border-border bg-card p-4">
-            <p className="type-step-eyebrow">Shortcuts</p>
-            <div className="mt-3 grid gap-2">
-                {actions.map((action) => {
-                    const Icon = action.icon;
+        <PanelSection label="Quick actions">
+            <div className="grid gap-2">
+                <Link
+                    className={cn(typography.small, "flex min-w-0 items-center gap-3 rounded-md border border-border bg-background px-3 py-2.5 transition-colors hover:bg-muted/50")}
+                    href="/alerts-workspace/workflows/new"
+                >
+                    <IconBolt className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
+                    <span className="truncate">Create workflow</span>
+                </Link>
+                <Link
+                    className={cn(typography.small, "flex min-w-0 items-center gap-3 rounded-md border border-border bg-background px-3 py-2.5 transition-colors hover:bg-muted/50")}
+                    href="/alerts-workspace/templates"
+                >
+                    <IconChecklist className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
+                    <span className="truncate">Browse templates</span>
+                </Link>
+                {enabledChannels === 0 ? (
+                    <Link
+                        className={cn(typography.small, "flex min-w-0 items-center gap-1 px-3 py-1 text-muted-foreground hover:text-foreground hover:underline")}
+                        href="/settings#alert-channels"
+                    >
+                        Set up delivery channels
+                        <IconArrowRight className="size-3" stroke={1.8} />
+                    </Link>
+                ) : null}
+            </div>
+        </PanelSection>
+    );
+}
+
+function WorkflowCoverage({ workflows, runs }: { workflows: AlertWorkflow[]; runs: AlertWorkflowRun[] }) {
+    return (
+        <section className="min-w-0">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <p className="type-step-eyebrow">Active workflows</p>
+                <Link
+                    className={cn(typography.small, "text-muted-foreground hover:text-foreground hover:underline")}
+                    href="/alerts-workspace/workflows"
+                >
+                    Manage all
+                </Link>
+            </div>
+            <div className="grid min-w-0 gap-3 min-[900px]:grid-cols-2 min-[1500px]:grid-cols-3">
+                {workflows.slice(0, 4).map((workflow) => {
+                    const latestRun = latestRunForWorkflow(runs, workflow.id);
                     return (
                         <Link
-                            className="flex min-w-0 items-center gap-3 border border-border bg-background px-3 py-3 font-semibold transition-colors duration-100 hover:border-primary/70 hover:text-primary"
-                            href={action.href}
-                            key={action.href}
+                            className="group min-w-0 border border-border bg-card p-3 transition-colors duration-100 hover:border-foreground/20"
+                            href={`/alerts-workspace/workflows/${workflow.id}`}
+                            key={workflow.id}
                         >
-                            <span className="flex min-w-0 items-center gap-3">
-                                <Icon className="size-4" stroke={1.8} />
-                                <span className="truncate">{action.label}</span>
-                            </span>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="type-section-title truncate text-base">{workflow.name}</div>
+                                    <div className="type-meta mt-1">
+                                        {workflow.workflow_dsl.workflow_type.replace("_", " ")}
+                                    </div>
+                                </div>
+                                <Badge
+                                    size="sm"
+                                    variant={workflow.last_runtime_error ? "error" : "success"}
+                                >
+                                    {workflow.last_runtime_error ? "Issue" : workflow.status}
+                                </Badge>
+                            </div>
+                            <div className="mt-4 grid gap-2">
+                                <div className="flex min-w-0 justify-between gap-3">
+                                    <span className="type-meta">Target</span>
+                                    <span className="type-label min-w-0 truncate text-right">
+                                        {targetSummary(workflow)}
+                                    </span>
+                                </div>
+                                <div className="flex min-w-0 justify-between gap-3">
+                                    <span className="type-meta">Trigger</span>
+                                    <span className="type-label min-w-0 truncate text-right">
+                                        {triggerSummary(workflow)}
+                                    </span>
+                                </div>
+                                <div className="flex min-w-0 justify-between gap-3">
+                                    <span className="type-meta">Channels</span>
+                                    <span className="type-label min-w-0 truncate text-right">
+                                        {channelSummary(workflow)}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="type-meta mt-4 border-t border-border pt-3">
+                                Last run:{" "}
+                                {latestRun
+                                    ? formatDateTime(latestRun.created_at)
+                                    : formatDateTime(workflow.last_triggered_at)}
+                            </div>
                         </Link>
                     );
                 })}
             </div>
         </section>
     );
+}
+
+function buildSetupSteps({
+    hasBroker,
+    hasActiveWorkflows,
+    enabledChannels
+}: {
+    hasBroker: boolean;
+    hasActiveWorkflows: boolean;
+    enabledChannels: number;
+}): SetupStep[] {
+    return [
+        {
+            title: "Connect broker account",
+            description: "Link a broker stream so workflows can evaluate live market data.",
+            href: "/broker-connections",
+            cta: "Connect broker",
+            status: hasBroker ? "complete" : "incomplete-amber"
+        },
+        {
+            title: "Create your first workflow",
+            description: "Define rules that watch symbols and trigger when conditions match.",
+            href: "/alerts-workspace/workflows/new",
+            cta: "Create workflow",
+            status: hasActiveWorkflows ? "complete" : "incomplete"
+        },
+        {
+            title: "Set up delivery channels",
+            description: "Configure where alerts are sent — in-app, email, or webhook.",
+            href: "/settings#alert-channels",
+            cta: "Configure channels",
+            status: enabledChannels > 0 ? "complete" : "incomplete"
+        }
+    ];
 }
 
 async function AlertsOverviewContent() {
@@ -566,42 +479,73 @@ async function AlertsOverviewContent() {
         ]
     );
 
+    const matchedRuns = runs.filter((run) => run.matched).length;
+    const enabledChannels = enabledChannelCount(channels);
+    const hasBroker = streamStatus.broker_statuses.length > 0;
+    const hasActiveWorkflows = activeWorkflows.length > 0;
+    const streamTone: Tone = streamStatus.redis_ok ? "good" : "danger";
+    const runtimeIssues = activeWorkflows.filter((workflow) => workflow.last_runtime_error).length;
+    const setupSteps = buildSetupSteps({ hasBroker, hasActiveWorkflows, enabledChannels });
+
     return (
-        <>
-            <CommandCenter
-                activeWorkflows={activeWorkflows}
-                channels={channels}
-                inactiveWorkflows={inactiveWorkflows}
-                notifications={notifications}
-                runs={runs}
-                streamStatus={streamStatus}
-                unreadCount={unread.unread_count}
-            />
-            <div className="grid min-w-0 gap-5 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
-                <div className="grid min-w-0 gap-5">
-                    <WorkflowCoverage workflows={activeWorkflows} runs={runs} />
-                    <AlertHistoryList notifications={notifications} runs={runs} />
+        <div className="grid min-w-0 gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,300px)]">
+            <div className="min-w-0 space-y-5 lg:pr-6">
+                <div className="grid min-w-0 gap-3 min-[640px]:grid-cols-2 min-[1100px]:grid-cols-4">
+                    <StatCard
+                        label="Stream health"
+                        statusDot={streamTone}
+                        subtext={`${streamStatus.desired_subscriptions.length} symbols · ${streamStatus.active_sessions.length} sessions`}
+                        value={streamStatus.redis_ok ? "Ready" : "Check"}
+                    />
+                    <StatCard
+                        label="Active workflows"
+                        statusDot={hasActiveWorkflows ? "good" : "warn"}
+                        subtext={`${inactiveWorkflows.length} inactive · ${runtimeIssues} runtime issues`}
+                        value={String(activeWorkflows.length)}
+                    />
+                    <StatCard
+                        label="Match rate"
+                        statusDot={matchedRuns ? "good" : "muted"}
+                        subtext={`${matchedRuns} matched · ${runs.length - matchedRuns} no match`}
+                        value={percent(matchedRuns, runs.length)}
+                    />
+                    <StatCard
+                        label="Alert inbox"
+                        statusDot={unread.unread_count ? "warn" : "good"}
+                        subtext={`${notifications.length} recent · ${enabledChannels} channel${enabledChannels === 1 ? "" : "s"}`}
+                        value={String(unread.unread_count)}
+                    />
                 </div>
-                <div className="grid min-w-0 content-start gap-5">
-                    <StreamReadiness streamStatus={streamStatus} />
-                    <ActionRail />
-                </div>
+
+                {!hasBroker ? <BrokerBanner /> : null}
+
+                {!hasActiveWorkflows ? (
+                    <SetupChecklist steps={setupSteps} />
+                ) : (
+                    <WorkflowCoverage runs={runs} workflows={activeWorkflows} />
+                )}
+
+                <AlertHistoryList notifications={notifications} runs={runs} />
             </div>
-        </>
+
+            <aside className="mt-6 min-w-0 space-y-5 border-border pt-6 lg:mt-0 lg:max-w-[300px] lg:border-l lg:pl-6 lg:pt-0">
+                <AttentionPanel hasActiveWorkflows={hasActiveWorkflows} unreadCount={unread.unread_count} />
+                <StreamReadinessPanel streamStatus={streamStatus} />
+                <QuickActionsPanel enabledChannels={enabledChannels} />
+            </aside>
+        </div>
     );
 }
 
 function OverviewFallback() {
     return (
-        <div className="grid gap-8">
-            <StatGridSkeleton count={4} />
-            <div className="grid min-w-0 gap-5 min-[1500px]:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]">
-                <div className="grid gap-6">
-                    <FeedSkeleton rows={4} />
-                    <FeedSkeleton rows={6} />
-                </div>
-                <FeedSkeleton rows={5} />
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="space-y-5">
+                <StatGridSkeleton count={4} />
+                <FeedSkeleton rows={4} />
+                <FeedSkeleton rows={6} />
             </div>
+            <FeedSkeleton rows={8} />
         </div>
     );
 }

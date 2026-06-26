@@ -65,9 +65,9 @@ export function AlphaCreditWarningModal() {
                             <AlertTriangle className="size-4" />
                         </span>
                         <div className="grid gap-1">
-                            <DialogTitle>Alpha credits required</DialogTitle>
+                            <DialogTitle>Drishti credits required</DialogTitle>
                             <DialogDescription>
-                                Ananta Market Stack could not complete this Alpha API request because the account has
+                                Ananta Market Stack could not complete this Drishti API request because the account has
                                 insufficient credits.
                             </DialogDescription>
                         </div>
@@ -76,7 +76,7 @@ export function AlphaCreditWarningModal() {
                 <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
                     <p>{message}</p>
                     <p>
-                        Add credits to the Manasija Alpha account or update the Alpha API key in Settings, then try
+                        Add credits to your Drishti account or update the Drishti API key in Settings, then try
                         the request again.
                     </p>
                 </div>

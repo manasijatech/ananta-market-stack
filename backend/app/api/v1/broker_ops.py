@@ -16,6 +16,8 @@ from app.schemas.broker import (
     HistoricalRequest,
     InstrumentSearchRow,
     InstrumentSyncOut,
+    MarketChartRequest,
+    MarketChartSnapshotOut,
     OhlcRequest,
     OptionChainRequest,
     QuoteRequest,
@@ -23,6 +25,7 @@ from app.schemas.broker import (
     StreamStatusOut,
 )
 from app.services import broker_data
+from app.services import market_chart
 from app.services import rbac
 from app.services.instrument_sync_jobs import instrument_sync_status
 from app.services.broker_streams import stream_registry
@@ -352,6 +355,19 @@ def data_historical(
 ) -> dict[str, Any]:
     acc = _account(db, principal, account_id, rbac.BROKER_USE_DATA)
     return broker_data.fetch_historical(db, acc, body.model_dump(mode="json"))
+
+
+@router.post("/{account_id}/data/market-chart", response_model=MarketChartSnapshotOut)
+def data_market_chart(
+    account_id: str,
+    body: MarketChartRequest,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> MarketChartSnapshotOut:
+    acc = _account(db, principal, account_id, rbac.BROKER_USE_DATA)
+    snapshot = market_chart.build_market_chart_snapshot(db, acc, body.model_dump(mode="json"))
+    db.commit()
+    return snapshot
 
 
 @router.post("/{account_id}/data/option-chain")

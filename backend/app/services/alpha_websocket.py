@@ -275,7 +275,7 @@ async def refresh_account_for_user(user_id: str) -> dict[str, Any]:
     try:
         row = db.get(UserAlphaApiCredential, user_id)
         if row is None or not row.api_key_cipher:
-            raise ValueError("Manasija Alpha API key is not configured.")
+            raise ValueError("Drishti API key is not configured.")
         account = await fetch_alpha_account(decrypt_value(row.api_key_cipher))
         row.account_json = _json_dumps(account)
         row.account_checked_at = _utc_now()

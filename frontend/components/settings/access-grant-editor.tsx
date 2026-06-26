@@ -7,11 +7,11 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+    Select,
     SelectContent,
     SelectGroup,
     SelectItem,
     SelectLabel,
-    SelectRoot,
     SelectTrigger
 } from "@/components/ui/select";
 import { upsertBrokerAccountGrant } from "@/service/actions/rbac";
@@ -197,7 +197,7 @@ export function AccessGrantEditor({
                     <label className="text-sm font-semibold" htmlFor={`subject-${accountId}`}>
                         Grant access to
                     </label>
-                    <SelectRoot onValueChange={setSelectedKey} value={selectedSubject?.key ?? ""}>
+                    <Select onValueChange={(value) => setSelectedKey(value ?? "")} value={selectedSubject?.key ?? ""}>
                         <SelectTrigger id={`subject-${accountId}`}>
                             <span className="min-w-0 truncate">
                                 {subjectSelectLabel(selectedSubject) || "Select person or role"}
@@ -228,7 +228,7 @@ export function AccessGrantEditor({
                                 );
                             })}
                         </SelectContent>
-                    </SelectRoot>
+                    </Select>
                     {selectedSubject?.subtitle ? (
                         <div className="text-sm text-muted-foreground">{selectedSubject.subtitle}</div>
                     ) : null}

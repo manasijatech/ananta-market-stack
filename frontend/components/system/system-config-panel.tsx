@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { CircleHelpIcon } from "lucide-react";
 import {
@@ -37,8 +38,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { formatIstDateTime } from "@/lib/datetime";
+import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
 
 type ProviderDraftState = {
@@ -612,20 +614,18 @@ export function SystemConfigPanel({
                     active account.
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Select
+                    <SimpleSelect
                         className="h-9 min-w-[240px] max-w-sm border border-input bg-background px-3 text-sm"
                         disabled={isDefaultBrokerSaving || !config.broker_data_default.accounts.length}
-                        onChange={(event) => {
-                            void autosaveDefaultBrokerPreference(event.target.value);
+                        onValueChange={(accountId) => {
+                            void autosaveDefaultBrokerPreference(accountId);
                         }}
+                        options={config.broker_data_default.accounts.map((account) => ({
+                            value: account.account_id,
+                            label: `${account.label} · ${account.broker_code}`
+                        }))}
                         value={selectedDefaultAccountId}
-                    >
-                        {config.broker_data_default.accounts.map((account) => (
-                            <option key={account.account_id} value={account.account_id}>
-                                {account.label} · {account.broker_code}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                 </div>
                 {isDefaultBrokerSaving ? <div className="mt-3 text-xs text-muted-foreground">Saving default broker...</div> : null}
                 {config.broker_data_default.effective_default_account_id ? (
@@ -706,11 +706,11 @@ export function SystemConfigPanel({
                 {section === "all" ? (
                 <div>
                     <div className="flex items-center gap-2">
-                        <div className="text-sm font-bold">Manasija Alpha API</div>
+                        <div className="text-sm font-bold">Drishti API</div>
                         <Dialog>
                             <DialogTrigger asChild>
                                 <Button
-                                    aria-label="Manasija Alpha API help"
+                                    aria-label="Drishti API help"
                                     className="size-6 border-transparent bg-transparent p-0 text-muted-foreground hover:bg-transparent hover:text-primary"
                                     size="icon"
                                     type="button"
@@ -721,9 +721,9 @@ export function SystemConfigPanel({
                             </DialogTrigger>
                             <DialogContent className="max-w-lg p-0">
                                 <DialogHeader className="border-b border-border px-5 py-4 pr-14">
-                                    <DialogTitle>Manasija Alpha API</DialogTitle>
+                                    <DialogTitle>Drishti API</DialogTitle>
                                     <DialogDescription>
-                                        This key connects Ananta Market Stack to Manasija Alpha market intelligence services.
+                                        This key connects Ananta Market Stack to Drishti market intelligence services.
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
@@ -733,14 +733,26 @@ export function SystemConfigPanel({
                                     </p>
                                     <p>
                                         The key is saved server-side and shown here only as a masked hint. Replace it
-                                        when the key rotates, or clear it to disable Alpha-backed intelligence calls.
+                                        when the key rotates, or clear it to disable Drishti-backed intelligence calls.
+                                    </p>
+                                    <p>
+                                        Don&apos;t have a key yet?{" "}
+                                        <Link
+                                            className="font-medium text-primary underline underline-offset-2"
+                                            href={DRISHTI_API_SIGNUP_URL}
+                                            rel="noopener noreferrer"
+                                            target="_blank"
+                                        >
+                                            Create one at drishti.manasija.in
+                                        </Link>
+                                        .
                                     </p>
                                 </div>
                             </DialogContent>
                         </Dialog>
                     </div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
-                        Store the Alpha API key used for market intelligence, company metadata, announcements, concalls,
+                        Store the Drishti API key used for market intelligence, company metadata, announcements, concalls,
                         and daily summaries.
                     </p>
                 </div>
@@ -748,8 +760,22 @@ export function SystemConfigPanel({
                 <div className="border border-border p-4" data-onboarding="manasija-alpha-api-input-section">
                     {alphaReadOnly ? (
                         <div className="mb-4 border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
-                            This Manasija Alpha key is shared for the whole workspace. You can use the configured
+                            This Drishti API key is shared for the whole workspace. You can use the configured
                             services, but only an allowed admin can change this setup.
+                        </div>
+                    ) : null}
+                    {!config.alpha_api.has_api_key ? (
+                        <div className="mb-4 border border-primary/30 bg-primary/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                            Don&apos;t have a Drishti API key yet?{" "}
+                            <Link
+                                className="font-medium text-primary underline underline-offset-2"
+                                href={DRISHTI_API_SIGNUP_URL}
+                                rel="noopener noreferrer"
+                                target="_blank"
+                            >
+                                Create one at drishti.manasija.in
+                            </Link>
+                            , then paste it below.
                         </div>
                     ) : null}
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -790,8 +816,8 @@ export function SystemConfigPanel({
                             onChange={(event) => setAlphaApiKey(event.target.value)}
                             placeholder={
                                 config.alpha_api.has_api_key
-                                    ? "Replace saved Manasija Alpha API key"
-                                    : "Add Manasija Alpha API key"
+                                    ? "Replace saved Drishti API key"
+                                    : "Add Drishti API key"
                             }
                             type="password"
                             value={alphaApiKey}
@@ -799,7 +825,7 @@ export function SystemConfigPanel({
                         <Button
                             disabled={alphaReadOnly || isPending || !alphaApiKey.trim()}
                             onClick={saveAlphaApiKey}
-                            title={alphaReadOnly ? "Only a workspace admin can update the shared Alpha key." : undefined}
+                            title={alphaReadOnly ? "Only a workspace admin can update the shared Drishti API key." : undefined}
                             type="button"
                         >
                             Save key
@@ -807,7 +833,7 @@ export function SystemConfigPanel({
                         <Button
                             disabled={alphaReadOnly || isPending || !config.alpha_api.has_api_key}
                             onClick={clearAlphaApiKey}
-                            title={alphaReadOnly ? "Only a workspace admin can clear the shared Alpha key." : undefined}
+                            title={alphaReadOnly ? "Only a workspace admin can clear the shared Drishti API key." : undefined}
                             type="button"
                             variant="ghost"
                         >
@@ -843,22 +869,20 @@ export function SystemConfigPanel({
                         </div>
                     ) : null}
                     <div className="mb-4 flex flex-wrap items-center gap-2">
-                        <Select
+                        <SimpleSelect
                             className="h-9 min-w-[260px]"
-                            onChange={(event) => {
-                                const next = mcpServers.find((server) => server.id === event.target.value);
-                                setSelectedMcpServerId(event.target.value);
+                            onValueChange={(serverId) => {
+                                const next = mcpServers.find((server) => server.id === serverId);
+                                setSelectedMcpServerId(serverId);
                                 setMcpApiKey("");
                                 setMcpExtraHeadersText(JSON.stringify(next?.extra_headers ?? {}, null, 2));
                             }}
+                            options={mcpServers.map((server, index) => ({
+                                value: server.id ?? "",
+                                label: server.name || server.url || `MCP server ${index + 1}`
+                            }))}
                             value={mcpConfig.id ?? ""}
-                        >
-                            {mcpServers.map((server, index) => (
-                                <option key={server.id ?? `mcp-${index}`} value={server.id ?? ""}>
-                                    {server.name || server.url || `MCP server ${index + 1}`}
-                                </option>
-                            ))}
-                        </Select>
+                        />
                         <Button
                             disabled={mcpReadOnly || isPending}
                             onClick={addMcpServer}
@@ -932,31 +956,33 @@ export function SystemConfigPanel({
                             placeholder="https://mcp.testing.manasija.in/"
                             value={mcpConfig.url}
                         />
-                        <Select
+                        <SimpleSelect
                             className="h-9"
                             disabled={mcpReadOnly}
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ transport: event.target.value as "streamable_http" | "sse" })
+                            onValueChange={(transport) =>
+                                patchSelectedMcpServer({ transport: transport as "streamable_http" | "sse" })
                             }
+                            options={[
+                                { value: "streamable_http", label: "Streamable HTTP" },
+                                { value: "sse", label: "SSE" }
+                            ]}
                             value={mcpConfig.transport}
-                        >
-                            <option value="streamable_http">Streamable HTTP</option>
-                            <option value="sse">SSE</option>
-                        </Select>
+                        />
                     </div>
 
                     <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[180px_minmax(220px,1fr)]">
-                        <Select
+                        <SimpleSelect
                             className="h-9"
                             disabled={mcpReadOnly}
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ auth_mode: event.target.value as "oauth" | "api_key" })
+                            onValueChange={(authMode) =>
+                                patchSelectedMcpServer({ auth_mode: authMode as "oauth" | "api_key" })
                             }
+                            options={[
+                                { value: "oauth", label: "OAuth / browser authentication" },
+                                { value: "api_key", label: "Bearer API key fallback" }
+                            ]}
                             value={mcpConfig.auth_mode ?? "oauth"}
-                        >
-                            <option value="oauth">OAuth / browser authentication</option>
-                            <option value="api_key">Bearer API key fallback</option>
-                        </Select>
+                        />
                         <div className="flex flex-wrap gap-2">
                             <Button
                                 disabled={mcpReadOnly || isPending || !mcpConfig.url}

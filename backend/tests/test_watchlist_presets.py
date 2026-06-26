@@ -84,6 +84,6 @@ def test_create_watchlist_requires_alpha_api_key():
             watchlist_svc.create_watchlist(db, "u1", WatchlistCreateIn(name="Momentum"))
 
         assert exc_info.value.status_code == 400
-        assert "Manasija Alpha API key is required" in str(exc_info.value.detail)
+        assert "Drishti API key is required" in str(exc_info.value.detail)
     finally:
         db.close()

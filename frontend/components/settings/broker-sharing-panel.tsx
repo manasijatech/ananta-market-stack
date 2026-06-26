@@ -1,10 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
+import { IconArrowRight, IconWallet } from "@tabler/icons-react";
 import { Pencil } from "lucide-react";
 import { AccessGrantEditor } from "@/components/settings/access-grant-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+    Empty,
+    EmptyContent,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle
+} from "@/components/ui/empty";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { BrokerAccountGrant, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
 
@@ -28,6 +38,28 @@ function permissionSummary(grant: BrokerAccountGrant): string {
     return grant.permissions.map((permission) => permissionLabel(permission)).join(", ");
 }
 
+function BrokerAccountsEmptyState() {
+    return (
+        <Empty className="items-start rounded-md bg-card px-5 py-8 text-left md:py-10">
+            <EmptyHeader className="items-start text-left">
+                <EmptyMedia className="mb-3" variant="icon">
+                    <IconWallet aria-hidden className="size-6 text-muted-foreground" />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-medium">No broker accounts connected</EmptyTitle>
+                <EmptyDescription className="text-[13px]">
+                    Connect a broker account first, then return here to share access.
+                </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent className="items-start">
+                <Button render={<Link href="/broker-connections" />} variant="ghost">
+                    Go to Broker Connections
+                    <IconArrowRight aria-hidden className="size-4" />
+                </Button>
+            </EmptyContent>
+        </Empty>
+    );
+}
+
 export function BrokerSharingPanel({
     accountGrants,
     members,
@@ -46,11 +78,7 @@ export function BrokerSharingPanel({
     );
 
     if (!selected) {
-        return (
-            <Alert>
-                <AlertDescription>No broker accounts available.</AlertDescription>
-            </Alert>
-        );
+        return <BrokerAccountsEmptyState />;
     }
 
     function openAddGrant() {
@@ -64,14 +92,14 @@ export function BrokerSharingPanel({
     }
 
     return (
-        <div className="grid border border-border bg-background lg:grid-cols-[200px_minmax(0,1fr)]">
-            <div className="max-h-[620px] overflow-y-auto border-b border-border lg:border-b-0 lg:border-r">
+        <div className="grid rounded-md bg-card lg:grid-cols-[200px_minmax(0,1fr)]">
+            <div className="max-h-[620px] overflow-y-auto border-b border-border lg:border-r lg:border-b-0">
                 {accountGrants.map(({ account, grants }) => {
                     const selectedAccount = account.id === selected.account.id;
                     return (
                         <button
-                            className={`grid w-full gap-1 border-b border-border px-3 py-3 text-left text-sm transition-colors hover:bg-[var(--bg-hover)] ${
-                                selectedAccount ? "bg-card" : "bg-background"
+                            className={`grid w-full gap-1 border-b border-border px-3 py-3 text-left text-sm transition-colors hover:bg-accent/40 ${
+                                selectedAccount ? "bg-accent/30" : "bg-card"
                             }`}
                             key={account.id}
                             onClick={() => {
@@ -83,7 +111,7 @@ export function BrokerSharingPanel({
                         >
                             <span className="flex min-w-0 items-center justify-between gap-2">
                                 <span className="truncate font-semibold">{account.label}</span>
-                                <span className="inline-flex size-6 shrink-0 items-center justify-center border border-primary bg-primary text-xs font-semibold text-primary-foreground">
+                                <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-sm border border-primary bg-primary text-xs font-semibold text-primary-foreground">
                                     {grants.length}
                                 </span>
                             </span>
@@ -107,7 +135,10 @@ export function BrokerSharingPanel({
                 {selected.grants.length ? (
                     <div className="grid gap-2">
                         {selected.grants.map((grant) => (
-                            <div className="grid gap-2 border border-border bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]" key={grant.id}>
+                            <div
+                                className="grid gap-2 rounded-md border border-border bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]"
+                                key={grant.id}
+                            >
                                 <div className="min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                         <span className="font-semibold">{grant.subject_label}</span>
@@ -146,7 +177,7 @@ export function BrokerSharingPanel({
                 </div>
 
                 {expandedForm ? (
-                    <div className="border border-border bg-card p-4">
+                    <div className="rounded-md border border-border bg-card p-4">
                         <AccessGrantEditor
                             accountId={selected.account.id}
                             grants={selected.grants}
