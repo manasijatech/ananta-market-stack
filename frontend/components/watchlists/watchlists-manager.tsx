@@ -145,6 +145,38 @@ function livePriceLabel(price: LivePriceTick | undefined): string {
     return formatLivePrice(price?.ltp ?? price?.last_price);
 }
 
+function normalizedInstrumentToken(value: string | null | undefined): string {
+    return (value ?? "").trim().toUpperCase();
+}
+
+function isDerivativeSearchRow(row: InstrumentSearchRow): boolean {
+    const segment = normalizedInstrumentToken(row.segment);
+    const instrumentType = normalizedInstrumentToken(row.instrument_type);
+    const symbol = normalizedInstrumentToken(row.symbol);
+    if (row.expiry || row.option_type || row.strike) return true;
+    if (
+        segment.includes("OPT") ||
+        segment.includes("FUT") ||
+        segment.includes("FNO") ||
+        segment.includes("DERIV")
+    ) {
+        return true;
+    }
+    if (
+        instrumentType.includes("OPT") ||
+        instrumentType.includes("FUT") ||
+        instrumentType.includes("FNO") ||
+        instrumentType.includes("DERIV")
+    ) {
+        return true;
+    }
+    return /-(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{4}-.*-(?:CE|PE)$/.test(symbol);
+}
+
+function isLivePreviewCandidate(row: InstrumentSearchRow): boolean {
+    return !isDerivativeSearchRow(row);
+}
+
 function sortWatchlists(items: Watchlist[]): Watchlist[] {
     return [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }
@@ -254,7 +286,10 @@ export function WatchlistsManager({
     );
     const suggestionLiveDemand = useMemo(
         () =>
-            [...suggestions, ...createSuggestions].slice(0, 40).map((row) => ({
+            [...suggestions, ...createSuggestions]
+                .filter(isLivePreviewCandidate)
+                .slice(0, 12)
+                .map((row) => ({
                 account_id: row.account_id ?? null,
                 broker_code: row.broker_code ?? null,
                 symbol: row.symbol,

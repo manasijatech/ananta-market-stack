@@ -91,10 +91,11 @@ def _hydrate_exact_match(
     broker_code: str,
     instrument: dict[str, Any],
 ) -> dict[str, Any]:
-    symbol = str(instrument.get("symbol") or "").strip()
-    exchange = str(instrument.get("exchange") or "").strip()
+    sanitized_instrument = {key: value for key, value in instrument.items() if value is not None}
+    symbol = str(sanitized_instrument.get("symbol") or "").strip()
+    exchange = str(sanitized_instrument.get("exchange") or "").strip()
     if not symbol:
-        return instrument
+        return sanitized_instrument
     stmt = select(BrokerInstrument).where(BrokerInstrument.broker_code == broker_code)
     stmt = stmt.where(BrokerInstrument.symbol == symbol)
     if exchange:
@@ -103,10 +104,10 @@ def _hydrate_exact_match(
     if not row:
         csv_match = _csv_exact_match(broker_code, symbol=symbol, exchange=exchange)
         if csv_match:
-            return {**csv_match, **instrument}
+            return {**csv_match, **sanitized_instrument}
     if not row:
-        return instrument
-    merged = dict(instrument)
+        return sanitized_instrument
+    merged = dict(sanitized_instrument)
     merged.setdefault("exchange", row.exchange)
     merged.setdefault("segment", row.segment)
     merged.setdefault("trading_symbol", row.trading_symbol)
@@ -522,11 +523,11 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
         ),
         "option_chain": DataCapabilityItem(
             supported=acc.broker_code in {"groww", "dhan"},
-            guidance="Option chain is currently wired for Groww and Dhan.",
+            guidance="Option chain is currently wired for Groww and Dhan. INDstocks documents the endpoints but the live API still returns route-missing responses.",
         ),
         "greeks": DataCapabilityItem(
             supported=acc.broker_code == "groww",
-            guidance="Greeks are currently derived from Groww option chain responses.",
+            guidance="Greeks are currently derived from Groww option chain responses. INDstocks still advertises these endpoints as coming soon and the live API returns 404.",
         ),
         "stream": DataCapabilityItem(supported=True, guidance="WebSocket v1 is an on-demand test manager that uses a uniform read-only flow."),
     }

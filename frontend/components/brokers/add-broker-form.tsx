@@ -16,7 +16,11 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { BrokerCode, CreateBrokerAccountPayload, FieldErrors } from "@/service/types/broker";
 
+type ZerodhaMode = "official" | "automation";
+type AngelMode = "manual" | "automation";
+type DhanMode = "consent" | "automation";
 type GrowwMode = "approval" | "totp" | "token";
+type KotakMode = "manual" | "automation";
 
 const fallbackBrokerRedirectUrl = "http://localhost:3000/broker-connections";
 
@@ -36,7 +40,11 @@ function nullableField(formData: FormData, key: string): string | null {
 function makePayload(
     broker: BrokerCode,
     formData: FormData,
+    zerodhaMode: ZerodhaMode,
+    angelMode: AngelMode,
+    dhanMode: DhanMode,
     growwMode: GrowwMode,
+    kotakMode: KotakMode,
     defaultBrokerRedirectUrl: string
 ): CreateBrokerAccountPayload {
     const label = stringField(formData, "label");
@@ -46,7 +54,10 @@ function makePayload(
                 broker,
                 label,
                 api_key: stringField(formData, "api_key"),
-                api_secret: stringField(formData, "api_secret")
+                api_secret: stringField(formData, "api_secret"),
+                login_user_id: zerodhaMode === "automation" ? nullableField(formData, "login_user_id") : null,
+                login_password: zerodhaMode === "automation" ? nullableField(formData, "login_password") : null,
+                totp_secret: zerodhaMode === "automation" ? nullableField(formData, "totp_secret") : null
             };
         case "upstox":
             return {
@@ -62,8 +73,8 @@ function makePayload(
                 label,
                 api_key: stringField(formData, "api_key"),
                 client_code: stringField(formData, "client_code"),
-                pin: stringField(formData, "pin"),
-                totp_secret: nullableField(formData, "totp_secret")
+                pin: angelMode === "automation" ? stringField(formData, "pin") : "",
+                totp_secret: angelMode === "automation" ? nullableField(formData, "totp_secret") : null
             };
         case "dhan":
             return {
@@ -72,8 +83,8 @@ function makePayload(
                 app_id: stringField(formData, "app_id"),
                 app_secret: stringField(formData, "app_secret"),
                 client_id: stringField(formData, "client_id"),
-                pin: nullableField(formData, "pin"),
-                totp_secret: nullableField(formData, "totp_secret")
+                pin: dhanMode === "automation" ? nullableField(formData, "pin") : null,
+                totp_secret: dhanMode === "automation" ? nullableField(formData, "totp_secret") : null
             };
         case "kotak":
             return {
@@ -81,9 +92,9 @@ function makePayload(
                 label,
                 ucc: stringField(formData, "ucc"),
                 portal_access_token: stringField(formData, "portal_access_token"),
-                mobile_number: nullableField(formData, "mobile_number"),
-                mpin: nullableField(formData, "mpin"),
-                totp_secret: nullableField(formData, "totp_secret")
+                mobile_number: kotakMode === "automation" ? nullableField(formData, "mobile_number") : null,
+                mpin: kotakMode === "automation" ? nullableField(formData, "mpin") : null,
+                totp_secret: kotakMode === "automation" ? nullableField(formData, "totp_secret") : null
             };
         case "groww":
             return {
@@ -102,6 +113,32 @@ function makePayload(
                 access_token: nullableField(formData, "access_token")
             };
     }
+}
+
+function ModeSwitch<TMode extends string>({
+    modes,
+    value,
+    onChange
+}: {
+    modes: readonly { value: TMode; label: string }[];
+    value: TMode;
+    onChange: (value: TMode) => void;
+}) {
+    return (
+        <div className="flex flex-wrap gap-2">
+            {modes.map((mode) => (
+                <Button
+                    size="sm"
+                    variant={value === mode.value ? "default" : "outline"}
+                    key={mode.value}
+                    onClick={() => onChange(mode.value)}
+                    type="button"
+                >
+                    {mode.label}
+                </Button>
+            ))}
+        </div>
+    );
 }
 
 function Field({
@@ -195,7 +232,11 @@ function BrokerGuidePanel({ broker }: { broker: BrokerCode }) {
 export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCode[] }) {
     const router = useRouter();
     const [broker, setBroker] = useState<BrokerCode>(supportedBrokers[0] ?? "zerodha");
+    const [zerodhaMode, setZerodhaMode] = useState<ZerodhaMode>("official");
+    const [angelMode, setAngelMode] = useState<AngelMode>("manual");
+    const [dhanMode, setDhanMode] = useState<DhanMode>("consent");
     const [growwMode, setGrowwMode] = useState<GrowwMode>("approval");
+    const [kotakMode, setKotakMode] = useState<KotakMode>("manual");
     const [isPending, startTransition] = useTransition();
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
     const [message, setMessage] = useState("");
@@ -210,7 +251,16 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
     function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
-        const payload = makePayload(broker, formData, growwMode, defaultBrokerRedirectUrl);
+        const payload = makePayload(
+            broker,
+            formData,
+            zerodhaMode,
+            angelMode,
+            dhanMode,
+            growwMode,
+            kotakMode,
+            defaultBrokerRedirectUrl
+        );
         setFieldErrors({});
         setMessage("");
 
@@ -267,6 +317,14 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
 
                         {broker === "zerodha" ? (
                             <>
+                                <ModeSwitch
+                                    modes={[
+                                        { value: "official", label: "API only" },
+                                        { value: "automation", label: "Web login automation" }
+                                    ]}
+                                    onChange={setZerodhaMode}
+                                    value={zerodhaMode}
+                                />
                                 <Field error={fieldErrors.api_key} label="API key" name="api_key" />
                                 <Field
                                     error={fieldErrors.api_secret}
@@ -274,6 +332,30 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                     name="api_secret"
                                     type="password"
                                 />
+                                {zerodhaMode === "automation" ? (
+                                    <>
+                                        <Field
+                                            error={fieldErrors.login_user_id}
+                                            label="Login user ID"
+                                            name="login_user_id"
+                                            description="Zerodha user ID used for the optional automated web-login flow."
+                                        />
+                                        <Field
+                                            error={fieldErrors.login_password}
+                                            label="Login password"
+                                            name="login_password"
+                                            type="password"
+                                            description="Stored encrypted and used only for optional automated refresh."
+                                        />
+                                        <Field
+                                            error={fieldErrors.totp_secret}
+                                            label="TOTP secret"
+                                            name="totp_secret"
+                                            type="password"
+                                            description="Base32 authenticator secret, not the current 6-digit OTP."
+                                        />
+                                    </>
+                                ) : null}
                             </>
                         ) : null}
 
@@ -299,20 +381,41 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
 
                         {broker === "angel" ? (
                             <>
+                                <ModeSwitch
+                                    modes={[
+                                        { value: "manual", label: "Manual TOTP" },
+                                        { value: "automation", label: "Stored TOTP automation" }
+                                    ]}
+                                    onChange={setAngelMode}
+                                    value={angelMode}
+                                />
                                 <Field error={fieldErrors.api_key} label="API key" name="api_key" />
                                 <Field error={fieldErrors.client_code} label="Client code" name="client_code" />
-                                <Field error={fieldErrors.pin} label="PIN" name="pin" type="password" />
-                                <Field
-                                    error={fieldErrors.totp_secret}
-                                    label="TOTP secret"
-                                    name="totp_secret"
-                                    optional
-                                />
+                                {angelMode === "automation" ? (
+                                    <>
+                                        <Field error={fieldErrors.pin} label="PIN" name="pin" type="password" />
+                                        <Field
+                                            error={fieldErrors.totp_secret}
+                                            label="TOTP secret"
+                                            name="totp_secret"
+                                            type="password"
+                                            description="Base32 authenticator secret for SmartAPI automation."
+                                        />
+                                    </>
+                                ) : null}
                             </>
                         ) : null}
 
                         {broker === "dhan" ? (
                             <>
+                                <ModeSwitch
+                                    modes={[
+                                        { value: "consent", label: "Manual consent" },
+                                        { value: "automation", label: "TOTP automation" }
+                                    ]}
+                                    onChange={setDhanMode}
+                                    value={dhanMode}
+                                />
                                 <Field error={fieldErrors.app_id} label="API key" name="app_id" />
                                 <Field
                                     error={fieldErrors.app_secret}
@@ -321,18 +424,31 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                     type="password"
                                 />
                                 <Field error={fieldErrors.client_id} label="Client ID" name="client_id" />
-                                <Field error={fieldErrors.pin} label="PIN" name="pin" optional type="password" />
-                                <Field
-                                    error={fieldErrors.totp_secret}
-                                    label="TOTP secret"
-                                    name="totp_secret"
-                                    optional
-                                />
+                                {dhanMode === "automation" ? (
+                                    <>
+                                        <Field error={fieldErrors.pin} label="PIN" name="pin" type="password" />
+                                        <Field
+                                            error={fieldErrors.totp_secret}
+                                            label="TOTP secret"
+                                            name="totp_secret"
+                                            type="password"
+                                            description="QR/authenticator secret used for official Dhan TOTP automation."
+                                        />
+                                    </>
+                                ) : null}
                             </>
                         ) : null}
 
                         {broker === "kotak" ? (
                             <>
+                                <ModeSwitch
+                                    modes={[
+                                        { value: "manual", label: "Manual session" },
+                                        { value: "automation", label: "Stored TOTP + MPIN" }
+                                    ]}
+                                    onChange={setKotakMode}
+                                    value={kotakMode}
+                                />
                                 <Field error={fieldErrors.ucc} label="UCC" name="ucc" />
                                 <Field
                                     error={fieldErrors.portal_access_token}
@@ -340,41 +456,33 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                     name="portal_access_token"
                                     type="password"
                                 />
-                                <Field
-                                    error={fieldErrors.mobile_number}
-                                    label="Mobile number"
-                                    name="mobile_number"
-                                    optional
-                                />
-                                <Field error={fieldErrors.mpin} label="MPIN" name="mpin" optional type="password" />
-                                <Field
-                                    error={fieldErrors.totp_secret}
-                                    label="TOTP secret"
-                                    name="totp_secret"
-                                    optional
-                                />
+                                {kotakMode === "automation" ? (
+                                    <>
+                                        <Field error={fieldErrors.mobile_number} label="Mobile number" name="mobile_number" />
+                                        <Field error={fieldErrors.mpin} label="MPIN" name="mpin" type="password" />
+                                        <Field
+                                            error={fieldErrors.totp_secret}
+                                            label="TOTP secret"
+                                            name="totp_secret"
+                                            type="password"
+                                            description="Base32 authenticator secret used for Kotak TOTP generation."
+                                        />
+                                    </>
+                                ) : null}
                             </>
                         ) : null}
 
                         {broker === "groww" ? (
                             <>
-                                <div className="flex flex-wrap gap-2">
-                                    {(["approval", "totp", "token"] as GrowwMode[]).map((mode) => (
-                                        <Button
-                                            size="sm"
-                                            variant={growwMode === mode ? "default" : "outline"}
-                                            key={mode}
-                                            onClick={() => setGrowwMode(mode)}
-                                            type="button"
-                                        >
-                                            {mode === "approval"
-                                                ? "API approval"
-                                                : mode === "totp"
-                                                  ? "TOTP"
-                                                  : "Access token"}
-                                        </Button>
-                                    ))}
-                                </div>
+                                <ModeSwitch
+                                    modes={[
+                                        { value: "approval", label: "API approval" },
+                                        { value: "totp", label: "TOTP" },
+                                        { value: "token", label: "Access token" }
+                                    ]}
+                                    onChange={setGrowwMode}
+                                    value={growwMode}
+                                />
                                 {growwMode === "approval" ? (
                                     <>
                                         <Field error={fieldErrors.api_key} label="API key" name="api_key" />
