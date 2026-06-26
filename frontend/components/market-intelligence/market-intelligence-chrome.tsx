@@ -147,6 +147,55 @@ function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
     };
 }
 
+const DERIVATIVE_EXCHANGES = new Set(["NFO", "BFO", "CDS", "MCX"]);
+const EQUITY_INSTRUMENT_TYPES = new Set(["E", "EQ", "EQUITY", "STOCK", "CASH", "NSE_EQ", "BSE_EQ", "BE"]);
+const DERIVATIVE_INSTRUMENT_TYPES = new Set(["FUT", "FUTSTK", "FUTIDX", "OPT", "OPTSTK", "OPTIDX", "CE", "PE"]);
+const DERIVATIVE_SEGMENT_PATTERN = /\b(?:F&O|FNO|FO|FUT|OPT|DERIV|NFO|BFO|CDS|MCX)\b/i;
+const DERIVATIVE_SYMBOL_PATTERN =
+    /(?:^|[-_])(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{4}(?:[-_]\d+(?:\.\d+)?)?(?:[-_](?:CE|PE))?(?:[-_]|$)|(?:^|[-_])(?:FUT|CE|PE)(?:[-_]|$)/i;
+const CONTRACT_MONTH_PATTERN = /[-_](?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{4}/i;
+const FUTURE_TOKEN_PATTERN = /[-_]FUT(?:[-_]|$)/i;
+
+function isLikelyEquitySymbol(value: string): boolean {
+    const symbol = value.trim().toUpperCase();
+    return Boolean(symbol) && !DERIVATIVE_SYMBOL_PATTERN.test(symbol);
+}
+
+function isEquitySearchRow(row: InstrumentSearchRow): boolean {
+    if (!isLikelyEquitySymbol(row.symbol) || (row.trading_symbol && !isLikelyEquitySymbol(row.trading_symbol))) {
+        return false;
+    }
+    if (row.expiry || row.strike || row.option_type) return false;
+
+    const exchange = row.exchange?.trim().toUpperCase();
+    if (exchange && DERIVATIVE_EXCHANGES.has(exchange)) return false;
+
+    const instrumentType = row.instrument_type?.trim().toUpperCase();
+    if (instrumentType && DERIVATIVE_INSTRUMENT_TYPES.has(instrumentType)) return false;
+    if (instrumentType && !EQUITY_INSTRUMENT_TYPES.has(instrumentType)) return false;
+
+    const segment = row.segment?.trim().toUpperCase();
+    if (segment && DERIVATIVE_SEGMENT_PATTERN.test(segment)) return false;
+
+    return true;
+}
+
+function marketIntelligenceSymbolFromValue(value: string): string {
+    const symbol = value.trim().toUpperCase();
+    const monthIndex = symbol.search(CONTRACT_MONTH_PATTERN);
+    if (monthIndex > 0) return symbol.slice(0, monthIndex);
+
+    const futureIndex = symbol.search(FUTURE_TOKEN_PATTERN);
+    if (futureIndex > 0) return symbol.slice(0, futureIndex);
+
+    return symbol;
+}
+
+function marketIntelligenceSymbolFromSearch(row: InstrumentSearchRow): string {
+    if (isEquitySearchRow(row)) return row.symbol.trim().toUpperCase();
+    return marketIntelligenceSymbolFromValue(row.symbol || row.trading_symbol || "");
+}
+
 function manualInstrument(symbol: string): InstrumentRef {
     return { symbol: symbol.trim().toUpperCase() };
 }
@@ -222,6 +271,7 @@ export function MarketIntelligenceChrome({
     const [socketState, setSocketState] = useState<MarketIntelligenceSocketState>("connecting");
     const [searchText, setSearchText] = useState("");
     const [committedSymbol, setCommittedSymbol] = useState("");
+    const [committedIntelligenceSymbol, setCommittedIntelligenceSymbol] = useState("");
     const [committedInstrument, setCommittedInstrument] = useState<InstrumentRef | null>(null);
     const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
     const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
@@ -244,9 +294,15 @@ export function MarketIntelligenceChrome({
     const filterLabel = selectedWatchlist ? selectedWatchlist.name : "All watchlists";
     const symbolModeActive = Boolean(committedSymbol);
     const visibleSymbols = useMemo(
-        () => (symbolModeActive ? [committedSymbol] : activeSymbols),
-        [activeSymbols, committedSymbol, symbolModeActive]
+        () => (symbolModeActive ? [committedIntelligenceSymbol || committedSymbol] : activeSymbols),
+        [activeSymbols, committedIntelligenceSymbol, committedSymbol, symbolModeActive]
     );
+    const chartMetadata = useMemo(() => {
+        if (!symbolModeActive || !committedSymbol || !committedIntelligenceSymbol) return activeMetadata;
+        const underlyingMetadata = activeMetadata[committedIntelligenceSymbol];
+        if (!underlyingMetadata || activeMetadata[committedSymbol]) return activeMetadata;
+        return { ...activeMetadata, [committedSymbol]: underlyingMetadata };
+    }, [activeMetadata, committedIntelligenceSymbol, committedSymbol, symbolModeActive]);
 
     useEffect(() => {
         let cancelled = false;
@@ -335,8 +391,9 @@ export function MarketIntelligenceChrome({
                     if (cancelled) return;
                     setSuggestions(rows);
                     setShowSuggestions(true);
+                    setIsLoadingSuggestions(false);
                     const symbolsToLoad = Array.from(
-                        new Set(rows.map((row) => row.symbol.trim().toUpperCase()).filter(Boolean))
+                        new Set(rows.map(marketIntelligenceSymbolFromSearch).filter(Boolean))
                     );
                     if (!symbolsToLoad.length) {
                         setSuggestionMetadata({});
@@ -367,7 +424,7 @@ export function MarketIntelligenceChrome({
     }, [committedSymbol, defaultBrokerAccount?.account_id, searchText]);
 
     useEffect(() => {
-        if (!committedSymbol) return;
+        if (!committedIntelligenceSymbol) return;
 
         let cancelled = false;
         setSymbolError("");
@@ -375,8 +432,8 @@ export function MarketIntelligenceChrome({
         setIsLoadingSymbolFeed(true);
         void (async () => {
             const [nextMetadata, nextFeeds] = await Promise.allSettled([
-                getAlphaSymbolMetadata([committedSymbol]),
-                loadFeeds([committedSymbol])
+                getAlphaSymbolMetadata([committedIntelligenceSymbol]),
+                loadFeeds([committedIntelligenceSymbol])
             ]);
             if (cancelled) return;
             if (nextMetadata.status === "fulfilled") {
@@ -398,7 +455,7 @@ export function MarketIntelligenceChrome({
         return () => {
             cancelled = true;
         };
-    }, [committedSymbol]);
+    }, [committedIntelligenceSymbol]);
 
     useEffect(() => {
         if (!committedSymbol || !committedInstrument) {
@@ -464,13 +521,16 @@ export function MarketIntelligenceChrome({
         isLoadingBrokerConfig
     ]);
 
-    function commitSymbol(symbol: string, instrument: InstrumentRef) {
+    function commitSymbol(symbol: string, instrument: InstrumentRef, intelligenceSymbol?: string) {
         const normalized = symbol.trim().toUpperCase();
         if (!normalized) {
             setSymbolError("Enter a symbol to search market intelligence.");
             return;
         }
+        const normalizedIntelligenceSymbol =
+            intelligenceSymbol?.trim().toUpperCase() || marketIntelligenceSymbolFromValue(normalized);
         setCommittedSymbol(normalized);
+        setCommittedIntelligenceSymbol(normalizedIntelligenceSymbol);
         setCommittedInstrument({ ...instrument, symbol: instrument.symbol?.trim().toUpperCase() || normalized });
         setSearchText(normalized);
         setShowSuggestions(false);
@@ -486,7 +546,11 @@ export function MarketIntelligenceChrome({
             return symbol === query || tradingSymbol === query;
         });
         if (exactSuggestion) {
-            commitSymbol(exactSuggestion.symbol, instrumentFromSearch(exactSuggestion));
+            commitSymbol(
+                exactSuggestion.symbol,
+                instrumentFromSearch(exactSuggestion),
+                marketIntelligenceSymbolFromSearch(exactSuggestion)
+            );
             return;
         }
         commitSymbol(query, manualInstrument(query));
@@ -495,6 +559,7 @@ export function MarketIntelligenceChrome({
     function clearSymbolSearch() {
         setSearchText("");
         setCommittedSymbol("");
+        setCommittedIntelligenceSymbol("");
         setCommittedInstrument(null);
         setSuggestions([]);
         setSuggestionMetadata({});
@@ -584,7 +649,8 @@ export function MarketIntelligenceChrome({
                                 ) : null}
                                 {!isLoadingSuggestions && suggestions.length
                                     ? suggestions.map((row) => {
-                                          const metadata = suggestionMetadata[row.symbol.trim().toUpperCase()];
+                                          const intelligenceSymbol = marketIntelligenceSymbolFromSearch(row);
+                                          const metadata = suggestionMetadata[intelligenceSymbol];
                                           const company = metadata?.company_name ?? row.name;
                                           const detail = [
                                               row.exchange,
@@ -598,7 +664,7 @@ export function MarketIntelligenceChrome({
                                                   key={`${row.account_id ?? "default"}-${row.exchange ?? ""}-${row.symbol}-${row.trading_symbol ?? ""}`}
                                                   onMouseDown={(event) => {
                                                       event.preventDefault();
-                                                      commitSymbol(row.symbol, instrumentFromSearch(row));
+                                                      commitSymbol(row.symbol, instrumentFromSearch(row), intelligenceSymbol);
                                                   }}
                                                   type="button"
                                               >
@@ -709,7 +775,11 @@ export function MarketIntelligenceChrome({
                     <div className="flex min-w-0 items-center gap-2 min-[920px]:w-[min(36vw,320px)] min-[920px]:shrink-0">
                         <FeedSearchInput
                             onChange={setFeedSearch}
-                            placeholder={symbolModeActive ? `Filter ${committedSymbol} feed` : `Filter ${filterLabel} feed`}
+                            placeholder={
+                                symbolModeActive
+                                    ? `Filter ${committedIntelligenceSymbol || committedSymbol} feed`
+                                    : `Filter ${filterLabel} feed`
+                            }
                             value={feedSearch}
                         />
                     </div>
@@ -724,7 +794,7 @@ export function MarketIntelligenceChrome({
                         instrument={committedInstrument}
                         state={chartState}
                         symbol={committedSymbol}
-                        symbolMetadata={activeMetadata}
+                        symbolMetadata={chartMetadata}
                     />
                 </div>
             ) : null}
