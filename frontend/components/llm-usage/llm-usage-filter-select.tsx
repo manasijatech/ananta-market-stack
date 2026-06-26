@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { SelectContent, SelectItem, SelectRoot, SelectTrigger } from "@/components/ui/select";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { LLM_USAGE_ALL_FILTER_VALUE, type LlmUsageFilterOption } from "@/lib/llm-usage-filters";
+import { typography } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 type LlmUsageFilterSelectProps = {
     label: string;
@@ -11,11 +14,15 @@ type LlmUsageFilterSelectProps = {
     options: LlmUsageFilterOption[];
     allLabel?: string;
     includeAll?: boolean;
+    triggerClassName?: string;
+    hideLabel?: boolean;
 };
 
 function cleanValue(value?: string | null): string {
     return value?.trim() || "";
 }
+
+const filterLabelClassName = typography.statLabel;
 
 export function LlmUsageFilterSelect({
     includeAll = true,
@@ -23,26 +30,27 @@ export function LlmUsageFilterSelect({
     name,
     value,
     options,
-    allLabel = "All"
+    allLabel = "All",
+    triggerClassName,
+    hideLabel = false
 }: LlmUsageFilterSelectProps) {
     const initialValue = cleanValue(value) || (includeAll ? LLM_USAGE_ALL_FILTER_VALUE : options[0]?.value || "");
     const [selectedValue, setSelectedValue] = useState(initialValue);
     useEffect(() => {
         setSelectedValue(initialValue);
     }, [initialValue]);
-    const hasSelectedValue = selectedValue !== LLM_USAGE_ALL_FILTER_VALUE && !options.some((option) => option.value === selectedValue);
+    const hasSelectedValue =
+        selectedValue !== LLM_USAGE_ALL_FILTER_VALUE && !options.some((option) => option.value === selectedValue);
     const selectedLabel = useMemo(() => {
         if (includeAll && selectedValue === LLM_USAGE_ALL_FILTER_VALUE) return allLabel;
         return options.find((option) => option.value === selectedValue)?.label || selectedValue;
     }, [allLabel, includeAll, options, selectedValue]);
 
     return (
-        <label className="grid gap-1">
-            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                {label}
-            </span>
-            <SelectRoot name={name} onValueChange={setSelectedValue} value={selectedValue}>
-                <SelectTrigger>
+        <Field className={cn("min-w-[140px]", triggerClassName)}>
+            {hideLabel ? null : <FieldLabel className={filterLabelClassName}>{label}</FieldLabel>}
+            <Select name={name} onValueChange={(next) => setSelectedValue(next ?? "")} value={selectedValue}>
+                <SelectTrigger className="h-8 w-full min-w-[140px]">
                     <span className="min-w-0 truncate">{selectedLabel}</span>
                 </SelectTrigger>
                 <SelectContent>
@@ -61,7 +69,7 @@ export function LlmUsageFilterSelect({
                         </SelectItem>
                     ))}
                 </SelectContent>
-            </SelectRoot>
-        </label>
+            </Select>
+        </Field>
     );
 }

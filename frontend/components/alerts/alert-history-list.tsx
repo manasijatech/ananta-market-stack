@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AlertNotification, AlertWorkflowRun } from "@/service/types/alerts";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatIstDateTime } from "@/lib/datetime";
+import { typography } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 12;
 
@@ -45,6 +48,25 @@ function llmOutput(payload: Record<string, unknown>) {
     return typeof output === "string" ? output : "";
 }
 
+function alertSeverityBorder(level: string) {
+    const normalized = level.toLowerCase();
+    if (normalized === "critical" || normalized === "error" || normalized === "danger") {
+        return "border-l-[3px] border-l-destructive";
+    }
+    if (normalized === "warning" || normalized === "warn") {
+        return "border-l-[3px] border-l-warning";
+    }
+    return "border-l-[3px] border-l-info";
+}
+
+function levelBadgeVariant(level: string): "info" | "warning" | "error" | "secondary" {
+    const normalized = level.toLowerCase();
+    if (normalized === "critical" || normalized === "error" || normalized === "danger") return "error";
+    if (normalized === "warning" || normalized === "warn") return "warning";
+    if (normalized === "info") return "info";
+    return "secondary";
+}
+
 export function AlertHistoryList({
     notifications,
     runs
@@ -67,41 +89,61 @@ export function AlertHistoryList({
     }, [runs]);
 
     return (
-        <div className="grid gap-6 min-[1100px]:grid-cols-2">
-            <section className="grid gap-3">
-                <div className="type-section-title">Recent alerts</div>
+        <div className="grid min-h-[120px] gap-0 min-[1024px]:grid-cols-2 min-[1024px]:divide-x min-[1024px]:divide-border">
+            <section className="grid min-h-[120px] gap-3 min-[1024px]:pr-6">
+                <p className="type-step-eyebrow">Recent alerts</p>
                 <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-1">
                     {alertList.rows.map((item) => (
-                        <div className=" border border-border p-4" key={item.id}>
-                            <div className="type-section-title">{item.title}</div>
-                            <div className="type-help mt-1 text-muted-foreground">{item.message}</div>
+                        <div
+                            className={cn(
+                                "min-h-[120px] border border-border bg-card p-4",
+                                alertSeverityBorder(item.level)
+                            )}
+                            key={item.id}
+                        >
+                            <div className="type-label">{item.title}</div>
+                            <div className="type-help mt-1">{item.message}</div>
                             {llmOutput(item.payload) ? (
-                                <div className="type-help mt-2 border-l-2 border-primary pl-2 text-muted-foreground">
+                                <div className="type-help mt-2 border-l-2 border-border pl-2">
                                     {llmOutput(item.payload)}
                                 </div>
                             ) : null}
-                            <div className="type-meta mt-2 text-muted-foreground">
-                                {item.symbol ?? "-"} · {item.level} · {item.channels.join(", ") || "in_app"}
+                            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                                {item.symbol ? (
+                                    <Badge size="sm" variant="outline">
+                                        {item.symbol}
+                                    </Badge>
+                                ) : null}
+                                <Badge size="sm" variant={levelBadgeVariant(item.level)}>
+                                    {item.level}
+                                </Badge>
+                                {(item.channels.length ? item.channels : ["in_app"]).map((channel) => (
+                                    <Badge key={channel} size="sm" variant="secondary">
+                                        {channel.replaceAll("_", " ")}
+                                    </Badge>
+                                ))}
                             </div>
                         </div>
                     ))}
                     {!notifications.length ? (
-                        <div className="type-body text-muted-foreground">No alert notifications yet.</div>
+                        <div className="type-help flex min-h-[120px] items-center">
+                            No alert notifications yet.
+                        </div>
                     ) : null}
                     {alertList.hasMore ? <div className="h-4" ref={alertList.sentinelRef} /> : null}
                 </div>
             </section>
-            <section className="grid gap-3">
+            <section className="grid min-h-[120px] gap-3 min-[1024px]:pl-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <div className="type-section-title">Recent workflow runs</div>
-                        <div className="type-help mt-1 text-muted-foreground">
+                        <p className="type-step-eyebrow">Recent workflow runs</p>
+                        <p className="type-help mt-1">
                             {runStats.total} loaded · {runStats.matched} matched · {runStats.unmatched} not matched
                             {runStats.latestAt ? ` · Last ${formatIstDateTime(runStats.latestAt)}` : ""}
-                        </div>
+                        </p>
                     </div>
                     <Button
-                        className="h-auto px-0 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                        className={cn(typography.small, "h-auto px-0 text-muted-foreground hover:text-foreground")}
                         onClick={() => setShowRuns((current) => !current)}
                         size="sm"
                         type="button"
@@ -113,25 +155,36 @@ export function AlertHistoryList({
                 {showRuns ? (
                     <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-1">
                         {runList.rows.map((item) => (
-                            <div className=" border border-border p-4" key={item.id}>
-                                <div className="type-section-title">{item.rendered_title || item.reason}</div>
-                                <div className="type-meta mt-1 text-muted-foreground">
-                                    {item.matched ? "Matched" : "No match"} · {item.channels.join(", ") || "in_app"}
+                            <div className="min-h-[120px] border border-border bg-card p-4" key={item.id}>
+                                <div className="type-label">
+                                    {item.rendered_title || item.reason}
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                    <Badge size="sm" variant={item.matched ? "success" : "secondary"}>
+                                        {item.matched ? "Matched" : "No match"}
+                                    </Badge>
+                                    {(item.channels.length ? item.channels : ["in_app"]).map((channel) => (
+                                        <Badge key={channel} size="sm" variant="secondary">
+                                            {channel.replaceAll("_", " ")}
+                                        </Badge>
+                                    ))}
                                 </div>
                                 {llmOutput(item.evaluation_payload) ? (
-                                    <div className="type-help mt-2 border-l-2 border-primary pl-2 text-muted-foreground">
+                                    <div className="type-help mt-2 border-l-2 border-border pl-2">
                                         {llmOutput(item.evaluation_payload)}
                                     </div>
                                 ) : null}
                             </div>
                         ))}
                         {!runs.length ? (
-                            <div className="type-body text-muted-foreground">No workflow runs yet.</div>
+                            <div className="type-help flex min-h-[120px] items-center">
+                                No workflow runs yet.
+                            </div>
                         ) : null}
                         {runList.hasMore ? <div className="h-4" ref={runList.sentinelRef} /> : null}
                     </div>
                 ) : (
-                    <div className="type-body border border-border p-4 text-muted-foreground">
+                    <div className="type-help flex min-h-[120px] items-center border border-border bg-card p-4">
                         Keep this collapsed for the summary view. Open details only when you want to inspect recent
                         evaluations.
                     </div>

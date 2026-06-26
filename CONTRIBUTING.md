@@ -66,7 +66,7 @@ The root README should stay short and discovery-focused. Put detailed setup, pro
 When adding docs:
 
 - Prefer relative links for repository files.
-- Keep commands aligned with `docker-compose.yml`, `.env.example`, backend requirements, and frontend package scripts.
+- Keep commands aligned with `docker-compose.yml`, `docker-compose.dev.yml`, `.env.example`, `.env.dev.example`, backend requirements, and frontend package scripts.
 - Use collapsible sections for long optional platform-specific details.
 
 ## Security-Sensitive Changes

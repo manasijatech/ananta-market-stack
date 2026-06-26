@@ -38,12 +38,27 @@ def _has_index(table_name: str, index_name: str) -> bool:
 
 
 def upgrade() -> None:
-    if not _has_column("user_alpha_api_credentials", "account_json"):
-        op.add_column("user_alpha_api_credentials", sa.Column("account_json", sa.Text(), nullable=False, server_default="{}"))
-    if not _has_column("user_alpha_api_credentials", "account_checked_at"):
-        op.add_column("user_alpha_api_credentials", sa.Column("account_checked_at", sa.DateTime(), nullable=True))
-    if not _has_column("user_alpha_api_credentials", "account_error"):
-        op.add_column("user_alpha_api_credentials", sa.Column("account_error", sa.Text(), nullable=True))
+    if not _has_table("user_alpha_api_credentials"):
+        op.create_table(
+            "user_alpha_api_credentials",
+            sa.Column("user_id", sa.String(length=36), nullable=False),
+            sa.Column("api_key_cipher", sa.Text(), nullable=False, server_default=""),
+            sa.Column("is_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column("account_json", sa.Text(), nullable=False, server_default="{}"),
+            sa.Column("account_checked_at", sa.DateTime(), nullable=True),
+            sa.Column("account_error", sa.Text(), nullable=True),
+            sa.Column("created_at", sa.DateTime(), nullable=True),
+            sa.Column("updated_at", sa.DateTime(), nullable=True),
+            sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+            sa.PrimaryKeyConstraint("user_id"),
+        )
+    else:
+        if not _has_column("user_alpha_api_credentials", "account_json"):
+            op.add_column("user_alpha_api_credentials", sa.Column("account_json", sa.Text(), nullable=False, server_default="{}"))
+        if not _has_column("user_alpha_api_credentials", "account_checked_at"):
+            op.add_column("user_alpha_api_credentials", sa.Column("account_checked_at", sa.DateTime(), nullable=True))
+        if not _has_column("user_alpha_api_credentials", "account_error"):
+            op.add_column("user_alpha_api_credentials", sa.Column("account_error", sa.Text(), nullable=True))
 
     if not _has_table("user_alpha_websocket_configs"):
         op.create_table(
@@ -93,6 +108,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("alpha_websocket_events")
     op.drop_table("user_alpha_websocket_configs")
-    op.drop_column("user_alpha_api_credentials", "account_error")
-    op.drop_column("user_alpha_api_credentials", "account_checked_at")
-    op.drop_column("user_alpha_api_credentials", "account_json")
+    if _has_column("user_alpha_api_credentials", "account_error"):
+        op.drop_column("user_alpha_api_credentials", "account_error")
+    if _has_column("user_alpha_api_credentials", "account_checked_at"):
+        op.drop_column("user_alpha_api_credentials", "account_checked_at")
+    if _has_column("user_alpha_api_credentials", "account_json"):
+        op.drop_column("user_alpha_api_credentials", "account_json")

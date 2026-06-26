@@ -1,6 +1,6 @@
 "use server";
 
-import { getRbacMe } from "@/service/actions/rbac";
+import { getRbacMe, getSignupStatus } from "@/service/actions/rbac";
 
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 400;
@@ -11,6 +11,21 @@ function delay(ms: number): Promise<void> {
     });
 }
 
+/**
+ * Resolves the sign-in entry route before any admin exists.
+ */
+export async function getUnauthenticatedAuthRoute(): Promise<"/auth/onboarding" | "/auth/sign-in"> {
+    const signupStatus = await getSignupStatus().catch(() => ({ has_admin: false }));
+    return signupStatus.has_admin ? "/auth/sign-in" : "/auth/onboarding";
+}
+
+/**
+ * Determines where an authenticated user should land after sign-in.
+ *
+ * Retries RBAC lookups with backoff so a freshly created account can propagate.
+ *
+ * @throws When RBAC cannot be verified after all retry attempts.
+ */
 export async function resolvePostAuthRoute(): Promise<"/dashboard" | "/pending-approval"> {
     let lastError: Error | null = null;
 
