@@ -220,6 +220,59 @@ def _load_cached_candles(
     ]
 
 
+def _range_tolerance(interval: str) -> timedelta:
+    normalized = interval.lower()
+    if normalized.endswith("minute"):
+        return timedelta(days=2)
+    if normalized.endswith("hour"):
+        return timedelta(days=3)
+    if normalized in {"day", "1day", "daily"}:
+        return timedelta(days=7)
+    if normalized in {"week", "1week"}:
+        return timedelta(days=21)
+    return timedelta(days=7)
+
+
+def _cached_range_is_usable(
+    candles: list[NormalizedCandle],
+    *,
+    interval: str,
+    from_time: datetime,
+    to_time: datetime,
+) -> bool:
+    if not candles:
+        return False
+    tolerance = _range_tolerance(interval)
+    first = candles[0].time
+    last = candles[-1].time
+    if first > from_time + tolerance:
+        return False
+    if last < to_time - tolerance:
+        return False
+    return True
+
+
+def _clear_cached_candles(
+    db: Session,
+    *,
+    broker_code: str,
+    symbol: str,
+    exchange: str,
+    interval: str,
+    from_time: datetime,
+    to_time: datetime,
+) -> None:
+    db.execute(
+        delete(BrokerMarketCandleCache)
+        .where(BrokerMarketCandleCache.broker_code == broker_code)
+        .where(BrokerMarketCandleCache.symbol == symbol)
+        .where(BrokerMarketCandleCache.exchange == exchange)
+        .where(BrokerMarketCandleCache.interval == interval)
+        .where(BrokerMarketCandleCache.candle_time >= from_time.replace(tzinfo=None))
+        .where(BrokerMarketCandleCache.candle_time <= to_time.replace(tzinfo=None))
+    )
+
+
 def _replace_cached_candles(
     db: Session,
     *,
@@ -371,9 +424,24 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
         from_time=daily_from_utc,
         to_time=daily_to_utc,
     )
-    if daily_candles:
+    if daily_candles and _cached_range_is_usable(
+        daily_candles,
+        interval=daily_interval,
+        from_time=daily_from_utc,
+        to_time=daily_to_utc,
+    ):
         cache_status.used_cached_daily = True
     else:
+        if daily_candles:
+            _clear_cached_candles(
+                db,
+                broker_code=acc.broker_code,
+                symbol=symbol,
+                exchange=exchange,
+                interval=daily_interval,
+                from_time=daily_from_utc,
+                to_time=daily_to_utc,
+            )
         daily_candles = _fetch_historical_candles(
             db,
             acc,
@@ -407,9 +475,29 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
             to_time=now_utc,
         )
         latest_intraday_time = intraday_candles[-1].time if intraday_candles else None
-        if intraday_candles and latest_intraday_time and now_utc - latest_intraday_time <= INTRADAY_CACHE_STALE_AFTER:
+        if (
+            intraday_candles
+            and latest_intraday_time
+            and now_utc - latest_intraday_time <= INTRADAY_CACHE_STALE_AFTER
+            and _cached_range_is_usable(
+                intraday_candles,
+                interval=intraday_interval,
+                from_time=intraday_from_utc,
+                to_time=now_utc,
+            )
+        ):
             cache_status.used_cached_intraday = True
         else:
+            if intraday_candles:
+                _clear_cached_candles(
+                    db,
+                    broker_code=acc.broker_code,
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=intraday_interval,
+                    from_time=intraday_from_utc,
+                    to_time=now_utc,
+                )
             intraday_candles = _fetch_historical_candles(
                 db,
                 acc,
@@ -433,15 +521,23 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
 
     latest_quote: QuoteRow | None = None
     last_price_time: datetime | None = None
-    if payload.get("include_live_quote", True) and intraday_from_utc is not None:
+    if payload.get("include_live_quote", True):
         quote_rows = broker_data.fetch_quotes(db, acc, [instrument])
         if quote_rows:
             latest_quote = quote_rows[0]
-            intraday_candles, last_price_time = _merge_live_quote(
-                intraday_candles,
-                quote=latest_quote,
-                interval=intraday_interval,
-            )
+            if intraday_from_utc is not None:
+                intraday_candles, last_price_time = _merge_live_quote(
+                    intraday_candles,
+                    quote=latest_quote,
+                    interval=intraday_interval,
+                )
+            else:
+                quote_dict = _quote_row_to_dict(latest_quote)
+                detail = quote_dict.get("detail") or {}
+                raw = detail.get("raw") if isinstance(detail, dict) and isinstance(detail.get("raw"), dict) else detail
+                last_price_time = _parse_time(raw.get("timestamp") if isinstance(raw, dict) else None)
+                if last_price_time is None:
+                    last_price_time = _parse_time(raw.get("last_trade_time") if isinstance(raw, dict) else None)
 
     combined = sorted(daily_candles + intraday_candles, key=lambda item: item.time)
     return MarketChartSnapshotOut(
@@ -457,6 +553,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
                 close=candle.close,
                 volume=candle.volume,
                 interval=intraday_interval if intraday_from_utc is not None and candle.time >= intraday_from_utc else daily_interval,
+                raw_payload=candle.source_payload,
             )
             for candle in combined
         ],

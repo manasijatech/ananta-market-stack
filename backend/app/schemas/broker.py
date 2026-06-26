@@ -392,6 +392,7 @@ class MarketChartCandleOut(BaseModel):
     close: float
     volume: float | None = None
     interval: str
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class MarketChartCacheStatusOut(BaseModel):

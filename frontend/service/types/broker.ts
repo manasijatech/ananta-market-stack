@@ -286,6 +286,7 @@ export interface MarketChartCandle {
     close: number;
     volume?: number | null;
     interval: string;
+    raw_payload: JsonObject;
 }
 
 export interface MarketChartCacheStatus {
