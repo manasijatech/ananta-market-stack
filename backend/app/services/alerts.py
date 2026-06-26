@@ -2446,13 +2446,26 @@ def _subscription_sort_key(row: LiveSubscriptionOut) -> tuple[datetime, str]:
 
 
 def _live_subscription_priority(row: LiveSubscriptionOut) -> tuple[int, float, str, str]:
-    source_priority = {
-        "ui": 0,
-        "workflow": 1,
-        "watchlist": 2,
-        "background_workflow": 3,
-        "manual": 4,
-    }.get(row.source_kind or "", 5)
+    if row.source_kind == "workflow":
+        source_priority = 0
+    elif row.source_kind == "watchlist":
+        source_priority = 1
+    elif row.source_kind == "ui":
+        source_priority = {
+            "watchlist_view": 2,
+            "market_intelligence_view": 2,
+            "company_view": 2,
+            "watchlist_focus": 2,
+            "active_ui": 3,
+            "heatmap": 4,
+            "symbol_search": 5,
+        }.get(row.source_type or "", 3)
+    elif row.source_kind == "background_workflow":
+        source_priority = 6
+    elif row.source_kind == "manual":
+        source_priority = 7
+    else:
+        source_priority = 8
     updated_at = row.updated_at.timestamp() if row.updated_at else 0.0
     return (source_priority, -updated_at, row.exchange or "", row.symbol)
 
@@ -2471,22 +2484,24 @@ def _merged_source_label(rows: list[LiveSubscriptionOut]) -> str | None:
 
 
 def _collapse_status_subscriptions(rows: list[LiveSubscriptionOut]) -> list[LiveSubscriptionOut]:
-    """Collapse UI demand owners for status output without changing DB ownership rows."""
+    """Collapse duplicate owners for status output without changing DB ownership rows."""
     grouped: dict[tuple[str | None, str | None, str, str | None], list[LiveSubscriptionOut]] = {}
-    passthrough: list[LiveSubscriptionOut] = []
     for row in rows:
-        if row.source_kind != "ui":
-            passthrough.append(row)
-            continue
         key = (row.account_id, row.broker_code, row.symbol, row.exchange)
         grouped.setdefault(key, []).append(row)
 
-    collapsed = list(passthrough)
+    collapsed: list[LiveSubscriptionOut] = []
     for group_rows in grouped.values():
         if len(group_rows) == 1:
             collapsed.append(group_rows[0])
             continue
-        sorted_rows = sorted(group_rows, key=_subscription_sort_key, reverse=True)
+        sorted_rows = sorted(
+            group_rows,
+            key=lambda row: (
+                _live_subscription_priority(row),
+                -((row.updated_at or datetime.min).timestamp() if row.updated_at else 0.0),
+            ),
+        )
         rows_with_quote = [row for row in sorted_rows if _subscription_has_live_quote(row)]
         representative = rows_with_quote[0] if rows_with_quote else sorted_rows[0]
         latest_received_at = max(
@@ -2509,14 +2524,19 @@ def _collapse_status_subscriptions(rows: list[LiveSubscriptionOut]) -> list[Live
             )
             health_status = worst.health_status
             health_reason = worst.health_reason
+        source_kinds = {row.source_kind for row in group_rows if row.source_kind}
         source_types = {row.source_type for row in group_rows if row.source_type}
         collapsed.append(
             representative.model_copy(
                 update={
-                    "id": f"ui:{representative.account_id}:{representative.broker_code}:{representative.exchange or ''}:{representative.symbol}",
-                    "source_type": next(iter(source_types)) if len(source_types) == 1 else "active_ui",
+                    "id": (
+                        f"merged:{representative.account_id}:{representative.broker_code}:"
+                        f"{representative.exchange or ''}:{representative.symbol}"
+                    ),
+                    "source_kind": next(iter(source_kinds)) if len(source_kinds) == 1 else "mixed",
+                    "source_type": next(iter(source_types)) if len(source_types) == 1 else "multi_source",
                     "source_label": _merged_source_label(group_rows),
-                    "owner_id": f"{len(group_rows)} active UI sources",
+                    "owner_id": f"{len(group_rows)} active sources",
                     "last_received_at": latest_received_at,
                     "reconciled_at": latest_reconciled_at,
                     "health_status": health_status,
@@ -2611,7 +2631,9 @@ def touch_ui_live_subscriptions(
     payloads: list[LiveSubscriptionCreateIn],
 ) -> list[LiveSubscriptionOut]:
     now = _now()
-    seen: set[tuple[str | None, str | None, str, str | None, str | None, str | None]] = set()
+    normalized_payloads: list[tuple[LiveSubscriptionCreateIn, str | None, str | None, str, str | None, str, str]] = []
+    desired_by_scope: dict[tuple[str | None, str | None, str, str], set[tuple[str, str | None]]] = {}
+    seen: set[tuple[str | None, str | None, str, str | None, str, str]] = set()
     rows: list[LiveSymbolSubscription] = []
     for item in payloads:
         symbol = _normalize_symbol(item.symbol)
@@ -2625,6 +2647,27 @@ def touch_ui_live_subscriptions(
         if key in seen:
             continue
         seen.add(key)
+        normalized_payloads.append((item, account_id, broker_code, symbol, exchange, source_type, source_id))
+        desired_by_scope.setdefault((account_id, broker_code, source_type, source_id), set()).add((symbol, exchange))
+
+    for (account_id, broker_code, source_type, source_id), desired_symbols in desired_by_scope.items():
+        existing_rows = db.scalars(
+            select(LiveSymbolSubscription).where(
+                LiveSymbolSubscription.user_id == user_id,
+                LiveSymbolSubscription.account_id == account_id,
+                LiveSymbolSubscription.broker_code == broker_code,
+                LiveSymbolSubscription.workflow_id.is_(None),
+                LiveSymbolSubscription.source_kind == "ui",
+                LiveSymbolSubscription.source_type == source_type,
+                LiveSymbolSubscription.source_id == source_id,
+            )
+        ).all()
+        for row in existing_rows:
+            if (row.symbol, row.exchange) in desired_symbols:
+                continue
+            db.delete(row)
+
+    for item, account_id, broker_code, symbol, exchange, source_type, source_id in normalized_payloads:
         ref = item.instrument_ref
         if ref.symbol is None:
             ref.symbol = symbol

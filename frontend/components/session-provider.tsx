@@ -1,7 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo } from "react";
-import { authClient, type AuthUser, type SignInInput, type SignUpInput } from "@/lib/auth-client";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { authClient, type AuthSession, type AuthUser, type SignInInput, type SignUpInput } from "@/lib/auth-client";
 
 type SessionContextValue = {
     user: AuthUser | null;
@@ -13,9 +13,71 @@ type SessionContextValue = {
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
+async function fetchSessionSnapshot(): Promise<AuthSession | null> {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 3000);
+    try {
+        const response = await fetch("/api/auth/get-session", {
+            cache: "no-store",
+            credentials: "include",
+            signal: controller.signal
+        });
+
+        if (!response.ok) {
+            throw new Error("Could not verify the current session.");
+        }
+
+        return (await response.json()) as AuthSession | null;
+    } finally {
+        window.clearTimeout(timeout);
+    }
+}
+
+async function clearStaleSessionCookies() {
+    await fetch("/api/auth/clear-stale-session", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include"
+    }).catch(() => undefined);
+}
+
 export function SessionProvider({ children }: { children: React.ReactNode }) {
     const session = authClient.useSession();
-    const user = session.data?.user ?? null;
+    const [fallbackSession, setFallbackSession] = useState<AuthSession | null | undefined>(undefined);
+
+    useEffect(() => {
+        if (!session.isPending) {
+            setFallbackSession(session.data ?? null);
+            return;
+        }
+
+        let active = true;
+        const timeout = window.setTimeout(async () => {
+            try {
+                const nextSession = await fetchSessionSnapshot();
+                if (active) {
+                    setFallbackSession(nextSession);
+                    if (!nextSession) {
+                        await clearStaleSessionCookies();
+                    }
+                }
+            } catch {
+                if (active) {
+                    setFallbackSession(null);
+                    await clearStaleSessionCookies();
+                }
+            }
+        }, 500);
+
+        return () => {
+            active = false;
+            window.clearTimeout(timeout);
+        };
+    }, [session.data, session.isPending]);
+
+    const effectiveSession = session.data ?? fallbackSession ?? null;
+    const user = effectiveSession?.user ?? null;
+    const isLoading = session.isPending && fallbackSession === undefined;
 
     const signIn = useCallback(
         async (input: SignInInput) => {
@@ -30,6 +92,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             }
 
             await session.refetch();
+            try {
+                setFallbackSession(await fetchSessionSnapshot());
+            } catch {
+                // Refetch already updated auth state; snapshot sync is best-effort.
+            }
         },
         [session]
     );
@@ -47,6 +114,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             }
 
             await session.refetch();
+            try {
+                setFallbackSession(await fetchSessionSnapshot());
+            } catch {
+                // Refetch already updated auth state; snapshot sync is best-effort.
+            }
         },
         [session]
     );
@@ -57,11 +129,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             throw new Error(error.message ?? "Could not sign out.");
         }
         await session.refetch();
-    }, []);
+        setFallbackSession(null);
+    }, [session]);
 
     const value = useMemo(
-        () => ({ user, isLoading: session.isPending, signIn, signUp, signOut }),
-        [user, session.isPending, signIn, signOut, signUp]
+        () => ({ user, isLoading, signIn, signUp, signOut }),
+        [user, isLoading, signIn, signOut, signUp]
     );
 
     return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

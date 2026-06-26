@@ -16,7 +16,7 @@ def me(user: User = Depends(get_current_user)) -> User:
     """
     **Get current user profile.**
 
-    Identity is resolved from the `X-User-Id` header (default: `local-dev-user`).
+    Identity is resolved from the authenticated `X-User-Id` header.
     """
     return user
 

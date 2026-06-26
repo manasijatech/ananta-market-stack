@@ -389,13 +389,26 @@ def _quote_debug_sample(rows: list[dict[str, Any]], *, limit: int = 12) -> list[
 
 
 def _subscription_priority(row: LiveSymbolSubscription) -> tuple[int, float, str, str]:
-    source_priority = {
-        "ui": 0,
-        "workflow": 1,
-        "watchlist": 2,
-        "background_workflow": 3,
-        "manual": 4,
-    }.get(row.source_kind or "", 5)
+    if row.source_kind == "workflow":
+        source_priority = 0
+    elif row.source_kind == "watchlist":
+        source_priority = 1
+    elif row.source_kind == "ui":
+        source_priority = {
+            "watchlist_view": 2,
+            "market_intelligence_view": 2,
+            "company_view": 2,
+            "watchlist_focus": 2,
+            "active_ui": 3,
+            "heatmap": 4,
+            "symbol_search": 5,
+        }.get(row.source_type or "", 3)
+    elif row.source_kind == "background_workflow":
+        source_priority = 6
+    elif row.source_kind == "manual":
+        source_priority = 7
+    else:
+        source_priority = 8
     updated_at = row.updated_at.timestamp() if row.updated_at else 0.0
     return (source_priority, -updated_at, row.exchange or "", row.symbol)
 

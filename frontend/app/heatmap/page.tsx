@@ -11,6 +11,7 @@ import { HeatmapMeasuredGrid } from "@/components/heatmap/heatmap-measured-grid"
 import { brokerNames, Shell } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { formatUserFacingError } from "@/lib/api-errors";
 import { getBrokerAccounts } from "@/service/actions/broker";
 import { getLiveHeatmap } from "@/service/actions/heatmap";
 import { getWatchlists } from "@/service/actions/watchlist";
@@ -284,7 +285,7 @@ export default async function HeatmapPage({
                 account_id: scope === "portfolio_holdings" ? effectiveAccountId : null
             });
         } catch (caught) {
-            heatmapError = caught instanceof Error ? caught.message : "Could not load heatmap.";
+            heatmapError = formatUserFacingError(caught, "Could not load heatmap.");
         }
     }
 

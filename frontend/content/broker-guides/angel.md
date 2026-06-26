@@ -1,6 +1,9 @@
 # Angel One SmartAPI Setup
 
-Ananta Market Stack connects Angel One with SmartAPI credentials, your Angel client code, PIN, and TOTP.
+Ananta Market Stack supports two Angel One setup styles:
+
+- manual TOTP sessions, where you enter the live 6-digit TOTP during refresh
+- stored-TOTP automation, where the backend stores PIN and TOTP secret for refresh attempts
 
 ## What You Need
 
@@ -8,24 +11,34 @@ Ananta Market Stack connects Angel One with SmartAPI credentials, your Angel cli
 | --- | --- |
 | API key | Angel One SmartAPI app key |
 | Client code | Angel One client code or user ID |
-| PIN | Angel One login PIN |
-| TOTP secret | Optional authenticator or QR secret for automation |
+| PIN | Only for automation mode |
+| TOTP secret | Only for automation mode |
 
 ## Before You Start
 
 1. Create or open your [Angel One SmartAPI app](https://smartapi.angelone.in/).
 2. Copy the API key from the app.
-3. Keep your Angel client code and PIN ready.
-4. Make sure TOTP is enabled for your Angel account.
+3. Make sure TOTP is enabled for your Angel account.
+4. Decide whether you want manual TOTP entry or stored-TOTP automation.
+5. Keep PIN and authenticator secret ready only if you want automation.
+
+## Option 1: Manual TOTP
+
+Use this when you want to keep the setup lighter and enter the current TOTP during session refresh.
+
+## Option 2: Stored TOTP Automation
+
+Use this when you want the backend to store PIN and TOTP secret and attempt SmartAPI refresh for you.
 
 ## Add Angel One In Ananta Market Stack
 
 1. Go to **Brokers**.
 2. Click **Add broker**.
 3. Select **Angel One**.
-4. Paste the API key, client code, and PIN.
-5. Add the TOTP secret only if you want automated refresh.
-6. Save the broker account.
+4. Choose **Manual TOTP** or **Stored TOTP automation**.
+5. Paste the API key and client code.
+6. If you chose automation, also paste PIN and TOTP secret.
+7. Save the broker account.
 
 ## Connect The Session
 
