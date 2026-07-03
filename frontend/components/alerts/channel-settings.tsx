@@ -108,6 +108,8 @@ const desktopDefaults = {
     enabled_device_ids: ""
 };
 
+const ENGLISH_VOICE_HINT = "Free built-in desktop voice. Uses the local browser speech engine on the paired app.";
+
 function stateFor(channel?: AlertChannel, defaults?: Record<string, string>): ChannelState {
     return {
         label: channel?.label ?? "",
@@ -161,7 +163,7 @@ export function ChannelSettings({
             const response = await fetch("http://127.0.0.1:17853/voices");
             if (!response.ok) return;
             const payload = (await response.json()) as { voices?: DesktopAudioVoiceOption[] };
-            setAvailableVoices(payload.voices ?? []);
+            setAvailableVoices((payload.voices ?? []).filter((voice) => String(voice.lang || "").toLowerCase().startsWith("en")));
             if (payload.voices?.length) setVoiceStatus("");
         } catch {
             setVoiceStatus("Desktop app voice list is unavailable until the local helper is running.");
@@ -369,6 +371,9 @@ export function ChannelSettings({
                 onSave={() => save("desktop_audio")}
                 onTest={() => test("desktop_audio")}
                 onPreviewVoice={previewLocalVoice}
+                onRefreshVoices={() => {
+                    void loadLocalVoices();
+                }}
                 pairingStatus={pairingStatus}
                 voiceStatus={voiceStatus}
                 availableVoices={availableVoices}
@@ -412,6 +417,7 @@ function DesktopAudioCard({
     onSave,
     onTest,
     onPreviewVoice,
+    onRefreshVoices,
     onShowRevokedChange,
     pairingStatus,
     voiceStatus,
@@ -427,6 +433,7 @@ function DesktopAudioCard({
     onSave: () => void;
     onTest: () => void;
     onPreviewVoice: () => void;
+    onRefreshVoices: () => void;
     onShowRevokedChange: (checked: boolean) => void;
     pairingStatus: string;
     voiceStatus: string;
@@ -537,13 +544,14 @@ function DesktopAudioCard({
                         }}
                         value={channel.config.web_speech_voice ?? desktopDefaults.web_speech_voice}
                     >
-                        <option value="">System default voice</option>
+                        <option value="">System default voice - free</option>
                         {availableVoices.map((voice) => (
                             <option key={`${voice.name}:${voice.lang}`} value={voice.name}>
                                 {voice.name} ({voice.lang}){voice.default ? " default" : ""}
                             </option>
                         ))}
                     </Select>
+                    <span className="mt-1 block max-w-md text-xs text-muted-foreground">{ENGLISH_VOICE_HINT}</span>
                 </LabeledField>
                 <LabeledField label="Desktop speech rate" required={false}>
                     <Input
@@ -606,6 +614,14 @@ function DesktopAudioCard({
                 </Button>
                 <Button className="h-9 px-4" onClick={onPreviewVoice} type="button" variant="outline">
                     Preview voice
+                </Button>
+                <Button
+                    className="h-9 px-4"
+                    onClick={onRefreshVoices}
+                    type="button"
+                    variant="ghost"
+                >
+                    Refresh voices
                 </Button>
                 <Button className="h-9 px-4" disabled={!activeDevices.length} onClick={onTest} type="button" variant="outline">
                     Test audio
