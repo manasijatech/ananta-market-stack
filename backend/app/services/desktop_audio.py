@@ -279,12 +279,52 @@ def _speech_config(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _generate_audio(db: Session, user_id: str, config: dict[str, Any], text: str) -> tuple[bytes, str, str, str]:
+def _openrouter_audio_config(config: dict[str, Any]) -> tuple[str, str, str, float]:
     model = str(config.get("model_id") or DEFAULT_MODEL).strip()
     voice = str(config.get("voice") or DEFAULT_VOICE).strip()
     if model == DEFAULT_MODEL and voice in {"", "alloy"}:
         voice = DEFAULT_VOICE
     response_format = str(config.get("response_format") or "mp3").strip().lower()
+    speed = _as_float(config.get("speed"), 1.0)
+    return model, voice, response_format, speed
+
+
+def _voice_cache_key(voice: str, speed: float) -> str:
+    return f"{voice}|speed={speed:g}"
+
+
+def _cached_audio_asset(
+    db: Session,
+    *,
+    user_id: str,
+    text: str,
+    model: str,
+    voice_key: str,
+    response_format: str,
+) -> AlertAudioAsset | None:
+    for asset in db.scalars(
+        select(AlertAudioAsset)
+        .where(
+            AlertAudioAsset.user_id == user_id,
+            AlertAudioAsset.generated_text == text,
+            AlertAudioAsset.model_id == model,
+            AlertAudioAsset.voice == voice_key,
+            AlertAudioAsset.response_format == response_format,
+            AlertAudioAsset.file_path != "",
+            AlertAudioAsset.byte_size > 0,
+            AlertAudioAsset.expires_at > _now(),
+        )
+        .order_by(AlertAudioAsset.created_at.desc())
+        .limit(20)
+    ):
+        path = Path(asset.file_path)
+        if path.exists():
+            return asset
+    return None
+
+
+def _generate_audio(db: Session, user_id: str, config: dict[str, Any], text: str) -> tuple[bytes, str, str, str, float]:
+    model, voice, response_format, speed = _openrouter_audio_config(config)
     api_key = llm_config.get_provider_api_key(db, user_id, "openrouter")
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -301,11 +341,11 @@ def _generate_audio(db: Session, user_id: str, config: dict[str, Any], text: str
         "response_format": response_format,
     }
     if config.get("speed") not in (None, ""):
-        body["speed"] = _as_float(config.get("speed"), 1.0)
+        body["speed"] = speed
     with httpx.Client(timeout=45) as client:
         response = client.post("https://openrouter.ai/api/v1/audio/speech", headers=headers, json=body)
         response.raise_for_status()
-        return response.content, model, voice, response_format
+        return response.content, model, voice, response_format, speed
 
 
 def _create_assets(
@@ -388,7 +428,36 @@ def queue_audio_for_delivery(
         return True, ""
 
     try:
-        audio_bytes, model, voice, response_format = _generate_audio(db, notification.user_id, config, text)
+        model, voice, response_format, speed = _openrouter_audio_config(config)
+        voice_key = _voice_cache_key(voice, speed)
+        cached_asset = _cached_audio_asset(
+            db,
+            user_id=notification.user_id,
+            text=text,
+            model=model,
+            voice_key=voice_key,
+            response_format=response_format,
+        )
+        if cached_asset:
+            _create_assets(
+                db,
+                devices=devices,
+                notification=notification,
+                delivery=delivery,
+                text=text,
+                speech=speech,
+                expires_at=expires_at,
+                model_id=cached_asset.model_id,
+                voice=cached_asset.voice,
+                response_format=cached_asset.response_format,
+                file_path=cached_asset.file_path,
+                mime_type=cached_asset.mime_type,
+                byte_size=cached_asset.byte_size,
+            )
+            return True, ""
+
+        audio_bytes, model, voice, response_format, speed = _generate_audio(db, notification.user_id, config, text)
+        voice_key = _voice_cache_key(voice, speed)
         ext = "mp3" if response_format not in {"wav", "pcm"} else response_format
         file_id = str(uuid.uuid4())
         file_path = _storage_dir() / f"{file_id}.{ext}"
@@ -402,7 +471,7 @@ def queue_audio_for_delivery(
             speech=speech,
             expires_at=expires_at,
             model_id=model,
-            voice=voice,
+            voice=voice_key,
             response_format=response_format,
             file_path=str(file_path),
             mime_type=MIME_BY_FORMAT.get(response_format, "audio/mpeg"),
