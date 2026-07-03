@@ -16,6 +16,7 @@ import redis
 from sqlalchemy import delete, select
 
 from app.config import get_settings
+from app.services import desktop_audio
 from db.models import (
     AlertWorkflow,
     AlertWorkflowRun,
@@ -118,7 +119,10 @@ def run_system_maintenance(
 
         sqlite_result = _cleanup_sqlite_tables(exclude_log_id=log_id)
         deleted_rows_total += sqlite_result["deleted_rows_total"]
+        audio_result = _cleanup_audio_assets()
         details["sqlite"]["prune"] = sqlite_result
+        details["audio_assets"] = audio_result
+        deleted_rows_total += audio_result["deleted_rows"]
 
         redis_result = _cleanup_redis(full_rebuild=full_redis_rebuild)
         deleted_redis_keys_total += redis_result["deleted_keys_total"]
@@ -305,6 +309,14 @@ def _cleanup_sqlite_tables(*, exclude_log_id: str) -> dict[str, Any]:
             "deleted_rows_total": deleted_total,
             "tables": table_results,
         }
+    finally:
+        db.close()
+
+
+def _cleanup_audio_assets() -> dict[str, int]:
+    db = SessionLocal()
+    try:
+        return desktop_audio.cleanup_expired_audio_assets(db)
     finally:
         db.close()
 

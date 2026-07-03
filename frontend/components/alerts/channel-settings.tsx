@@ -1,25 +1,32 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState, useTransition } from "react";
-import { CircleHelpIcon } from "lucide-react";
-import { saveAlertChannel, sendTestAlert, testAlertChannel } from "@/service/actions/alerts";
-import type { AlertChannel } from "@/service/types/alerts";
-import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useState, useTransition } from "react";
+import { CircleHelpIcon, MonitorSpeakerIcon, PlugZapIcon, Trash2Icon } from "lucide-react";
+import {
+    getDesktopAudioEdgeVoicesSafe,
+    getDesktopAudioDevicesSafe,
+    getDesktopAudioPairingSafe,
+    revokeDesktopAudioDeviceSafe,
+    saveAlertChannelSafe,
+    sendTestAlert,
+    startDesktopAudioPairingSafe,
+    testAlertChannelSafe
+} from "@/service/actions/alerts";
+import type { AlertChannel, DesktopAudioDevice, DesktopAudioVoiceOption, EdgeAudioVoiceOption } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
     DialogContent,
     DialogDescription,
     DialogHeader,
-    DialogPanel,
     DialogTitle,
     DialogTrigger
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 type ChannelState = {
     label: string;
@@ -44,10 +51,13 @@ type ChannelGuide = {
     notes: string[];
 };
 
+const compactFieldClassName = "h-9 w-full max-w-md text-sm";
+const compactFieldGridClassName = "grid max-w-md gap-3";
+
 const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
     discord: {
         title: "Discord setup guide",
-        summary: "Ananta sends alerts to Discord by posting to one incoming webhook URL.",
+        summary: "Ananta Market Stack sends alerts to Discord by posting to one incoming webhook URL.",
         requiredFields: ["Discord webhook URL"],
         optionalFields: ["Label"],
         steps: [
@@ -64,7 +74,7 @@ const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
     telegram: {
         title: "Telegram setup guide",
         summary:
-            "Ananta sends alerts through the Telegram Bot API using your bot token and a destination chat id.",
+            "Ananta Market Stack sends alerts through the Telegram Bot API using your bot token and a destination chat id.",
         requiredFields: ["Telegram bot token", "Telegram chat id"],
         optionalFields: ["Label"],
         steps: [
@@ -82,19 +92,29 @@ const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
     }
 };
 
-const DISCORD_FIELDS: ChannelField[] = [
-    { key: "webhook_url", label: "Webhook URL", placeholder: "Paste webhook URL", required: true }
-];
-
-const TELEGRAM_FIELDS: ChannelField[] = [
-    { key: "bot_token", label: "Bot token", placeholder: "Paste bot token", required: true },
-    { key: "chat_id", label: "Chat ID", placeholder: "Paste destination chat id", required: true }
-];
-
-const BRAND_ICONS: Record<string, { src: string; className: string }> = {
-    Discord: { src: "/brand/providers/discord.svg", className: "h-5 w-5" },
-    Telegram: { src: "/brand/providers/telegram.svg", className: "h-6 w-6" }
+const desktopDefaults = {
+    tts_provider: "edge_tts",
+    fallback_to_web_speech: "true",
+    spoken_template: "{title}. {message}",
+    model_id: "hexgrad/kokoro-82m",
+    voice: "af_bella",
+    edge_voice: "en-US-EmmaMultilingualNeural",
+    edge_rate: "0",
+    edge_pitch: "0",
+    edge_volume: "0",
+    web_speech_voice: "",
+    web_speech_lang: "",
+    web_speech_rate: "1",
+    web_speech_pitch: "1",
+    web_speech_volume: "1",
+    speed: "1",
+    response_format: "mp3",
+    retention_days: "15",
+    enabled_device_ids: ""
 };
+
+const ENGLISH_VOICE_HINT = "Free built-in desktop voice. Uses the local browser speech engine on the paired app.";
+const EDGE_VOICE_HINT = "Free hosted voice. Ananta generates MP3 audio through Microsoft's Edge voice catalog so playback stays consistent across devices.";
 
 function stateFor(channel?: AlertChannel, defaults?: Record<string, string>): ChannelState {
     return {
@@ -110,39 +130,112 @@ function stateFor(channel?: AlertChannel, defaults?: Record<string, string>): Ch
     };
 }
 
-function isConfigured(channel: ChannelState, fields: ChannelField[]): boolean {
-    return fields.every((field) => !field.required || (channel.config[field.key] ?? "").trim().length > 0);
+function desktopStateFor(channel?: AlertChannel): ChannelState {
+    const state = stateFor(channel, desktopDefaults);
+    const config = { ...state.config };
+    if (config.model_id === desktopDefaults.model_id && (!config.voice || config.voice === "alloy")) {
+        config.voice = desktopDefaults.voice;
+    }
+    if (config.tts_provider === "edge_tts" && !config.edge_voice) {
+        config.edge_voice = config.voice && config.voice !== desktopDefaults.voice ? config.voice : desktopDefaults.edge_voice;
+    }
+    return { ...state, config };
 }
 
-export function ChannelSettings({ initialChannels }: { initialChannels: AlertChannel[] }) {
+export function ChannelSettings({
+    initialChannels,
+    initialDesktopAudioDevices
+}: {
+    initialChannels: AlertChannel[];
+    initialDesktopAudioDevices: DesktopAudioDevice[];
+}) {
     const discordInitial = initialChannels.find((item) => item.channel_type === "discord");
     const telegramInitial = initialChannels.find((item) => item.channel_type === "telegram");
+    const desktopInitial = initialChannels.find((item) => item.channel_type === "desktop_audio");
     const [discord, setDiscord] = useState(stateFor(discordInitial, { webhook_url: "" }));
     const [telegram, setTelegram] = useState(stateFor(telegramInitial, { bot_token: "", chat_id: "" }));
-    const [message, setMessage] = useState("Ananta channel test");
+    const [desktopAudio, setDesktopAudio] = useState(desktopStateFor(desktopInitial));
+    const [devices, setDevices] = useState(initialDesktopAudioDevices);
+    const [showRevokedDevices, setShowRevokedDevices] = useState(false);
+    const [availableVoices, setAvailableVoices] = useState<DesktopAudioVoiceOption[]>([]);
+    const [edgeVoices, setEdgeVoices] = useState<EdgeAudioVoiceOption[]>([]);
+    const [voiceStatus, setVoiceStatus] = useState("");
+    const [edgeVoiceStatus, setEdgeVoiceStatus] = useState("");
+    const [pairingStatus, setPairingStatus] = useState("");
+    const [message, setMessage] = useState("Ananta Market Stack channel test");
     const [error, setError] = useState("");
     const [isPending, startTransition] = useTransition();
 
-    const [openChannels, setOpenChannels] = useState<string[]>(() => {
-        if (!discord.is_enabled || !isConfigured(discord, DISCORD_FIELDS)) {
-            return ["discord"];
-        }
-        if (!telegram.is_enabled || !isConfigured(telegram, TELEGRAM_FIELDS)) {
-            return ["telegram"];
-        }
-        return [];
-    });
+    useEffect(() => {
+        void loadLocalVoices();
+        void loadEdgeVoices();
+    }, []);
 
-    function save(channelType: "discord" | "telegram") {
+    async function loadLocalVoices() {
+        try {
+            const response = await fetch("http://127.0.0.1:17853/voices");
+            if (!response.ok) return;
+            const payload = (await response.json()) as { voices?: DesktopAudioVoiceOption[] };
+            setAvailableVoices((payload.voices ?? []).filter((voice) => String(voice.lang || "").toLowerCase().startsWith("en")));
+            if (payload.voices?.length) setVoiceStatus("");
+        } catch {
+            setVoiceStatus("Desktop app voice list is unavailable until the local helper is running.");
+        }
+    }
+
+    async function loadEdgeVoices(forceRefresh = false) {
+        const result = await getDesktopAudioEdgeVoicesSafe(forceRefresh);
+        if (!result.ok) {
+            setEdgeVoiceStatus(result.error);
+            return;
+        }
+        const englishVoices = result.data.filter((voice) => voice.locale.toLowerCase().startsWith("en-"));
+        setEdgeVoices(englishVoices);
+        setEdgeVoiceStatus(englishVoices.length ? "" : "No English Edge voices are currently available.");
+    }
+
+    async function previewLocalVoice() {
+        setError("");
+        setVoiceStatus("Playing local voice preview...");
+        try {
+            const response = await fetch("http://127.0.0.1:17853/preview", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    text: message,
+                    speech: {
+                        voice_name: desktopAudio.config.web_speech_voice ?? "",
+                        lang: desktopAudio.config.web_speech_lang ?? "",
+                        rate: Number(desktopAudio.config.web_speech_rate ?? "1"),
+                        pitch: Number(desktopAudio.config.web_speech_pitch ?? "1"),
+                        volume: Number(desktopAudio.config.web_speech_volume ?? "1")
+                    }
+                })
+            });
+            if (!response.ok) throw new Error("Could not preview voice.");
+            setVoiceStatus("Preview sent to the desktop app.");
+        } catch (caught) {
+            setVoiceStatus("");
+            setError(caught instanceof Error ? caught.message : "Could not preview local voice.");
+        }
+    }
+
+    function save(channelType: "discord" | "telegram" | "desktop_audio") {
         setError("");
         startTransition(async () => {
             try {
-                const payload = channelType === "discord" ? discord : telegram;
-                const saved = await saveAlertChannel(channelType, payload);
+                const payload = channelType === "discord" ? discord : channelType === "telegram" ? telegram : desktopAudio;
+                const saved = await saveAlertChannelSafe(channelType, payload);
+                if (!saved.ok) {
+                    setError(saved.error);
+                    return;
+                }
                 if (channelType === "discord") {
-                    setDiscord(stateFor(saved, { webhook_url: "" }));
+                    setDiscord(stateFor(saved.data, { webhook_url: "" }));
+                } else if (channelType === "telegram") {
+                    setTelegram(stateFor(saved.data, { bot_token: "", chat_id: "" }));
                 } else {
-                    setTelegram(stateFor(saved, { bot_token: "", chat_id: "" }));
+                    setDesktopAudio(desktopStateFor(saved.data));
                 }
             } catch (caught) {
                 setError(caught instanceof Error ? caught.message : "Could not save channel.");
@@ -150,15 +243,29 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
         });
     }
 
-    function test(channelType: "discord" | "telegram") {
+    function test(channelType: "discord" | "telegram" | "desktop_audio") {
         setError("");
         startTransition(async () => {
             try {
-                const saved = await testAlertChannel(channelType, message);
+                if (channelType === "desktop_audio") {
+                    const savedBeforeTest = await saveAlertChannelSafe("desktop_audio", desktopAudio);
+                    if (!savedBeforeTest.ok) {
+                        setError(savedBeforeTest.error);
+                        return;
+                    }
+                    setDesktopAudio(desktopStateFor(savedBeforeTest.data));
+                }
+                const saved = await testAlertChannelSafe(channelType, message);
+                if (!saved.ok) {
+                    setError(saved.error);
+                    return;
+                }
                 if (channelType === "discord") {
-                    setDiscord(stateFor(saved, { webhook_url: "" }));
+                    setDiscord(stateFor(saved.data, { webhook_url: "" }));
+                } else if (channelType === "telegram") {
+                    setTelegram(stateFor(saved.data, { bot_token: "", chat_id: "" }));
                 } else {
-                    setTelegram(stateFor(saved, { bot_token: "", chat_id: "" }));
+                    setDesktopAudio(desktopStateFor(saved.data));
                 }
             } catch (caught) {
                 setError(caught instanceof Error ? caught.message : "Could not test channel.");
@@ -172,72 +279,498 @@ export function ChannelSettings({ initialChannels }: { initialChannels: AlertCha
         });
     }
 
+    function connectDesktopApp() {
+        setError("");
+        setPairingStatus("Preparing pairing request...");
+        startTransition(async () => {
+            try {
+                const pairing = await startDesktopAudioPairingSafe({
+                    app_url: window.location.origin,
+                    metadata: { source: "settings" }
+                });
+                if (!pairing.ok) {
+                    setError(pairing.error);
+                    setPairingStatus("");
+                    return;
+                }
+                const payload = {
+                    pairingId: pairing.data.pairing_id,
+                    secret: pairing.data.secret,
+                    stackUrl: window.location.origin
+                };
+                const localResponse = await fetch("http://127.0.0.1:17853/pair", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(payload)
+                }).catch(() => null);
+                const sentLocal = Boolean(localResponse?.ok);
+                if (!sentLocal) {
+                    window.location.href = `ananta-audio://pair?payload=${encodeURIComponent(JSON.stringify(payload))}`;
+                    setPairingStatus("Opened the desktop app pairing link. Return here after the app confirms connection.");
+                } else {
+                    setPairingStatus("Pairing request sent to the local desktop app.");
+                }
+                window.setTimeout(async () => {
+                    const status = await getDesktopAudioPairingSafe(pairing.data.pairing_id);
+                    if (status.ok && status.data.status === "completed") {
+                        setPairingStatus("Desktop app connected.");
+                        const devicesResult = await getDesktopAudioDevicesSafe(showRevokedDevices);
+                        if (devicesResult.ok) setDevices(devicesResult.data);
+                        void loadLocalVoices();
+                    }
+                }, 2500);
+            } catch (caught) {
+                setError(caught instanceof Error ? caught.message : "Could not start desktop pairing.");
+                setPairingStatus("");
+            }
+        });
+    }
+
+    function revokeDevice(deviceId: string) {
+        setError("");
+        startTransition(async () => {
+            try {
+                const revoked = await revokeDesktopAudioDeviceSafe(deviceId);
+                if (!revoked.ok) {
+                    setError(revoked.error);
+                    return;
+                }
+                const devicesResult = await getDesktopAudioDevicesSafe(showRevokedDevices);
+                if (!devicesResult.ok) {
+                    setError(devicesResult.error);
+                    return;
+                }
+                setDevices(devicesResult.data);
+            } catch (caught) {
+                setError(caught instanceof Error ? caught.message : "Could not revoke desktop device.");
+            }
+        });
+    }
+
+    function toggleRevokedDevices(next: boolean) {
+        setShowRevokedDevices(next);
+        startTransition(async () => {
+            const devicesResult = await getDesktopAudioDevicesSafe(next);
+            if (devicesResult.ok) {
+                setDevices(devicesResult.data);
+                return;
+            }
+            setError(devicesResult.error);
+        });
+    }
+
     return (
-        <div className="grid gap-4">
+        <div className="grid gap-5">
             {error ? (
                 <div className="border-l-2 border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3 text-sm text-[var(--danger)]">
                     {error}
                 </div>
             ) : null}
-            <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border p-4">
-                <Label className="grid flex-1 gap-1.5 text-sm font-medium">
-                    Shared test message
+            <div className="border border-border p-4">
+                <div className="mb-3 text-sm font-bold tracking-tight">Shared test message</div>
+                <div className="grid max-w-md gap-2">
                     <Input
-                        className="h-9 w-full text-sm"
+                        className={compactFieldClassName}
                         onChange={(event) => setMessage(event.target.value)}
                         value={message}
                     />
-                </Label>
-                <Button
-                    className="h-9 shrink-0 px-4"
-                    disabled={isPending}
-                    onClick={sendInAppTest}
-                    type="button"
-                    variant="outline"
-                >
-                    Test in-app alert
-                </Button>
+                    <Button
+                        className="h-9 w-fit px-4"
+                        disabled={isPending}
+                        onClick={sendInAppTest}
+                        type="button"
+                        variant="outline"
+                    >
+                        Test in-app alert
+                    </Button>
+                </div>
             </div>
-            <Accordion
-                className="overflow-hidden rounded-lg border border-border"
-                multiple={false}
-                onValueChange={(value) => setOpenChannels(value as string[])}
-                value={openChannels}
-            >
-                <ChannelItem
-                    channel={discord}
-                    fields={DISCORD_FIELDS}
-                    guide={CHANNEL_GUIDES.discord}
-                    onChange={setDiscord}
-                    onSave={() => save("discord")}
-                    onTest={() => test("discord")}
-                    title="Discord"
-                    value="discord"
-                />
-                <ChannelItem
-                    channel={telegram}
-                    fields={TELEGRAM_FIELDS}
-                    guide={CHANNEL_GUIDES.telegram}
-                    onChange={setTelegram}
-                    onSave={() => save("telegram")}
-                    onTest={() => test("telegram")}
-                    title="Telegram"
-                    value="telegram"
-                />
-            </Accordion>
+            <DesktopAudioCard
+                channel={desktopAudio}
+                devices={devices}
+                isPending={isPending}
+                onChange={setDesktopAudio}
+                onConnect={connectDesktopApp}
+                onRevoke={revokeDevice}
+                onSave={() => save("desktop_audio")}
+                onTest={() => test("desktop_audio")}
+                onPreviewVoice={previewLocalVoice}
+                onRefreshVoices={() => {
+                    void loadLocalVoices();
+                }}
+                onRefreshEdgeVoices={() => {
+                    void loadEdgeVoices(true);
+                }}
+                pairingStatus={pairingStatus}
+                voiceStatus={voiceStatus}
+                edgeVoiceStatus={edgeVoiceStatus}
+                availableVoices={availableVoices}
+                edgeVoices={edgeVoices}
+                showRevokedDevices={showRevokedDevices}
+                onShowRevokedChange={toggleRevokedDevices}
+            />
+            <ChannelCard
+                channel={discord}
+                fields={[
+                    { key: "webhook_url", label: "Webhook URL", placeholder: "Paste webhook URL", required: true }
+                ]}
+                guide={CHANNEL_GUIDES.discord}
+                onChange={setDiscord}
+                onSave={() => save("discord")}
+                onTest={() => test("discord")}
+                title="Discord"
+            />
+            <ChannelCard
+                channel={telegram}
+                fields={[
+                    { key: "bot_token", label: "Bot token", placeholder: "Paste bot token", required: true },
+                    { key: "chat_id", label: "Chat ID", placeholder: "Paste destination chat id", required: true }
+                ]}
+                guide={CHANNEL_GUIDES.telegram}
+                onChange={setTelegram}
+                onSave={() => save("telegram")}
+                onTest={() => test("telegram")}
+                title="Telegram"
+            />
         </div>
     );
 }
 
-function ChannelItem({
+function DesktopAudioCard({
+    channel,
+    devices,
+    isPending,
+    onChange,
+    onConnect,
+    onRevoke,
+    onSave,
+    onTest,
+    onPreviewVoice,
+    onRefreshVoices,
+    onRefreshEdgeVoices,
+    onShowRevokedChange,
+    pairingStatus,
+    voiceStatus,
+    edgeVoiceStatus,
+    availableVoices,
+    edgeVoices,
+    showRevokedDevices
+}: {
+    channel: ChannelState;
+    devices: DesktopAudioDevice[];
+    isPending: boolean;
+    onChange: (value: ChannelState) => void;
+    onConnect: () => void;
+    onRevoke: (deviceId: string) => void;
+    onSave: () => void;
+    onTest: () => void;
+    onPreviewVoice: () => void;
+    onRefreshVoices: () => void;
+    onRefreshEdgeVoices: () => void;
+    onShowRevokedChange: (checked: boolean) => void;
+    pairingStatus: string;
+    voiceStatus: string;
+    edgeVoiceStatus: string;
+    availableVoices: DesktopAudioVoiceOption[];
+    edgeVoices: EdgeAudioVoiceOption[];
+    showRevokedDevices: boolean;
+}) {
+    const activeDevices = devices.filter((device) => device.status === "active");
+    return (
+        <div className="border border-border p-4">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <div className="flex items-center gap-3 text-lg font-bold leading-none tracking-tight">
+                        <MonitorSpeakerIcon className="size-5 text-primary" />
+                        Desktop Audio
+                    </div>
+                    <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+                        Pair the tray app once, then Ananta sends spoken alerts to all active devices. Edge voice is
+                        the default free hosted path, desktop voice stays available as a local fallback, and OpenRouter
+                        remains optional when you want a different paid model.
+                    </p>
+                </div>
+                <Button className="h-9 gap-2 px-4" disabled={isPending} onClick={onConnect} type="button">
+                    <PlugZapIcon className="size-4" />
+                    Connect app
+                </Button>
+            </div>
+            {pairingStatus ? (
+                <div className="mb-4 border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
+                    {pairingStatus}
+                </div>
+            ) : null}
+            <div className="mb-4 flex flex-col gap-2 text-sm">
+                <Label className="flex items-center gap-2">
+                    <Checkbox
+                        checked={channel.is_enabled}
+                        onCheckedChange={(checked) => onChange({ ...channel, is_enabled: Boolean(checked) })}
+                    />
+                    Enabled
+                </Label>
+                <Label className="flex items-center gap-2">
+                    <Checkbox
+                        checked={channel.is_default}
+                        onCheckedChange={(checked) => onChange({ ...channel, is_default: Boolean(checked) })}
+                    />
+                    Default
+                </Label>
+            </div>
+            <div className="grid gap-3 min-[760px]:grid-cols-2">
+                <LabeledField label="TTS provider" required>
+                    <Select
+                        className={compactFieldClassName}
+                        onChange={(event) => onChange({ ...channel, config: { ...channel.config, tts_provider: event.target.value } })}
+                        value={channel.config.tts_provider ?? desktopDefaults.tts_provider}
+                    >
+                        <option value="edge_tts">Edge voice - free</option>
+                        <option value="web_speech">Desktop app voice - free local</option>
+                        <option value="openrouter">OpenRouter audio - paid</option>
+                    </Select>
+                </LabeledField>
+                <LabeledField label="Spoken template" required>
+                    <Input
+                        className={compactFieldClassName}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, spoken_template: event.target.value } })
+                        }
+                        value={channel.config.spoken_template ?? desktopDefaults.spoken_template}
+                    />
+                </LabeledField>
+                <LabeledField label="Retention days" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        min={1}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, retention_days: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.retention_days ?? desktopDefaults.retention_days}
+                    />
+                </LabeledField>
+                <LabeledField label="Edge voice" required={false}>
+                    <Select
+                        className={compactFieldClassName}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, edge_voice: event.target.value } })
+                        }
+                        value={channel.config.edge_voice ?? desktopDefaults.edge_voice}
+                    >
+                        {!edgeVoices.length ? <option value={desktopDefaults.edge_voice}>Loading Edge voices...</option> : null}
+                        {edgeVoices.map((voice) => (
+                            <option key={voice.short_name} value={voice.short_name}>
+                                {voice.friendly_name} ({voice.gender}, {voice.locale})
+                            </option>
+                        ))}
+                    </Select>
+                    <span className="mt-1 block max-w-md text-xs text-muted-foreground">{EDGE_VOICE_HINT}</span>
+                </LabeledField>
+                <LabeledField label="Edge speech rate" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        max={100}
+                        min={-100}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, edge_rate: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.edge_rate ?? desktopDefaults.edge_rate}
+                    />
+                </LabeledField>
+                <LabeledField label="Edge speech pitch" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        max={100}
+                        min={-100}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, edge_pitch: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.edge_pitch ?? desktopDefaults.edge_pitch}
+                    />
+                </LabeledField>
+                <LabeledField label="Edge speech volume" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        max={100}
+                        min={-100}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, edge_volume: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.edge_volume ?? desktopDefaults.edge_volume}
+                    />
+                </LabeledField>
+                <LabeledField label="Desktop voice" required={false}>
+                    <Select
+                        className={compactFieldClassName}
+                        onChange={(event) => {
+                            const nextVoice = availableVoices.find((voice) => voice.name === event.target.value);
+                            onChange({
+                                ...channel,
+                                config: {
+                                    ...channel.config,
+                                    web_speech_voice: event.target.value,
+                                    web_speech_lang: nextVoice?.lang ?? channel.config.web_speech_lang ?? ""
+                                }
+                            });
+                        }}
+                        value={channel.config.web_speech_voice ?? desktopDefaults.web_speech_voice}
+                    >
+                        <option value="">System default voice - free</option>
+                        {availableVoices.map((voice) => (
+                            <option key={`${voice.name}:${voice.lang}`} value={voice.name}>
+                                {voice.name} ({voice.lang}){voice.default ? " default" : ""}
+                            </option>
+                        ))}
+                    </Select>
+                    <span className="mt-1 block max-w-md text-xs text-muted-foreground">{ENGLISH_VOICE_HINT}</span>
+                </LabeledField>
+                <LabeledField label="Desktop speech rate" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        min={0.5}
+                        max={2}
+                        step={0.1}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, web_speech_rate: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.web_speech_rate ?? desktopDefaults.web_speech_rate}
+                    />
+                </LabeledField>
+                <LabeledField label="Desktop speech pitch" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, web_speech_pitch: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.web_speech_pitch ?? desktopDefaults.web_speech_pitch}
+                    />
+                </LabeledField>
+                <LabeledField label="Desktop speech volume" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        min={0}
+                        max={1}
+                        step={0.1}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, web_speech_volume: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.web_speech_volume ?? desktopDefaults.web_speech_volume}
+                    />
+                </LabeledField>
+                <LabeledField label="OpenRouter TTS model" required>
+                    <Input
+                        className={compactFieldClassName}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, model_id: event.target.value } })
+                        }
+                        value={channel.config.model_id ?? desktopDefaults.model_id}
+                    />
+                </LabeledField>
+                <LabeledField label="OpenRouter voice" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        onChange={(event) => onChange({ ...channel, config: { ...channel.config, voice: event.target.value } })}
+                        value={channel.config.voice ?? desktopDefaults.voice}
+                    />
+                </LabeledField>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                <Label className="flex items-center gap-2">
+                    <Checkbox
+                        checked={(channel.config.fallback_to_web_speech ?? desktopDefaults.fallback_to_web_speech) !== "false"}
+                        onCheckedChange={(checked) =>
+                            onChange({
+                                ...channel,
+                                config: { ...channel.config, fallback_to_web_speech: checked ? "true" : "false" }
+                            })
+                        }
+                    />
+                    Fallback to desktop voice when OpenRouter audio fails
+                </Label>
+                {voiceStatus ? <span className="text-xs text-muted-foreground">{voiceStatus}</span> : null}
+                {edgeVoiceStatus ? <span className="text-xs text-muted-foreground">{edgeVoiceStatus}</span> : null}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+                <Button className="h-9 px-4" onClick={onSave} type="button">
+                    Save
+                </Button>
+                <Button className="h-9 px-4" onClick={onPreviewVoice} type="button" variant="outline">
+                    Preview desktop voice
+                </Button>
+                <Button
+                    className="h-9 px-4"
+                    onClick={onRefreshVoices}
+                    type="button"
+                    variant="ghost"
+                >
+                    Refresh desktop voices
+                </Button>
+                <Button className="h-9 px-4" onClick={onRefreshEdgeVoices} type="button" variant="ghost">
+                    Refresh Edge voices
+                </Button>
+                <Button className="h-9 px-4" disabled={!activeDevices.length} onClick={onTest} type="button" variant="outline">
+                    Test selected provider
+                </Button>
+            </div>
+            <div className="mt-5 grid gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm font-bold">Paired devices</div>
+                    <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Checkbox checked={showRevokedDevices} onCheckedChange={(checked) => onShowRevokedChange(Boolean(checked))} />
+                        Show revoked
+                    </Label>
+                </div>
+                {devices.length ? (
+                    <div className="grid gap-2">
+                        {devices.map((device) => (
+                            <div className="flex flex-wrap items-center justify-between gap-3 border border-border px-3 py-2" key={device.id}>
+                                <div>
+                                    <div className="text-sm font-medium">{device.label || "Ananta Audio App"}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                        {device.status} {device.last_seen_at ? `- seen ${new Date(device.last_seen_at).toLocaleString()}` : ""}
+                                    </div>
+                                </div>
+                                {device.status === "active" ? (
+                                    <Button
+                                        aria-label={`Revoke ${device.label}`}
+                                        className="size-8"
+                                        onClick={() => onRevoke(device.id)}
+                                        size="icon"
+                                        type="button"
+                                        variant="outline"
+                                    >
+                                        <Trash2Icon className="size-4" />
+                                    </Button>
+                                ) : null}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                        {showRevokedDevices ? "No desktop audio devices are paired yet." : "No active desktop audio app is paired yet."}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function ChannelCard({
     channel,
     fields,
     guide,
     onChange,
     onSave,
     onTest,
-    title,
-    value
+    title
 }: {
     channel: ChannelState;
     fields: ChannelField[];
@@ -246,52 +779,35 @@ function ChannelItem({
     onSave: () => void;
     onTest: () => void;
     title: string;
-    value: string;
 }) {
-    const brandIcon = BRAND_ICONS[title] ?? null;
-    const configured = isConfigured(channel, fields);
-    const needsSetup = channel.is_enabled && !configured;
+    const brandIcon =
+        title === "Discord"
+            ? "/brand/providers/discord.svg"
+            : title === "Telegram"
+              ? "/brand/providers/telegram.svg"
+              : null;
+    const brandIconClassName = title === "Telegram" ? "h-6 w-6" : "h-5 w-5";
 
     return (
-        <AccordionItem className="@container px-4" value={value}>
-            <AccordionTrigger className="items-center gap-3 py-3">
-                {brandIcon ? (
-                    <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center">
-                        <img
-                            alt=""
-                            className={`${brandIcon.className} object-contain`}
-                            draggable={false}
-                            src={brandIcon.src}
-                        />
-                    </span>
-                ) : null}
-                <span className="min-w-0 flex-1 text-left font-heading text-sm font-semibold tracking-tight text-foreground">
-                    {title}
-                </span>
-                {channel.is_default ? (
-                    <span className="hidden text-xs text-muted-foreground @sm:inline">Default</span>
-                ) : null}
-                {needsSetup ? (
-                    <Badge
-                        className="border-[var(--warning)]/40 bg-[var(--warning)]/10 font-normal text-[var(--warning)]"
-                        variant="outline"
-                    >
-                        Needs setup
-                    </Badge>
-                ) : null}
-                <Badge
-                    className={
-                        channel.is_enabled
-                            ? "border-[var(--success)] bg-[var(--success-subtle)] font-normal text-[var(--success)]"
-                            : "font-normal text-muted-foreground"
-                    }
-                    variant="outline"
-                >
-                    {channel.is_enabled ? "Enabled" : "Disabled"}
-                </Badge>
-            </AccordionTrigger>
-            <AccordionPanel className="grid gap-4">
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <div className="border border-border p-4">
+            <div className="mb-4 grid gap-3">
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3 text-lg font-bold leading-none tracking-tight">
+                        {brandIcon ? (
+                            <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center">
+                                <img
+                                    alt=""
+                                    className={`${brandIconClassName} object-contain`}
+                                    draggable={false}
+                                    src={brandIcon}
+                                />
+                            </span>
+                        ) : null}
+                        <span>{title}</span>
+                    </div>
+                    <SetupGuide guide={guide} />
+                </div>
+                <div className="flex flex-col gap-2 text-sm">
                     <Label className="flex items-center gap-2">
                         <Checkbox
                             checked={channel.is_enabled}
@@ -306,47 +822,43 @@ function ChannelItem({
                         />
                         Default
                     </Label>
-                    <SetupGuide guide={guide} />
                 </div>
-                <div className="grid gap-4 @lg:grid-cols-2">
-                    <LabeledField label="Label" required={false}>
+            </div>
+            <div className={compactFieldGridClassName}>
+                <LabeledField label="Label" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        onChange={(event) => onChange({ ...channel, label: event.target.value })}
+                        placeholder="Optional label"
+                        value={channel.label}
+                    />
+                </LabeledField>
+                {fields.map((field) => (
+                    <LabeledField key={field.key} label={field.label} required={Boolean(field.required)}>
                         <Input
-                            className="h-9 w-full text-sm"
-                            onChange={(event) => onChange({ ...channel, label: event.target.value })}
-                            placeholder="Optional label"
-                            value={channel.label}
+                            autoComplete="off"
+                            className={compactFieldClassName}
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            onChange={(event) =>
+                                onChange({ ...channel, config: { ...channel.config, [field.key]: event.target.value } })
+                            }
+                            placeholder={field.placeholder ?? field.label}
+                            value={channel.config[field.key] ?? ""}
                         />
                     </LabeledField>
-                    {fields.map((field) => (
-                        <LabeledField key={field.key} label={field.label} required={Boolean(field.required)}>
-                            <Input
-                                autoComplete="off"
-                                className="h-9 w-full text-sm"
-                                data-1p-ignore="true"
-                                data-form-type="other"
-                                data-lpignore="true"
-                                onChange={(event) =>
-                                    onChange({
-                                        ...channel,
-                                        config: { ...channel.config, [field.key]: event.target.value }
-                                    })
-                                }
-                                placeholder={field.placeholder ?? field.label}
-                                value={channel.config[field.key] ?? ""}
-                            />
-                        </LabeledField>
-                    ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    <Button className="h-9 px-4" onClick={onSave} type="button">
-                        Save
-                    </Button>
-                    <Button className="h-9 px-4" onClick={onTest} type="button" variant="outline">
-                        Test
-                    </Button>
-                </div>
-            </AccordionPanel>
-        </AccordionItem>
+                ))}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+                <Button className="h-9 px-4" onClick={onSave} type="button">
+                    Save
+                </Button>
+                <Button className="h-9 px-4" onClick={onTest} type="button" variant="outline">
+                    Test
+                </Button>
+            </div>
+        </div>
     );
 }
 
@@ -371,51 +883,49 @@ function SetupGuide({ guide }: { guide: ChannelGuide }) {
         <Dialog>
             <DialogTrigger asChild>
                 <Button
-                    className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-primary"
-                    size="sm"
+                    aria-label={`${guide.title} help`}
+                    className="size-6 border-transparent bg-transparent p-0 text-muted-foreground hover:bg-transparent hover:text-primary"
+                    size="icon"
                     type="button"
                     variant="ghost"
                 >
                     <CircleHelpIcon className="size-4" />
-                    Setup guide
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl">
-                <DialogHeader>
+            <DialogContent className="max-h-[calc(100vh-2rem)] max-w-2xl overflow-y-auto p-0">
+                <DialogHeader className="border-b border-border px-6 py-5 pr-14">
                     <DialogTitle>{guide.title}</DialogTitle>
                     <DialogDescription>{guide.summary}</DialogDescription>
                 </DialogHeader>
-                <DialogPanel>
-                    <div className="grid gap-6 text-sm">
-                        <section className="grid gap-3">
-                            <div className="font-semibold text-foreground">Fields</div>
-                            <div className="grid gap-2">
-                                <div>
-                                    <span className="font-medium">Required:</span> {guide.requiredFields.join(", ")}
-                                </div>
-                                <div>
-                                    <span className="font-medium">Optional:</span> {guide.optionalFields.join(", ")}
-                                </div>
+                <div className="grid gap-6 px-6 py-5 text-sm">
+                    <section className="grid gap-3">
+                        <div className="font-semibold text-foreground">Fields</div>
+                        <div className="grid gap-2">
+                            <div>
+                                <span className="font-medium">Required:</span> {guide.requiredFields.join(", ")}
                             </div>
-                        </section>
-                        <section className="grid gap-3">
-                            <div className="font-semibold text-foreground">Setup</div>
-                            <ol className="grid list-decimal gap-2 pl-5">
-                                {guide.steps.map((step) => (
-                                    <li key={step}>{step}</li>
-                                ))}
-                            </ol>
-                        </section>
-                        <section className="grid gap-3">
-                            <div className="font-semibold text-foreground">Notes</div>
-                            <ul className="grid list-disc gap-2 pl-5">
-                                {guide.notes.map((note) => (
-                                    <li key={note}>{note}</li>
-                                ))}
-                            </ul>
-                        </section>
-                    </div>
-                </DialogPanel>
+                            <div>
+                                <span className="font-medium">Optional:</span> {guide.optionalFields.join(", ")}
+                            </div>
+                        </div>
+                    </section>
+                    <section className="grid gap-3">
+                        <div className="font-semibold text-foreground">Setup</div>
+                        <ol className="grid list-decimal gap-2 pl-5">
+                            {guide.steps.map((step) => (
+                                <li key={step}>{step}</li>
+                            ))}
+                        </ol>
+                    </section>
+                    <section className="grid gap-3">
+                        <div className="font-semibold text-foreground">Notes</div>
+                        <ul className="grid list-disc gap-2 pl-5">
+                            {guide.notes.map((note) => (
+                                <li key={note}>{note}</li>
+                            ))}
+                        </ul>
+                    </section>
+                </div>
             </DialogContent>
         </Dialog>
     );

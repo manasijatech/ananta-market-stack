@@ -6,7 +6,7 @@ import { SettingsSections } from "@/components/settings/settings-sections";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
-import { getAlertChannels, getLiveStreamsStatus, getLiveSubscriptions } from "@/service/actions/alerts";
+import { getAlertChannels, getDesktopAudioDevices, getLiveStreamsStatus, getLiveSubscriptions } from "@/service/actions/alerts";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
 import { getOpenRouterModels } from "@/service/actions/llm-models";
 import { getRbacMe } from "@/service/actions/rbac";
@@ -34,16 +34,25 @@ export default async function SettingsPage() {
         );
     }
 
-    const [config, alertChannels, accounts, subscriptions, streamStatus, watchlists, openRouterModels] =
-        await Promise.all([
-            getSystemConfig(),
-            getAlertChannels(),
-            getBrokerAccounts(),
-            getLiveSubscriptions(),
-            getLiveStreamsStatus(),
-            getWatchlists(),
-            getOpenRouterModels()
-        ]);
+    const [
+        config,
+        alertChannels,
+        desktopAudioDevices,
+        accounts,
+        subscriptions,
+        streamStatus,
+        watchlists,
+        openRouterModels
+    ] = await Promise.all([
+        getSystemConfig(),
+        getAlertChannels(),
+        getDesktopAudioDevices().catch(() => []),
+        getBrokerAccounts(),
+        getLiveSubscriptions(),
+        getLiveStreamsStatus(),
+        getWatchlists(),
+        getOpenRouterModels()
+    ]);
     let creditWarningMessage: string | null = null;
     const metadataRows = await getAlphaSymbolMetadata(subscriptions.map((item) => item.symbol)).catch((caught) => {
         creditWarningMessage = getAlphaCreditWarningMessage(caught);
@@ -63,6 +72,7 @@ export default async function SettingsPage() {
                 <SettingsSections
                     accounts={accounts}
                     alertChannels={alertChannels}
+                    desktopAudioDevices={desktopAudioDevices}
                     config={config}
                     openRouterModels={openRouterModels}
                     permissions={{

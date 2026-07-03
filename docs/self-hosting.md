@@ -38,7 +38,7 @@ docker compose up -d --build
 
 This rebuilds images and recreates containers if needed. Recreating containers is normal; persistent data is kept in Docker named volumes. It preserves:
 
-- `ananta-market-stack_backend_data` - SQLite app database and backend data.
+- `ananta-market-stack_backend_data` - SQLite app database, backend data, and generated desktop alert audio under `/data/alert-audio`.
 - `ananta-market-stack_ananta_market_stack_config` - generated `CREDENTIAL_ENCRYPTION_KEY`, `BETTER_AUTH_SECRET`, and `REDIS_PASSWORD`.
 - `ananta-market-stack_redis_data` - Redis append-only data.
 
