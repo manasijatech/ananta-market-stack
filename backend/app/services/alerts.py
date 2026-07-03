@@ -2356,6 +2356,8 @@ def test_channel(db: Session, user_id: str, channel_type: str, message: str) -> 
             channels_json=_json_dumps(["desktop_audio"]),
             payload_json=_json_dumps({"symbol": "TEST", "message": message}),
         )
+        db.add(notification)
+        db.flush()
         delivery = UserAlertChannelDelivery(
             id=str(uuid.uuid4()),
             notification_id=notification.id,
@@ -2364,11 +2366,10 @@ def test_channel(db: Session, user_id: str, channel_type: str, message: str) -> 
             status="pending",
             payload_json=notification.payload_json,
         )
-        db.add(notification)
         db.add(delivery)
         db.flush()
         ok, error = desktop_audio.queue_audio_for_delivery(db, notification, delivery, row)
-        delivery.attempt_count += 1
+        delivery.attempt_count = (delivery.attempt_count or 0) + 1
         delivery.status = "delivered" if ok else "failed"
         delivery.last_error = None if ok else error
         delivery.delivered_at = _now() if ok else None

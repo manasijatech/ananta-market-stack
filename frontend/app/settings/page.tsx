@@ -36,7 +36,7 @@ export default async function SettingsPage() {
     const [config, alertChannels, desktopAudioDevices, accounts, subscriptions, streamStatus, watchlists] = await Promise.all([
         getSystemConfig(),
         getAlertChannels(),
-        getDesktopAudioDevices(),
+        getDesktopAudioDevices().catch(() => []),
         getBrokerAccounts(),
         getLiveSubscriptions(),
         getLiveStreamsStatus(),
