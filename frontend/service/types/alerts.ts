@@ -1,4 +1,4 @@
-export type AlertChannelType = "in_app" | "discord" | "telegram";
+export type AlertChannelType = "in_app" | "discord" | "telegram" | "desktop_audio";
 export type WorkflowStatus = "active" | "inactive" | "draft" | "validated" | "paused" | "error";
 export type EditorMode = "rule" | "graph";
 
@@ -241,6 +241,30 @@ export interface AlertChannel {
     last_error?: string | null;
     created_at: string;
     updated_at: string;
+}
+
+export interface DesktopAudioDevice {
+    id: string;
+    label: string;
+    status: string;
+    last_seen_at?: string | null;
+    last_ack_asset_id?: string | null;
+    revoked_at?: string | null;
+    metadata: Record<string, unknown>;
+    created_at: string;
+}
+
+export interface DesktopAudioPairingStart {
+    pairing_id: string;
+    secret: string;
+    expires_at: string;
+}
+
+export interface DesktopAudioPairingStatus {
+    id: string;
+    status: string;
+    expires_at: string;
+    completed_device_id?: string | null;
 }
 
 export interface LiveSubscription {

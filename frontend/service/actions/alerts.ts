@@ -12,6 +12,9 @@ import type {
     AlertLlmPlaceholderCatalog,
     AlertLlmTestResult,
     AlertNotification,
+    DesktopAudioDevice,
+    DesktopAudioPairingStart,
+    DesktopAudioPairingStatus,
     AlertTemplate,
     AlertUnreadCount,
     AlertWorkflow,
@@ -294,6 +297,33 @@ export async function testAlertChannel(channelType: string, message: string): Pr
         method: "POST",
         body: JSON.stringify({ message })
     });
+}
+
+export async function startDesktopAudioPairing(payload: {
+    app_url?: string | null;
+    metadata?: Record<string, unknown>;
+} = {}): Promise<DesktopAudioPairingStart> {
+    return request<DesktopAudioPairingStart>("/desktop-audio/pairing/start", {
+        method: "POST",
+        body: JSON.stringify({
+            app_url: payload.app_url ?? null,
+            metadata: payload.metadata ?? {}
+        })
+    });
+}
+
+export async function getDesktopAudioPairing(pairingId: string): Promise<DesktopAudioPairingStatus> {
+    return request<DesktopAudioPairingStatus>(`/desktop-audio/pairing/${pairingId}`);
+}
+
+export async function getDesktopAudioDevices(): Promise<DesktopAudioDevice[]> {
+    return request<DesktopAudioDevice[]>("/desktop-audio/devices");
+}
+
+export async function revokeDesktopAudioDevice(deviceId: string): Promise<{ ok: boolean }> {
+    const result = await request<{ ok: boolean }>(`/desktop-audio/devices/${deviceId}`, { method: "DELETE" });
+    revalidatePath("/settings");
+    return result;
 }
 
 export async function getLiveStreamsStatus(): Promise<LiveStreamsStatus> {

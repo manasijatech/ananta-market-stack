@@ -7,7 +7,7 @@ import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager"
 import { SystemConfigPanel } from "@/components/system/system-config-panel";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { AlertChannel, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
+import type { AlertChannel, DesktopAudioDevice, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import type { BrokerAccount, SystemConfig } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
 
@@ -30,6 +30,7 @@ type SettingsSectionsProps = {
         canUseMcp: boolean;
     };
     alertChannels: AlertChannel[];
+    desktopAudioDevices: DesktopAudioDevice[];
     accounts: BrokerAccount[];
     subscriptions: LiveSubscription[];
     streamStatus: LiveStreamsStatus;
@@ -78,7 +79,7 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
         value: "alert-channels",
         label: "Delivery",
         title: "Alert delivery channels",
-        description: "Manage Discord and Telegram delivery credentials, defaults, and test sends."
+        description: "Manage desktop audio, Discord, and Telegram delivery credentials, defaults, and test sends."
     },
     {
         value: "preferences",
@@ -105,6 +106,7 @@ export function SettingsSections({
     config,
     permissions,
     alertChannels,
+    desktopAudioDevices,
     accounts,
     subscriptions,
     streamStatus,
@@ -187,7 +189,7 @@ export function SettingsSections({
                 <StreamManager initialStatus={streamStatus} />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="alert-channels">
-                <ChannelSettings initialChannels={alertChannels} />
+                <ChannelSettings initialChannels={alertChannels} initialDesktopAudioDevices={desktopAudioDevices} />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="preferences">
                 <section className="border border-border p-4">

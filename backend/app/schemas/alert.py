@@ -9,7 +9,7 @@ from app.schemas.broker import InstrumentRef
 from app.schemas.system_config import LlmProvider
 
 
-AlertChannelType = Literal["in_app", "discord", "telegram"]
+AlertChannelType = Literal["in_app", "discord", "telegram", "desktop_audio"]
 WorkflowStatus = Literal["active", "inactive", "draft", "validated", "paused", "error"]
 EditorMode = Literal["rule", "graph"]
 
