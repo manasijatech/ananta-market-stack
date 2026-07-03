@@ -271,6 +271,7 @@ export interface DesktopAudioVoiceOption {
     name: string;
     lang: string;
     default: boolean;
+    localService?: boolean;
 }
 
 export interface LiveSubscription {
