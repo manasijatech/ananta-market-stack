@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import { CircleHelpIcon, MonitorSpeakerIcon, PlugZapIcon, Trash2Icon } from "lucide-react";
 import {
+    getDesktopAudioEdgeVoicesSafe,
     getDesktopAudioDevicesSafe,
     getDesktopAudioPairingSafe,
     revokeDesktopAudioDeviceSafe,
@@ -12,7 +13,7 @@ import {
     startDesktopAudioPairingSafe,
     testAlertChannelSafe
 } from "@/service/actions/alerts";
-import type { AlertChannel, DesktopAudioDevice, DesktopAudioVoiceOption } from "@/service/types/alerts";
+import type { AlertChannel, DesktopAudioDevice, DesktopAudioVoiceOption, EdgeAudioVoiceOption } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -92,11 +93,15 @@ const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
 };
 
 const desktopDefaults = {
-    tts_provider: "web_speech",
+    tts_provider: "edge_tts",
     fallback_to_web_speech: "true",
     spoken_template: "{title}. {message}",
     model_id: "hexgrad/kokoro-82m",
     voice: "af_bella",
+    edge_voice: "en-US-EmmaMultilingualNeural",
+    edge_rate: "0",
+    edge_pitch: "0",
+    edge_volume: "0",
     web_speech_voice: "",
     web_speech_lang: "",
     web_speech_rate: "1",
@@ -109,6 +114,7 @@ const desktopDefaults = {
 };
 
 const ENGLISH_VOICE_HINT = "Free built-in desktop voice. Uses the local browser speech engine on the paired app.";
+const EDGE_VOICE_HINT = "Free hosted voice. Ananta generates MP3 audio through Microsoft's Edge voice catalog so playback stays consistent across devices.";
 
 function stateFor(channel?: AlertChannel, defaults?: Record<string, string>): ChannelState {
     return {
@@ -126,10 +132,14 @@ function stateFor(channel?: AlertChannel, defaults?: Record<string, string>): Ch
 
 function desktopStateFor(channel?: AlertChannel): ChannelState {
     const state = stateFor(channel, desktopDefaults);
-    if (state.config.model_id === desktopDefaults.model_id && (!state.config.voice || state.config.voice === "alloy")) {
-        return { ...state, config: { ...state.config, voice: desktopDefaults.voice } };
+    const config = { ...state.config };
+    if (config.model_id === desktopDefaults.model_id && (!config.voice || config.voice === "alloy")) {
+        config.voice = desktopDefaults.voice;
     }
-    return state;
+    if (config.tts_provider === "edge_tts" && !config.edge_voice) {
+        config.edge_voice = config.voice && config.voice !== desktopDefaults.voice ? config.voice : desktopDefaults.edge_voice;
+    }
+    return { ...state, config };
 }
 
 export function ChannelSettings({
@@ -148,7 +158,9 @@ export function ChannelSettings({
     const [devices, setDevices] = useState(initialDesktopAudioDevices);
     const [showRevokedDevices, setShowRevokedDevices] = useState(false);
     const [availableVoices, setAvailableVoices] = useState<DesktopAudioVoiceOption[]>([]);
+    const [edgeVoices, setEdgeVoices] = useState<EdgeAudioVoiceOption[]>([]);
     const [voiceStatus, setVoiceStatus] = useState("");
+    const [edgeVoiceStatus, setEdgeVoiceStatus] = useState("");
     const [pairingStatus, setPairingStatus] = useState("");
     const [message, setMessage] = useState("Ananta Market Stack channel test");
     const [error, setError] = useState("");
@@ -156,6 +168,7 @@ export function ChannelSettings({
 
     useEffect(() => {
         void loadLocalVoices();
+        void loadEdgeVoices();
     }, []);
 
     async function loadLocalVoices() {
@@ -168,6 +181,17 @@ export function ChannelSettings({
         } catch {
             setVoiceStatus("Desktop app voice list is unavailable until the local helper is running.");
         }
+    }
+
+    async function loadEdgeVoices(forceRefresh = false) {
+        const result = await getDesktopAudioEdgeVoicesSafe(forceRefresh);
+        if (!result.ok) {
+            setEdgeVoiceStatus(result.error);
+            return;
+        }
+        const englishVoices = result.data.filter((voice) => voice.locale.toLowerCase().startsWith("en-"));
+        setEdgeVoices(englishVoices);
+        setEdgeVoiceStatus(englishVoices.length ? "" : "No English Edge voices are currently available.");
     }
 
     async function previewLocalVoice() {
@@ -374,9 +398,14 @@ export function ChannelSettings({
                 onRefreshVoices={() => {
                     void loadLocalVoices();
                 }}
+                onRefreshEdgeVoices={() => {
+                    void loadEdgeVoices(true);
+                }}
                 pairingStatus={pairingStatus}
                 voiceStatus={voiceStatus}
+                edgeVoiceStatus={edgeVoiceStatus}
                 availableVoices={availableVoices}
+                edgeVoices={edgeVoices}
                 showRevokedDevices={showRevokedDevices}
                 onShowRevokedChange={toggleRevokedDevices}
             />
@@ -418,10 +447,13 @@ function DesktopAudioCard({
     onTest,
     onPreviewVoice,
     onRefreshVoices,
+    onRefreshEdgeVoices,
     onShowRevokedChange,
     pairingStatus,
     voiceStatus,
+    edgeVoiceStatus,
     availableVoices,
+    edgeVoices,
     showRevokedDevices
 }: {
     channel: ChannelState;
@@ -434,10 +466,13 @@ function DesktopAudioCard({
     onTest: () => void;
     onPreviewVoice: () => void;
     onRefreshVoices: () => void;
+    onRefreshEdgeVoices: () => void;
     onShowRevokedChange: (checked: boolean) => void;
     pairingStatus: string;
     voiceStatus: string;
+    edgeVoiceStatus: string;
     availableVoices: DesktopAudioVoiceOption[];
+    edgeVoices: EdgeAudioVoiceOption[];
     showRevokedDevices: boolean;
 }) {
     const activeDevices = devices.filter((device) => device.status === "active");
@@ -450,9 +485,9 @@ function DesktopAudioCard({
                         Desktop Audio
                     </div>
                     <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
-                        Pair the tray app once, then Ananta sends spoken alerts to all active devices. Desktop voice is
-                        the default path, OpenRouter audio stays optional, and the app warns clearly when a connection
-                        uses HTTP instead of HTTPS.
+                        Pair the tray app once, then Ananta sends spoken alerts to all active devices. Edge voice is
+                        the default free hosted path, desktop voice stays available as a local fallback, and OpenRouter
+                        remains optional when you want a different paid model.
                     </p>
                 </div>
                 <Button className="h-9 gap-2 px-4" disabled={isPending} onClick={onConnect} type="button">
@@ -488,8 +523,9 @@ function DesktopAudioCard({
                         onChange={(event) => onChange({ ...channel, config: { ...channel.config, tts_provider: event.target.value } })}
                         value={channel.config.tts_provider ?? desktopDefaults.tts_provider}
                     >
-                        <option value="web_speech">Desktop app voice</option>
-                        <option value="openrouter">OpenRouter audio</option>
+                        <option value="edge_tts">Edge voice - free</option>
+                        <option value="web_speech">Desktop app voice - free local</option>
+                        <option value="openrouter">OpenRouter audio - paid</option>
                     </Select>
                 </LabeledField>
                 <LabeledField label="Spoken template" required>
@@ -501,22 +537,6 @@ function DesktopAudioCard({
                         value={channel.config.spoken_template ?? desktopDefaults.spoken_template}
                     />
                 </LabeledField>
-                <LabeledField label="OpenRouter TTS model" required>
-                    <Input
-                        className={compactFieldClassName}
-                        onChange={(event) =>
-                            onChange({ ...channel, config: { ...channel.config, model_id: event.target.value } })
-                        }
-                        value={channel.config.model_id ?? desktopDefaults.model_id}
-                    />
-                </LabeledField>
-                <LabeledField label="OpenRouter voice" required={false}>
-                    <Input
-                        className={compactFieldClassName}
-                        onChange={(event) => onChange({ ...channel, config: { ...channel.config, voice: event.target.value } })}
-                        value={channel.config.voice ?? desktopDefaults.voice}
-                    />
-                </LabeledField>
                 <LabeledField label="Retention days" required={false}>
                     <Input
                         className={compactFieldClassName}
@@ -526,6 +546,59 @@ function DesktopAudioCard({
                         }
                         type="number"
                         value={channel.config.retention_days ?? desktopDefaults.retention_days}
+                    />
+                </LabeledField>
+                <LabeledField label="Edge voice" required={false}>
+                    <Select
+                        className={compactFieldClassName}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, edge_voice: event.target.value } })
+                        }
+                        value={channel.config.edge_voice ?? desktopDefaults.edge_voice}
+                    >
+                        {!edgeVoices.length ? <option value={desktopDefaults.edge_voice}>Loading Edge voices...</option> : null}
+                        {edgeVoices.map((voice) => (
+                            <option key={voice.short_name} value={voice.short_name}>
+                                {voice.friendly_name} ({voice.gender}, {voice.locale})
+                            </option>
+                        ))}
+                    </Select>
+                    <span className="mt-1 block max-w-md text-xs text-muted-foreground">{EDGE_VOICE_HINT}</span>
+                </LabeledField>
+                <LabeledField label="Edge speech rate" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        max={100}
+                        min={-100}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, edge_rate: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.edge_rate ?? desktopDefaults.edge_rate}
+                    />
+                </LabeledField>
+                <LabeledField label="Edge speech pitch" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        max={100}
+                        min={-100}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, edge_pitch: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.edge_pitch ?? desktopDefaults.edge_pitch}
+                    />
+                </LabeledField>
+                <LabeledField label="Edge speech volume" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        max={100}
+                        min={-100}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, edge_volume: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.edge_volume ?? desktopDefaults.edge_volume}
                     />
                 </LabeledField>
                 <LabeledField label="Desktop voice" required={false}>
@@ -592,6 +665,22 @@ function DesktopAudioCard({
                         value={channel.config.web_speech_volume ?? desktopDefaults.web_speech_volume}
                     />
                 </LabeledField>
+                <LabeledField label="OpenRouter TTS model" required>
+                    <Input
+                        className={compactFieldClassName}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, model_id: event.target.value } })
+                        }
+                        value={channel.config.model_id ?? desktopDefaults.model_id}
+                    />
+                </LabeledField>
+                <LabeledField label="OpenRouter voice" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        onChange={(event) => onChange({ ...channel, config: { ...channel.config, voice: event.target.value } })}
+                        value={channel.config.voice ?? desktopDefaults.voice}
+                    />
+                </LabeledField>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
                 <Label className="flex items-center gap-2">
@@ -607,13 +696,14 @@ function DesktopAudioCard({
                     Fallback to desktop voice when OpenRouter audio fails
                 </Label>
                 {voiceStatus ? <span className="text-xs text-muted-foreground">{voiceStatus}</span> : null}
+                {edgeVoiceStatus ? <span className="text-xs text-muted-foreground">{edgeVoiceStatus}</span> : null}
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
                 <Button className="h-9 px-4" onClick={onSave} type="button">
                     Save
                 </Button>
                 <Button className="h-9 px-4" onClick={onPreviewVoice} type="button" variant="outline">
-                    Preview voice
+                    Preview desktop voice
                 </Button>
                 <Button
                     className="h-9 px-4"
@@ -621,10 +711,13 @@ function DesktopAudioCard({
                     type="button"
                     variant="ghost"
                 >
-                    Refresh voices
+                    Refresh desktop voices
+                </Button>
+                <Button className="h-9 px-4" onClick={onRefreshEdgeVoices} type="button" variant="ghost">
+                    Refresh Edge voices
                 </Button>
                 <Button className="h-9 px-4" disabled={!activeDevices.length} onClick={onTest} type="button" variant="outline">
-                    Test audio
+                    Test selected provider
                 </Button>
             </div>
             <div className="mt-5 grid gap-2">

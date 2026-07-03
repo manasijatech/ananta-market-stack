@@ -274,6 +274,16 @@ export interface DesktopAudioVoiceOption {
     localService?: boolean;
 }
 
+export interface EdgeAudioVoiceOption {
+    name: string;
+    short_name: string;
+    locale: string;
+    gender: string;
+    friendly_name: string;
+    content_categories: string[];
+    voice_personalities: string[];
+}
+
 export interface LiveSubscription {
     id: string;
     user_id: string;
