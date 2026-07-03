@@ -7,6 +7,7 @@ import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager"
 import { SystemConfigPanel } from "@/components/system/system-config-panel";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
 import type { AlertChannel, DesktopAudioDevice, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import type { BrokerAccount, SystemConfig } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
@@ -36,6 +37,7 @@ type SettingsSectionsProps = {
     streamStatus: LiveStreamsStatus;
     symbolMetadata: ComponentProps<typeof SubscriptionsManager>["symbolMetadata"];
     watchlists: Watchlist[];
+    openRouterModels: OpenRouterModel[];
 };
 
 const sections: Array<{ value: SettingsSection; label: string; title: string; description: string }> = [
@@ -111,7 +113,8 @@ export function SettingsSections({
     subscriptions,
     streamStatus,
     symbolMetadata,
-    watchlists
+    watchlists,
+    openRouterModels
 }: SettingsSectionsProps) {
     const visibleSections = useMemo(
         () => sections.filter((section) => section.value !== "mcp" || permissions.canUseMcp || permissions.canManageMcp),
@@ -160,7 +163,7 @@ export function SettingsSections({
             </div>
 
             <div className="grid min-w-0 max-w-full gap-1">
-                <h2 className="text-xl font-semibold tracking-normal">{activeMeta.title}</h2>
+                <h2 className="text-xl font-heading font-semibold tracking-tight">{activeMeta.title}</h2>
                 <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{activeMeta.description}</p>
             </div>
 
@@ -174,7 +177,12 @@ export function SettingsSections({
                 <SystemConfigPanel initialConfig={config} permissions={permissions} section="mcp" />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="llm">
-                <SystemConfigPanel initialConfig={config} permissions={permissions} section="llm" />
+                <SystemConfigPanel
+                    initialConfig={config}
+                    openRouterModels={openRouterModels}
+                    permissions={permissions}
+                    section="llm"
+                />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="live-subscriptions">
                 <SubscriptionsManager
@@ -197,8 +205,7 @@ export function SettingsSections({
                         <div>
                             <div className="text-sm font-bold">Onboarding tour</div>
                             <p className="mt-1.5 max-w-2xl text-xs leading-5 text-muted-foreground">
-                                Clear the saved tour completion flag in this browser and start the onboarding guide
-                                again.
+                                Clear the saved tour completion flag in this browser and start the onboarding guide again.
                             </p>
                         </div>
                         <Button onClick={resetOnboardingTour} type="button" variant="outline">

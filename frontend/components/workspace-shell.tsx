@@ -95,6 +95,7 @@ const ONBOARDING_RESET_EVENT = "ananta-market-stack-reset-onboarding";
 const ONBOARDING_PHASE_BROKER_SELECTOR = "broker-selector";
 const ONBOARDING_PHASE_WAITING_FOR_ACTIVE_BROKER = "waiting-for-active-broker";
 const ONBOARDING_PHASE_ALPHA_API = "alpha-api";
+const ADD_BROKER_TARGET = '[data-onboarding="add-broker-action"]';
 const ACTIVE_BROKER_TARGET = '[data-onboarding="active-broker-ready"]';
 const BROKER_SELECTOR_TARGET = '[data-onboarding="broker-selector"]';
 const ALPHA_API_TARGET = '[data-onboarding="manasija-alpha-api-input-section"]';
@@ -121,7 +122,7 @@ const onboardingSteps: OnboardingStep[] = [
         spotlightPadding: 6
     },
     {
-        target: '[data-onboarding="add-broker-action"]',
+        target: ADD_BROKER_TARGET,
         route: "/broker-connections",
         title: "Add Broker",
         content: (
@@ -206,6 +207,19 @@ function storedOnboardingStepIndex() {
     return Number.isInteger(value) && value >= 0 && value < onboardingSteps.length ? value : null;
 }
 
+function splitOnboardingRoute(route?: string) {
+    if (!route) {
+        return { path: "", hash: "" };
+    }
+
+    const normalized = route.startsWith("/") ? route : `/${route}`;
+    const url = new URL(normalized, "http://localhost");
+    return {
+        path: `${url.pathname}${url.search}`,
+        hash: url.hash
+    };
+}
+
 function isNavItemActive(pathname: string, href: string) {
     if (href === "/dashboard") {
         return pathname === "/dashboard";
@@ -232,14 +246,6 @@ function initials(name?: string | null, email?: string | null) {
         .slice(0, 2)
         .map((part) => part.charAt(0).toUpperCase())
         .join("");
-}
-
-function splitOnboardingRoute(route?: string) {
-    if (!route) {
-        return { path: "", hash: "" };
-    }
-    const [path, hash] = route.split("#");
-    return { path, hash: hash ? `#${hash}` : "" };
 }
 
 function visibleNavGroups(principal: RbacPrincipal | null | undefined) {
@@ -313,13 +319,6 @@ function NavigationGroups({
                                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                                         : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
                                 )}
-                                data-onboarding={
-                                    item.href === "/broker-connections"
-                                        ? "broker-connections-nav"
-                                        : item.href === "/settings"
-                                          ? "settings-nav"
-                                          : undefined
-                                }
                                 href={href}
                                 key={item.href}
                             >
@@ -386,16 +385,15 @@ export function WorkspaceShell({
             const alphaApiStepIndex = onboardingSteps.findIndex((step) => step.target === ALPHA_API_TARGET);
 
             setOnboardingActive(true);
-            if (storedStepIndex !== null) {
-                setOnboardingStepIndex(storedStepIndex);
-                return;
-            }
             if (
-                onboardingPhase === ONBOARDING_PHASE_BROKER_SELECTOR &&
                 pathname === "/broker-connections/new" &&
                 brokerSelectorStepIndex >= 0
             ) {
                 setOnboardingStepIndex(brokerSelectorStepIndex);
+                return;
+            }
+            if (storedStepIndex !== null) {
+                setOnboardingStepIndex(storedStepIndex);
                 return;
             }
             if (onboardingPhase === ONBOARDING_PHASE_ALPHA_API && alphaApiStepIndex >= 0) {
@@ -528,7 +526,7 @@ export function WorkspaceShell({
     function handleOnboardingPrimary(index: number) {
         let nextStepIndex = index + 1;
 
-        if (onboardingSteps[index]?.target === '[data-onboarding="add-broker-action"]') {
+        if (onboardingSteps[index]?.target === ADD_BROKER_TARGET) {
             const readyBroker = document.querySelector(ACTIVE_BROKER_TARGET);
             if (readyBroker) {
                 nextStepIndex = onboardingSteps.findIndex((step) => step.target === ACTIVE_BROKER_TARGET);
@@ -636,14 +634,14 @@ export function WorkspaceShell({
                 }}
                 tooltipComponent={OnboardingTooltip}
             />
-            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background min-[980px]:hidden">
-                <div className="flex min-h-16 items-center justify-between gap-3 px-4">
-                    <div className="flex min-w-0 items-center gap-3">
+            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background pt-[env(safe-area-inset-top)] min-[980px]:hidden">
+                <div className="flex min-h-14 items-center justify-between gap-2 px-3 sm:min-h-16 sm:gap-3 sm:px-4">
+                    <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
                         <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
                             <DialogTrigger asChild>
                                 <Button
                                     aria-label="Open navigation"
-                                    className="size-9"
+                                    className="size-9 shrink-0"
                                     size="icon"
                                     type="button"
                                     variant="outline"
@@ -681,9 +679,9 @@ export function WorkspaceShell({
                                 </div>
                             </DialogContent>
                         </Dialog>
-                        <BrandLogo imageClassName="text-[1.35rem]" />
+                        <BrandLogo compact className="min-w-0 overflow-hidden" imageClassName="text-base sm:text-[1.35rem]" />
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                         <GithubStarButton />
                         <AlertNotificationsTray />
                         <ThemeToggle />
@@ -730,7 +728,7 @@ export function WorkspaceShell({
                         </div>
                     </div>
                 </header>
-                <div className="min-w-0 px-4 pb-6 pt-[5.5rem] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10">
+                <div className="min-w-0 px-3 pb-6 pt-[calc(3.75rem+env(safe-area-inset-top))] sm:px-4 sm:pt-[calc(4.5rem+env(safe-area-inset-top))] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-10">
                     <UpdateAvailableBanner />
                     {children}
                 </div>

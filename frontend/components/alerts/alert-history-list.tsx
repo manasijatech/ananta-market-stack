@@ -96,7 +96,7 @@ export function AlertHistoryList({
                     {alertList.rows.map((item) => (
                         <div
                             className={cn(
-                                "min-h-[120px] border border-border bg-card p-4",
+                                "min-h-[120px] rounded-lg border border-border bg-card p-4",
                                 alertSeverityBorder(item.level)
                             )}
                             key={item.id}
@@ -155,7 +155,7 @@ export function AlertHistoryList({
                 {showRuns ? (
                     <div className="grid max-h-[420px] gap-3 overflow-y-auto pr-1">
                         {runList.rows.map((item) => (
-                            <div className="min-h-[120px] border border-border bg-card p-4" key={item.id}>
+                            <div className="min-h-[120px] rounded-lg border border-border bg-card p-4" key={item.id}>
                                 <div className="type-label">
                                     {item.rendered_title || item.reason}
                                 </div>
@@ -184,7 +184,7 @@ export function AlertHistoryList({
                         {runList.hasMore ? <div className="h-4" ref={runList.sentinelRef} /> : null}
                     </div>
                 ) : (
-                    <div className="type-help flex min-h-[120px] items-center border border-border bg-card p-4">
+                    <div className="type-help flex min-h-[120px] items-center rounded-lg border border-border bg-card p-4">
                         Keep this collapsed for the summary view. Open details only when you want to inspect recent
                         evaluations.
                     </div>

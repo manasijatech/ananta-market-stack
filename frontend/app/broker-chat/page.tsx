@@ -2,13 +2,15 @@ import { BrokerChatWorkspace } from "@/components/broker-chat/broker-chat-worksp
 import { Shell } from "@/components/brokers/shell";
 import { getSystemConfig } from "@/service/actions/broker";
 import { getBrokerChatConfig, getBrokerChatRuns, getBrokerChatSessions } from "@/service/actions/broker-chat";
+import { getOpenRouterModels } from "@/service/actions/llm-models";
 
 export default async function BrokerChatPage() {
-    const [config, sessions, runs, systemConfig] = await Promise.all([
+    const [config, sessions, runs, systemConfig, openRouterModels] = await Promise.all([
         getBrokerChatConfig(),
         getBrokerChatSessions(80),
         getBrokerChatRuns({ limit: 160 }),
-        getSystemConfig()
+        getSystemConfig(),
+        getOpenRouterModels()
     ]);
 
     return (
@@ -21,6 +23,7 @@ export default async function BrokerChatPage() {
                     llmProviders={systemConfig.llm_providers}
                     mcpServer={systemConfig.mcp_server}
                     mcpServers={systemConfig.mcp_servers}
+                    openRouterModels={openRouterModels}
                 />
             </div>
         </Shell>

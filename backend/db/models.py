@@ -60,6 +60,12 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    llm_model_pricing: Mapped[list[LlmModelPricing]] = relationship(
+        "LlmModelPricing",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     alpha_api_credential: Mapped[UserAlphaApiCredential | None] = relationship(
         "UserAlphaApiCredential",
         back_populates="user",
@@ -666,6 +672,8 @@ class LlmUsageEvent(Base):
     request_kind: Mapped[str] = mapped_column(String(64), default="generic", index=True)
     status: Mapped[str] = mapped_column(String(32), default="success", index=True)
     provider_response_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    span_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     workflow_ref: Mapped[str] = mapped_column(String(64), default="", index=True)
     workflow_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     workflow_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -673,6 +681,11 @@ class LlmUsageEvent(Base):
     workflow_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     template_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     account_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    source_kind: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    source_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    workflow_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    request_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
@@ -685,6 +698,9 @@ class LlmUsageEvent(Base):
     video_tokens: Mapped[int] = mapped_column(Integer, default=0)
     provider_cost: Mapped[float | None] = mapped_column(nullable=True)
     provider_cost_currency: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(nullable=True)
+    display_cost_usd: Mapped[float | None] = mapped_column(nullable=True)
+    cost_source: Mapped[str] = mapped_column(String(32), default="unpriced", index=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_byok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     usage_json: Mapped[str] = mapped_column(Text, default="{}")
@@ -722,6 +738,8 @@ class LlmUsageDailySnapshot(Base):
     model_id: Mapped[str] = mapped_column(String(256), index=True)
     api_surface: Mapped[str] = mapped_column(String(64), default="chat_completions", index=True)
     request_kind: Mapped[str] = mapped_column(String(64), default="generic", index=True)
+    trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    span_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     workflow_ref: Mapped[str] = mapped_column(String(64), default="", index=True)
     workflow_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     workflow_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -729,6 +747,11 @@ class LlmUsageDailySnapshot(Base):
     workflow_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     template_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     account_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    source_kind: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    source_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    workflow_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    request_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     request_count: Mapped[int] = mapped_column(Integer, default=0)
     success_count: Mapped[int] = mapped_column(Integer, default=0)
     error_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -746,6 +769,13 @@ class LlmUsageDailySnapshot(Base):
     video_tokens: Mapped[int] = mapped_column(Integer, default=0)
     provider_cost_total: Mapped[float] = mapped_column(default=0.0)
     priced_request_count: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(nullable=True)
+    display_cost_usd: Mapped[float | None] = mapped_column(nullable=True)
+    cost_source: Mapped[str] = mapped_column(String(32), default="unpriced", index=True)
+    estimated_cost_total_usd: Mapped[float] = mapped_column(default=0.0)
+    display_cost_total_usd: Mapped[float] = mapped_column(default=0.0)
+    estimated_cost_request_count: Mapped[int] = mapped_column(Integer, default=0)
+    display_cost_request_count: Mapped[int] = mapped_column(Integer, default=0)
     last_request_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -753,6 +783,42 @@ class LlmUsageDailySnapshot(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="llm_usage_daily_snapshots")
+
+
+class LlmModelPricing(Base):
+    __tablename__ = "llm_model_pricing"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "provider",
+            "model_id",
+            name="uq_llm_model_pricing_user_provider_model",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    model_id: Mapped[str] = mapped_column(String(256), index=True)
+    input_cost_per_1m_tokens: Mapped[float | None] = mapped_column(nullable=True)
+    output_cost_per_1m_tokens: Mapped[float | None] = mapped_column(nullable=True)
+    cached_input_cost_per_1m_tokens: Mapped[float | None] = mapped_column(nullable=True)
+    cache_write_cost_per_1m_tokens: Mapped[float | None] = mapped_column(nullable=True)
+    reasoning_cost_per_1m_tokens: Mapped[float | None] = mapped_column(nullable=True)
+    input_audio_cost_per_1m_tokens: Mapped[float | None] = mapped_column(nullable=True)
+    output_audio_cost_per_1m_tokens: Mapped[float | None] = mapped_column(nullable=True)
+    source: Mapped[str] = mapped_column(String(64), default="manual", index=True)
+    source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="llm_model_pricing")
 
 
 class UserAlphaApiCredential(Base):

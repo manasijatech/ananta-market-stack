@@ -19,8 +19,16 @@ import {
     normalizeProfile,
     normalizeTrades
 } from "@/components/brokers/normalizers";
+import { Inbox } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+    Empty as EmptyState,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Skeleton as UISkeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -57,7 +65,17 @@ function containsSymbol(row: { symbol: string }, filter: string): boolean {
 }
 
 function Empty({ message }: { message: string }) {
-    return <div className="border-y border-dashed border-border py-8 text-center text-muted-foreground">{message}</div>;
+    return (
+        <EmptyState className="border-y border-dashed border-border py-8">
+            <EmptyHeader>
+                <EmptyMedia variant="icon">
+                    <Inbox />
+                </EmptyMedia>
+                <EmptyTitle className="text-base">Nothing to show</EmptyTitle>
+                <EmptyDescription>{message}</EmptyDescription>
+            </EmptyHeader>
+        </EmptyState>
+    );
 }
 
 function Skeleton() {

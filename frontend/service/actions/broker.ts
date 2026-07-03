@@ -20,6 +20,8 @@ import type {
     InstrumentSearchRow,
     InstrumentSyncResult,
     JsonObject,
+    LlmModelPricing,
+    LlmModelPricingUpsert,
     LlmProvider,
     LlmProviderConfig,
     Notification,
@@ -546,6 +548,41 @@ export async function deleteLlmProviderModel(modelRowId: string): Promise<LlmPro
         method: "DELETE"
     });
     revalidatePath("/settings");
+    return result;
+}
+
+export async function getLlmModelPricing(): Promise<LlmModelPricing[]> {
+    return request<LlmModelPricing[]>("/system-config/llm/pricing");
+}
+
+export async function upsertLlmModelPricing(payload: LlmModelPricingUpsert): Promise<LlmModelPricing> {
+    const result = await request<LlmModelPricing>("/system-config/llm/pricing", {
+        method: "PUT",
+        body: JSON.stringify({
+            ...payload,
+            metadata: payload.metadata ?? {}
+        })
+    });
+    revalidatePath("/settings");
+    revalidatePath("/llm-usage");
+    return result;
+}
+
+export async function deleteLlmModelPricing(pricingId: string): Promise<LlmModelPricing[]> {
+    const result = await request<LlmModelPricing[]>(`/system-config/llm/pricing/${pricingId}`, {
+        method: "DELETE"
+    });
+    revalidatePath("/settings");
+    revalidatePath("/llm-usage");
+    return result;
+}
+
+export async function refreshOpenRouterModelPricing(): Promise<LlmModelPricing[]> {
+    const result = await request<LlmModelPricing[]>("/system-config/llm/pricing/openrouter/refresh", {
+        method: "POST"
+    });
+    revalidatePath("/settings");
+    revalidatePath("/llm-usage");
     return result;
 }
 

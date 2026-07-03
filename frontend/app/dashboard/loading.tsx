@@ -1,5 +1,5 @@
-import { HeaderSkeleton, LoadingShell } from "@/components/ui/loading-skeletons";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { HeaderSkeleton, LoadingShell } from "@/components/ui/loading-skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardLoading() {
@@ -7,7 +7,7 @@ export default function DashboardLoading() {
         <LoadingShell
             header={<HeaderSkeleton eyebrowWidth="w-24" titleWidth="w-72" descriptionWidth="w-full max-w-3xl" />}
         >
-            <Card className="shadow-sm ring-border/50 [--card-spacing:--spacing(6)]">
+            <Card className="[--card-spacing:--spacing(6)]">
                 <CardHeader className="gap-4">
                     <Skeleton className="h-7 w-56" />
                     <Skeleton className="h-4 w-full max-w-2xl" />

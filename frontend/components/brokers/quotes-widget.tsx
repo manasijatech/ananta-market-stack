@@ -105,7 +105,7 @@ export function QuotesWidget({ account }: { account: BrokerAccount }) {
 
     return (
         <section className="border-t border-border py-8">
-            <h2 className="text-xl font-bold">Quotes</h2>
+            <h2 className="text-xl font-heading font-bold tracking-tight">Quotes</h2>
             <form className="mt-5 grid gap-3 min-[720px]:grid-cols-4" onSubmit={submit}>
                 <Input name="symbol" placeholder="Symbol" />
                 <Input name="exchange" placeholder="Exchange/segment" />

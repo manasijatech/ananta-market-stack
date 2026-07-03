@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
     IconBellRinging,
     IconBolt,
@@ -22,7 +23,7 @@ import { PageHeader, isBrokerAccountReady } from "@/components/brokers/ui";
 import { Shell } from "@/components/brokers/shell";
 import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import { formatIstDateTime } from "@/lib/datetime";
-import { formatLlmCost, requestKindDisplay } from "@/lib/llm-usage";
+import { formatDisplayLlmCost, requestKindDisplay } from "@/lib/llm-usage";
 import {
     getAlertHistory,
     getAlertUnreadCount,
@@ -238,7 +239,15 @@ function BrokerOverviewCard({ data }: { data: DashboardData["accounts"] }) {
                     ) : null}
                 </>
             ) : (
-                <EmptyStateLine>No broker accounts connected yet.</EmptyStateLine>
+                <EmptyStateLine
+                    action={
+                        <Link className="font-medium text-primary underline underline-offset-2" href="/broker-connections">
+                            Connect a broker
+                        </Link>
+                    }
+                >
+                    No broker accounts connected yet.
+                </EmptyStateLine>
             )}
         </DashboardModuleCard>
     );
@@ -352,7 +361,18 @@ function AlertsOverviewCard({
                     )}
                 </>
             ) : (
-                <EmptyStateLine>No alert activity yet. Create a workflow to start monitoring.</EmptyStateLine>
+                <EmptyStateLine
+                    action={
+                        <Link
+                            className="font-medium text-primary underline underline-offset-2"
+                            href="/alerts-workspace/workflows/new"
+                        >
+                            Create a workflow
+                        </Link>
+                    }
+                >
+                    No alert activity yet. Create a workflow to start monitoring.
+                </EmptyStateLine>
             )}
         </DashboardModuleCard>
     );
@@ -376,6 +396,8 @@ function LlmOverviewCard({ data }: { data: DashboardData["llmOverview"] }) {
             error={data.error}
             href="/llm-usage"
             icon={IconBrain}
+            iconClassName="text-foreground"
+            iconStroke={2.2}
             title="LLM Usage"
             tone={tone}
         >
@@ -395,15 +417,15 @@ function LlmOverviewCard({ data }: { data: DashboardData["llmOverview"] }) {
                     value={percent(todayRequests, requests)}
                 />
             ) : null}
-            {(errors > 0 || (overview?.totals.provider_cost_total ?? 0) > 0) && (
+            {(errors > 0 || (overview?.totals.display_cost_total_usd ?? 0) > 0) && (
                 <div className="grid gap-3 min-[480px]:grid-cols-2">
                     {errors > 0 ? <MetricPanel label="Errors" value={formatNumber(errors)} /> : null}
-                    {(overview?.totals.provider_cost_total ?? 0) > 0 ? (
+                    {(overview?.totals.display_cost_total_usd ?? 0) > 0 ? (
                         <MetricPanel
-                            label="Estimated cost"
-                            value={formatLlmCost(
-                                overview?.totals.provider_cost_total ?? 0,
-                                overview?.totals.priced_request_count ?? 0
+                            label="LLM cost"
+                            value={formatDisplayLlmCost(
+                                overview?.totals.display_cost_total_usd ?? 0,
+                                overview?.totals.display_cost_request_count ?? 0
                             )}
                         />
                     ) : null}

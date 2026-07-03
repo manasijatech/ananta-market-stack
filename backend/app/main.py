@@ -15,6 +15,7 @@ from app.services.alpha_websocket import run_alpha_websocket_worker
 from app.services.alert_workflow_chat.worker_service import run_alert_workflow_chat_worker
 from app.services.broker_chat_worker_service import run_broker_chat_worker
 from app.services.broker_sessions import maintenance_loop
+from app.services.llm_telemetry import configure_llm_telemetry
 from app.services.system_maintenance import run_startup_maintenance
 from app.services.watchlist_preset_worker import run_watchlist_preset_worker
 from db.session import init_db
@@ -109,6 +110,7 @@ class BackgroundAsyncLoopThread:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    configure_llm_telemetry()
     init_db()
     Thread(
         target=_run_startup_maintenance_background,

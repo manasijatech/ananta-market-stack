@@ -43,8 +43,13 @@ function dashboardToneBadgeVariant(tone: DashboardTone): NonNullable<BadgeProps[
     return "secondary";
 }
 
-export function EmptyStateLine({ children }: { children: ReactNode }) {
-    return <p className={typography.muted}>{children}</p>;
+export function EmptyStateLine({ children, action }: { children: ReactNode; action?: ReactNode }) {
+    return (
+        <p className={typography.muted}>
+            {children}
+            {action ? <span className="ml-1.5">{action}</span> : null}
+        </p>
+    );
 }
 
 export function MetricPanel({
@@ -59,10 +64,10 @@ export function MetricPanel({
     className?: string;
 }) {
     return (
-        <Card className={cn("border-border/80 bg-background/40 shadow-none", className)}>
+        <Card className={cn("border-border bg-card", className)}>
             <CardPanel className="p-4">
                 <p className={typography.muted}>{label}</p>
-                <p className={cn(typography.h3, "mt-2")}>{value}</p>
+                <p className={cn(typography.h3, "mt-2 font-mono tabular-nums")}>{value}</p>
                 {hint ? <p className={cn(typography.muted, "mt-1 leading-5")}>{hint}</p> : null}
             </CardPanel>
         </Card>
@@ -122,7 +127,7 @@ export function ActivityRow({
             </div>
             <div className="shrink-0 text-right">
                 <p className={typography.muted}>{meta}</p>
-                <p className={cn(typography.small, valueClassName)}>{value}</p>
+                <p className={cn(typography.small, "font-mono tabular-nums", valueClassName)}>{value}</p>
             </div>
         </div>
     );
@@ -134,6 +139,8 @@ export function DashboardModuleCard({
     description,
     tone,
     icon: Icon,
+    iconClassName,
+    iconStroke = 1.8,
     error,
     children
 }: {
@@ -142,6 +149,8 @@ export function DashboardModuleCard({
     description: string;
     tone: DashboardTone;
     icon: TablerIcon;
+    iconClassName?: string;
+    iconStroke?: number;
     error?: string;
     children: ReactNode;
 }) {
@@ -168,7 +177,7 @@ export function DashboardModuleCard({
                             dashboardToneClasses(tone)
                         )}
                     >
-                        <Icon stroke={1.8} />
+                        <Icon className={cn("size-5", iconClassName)} stroke={iconStroke} />
                     </span>
                 </CardFrameAction>
             </CardFrameHeader>

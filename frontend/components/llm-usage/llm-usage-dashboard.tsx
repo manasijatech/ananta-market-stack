@@ -6,7 +6,6 @@ import {
     IconBrain,
     IconChartBar,
     IconCoins,
-    IconInfoCircle,
     IconSearch,
     IconShieldCheck
 } from "@tabler/icons-react";
@@ -17,6 +16,7 @@ import { MetricInfoTooltip } from "@/components/llm-usage/llm-usage-metric-info-
 import { StatCard, StatValueMuted, tableHeadClassName } from "@/components/llm-usage/llm-usage-stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatIstDateTime } from "@/lib/datetime";
 import { typography } from "@/lib/typography";
@@ -29,8 +29,10 @@ import {
 } from "@/lib/llm-usage-filters";
 import {
     apiSurfaceDisplay,
+    aggregateCostSource,
+    costSourceLabel,
     eventWorkflowDisplayName,
-    formatLlmCost,
+    formatDisplayLlmCost,
     groupWorkflowDisplayName,
     metricReportingLabel,
     requestKindDisplay
@@ -77,7 +79,7 @@ const DEFAULT_API_SURFACE_OPTIONS: LlmUsageFilterOption[] = [
 
 const SPARSE_BUCKET_THRESHOLD = 4;
 const PROVIDER_COST_TOOLTIP =
-    "Cost is only reported when the upstream provider includes it in the API response. provider_cost_total only includes cost returned by the provider.";
+    "Costs use provider-reported USD when available. Otherwise Ananta shows an estimated cost from configured model pricing.";
 const TOKENS_TOOLTIP = "Some providers do not expose cache, reasoning, or cost fields in every response.";
 const WORKFLOW_TABLE_TOOLTIP = "Historical workflow usage is retained in the ledger after a workflow is deleted.";
 const PERIOD_TOOLTIP = "Daily snapshots are updated at write time when requests complete.";
@@ -191,12 +193,23 @@ export function buildLlmUsageFilterOptions(
 
 function UsageEmptyNotice() {
     return (
-        <div className="flex items-center gap-2.5 rounded-md border-l-[3px] border-l-blue-400 bg-card px-3.5 py-2.5">
-            <IconInfoCircle aria-hidden className="size-4 shrink-0 text-blue-400" />
-            <p className="text-[13px] text-foreground">
-                No usage data yet — LLM activity appears here once workflows start running.
-            </p>
-        </div>
+        <Empty className="rounded-lg border border-border bg-card py-12 md:py-16">
+            <EmptyHeader>
+                <EmptyMedia variant="icon">
+                    <IconActivity />
+                </EmptyMedia>
+                <EmptyTitle>No usage yet</EmptyTitle>
+                <EmptyDescription>
+                    LLM activity appears here once a workflow with an LLM step runs.
+                </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+                <Button render={<Link href="/alerts-workspace/workflows/new" />}>
+                    <IconActivity className="size-4" />
+                    Create a workflow
+                </Button>
+            </EmptyContent>
+        </Empty>
     );
 }
 
@@ -215,7 +228,8 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
         "Reasoning"
     );
     const hasRequests = overview.totals.request_count > 0;
-    const costReported = overview.totals.priced_request_count > 0;
+    const costReported = overview.totals.display_cost_request_count > 0;
+    const costSource = aggregateCostSource(overview.totals);
 
     return (
         <section className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-4">
@@ -242,13 +256,13 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
                 value={formatTokens(overview.totals.total_tokens)}
             />
             <StatCard
-                detail={`${formatTokens(overview.totals.priced_request_count)} priced requests`}
+                detail={`${costSourceLabel(costSource)} / ${formatTokens(overview.totals.display_cost_request_count)} priced requests`}
                 icon={IconCoins}
                 infoTooltip={<MetricInfoTooltip content={PROVIDER_COST_TOOLTIP} />}
-                label="Provider cost"
+                label="Cost"
                 mutedIcon={zeroState}
-                value={costReported ? formatLlmCost(overview.totals.provider_cost_total, overview.totals.priced_request_count) : undefined}
-                valueNode={costReported ? undefined : <StatValueMuted>Not reported</StatValueMuted>}
+                value={costReported ? formatDisplayLlmCost(overview.totals.display_cost_total_usd, overview.totals.display_cost_request_count) : undefined}
+                valueNode={costReported ? undefined : <StatValueMuted>Not priced</StatValueMuted>}
             />
         </section>
     );
@@ -256,7 +270,7 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
 
 function PeriodCard({ label, totals }: { label: string; totals: LlmUsageTotals }) {
     return (
-        <div className="min-w-0 rounded-md border border-border bg-card p-4">
+        <div className="min-w-0 rounded-lg border border-border bg-card p-4">
             <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
             <div className="mt-3 text-[22px] font-medium leading-none">{formatTokens(totals.total_tokens)}</div>
             <p className="mt-1 text-[11px] text-muted-foreground">tokens</p>
@@ -296,7 +310,7 @@ function UsageChart({ buckets }: { buckets: LlmUsageTimeBucket[] }) {
     }
 
     return (
-        <section className="rounded-md border border-border bg-card p-4">
+        <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-4">
                 <h2 className={typography.sectionTitle}>Usage trend</h2>
                 {!emptyMessage ? (
@@ -348,7 +362,7 @@ function GroupTable({
     headerTooltip?: ReactNode;
 }) {
     return (
-        <section className="rounded-md border border-border bg-card p-4">
+        <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-4">
                 <div className="flex items-center gap-2">
                     <h2 className={typography.sectionTitle}>{title}</h2>
@@ -396,7 +410,7 @@ function GroupTable({
                                 <TableCell className="text-right text-[13px]">{formatTokens(row.request_count)}</TableCell>
                                 <TableCell className="text-right text-[13px]">{formatTokens(row.total_tokens)}</TableCell>
                                 <TableCell className="text-right text-[13px]">
-                                    {formatLlmCost(row.provider_cost_total, row.priced_request_count)}
+                                    {formatDisplayLlmCost(row.display_cost_total_usd, row.display_cost_request_count)}
                                 </TableCell>
                             </TableRow>
                         );
@@ -416,7 +430,7 @@ function GroupTable({
 
 function BreakdownEmptyState() {
     return (
-        <section className="rounded-md border border-border bg-card px-6 py-10">
+        <section className="rounded-lg border border-border bg-card px-6 py-10">
             <div className="mx-auto flex max-w-md flex-col items-center text-center">
                 <IconChartBar aria-hidden className="mb-3 size-6 text-muted-foreground" />
                 <h2 className="text-sm font-medium text-foreground">No breakdown data</h2>
@@ -480,7 +494,7 @@ function RecentEvents({
         : "No LLM calls recorded yet. Calls appear here once a workflow with an LLM step runs.";
 
     return (
-        <section className="rounded-md border border-border bg-card p-4">
+        <section className="rounded-lg border border-border bg-card p-4">
             <div className="mb-4 flex flex-wrap items-center gap-2">
                 <h2 className={typography.sectionTitle}>Recent request ledger</h2>
                 <Badge size="sm" variant="secondary">
@@ -495,6 +509,7 @@ function RecentEvents({
                         <TableHead className={tableHeadClassName()}>Workflow</TableHead>
                         <TableHead className={tableHeadClassName("text-right")}>Tokens</TableHead>
                         <TableHead className={tableHeadClassName("text-right")}>Latency</TableHead>
+                        <TableHead className={tableHeadClassName("text-right")}>Cost</TableHead>
                         <TableHead className={tableHeadClassName()}>Status</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -522,6 +537,10 @@ function RecentEvents({
                             <TableCell className="text-right text-[13px]">
                                 {event.latency_ms == null ? "n/a" : `${event.latency_ms} ms`}
                             </TableCell>
+                            <TableCell className="text-right text-[13px]">
+                                <div>{formatDisplayLlmCost(event.display_cost_usd, event.display_cost_usd == null ? 0 : 1)}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{costSourceLabel(event.cost_source)}</div>
+                            </TableCell>
                             <TableCell>
                                 <Badge variant={event.status === "success" ? "default" : "destructive"}>{event.status}</Badge>
                             </TableCell>
@@ -529,7 +548,7 @@ function RecentEvents({
                     ))}
                     {!events.items.length ? (
                         <TableRow>
-                            <TableCell className="py-10 text-center" colSpan={6}>
+                            <TableCell className="py-10 text-center" colSpan={7}>
                                 <div className="flex flex-col items-center gap-2">
                                     <IconSearch aria-hidden className="size-5 text-muted-foreground" />
                                     <p className="text-[13px] text-muted-foreground">{emptyMessage}</p>
@@ -544,7 +563,7 @@ function RecentEvents({
 }
 
 function FilterBarFallback() {
-    return <div className="h-28 animate-pulse rounded-md border border-border bg-card" />;
+    return <div className="h-28 animate-pulse rounded-lg border border-border bg-card" />;
 }
 
 export function LlmUsageDashboard({
@@ -561,7 +580,7 @@ export function LlmUsageDashboard({
     return (
         <Shell>
             <PageHeader
-                description="Monitor provider calls, token volume, provider-reported cost, and workflow-level LLM activity."
+                description="Monitor provider calls, token volume, reported or estimated cost, and workflow-level LLM activity."
                 eyebrow="Operations"
                 title="LLM Usage"
             />

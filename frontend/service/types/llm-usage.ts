@@ -8,6 +8,10 @@ export interface LlmUsageFilters {
     workflow_id?: string | null;
     request_kind?: string | null;
     api_surface?: string | null;
+    source_kind?: string | null;
+    source_id?: string | null;
+    session_id?: string | null;
+    workflow_run_id?: string | null;
 }
 
 export interface LlmUsageTotals {
@@ -28,6 +32,10 @@ export interface LlmUsageTotals {
     video_tokens: number;
     provider_cost_total: number;
     priced_request_count: number;
+    estimated_cost_total_usd: number;
+    display_cost_total_usd: number;
+    estimated_cost_request_count: number;
+    display_cost_request_count: number;
 }
 
 export interface LlmUsageGroup extends LlmUsageTotals {
@@ -61,12 +69,19 @@ export interface LlmUsageEvent {
     request_kind_label: string;
     status: string;
     provider_response_id?: string | null;
+    trace_id?: string | null;
+    span_id?: string | null;
     workflow_id?: string | null;
     workflow_name?: string | null;
     workflow_status?: string | null;
     workflow_type?: string | null;
     template_id?: string | null;
     account_id?: string | null;
+    source_kind?: string | null;
+    source_id?: string | null;
+    session_id?: string | null;
+    workflow_run_id?: string | null;
+    request_index?: number | null;
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
@@ -81,6 +96,9 @@ export interface LlmUsageEvent {
     video_tokens: number;
     provider_cost?: number | null;
     provider_cost_currency?: string | null;
+    estimated_cost_usd?: number | null;
+    display_cost_usd?: number | null;
+    cost_source: "provider_reported" | "pricing_config" | "openrouter_pricing" | "unpriced" | string;
     latency_ms?: number | null;
     is_byok?: boolean | null;
     usage: Record<string, unknown>;

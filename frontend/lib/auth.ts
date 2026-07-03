@@ -111,7 +111,7 @@ const trustedOrigins = Array.from(
 
 /** Shared Better Auth instance for API routes and server session lookups. */
 export const auth = betterAuth({
-    appName: "Ananta Market Stack",
+    appName: "Ananta",
     baseURL: authBaseURL,
     trustedOrigins,
     secret: process.env.BETTER_AUTH_SECRET,

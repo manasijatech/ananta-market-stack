@@ -17,6 +17,10 @@ class LlmUsageFilterOut(BaseModel):
     workflow_id: str | None = Field(default=None, description="Optional workflow id filter. Historical rows remain even after workflow deletion.")
     request_kind: str | None = Field(default=None, description="Optional request-kind filter such as workflow_llm_analysis or workflow_feed_trigger.")
     api_surface: str | None = Field(default=None, description="Optional API surface filter such as chat_completions or responses_api.")
+    source_kind: str | None = Field(default=None, description="Optional source type filter such as broker_chat_run or alert_workflow_chat_run.")
+    source_id: str | None = Field(default=None, description="Optional source id filter.")
+    session_id: str | None = Field(default=None, description="Optional chat session id filter.")
+    workflow_run_id: str | None = Field(default=None, description="Optional alert workflow run id filter.")
 
 
 class LlmUsageTotalsOut(BaseModel):
@@ -37,6 +41,10 @@ class LlmUsageTotalsOut(BaseModel):
     video_tokens: int = Field(default=0, description="Video input tokens when reported.")
     provider_cost_total: float = Field(default=0.0, description="Sum of provider-reported cost only. No local estimation is added when a provider omits cost.")
     priced_request_count: int = Field(default=0, description="Number of requests with provider-reported cost.")
+    estimated_cost_total_usd: float = Field(default=0.0, description="Sum of locally estimated USD cost from configured model pricing.")
+    display_cost_total_usd: float = Field(default=0.0, description="Best available USD cost for display: provider-reported USD when available, otherwise configured estimate.")
+    estimated_cost_request_count: int = Field(default=0, description="Number of requests with locally estimated cost.")
+    display_cost_request_count: int = Field(default=0, description="Number of requests with displayable cost.")
 
 
 class LlmUsageGroupOut(LlmUsageTotalsOut):
@@ -70,12 +78,19 @@ class LlmUsageEventOut(BaseModel):
     request_kind_label: str = Field(description="Human-friendly backend request category label.")
     status: str = Field(description="success or error.")
     provider_response_id: str | None = Field(default=None, description="Provider response/request id when returned by the SDK.")
+    trace_id: str | None = Field(default=None, description="Trace id for local or OpenTelemetry correlation.")
+    span_id: str | None = Field(default=None, description="Span id for local or OpenTelemetry correlation.")
     workflow_id: str | None = Field(default=None, description="Workflow id captured at request time.")
     workflow_name: str | None = Field(default=None, description="Workflow name captured at request time.")
     workflow_status: str | None = Field(default=None, description="Workflow status captured at request time.")
     workflow_type: str | None = Field(default=None, description="Workflow type captured at request time.")
     template_id: str | None = Field(default=None, description="Template id captured at request time when relevant.")
     account_id: str | None = Field(default=None, description="Broker account id captured at request time when relevant.")
+    source_kind: str | None = Field(default=None, description="Source type such as broker_chat_run or alert_workflow_chat_run.")
+    source_id: str | None = Field(default=None, description="Source row id for run-level correlation.")
+    session_id: str | None = Field(default=None, description="Chat session id when relevant.")
+    workflow_run_id: str | None = Field(default=None, description="Alert workflow run id when relevant.")
+    request_index: int | None = Field(default=None, description="Ordinal request number inside the source when available.")
     prompt_tokens: int = Field(default=0, description="Input tokens reported by the provider.")
     completion_tokens: int = Field(default=0, description="Output tokens reported by the provider.")
     total_tokens: int = Field(default=0, description="Total tokens reported by the provider.")
@@ -90,6 +105,9 @@ class LlmUsageEventOut(BaseModel):
     video_tokens: int = Field(default=0, description="Video input tokens when reported.")
     provider_cost: float | None = Field(default=None, description="Provider-reported cost only. Null means the provider response did not include cost.")
     provider_cost_currency: str | None = Field(default=None, description="Units associated with provider_cost, such as credits for OpenRouter.")
+    estimated_cost_usd: float | None = Field(default=None, description="Locally estimated USD cost from configured model pricing.")
+    display_cost_usd: float | None = Field(default=None, description="Best available USD cost for display.")
+    cost_source: str = Field(default="unpriced", description="Cost source: provider_reported, pricing_config, openrouter_pricing, or unpriced.")
     latency_ms: int | None = Field(default=None, description="Observed end-to-end SDK call latency in milliseconds.")
     is_byok: bool | None = Field(default=None, description="Bring-your-own-key indicator when a provider reports it.")
     usage: dict[str, Any] = Field(default_factory=dict, description="Normalized usage payload plus raw provider usage details.")

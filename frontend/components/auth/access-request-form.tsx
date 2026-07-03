@@ -13,11 +13,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useMemo, useState } from "react";
 
 import {
-    authFormInputClassName,
-    authFormInputGroupClassName,
     authFormInputGroupButtonClassName,
-    authFormInputGroupInputClassName,
-    authFormInputInvalidClassName,
     authFormPrimaryButtonClassName,
     getPasswordChecks,
     getPasswordStrength
@@ -88,7 +84,7 @@ function RequestSubmittedSuccess({ onBackToSignIn }: { onBackToSignIn: () => voi
 
                 <div className="space-y-2">
 
-                    <h1 className="text-2xl font-semibold tracking-tight">Request submitted</h1>
+                    <h1 className="text-2xl font-heading font-semibold tracking-tight">Request submitted</h1>
 
                     <p className="text-sm leading-relaxed text-muted-foreground">
 
@@ -102,7 +98,7 @@ function RequestSubmittedSuccess({ onBackToSignIn }: { onBackToSignIn: () => voi
 
             </div>
 
-            <Button type="button" className={authFormPrimaryButtonClassName} onClick={onBackToSignIn}>
+            <Button type="button" size="lg" className={authFormPrimaryButtonClassName} onClick={onBackToSignIn}>
 
                 Back to sign in
 
@@ -252,8 +248,9 @@ export function AccessRequestForm() {
         <div className="flex w-full flex-col gap-5">
             <ApprovalNoticeCard className="lg:hidden" />
 
+
             <div className="space-y-1.5">
-                <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
+                <h1 className="text-2xl font-heading font-semibold tracking-tight">Create account</h1>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                     Create your login credentials to request access to this workspace.
                 </p>
@@ -282,9 +279,7 @@ export function AccessRequestForm() {
                             value={name}
 
                             disabled={isPending}
-
-                            className={cn(authFormInputClassName, fieldErrors.name && authFormInputInvalidClassName)}
-
+                            size="lg"
                             onChange={(event) => {
 
                                 setName(event.target.value);
@@ -322,9 +317,7 @@ export function AccessRequestForm() {
                             value={email}
 
                             disabled={isPending}
-
-                            className={cn(authFormInputClassName, fieldErrors.email && authFormInputInvalidClassName)}
-
+                            size="lg"
                             onChange={(event) => {
 
                                 setEmail(event.target.value);
@@ -347,12 +340,7 @@ export function AccessRequestForm() {
 
                         <FieldLabel htmlFor="access-request-password">Password</FieldLabel>
 
-                        <InputGroup
-                            className={cn(
-                                authFormInputGroupClassName,
-                                fieldErrors.password && authFormInputInvalidClassName,
-                            )}
-                        >
+                        <InputGroup>
 
                             <InputGroupInput
 
@@ -369,9 +357,6 @@ export function AccessRequestForm() {
                                 value={password}
 
                                 disabled={isPending}
-
-                                className={authFormInputGroupInputClassName}
-
                                 onChange={(event) => {
 
                                     setPassword(event.target.value);
@@ -432,7 +417,7 @@ export function AccessRequestForm() {
 
                                     </div>
 
-                                    <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border-subtle)]">
+                                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
 
                                         <div
 
@@ -482,7 +467,7 @@ export function AccessRequestForm() {
 
                 <div className="space-y-5">
 
-                    <Button type="submit" disabled={isPending} className={authFormPrimaryButtonClassName}>
+                    <Button type="submit" disabled={isPending} size="lg" className={authFormPrimaryButtonClassName}>
 
                         {isPending ? <Spinner /> : null}
 

@@ -420,6 +420,23 @@ def refresh_due_presets(db: Session) -> int:
     return refreshed
 
 
+def _refresh_missing_constituent_counts(db: Session, rows: list[SystemWatchlistPreset]) -> None:
+    stale_before = _utc_now() - DEFAULT_SYNC_INTERVAL
+    for row in rows:
+        if row.sync_status == BLACKLISTED_SYNC_STATUS:
+            continue
+        if int(row.constituent_count or 0) > 0:
+            continue
+        if row.last_constituents_sync_at and row.last_constituents_sync_at >= stale_before:
+            continue
+        try:
+            refresh_preset_constituents(db, row)
+        except HTTPException:
+            continue
+        except Exception:
+            logger.exception("Preset catalog count sync failed for %s", row.slug)
+
+
 def list_preset_catalog(
     db: Session,
     user_id: str,
@@ -444,6 +461,7 @@ def list_preset_catalog(
         .offset(page_offset)
         .limit(page_size)
     ).all()
+    _refresh_missing_constituent_counts(db, rows)
     added_by_preset_id = {
         row.system_preset_id: row.id
         for row in db.scalars(
@@ -473,6 +491,7 @@ def list_preset_catalog(
             "user_watchlist_id": added_by_preset_id.get(row.id),
         }
         for row in rows
+        if row.sync_status != BLACKLISTED_SYNC_STATUS
     ]
 
 

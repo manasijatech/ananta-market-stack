@@ -7,13 +7,21 @@ type BrandLogoProps = {
     imageClassName?: string;
     markClassName?: string;
     showMark?: boolean;
+    /** Hides the wordmark for narrow headers (mobile toolbar). */
+    compact?: boolean;
 };
 
-export function BrandLogo({ className, imageClassName, markClassName, showMark = true }: BrandLogoProps) {
+export function BrandLogo({
+    className,
+    imageClassName,
+    markClassName,
+    showMark = true,
+    compact = false
+}: BrandLogoProps) {
     return (
         <span
             role="img"
-            aria-label="Ananta Market Stack"
+            aria-label="Ananta"
             className={cn(
                 "inline-flex min-w-0 items-center gap-[0.4em] text-[1.25rem] [--logo-mark-height:1.3em] [--word-mark-height:1em]",
                 imageClassName,
@@ -21,7 +29,7 @@ export function BrandLogo({ className, imageClassName, markClassName, showMark =
             )}
         >
             {showMark ? <LogoMark className={markClassName} /> : null}
-            <WordMark />
+            {!compact ? <WordMark /> : null}
         </span>
     );
 }

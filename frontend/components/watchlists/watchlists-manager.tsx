@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition, type UIEvent } fro
 import { AlertTriangle, CandlestickChart, Check, Loader2, Minus, Pencil, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getLivePricesWebSocketConfig, touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
@@ -21,7 +22,7 @@ import type { InstrumentRef } from "@/service/types/alerts";
 import type { LivePriceTick } from "@/service/types/alerts";
 import type { InstrumentSearchRow } from "@/service/types/broker";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
-import type { Watchlist, WatchlistPresetCatalogEntry } from "@/service/types/watchlist";
+import type { Watchlist, WatchlistPresetCatalogEntry, WatchlistSymbol } from "@/service/types/watchlist";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,10 +35,12 @@ import {
 } from "@/components/ui/card";
 import {
     Dialog,
+    DialogClose,
     DialogContent,
     DialogDescription,
     DialogFooter,
     DialogHeader,
+    DialogPanel,
     DialogTitle
 } from "@/components/ui/dialog";
 import {
@@ -378,6 +381,9 @@ export function WatchlistsManager({
     const [showAlphaConfigPrompt, setShowAlphaConfigPrompt] = useState(false);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
+    // Symbols inserted optimistically that are still awaiting server confirmation
+    // (keyed by uppercased symbol) — rendered as ghosted/pulsing rows.
+    const [pendingSymbols, setPendingSymbols] = useState<Set<string>>(() => new Set());
     const [livePrices, setLivePrices] = useState<Record<string, LivePriceTick>>({});
     const [liveState, setLiveState] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
     const [isPending, startTransition] = useTransition();
@@ -795,7 +801,9 @@ export function WatchlistsManager({
 
     function fail(caught: unknown, fallback: string) {
         setNotice("");
-        setError(caught instanceof Error ? caught.message : fallback);
+        const message = caught instanceof Error ? caught.message : fallback;
+        setError(message);
+        toast.error(message);
     }
 
     async function readSymbolsFromCsv(file: File): Promise<string[]> {
@@ -949,6 +957,7 @@ export function WatchlistsManager({
                 setSelectedId(finalWatchlist.id);
                 resetCreateModal();
                 setNotice(`Created ${finalWatchlist.name}.`);
+                toast.success(`Created ${finalWatchlist.name}.`);
             } catch (caught) {
                 fail(caught, "Could not create watchlist.");
             }
@@ -979,6 +988,7 @@ export function WatchlistsManager({
                 setSelectedId(updated.id);
                 setEditingName(false);
                 setNotice(`Renamed to ${updated.name}.`);
+                toast.success(`Renamed to ${updated.name}.`);
             } catch (caught) {
                 fail(caught, "Could not rename watchlist.");
             }
@@ -992,11 +1002,43 @@ export function WatchlistsManager({
             return;
         }
         const selectedExchange = row.exchange ?? (exchange.trim().toUpperCase() || null);
+        const symbolKey = row.symbol.trim().toUpperCase();
+        const watchlistId = selected.id;
+        const alreadyPresent = selectedSymbols.includes(symbolKey);
+        const optimisticId = `optimistic:${symbolKey}:${selectedExchange ?? ""}`;
         setError("");
         setNotice("");
+
+        // Optimistically drop the symbol in so it appears instantly (ghosted)
+        // while the server round-trip completes — reconciled or rolled back below.
+        if (!alreadyPresent) {
+            const optimisticItem: WatchlistSymbol = {
+                id: optimisticId,
+                symbol: row.symbol,
+                exchange: selectedExchange,
+                instrument_ref: instrumentFromSearch(row),
+                sort_order: selected.items.length,
+                created_at: new Date().toISOString()
+            };
+            setWatchlists((current) =>
+                current.map((wl) =>
+                    wl.id === watchlistId
+                        ? { ...wl, items: [...wl.items, optimisticItem], symbols: [...wl.symbols, row.symbol] }
+                        : wl
+                )
+            );
+            setPendingSymbols((current) => new Set(current).add(symbolKey));
+        }
+
+        // Clear the search UI right away — the add feels immediate.
+        setSymbolSearch("");
+        setSuggestions([]);
+        setActiveSuggestionIndex(-1);
+        setShowSuggestions(false);
+
         startTransition(async () => {
             try {
-                const result = await addSymbolsToWatchlist(selected.id, {
+                const result = await addSymbolsToWatchlist(watchlistId, {
                     symbols: [],
                     items: [
                         {
@@ -1008,18 +1050,43 @@ export function WatchlistsManager({
                         }
                     ]
                 });
+                // Replace the optimistic row with the canonical server watchlist.
                 setWatchlists((current) => upsertWatchlist(current, result.watchlist));
                 setSelectedId(result.watchlist.id);
-                setSymbolSearch("");
-                setSuggestions([]);
-                setActiveSuggestionIndex(-1);
-                setShowSuggestions(false);
-                const skipped = result.skipped_symbols.length ? " Already in this watchlist." : "";
-                setNotice(
-                    result.added_symbols.length ? `Added ${row.symbol}.` : `${row.symbol} was not added.${skipped}`
-                );
+                if (result.added_symbols.length) {
+                    setNotice(`Added ${row.symbol}.`);
+                    toast.success(`Added ${row.symbol}.`);
+                } else {
+                    const skipped = result.skipped_symbols.length ? " Already in this watchlist." : "";
+                    setNotice(`${row.symbol} was not added.${skipped}`);
+                    if (result.skipped_symbols.length) {
+                        toast.info(`${row.symbol} is already in this watchlist.`);
+                    }
+                }
             } catch (caught) {
-                fail(caught, "Could not add symbol.");
+                // Roll back the optimistic insert so the UI matches the server.
+                if (!alreadyPresent) {
+                    setWatchlists((current) =>
+                        current.map((wl) =>
+                            wl.id === watchlistId
+                                ? {
+                                      ...wl,
+                                      items: wl.items.filter((item) => item.id !== optimisticId),
+                                      symbols: wl.symbols.filter((value) => value !== row.symbol)
+                                  }
+                                : wl
+                        )
+                    );
+                }
+                fail(caught, `Could not add ${row.symbol}.`);
+            } finally {
+                if (!alreadyPresent) {
+                    setPendingSymbols((current) => {
+                        const next = new Set(current);
+                        next.delete(symbolKey);
+                        return next;
+                    });
+                }
             }
         });
     }
@@ -1098,6 +1165,7 @@ export function WatchlistsManager({
                 setWatchlists((current) => upsertWatchlist(current, updated));
                 setSelectedId(updated.id);
                 setNotice(`Removed ${symbol}.`);
+                toast.success(`Removed ${symbol}.`);
             } catch (caught) {
                 fail(caught, "Could not remove symbol.");
             }
@@ -1117,6 +1185,7 @@ export function WatchlistsManager({
                 setSelectedId(next[0]?.id ?? "");
                 setConfirmDelete(false);
                 setNotice("Watchlist deleted.");
+                toast.success("Watchlist deleted.");
             } catch (caught) {
                 fail(caught, "Could not delete watchlist.");
             }
@@ -1233,8 +1302,8 @@ export function WatchlistsManager({
             </div>
 
                 <Dialog open={showAlphaConfigPrompt} onOpenChange={setShowAlphaConfigPrompt}>
-                    <DialogContent className="w-[calc(100vw-2rem)] max-w-[425px] gap-4 p-6">
-                        <DialogHeader className="pr-8">
+                    <DialogContent className="max-w-[425px]">
+                        <DialogHeader>
                             <DialogTitle>Drishti API key required</DialogTitle>
                             <DialogDescription>
                                 Add a Drishti API key in Settings before creating watchlists. Don&apos;t have one yet?{" "}
@@ -1250,14 +1319,17 @@ export function WatchlistsManager({
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter>
-                            <Button
-                                className="normal-case tracking-normal"
-                                onClick={() => setShowAlphaConfigPrompt(false)}
-                                type="button"
-                                variant="outline"
+                            <DialogClose
+                                render={
+                                    <Button
+                                        className="normal-case tracking-normal"
+                                        type="button"
+                                        variant="ghost"
+                                    />
+                                }
                             >
                                 Cancel
-                            </Button>
+                            </DialogClose>
                             <Button
                                 className="normal-case tracking-normal"
                                 onClick={() => {
@@ -1278,18 +1350,15 @@ export function WatchlistsManager({
                         if (!isPending) setConfirmDelete(open);
                     }}
                 >
-                    <DialogContent
-                        className="w-[calc(100vw-2rem)] max-w-[425px] gap-4 p-6"
-                        showCloseButton={!isPending}
-                    >
-                        <DialogHeader className="pr-8">
+                    <DialogContent className="max-w-[425px]" showCloseButton={!isPending}>
+                        <DialogHeader>
                             <div className="flex items-start gap-3">
                                 <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center border border-destructive/40 bg-destructive/10 text-destructive">
                                     <AlertTriangle className="size-5" />
                                 </span>
                                 <div className="min-w-0">
                                     <DialogTitle>Delete watchlist?</DialogTitle>
-                                    <DialogDescription className="mt-2 leading-6">
+                                    <DialogDescription className="leading-6">
                                         This will permanently delete{" "}
                                         <span className="font-semibold text-foreground">
                                             {selected?.name ?? "this watchlist"}
@@ -1300,19 +1369,24 @@ export function WatchlistsManager({
                                 </div>
                             </div>
                         </DialogHeader>
-                        <div className="border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                            Any alert workflows using this watchlist may lose that source after deletion.
-                        </div>
+                        <DialogPanel>
+                            <div className="border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                                Any alert workflows using this watchlist may lose that source after deletion.
+                            </div>
+                        </DialogPanel>
                         <DialogFooter>
-                            <Button
-                                className="normal-case tracking-normal"
+                            <DialogClose
                                 disabled={isPending}
-                                onClick={() => setConfirmDelete(false)}
-                                type="button"
-                                variant="outline"
+                                render={
+                                    <Button
+                                        className="normal-case tracking-normal"
+                                        type="button"
+                                        variant="ghost"
+                                    />
+                                }
                             >
                                 Cancel
-                            </Button>
+                            </DialogClose>
                             <Button
                                 className="normal-case tracking-normal"
                                 disabled={isPending}
@@ -1339,18 +1413,18 @@ export function WatchlistsManager({
                 >
                     <DialogContent
                         className={cn(
-                            "flex w-[min(100vw-2rem,36rem)] flex-col gap-0 overflow-hidden p-0",
+                            "max-w-[36rem]",
                             createParsedSymbols.length
                                 ? "max-h-[min(100dvh-2rem,42rem)]"
                                 : "max-h-[min(100dvh-2rem,26rem)]"
                         )}
                     >
-                        <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+                        <DialogHeader>
                             <DialogTitle>Create watchlist</DialogTitle>
                             <DialogDescription>Name your list, add symbols, then create.</DialogDescription>
                         </DialogHeader>
 
-                        <div className="min-h-0 flex-1 space-y-6 overflow-x-hidden overflow-y-auto px-5 py-4">
+                        <DialogPanel className="space-y-6">
                             <section className="grid gap-1.5">
                                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                                     1 · Name
@@ -1599,9 +1673,9 @@ export function WatchlistsManager({
                                     </div>
                                 </div>
                             </section>
-                        </div>
+                        </DialogPanel>
 
-                        <DialogFooter className="flex-col gap-3 border-t border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
+                        <DialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                             {createNameMissing ? (
                                 <p className="w-full text-sm text-muted-foreground sm:mr-auto">
                                     Enter a watchlist name to continue.
@@ -1612,14 +1686,12 @@ export function WatchlistsManager({
                                 </p>
                             )}
                             <div className="flex w-full shrink-0 justify-end gap-2 sm:w-auto">
-                                <Button
+                                <DialogClose
                                     disabled={isPending}
-                                    onClick={resetCreateModal}
-                                    type="button"
-                                    variant="outline"
+                                    render={<Button type="button" variant="ghost" />}
                                 >
                                     Cancel
-                                </Button>
+                                </DialogClose>
                                 <Button disabled={!createCanSubmit} onClick={create} type="button">
                                     {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
                                     Create watchlist
@@ -1693,11 +1765,23 @@ export function WatchlistsManager({
                                 <Card className="border-dashed shadow-none">
                                     <Empty className="py-8">
                                         <EmptyHeader>
+                                            <EmptyMedia variant="icon">
+                                                <CandlestickChart />
+                                            </EmptyMedia>
                                             <EmptyTitle className="text-base">No watchlists yet</EmptyTitle>
                                             <EmptyDescription>
-                                                Create a list or add an index preset to get started.
+                                                Create a watchlist to track symbols and watch live prices.
                                             </EmptyDescription>
                                         </EmptyHeader>
+                                        <Button
+                                            className="mt-2"
+                                            onClick={requestCreateWatchlist}
+                                            type="button"
+                                            variant="outline"
+                                        >
+                                            <Plus className="size-4" />
+                                            New watchlist
+                                        </Button>
                                     </Empty>
                                 </Card>
                             ) : null}
@@ -2097,8 +2181,17 @@ export function WatchlistsManager({
                                                     const priceText = livePriceLabel(price);
                                                     const priceUnavailable =
                                                         priceText === "—" && Boolean(price?.unavailable_reason);
+                                                    const rowPending = pendingSymbols.has(
+                                                        item.symbol.trim().toUpperCase()
+                                                    );
                                                     return (
-                                                        <TableRow className="group" key={item.id}>
+                                                        <TableRow
+                                                            className={cn(
+                                                                "group transition-opacity",
+                                                                rowPending && "opacity-55 motion-safe:animate-pulse"
+                                                            )}
+                                                            key={item.id}
+                                                        >
                                                             <TableCell className="font-medium">
                                                                 <div className="flex items-center gap-3">
                                                                     <SymbolAvatar
@@ -2218,8 +2311,8 @@ export function WatchlistsManager({
                                                 <EmptyTitle>No symbols yet</EmptyTitle>
                                                 <EmptyDescription>
                                                     {canEditSelected
-                                                        ? "Search above or import a CSV to add your first symbol."
-                                                        : "This preset has no constituents yet. Try refreshing the watchlist."}
+                                                        ? "Search above to add symbols and track them live."
+                                                        : "This preset doesn't have any symbols yet."}
                                                 </EmptyDescription>
                                             </EmptyHeader>
                                         </Empty>
@@ -2233,8 +2326,15 @@ export function WatchlistsManager({
                                         const price = livePrices[livePriceKey({ symbol: item.symbol })];
                                         const change = toNumber(price?.change_pct ?? price?.day_change_perc);
                                         const priceText = livePriceLabel(price);
+                                        const rowPending = pendingSymbols.has(item.symbol.trim().toUpperCase());
                                         return (
-                                            <Card className="shadow-none" key={item.id}>
+                                            <Card
+                                                className={cn(
+                                                    "shadow-none transition-opacity",
+                                                    rowPending && "opacity-55 motion-safe:animate-pulse"
+                                                )}
+                                                key={item.id}
+                                            >
                                                 <div className="p-4">
                                                     <div className="flex min-w-0 items-start justify-between gap-3">
                                                         <div className="flex min-w-0 items-start gap-3">
@@ -2315,11 +2415,14 @@ export function WatchlistsManager({
                                         <Card className="border-dashed shadow-none">
                                             <Empty className="py-12">
                                                 <EmptyHeader>
+                                                    <EmptyMedia variant="icon">
+                                                        <Search />
+                                                    </EmptyMedia>
                                                     <EmptyTitle className="text-base">No symbols yet</EmptyTitle>
                                                     <EmptyDescription>
                                                         {canEditSelected
-                                                            ? "Search above to add your first symbol."
-                                                            : "Try refreshing this preset watchlist."}
+                                                            ? "Search above to add symbols and track them live."
+                                                            : "This preset doesn't have any symbols yet."}
                                                     </EmptyDescription>
                                                 </EmptyHeader>
                                             </Empty>

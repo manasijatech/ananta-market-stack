@@ -40,7 +40,7 @@ function permissionSummary(grant: BrokerAccountGrant): string {
 
 function BrokerAccountsEmptyState() {
     return (
-        <Empty className="items-start rounded-md bg-card px-5 py-8 text-left md:py-10">
+        <Empty className="items-start rounded-lg bg-card px-5 py-8 text-left md:py-10">
             <EmptyHeader className="items-start text-left">
                 <EmptyMedia className="mb-3" variant="icon">
                     <IconWallet aria-hidden className="size-6 text-muted-foreground" />
@@ -92,7 +92,7 @@ export function BrokerSharingPanel({
     }
 
     return (
-        <div className="grid rounded-md bg-card lg:grid-cols-[200px_minmax(0,1fr)]">
+        <div className="grid rounded-lg bg-card lg:grid-cols-[200px_minmax(0,1fr)]">
             <div className="max-h-[620px] overflow-y-auto border-b border-border lg:border-r lg:border-b-0">
                 {accountGrants.map(({ account, grants }) => {
                     const selectedAccount = account.id === selected.account.id;
@@ -136,7 +136,7 @@ export function BrokerSharingPanel({
                     <div className="grid gap-2">
                         {selected.grants.map((grant) => (
                             <div
-                                className="grid gap-2 rounded-md border border-border bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]"
+                                className="grid gap-2 rounded-lg border border-border bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]"
                                 key={grant.id}
                             >
                                 <div className="min-w-0">
@@ -177,7 +177,7 @@ export function BrokerSharingPanel({
                 </div>
 
                 {expandedForm ? (
-                    <div className="rounded-md border border-border bg-card p-4">
+                    <div className="rounded-lg border border-border bg-card p-4">
                         <AccessGrantEditor
                             accountId={selected.account.id}
                             grants={selected.grants}

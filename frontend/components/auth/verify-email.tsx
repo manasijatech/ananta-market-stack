@@ -92,7 +92,7 @@ export function VerifyEmail({ className }: VerifyEmailProps) {
   return (
     <Card className={cn("w-full max-w-sm", className)}>
       <CardHeader>
-        <CardTitle className="text-xl font-semibold">
+        <CardTitle className="text-xl font-heading font-semibold tracking-tight">
           {localization.auth.verifyEmail}
         </CardTitle>
       </CardHeader>

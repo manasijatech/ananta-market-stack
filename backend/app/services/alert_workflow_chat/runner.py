@@ -12,6 +12,7 @@ from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
 from app.services import llm_config
+from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.alert_workflow_chat import sessions
 from app.services.alert_workflow_chat.prompts import workflow_chat_instructions
@@ -51,6 +52,9 @@ def _record_workflow_chat_usage(
         tracking=LlmTrackingContext(
             request_kind="alert_workflow_chat",
             workflow_id=run.workflow_id,
+            source_kind="alert_workflow_chat_run",
+            source_id=run.id,
+            session_id=run.session_id,
             metadata={"alert_workflow_chat_run_id": run.id, "alert_workflow_chat_session_id": run.session_id},
         ),
         response=response,
@@ -139,6 +143,18 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
         run = db.get(AlertWorkflowChatRun, run_id)
         if run is None:
             return
+        run_span = llm_telemetry.start_span(
+            "llm.alert_workflow_chat.run",
+            {
+                "llm.source_kind": "alert_workflow_chat_run",
+                "llm.source_id": run.id,
+                "llm.session_id": run.session_id,
+                "llm.workflow_id": run.workflow_id,
+                "gen_ai.system": run.provider,
+                "gen_ai.request.model": run.model_id,
+            },
+        )
+        run_span.__enter__()
         if run.status == "cancelled" or alert_workflow_chat_cancel_requested(run.id):
             sessions.mark_run_terminal(db, run, status="cancelled", response_text=run.response_text)
             sessions.append_event_once(db, run, event_type="run_cancelled", public_payload={"status": "cancelled"})
@@ -326,6 +342,8 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
             )
         raise
     finally:
+        if "run_span" in locals():
+            run_span.__exit__(None, None, None)
         db.close()
 
 

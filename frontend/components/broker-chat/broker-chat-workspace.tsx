@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
+import { LlmModelPicker } from "@/components/system/llm-model-picker";
 import { ShimmeringText } from "@/components/ui/shimmering-text";
 import { Textarea } from "@/components/ui/textarea";
 import { useChatAutoScroll } from "@/hooks/use-chat-auto-scroll";
@@ -40,6 +41,7 @@ import {
     submitBrokerChatRun,
     updateBrokerChatConfig
 } from "@/service/actions/broker-chat";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
 import type { LlmProvider, LlmProviderConfig, McpServerConfig } from "@/service/types/broker";
 import type {
     BrokerChatEvent,
@@ -55,6 +57,7 @@ type Props = {
     initialSessions: BrokerChatSession[];
     initialRuns: BrokerChatRun[];
     llmProviders: LlmProviderConfig[];
+    openRouterModels: OpenRouterModel[];
     mcpServer: McpServerConfig;
     mcpServers: McpServerConfig[];
 };
@@ -506,7 +509,7 @@ function ToolDetailBlock({ label, value }: { label: string; value: unknown }) {
             <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 {label}
             </div>
-            <pre className="max-h-72 overflow-auto border border-border bg-secondary/50 p-3 font-mono text-[11px] leading-5 text-foreground">
+            <pre className="max-h-72 overflow-auto rounded-lg border border-border bg-secondary/50 p-3 font-mono text-[11px] leading-5 text-foreground">
                 {formatted}
             </pre>
         </div>
@@ -599,7 +602,7 @@ function ThinkingTrace({
     const toolCount = items.filter((item) => item.kind === "tool").length;
     const reasoningCount = items.filter((item) => item.kind === "reasoning").length;
     return (
-        <details className="ml-11 max-w-6xl border border-border bg-secondary/20 p-3" open={!collapsed}>
+        <details className="ml-11 max-w-6xl rounded-lg border border-border bg-secondary/20 p-3" open={!collapsed}>
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs text-muted-foreground">
                 <span className="font-mono uppercase tracking-[0.14em]">
                     Thinking
@@ -649,7 +652,7 @@ function ThinkingTrace({
 
 function MarkdownTable({ children }: { children: ReactNode }) {
     return (
-        <div className="my-4 max-w-full overflow-x-auto border border-border bg-card shadow-sm last:mb-0">
+        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card shadow-sm last:mb-0">
             <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
                 {children}
             </table>
@@ -682,14 +685,14 @@ function PlainTextTable({ source }: { source: string }) {
     const table = parsePlainTextTable(source);
     if (!table) {
         return (
-            <pre className="mb-3 max-w-full overflow-auto border border-border bg-secondary/60 p-3 text-xs leading-5 last:mb-0">
+            <pre className="mb-3 max-w-full overflow-auto rounded-lg border border-border bg-secondary/60 p-3 text-xs leading-5 last:mb-0">
                 {source}
             </pre>
         );
     }
 
     return (
-        <div className="my-4 max-w-full overflow-x-auto border border-border bg-card shadow-sm last:mb-0">
+        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card shadow-sm last:mb-0">
             <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
                 <colgroup>
                     {table.headers.map((header, index) => (
@@ -772,12 +775,12 @@ function ThinkingMarkdown({ text }: { text: string }) {
                     ul: ({ children }) => <ul className="mb-2 list-disc pl-5 last:mb-0">{children}</ul>,
                     ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 last:mb-0">{children}</ol>,
                     code: ({ children }) => (
-                        <code className="bg-secondary/70 px-1 py-0.5 font-mono text-[0.92em] text-foreground">
+                        <code className="rounded-lg bg-secondary/70 px-1 py-0.5 font-mono text-[0.92em] text-foreground">
                             {children}
                         </code>
                     ),
                     pre: ({ children }) => (
-                        <pre className="mb-2 max-w-full overflow-auto border border-border bg-secondary/40 p-2 text-xs leading-5 last:mb-0">
+                        <pre className="mb-2 max-w-full overflow-auto rounded-lg border border-border bg-secondary/40 p-2 text-xs leading-5 last:mb-0">
                             {children}
                         </pre>
                     ),
@@ -806,7 +809,7 @@ function AssistantMessage({ text, running }: { text: string; running: boolean })
                         ul: ({ children }) => <ul className="mb-3 list-disc pl-5 last:mb-0">{children}</ul>,
                         ol: ({ children }) => <ol className="mb-3 list-decimal pl-5 last:mb-0">{children}</ol>,
                         code: ({ children }) => (
-                            <code className="bg-secondary px-1 py-0.5 font-mono text-[0.92em]">{children}</code>
+                            <code className="rounded-lg bg-secondary px-1 py-0.5 font-mono text-[0.92em]">{children}</code>
                         ),
                         pre: ({ children }) => (
                             <PlainTextTable source={textFromNode(children)} />
@@ -838,14 +841,22 @@ function AssistantMessage({ text, running }: { text: string; running: boolean })
 function UserMessage({ text }: { text: string }) {
     return (
         <div className="flex justify-end">
-            <div className="max-w-[min(720px,82%)] border border-border bg-secondary px-4 py-3">
+            <div className="max-w-[min(720px,82%)] rounded-lg border border-border bg-secondary px-4 py-3">
                 <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{text}</p>
             </div>
         </div>
     );
 }
 
-export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSessions, llmProviders, mcpServer, mcpServers }: Props) {
+export function BrokerChatWorkspace({
+    initialConfig,
+    initialRuns,
+    initialSessions,
+    llmProviders,
+    openRouterModels,
+    mcpServer,
+    mcpServers
+}: Props) {
     const { user } = useSession();
     const [sessions, setSessions] = useState(() => sortSessions(initialSessions));
     const [runs, setRuns] = useState(() => mergeRuns([], initialRuns));
@@ -883,6 +894,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
     const runsRef = useRef(runs);
     const eventsByRunRef = useRef(eventsByRun);
     const streamDetailKeyRef = useRef(`${includeToolOutputs}:${includeReasoning}`);
+    const previousProviderRef = useRef<LlmProvider | "">(initialConfig.default_provider ?? "");
     const configSaveRequestRef = useRef(0);
     const savedConfigKeyRef = useRef(
         brokerChatConfigKey({
@@ -914,11 +926,16 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
         if (!selectedProvider) {
             return;
         }
+        const providerChanged = previousProviderRef.current !== provider;
+        previousProviderRef.current = provider;
+        if (!providerChanged && model) {
+            return;
+        }
         const hasModel = selectedModels.some((item) => item.model_id === model);
-        if (!hasModel) {
+        if (!model || (providerChanged && !hasModel)) {
             setModel(selectedModels[0]?.model_id ?? "");
         }
-    }, [model, selectedModels, selectedProvider]);
+    }, [model, provider, selectedModels, selectedProvider]);
 
     const runsForActiveSession = useMemo(
         () => sortRuns(runs.filter((run) => run.session_id === activeSessionId)),
@@ -1401,7 +1418,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
 
     return (
         <section className="grid min-h-0 flex-1 gap-4 min-[1080px]:grid-cols-[284px_minmax(0,1fr)]">
-            <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-border bg-background">
+            <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] rounded-lg border border-border bg-background">
                 <div className="border-b border-border p-3">
                     <Button
                         className="h-10 w-full justify-start gap-2"
@@ -1437,12 +1454,12 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         Recents
                     </div>
                     {emptyState ? (
-                        <div className="border border-dashed border-border p-4 text-sm text-muted-foreground">
+                        <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                             Start a chat to create the first broker data session.
                         </div>
                     ) : null}
                     {!emptyState && !filteredSessions.length ? (
-                        <div className="border border-dashed border-border p-4 text-sm text-muted-foreground">
+                        <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                             No chats match your search.
                         </div>
                     ) : null}
@@ -1454,7 +1471,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             return (
                                 <div
                                     className={cn(
-                                        "group relative flex min-w-0 items-center gap-1 overflow-hidden border border-transparent transition",
+                                        "group relative flex min-w-0 items-center gap-1 overflow-hidden rounded-lg border border-transparent transition",
                                         active
                                             ? "border-border bg-secondary"
                                             : "hover:border-border hover:bg-secondary/55",
@@ -1507,11 +1524,11 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                 </div>
             </aside>
 
-            <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border border-border bg-background">
+            <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] rounded-lg border border-border bg-background">
                 <div className="border-b border-border p-3">
                     <div className="flex flex-col gap-4 min-[900px]:flex-row min-[900px]:items-end min-[900px]:justify-between">
                         <div className="min-w-0">
-                            <h2 className="truncate text-xl font-semibold">
+                            <h2 className="truncate text-xl font-heading font-semibold tracking-tight">
                                 {activeSession?.title ?? "New broker chat"}
                             </h2>
                             <p className="mt-1 text-sm text-muted-foreground">
@@ -1522,25 +1539,25 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                     </div>
 
                     {!configuredProviders.length ? (
-                        <div className="mt-4 flex items-start gap-2 border border-[var(--accent)] bg-[var(--accent-subtle)] p-3 text-sm text-[var(--accent-dim)] dark:text-[var(--accent)]">
+                        <div className="mt-4 flex items-start gap-2 rounded-lg border border-[var(--accent)] bg-[var(--accent-subtle)] p-3 text-sm text-[var(--accent-dim)] dark:text-[var(--accent)]">
                             <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
                             Configure and enable at least one LLM provider in Settings before sending broker chat messages.
                         </div>
                     ) : null}
                     {error ? (
-                        <div className="mt-4 flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                        <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                             <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
                             {error}
                         </div>
                     ) : null}
                     {configError ? (
-                        <div className="mt-4 flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                        <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                             <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
                             {configError}
                         </div>
                     ) : null}
                     {queueHealth && !queueHealth.has_processing_path ? (
-                        <div className="mt-3 flex items-start gap-2 border border-[var(--accent)] bg-[var(--accent-subtle)] p-3 text-sm text-[var(--accent-dim)] dark:text-[var(--accent)]">
+                        <div className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--accent)] bg-[var(--accent-subtle)] p-3 text-sm text-[var(--accent-dim)] dark:text-[var(--accent)]">
                             <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
                             Broker chat jobs are queued, but no RQ worker or in-process worker is currently available.
                         </div>
@@ -1558,13 +1575,13 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             {!runsForActiveSession.length ? (
                                 <div className="flex min-h-full items-center justify-center px-4 py-10 text-center">
                                     <div className="w-full max-w-2xl">
-                                        <span className="mx-auto flex size-11 items-center justify-center border border-border bg-secondary text-muted-foreground">
+                                        <span className="mx-auto flex size-11 items-center justify-center rounded-lg border border-border bg-secondary text-muted-foreground">
                                             <IconTerminal2 className="size-5" stroke={1.8} />
                                         </span>
                                         <p className="mt-5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
                                             Broker data assistant
                                         </p>
-                                        <h3 className="mt-2 text-2xl font-semibold tracking-normal">
+                                        <h3 className="mt-2 text-2xl font-heading font-semibold tracking-tight">
                                             Start with a portfolio or market question
                                         </h3>
                                         <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
@@ -1575,7 +1592,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                         <div className="mx-auto mt-6 grid max-w-xl gap-2 min-[640px]:grid-cols-2">
                                             {starterPrompts.map((prompt) => (
                                                 <button
-                                                    className="border border-border bg-background px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:border-primary hover:bg-[var(--accent-glow)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                                                    className="rounded-lg border border-border bg-background px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:border-primary hover:bg-[var(--accent-glow)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
                                                     disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
                                                     key={prompt}
                                                     onClick={() => {
@@ -1612,7 +1629,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                                     <AssistantMessage running={showThinking} text={text} />
                                                 ) : null}
                                                 {run.error ? (
-                                                    <div className="ml-11 flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                                                    <div className="ml-11 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                                                         <IconAlertTriangle
                                                             className="mt-0.5 size-4 shrink-0"
                                                             stroke={1.8}
@@ -1634,7 +1651,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                 : "Scroll to latest broker chat message"
                         }
                         className={cn(
-                            "absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground shadow-lg transition duration-150 hover:border-primary hover:text-primary motion-reduce:transition-none",
+                            "absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground shadow-lg transition duration-150 hover:border-primary hover:text-primary motion-reduce:transition-none",
                             showScrollButton
                                 ? "translate-y-0 opacity-100"
                                 : "pointer-events-none translate-y-2 opacity-0"
@@ -1659,7 +1676,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         void sendMessage();
                     }}
                 >
-                    <div className="border border-border bg-background focus-within:border-primary focus-within:bg-card">
+                    <div className="rounded-lg border border-border bg-background focus-within:border-primary focus-within:bg-card">
                         <div className="flex min-w-0 items-center gap-3 p-2">
                             <Textarea
                                 className="max-h-[260px] min-h-16 resize-none overflow-hidden border-0 bg-transparent px-2 py-5 shadow-none focus-visible:border-transparent disabled:bg-transparent"
@@ -1718,18 +1735,28 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                             </Label>
                             <Label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold uppercase text-muted-foreground min-[820px]:max-w-sm">
                                 Model
-                                <SimpleSelect
-                                    className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
-                                    disabled={!selectedModels.length}
-                                    onValueChange={setModel}
-                                    options={selectedModels.map((item) => ({
-                                        value: item.model_id,
-                                        label: item.label || item.model_id
-                                    }))}
-                                    placeholder="Select model"
-                                    size="sm"
-                                    value={model}
-                                />
+                                {provider ? (
+                                    <LlmModelPicker
+                                        allowedModels={selectedModels}
+                                        models={openRouterModels}
+                                        onSelect={(id) => setModel(id)}
+                                        provider={provider}
+                                        value={model}
+                                    />
+                                ) : (
+                                    <SimpleSelect
+                                        className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
+                                        disabled
+                                        onValueChange={setModel}
+                                        options={selectedModels.map((item) => ({
+                                            value: item.model_id,
+                                            label: item.label || item.model_id
+                                        }))}
+                                        placeholder="Select model"
+                                        size="sm"
+                                        value={model}
+                                    />
+                                )}
                             </Label>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-[1120px]:ml-auto">
                                 <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
@@ -1765,7 +1792,7 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                                     const serverId = server.id as string;
                                     return (
                                         <Label
-                                            className="flex items-center gap-1.5 border border-border px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground"
+                                            className="flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground"
                                             key={serverId}
                                         >
                                             <Checkbox

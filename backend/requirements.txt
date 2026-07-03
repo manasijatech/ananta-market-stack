@@ -38,6 +38,9 @@ mcp==1.27.1
 mdurl==0.1.2
 openai==2.36.0
 openai-agents==0.17.4
+opentelemetry-api==1.39.0
+opentelemetry-sdk==1.39.0
+opentelemetry-exporter-otlp-proto-http==1.39.0
 pycparser==3.0
 pydantic==2.12.5
 pydantic-extra-types==2.11.1
