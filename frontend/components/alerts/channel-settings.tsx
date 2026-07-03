@@ -1,17 +1,18 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { CircleHelpIcon, MonitorSpeakerIcon, PlugZapIcon, Trash2Icon } from "lucide-react";
 import {
-    getDesktopAudioPairing,
-    revokeDesktopAudioDevice,
-    saveAlertChannel,
+    getDesktopAudioDevicesSafe,
+    getDesktopAudioPairingSafe,
+    revokeDesktopAudioDeviceSafe,
+    saveAlertChannelSafe,
     sendTestAlert,
-    startDesktopAudioPairing,
-    testAlertChannel
+    startDesktopAudioPairingSafe,
+    testAlertChannelSafe
 } from "@/service/actions/alerts";
-import type { AlertChannel, DesktopAudioDevice } from "@/service/types/alerts";
+import type { AlertChannel, DesktopAudioDevice, DesktopAudioVoiceOption } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -24,6 +25,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 type ChannelState = {
     label: string;
@@ -90,9 +92,16 @@ const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
 };
 
 const desktopDefaults = {
+    tts_provider: "web_speech",
+    fallback_to_web_speech: "true",
     spoken_template: "{title}. {message}",
-    model_id: "openai/gpt-4o-mini-tts",
-    voice: "alloy",
+    model_id: "hexgrad/kokoro-82m",
+    voice: "af_bella",
+    web_speech_voice: "",
+    web_speech_lang: "",
+    web_speech_rate: "1",
+    web_speech_pitch: "1",
+    web_speech_volume: "1",
     speed: "1",
     response_format: "mp3",
     retention_days: "15",
@@ -113,6 +122,14 @@ function stateFor(channel?: AlertChannel, defaults?: Record<string, string>): Ch
     };
 }
 
+function desktopStateFor(channel?: AlertChannel): ChannelState {
+    const state = stateFor(channel, desktopDefaults);
+    if (state.config.model_id === desktopDefaults.model_id && (!state.config.voice || state.config.voice === "alloy")) {
+        return { ...state, config: { ...state.config, voice: desktopDefaults.voice } };
+    }
+    return state;
+}
+
 export function ChannelSettings({
     initialChannels,
     initialDesktopAudioDevices
@@ -125,25 +142,74 @@ export function ChannelSettings({
     const desktopInitial = initialChannels.find((item) => item.channel_type === "desktop_audio");
     const [discord, setDiscord] = useState(stateFor(discordInitial, { webhook_url: "" }));
     const [telegram, setTelegram] = useState(stateFor(telegramInitial, { bot_token: "", chat_id: "" }));
-    const [desktopAudio, setDesktopAudio] = useState(stateFor(desktopInitial, desktopDefaults));
+    const [desktopAudio, setDesktopAudio] = useState(desktopStateFor(desktopInitial));
     const [devices, setDevices] = useState(initialDesktopAudioDevices);
+    const [showRevokedDevices, setShowRevokedDevices] = useState(false);
+    const [availableVoices, setAvailableVoices] = useState<DesktopAudioVoiceOption[]>([]);
+    const [voiceStatus, setVoiceStatus] = useState("");
     const [pairingStatus, setPairingStatus] = useState("");
     const [message, setMessage] = useState("Ananta Market Stack channel test");
     const [error, setError] = useState("");
     const [isPending, startTransition] = useTransition();
+
+    useEffect(() => {
+        void loadLocalVoices();
+    }, []);
+
+    async function loadLocalVoices() {
+        try {
+            const response = await fetch("http://127.0.0.1:17853/voices");
+            if (!response.ok) return;
+            const payload = (await response.json()) as { voices?: DesktopAudioVoiceOption[] };
+            setAvailableVoices(payload.voices ?? []);
+            if (payload.voices?.length) setVoiceStatus("");
+        } catch {
+            setVoiceStatus("Desktop app voice list is unavailable until the local helper is running.");
+        }
+    }
+
+    async function previewLocalVoice() {
+        setError("");
+        setVoiceStatus("Playing local voice preview...");
+        try {
+            const response = await fetch("http://127.0.0.1:17853/preview", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    text: message,
+                    speech: {
+                        voice_name: desktopAudio.config.web_speech_voice ?? "",
+                        lang: desktopAudio.config.web_speech_lang ?? "",
+                        rate: Number(desktopAudio.config.web_speech_rate ?? "1"),
+                        pitch: Number(desktopAudio.config.web_speech_pitch ?? "1"),
+                        volume: Number(desktopAudio.config.web_speech_volume ?? "1")
+                    }
+                })
+            });
+            if (!response.ok) throw new Error("Could not preview voice.");
+            setVoiceStatus("Preview sent to the desktop app.");
+        } catch (caught) {
+            setVoiceStatus("");
+            setError(caught instanceof Error ? caught.message : "Could not preview local voice.");
+        }
+    }
 
     function save(channelType: "discord" | "telegram" | "desktop_audio") {
         setError("");
         startTransition(async () => {
             try {
                 const payload = channelType === "discord" ? discord : channelType === "telegram" ? telegram : desktopAudio;
-                const saved = await saveAlertChannel(channelType, payload);
+                const saved = await saveAlertChannelSafe(channelType, payload);
+                if (!saved.ok) {
+                    setError(saved.error);
+                    return;
+                }
                 if (channelType === "discord") {
-                    setDiscord(stateFor(saved, { webhook_url: "" }));
+                    setDiscord(stateFor(saved.data, { webhook_url: "" }));
                 } else if (channelType === "telegram") {
-                    setTelegram(stateFor(saved, { bot_token: "", chat_id: "" }));
+                    setTelegram(stateFor(saved.data, { bot_token: "", chat_id: "" }));
                 } else {
-                    setDesktopAudio(stateFor(saved, desktopDefaults));
+                    setDesktopAudio(desktopStateFor(saved.data));
                 }
             } catch (caught) {
                 setError(caught instanceof Error ? caught.message : "Could not save channel.");
@@ -155,13 +221,25 @@ export function ChannelSettings({
         setError("");
         startTransition(async () => {
             try {
-                const saved = await testAlertChannel(channelType, message);
+                if (channelType === "desktop_audio") {
+                    const savedBeforeTest = await saveAlertChannelSafe("desktop_audio", desktopAudio);
+                    if (!savedBeforeTest.ok) {
+                        setError(savedBeforeTest.error);
+                        return;
+                    }
+                    setDesktopAudio(desktopStateFor(savedBeforeTest.data));
+                }
+                const saved = await testAlertChannelSafe(channelType, message);
+                if (!saved.ok) {
+                    setError(saved.error);
+                    return;
+                }
                 if (channelType === "discord") {
-                    setDiscord(stateFor(saved, { webhook_url: "" }));
+                    setDiscord(stateFor(saved.data, { webhook_url: "" }));
                 } else if (channelType === "telegram") {
-                    setTelegram(stateFor(saved, { bot_token: "", chat_id: "" }));
+                    setTelegram(stateFor(saved.data, { bot_token: "", chat_id: "" }));
                 } else {
-                    setDesktopAudio(stateFor(saved, desktopDefaults));
+                    setDesktopAudio(desktopStateFor(saved.data));
                 }
             } catch (caught) {
                 setError(caught instanceof Error ? caught.message : "Could not test channel.");
@@ -175,43 +253,31 @@ export function ChannelSettings({
         });
     }
 
-    function resolvedApiBaseUrl() {
-        const configured = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/v1";
-        if (configured.startsWith("http://") || configured.startsWith("https://")) return configured.replace(/\/+$/, "");
-        return new URL(configured, window.location.origin).toString().replace(/\/+$/, "");
-    }
-
     function connectDesktopApp() {
         setError("");
         setPairingStatus("Preparing pairing request...");
         startTransition(async () => {
             try {
-                const pairing = await startDesktopAudioPairing({
+                const pairing = await startDesktopAudioPairingSafe({
                     app_url: window.location.origin,
                     metadata: { source: "settings" }
                 });
-                const payload = {
-                    pairingId: pairing.pairing_id,
-                    secret: pairing.secret,
-                    stackUrl: window.location.origin,
-                    apiBaseUrl: resolvedApiBaseUrl()
-                };
-                let sentLocal = false;
-                for (let port = 17853; port <= 17857; port += 1) {
-                    try {
-                        const response = await fetch(`http://127.0.0.1:${port}/pair`, {
-                            method: "POST",
-                            headers: { "content-type": "application/json" },
-                            body: JSON.stringify(payload)
-                        });
-                        if (response.ok) {
-                            sentLocal = true;
-                            break;
-                        }
-                    } catch {
-                        // Try the next helper port.
-                    }
+                if (!pairing.ok) {
+                    setError(pairing.error);
+                    setPairingStatus("");
+                    return;
                 }
+                const payload = {
+                    pairingId: pairing.data.pairing_id,
+                    secret: pairing.data.secret,
+                    stackUrl: window.location.origin
+                };
+                const localResponse = await fetch("http://127.0.0.1:17853/pair", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(payload)
+                }).catch(() => null);
+                const sentLocal = Boolean(localResponse?.ok);
                 if (!sentLocal) {
                     window.location.href = `ananta-audio://pair?payload=${encodeURIComponent(JSON.stringify(payload))}`;
                     setPairingStatus("Opened the desktop app pairing link. Return here after the app confirms connection.");
@@ -219,9 +285,12 @@ export function ChannelSettings({
                     setPairingStatus("Pairing request sent to the local desktop app.");
                 }
                 window.setTimeout(async () => {
-                    const status = await getDesktopAudioPairing(pairing.pairing_id).catch(() => null);
-                    if (status?.status === "completed") {
+                    const status = await getDesktopAudioPairingSafe(pairing.data.pairing_id);
+                    if (status.ok && status.data.status === "completed") {
                         setPairingStatus("Desktop app connected.");
+                        const devicesResult = await getDesktopAudioDevicesSafe(showRevokedDevices);
+                        if (devicesResult.ok) setDevices(devicesResult.data);
+                        void loadLocalVoices();
                     }
                 }, 2500);
             } catch (caught) {
@@ -235,11 +304,32 @@ export function ChannelSettings({
         setError("");
         startTransition(async () => {
             try {
-                await revokeDesktopAudioDevice(deviceId);
-                setDevices((current) => current.map((item) => (item.id === deviceId ? { ...item, status: "revoked" } : item)));
+                const revoked = await revokeDesktopAudioDeviceSafe(deviceId);
+                if (!revoked.ok) {
+                    setError(revoked.error);
+                    return;
+                }
+                const devicesResult = await getDesktopAudioDevicesSafe(showRevokedDevices);
+                if (!devicesResult.ok) {
+                    setError(devicesResult.error);
+                    return;
+                }
+                setDevices(devicesResult.data);
             } catch (caught) {
                 setError(caught instanceof Error ? caught.message : "Could not revoke desktop device.");
             }
+        });
+    }
+
+    function toggleRevokedDevices(next: boolean) {
+        setShowRevokedDevices(next);
+        startTransition(async () => {
+            const devicesResult = await getDesktopAudioDevicesSafe(next);
+            if (devicesResult.ok) {
+                setDevices(devicesResult.data);
+                return;
+            }
+            setError(devicesResult.error);
         });
     }
 
@@ -278,7 +368,12 @@ export function ChannelSettings({
                 onRevoke={revokeDevice}
                 onSave={() => save("desktop_audio")}
                 onTest={() => test("desktop_audio")}
+                onPreviewVoice={previewLocalVoice}
                 pairingStatus={pairingStatus}
+                voiceStatus={voiceStatus}
+                availableVoices={availableVoices}
+                showRevokedDevices={showRevokedDevices}
+                onShowRevokedChange={toggleRevokedDevices}
             />
             <ChannelCard
                 channel={discord}
@@ -316,7 +411,12 @@ function DesktopAudioCard({
     onRevoke,
     onSave,
     onTest,
-    pairingStatus
+    onPreviewVoice,
+    onShowRevokedChange,
+    pairingStatus,
+    voiceStatus,
+    availableVoices,
+    showRevokedDevices
 }: {
     channel: ChannelState;
     devices: DesktopAudioDevice[];
@@ -326,7 +426,12 @@ function DesktopAudioCard({
     onRevoke: (deviceId: string) => void;
     onSave: () => void;
     onTest: () => void;
+    onPreviewVoice: () => void;
+    onShowRevokedChange: (checked: boolean) => void;
     pairingStatus: string;
+    voiceStatus: string;
+    availableVoices: DesktopAudioVoiceOption[];
+    showRevokedDevices: boolean;
 }) {
     const activeDevices = devices.filter((device) => device.status === "active");
     return (
@@ -338,9 +443,9 @@ function DesktopAudioCard({
                         Desktop Audio
                     </div>
                     <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
-                        Pair the tray app once, then Ananta generates MP3 alert audio with your saved OpenRouter key
-                        and streams it to all active devices. HTTP stack URLs are allowed, but the desktop app will show
-                        a warning when a connection is not encrypted.
+                        Pair the tray app once, then Ananta sends spoken alerts to all active devices. Desktop voice is
+                        the default path, OpenRouter audio stays optional, and the app warns clearly when a connection
+                        uses HTTP instead of HTTPS.
                     </p>
                 </div>
                 <Button className="h-9 gap-2 px-4" disabled={isPending} onClick={onConnect} type="button">
@@ -370,6 +475,16 @@ function DesktopAudioCard({
                 </Label>
             </div>
             <div className="grid gap-3 min-[760px]:grid-cols-2">
+                <LabeledField label="TTS provider" required>
+                    <Select
+                        className={compactFieldClassName}
+                        onChange={(event) => onChange({ ...channel, config: { ...channel.config, tts_provider: event.target.value } })}
+                        value={channel.config.tts_provider ?? desktopDefaults.tts_provider}
+                    >
+                        <option value="web_speech">Desktop app voice</option>
+                        <option value="openrouter">OpenRouter audio</option>
+                    </Select>
+                </LabeledField>
                 <LabeledField label="Spoken template" required>
                     <Input
                         className={compactFieldClassName}
@@ -388,7 +503,7 @@ function DesktopAudioCard({
                         value={channel.config.model_id ?? desktopDefaults.model_id}
                     />
                 </LabeledField>
-                <LabeledField label="Voice" required={false}>
+                <LabeledField label="OpenRouter voice" required={false}>
                     <Input
                         className={compactFieldClassName}
                         onChange={(event) => onChange({ ...channel, config: { ...channel.config, voice: event.target.value } })}
@@ -406,17 +521,104 @@ function DesktopAudioCard({
                         value={channel.config.retention_days ?? desktopDefaults.retention_days}
                     />
                 </LabeledField>
+                <LabeledField label="Desktop voice" required={false}>
+                    <Select
+                        className={compactFieldClassName}
+                        onChange={(event) => {
+                            const nextVoice = availableVoices.find((voice) => voice.name === event.target.value);
+                            onChange({
+                                ...channel,
+                                config: {
+                                    ...channel.config,
+                                    web_speech_voice: event.target.value,
+                                    web_speech_lang: nextVoice?.lang ?? channel.config.web_speech_lang ?? ""
+                                }
+                            });
+                        }}
+                        value={channel.config.web_speech_voice ?? desktopDefaults.web_speech_voice}
+                    >
+                        <option value="">System default voice</option>
+                        {availableVoices.map((voice) => (
+                            <option key={`${voice.name}:${voice.lang}`} value={voice.name}>
+                                {voice.name} ({voice.lang}){voice.default ? " default" : ""}
+                            </option>
+                        ))}
+                    </Select>
+                </LabeledField>
+                <LabeledField label="Desktop speech rate" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        min={0.5}
+                        max={2}
+                        step={0.1}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, web_speech_rate: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.web_speech_rate ?? desktopDefaults.web_speech_rate}
+                    />
+                </LabeledField>
+                <LabeledField label="Desktop speech pitch" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, web_speech_pitch: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.web_speech_pitch ?? desktopDefaults.web_speech_pitch}
+                    />
+                </LabeledField>
+                <LabeledField label="Desktop speech volume" required={false}>
+                    <Input
+                        className={compactFieldClassName}
+                        min={0}
+                        max={1}
+                        step={0.1}
+                        onChange={(event) =>
+                            onChange({ ...channel, config: { ...channel.config, web_speech_volume: event.target.value } })
+                        }
+                        type="number"
+                        value={channel.config.web_speech_volume ?? desktopDefaults.web_speech_volume}
+                    />
+                </LabeledField>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                <Label className="flex items-center gap-2">
+                    <Checkbox
+                        checked={(channel.config.fallback_to_web_speech ?? desktopDefaults.fallback_to_web_speech) !== "false"}
+                        onCheckedChange={(checked) =>
+                            onChange({
+                                ...channel,
+                                config: { ...channel.config, fallback_to_web_speech: checked ? "true" : "false" }
+                            })
+                        }
+                    />
+                    Fallback to desktop voice when OpenRouter audio fails
+                </Label>
+                {voiceStatus ? <span className="text-xs text-muted-foreground">{voiceStatus}</span> : null}
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
                 <Button className="h-9 px-4" onClick={onSave} type="button">
                     Save
+                </Button>
+                <Button className="h-9 px-4" onClick={onPreviewVoice} type="button" variant="outline">
+                    Preview voice
                 </Button>
                 <Button className="h-9 px-4" disabled={!activeDevices.length} onClick={onTest} type="button" variant="outline">
                     Test audio
                 </Button>
             </div>
             <div className="mt-5 grid gap-2">
-                <div className="text-sm font-bold">Paired devices</div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm font-bold">Paired devices</div>
+                    <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Checkbox checked={showRevokedDevices} onCheckedChange={(checked) => onShowRevokedChange(Boolean(checked))} />
+                        Show revoked
+                    </Label>
+                </div>
                 {devices.length ? (
                     <div className="grid gap-2">
                         {devices.map((device) => (
@@ -444,7 +646,7 @@ function DesktopAudioCard({
                     </div>
                 ) : (
                     <div className="border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-                        No desktop audio app is paired yet.
+                        {showRevokedDevices ? "No desktop audio devices are paired yet." : "No active desktop audio app is paired yet."}
                     </div>
                 )}
             </div>

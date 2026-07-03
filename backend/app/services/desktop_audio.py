@@ -21,8 +21,12 @@ from common.datetime_compat import UTC
 from db.models import AlertAudioAsset, DesktopAudioDevice, DesktopAudioPairing, UserAlertChannelDelivery, UserAlertNotification
 
 DEFAULT_TEMPLATE = "{title}. {message}"
-DEFAULT_MODEL = "openai/gpt-4o-mini-tts"
-DEFAULT_VOICE = "alloy"
+DEFAULT_TTS_PROVIDER = "web_speech"
+DEFAULT_MODEL = "hexgrad/kokoro-82m"
+DEFAULT_VOICE = "af_bella"
+DEFAULT_WEB_SPEECH_RATE = 1.0
+DEFAULT_WEB_SPEECH_PITCH = 1.0
+DEFAULT_WEB_SPEECH_VOLUME = 1.0
 MIME_BY_FORMAT = {"mp3": "audio/mpeg", "wav": "audio/wav", "pcm": "audio/L16"}
 
 _connections: dict[str, set[WebSocket]] = defaultdict(set)
@@ -49,6 +53,24 @@ def _json_loads(value: str | None, default: Any) -> Any:
         return default
 
 
+def _as_float(value: Any, default: float) -> float:
+    try:
+        if value in (None, ""):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_int(value: Any, default: int) -> int:
+    try:
+        if value in (None, ""):
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class _SafeFormat(dict):
     def __missing__(self, key: str) -> str:
         return "{" + key + "}"
@@ -56,12 +78,14 @@ class _SafeFormat(dict):
 
 def _render_template(template: str, notification: UserAlertNotification, payload: dict[str, Any]) -> str:
     context = _SafeFormat(
-        title=notification.title,
-        message=notification.message,
-        level=notification.level,
-        symbol=notification.symbol or payload.get("symbol") or "",
-        exchange=notification.exchange or payload.get("exchange") or "",
-        **{str(k): v for k, v in payload.items() if isinstance(k, str)},
+        **{
+            **{str(k): v for k, v in payload.items() if isinstance(k, str)},
+            "title": notification.title,
+            "message": notification.message,
+            "level": notification.level,
+            "symbol": notification.symbol or payload.get("symbol") or "",
+            "exchange": notification.exchange or payload.get("exchange") or "",
+        }
     )
     return (template or DEFAULT_TEMPLATE).format_map(context).strip()[:4000]
 
@@ -112,19 +136,65 @@ def complete_pairing(
         raise ValueError("pairing request is expired or unavailable")
     if not secrets.compare_digest(row.secret_hash, _hash_secret(secret)):
         raise ValueError("pairing secret is invalid")
+    now = _now()
+    metadata = metadata or {}
+    install_id = str(metadata.get("install_id") or metadata.get("device_key") or "").strip()
+    device = None
+    if install_id:
+        for candidate in db.scalars(
+            select(DesktopAudioDevice)
+            .where(DesktopAudioDevice.user_id == row.user_id)
+            .order_by(DesktopAudioDevice.created_at.desc())
+        ):
+            candidate_metadata = _json_loads(candidate.metadata_json, {})
+            if str(candidate_metadata.get("install_id") or candidate_metadata.get("device_key") or "") == install_id:
+                device = candidate
+                break
+            if (
+                device is None
+                and not str(candidate_metadata.get("install_id") or candidate_metadata.get("device_key") or "")
+                and candidate.label == (label or "Ananta Audio App")[:128]
+                and candidate_metadata.get("platform") == metadata.get("platform")
+            ):
+                device = candidate
+
     token = secrets.token_urlsafe(48)
-    device = DesktopAudioDevice(
-        id=str(uuid.uuid4()),
-        user_id=row.user_id,
-        label=(label or "Ananta Audio App")[:128],
-        token_hash=_hash_secret(token),
-        status="active",
-        last_seen_at=_now(),
-        metadata_json=_json_dumps(metadata or {}),
-    )
+    if device is None:
+        device = DesktopAudioDevice(
+            id=str(uuid.uuid4()),
+            user_id=row.user_id,
+            label=(label or "Ananta Audio App")[:128],
+            token_hash=_hash_secret(token),
+            metadata_json=_json_dumps(metadata),
+        )
+    else:
+        device.label = (label or device.label or "Ananta Audio App")[:128]
+        device.token_hash = _hash_secret(token)
+        device.revoked_at = None
+        device.metadata_json = _json_dumps({**_json_loads(device.metadata_json, {}), **metadata})
+    device.status = "active"
+    device.last_seen_at = now
+    for candidate in db.scalars(
+        select(DesktopAudioDevice).where(
+            DesktopAudioDevice.user_id == row.user_id,
+            DesktopAudioDevice.id != device.id,
+            DesktopAudioDevice.status == "active",
+        )
+    ):
+        candidate_metadata = _json_loads(candidate.metadata_json, {})
+        same_install = install_id and str(candidate_metadata.get("install_id") or candidate_metadata.get("device_key") or "") == install_id
+        same_unclaimed_host = (
+            not str(candidate_metadata.get("install_id") or candidate_metadata.get("device_key") or "")
+            and candidate.label == device.label
+            and candidate_metadata.get("platform") == metadata.get("platform")
+        )
+        if same_install or same_unclaimed_host:
+            candidate.status = "revoked"
+            candidate.revoked_at = now
+            db.add(candidate)
     row.status = "completed"
     row.completed_device_id = device.id
-    row.completed_at = _now()
+    row.completed_at = now
     db.add(device)
     db.add(row)
     db.commit()
@@ -151,12 +221,13 @@ def authenticate_device(db: Session, token: str | None) -> DesktopAudioDevice | 
     return row
 
 
-def list_devices(db: Session, user_id: str) -> list[DesktopAudioDevice]:
+def list_devices(db: Session, user_id: str, *, include_revoked: bool = False) -> list[DesktopAudioDevice]:
+    stmt = select(DesktopAudioDevice).where(DesktopAudioDevice.user_id == user_id)
+    if not include_revoked:
+        stmt = stmt.where(DesktopAudioDevice.status != "revoked")
     return list(
         db.scalars(
-            select(DesktopAudioDevice)
-            .where(DesktopAudioDevice.user_id == user_id)
-            .order_by(DesktopAudioDevice.created_at.desc())
+            stmt.order_by(DesktopAudioDevice.status.asc(), DesktopAudioDevice.created_at.desc())
         ).all()
     )
 
@@ -196,9 +267,23 @@ def _target_devices(db: Session, user_id: str, config: dict[str, Any]) -> list[D
     return list(db.scalars(stmt).all())
 
 
+def _speech_config(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "provider": str(config.get("tts_provider") or DEFAULT_TTS_PROVIDER).strip().lower(),
+        "voice_name": str(config.get("web_speech_voice") or "").strip(),
+        "lang": str(config.get("web_speech_lang") or "").strip(),
+        "rate": _as_float(config.get("web_speech_rate"), DEFAULT_WEB_SPEECH_RATE),
+        "pitch": _as_float(config.get("web_speech_pitch"), DEFAULT_WEB_SPEECH_PITCH),
+        "volume": _as_float(config.get("web_speech_volume"), DEFAULT_WEB_SPEECH_VOLUME),
+        "fallback_to_web_speech": str(config.get("fallback_to_web_speech") or "true").lower() != "false",
+    }
+
+
 def _generate_audio(db: Session, user_id: str, config: dict[str, Any], text: str) -> tuple[bytes, str, str, str]:
     model = str(config.get("model_id") or DEFAULT_MODEL).strip()
     voice = str(config.get("voice") or DEFAULT_VOICE).strip()
+    if model == DEFAULT_MODEL and voice in {"", "alloy"}:
+        voice = DEFAULT_VOICE
     response_format = str(config.get("response_format") or "mp3").strip().lower()
     api_key = llm_config.get_provider_api_key(db, user_id, "openrouter")
     headers = {
@@ -216,36 +301,30 @@ def _generate_audio(db: Session, user_id: str, config: dict[str, Any], text: str
         "response_format": response_format,
     }
     if config.get("speed") not in (None, ""):
-        body["speed"] = float(config.get("speed"))
+        body["speed"] = _as_float(config.get("speed"), 1.0)
     with httpx.Client(timeout=45) as client:
         response = client.post("https://openrouter.ai/api/v1/audio/speech", headers=headers, json=body)
         response.raise_for_status()
         return response.content, model, voice, response_format
 
 
-def queue_audio_for_delivery(
+def _create_assets(
     db: Session,
+    *,
+    devices: list[DesktopAudioDevice],
     notification: UserAlertNotification,
     delivery: UserAlertChannelDelivery,
-    channel,
-) -> tuple[bool, str]:
-    config = _channel_config(channel)
-    devices = _target_devices(db, notification.user_id, config)
-    if not devices:
-        return False, "no active desktop audio devices are paired"
-    payload = _json_loads(delivery.payload_json, {})
-    text = _render_template(str(config.get("spoken_template") or DEFAULT_TEMPLATE), notification, payload)
-    retention_days = int(config.get("retention_days") or get_settings().desktop_audio_retention_days)
-    expires_at = _now() + timedelta(days=max(retention_days, 1))
-    try:
-        audio_bytes, model, voice, response_format = _generate_audio(db, notification.user_id, config, text)
-    except Exception as exc:
-        return False, str(exc)
-
-    ext = "mp3" if response_format not in {"wav", "pcm"} else response_format
-    file_id = str(uuid.uuid4())
-    file_path = _storage_dir() / f"{file_id}.{ext}"
-    file_path.write_bytes(audio_bytes)
+    text: str,
+    speech: dict[str, Any],
+    expires_at: datetime,
+    model_id: str,
+    voice: str,
+    response_format: str,
+    file_path: str = "",
+    mime_type: str = "audio/mpeg",
+    byte_size: int = 0,
+    status: str = "ready",
+) -> list[AlertAudioAsset]:
     created_assets: list[AlertAudioAsset] = []
     for device in devices:
         asset = AlertAudioAsset(
@@ -255,13 +334,13 @@ def queue_audio_for_delivery(
             delivery_id=delivery.id,
             device_id=device.id,
             generated_text=text,
-            model_id=model,
+            model_id=model_id,
             voice=voice,
             response_format=response_format,
-            file_path=str(file_path),
-            mime_type=MIME_BY_FORMAT.get(response_format, "audio/mpeg"),
-            byte_size=len(audio_bytes),
-            status="ready",
+            file_path=file_path,
+            mime_type=mime_type,
+            byte_size=byte_size,
+            status=status,
             expires_at=expires_at,
         )
         db.add(asset)
@@ -269,8 +348,86 @@ def queue_audio_for_delivery(
     db.commit()
     for asset in created_assets:
         db.refresh(asset)
-        asyncio.run(_broadcast_asset(asset, notification))
-    return True, ""
+        asyncio.run(_broadcast_asset(asset, notification, speech))
+    return created_assets
+
+
+def queue_audio_for_delivery(
+    db: Session,
+    notification: UserAlertNotification,
+    delivery: UserAlertChannelDelivery,
+    channel,
+) -> tuple[bool, str]:
+    config = _channel_config(channel)
+    speech = _speech_config(config)
+    devices = _target_devices(db, notification.user_id, config)
+    if not devices:
+        return False, "no active desktop audio devices are paired"
+    payload = _json_loads(delivery.payload_json, {})
+    text = _render_template(str(config.get("spoken_template") or DEFAULT_TEMPLATE), notification, payload)
+    retention_days = _as_int(config.get("retention_days"), get_settings().desktop_audio_retention_days)
+    expires_at = _now() + timedelta(days=max(retention_days, 1))
+    provider = speech["provider"]
+
+    if provider == "web_speech":
+        _create_assets(
+            db,
+            devices=devices,
+            notification=notification,
+            delivery=delivery,
+            text=text,
+            speech=speech,
+            expires_at=expires_at,
+            model_id="web_speech",
+            voice=str(speech.get("voice_name") or ""),
+            response_format="web_speech",
+            file_path="",
+            mime_type="text/plain",
+            byte_size=0,
+        )
+        return True, ""
+
+    try:
+        audio_bytes, model, voice, response_format = _generate_audio(db, notification.user_id, config, text)
+        ext = "mp3" if response_format not in {"wav", "pcm"} else response_format
+        file_id = str(uuid.uuid4())
+        file_path = _storage_dir() / f"{file_id}.{ext}"
+        file_path.write_bytes(audio_bytes)
+        _create_assets(
+            db,
+            devices=devices,
+            notification=notification,
+            delivery=delivery,
+            text=text,
+            speech=speech,
+            expires_at=expires_at,
+            model_id=model,
+            voice=voice,
+            response_format=response_format,
+            file_path=str(file_path),
+            mime_type=MIME_BY_FORMAT.get(response_format, "audio/mpeg"),
+            byte_size=len(audio_bytes),
+        )
+        return True, ""
+    except Exception as exc:
+        if speech.get("fallback_to_web_speech"):
+            _create_assets(
+                db,
+                devices=devices,
+                notification=notification,
+                delivery=delivery,
+                text=text,
+                speech=speech,
+                expires_at=expires_at,
+                model_id="web_speech-fallback",
+                voice=str(speech.get("voice_name") or ""),
+                response_format="web_speech",
+                file_path="",
+                mime_type="text/plain",
+                byte_size=0,
+            )
+            return True, ""
+        return False, str(exc)
 
 
 def pending_assets_for_device(db: Session, device_id: str, limit: int = 25) -> list[AlertAudioAsset]:
@@ -335,23 +492,35 @@ async def unregister_connection(device_id: str, websocket: WebSocket) -> None:
     _connections[device_id].discard(websocket)
 
 
-def asset_event(asset: AlertAudioAsset, notification: UserAlertNotification) -> dict[str, Any]:
+def asset_event(asset: AlertAudioAsset, notification: UserAlertNotification, speech: dict[str, Any] | None = None) -> dict[str, Any]:
+    speech = speech or {}
+    use_web_speech = asset.response_format == "web_speech"
     return {
         "type": "audio_alert",
         "asset_id": asset.id,
         "notification_id": notification.id,
         "title": notification.title,
         "message": notification.message,
+        "spoken_text": asset.generated_text,
         "level": notification.level,
         "symbol": notification.symbol,
         "exchange": notification.exchange,
+        "playback_mode": "web_speech" if use_web_speech else "audio_file",
+        "fallback_to_web_speech": bool(speech.get("fallback_to_web_speech")),
+        "speech": {
+            "voice_name": speech.get("voice_name") or "",
+            "lang": speech.get("lang") or "",
+            "rate": speech.get("rate") or DEFAULT_WEB_SPEECH_RATE,
+            "pitch": speech.get("pitch") or DEFAULT_WEB_SPEECH_PITCH,
+            "volume": speech.get("volume") or DEFAULT_WEB_SPEECH_VOLUME,
+        },
         "created_at": asset.created_at.isoformat(),
         "expires_at": asset.expires_at.isoformat(),
     }
 
 
-async def _broadcast_asset(asset: AlertAudioAsset, notification: UserAlertNotification) -> None:
-    await _broadcast(str(asset.device_id), asset_event(asset, notification))
+async def _broadcast_asset(asset: AlertAudioAsset, notification: UserAlertNotification, speech: dict[str, Any] | None = None) -> None:
+    await _broadcast(str(asset.device_id), asset_event(asset, notification, speech))
 
 
 async def _broadcast(device_id: str, payload: dict[str, Any]) -> None:

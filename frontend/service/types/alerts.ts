@@ -267,6 +267,12 @@ export interface DesktopAudioPairingStatus {
     completed_device_id?: string | null;
 }
 
+export interface DesktopAudioVoiceOption {
+    name: string;
+    lang: string;
+    default: boolean;
+}
+
 export interface LiveSubscription {
     id: string;
     user_id: string;

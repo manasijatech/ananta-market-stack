@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
 from app.services import desktop_audio as svc
-from db.models import User, UserAlertNotification
+from db.models import User, UserAlertChannel, UserAlertChannelDelivery, UserAlertNotification
 from db.session import SessionLocal, get_db
 
 router = APIRouter()
@@ -57,6 +57,12 @@ class DeviceOut(BaseModel):
     revoked_at: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str
+
+
+class DeviceEventIn(BaseModel):
+    type: str
+    asset_id: str | None = None
+    error: str | None = None
 
 
 def _device_out(row) -> DeviceOut:
@@ -135,10 +141,11 @@ def complete_pairing(body: PairingCompleteIn, db: Session = Depends(get_db)) -> 
 
 @router.get("/devices", response_model=list[DeviceOut])
 def list_devices(
+    include_revoked: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[DeviceOut]:
-    return [_device_out(row) for row in svc.list_devices(db, user.id)]
+    return [_device_out(row) for row in svc.list_devices(db, user.id, include_revoked=include_revoked)]
 
 
 @router.delete("/devices/{device_id}")
@@ -162,6 +169,42 @@ def disconnect_current(
     if device is None:
         raise HTTPException(status_code=401, detail="invalid device token")
     svc.revoke_device(db, device.user_id, device.id)
+    return {"ok": True}
+
+
+@router.get("/devices/current/pending")
+def current_pending(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    token: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    device = svc.authenticate_device(db, _bearer_token(authorization, token))
+    if device is None:
+        raise HTTPException(status_code=401, detail="invalid device token")
+    payloads: list[dict[str, Any]] = []
+    for asset in svc.pending_assets_for_device(db, device.id):
+        notification = db.get(UserAlertNotification, asset.notification_id)
+        if not notification:
+            continue
+        delivery = db.get(UserAlertChannelDelivery, asset.delivery_id) if asset.delivery_id else None
+        channel = db.get(UserAlertChannel, delivery.channel_id) if delivery and delivery.channel_id else None
+        speech = svc._speech_config(svc._channel_config(channel)) if channel else None  # type: ignore[attr-defined]
+        payloads.append(svc.asset_event(asset, notification, speech))
+    return payloads
+
+
+@router.post("/devices/current/events")
+def current_device_event(
+    body: DeviceEventIn,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    token: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    device = svc.authenticate_device(db, _bearer_token(authorization, token))
+    if device is None:
+        raise HTTPException(status_code=401, detail="invalid device token")
+    if body.type == "ack" and body.asset_id:
+        svc.mark_asset_acknowledged(db, device, body.asset_id)
     return {"ok": True}
 
 
@@ -199,7 +242,10 @@ async def desktop_audio_ws(websocket: WebSocket, token: str | None = Query(defau
         for asset in svc.pending_assets_for_device(db, device.id):
             notification = db.get(UserAlertNotification, asset.notification_id)
             if notification:
-                await websocket.send_json(svc.asset_event(asset, notification))
+                delivery = db.get(UserAlertChannelDelivery, asset.delivery_id) if asset.delivery_id else None
+                channel = db.get(UserAlertChannel, delivery.channel_id) if delivery and delivery.channel_id else None
+                speech = svc._speech_config(svc._channel_config(channel)) if channel else None  # type: ignore[attr-defined]
+                await websocket.send_json(svc.asset_event(asset, notification, speech))
         while True:
             msg = await websocket.receive_json()
             msg_type = msg.get("type") or msg.get("action")
