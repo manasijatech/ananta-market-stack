@@ -670,6 +670,61 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
                 "delivered_at": "DATETIME",
             },
         )
+        _ensure_table_columns(
+            conn,
+            "desktop_audio_devices",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "label": "VARCHAR(128) DEFAULT ''",
+                "token_hash": "VARCHAR(128)",
+                "status": "VARCHAR(32) DEFAULT 'active'",
+                "last_seen_at": "DATETIME",
+                "last_ack_asset_id": "VARCHAR(36)",
+                "revoked_at": "DATETIME",
+                "metadata_json": "TEXT DEFAULT '{}'",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "desktop_audio_pairings",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "secret_hash": "VARCHAR(128)",
+                "status": "VARCHAR(32) DEFAULT 'pending'",
+                "expires_at": "DATETIME",
+                "completed_device_id": "VARCHAR(36)",
+                "metadata_json": "TEXT DEFAULT '{}'",
+                "created_at": "DATETIME",
+                "completed_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "alert_audio_assets",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "notification_id": "VARCHAR(36)",
+                "delivery_id": "VARCHAR(36)",
+                "device_id": "VARCHAR(36)",
+                "generated_text": "TEXT DEFAULT ''",
+                "model_id": "VARCHAR(256) DEFAULT ''",
+                "voice": "VARCHAR(128) DEFAULT ''",
+                "response_format": "VARCHAR(32) DEFAULT 'mp3'",
+                "file_path": "TEXT DEFAULT ''",
+                "mime_type": "VARCHAR(128) DEFAULT 'audio/mpeg'",
+                "byte_size": "INTEGER DEFAULT 0",
+                "status": "VARCHAR(32) DEFAULT 'pending'",
+                "last_error": "TEXT",
+                "acknowledged_at": "DATETIME",
+                "created_at": "DATETIME",
+                "expires_at": "DATETIME",
+            },
+        )
         conn.commit()
     finally:
         conn.close()

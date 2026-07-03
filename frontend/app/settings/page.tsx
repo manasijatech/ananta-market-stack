@@ -6,7 +6,7 @@ import { SettingsSections } from "@/components/settings/settings-sections";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
-import { getAlertChannels, getLiveStreamsStatus, getLiveSubscriptions } from "@/service/actions/alerts";
+import { getAlertChannels, getDesktopAudioDevices, getLiveStreamsStatus, getLiveSubscriptions } from "@/service/actions/alerts";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
 import { getRbacMe } from "@/service/actions/rbac";
 import { getWatchlists } from "@/service/actions/watchlist";
@@ -33,9 +33,10 @@ export default async function SettingsPage() {
         );
     }
 
-    const [config, alertChannels, accounts, subscriptions, streamStatus, watchlists] = await Promise.all([
+    const [config, alertChannels, desktopAudioDevices, accounts, subscriptions, streamStatus, watchlists] = await Promise.all([
         getSystemConfig(),
         getAlertChannels(),
+        getDesktopAudioDevices(),
         getBrokerAccounts(),
         getLiveSubscriptions(),
         getLiveStreamsStatus(),
@@ -60,6 +61,7 @@ export default async function SettingsPage() {
                 <SettingsSections
                     accounts={accounts}
                     alertChannels={alertChannels}
+                    desktopAudioDevices={desktopAudioDevices}
                     config={config}
                     permissions={{
                         canManageAlpha: hasRbacPermission(principal, "settings.manage_alpha"),

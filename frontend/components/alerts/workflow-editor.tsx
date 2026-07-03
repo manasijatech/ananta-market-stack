@@ -1503,6 +1503,9 @@ export function WorkflowEditor({
     const [channelTelegram, setChannelTelegram] = useState(
         initialWorkflow?.workflow_dsl.channels.enabled.includes("telegram") ?? false
     );
+    const [channelDesktopAudio, setChannelDesktopAudio] = useState(
+        initialWorkflow?.workflow_dsl.channels.enabled.includes("desktop_audio") ?? false
+    );
     const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
     const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
     const [selectedSymbolMetadata, setSelectedSymbolMetadata] = useState<AlphaSymbolMetadata | null>(null);
@@ -2176,7 +2179,8 @@ export function WorkflowEditor({
         const enabled = [
             channelInApp ? "in_app" : null,
             channelDiscord ? "discord" : null,
-            channelTelegram ? "telegram" : null
+            channelTelegram ? "telegram" : null,
+            channelDesktopAudio ? "desktop_audio" : null
         ].filter(Boolean) as AlertChannelType[];
         return {
             inherit_defaults: inheritDefaults,
@@ -2736,6 +2740,7 @@ export function WorkflowEditor({
         setChannelInApp(nextEnabledChannels.includes("in_app"));
         setChannelDiscord(nextEnabledChannels.includes("discord"));
         setChannelTelegram(nextEnabledChannels.includes("telegram"));
+        setChannelDesktopAudio(nextEnabledChannels.includes("desktop_audio"));
         setLlmEnabled(Boolean(llm?.enabled));
         setLlmProvider(llm?.provider ?? firstLlmProvider?.provider ?? "");
         setLlmModelId(llm?.model_id ?? firstLlmModel?.model_id ?? "");
@@ -5381,6 +5386,16 @@ export function WorkflowEditor({
                                     onCheckedChange={(checked) => setChannelTelegram(Boolean(checked))}
                                 />
                                 Telegram
+                            </Label>
+                            <Label
+                                className="flex items-center gap-2"
+                                title="Send generated audio to paired desktop tray apps."
+                            >
+                                <Checkbox
+                                    checked={channelDesktopAudio}
+                                    onCheckedChange={(checked) => setChannelDesktopAudio(Boolean(checked))}
+                                />
+                                Desktop audio
                             </Label>
                             <Label
                                 className="flex items-center gap-2"

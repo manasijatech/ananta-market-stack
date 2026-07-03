@@ -15,6 +15,7 @@ from app.api.v1 import (
     broker_data_config,
     broker_ops,
     deployment,
+    desktop_audio,
     health,
     live_streams,
     llm_usage,
@@ -57,6 +58,9 @@ api_router.include_router(
 )
 api_router.include_router(
     alert_channels.router, prefix="/alert-channels", tags=["alert-channels"]
+)
+api_router.include_router(
+    desktop_audio.router, prefix="/desktop-audio", tags=["desktop-audio"]
 )
 api_router.include_router(
     live_streams.router, prefix="/live-streams", tags=["live-streams"]
