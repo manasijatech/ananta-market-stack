@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import edge_tts
 import httpx
 from fastapi import WebSocket
 from sqlalchemy import delete, select
@@ -21,15 +22,18 @@ from common.datetime_compat import UTC
 from db.models import AlertAudioAsset, DesktopAudioDevice, DesktopAudioPairing, UserAlertChannelDelivery, UserAlertNotification
 
 DEFAULT_TEMPLATE = "{title}. {message}"
-DEFAULT_TTS_PROVIDER = "web_speech"
+DEFAULT_TTS_PROVIDER = "edge_tts"
 DEFAULT_MODEL = "hexgrad/kokoro-82m"
 DEFAULT_VOICE = "af_bella"
+DEFAULT_EDGE_VOICE = "en-US-EmmaMultilingualNeural"
 DEFAULT_WEB_SPEECH_RATE = 1.0
 DEFAULT_WEB_SPEECH_PITCH = 1.0
 DEFAULT_WEB_SPEECH_VOLUME = 1.0
 MIME_BY_FORMAT = {"mp3": "audio/mpeg", "wav": "audio/wav", "pcm": "audio/L16"}
+EDGE_VOICE_CACHE_TTL = timedelta(hours=6)
 
 _connections: dict[str, set[WebSocket]] = defaultdict(set)
+_edge_voice_cache: dict[str, Any] = {"expires_at": None, "voices": []}
 
 
 def _now() -> datetime:
@@ -279,6 +283,28 @@ def _speech_config(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _signed_percent(value: Any, default: int = 0) -> str:
+    amount = _as_int(value, default)
+    amount = max(-100, min(100, amount))
+    return f"{amount:+d}%"
+
+
+def _signed_hz(value: Any, default: int = 0) -> str:
+    amount = _as_int(value, default)
+    amount = max(-100, min(100, amount))
+    return f"{amount:+d}Hz"
+
+
+def _edge_audio_config(config: dict[str, Any]) -> tuple[str, str, str]:
+    voice = str(config.get("edge_voice") or config.get("voice") or DEFAULT_EDGE_VOICE).strip()
+    if not voice:
+        voice = DEFAULT_EDGE_VOICE
+    rate = _signed_percent(config.get("edge_rate"), 0)
+    pitch = _signed_hz(config.get("edge_pitch"), 0)
+    volume = _signed_percent(config.get("edge_volume"), 0)
+    return voice, rate, pitch, volume
+
+
 def _openrouter_audio_config(config: dict[str, Any]) -> tuple[str, str, str, float]:
     model = str(config.get("model_id") or DEFAULT_MODEL).strip()
     voice = str(config.get("voice") or DEFAULT_VOICE).strip()
@@ -289,8 +315,13 @@ def _openrouter_audio_config(config: dict[str, Any]) -> tuple[str, str, str, flo
     return model, voice, response_format, speed
 
 
-def _voice_cache_key(voice: str, speed: float) -> str:
-    return f"{voice}|speed={speed:g}"
+def _voice_cache_key(voice: str, speed: float | None = None, **extras: str) -> str:
+    parts = [voice]
+    if speed is not None:
+        parts.append(f"speed={speed:g}")
+    for key in sorted(extras):
+        parts.append(f"{key}={extras[key]}")
+    return "|".join(parts)
 
 
 def _cached_audio_asset(
@@ -321,6 +352,53 @@ def _cached_audio_asset(
         if path.exists():
             return asset
     return None
+
+
+async def _edge_generate_audio_bytes(text: str, voice: str, rate: str, pitch: str, volume: str) -> bytes:
+    communicate = edge_tts.Communicate(
+        text,
+        voice=voice,
+        rate=rate,
+        pitch=pitch,
+        volume=volume,
+        connect_timeout=10,
+        receive_timeout=60,
+    )
+    chunks: list[bytes] = []
+    async for message in communicate.stream():
+        if message["type"] == "audio":
+            chunks.append(message["data"])
+    return b"".join(chunks)
+
+
+def _generate_edge_audio(config: dict[str, Any], text: str) -> tuple[bytes, str, str, str, str]:
+    voice, rate, pitch, volume = _edge_audio_config(config)
+    audio = asyncio.run(_edge_generate_audio_bytes(text, voice, rate, pitch, volume))
+    return audio, voice, rate, pitch, volume
+
+
+def list_edge_voices(*, force_refresh: bool = False) -> list[dict[str, Any]]:
+    cached_until = _edge_voice_cache.get("expires_at")
+    if not force_refresh and isinstance(cached_until, datetime) and cached_until > _now():
+        return list(_edge_voice_cache.get("voices") or [])
+
+    raw_voices = asyncio.run(edge_tts.list_voices())
+    voices = [
+        {
+            "name": str(voice.get("Name") or ""),
+            "short_name": str(voice.get("ShortName") or voice.get("Name") or ""),
+            "locale": str(voice.get("Locale") or ""),
+            "gender": str(voice.get("Gender") or ""),
+            "friendly_name": str(voice.get("FriendlyName") or voice.get("ShortName") or voice.get("Name") or ""),
+            "content_categories": list(voice.get("VoiceTag", {}).get("ContentCategories") or []),
+            "voice_personalities": list(voice.get("VoiceTag", {}).get("VoicePersonalities") or []),
+        }
+        for voice in raw_voices
+    ]
+    voices.sort(key=lambda item: (0 if str(item["locale"]).startswith("en-") else 1, str(item["locale"]), str(item["short_name"])))
+    _edge_voice_cache["voices"] = voices
+    _edge_voice_cache["expires_at"] = _now() + EDGE_VOICE_CACHE_TTL
+    return list(voices)
 
 
 def _generate_audio(db: Session, user_id: str, config: dict[str, Any], text: str) -> tuple[bytes, str, str, str, float]:
@@ -428,6 +506,56 @@ def queue_audio_for_delivery(
         return True, ""
 
     try:
+        if provider == "edge_tts":
+            voice, rate, pitch, volume = _edge_audio_config(config)
+            voice_key = _voice_cache_key(voice, rate=rate, pitch=pitch, volume=volume)
+            cached_asset = _cached_audio_asset(
+                db,
+                user_id=notification.user_id,
+                text=text,
+                model="edge_tts",
+                voice_key=voice_key,
+                response_format="mp3",
+            )
+            if cached_asset:
+                _create_assets(
+                    db,
+                    devices=devices,
+                    notification=notification,
+                    delivery=delivery,
+                    text=text,
+                    speech=speech,
+                    expires_at=expires_at,
+                    model_id=cached_asset.model_id,
+                    voice=cached_asset.voice,
+                    response_format=cached_asset.response_format,
+                    file_path=cached_asset.file_path,
+                    mime_type=cached_asset.mime_type,
+                    byte_size=cached_asset.byte_size,
+                )
+                return True, ""
+
+            audio_bytes, voice, rate, pitch, volume = _generate_edge_audio(config, text)
+            voice_key = _voice_cache_key(voice, rate=rate, pitch=pitch, volume=volume)
+            file_path = _storage_dir() / f"{uuid.uuid4()}.mp3"
+            file_path.write_bytes(audio_bytes)
+            _create_assets(
+                db,
+                devices=devices,
+                notification=notification,
+                delivery=delivery,
+                text=text,
+                speech=speech,
+                expires_at=expires_at,
+                model_id="edge_tts",
+                voice=voice_key,
+                response_format="mp3",
+                file_path=str(file_path),
+                mime_type="audio/mpeg",
+                byte_size=len(audio_bytes),
+            )
+            return True, ""
+
         model, voice, response_format, speed = _openrouter_audio_config(config)
         voice_key = _voice_cache_key(voice, speed)
         cached_asset = _cached_audio_asset(

@@ -7,6 +7,7 @@ import type {
     AlertChannel,
     AlertChannelSelection,
     AlertConditionRegistry,
+    EdgeAudioVoiceOption,
     AlertGraphDsl,
     AlertLlmContextPreview,
     AlertLlmPlaceholderCatalog,
@@ -358,6 +359,22 @@ export async function getDesktopAudioPairingSafe(pairingId: string): Promise<Act
         return {
             ok: false,
             error: error instanceof Error ? error.message : "Could not load pairing status."
+        };
+    }
+}
+
+export async function getDesktopAudioEdgeVoicesSafe(
+    forceRefresh = false
+): Promise<ActionResult<EdgeAudioVoiceOption[]>> {
+    try {
+        return {
+            ok: true,
+            data: await request<EdgeAudioVoiceOption[]>(`/desktop-audio/edge-voices${forceRefresh ? "?force_refresh=true" : ""}`)
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not load Edge voices."
         };
     }
 }

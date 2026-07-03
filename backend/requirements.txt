@@ -23,6 +23,7 @@ h11==0.16.0
 httpcore==1.0.9
 httptools==0.7.1
 httpx==0.28.1
+edge-tts==7.2.8
 httpx-sse==0.4.3
 drishti-sdk
 idna==3.11

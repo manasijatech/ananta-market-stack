@@ -65,6 +65,16 @@ class DeviceEventIn(BaseModel):
     error: str | None = None
 
 
+class EdgeVoiceOut(BaseModel):
+    name: str
+    short_name: str
+    locale: str
+    gender: str
+    friendly_name: str
+    content_categories: list[str] = Field(default_factory=list)
+    voice_personalities: list[str] = Field(default_factory=list)
+
+
 def _device_out(row) -> DeviceOut:
     try:
         metadata = json.loads(row.metadata_json or "{}")
@@ -157,6 +167,18 @@ def revoke_device(
     if not svc.revoke_device(db, user.id, device_id):
         raise HTTPException(status_code=404, detail="device not found")
     return {"ok": True}
+
+
+@router.get("/edge-voices", response_model=list[EdgeVoiceOut])
+def get_edge_voices(
+    force_refresh: bool = Query(default=False),
+    user: User = Depends(get_current_user),
+) -> list[EdgeVoiceOut]:
+    del user
+    try:
+        return [EdgeVoiceOut(**item) for item in svc.list_edge_voices(force_refresh=force_refresh)]
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not load Edge voices: {exc}") from exc
 
 
 @router.post("/devices/current/disconnect")
