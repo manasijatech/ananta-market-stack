@@ -7,11 +7,15 @@ import type {
     AlertChannel,
     AlertChannelSelection,
     AlertConditionRegistry,
+    EdgeAudioVoiceOption,
     AlertGraphDsl,
     AlertLlmContextPreview,
     AlertLlmPlaceholderCatalog,
     AlertLlmTestResult,
     AlertNotification,
+    DesktopAudioDevice,
+    DesktopAudioPairingStart,
+    DesktopAudioPairingStatus,
     AlertTemplate,
     AlertUnreadCount,
     AlertWorkflow,
@@ -28,6 +32,7 @@ import type { BrokerCode } from "@/service/types/broker";
 
 type JsonObject = Record<string, unknown>;
 const publicApiBaseUrl = getPublicApiBaseUrl();
+type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 function isJsonObject(value: unknown): value is JsonObject {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -289,11 +294,143 @@ export async function saveAlertChannel(
     return result;
 }
 
+export async function saveAlertChannelSafe(
+    channelType: string,
+    payload: { label?: string; is_enabled: boolean; is_default: boolean; config: Record<string, unknown> }
+): Promise<ActionResult<AlertChannel>> {
+    try {
+        return { ok: true, data: await saveAlertChannel(channelType, payload) };
+    } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : "Could not save channel." };
+    }
+}
+
 export async function testAlertChannel(channelType: string, message: string): Promise<AlertChannel> {
     return request<AlertChannel>(`/alert-channels/${channelType}/test`, {
         method: "POST",
         body: JSON.stringify({ message })
     });
+}
+
+export async function testAlertChannelSafe(channelType: string, message: string): Promise<ActionResult<AlertChannel>> {
+    try {
+        return {
+            ok: true,
+            data: await request<AlertChannel>(`/alert-channels/${channelType}/test`, {
+                method: "POST",
+                body: JSON.stringify({ message })
+            })
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not test channel."
+        };
+    }
+}
+
+export async function startDesktopAudioPairingSafe(payload: {
+    app_url?: string | null;
+    metadata?: Record<string, unknown>;
+} = {}): Promise<ActionResult<DesktopAudioPairingStart>> {
+    try {
+        return {
+            ok: true,
+            data: await request<DesktopAudioPairingStart>("/desktop-audio/pairing/start", {
+                method: "POST",
+                body: JSON.stringify({
+                    app_url: payload.app_url ?? null,
+                    metadata: payload.metadata ?? {}
+                })
+            })
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not start desktop pairing."
+        };
+    }
+}
+
+export async function getDesktopAudioPairingSafe(pairingId: string): Promise<ActionResult<DesktopAudioPairingStatus>> {
+    try {
+        return { ok: true, data: await request<DesktopAudioPairingStatus>(`/desktop-audio/pairing/${pairingId}`) };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not load pairing status."
+        };
+    }
+}
+
+export async function getDesktopAudioEdgeVoicesSafe(
+    forceRefresh = false
+): Promise<ActionResult<EdgeAudioVoiceOption[]>> {
+    try {
+        return {
+            ok: true,
+            data: await request<EdgeAudioVoiceOption[]>(`/desktop-audio/edge-voices${forceRefresh ? "?force_refresh=true" : ""}`)
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not load Edge voices."
+        };
+    }
+}
+
+export async function getDesktopAudioDevicesSafe(includeRevoked = false): Promise<ActionResult<DesktopAudioDevice[]>> {
+    try {
+        return {
+            ok: true,
+            data: await request<DesktopAudioDevice[]>(`/desktop-audio/devices${includeRevoked ? "?include_revoked=true" : ""}`)
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not load desktop devices."
+        };
+    }
+}
+
+export async function revokeDesktopAudioDeviceSafe(deviceId: string): Promise<ActionResult<{ ok: boolean }>> {
+    try {
+        const result = await request<{ ok: boolean }>(`/desktop-audio/devices/${deviceId}`, { method: "DELETE" });
+        revalidatePath("/settings");
+        return { ok: true, data: result };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not revoke desktop device."
+        };
+    }
+}
+
+export async function startDesktopAudioPairing(payload: {
+    app_url?: string | null;
+    metadata?: Record<string, unknown>;
+} = {}): Promise<DesktopAudioPairingStart> {
+    return request<DesktopAudioPairingStart>("/desktop-audio/pairing/start", {
+        method: "POST",
+        body: JSON.stringify({
+            app_url: payload.app_url ?? null,
+            metadata: payload.metadata ?? {}
+        })
+    });
+}
+
+export async function getDesktopAudioPairing(pairingId: string): Promise<DesktopAudioPairingStatus> {
+    return request<DesktopAudioPairingStatus>(`/desktop-audio/pairing/${pairingId}`);
+}
+
+export async function getDesktopAudioDevices(includeRevoked = false): Promise<DesktopAudioDevice[]> {
+    return request<DesktopAudioDevice[]>(`/desktop-audio/devices${includeRevoked ? "?include_revoked=true" : ""}`);
+}
+
+export async function revokeDesktopAudioDevice(deviceId: string): Promise<{ ok: boolean }> {
+    const result = await request<{ ok: boolean }>(`/desktop-audio/devices/${deviceId}`, { method: "DELETE" });
+    revalidatePath("/settings");
+    return result;
 }
 
 export async function getLiveStreamsStatus(): Promise<LiveStreamsStatus> {

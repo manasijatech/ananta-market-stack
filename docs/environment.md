@@ -39,6 +39,9 @@ This page summarizes the main environment variables used by Ananta Market Stack.
 | `ENABLE_IN_PROCESS_ALERT_WORKERS` | `true` in Docker | Runs alert workers in the API process for simple installs. |
 | `ENABLE_IN_PROCESS_ALPHA_WS_WORKER` | `true` in Docker | Runs the alpha websocket worker in process. |
 | `ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER` | `true` in Docker | Runs watchlist preset worker in process. |
+| `DESKTOP_AUDIO_STORAGE_DIR` | `/data/alert-audio` in Docker, `./data/alert-audio` locally | Directory where generated desktop alert audio files are stored. |
+| `DESKTOP_AUDIO_RETENTION_DAYS` | `15` | Number of days to retain generated desktop alert audio before maintenance deletes it. |
+| `DESKTOP_AUDIO_PAIRING_TTL_SECONDS` | `300` | Lifetime for one-time desktop app pairing secrets. |
 
 ## Frontend Variables
 

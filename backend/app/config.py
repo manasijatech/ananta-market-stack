@@ -198,6 +198,18 @@ class Settings(BaseSettings):
         default=5 * 60,
         validation_alias="LIVE_UI_DEMAND_TTL_SECONDS",
     )
+    desktop_audio_storage_dir: str = Field(
+        default="./data/alert-audio",
+        validation_alias="DESKTOP_AUDIO_STORAGE_DIR",
+    )
+    desktop_audio_retention_days: int = Field(
+        default=15,
+        validation_alias="DESKTOP_AUDIO_RETENTION_DAYS",
+    )
+    desktop_audio_pairing_ttl_seconds: int = Field(
+        default=5 * 60,
+        validation_alias="DESKTOP_AUDIO_PAIRING_TTL_SECONDS",
+    )
     watchlist_preset_worker_interval_seconds: int = Field(
         default=60 * 60,
         validation_alias="WATCHLIST_PRESET_WORKER_INTERVAL_SECONDS",

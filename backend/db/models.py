@@ -88,6 +88,12 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    desktop_audio_devices: Mapped[list[DesktopAudioDevice]] = relationship(
+        "DesktopAudioDevice",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     mcp_server_configs: Mapped[list[UserMcpServerConfig]] = relationship(
         "UserMcpServerConfig",
         back_populates="user",
@@ -1395,3 +1401,69 @@ class UserAlertChannelDelivery(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class DesktopAudioDevice(Base):
+    __tablename__ = "desktop_audio_devices"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    label: Mapped[str] = mapped_column(String(128), default="")
+    token_hash: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_ack_asset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="desktop_audio_devices")
+
+
+class DesktopAudioPairing(Base):
+    __tablename__ = "desktop_audio_pairings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    secret_hash: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    completed_device_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AlertAudioAsset(Base):
+    __tablename__ = "alert_audio_assets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    notification_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("user_alert_notifications.id", ondelete="CASCADE"), index=True
+    )
+    delivery_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("user_alert_channel_deliveries.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    device_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("desktop_audio_devices.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    generated_text: Mapped[str] = mapped_column(Text, default="")
+    model_id: Mapped[str] = mapped_column(String(256), default="")
+    voice: Mapped[str] = mapped_column(String(128), default="")
+    response_format: Mapped[str] = mapped_column(String(32), default="mp3")
+    file_path: Mapped[str] = mapped_column(Text, default="")
+    mime_type: Mapped[str] = mapped_column(String(128), default="audio/mpeg")
+    byte_size: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)

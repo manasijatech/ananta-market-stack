@@ -59,7 +59,7 @@ from app.services.alert_llm_context import (
     prompt_placeholders_from_config,
     resolve_llm_context,
 )
-from app.services import broker_data_preferences, llm_usage as llm_usage_svc
+from app.services import broker_data_preferences, desktop_audio, llm_usage as llm_usage_svc
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import (
@@ -2345,6 +2345,35 @@ def test_channel(db: Session, user_id: str, channel_type: str, message: str) -> 
             str(config.get("bot_token") or ""),
             _telegram_test_payload(message, str(config.get("chat_id") or "")),
         )
+    elif channel_type == "desktop_audio":
+        notification = UserAlertNotification(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            level="info",
+            title="Desktop audio channel test",
+            message=message,
+            status="new",
+            channels_json=_json_dumps(["desktop_audio"]),
+            payload_json=_json_dumps({"symbol": "TEST", "message": message}),
+        )
+        db.add(notification)
+        db.flush()
+        delivery = UserAlertChannelDelivery(
+            id=str(uuid.uuid4()),
+            notification_id=notification.id,
+            channel_id=row.id,
+            channel_type="desktop_audio",
+            status="pending",
+            payload_json=notification.payload_json,
+        )
+        db.add(delivery)
+        db.flush()
+        ok, error = desktop_audio.queue_audio_for_delivery(db, notification, delivery, row)
+        delivery.attempt_count = (delivery.attempt_count or 0) + 1
+        delivery.status = "delivered" if ok else "failed"
+        delivery.last_error = None if ok else error
+        delivery.delivered_at = _now() if ok else None
+        db.add(delivery)
     row.last_tested_at = _now()
     row.last_error = None if ok else error
     db.add(row)
@@ -3005,6 +3034,8 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> int:
                 str(config.get("bot_token") or ""),
                 _telegram_notification_payload(notification, payload, str(config.get("chat_id") or "")),
             )
+        elif delivery.channel_type == "desktop_audio":
+            ok, error = desktop_audio.queue_audio_for_delivery(db, notification, delivery, channel)
         delivery.attempt_count += 1
         delivery.status = "delivered" if ok else "failed"
         delivery.last_error = None if ok else error
