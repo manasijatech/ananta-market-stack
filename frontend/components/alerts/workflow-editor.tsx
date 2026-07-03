@@ -70,6 +70,10 @@ import { cn } from "@/lib/utils";
 
 type EngineAction = "validate" | "compile" | "explain" | "samples" | "deploy";
 
+function asArray<T>(value: T[] | null | undefined): T[] {
+    return Array.isArray(value) ? value : [];
+}
+
 function normalizeEditorMode(mode: EditorMode | null | undefined): EditorMode {
     return mode === "graph" ? "rule" : (mode ?? "rule");
 }
@@ -1308,15 +1312,15 @@ function StepHeader({
 }
 
 export function WorkflowEditor({
-    accounts,
-    announcementCategories = [],
+    accounts: rawAccounts,
+    announcementCategories: rawAnnouncementCategories = [],
     initialWorkflow,
-    llmProviders = [],
-    openRouterModels = [],
-    presets = [],
-    watchlists = []
+    llmProviders: rawLlmProviders = [],
+    openRouterModels: rawOpenRouterModels = [],
+    presets: rawPresets = [],
+    watchlists: rawWatchlists = []
 }: {
-    accounts: BrokerAccount[];
+    accounts?: BrokerAccount[];
     announcementCategories?: string[];
     initialWorkflow?: AlertWorkflow | null;
     llmProviders?: LlmProviderConfig[];
@@ -1325,6 +1329,12 @@ export function WorkflowEditor({
     watchlists?: Watchlist[];
 }) {
     const router = useRouter();
+    const accounts = asArray(rawAccounts);
+    const announcementCategories = asArray(rawAnnouncementCategories);
+    const llmProviders = asArray(rawLlmProviders);
+    const openRouterModels = asArray(rawOpenRouterModels);
+    const presets = asArray(rawPresets);
+    const watchlists = asArray(rawWatchlists);
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
@@ -4010,6 +4020,7 @@ export function WorkflowEditor({
                                     />
                                     {feedProvider ? (
                                         <LlmModelPicker
+                                            allowedModels={selectedFeedModels}
                                             disabled={!feedTriggerLlmEnabled}
                                             models={openRouterModels}
                                             onSelect={(id) => setFeedModelId(id)}
@@ -4904,6 +4915,7 @@ export function WorkflowEditor({
                         <div className="grid gap-2">
                             {llmProvider ? (
                                 <LlmModelPicker
+                                    allowedModels={selectedLlmModels}
                                     disabled={!llmEnabled}
                                     models={openRouterModels}
                                     onSelect={(id) => setLlmModelId(id)}

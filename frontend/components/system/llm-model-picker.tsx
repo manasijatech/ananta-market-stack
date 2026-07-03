@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { OpenRouterModel } from "@/service/actions/llm-models";
-import type { LlmProvider } from "@/service/types/broker";
+import type { LlmModelConfig, LlmProvider } from "@/service/types/broker";
 
 /**
  * Which OpenRouter vendor prefix each provider draws from. `openrouter` itself
@@ -59,17 +59,29 @@ function formatMeta(model: OpenRouterModel): string {
 export function LlmModelPicker({
     provider,
     models,
+    allowedModels,
     value,
     disabled,
     onSelect
 }: {
     provider: LlmProvider;
     models: OpenRouterModel[];
+    allowedModels?: LlmModelConfig[];
     value: string;
     disabled?: boolean;
     onSelect: (modelId: string, modelName: string) => void;
 }) {
     const [customMode, setCustomMode] = useState(false);
+    const restricted = allowedModels !== undefined;
+    const allowedOptions = useMemo(() => {
+        const values = new Set<string>();
+        const labels = new Map<string, string>();
+        for (const model of allowedModels ?? []) {
+            values.add(model.model_id);
+            labels.set(model.model_id, model.label || model.model_id);
+        }
+        return { labels, values };
+    }, [allowedModels]);
 
     const catalogOptions = useMemo<ModelOption[]>(() => {
         const vendor = PROVIDER_VENDOR[provider];
@@ -80,28 +92,46 @@ export function LlmModelPicker({
             // Bare id for direct providers (drop the "vendor/" prefix), full slug for openrouter.
             const modelValue =
                 provider === "openrouter" ? model.id : model.id.split("/").slice(1).join("/") || model.id;
+            if (restricted && !allowedOptions.values.has(modelValue)) {
+                continue;
+            }
             if (seen.has(modelValue)) {
                 continue;
             }
             seen.add(modelValue);
-            result.push({ value: modelValue, label: model.name, meta: `${modelValue} · ${formatMeta(model)}` });
+            result.push({
+                value: modelValue,
+                label: allowedOptions.labels.get(modelValue) ?? model.name,
+                meta: `${modelValue} · ${formatMeta(model)}`
+            });
         }
         return result;
-    }, [provider, models]);
+    }, [allowedOptions, provider, models, restricted]);
 
     // Keep a previously-saved/custom/variant'd model selectable & visible even if
     // it isn't in the live catalog (renamed, legacy, or a `model:variant` slug).
     const options = useMemo<ModelOption[]>(() => {
+        if (restricted) {
+            const catalogValues = new Set(catalogOptions.map((option) => option.value));
+            const missingAllowedOptions = [...allowedOptions.values]
+                .filter((modelId) => !catalogValues.has(modelId))
+                .map((modelId) => ({
+                    value: modelId,
+                    label: allowedOptions.labels.get(modelId) ?? modelId,
+                    meta: "Enabled model · not in catalog"
+                }));
+            return [...catalogOptions, ...missingAllowedOptions];
+        }
         if (value && !catalogOptions.some((option) => option.value === value)) {
             return [{ value, label: value, meta: "Custom model · not in catalog" }, ...catalogOptions];
         }
         return catalogOptions;
-    }, [catalogOptions, value]);
+    }, [allowedOptions, catalogOptions, restricted, value]);
 
     const selected = options.find((option) => option.value === value) ?? null;
 
     // OpenRouter variant suffix handling (e.g. "vendor/model:nitro").
-    const supportsVariants = provider === "openrouter";
+    const supportsVariants = provider === "openrouter" && !restricted;
     const colonIndex = value.indexOf(":");
     const baseModel = colonIndex >= 0 ? value.slice(0, colonIndex) : value;
     const activeVariant = colonIndex >= 0 ? value.slice(colonIndex + 1) : "";
@@ -141,7 +171,7 @@ export function LlmModelPicker({
                         >
                             <ComboboxInput
                                 className="h-9 text-sm"
-                                placeholder={options.length ? "Search models…" : "No catalog — use Custom"}
+                                placeholder={options.length ? "Search models…" : restricted ? "No enabled models" : "No catalog — use Custom"}
                             />
                             <ComboboxContent>
                                 <ComboboxEmpty>No models found.</ComboboxEmpty>
@@ -161,16 +191,18 @@ export function LlmModelPicker({
                         </Combobox>
                     </div>
                 )}
-                <Button
-                    className="h-9 shrink-0 px-2 text-xs"
-                    disabled={disabled}
-                    onClick={() => setCustomMode((mode) => !mode)}
-                    title={customMode ? "Browse the model catalog" : "Enter a custom model id"}
-                    type="button"
-                    variant="ghost"
-                >
-                    {customMode ? "Catalog" : "Custom"}
-                </Button>
+                {restricted ? null : (
+                    <Button
+                        className="h-9 shrink-0 px-2 text-xs"
+                        disabled={disabled}
+                        onClick={() => setCustomMode((mode) => !mode)}
+                        title={customMode ? "Browse the model catalog" : "Enter a custom model id"}
+                        type="button"
+                        variant="ghost"
+                    >
+                        {customMode ? "Catalog" : "Custom"}
+                    </Button>
+                )}
             </div>
 
             {supportsVariants && baseModel ? (

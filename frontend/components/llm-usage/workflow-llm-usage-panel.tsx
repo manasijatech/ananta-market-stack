@@ -1,7 +1,7 @@
 import { IconBrain } from "@tabler/icons-react";
 import { StatusBadge } from "@/components/brokers/ui";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatLlmCost, requestKindDisplay } from "@/lib/llm-usage";
+import { aggregateCostSource, costSourceLabel, formatDisplayLlmCost, requestKindDisplay } from "@/lib/llm-usage";
 import type { WorkflowLlmUsageSummary } from "@/service/types/llm-usage";
 
 const numberFormatter = new Intl.NumberFormat("en-IN");
@@ -52,8 +52,9 @@ export function WorkflowLlmUsagePanel({ summary }: { summary: WorkflowLlmUsageSu
                         Cost
                     </p>
                     <div className="mt-2 text-2xl font-semibold leading-none">
-                        {formatLlmCost(summary.totals.provider_cost_total, summary.totals.priced_request_count)}
+                        {formatDisplayLlmCost(summary.totals.display_cost_total_usd, summary.totals.display_cost_request_count)}
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{costSourceLabel(aggregateCostSource(summary.totals))}</p>
                 </div>
             </div>
 
@@ -96,7 +97,10 @@ export function WorkflowLlmUsagePanel({ summary }: { summary: WorkflowLlmUsageSu
                             </TableCell>
                             <TableCell className="text-right">{formatNumber(row.request_count)}</TableCell>
                             <TableCell className="text-right">{formatNumber(row.total_tokens)}</TableCell>
-                            <TableCell className="text-right">{formatLlmCost(row.provider_cost_total, row.priced_request_count)}</TableCell>
+                            <TableCell className="text-right">
+                                <div>{formatDisplayLlmCost(row.display_cost_total_usd, row.display_cost_request_count)}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{costSourceLabel(aggregateCostSource(row))}</div>
+                            </TableCell>
                         </TableRow>
                     ))}
                     {!summary.request_kinds.length ? (

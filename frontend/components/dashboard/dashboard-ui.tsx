@@ -139,6 +139,8 @@ export function DashboardModuleCard({
     description,
     tone,
     icon: Icon,
+    iconClassName,
+    iconStroke = 1.8,
     error,
     children
 }: {
@@ -147,6 +149,8 @@ export function DashboardModuleCard({
     description: string;
     tone: DashboardTone;
     icon: TablerIcon;
+    iconClassName?: string;
+    iconStroke?: number;
     error?: string;
     children: ReactNode;
 }) {
@@ -173,7 +177,7 @@ export function DashboardModuleCard({
                             dashboardToneClasses(tone)
                         )}
                     >
-                        <Icon stroke={1.8} />
+                        <Icon className={cn("size-5", iconClassName)} stroke={iconStroke} />
                     </span>
                 </CardFrameAction>
             </CardFrameHeader>

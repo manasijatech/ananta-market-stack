@@ -29,7 +29,5 @@
 **/*.log
 **/*.sqlite
 **/*.sqlite3
-**/data
-**/data/**
-docker/__pycache__
-frontend/tsconfig.tsbuildinfo
+data
+data/**

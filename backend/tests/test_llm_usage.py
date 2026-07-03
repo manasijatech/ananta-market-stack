@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from app.schemas.llm_usage import LlmUsageFilterOut
 from app.services import llm_usage
 from common.datetime_compat import UTC
-from db.models import LlmUsageDailySnapshot, LlmUsageEvent, User
+from db.models import LlmModelPricing, LlmUsageDailySnapshot, LlmUsageEvent, User
 from db.session import Base
 
 
@@ -73,12 +73,69 @@ def test_record_llm_usage_persists_event_and_daily_snapshot():
         assert event.reasoning_tokens == 7
         assert event.provider_cost == 0.0123
         assert event.provider_cost_currency == "credits"
+        assert event.display_cost_usd == 0.0123
+        assert event.cost_source == "provider_reported"
         assert snapshot.request_count == 1
         assert snapshot.success_count == 1
         assert snapshot.total_tokens == 165
         assert snapshot.cached_tokens_reported_count == 1
         assert snapshot.reasoning_tokens_reported_count == 1
         assert snapshot.provider_cost_total == 0.0123
+        assert snapshot.display_cost_total_usd == 0.0123
+        db.close()
+    finally:
+        llm_usage.SessionLocal = original_session_local
+
+
+def test_record_llm_usage_estimates_cost_from_model_pricing_when_provider_omits_cost():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    original_session_local = llm_usage.SessionLocal
+    llm_usage.SessionLocal = session_factory
+    try:
+        db = session_factory()
+        db.add(User(id="u1", display_name="User"))
+        db.add(
+            LlmModelPricing(
+                id="pricing-1",
+                user_id="u1",
+                provider="openai",
+                model_id="gpt-test",
+                input_cost_per_1m_tokens=1.0,
+                output_cost_per_1m_tokens=2.0,
+            )
+        )
+        db.commit()
+        db.close()
+
+        now = datetime(2026, 5, 15, 9, 0, tzinfo=UTC).replace(tzinfo=None)
+        llm_usage.record_llm_usage(
+            user_id="u1",
+            provider="openai",
+            requested_model_id="gpt-test",
+            api_surface="chat_completions",
+            started_at=now,
+            completed_at=now,
+            status="success",
+            tracking=llm_usage.LlmTrackingContext(request_kind="generic"),
+            response=_FakeResponse(
+                model="gpt-test",
+                response_id="resp_priced",
+                usage={"prompt_tokens": 1_000, "completion_tokens": 2_000, "total_tokens": 3_000},
+            ),
+        )
+
+        db = session_factory()
+        event = db.query(LlmUsageEvent).one()
+        snapshot = db.query(LlmUsageDailySnapshot).one()
+        assert round(event.estimated_cost_usd or 0, 6) == 0.005
+        assert round(event.display_cost_usd or 0, 6) == 0.005
+        assert event.cost_source == "pricing_config"
+        assert event.trace_id
+        assert event.span_id
+        assert round(snapshot.display_cost_total_usd, 6) == 0.005
+        assert snapshot.display_cost_request_count == 1
         db.close()
     finally:
         llm_usage.SessionLocal = original_session_local

@@ -977,6 +977,7 @@ export function WorkflowAiChatPanel({
                             {provider ? (
                                 <div className="min-w-[132px] flex-[1_1_150px] max-w-[190px]">
                                     <LlmModelPicker
+                                        allowedModels={selectedModels}
                                         models={openRouterModels}
                                         onSelect={(id) => setModel(id)}
                                         provider={provider}

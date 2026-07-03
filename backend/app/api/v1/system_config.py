@@ -19,6 +19,8 @@ from app.schemas.system_config import (
     AlphaWebSocketConfigOut,
     AlphaWebSocketConfigUpdateIn,
     LlmModelCreateIn,
+    LlmModelPricingOut,
+    LlmModelPricingUpsertIn,
     LlmProvider,
     LlmProviderConfigOut,
     LlmProviderCredentialUpsertIn,
@@ -63,6 +65,7 @@ def get_system_config(
         broker_data_default=broker_data_preferences.get_broker_data_default_config(db, principal.user.id, principal),
         broker_data_search=broker_data_preferences.get_broker_data_search_config(db, principal.user.id, principal),
         llm_providers=llm_config.list_provider_configs(db, principal.user.id),
+        llm_model_pricing=llm_config.list_model_pricing(db, principal.user.id),
         alpha_api=alpha_config.get_alpha_api_config(db, principal.user.id),
         alpha_websocket=alpha_websocket.alpha_ws_config_out(db, principal.user.id),
         mcp_server=mcp_server,
@@ -253,6 +256,47 @@ def delete_llm_model(
 ) -> list[LlmProviderConfigOut]:
     rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
     return llm_config.delete_provider_model(db, principal.user.id, model_row_id)
+
+
+@router.get("/llm/pricing", response_model=list[LlmModelPricingOut])
+def list_llm_model_pricing(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+) -> list[LlmModelPricingOut]:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_VIEW_LLM_USAGE)
+    return llm_config.list_model_pricing(db, principal.user.id)
+
+
+@router.put("/llm/pricing", response_model=LlmModelPricingOut)
+def upsert_llm_model_pricing(
+    body: LlmModelPricingUpsertIn,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+) -> LlmModelPricingOut:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
+    return llm_config.upsert_model_pricing(db, principal.user.id, body)
+
+
+@router.delete("/llm/pricing/{pricing_id}", response_model=list[LlmModelPricingOut])
+def delete_llm_model_pricing(
+    pricing_id: str,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+) -> list[LlmModelPricingOut]:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
+    return llm_config.delete_model_pricing(db, principal.user.id, pricing_id)
+
+
+@router.post("/llm/pricing/openrouter/refresh", response_model=list[LlmModelPricingOut])
+def refresh_openrouter_llm_model_pricing(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+) -> list[LlmModelPricingOut]:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
+    try:
+        return llm_config.refresh_openrouter_model_pricing(db, principal.user.id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/mcp", response_model=McpServerConfigOut)

@@ -20,6 +20,7 @@ import {
 } from "@tabler/icons-react";
 import type { TablerIcon } from "@tabler/icons-react";
 import { usePathname, useRouter } from "next/navigation";
+import { EVENTS, Joyride, STATUS, type EventData, type Step, type TooltipRenderProps } from "react-joyride";
 import { AlertNotificationsTray } from "@/components/alerts/alert-notifications-tray";
 import { BrandLogo } from "@/components/brand-logo";
 import { GithubStarButton } from "@/components/github-star-button";
@@ -87,6 +88,137 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         ]
     }
 ];
+const ONBOARDING_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
+const ONBOARDING_PHASE_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
+const ONBOARDING_STEP_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-step";
+const ONBOARDING_RESET_EVENT = "ananta-market-stack-reset-onboarding";
+const ONBOARDING_PHASE_BROKER_SELECTOR = "broker-selector";
+const ONBOARDING_PHASE_WAITING_FOR_ACTIVE_BROKER = "waiting-for-active-broker";
+const ONBOARDING_PHASE_ALPHA_API = "alpha-api";
+const ADD_BROKER_TARGET = '[data-onboarding="add-broker-action"]';
+const ACTIVE_BROKER_TARGET = '[data-onboarding="active-broker-ready"]';
+const BROKER_SELECTOR_TARGET = '[data-onboarding="broker-selector"]';
+const ALPHA_API_TARGET = '[data-onboarding="manasija-alpha-api-input-section"]';
+
+type OnboardingStep = Step & {
+    route?: string;
+    waitForTarget?: boolean;
+};
+
+const onboardingSteps: OnboardingStep[] = [
+    {
+        target: '[data-onboarding="broker-connections-nav"]',
+        title: "Broker Connections",
+        content: (
+            <div className="grid gap-3 text-left">
+                <p>Start here to connect and manage broker accounts for portfolio and live data access.</p>
+                <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
+                    Add your first broker connection before enabling broker chat, alerts, or live data workflows.
+                </p>
+            </div>
+        ),
+        placement: "right",
+        skipBeacon: true,
+        spotlightPadding: 6
+    },
+    {
+        target: ADD_BROKER_TARGET,
+        route: "/broker-connections",
+        title: "Add Broker",
+        content: (
+            <div className="grid gap-3 text-left">
+                <p>Use this action to start connecting your broker account.</p>
+                <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
+                    The next screen asks for the broker and the required credentials.
+                </p>
+            </div>
+        ),
+        placement: "bottom",
+        skipBeacon: true,
+        spotlightPadding: 8
+    },
+    {
+        target: BROKER_SELECTOR_TARGET,
+        route: "/broker-connections/new",
+        title: "Choose Broker",
+        content: (
+            <div className="grid gap-3 text-left">
+                <p>Select the broker you want to connect from this list.</p>
+                <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
+                    The credential form on the right changes based on the broker selected here.
+                </p>
+            </div>
+        ),
+        placement: "right",
+        skipBeacon: true,
+        spotlightPadding: 8
+    },
+    {
+        target: ACTIVE_BROKER_TARGET,
+        title: "Broker Active",
+        content: (
+            <div className="grid gap-3 text-left">
+                <p>This broker is verified and has an active session, so the workspace can use broker-backed data.</p>
+                <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
+                    Next, open Settings.
+                </p>
+            </div>
+        ),
+        placement: "bottom",
+        skipBeacon: true,
+        spotlightPadding: 8,
+        waitForTarget: true
+    },
+    {
+        target: '[data-onboarding="settings-nav"]',
+        title: "Settings",
+        content: (
+            <div className="grid gap-3 text-left">
+                <p>Use this Settings navigation item after your broker connection is active.</p>
+                <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
+                    The next step will take you to the Drishti API credential section.
+                </p>
+            </div>
+        ),
+        placement: "right",
+        skipBeacon: true,
+        spotlightPadding: 6
+    },
+    {
+        target: ALPHA_API_TARGET,
+        route: "/settings#alpha",
+        title: "Drishti API",
+        content: (
+            <div className="grid gap-3 text-left">
+                <p>Add or replace the Drishti API key here.</p>
+                <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
+                    This enables Drishti-backed market intelligence, metadata, announcements, concalls, and summaries.
+                </p>
+            </div>
+        ),
+        placement: "bottom",
+        skipBeacon: true,
+        spotlightPadding: 6
+    }
+];
+
+function storedOnboardingStepIndex() {
+    const value = Number(localStorage.getItem(ONBOARDING_STEP_STORAGE_KEY));
+    return Number.isInteger(value) && value >= 0 && value < onboardingSteps.length ? value : null;
+}
+
+function splitOnboardingRoute(route?: string) {
+    if (!route) {
+        return { path: "", hash: "" };
+    }
+
+    const normalized = route.startsWith("/") ? route : `/${route}`;
+    const url = new URL(normalized, "http://localhost");
+    return {
+        path: `${url.pathname}${url.search}`,
+        hash: url.hash
+    };
+}
 
 function isNavItemActive(pathname: string, href: string) {
     if (href === "/dashboard") {
@@ -223,6 +355,10 @@ export function WorkspaceShell({
     const router = useRouter();
     const { user, isLoading, signOut } = useSession();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [onboardingActive, setOnboardingActive] = useState(false);
+    const [onboardingRun, setOnboardingRun] = useState(false);
+    const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
+    const [onboardingTargetCheck, setOnboardingTargetCheck] = useState(0);
 
     useEffect(() => {
         if (!isLoading && !user) {
@@ -236,9 +372,214 @@ export function WorkspaceShell({
         }
     }, [isLoading, pathname, principal, router, user]);
 
+    useEffect(() => {
+        if (isLoading || !user || (principal && principal.status !== "active")) {
+            return;
+        }
+
+        if (localStorage.getItem(ONBOARDING_STORAGE_KEY) !== "true") {
+            const onboardingPhase = localStorage.getItem(ONBOARDING_PHASE_STORAGE_KEY);
+            const storedStepIndex = storedOnboardingStepIndex();
+            const activeBrokerStepIndex = onboardingSteps.findIndex((step) => step.target === ACTIVE_BROKER_TARGET);
+            const brokerSelectorStepIndex = onboardingSteps.findIndex((step) => step.target === BROKER_SELECTOR_TARGET);
+            const alphaApiStepIndex = onboardingSteps.findIndex((step) => step.target === ALPHA_API_TARGET);
+
+            setOnboardingActive(true);
+            if (
+                pathname === "/broker-connections/new" &&
+                brokerSelectorStepIndex >= 0
+            ) {
+                setOnboardingStepIndex(brokerSelectorStepIndex);
+                return;
+            }
+            if (storedStepIndex !== null) {
+                setOnboardingStepIndex(storedStepIndex);
+                return;
+            }
+            if (onboardingPhase === ONBOARDING_PHASE_ALPHA_API && alphaApiStepIndex >= 0) {
+                setOnboardingStepIndex(alphaApiStepIndex);
+                return;
+            }
+            setOnboardingStepIndex(
+                onboardingPhase === ONBOARDING_PHASE_WAITING_FOR_ACTIVE_BROKER && activeBrokerStepIndex >= 0
+                    ? activeBrokerStepIndex
+                    : 0
+            );
+        }
+    }, [isLoading, pathname, principal, user]);
+
+    useEffect(() => {
+        function handleOnboardingReset() {
+            localStorage.removeItem(ONBOARDING_STORAGE_KEY);
+            localStorage.removeItem(ONBOARDING_PHASE_STORAGE_KEY);
+            localStorage.removeItem(ONBOARDING_STEP_STORAGE_KEY);
+            setOnboardingActive(true);
+            setOnboardingRun(false);
+            setOnboardingStepIndex(0);
+            setOnboardingTargetCheck(0);
+        }
+
+        window.addEventListener(ONBOARDING_RESET_EVENT, handleOnboardingReset);
+        return () => window.removeEventListener(ONBOARDING_RESET_EVENT, handleOnboardingReset);
+    }, []);
+
+    useEffect(() => {
+        if (!onboardingActive) {
+            setOnboardingRun(false);
+            return;
+        }
+
+        const step = onboardingSteps[onboardingStepIndex];
+        if (!step) {
+            return;
+        }
+
+        const stepRoute = step.route;
+        const route = splitOnboardingRoute(stepRoute);
+        if (stepRoute && pathname !== route.path) {
+            setOnboardingRun(false);
+            router.push(stepRoute);
+            return;
+        }
+        if (stepRoute && route.hash && window.location.hash !== route.hash) {
+            setOnboardingRun(false);
+            router.push(stepRoute);
+            return;
+        }
+
+        const target = document.querySelector(String(step.target));
+        if (target) {
+            setOnboardingRun(true);
+            return;
+        }
+
+        setOnboardingRun(false);
+        if (step.waitForTarget || onboardingTargetCheck < 12) {
+            const timeout = window.setTimeout(
+                () => setOnboardingTargetCheck((value) => value + 1),
+                step.waitForTarget ? 1200 : 150
+            );
+            return () => window.clearTimeout(timeout);
+        }
+    }, [onboardingActive, onboardingStepIndex, onboardingTargetCheck, pathname, router]);
+
+    useEffect(() => {
+        setOnboardingTargetCheck(0);
+    }, [onboardingStepIndex, pathname]);
+
     async function handleSignOut() {
         await signOut();
         router.replace("/auth/sign-in");
+    }
+
+    function finishOnboarding(nextHref?: string) {
+        localStorage.setItem(ONBOARDING_STORAGE_KEY, "true");
+        localStorage.removeItem(ONBOARDING_PHASE_STORAGE_KEY);
+        localStorage.removeItem(ONBOARDING_STEP_STORAGE_KEY);
+        setOnboardingActive(false);
+        setOnboardingRun(false);
+
+        if (nextHref) {
+            router.push(nextHref);
+        }
+    }
+
+    function goToOnboardingStep(nextStepIndex: number) {
+        localStorage.setItem(ONBOARDING_STEP_STORAGE_KEY, String(nextStepIndex));
+        localStorage.removeItem(ONBOARDING_PHASE_STORAGE_KEY);
+        const target = onboardingSteps[nextStepIndex]?.target;
+        if (target === BROKER_SELECTOR_TARGET) {
+            localStorage.setItem(ONBOARDING_PHASE_STORAGE_KEY, ONBOARDING_PHASE_BROKER_SELECTOR);
+        }
+        if (target === ACTIVE_BROKER_TARGET) {
+            localStorage.setItem(ONBOARDING_PHASE_STORAGE_KEY, ONBOARDING_PHASE_WAITING_FOR_ACTIVE_BROKER);
+        }
+        if (target === ALPHA_API_TARGET) {
+            localStorage.setItem(ONBOARDING_PHASE_STORAGE_KEY, ONBOARDING_PHASE_ALPHA_API);
+        }
+        setOnboardingRun(false);
+        setOnboardingStepIndex(nextStepIndex);
+
+        const nextRoute = onboardingSteps[nextStepIndex]?.route;
+        const route = splitOnboardingRoute(nextRoute);
+        if (nextRoute && (pathname !== route.path || window.location.hash !== route.hash)) {
+            router.push(nextRoute);
+        }
+    }
+
+    function handleOnboardingEvent(data: EventData) {
+        if (data.status === STATUS.SKIPPED) {
+            finishOnboarding();
+            return;
+        }
+
+        if (data.status === STATUS.FINISHED) {
+            finishOnboarding();
+            return;
+        }
+
+        if (data.type === EVENTS.TARGET_NOT_FOUND) {
+            setOnboardingRun(false);
+        }
+    }
+
+    function handleOnboardingPrimary(index: number) {
+        let nextStepIndex = index + 1;
+
+        if (onboardingSteps[index]?.target === ADD_BROKER_TARGET) {
+            const readyBroker = document.querySelector(ACTIVE_BROKER_TARGET);
+            if (readyBroker) {
+                nextStepIndex = onboardingSteps.findIndex((step) => step.target === ACTIVE_BROKER_TARGET);
+            }
+        }
+
+        if (nextStepIndex < onboardingSteps.length) {
+            goToOnboardingStep(nextStepIndex);
+            return;
+        }
+
+        finishOnboarding();
+    }
+
+    function OnboardingTooltip({ index, isLastStep, step, tooltipProps }: TooltipRenderProps) {
+        return (
+            <div
+                {...tooltipProps}
+                aria-labelledby="onboarding-tooltip-title"
+                className="react-joyride__tooltip"
+                style={step.styles.tooltip}
+            >
+                <div style={step.styles.tooltipContainer}>
+                    {step.title ? (
+                        <h4 id="onboarding-tooltip-title" style={step.styles.tooltipTitle}>
+                            {step.title}
+                        </h4>
+                    ) : null}
+                    <div style={step.styles.tooltipContent}>{step.content}</div>
+                </div>
+                <div style={step.styles.tooltipFooter}>
+                    <div style={step.styles.tooltipFooterSpacer}>
+                        {!isLastStep ? (
+                            <button
+                                onClick={() => finishOnboarding()}
+                                style={step.styles.buttonSkip}
+                                type="button"
+                            >
+                                Skip
+                            </button>
+                        ) : null}
+                    </div>
+                    <button
+                        data-action="primary"
+                        onClick={() => handleOnboardingPrimary(index)}
+                        style={step.styles.buttonPrimary}
+                        type="button"
+                    >
+                        {isLastStep ? "Done" : "Next"}
+                    </button>
+                </div>
+            </div>
+        );
     }
 
     if (isLoading || !user) {
@@ -253,6 +594,46 @@ export function WorkspaceShell({
 
     return (
         <main className="min-h-screen overflow-x-hidden bg-background text-foreground">
+            <Joyride
+                key={`onboarding-${onboardingStepIndex}`}
+                continuous
+                onEvent={handleOnboardingEvent}
+                options={{
+                    arrowColor: "var(--popover)",
+                    backgroundColor: "var(--popover)",
+                    buttons: ["skip", "primary"],
+                    overlayColor: "rgb(0 0 0 / 0.48)",
+                    overlayClickAction: false,
+                    primaryColor: "var(--primary)",
+                    scrollDuration: 180,
+                    scrollOffset: 130,
+                    showProgress: true,
+                    spotlightRadius: 0,
+                    textColor: "var(--popover-foreground)",
+                    zIndex: 120
+                }}
+                run={onboardingRun}
+                scrollToFirstStep
+                stepIndex={onboardingStepIndex}
+                steps={onboardingSteps}
+                styles={{
+                    tooltip: {
+                        border: "1px solid var(--border)",
+                        borderRadius: 0,
+                        boxShadow: "0 18px 48px rgb(0 0 0 / 0.24)"
+                    },
+                    tooltipContent: {
+                        fontSize: 14,
+                        lineHeight: 1.55,
+                        padding: "10px 0 14px"
+                    },
+                    tooltipTitle: {
+                        fontSize: 18,
+                        fontWeight: 800
+                    }
+                }}
+                tooltipComponent={OnboardingTooltip}
+            />
             <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background pt-[env(safe-area-inset-top)] min-[980px]:hidden">
                 <div className="flex min-h-14 items-center justify-between gap-2 px-3 sm:min-h-16 sm:gap-3 sm:px-4">
                     <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">

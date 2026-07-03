@@ -23,8 +23,9 @@ from app.schemas.llm_usage import (
     LlmUsageTotalsOut,
     WorkflowLlmUsageSummaryOut,
 )
+from app.services import llm_telemetry, rbac
 from common.datetime_compat import UTC
-from db.models import AlertWorkflow, LlmUsageDailySnapshot, LlmUsageEvent
+from db.models import AlertWorkflow, LlmModelPricing, LlmUsageDailySnapshot, LlmUsageEvent
 from db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,11 @@ class LlmTrackingContext:
     workflow_type: str | None = None
     template_id: str | None = None
     account_id: str | None = None
+    source_kind: str | None = None
+    source_id: str | None = None
+    session_id: str | None = None
+    workflow_run_id: str | None = None
+    request_index: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -74,6 +80,8 @@ def workflow_tracking_context(
         workflow_type=workflow.workflow_dsl.workflow_type,
         template_id=workflow.template_id,
         account_id=workflow.account_id,
+        source_kind="alert_workflow",
+        source_id=workflow.id,
         metadata=metadata or {},
     )
 
@@ -289,6 +297,54 @@ def normalize_usage_payload(response: Any, provider: str) -> dict[str, Any]:
     return _normalize_usage_dict(raw_usage, provider)
 
 
+def _pricing_rate(row: LlmModelPricing | None, field_name: str, fallback_name: str | None = None) -> float | None:
+    if row is None:
+        return None
+    value = getattr(row, field_name)
+    if value is not None:
+        return float(value)
+    if fallback_name is not None:
+        fallback = getattr(row, fallback_name)
+        if fallback is not None:
+            return float(fallback)
+    return None
+
+
+def _token_cost(tokens: int, rate_per_1m: float | None) -> float:
+    if not tokens or rate_per_1m is None:
+        return 0.0
+    return (float(tokens) / 1_000_000.0) * float(rate_per_1m)
+
+
+def _estimate_cost_usd(db: Session, user_id: str, provider: str, model_id: str, normalized: dict[str, Any]) -> tuple[float | None, str]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    pricing = db.scalars(
+        select(LlmModelPricing).where(
+            LlmModelPricing.user_id == owner_user_id,
+            LlmModelPricing.provider == provider,
+            LlmModelPricing.model_id == model_id,
+        )
+    ).first()
+    if pricing is None:
+        return None, "unpriced"
+    cost = 0.0
+    cost += _token_cost(normalized["prompt_tokens"], _pricing_rate(pricing, "input_cost_per_1m_tokens"))
+    cost += _token_cost(normalized["completion_tokens"], _pricing_rate(pricing, "output_cost_per_1m_tokens"))
+    cost += _token_cost(normalized["cached_tokens"], _pricing_rate(pricing, "cached_input_cost_per_1m_tokens", "input_cost_per_1m_tokens"))
+    cost += _token_cost(normalized["cache_write_tokens"], _pricing_rate(pricing, "cache_write_cost_per_1m_tokens", "input_cost_per_1m_tokens"))
+    cost += _token_cost(normalized["reasoning_tokens"], _pricing_rate(pricing, "reasoning_cost_per_1m_tokens", "output_cost_per_1m_tokens"))
+    cost += _token_cost(normalized["input_audio_tokens"], _pricing_rate(pricing, "input_audio_cost_per_1m_tokens", "input_cost_per_1m_tokens"))
+    cost += _token_cost(normalized["output_audio_tokens"], _pricing_rate(pricing, "output_audio_cost_per_1m_tokens", "output_cost_per_1m_tokens"))
+    source = "openrouter_pricing" if pricing.source == "openrouter_pricing" else "pricing_config"
+    return cost, source
+
+
+def _provider_cost_is_usd(provider: str, currency: str | None) -> bool:
+    if currency:
+        return currency.lower() in {"usd", "us_dollar", "$", "credits"}
+    return provider != "openrouter"
+
+
 def record_llm_usage(
     *,
     user_id: str,
@@ -331,6 +387,33 @@ def record_llm_usage(
 
     db = SessionLocal()
     try:
+        estimated_cost_usd, estimate_source = _estimate_cost_usd(db, user_id, provider, effective_model_id, normalized)
+        if normalized["provider_cost"] is not None and _provider_cost_is_usd(provider, normalized["provider_cost_currency"]):
+            display_cost_usd = float(normalized["provider_cost"])
+            cost_source = "provider_reported"
+        elif estimated_cost_usd is not None:
+            display_cost_usd = estimated_cost_usd
+            cost_source = estimate_source
+        else:
+            display_cost_usd = None
+            cost_source = "unpriced"
+        with llm_telemetry.start_span(
+            "llm.provider_request",
+            {
+                "gen_ai.system": provider,
+                "gen_ai.request.model": requested_model_id,
+                "gen_ai.response.model": effective_model_id,
+                "llm.request_kind": tracking.request_kind,
+                "llm.api_surface": api_surface,
+                "llm.status": status,
+                "llm.cost_source": cost_source,
+                "llm.source_kind": tracking.source_kind,
+                "llm.source_id": tracking.source_id,
+                "llm.workflow_id": tracking.workflow_id,
+            },
+        ) as span_context:
+            trace_id = span_context.trace_id
+            span_id = span_context.span_id
         row = LlmUsageEvent(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -340,6 +423,8 @@ def record_llm_usage(
             request_kind=tracking.request_kind,
             status=status,
             provider_response_id=str(provider_response_id) if provider_response_id else None,
+            trace_id=trace_id,
+            span_id=span_id,
             workflow_ref=workflow_ref,
             workflow_id=tracking.workflow_id,
             workflow_name=tracking.workflow_name,
@@ -347,6 +432,11 @@ def record_llm_usage(
             workflow_type=tracking.workflow_type,
             template_id=tracking.template_id,
             account_id=tracking.account_id,
+            source_kind=tracking.source_kind,
+            source_id=tracking.source_id,
+            session_id=tracking.session_id,
+            workflow_run_id=tracking.workflow_run_id,
+            request_index=tracking.request_index,
             prompt_tokens=normalized["prompt_tokens"],
             completion_tokens=normalized["completion_tokens"],
             total_tokens=normalized["total_tokens"],
@@ -359,6 +449,9 @@ def record_llm_usage(
             video_tokens=normalized["video_tokens"],
             provider_cost=normalized["provider_cost"],
             provider_cost_currency=normalized["provider_cost_currency"],
+            estimated_cost_usd=estimated_cost_usd,
+            display_cost_usd=display_cost_usd,
+            cost_source=cost_source,
             latency_ms=latency_ms,
             is_byok=normalized["is_byok"],
             usage_json=_json_dumps(
@@ -529,6 +622,8 @@ def _upsert_daily_snapshot(db: Session, row: LlmUsageEvent) -> None:
             model_id=row.model_id,
             api_surface=row.api_surface,
             request_kind=row.request_kind,
+            trace_id=row.trace_id,
+            span_id=row.span_id,
             workflow_ref=row.workflow_ref,
             workflow_id=row.workflow_id,
             workflow_name=row.workflow_name,
@@ -536,6 +631,11 @@ def _upsert_daily_snapshot(db: Session, row: LlmUsageEvent) -> None:
             workflow_type=row.workflow_type,
             template_id=row.template_id,
             account_id=row.account_id,
+            source_kind=row.source_kind,
+            source_id=row.source_id,
+            session_id=row.session_id,
+            workflow_run_id=row.workflow_run_id,
+            request_index=row.request_index,
             request_count=0,
             success_count=0,
             error_count=0,
@@ -553,14 +653,27 @@ def _upsert_daily_snapshot(db: Session, row: LlmUsageEvent) -> None:
             video_tokens=0,
             provider_cost_total=0.0,
             priced_request_count=0,
+            estimated_cost_total_usd=0.0,
+            display_cost_total_usd=0.0,
+            estimated_cost_request_count=0,
+            display_cost_request_count=0,
+            cost_source=row.cost_source,
             last_request_at=row.completed_at,
         )
+    snapshot.trace_id = row.trace_id
+    snapshot.span_id = row.span_id
     snapshot.workflow_id = row.workflow_id
     snapshot.workflow_name = row.workflow_name
     snapshot.workflow_status = row.workflow_status
     snapshot.workflow_type = row.workflow_type
     snapshot.template_id = row.template_id
     snapshot.account_id = row.account_id
+    snapshot.source_kind = row.source_kind
+    snapshot.source_id = row.source_id
+    snapshot.session_id = row.session_id
+    snapshot.workflow_run_id = row.workflow_run_id
+    snapshot.request_index = row.request_index
+    snapshot.cost_source = row.cost_source
     snapshot.request_count = int(snapshot.request_count or 0) + 1
     if row.status == "success":
         snapshot.success_count = int(snapshot.success_count or 0) + 1
@@ -583,6 +696,12 @@ def _upsert_daily_snapshot(db: Session, row: LlmUsageEvent) -> None:
     if row.provider_cost is not None:
         snapshot.provider_cost_total = float(snapshot.provider_cost_total or 0.0) + float(row.provider_cost)
         snapshot.priced_request_count = int(snapshot.priced_request_count or 0) + 1
+    if row.estimated_cost_usd is not None:
+        snapshot.estimated_cost_total_usd = float(snapshot.estimated_cost_total_usd or 0.0) + float(row.estimated_cost_usd)
+        snapshot.estimated_cost_request_count = int(snapshot.estimated_cost_request_count or 0) + 1
+    if row.display_cost_usd is not None:
+        snapshot.display_cost_total_usd = float(snapshot.display_cost_total_usd or 0.0) + float(row.display_cost_usd)
+        snapshot.display_cost_request_count = int(snapshot.display_cost_request_count or 0) + 1
     snapshot.last_request_at = row.completed_at
     db.add(snapshot)
 
@@ -603,6 +722,14 @@ def _apply_snapshot_filters(stmt, user_id: str, filters: LlmUsageFilterOut):
         stmt = stmt.where(LlmUsageDailySnapshot.request_kind == filters.request_kind)
     if filters.api_surface:
         stmt = stmt.where(LlmUsageDailySnapshot.api_surface == filters.api_surface)
+    if filters.source_kind:
+        stmt = stmt.where(LlmUsageDailySnapshot.source_kind == filters.source_kind)
+    if filters.source_id:
+        stmt = stmt.where(LlmUsageDailySnapshot.source_id == filters.source_id)
+    if filters.session_id:
+        stmt = stmt.where(LlmUsageDailySnapshot.session_id == filters.session_id)
+    if filters.workflow_run_id:
+        stmt = stmt.where(LlmUsageDailySnapshot.workflow_run_id == filters.workflow_run_id)
     return stmt
 
 
@@ -622,6 +749,14 @@ def _apply_event_filters(stmt, user_id: str, filters: LlmUsageFilterOut):
         stmt = stmt.where(LlmUsageEvent.request_kind == filters.request_kind)
     if filters.api_surface:
         stmt = stmt.where(LlmUsageEvent.api_surface == filters.api_surface)
+    if filters.source_kind:
+        stmt = stmt.where(LlmUsageEvent.source_kind == filters.source_kind)
+    if filters.source_id:
+        stmt = stmt.where(LlmUsageEvent.source_id == filters.source_id)
+    if filters.session_id:
+        stmt = stmt.where(LlmUsageEvent.session_id == filters.session_id)
+    if filters.workflow_run_id:
+        stmt = stmt.where(LlmUsageEvent.workflow_run_id == filters.workflow_run_id)
     return stmt
 
 
@@ -645,6 +780,10 @@ def _totals_from_rows(rows: list[LlmUsageDailySnapshot]) -> LlmUsageTotalsOut:
         totals.video_tokens += row.video_tokens
         totals.provider_cost_total += float(row.provider_cost_total or 0.0)
         totals.priced_request_count += row.priced_request_count
+        totals.estimated_cost_total_usd += float(row.estimated_cost_total_usd or 0.0)
+        totals.display_cost_total_usd += float(row.display_cost_total_usd or 0.0)
+        totals.estimated_cost_request_count += row.estimated_cost_request_count
+        totals.display_cost_request_count += row.display_cost_request_count
     return totals
 
 
@@ -677,6 +816,10 @@ def _group_rows(
                 "video_tokens": 0,
                 "provider_cost_total": 0.0,
                 "priced_request_count": 0,
+                "estimated_cost_total_usd": 0.0,
+                "display_cost_total_usd": 0.0,
+                "estimated_cost_request_count": 0,
+                "display_cost_request_count": 0,
                 "last_request_at": row.last_request_at,
             },
         )
@@ -697,10 +840,14 @@ def _group_rows(
         current["video_tokens"] += row.video_tokens
         current["provider_cost_total"] += float(row.provider_cost_total or 0.0)
         current["priced_request_count"] += row.priced_request_count
+        current["estimated_cost_total_usd"] += float(row.estimated_cost_total_usd or 0.0)
+        current["display_cost_total_usd"] += float(row.display_cost_total_usd or 0.0)
+        current["estimated_cost_request_count"] += row.estimated_cost_request_count
+        current["display_cost_request_count"] += row.display_cost_request_count
         if row.last_request_at and (current["last_request_at"] is None or row.last_request_at > current["last_request_at"]):
             current["last_request_at"] = row.last_request_at
     result = [LlmUsageGroupOut(**payload) for payload in grouped.values()]
-    result.sort(key=lambda item: (item.provider_cost_total, item.total_tokens, item.request_count), reverse=True)
+    result.sort(key=lambda item: (item.display_cost_total_usd, item.total_tokens, item.request_count), reverse=True)
     return result
 
 
@@ -747,12 +894,19 @@ def list_usage_events(
                 request_kind_label=request_kind_label(row.request_kind) or row.request_kind,
                 status=row.status,
                 provider_response_id=row.provider_response_id,
+                trace_id=row.trace_id,
+                span_id=row.span_id,
                 workflow_id=row.workflow_id,
                 workflow_name=row.workflow_name,
                 workflow_status=row.workflow_status,
                 workflow_type=row.workflow_type,
                 template_id=row.template_id,
                 account_id=row.account_id,
+                source_kind=row.source_kind,
+                source_id=row.source_id,
+                session_id=row.session_id,
+                workflow_run_id=row.workflow_run_id,
+                request_index=row.request_index,
                 prompt_tokens=row.prompt_tokens,
                 completion_tokens=row.completion_tokens,
                 total_tokens=row.total_tokens,
@@ -767,6 +921,9 @@ def list_usage_events(
                 video_tokens=row.video_tokens,
                 provider_cost=row.provider_cost,
                 provider_cost_currency=row.provider_cost_currency,
+                estimated_cost_usd=row.estimated_cost_usd,
+                display_cost_usd=row.display_cost_usd,
+                cost_source=row.cost_source,
                 latency_ms=row.latency_ms,
                 is_byok=row.is_byok,
                 usage=_json_loads(row.usage_json, {}),
@@ -830,7 +987,9 @@ def usage_overview(db: Session, user_id: str, *, filters: LlmUsageFilterOut) -> 
             },
         ),
         notes=[
-            "provider_cost_total only includes cost returned by the provider response; no local pricing estimates are injected.",
+            "display_cost_total_usd uses provider-reported USD cost when available, otherwise configured model pricing estimates.",
+            "estimated costs are not provider invoices and should be labeled as estimates in user-facing UI.",
+            "provider_cost_total remains the raw provider-reported cost total for compatibility.",
             "Some provider and API-surface combinations do not expose cache, reasoning, or cost details. In those cases the dashboard should treat those metrics as not reported, not as proven zeros.",
             "historical workflow usage is retained even after workflow deletion because workflow identity is denormalized into the ledger.",
             "daily snapshots are updated at write time and power weekly/monthly aggregations without requiring the source workflow to remain active.",
@@ -873,9 +1032,13 @@ def usage_timeseries(
                 "output_audio_tokens": 0,
                 "image_tokens": 0,
                 "video_tokens": 0,
-                "provider_cost_total": 0.0,
-                "priced_request_count": 0,
-            },
+            "provider_cost_total": 0.0,
+            "priced_request_count": 0,
+            "estimated_cost_total_usd": 0.0,
+            "display_cost_total_usd": 0.0,
+            "estimated_cost_request_count": 0,
+            "display_cost_request_count": 0,
+        },
         )
         current["request_count"] += row.request_count
         current["success_count"] += row.success_count
@@ -894,6 +1057,10 @@ def usage_timeseries(
         current["video_tokens"] += row.video_tokens
         current["provider_cost_total"] += float(row.provider_cost_total or 0.0)
         current["priced_request_count"] += row.priced_request_count
+        current["estimated_cost_total_usd"] += float(row.estimated_cost_total_usd or 0.0)
+        current["display_cost_total_usd"] += float(row.display_cost_total_usd or 0.0)
+        current["estimated_cost_request_count"] += row.estimated_cost_request_count
+        current["display_cost_request_count"] += row.display_cost_request_count
     buckets = [LlmUsageTimeBucketOut(**payload) for _, payload in sorted(grouped.items())]
     return LlmUsageTimeseriesOut(
         generated_at=_utc_now(),

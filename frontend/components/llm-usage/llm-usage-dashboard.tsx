@@ -29,8 +29,10 @@ import {
 } from "@/lib/llm-usage-filters";
 import {
     apiSurfaceDisplay,
+    aggregateCostSource,
+    costSourceLabel,
     eventWorkflowDisplayName,
-    formatLlmCost,
+    formatDisplayLlmCost,
     groupWorkflowDisplayName,
     metricReportingLabel,
     requestKindDisplay
@@ -77,7 +79,7 @@ const DEFAULT_API_SURFACE_OPTIONS: LlmUsageFilterOption[] = [
 
 const SPARSE_BUCKET_THRESHOLD = 4;
 const PROVIDER_COST_TOOLTIP =
-    "Cost is only reported when the upstream provider includes it in the API response. provider_cost_total only includes cost returned by the provider.";
+    "Costs use provider-reported USD when available. Otherwise Ananta shows an estimated cost from configured model pricing.";
 const TOKENS_TOOLTIP = "Some providers do not expose cache, reasoning, or cost fields in every response.";
 const WORKFLOW_TABLE_TOOLTIP = "Historical workflow usage is retained in the ledger after a workflow is deleted.";
 const PERIOD_TOOLTIP = "Daily snapshots are updated at write time when requests complete.";
@@ -226,7 +228,8 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
         "Reasoning"
     );
     const hasRequests = overview.totals.request_count > 0;
-    const costReported = overview.totals.priced_request_count > 0;
+    const costReported = overview.totals.display_cost_request_count > 0;
+    const costSource = aggregateCostSource(overview.totals);
 
     return (
         <section className="grid grid-cols-2 gap-3 min-[900px]:grid-cols-4">
@@ -253,13 +256,13 @@ function TotalsGrid({ overview }: { overview: LlmUsageOverview }) {
                 value={formatTokens(overview.totals.total_tokens)}
             />
             <StatCard
-                detail={`${formatTokens(overview.totals.priced_request_count)} priced requests`}
+                detail={`${costSourceLabel(costSource)} / ${formatTokens(overview.totals.display_cost_request_count)} priced requests`}
                 icon={IconCoins}
                 infoTooltip={<MetricInfoTooltip content={PROVIDER_COST_TOOLTIP} />}
-                label="Provider cost"
+                label="Cost"
                 mutedIcon={zeroState}
-                value={costReported ? formatLlmCost(overview.totals.provider_cost_total, overview.totals.priced_request_count) : undefined}
-                valueNode={costReported ? undefined : <StatValueMuted>Not reported</StatValueMuted>}
+                value={costReported ? formatDisplayLlmCost(overview.totals.display_cost_total_usd, overview.totals.display_cost_request_count) : undefined}
+                valueNode={costReported ? undefined : <StatValueMuted>Not priced</StatValueMuted>}
             />
         </section>
     );
@@ -407,7 +410,7 @@ function GroupTable({
                                 <TableCell className="text-right text-[13px]">{formatTokens(row.request_count)}</TableCell>
                                 <TableCell className="text-right text-[13px]">{formatTokens(row.total_tokens)}</TableCell>
                                 <TableCell className="text-right text-[13px]">
-                                    {formatLlmCost(row.provider_cost_total, row.priced_request_count)}
+                                    {formatDisplayLlmCost(row.display_cost_total_usd, row.display_cost_request_count)}
                                 </TableCell>
                             </TableRow>
                         );
@@ -506,6 +509,7 @@ function RecentEvents({
                         <TableHead className={tableHeadClassName()}>Workflow</TableHead>
                         <TableHead className={tableHeadClassName("text-right")}>Tokens</TableHead>
                         <TableHead className={tableHeadClassName("text-right")}>Latency</TableHead>
+                        <TableHead className={tableHeadClassName("text-right")}>Cost</TableHead>
                         <TableHead className={tableHeadClassName()}>Status</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -533,6 +537,10 @@ function RecentEvents({
                             <TableCell className="text-right text-[13px]">
                                 {event.latency_ms == null ? "n/a" : `${event.latency_ms} ms`}
                             </TableCell>
+                            <TableCell className="text-right text-[13px]">
+                                <div>{formatDisplayLlmCost(event.display_cost_usd, event.display_cost_usd == null ? 0 : 1)}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{costSourceLabel(event.cost_source)}</div>
+                            </TableCell>
                             <TableCell>
                                 <Badge variant={event.status === "success" ? "default" : "destructive"}>{event.status}</Badge>
                             </TableCell>
@@ -540,7 +548,7 @@ function RecentEvents({
                     ))}
                     {!events.items.length ? (
                         <TableRow>
-                            <TableCell className="py-10 text-center" colSpan={6}>
+                            <TableCell className="py-10 text-center" colSpan={7}>
                                 <div className="flex flex-col items-center gap-2">
                                     <IconSearch aria-hidden className="size-5 text-muted-foreground" />
                                     <p className="text-[13px] text-muted-foreground">{emptyMessage}</p>
@@ -572,7 +580,7 @@ export function LlmUsageDashboard({
     return (
         <Shell>
             <PageHeader
-                description="Monitor provider calls, token volume, provider-reported cost, and workflow-level LLM activity."
+                description="Monitor provider calls, token volume, reported or estimated cost, and workflow-level LLM activity."
                 eyebrow="Operations"
                 title="LLM Usage"
             />

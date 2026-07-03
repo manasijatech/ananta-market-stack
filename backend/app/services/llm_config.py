@@ -1,21 +1,27 @@
 from __future__ import annotations
 
+import json
 import uuid
+from datetime import datetime
 from typing import Any
 
+import requests
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.schemas.system_config import (
     LlmModelCreateIn,
     LlmModelOut,
+    LlmModelPricingOut,
+    LlmModelPricingUpsertIn,
     LlmProvider,
     LlmProviderConfigOut,
     LlmProviderCredentialUpsertIn,
 )
 from app.services import rbac
 from broker.crypto import decrypt_value, encrypt_value
-from db.models import UserLlmModel, UserLlmProviderCredential
+from common.datetime_compat import UTC
+from db.models import LlmModelPricing, UserLlmModel, UserLlmProviderCredential
 
 _PROVIDER_DEFINITIONS: dict[LlmProvider, dict[str, str]] = {
     "openai": {
@@ -251,3 +257,160 @@ def system_provider_summary(db: Session, user_id: str) -> dict[str, Any]:
     return {
         "llm_providers": [item.model_dump(mode="json") for item in list_provider_configs(db, user_id)],
     }
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, default=str, separators=(",", ":"))
+
+
+def _json_loads(value: str | None, default: Any) -> Any:
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
+
+
+def _pricing_to_out(row: LlmModelPricing) -> LlmModelPricingOut:
+    return LlmModelPricingOut(
+        id=row.id,
+        provider=row.provider,
+        model_id=row.model_id,
+        input_cost_per_1m_tokens=row.input_cost_per_1m_tokens,
+        output_cost_per_1m_tokens=row.output_cost_per_1m_tokens,
+        cached_input_cost_per_1m_tokens=row.cached_input_cost_per_1m_tokens,
+        cache_write_cost_per_1m_tokens=row.cache_write_cost_per_1m_tokens,
+        reasoning_cost_per_1m_tokens=row.reasoning_cost_per_1m_tokens,
+        input_audio_cost_per_1m_tokens=row.input_audio_cost_per_1m_tokens,
+        output_audio_cost_per_1m_tokens=row.output_audio_cost_per_1m_tokens,
+        source=row.source,
+        source_url=row.source_url,
+        metadata=_json_loads(row.metadata_json, {}),
+        effective_from=row.effective_from,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def list_model_pricing(db: Session, user_id: str) -> list[LlmModelPricingOut]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    rows = db.scalars(
+        select(LlmModelPricing)
+        .where(LlmModelPricing.user_id == owner_user_id)
+        .order_by(LlmModelPricing.provider.asc(), LlmModelPricing.model_id.asc())
+    ).all()
+    return [_pricing_to_out(row) for row in rows]
+
+
+def upsert_model_pricing(db: Session, user_id: str, payload: LlmModelPricingUpsertIn) -> LlmModelPricingOut:
+    provider_definition(payload.provider)
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    row = db.scalars(
+        select(LlmModelPricing).where(
+            LlmModelPricing.user_id == owner_user_id,
+            LlmModelPricing.provider == payload.provider,
+            LlmModelPricing.model_id == payload.model_id,
+        )
+    ).first()
+    if row is None:
+        row = LlmModelPricing(
+            id=str(uuid.uuid4()),
+            user_id=owner_user_id,
+            provider=payload.provider,
+            model_id=payload.model_id,
+            created_at=now,
+        )
+    for field in (
+        "input_cost_per_1m_tokens",
+        "output_cost_per_1m_tokens",
+        "cached_input_cost_per_1m_tokens",
+        "cache_write_cost_per_1m_tokens",
+        "reasoning_cost_per_1m_tokens",
+        "input_audio_cost_per_1m_tokens",
+        "output_audio_cost_per_1m_tokens",
+        "source_url",
+        "effective_from",
+    ):
+        setattr(row, field, getattr(payload, field))
+    row.source = "manual"
+    row.metadata_json = _json_dumps(payload.metadata)
+    row.updated_at = now
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _pricing_to_out(row)
+
+
+def delete_model_pricing(db: Session, user_id: str, pricing_id: str) -> list[LlmModelPricingOut]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = db.get(LlmModelPricing, pricing_id)
+    if row is not None and row.user_id == owner_user_id:
+        db.delete(row)
+        db.commit()
+    return list_model_pricing(db, user_id)
+
+
+def _per_token_to_per_1m(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed * 1_000_000
+
+
+def refresh_openrouter_model_pricing(db: Session, user_id: str) -> list[LlmModelPricingOut]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    response = requests.get("https://openrouter.ai/api/v1/models", timeout=20)
+    response.raise_for_status()
+    payload = response.json()
+    models = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(models, list):
+        raise ValueError("OpenRouter pricing response did not include a model list")
+
+    saved_models = {
+        row.model_id
+        for row in db.scalars(
+            select(UserLlmModel).where(
+                UserLlmModel.user_id == owner_user_id,
+                UserLlmModel.provider == "openrouter",
+            )
+        ).all()
+    }
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("id") or "").strip()
+        if not model_id or (saved_models and model_id not in saved_models):
+            continue
+        pricing = item.get("pricing")
+        if not isinstance(pricing, dict):
+            continue
+        row = db.scalars(
+            select(LlmModelPricing).where(
+                LlmModelPricing.user_id == owner_user_id,
+                LlmModelPricing.provider == "openrouter",
+                LlmModelPricing.model_id == model_id,
+            )
+        ).first()
+        if row is None:
+            row = LlmModelPricing(
+                id=str(uuid.uuid4()),
+                user_id=owner_user_id,
+                provider="openrouter",
+                model_id=model_id,
+                created_at=now,
+            )
+        row.input_cost_per_1m_tokens = _per_token_to_per_1m(pricing.get("prompt"))
+        row.output_cost_per_1m_tokens = _per_token_to_per_1m(pricing.get("completion"))
+        row.cached_input_cost_per_1m_tokens = _per_token_to_per_1m(pricing.get("input_cache_read"))
+        row.cache_write_cost_per_1m_tokens = _per_token_to_per_1m(pricing.get("input_cache_write"))
+        row.source = "openrouter_pricing"
+        row.source_url = "https://openrouter.ai/api/v1/models"
+        row.metadata_json = _json_dumps({"raw_pricing": pricing})
+        row.updated_at = now
+        db.add(row)
+    db.commit()
+    return list_model_pricing(db, user_id)

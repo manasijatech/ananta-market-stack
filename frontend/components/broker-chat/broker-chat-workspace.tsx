@@ -894,6 +894,7 @@ export function BrokerChatWorkspace({
     const runsRef = useRef(runs);
     const eventsByRunRef = useRef(eventsByRun);
     const streamDetailKeyRef = useRef(`${includeToolOutputs}:${includeReasoning}`);
+    const previousProviderRef = useRef<LlmProvider | "">(initialConfig.default_provider ?? "");
     const configSaveRequestRef = useRef(0);
     const savedConfigKeyRef = useRef(
         brokerChatConfigKey({
@@ -925,11 +926,16 @@ export function BrokerChatWorkspace({
         if (!selectedProvider) {
             return;
         }
+        const providerChanged = previousProviderRef.current !== provider;
+        previousProviderRef.current = provider;
+        if (!providerChanged && model) {
+            return;
+        }
         const hasModel = selectedModels.some((item) => item.model_id === model);
-        if (!hasModel) {
+        if (!model || (providerChanged && !hasModel)) {
             setModel(selectedModels[0]?.model_id ?? "");
         }
-    }, [model, selectedModels, selectedProvider]);
+    }, [model, provider, selectedModels, selectedProvider]);
 
     const runsForActiveSession = useMemo(
         () => sortRuns(runs.filter((run) => run.session_id === activeSessionId)),
@@ -1731,6 +1737,7 @@ export function BrokerChatWorkspace({
                                 Model
                                 {provider ? (
                                     <LlmModelPicker
+                                        allowedModels={selectedModels}
                                         models={openRouterModels}
                                         onSelect={(id) => setModel(id)}
                                         provider={provider}

@@ -65,9 +65,11 @@ function resolveAsChildRender(
     return { render, children };
   }
 
-  const child = React.Children.only(children) as React.ReactElement<{
-    children?: React.ReactNode;
-  }>;
+  const childNodes = React.Children.toArray(children);
+  const child = childNodes.length === 1 ? childNodes[0] : null;
+  if (!React.isValidElement<{ children?: React.ReactNode }>(child)) {
+    return { render, children };
+  }
   const { children: childChildren, ...childProps } = child.props;
 
   // Keep children on Button props only — render.props.children would win in

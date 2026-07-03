@@ -137,6 +137,7 @@ export function BrokerAccountsEmpty({
 						<Button
 							asChild
 							className="min-h-11 w-full font-semibold min-[520px]:w-auto"
+							data-onboarding="add-broker-action"
 						>
 							<Link href="/broker-connections/new">
 								<IconPlus aria-hidden="true" className="size-4" stroke={1.75} />

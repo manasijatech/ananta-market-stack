@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.schemas.system_config import LlmProvider
 from app.services import llm_config
+from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from common.datetime_compat import UTC
 
@@ -149,9 +150,30 @@ def generate_text(
         payload["max_completion_tokens"] = max_completion_tokens
     if extra_body:
         payload["extra_body"] = extra_body
-    try:
-        response = client.chat.completions.create(**payload)
-    except Exception as exc:
+    with llm_telemetry.start_span(
+        "llm.chat_completions",
+        {
+            "gen_ai.system": provider,
+            "gen_ai.request.model": model,
+            "llm.api_surface": "chat_completions",
+            "llm.request_kind": tracking.request_kind if tracking else "generic",
+        },
+    ):
+        try:
+            response = client.chat.completions.create(**payload)
+        except Exception as exc:
+            record_llm_usage(
+                user_id=user_id,
+                provider=provider,
+                requested_model_id=model,
+                api_surface="chat_completions",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+                status="error",
+                tracking=tracking,
+                error=str(exc),
+            )
+            raise
         record_llm_usage(
             user_id=user_id,
             provider=provider,
@@ -159,22 +181,10 @@ def generate_text(
             api_surface="chat_completions",
             started_at=started_at,
             completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
-            status="error",
+            status="success",
             tracking=tracking,
-            error=str(exc),
+            response=response,
         )
-        raise
-    record_llm_usage(
-        user_id=user_id,
-        provider=provider,
-        requested_model_id=model,
-        api_surface="chat_completions",
-        started_at=started_at,
-        completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
-        status="success",
-        tracking=tracking,
-        response=response,
-    )
     return response
 
 
@@ -206,9 +216,30 @@ def generate_text_response_api(
         payload["instructions"] = instructions
     if reasoning_effort:
         payload["reasoning"] = {"effort": reasoning_effort}
-    try:
-        response = client.responses.create(**payload)
-    except Exception as exc:
+    with llm_telemetry.start_span(
+        "llm.responses",
+        {
+            "gen_ai.system": provider,
+            "gen_ai.request.model": model,
+            "llm.api_surface": "responses_api",
+            "llm.request_kind": tracking.request_kind if tracking else "generic",
+        },
+    ):
+        try:
+            response = client.responses.create(**payload)
+        except Exception as exc:
+            record_llm_usage(
+                user_id=user_id,
+                provider=provider,
+                requested_model_id=model,
+                api_surface="responses_api",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+                status="error",
+                tracking=tracking,
+                error=str(exc),
+            )
+            raise
         record_llm_usage(
             user_id=user_id,
             provider=provider,
@@ -216,20 +247,8 @@ def generate_text_response_api(
             api_surface="responses_api",
             started_at=started_at,
             completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
-            status="error",
+            status="success",
             tracking=tracking,
-            error=str(exc),
+            response=response,
         )
-        raise
-    record_llm_usage(
-        user_id=user_id,
-        provider=provider,
-        requested_model_id=model,
-        api_surface="responses_api",
-        started_at=started_at,
-        completed_at=datetime.now(tz=UTC).replace(tzinfo=None),
-        status="success",
-        tracking=tracking,
-        response=response,
-    )
     return response

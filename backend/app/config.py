@@ -2,6 +2,7 @@ from functools import lru_cache
 from urllib.parse import urlparse
 
 from pydantic import Field
+from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -217,6 +218,13 @@ class Settings(BaseSettings):
 
     # Development-only fallback if no key set (not for production).
     allow_insecure_dev_credentials: bool = False
+
+    @field_validator("log_to_file", mode="before")
+    @classmethod
+    def _empty_log_to_file_is_unset(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
 
     @model_validator(mode="after")
     def _apply_redis_url(self) -> "Settings":

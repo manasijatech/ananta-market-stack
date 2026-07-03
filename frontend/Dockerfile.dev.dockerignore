@@ -14,8 +14,12 @@
 **/.ruff_cache/**
 **/.next
 **/.next/**
+.next
+.next/**
 **/node_modules
 **/node_modules/**
+node_modules
+node_modules/**
 **/dist
 **/dist/**
 **/build
@@ -29,7 +33,4 @@
 **/*.log
 **/*.sqlite
 **/*.sqlite3
-**/data
-**/data/**
-docker/__pycache__
-frontend/tsconfig.tsbuildinfo
+tsconfig.tsbuildinfo

@@ -405,6 +405,40 @@ export interface LlmProviderConfig {
     documentation_url?: string | null;
 }
 
+export interface LlmModelPricing {
+    id: string;
+    provider: LlmProvider | string;
+    model_id: string;
+    input_cost_per_1m_tokens?: number | null;
+    output_cost_per_1m_tokens?: number | null;
+    cached_input_cost_per_1m_tokens?: number | null;
+    cache_write_cost_per_1m_tokens?: number | null;
+    reasoning_cost_per_1m_tokens?: number | null;
+    input_audio_cost_per_1m_tokens?: number | null;
+    output_audio_cost_per_1m_tokens?: number | null;
+    source: string;
+    source_url?: string | null;
+    metadata: JsonObject;
+    effective_from?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface LlmModelPricingUpsert {
+    provider: LlmProvider;
+    model_id: string;
+    input_cost_per_1m_tokens?: number | null;
+    output_cost_per_1m_tokens?: number | null;
+    cached_input_cost_per_1m_tokens?: number | null;
+    cache_write_cost_per_1m_tokens?: number | null;
+    reasoning_cost_per_1m_tokens?: number | null;
+    input_audio_cost_per_1m_tokens?: number | null;
+    output_audio_cost_per_1m_tokens?: number | null;
+    source_url?: string | null;
+    metadata?: JsonObject;
+    effective_from?: string | null;
+}
+
 export interface AlphaApiConfig {
     label: string;
     has_api_key: boolean;
@@ -485,6 +519,7 @@ export interface SystemConfig {
     broker_data_default: BrokerDataDefaultConfig;
     broker_data_search: BrokerDataSearchConfig;
     llm_providers: LlmProviderConfig[];
+    llm_model_pricing: LlmModelPricing[];
     alpha_api: AlphaApiConfig;
     alpha_websocket: AlphaWebSocketConfig;
     mcp_server: McpServerConfig;

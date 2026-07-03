@@ -6,16 +6,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN grep -v '^winloop==' requirements.txt > requirements-linux.txt \
     && pip install --no-cache-dir -r requirements-linux.txt
 
-COPY backend/ .
-COPY docker/dev-backend-entrypoint.sh /usr/local/bin/ananta-market-stack-dev-backend-entrypoint
+COPY . .
+COPY dev-backend-entrypoint.sh /usr/local/bin/ananta-market-stack-dev-backend-entrypoint
 RUN sed -i 's/\r$//' /usr/local/bin/ananta-market-stack-dev-backend-entrypoint \
     && chmod +x /usr/local/bin/ananta-market-stack-dev-backend-entrypoint
 
 EXPOSE 8000
 
 ENTRYPOINT ["ananta-market-stack-dev-backend-entrypoint"]
-CMD ["python", "-m", "uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
