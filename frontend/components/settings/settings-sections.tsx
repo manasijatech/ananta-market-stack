@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ComponentProps } from "react";
+import { useEffect, useMemo, useState, type ComponentProps } from "react";
 import { ChannelSettings } from "@/components/alerts/channel-settings";
 import { StreamManager } from "@/components/alerts/stream-manager";
 import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager";
@@ -23,6 +23,12 @@ type SettingsSection =
 
 type SettingsSectionsProps = {
     config: SystemConfig;
+    permissions: {
+        canManageAlpha: boolean;
+        canManageLlm: boolean;
+        canManageMcp: boolean;
+        canUseMcp: boolean;
+    };
     alertChannels: AlertChannel[];
     accounts: BrokerAccount[];
     subscriptions: LiveSubscription[];
@@ -40,9 +46,9 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
     },
     {
         value: "alpha",
-        label: "Alpha",
-        title: "Manasija Alpha",
-        description: "Manage the Alpha API key used for market intelligence and company data."
+        label: "Drishti",
+        title: "Drishti",
+        description: "Manage the Drishti API key used for market intelligence and company data."
     },
     {
         value: "mcp",
@@ -60,7 +66,7 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
         value: "live-subscriptions",
         label: "Subscriptions",
         title: "Live data subscriptions",
-        description: "Manage Alpha websocket products, symbol scope, watchlists, and reusable live subscriptions."
+        description: "Manage Drishti websocket products, symbol scope, watchlists, and reusable live subscriptions."
     },
     {
         value: "stream-manager",
@@ -97,6 +103,7 @@ function sectionFromHash(): SettingsSection {
 
 export function SettingsSections({
     config,
+    permissions,
     alertChannels,
     accounts,
     subscriptions,
@@ -104,16 +111,24 @@ export function SettingsSections({
     symbolMetadata,
     watchlists
 }: SettingsSectionsProps) {
+    const visibleSections = useMemo(
+        () => sections.filter((section) => section.value !== "mcp" || permissions.canUseMcp || permissions.canManageMcp),
+        [permissions.canManageMcp, permissions.canUseMcp]
+    );
     const [activeSection, setActiveSection] = useState<SettingsSection>("broker-data");
 
     useEffect(() => {
-        setActiveSection(sectionFromHash());
+        const next = sectionFromHash();
+        setActiveSection(visibleSections.some((section) => section.value === next) ? next : visibleSections[0]?.value ?? "broker-data");
         function handleHashChange() {
-            setActiveSection(sectionFromHash());
+            const changed = sectionFromHash();
+            setActiveSection(
+                visibleSections.some((section) => section.value === changed) ? changed : visibleSections[0]?.value ?? "broker-data"
+            );
         }
         window.addEventListener("hashchange", handleHashChange);
         return () => window.removeEventListener("hashchange", handleHashChange);
-    }, []);
+    }, [visibleSections]);
 
     function changeSection(value: string) {
         const next = value as SettingsSection;
@@ -128,13 +143,13 @@ export function SettingsSections({
         window.dispatchEvent(new Event(ONBOARDING_RESET_EVENT));
     }
 
-    const activeMeta = sections.find((section) => section.value === activeSection) ?? sections[0];
+    const activeMeta = visibleSections.find((section) => section.value === activeSection) ?? visibleSections[0] ?? sections[0];
 
     return (
         <Tabs className="min-w-0 max-w-full gap-5" onValueChange={changeSection} value={activeSection}>
             <div className="sticky top-0 z-10 min-w-0 max-w-full border-b border-border bg-background/95 pb-3 pt-1 backdrop-blur">
                 <TabsList className="max-w-full justify-start overflow-x-auto overflow-y-hidden">
-                    {sections.map((section) => (
+                    {visibleSections.map((section) => (
                         <TabsTrigger className="shrink-0" key={section.value} value={section.value}>
                             {section.label}
                         </TabsTrigger>
@@ -148,16 +163,16 @@ export function SettingsSections({
             </div>
 
             <TabsContent className="mt-0 min-w-0 max-w-full" value="broker-data">
-                <SystemConfigPanel initialConfig={config} section="broker-data" />
+                <SystemConfigPanel initialConfig={config} permissions={permissions} section="broker-data" />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="alpha">
-                <SystemConfigPanel initialConfig={config} section="alpha" />
+                <SystemConfigPanel initialConfig={config} permissions={permissions} section="alpha" />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="mcp">
-                <SystemConfigPanel initialConfig={config} section="mcp" />
+                <SystemConfigPanel initialConfig={config} permissions={permissions} section="mcp" />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="llm">
-                <SystemConfigPanel initialConfig={config} section="llm" />
+                <SystemConfigPanel initialConfig={config} permissions={permissions} section="llm" />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="live-subscriptions">
                 <SubscriptionsManager

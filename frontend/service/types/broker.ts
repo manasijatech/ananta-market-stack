@@ -8,6 +8,7 @@ export type SessionStatusValue = "pending" | "active" | "automation_ready" | "ac
 
 export interface BrokerAccount {
     id: string;
+    workspace_id?: string | null;
     user_id: string;
     broker_code: BrokerCode;
     label: string;
@@ -19,6 +20,8 @@ export interface BrokerAccount {
     automation_enabled: boolean;
     automation_mode?: string | null;
     is_preferred_instrument_search?: boolean;
+    access_permissions?: string[];
+    is_shared?: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -264,6 +267,43 @@ export interface HistoricalRequest {
     interval: string;
     from_date: string;
     to_date: string;
+}
+
+export interface MarketChartRequest {
+    instrument: InstrumentRef;
+    history_days?: number;
+    daily_interval?: string;
+    intraday_interval?: string;
+    intraday_lookback_days?: number;
+    include_live_quote?: boolean;
+}
+
+export interface MarketChartCandle {
+    time: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume?: number | null;
+    interval: string;
+    raw_payload: JsonObject;
+}
+
+export interface MarketChartCacheStatus {
+    used_cached_daily: boolean;
+    used_cached_intraday: boolean;
+    fetched_daily: boolean;
+    fetched_intraday: boolean;
+}
+
+export interface MarketChartSnapshot {
+    broker_code: BrokerCode | string;
+    symbol: string;
+    exchange?: string | null;
+    candles: MarketChartCandle[];
+    latest_quote?: QuoteResponse | null;
+    last_price_time?: string | null;
+    cache_status: MarketChartCacheStatus;
 }
 
 export interface OptionChainRequest {

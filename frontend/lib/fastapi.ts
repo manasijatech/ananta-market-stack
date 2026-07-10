@@ -6,6 +6,11 @@ import { getInternalApiBaseUrl } from "@/lib/runtime-config";
 
 const apiBaseUrl = getInternalApiBaseUrl();
 
+/**
+ * Builds headers for authenticated FastAPI requests.
+ *
+ * Forwards `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` when a session exists.
+ */
 export async function getAuthenticatedBackendHeaders(): Promise<Headers> {
     const session = await auth.api.getSession({
         headers: await headers()
@@ -26,6 +31,11 @@ export async function getAuthenticatedBackendHeaders(): Promise<Headers> {
     return requestHeaders;
 }
 
+/**
+ * Proxies a request to the internal FastAPI backend with session headers attached.
+ *
+ * @param path - API path (e.g. `/rbac/me`).
+ */
 export async function fetchFastApi(path: string, init: RequestInit = {}): Promise<Response> {
     const authHeaders = await getAuthenticatedBackendHeaders();
     const headersFromInit = new Headers(init.headers);
@@ -37,6 +47,14 @@ export async function fetchFastApi(path: string, init: RequestInit = {}): Promis
     return fetch(`${apiBaseUrl}${path}`, {
         ...init,
         headers: authHeaders,
+        cache: init.cache ?? "no-store"
+    });
+}
+
+export async function fetchFastApiPublic(path: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(`${apiBaseUrl}${path}`, {
+        ...init,
+        headers: init.headers,
         cache: init.cache ?? "no-store"
     });
 }

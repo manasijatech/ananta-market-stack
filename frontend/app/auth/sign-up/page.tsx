@@ -1,28 +1,21 @@
-import { AuthForm } from "@/components/auth-form";
-import { AuthShell } from "@/components/auth-shell";
-import { headers } from "next/headers";
+import { AuthSignUpView } from "@/components/auth/auth-views";
+import { AuthSplitLayout } from "@/components/auth/auth-split-layout";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { redirectIfAuthenticated } from "@/lib/auth-guards";
+import { getSignupStatus } from "@/service/actions/rbac";
 
 export default async function SignUpPage() {
-    const session = await auth.api.getSession({
-        headers: await headers()
-    });
+    await redirectIfAuthenticated();
 
-    if (session?.user) {
-        redirect("/dashboard");
+    const signupStatus = await getSignupStatus().catch(() => ({ has_admin: false }));
+
+    if (!signupStatus.has_admin) {
+        redirect("/auth/onboarding");
     }
 
     return (
-        <AuthShell
-            eyebrow="Start secure"
-            title="Create account"
-            subtitle="Set up your email login before connecting broker APIs."
-            footerText="Already have an account?"
-            footerHref="/auth/sign-in"
-            footerAction="Sign in"
-        >
-            <AuthForm mode="sign-up" />
-        </AuthShell>
+        <AuthSplitLayout panel="approval">
+            <AuthSignUpView />
+        </AuthSplitLayout>
     );
 }

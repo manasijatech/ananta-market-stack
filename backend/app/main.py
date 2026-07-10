@@ -177,7 +177,7 @@ Modular trading/data platform for multi-broker account management.
 - **Quote Cache**: Direct access to real-time quotes with optional Redis write-through.
 
 ### Documentation for Frontend Integration:
-- **X-User-Id Header**: Most endpoints require an `X-User-Id` header. In development, it defaults to `local-dev-user`.
+- **X-User-Id Header**: Authenticated endpoints require an `X-User-Id` header from the frontend session.
 - **Broker-Specific Flows**: See individual session endpoints for authentication redirects and token exchanges.
 - **Extra Payload**: Use the `extra` field in order bodies for broker-specific parameters (e.g., `instrument_token`).
 

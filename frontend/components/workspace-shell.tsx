@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
     IconBook,
     IconBellRinging,
@@ -15,6 +15,7 @@ import {
     IconMessageCircle,
     IconNews,
     IconSettings2,
+    IconShieldLock,
     IconWallet
 } from "@tabler/icons-react";
 import type { TablerIcon } from "@tabler/icons-react";
@@ -22,6 +23,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { EVENTS, Joyride, STATUS, type EventData, type Step, type TooltipRenderProps } from "react-joyride";
 import { AlertNotificationsTray } from "@/components/alerts/alert-notifications-tray";
 import { BrandLogo } from "@/components/brand-logo";
+import { GithubStarButton } from "@/components/github-star-button";
 import {
     HEATMAP_FILTER_CHANGE_EVENT,
     HEATMAP_FILTER_STORAGE_KEY,
@@ -29,21 +31,26 @@ import {
     parseStoredHeatmapFilters
 } from "@/components/heatmap/heatmap-filter-state";
 import { useSession } from "@/components/session-provider";
+import { UpdateAvailableBanner } from "@/components/system/update-available-banner";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
+import { hasRbacPermission } from "@/lib/rbac";
+import { cn } from "@/lib/utils";
+import type { RbacPrincipal } from "@/service/types/rbac";
 
 type NavItem = {
     href: string;
     label: string;
     icon: TablerIcon;
     external?: boolean;
+    requiredPermission?: string;
+    hideWhenUnauthorized?: boolean;
 };
 
 const navGroups: { label: string; items: NavItem[] }[] = [
     {
-        label: "MAIN",
+        label: "Main",
         items: [
             { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
             { href: "/broker-connections", label: "Broker Connections", icon: IconWallet },
@@ -51,25 +58,36 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         ]
     },
     {
-        label: "INTELLIGENCE",
+        label: "Intelligence",
         items: [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
             { href: "/heatmap", label: "Heatmap", icon: IconLayoutGrid },
             { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
-            { href: "/llm-usage", label: "LLM Usage", icon: IconBrain },
             { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
         ]
     },
     {
-        label: "SETTINGS",
+        label: "Settings",
         items: [
             { href: "/settings", label: "Settings", icon: IconSettings2 },
+            {
+                href: "/llm-usage",
+                label: "LLM Usage",
+                icon: IconBrain,
+                requiredPermission: "settings.view_llm_usage",
+                hideWhenUnauthorized: true
+            },
+            {
+                href: "/settings/access",
+                label: "Access",
+                icon: IconShieldLock,
+                requiredPermission: "workspace.manage_members",
+                hideWhenUnauthorized: true
+            },
             { href: "/docs", label: "Docs", icon: IconBook, external: true }
         ]
     }
 ];
-
-const navItems = navGroups.flatMap((group) => group.items);
 const ONBOARDING_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
 const ONBOARDING_PHASE_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
 const ONBOARDING_STEP_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-step";
@@ -157,7 +175,7 @@ const onboardingSteps: OnboardingStep[] = [
             <div className="grid gap-3 text-left">
                 <p>Use this Settings navigation item after your broker connection is active.</p>
                 <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
-                    The next step will take you to the Alpha API credential section.
+                    The next step will take you to the Drishti API credential section.
                 </p>
             </div>
         ),
@@ -168,12 +186,12 @@ const onboardingSteps: OnboardingStep[] = [
     {
         target: ALPHA_API_TARGET,
         route: "/settings#alpha",
-        title: "Manasija Alpha API",
+        title: "Drishti API",
         content: (
             <div className="grid gap-3 text-left">
-                <p>Add or replace the Manasija Alpha API key here.</p>
+                <p>Add or replace the Drishti API key here.</p>
                 <p className="border-l-2 border-primary bg-primary/10 px-3 py-2 text-sm">
-                    This enables Alpha-backed market intelligence, metadata, announcements, concalls, and summaries.
+                    This enables Drishti-backed market intelligence, metadata, announcements, concalls, and summaries.
                 </p>
             </div>
         ),
@@ -191,6 +209,12 @@ function storedOnboardingStepIndex() {
 function isNavItemActive(pathname: string, href: string) {
     if (href === "/dashboard") {
         return pathname === "/dashboard";
+    }
+    if (href === "/settings") {
+        return pathname === "/settings";
+    }
+    if (href === "/settings/access") {
+        return pathname === "/settings/access" || pathname.startsWith("/settings/access/");
     }
     if (href === "/market-intelligence") {
         return pathname.startsWith("/market-intelligence");
@@ -218,6 +242,23 @@ function splitOnboardingRoute(route?: string) {
     return { path, hash: hash ? `#${hash}` : "" };
 }
 
+function visibleNavGroups(principal: RbacPrincipal | null | undefined) {
+    return navGroups
+        .map((group) => ({
+            ...group,
+            items: group.items.filter((item) => {
+                if (!item.requiredPermission) {
+                    return true;
+                }
+                if (hasRbacPermission(principal, item.requiredPermission)) {
+                    return true;
+                }
+                return !item.hideWhenUnauthorized;
+            })
+        }))
+        .filter((group) => group.items.length > 0);
+}
+
 function storedHeatmapHref() {
     try {
         const stored = parseStoredHeatmapFilters(localStorage.getItem(HEATMAP_FILTER_STORAGE_KEY) ?? undefined);
@@ -236,7 +277,16 @@ function storedHeatmapHref() {
     }
 }
 
-function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: string; closeOnSelect?: boolean }) {
+function NavigationGroups({
+    pathname,
+    principal,
+    closeOnSelect = false
+}: {
+    pathname: string;
+    principal?: RbacPrincipal | null;
+    closeOnSelect?: boolean;
+}) {
+    const groups = visibleNavGroups(principal);
     const [heatmapHref, setHeatmapHref] = useState("/heatmap");
 
     useEffect(() => {
@@ -247,25 +297,22 @@ function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: strin
     }, []);
 
     return (
-        <nav className="grid gap-1" aria-label="Primary navigation">
-            {navGroups.map((group, groupIndex) => (
-                <div className="grid gap-1" key={group.label}>
-                    {groupIndex > 0 ? <Separator className="my-2" /> : null}
-                    <div className="px-3 pt-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                        {group.label}
-                    </div>
+        <nav className="flex flex-col gap-6 py-2" aria-label="Primary navigation">
+            {groups.map((group) => (
+                <div className="flex flex-col gap-0.5" key={group.label}>
+                    <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{group.label}</p>
                     {group.items.map((item) => {
                         const Icon = item.icon;
                         const active = isNavItemActive(pathname, item.href);
                         const href = item.href === "/heatmap" ? heatmapHref : item.href;
                         const link = (
                             <Link
-                                className={[
-                                    "flex h-10 min-w-0 items-center gap-3 border-l-2 px-3 text-sm font-semibold uppercase tracking-[0.04em] transition-colors duration-100 ease-out",
+                                className={cn(
+                                    "flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium transition-colors",
                                     active
-                                        ? "border-l-primary text-primary"
-                                        : "border-l-transparent text-muted-foreground hover:border-l-primary/50 hover:text-foreground"
-                                ].join(" ")}
+                                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                                        : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                                )}
                                 data-onboarding={
                                     item.href === "/broker-connections"
                                         ? "broker-connections-nav"
@@ -276,9 +323,11 @@ function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: strin
                                 href={href}
                                 key={item.href}
                             >
-                                <Icon className="size-4 shrink-0" stroke={1.8} />
+                                <Icon className="size-4 shrink-0 opacity-80" stroke={1.75} />
                                 <span className="truncate">{item.label}</span>
-                                {item.external ? <IconExternalLink className="size-3 shrink-0" stroke={1.8} /> : null}
+                                {item.external ? (
+                                    <IconExternalLink className="ml-auto size-3.5 shrink-0 opacity-50" stroke={1.75} />
+                                ) : null}
                             </Link>
                         );
 
@@ -296,7 +345,13 @@ function NavigationGroups({ pathname, closeOnSelect = false }: { pathname: strin
     );
 }
 
-export function WorkspaceShell({ children }: { children: React.ReactNode }) {
+export function WorkspaceShell({
+    children,
+    principal = null
+}: {
+    children: React.ReactNode;
+    principal?: RbacPrincipal | null;
+}) {
     const pathname = usePathname();
     const router = useRouter();
     const { user, isLoading, signOut } = useSession();
@@ -305,7 +360,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     const [onboardingRun, setOnboardingRun] = useState(false);
     const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
     const [onboardingTargetCheck, setOnboardingTargetCheck] = useState(0);
-    const activeSection = useMemo(() => navItems.find((item) => isNavItemActive(pathname, item.href)), [pathname]);
 
     useEffect(() => {
         if (!isLoading && !user) {
@@ -314,7 +368,13 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     }, [isLoading, router, user]);
 
     useEffect(() => {
-        if (isLoading || !user) {
+        if (!isLoading && user && principal && principal.status !== "active" && pathname !== "/pending-approval") {
+            router.replace("/pending-approval");
+        }
+    }, [isLoading, pathname, principal, router, user]);
+
+    useEffect(() => {
+        if (isLoading || !user || (principal && principal.status !== "active")) {
             return;
         }
 
@@ -348,7 +408,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                     : 0
             );
         }
-    }, [isLoading, pathname, user]);
+    }, [isLoading, pathname, principal, user]);
 
     useEffect(() => {
         function handleOnboardingReset() {
@@ -527,7 +587,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     if (isLoading || !user) {
         return (
             <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
-                <div className="border-l-2 border-primary px-4 py-2 font-mono text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <div className="border-l-2 border-primary px-4 py-2 text-sm font-medium text-muted-foreground">
                     Checking session...
                 </div>
             </main>
@@ -576,8 +636,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 }}
                 tooltipComponent={OnboardingTooltip}
             />
-            <div className="fixed inset-x-0 top-0 z-[80] h-[3px] bg-primary" />
-            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background pt-[3px] min-[980px]:hidden">
+            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background min-[980px]:hidden">
                 <div className="flex min-h-16 items-center justify-between gap-3 px-4">
                     <div className="flex min-w-0 items-center gap-3">
                         <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -598,14 +657,14 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                                     <BrandLogo imageClassName="max-w-full text-[1.5rem]" />
                                 </DialogHeader>
                                 <div className="min-h-0 overflow-y-auto px-3 py-4">
-                                    <NavigationGroups closeOnSelect pathname={pathname} />
+                                    <NavigationGroups closeOnSelect pathname={pathname} principal={principal} />
                                 </div>
-                                <div className="border-t border-border p-3">
-                                    <div className="flex items-center gap-3 px-2 py-2">
-                                        <span className="flex size-8 shrink-0 items-center justify-center !rounded-full border border-border bg-secondary font-mono text-[11px] font-bold text-secondary-foreground">
+                                <div className="border-t border-border p-2">
+                                    <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+                                        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
                                             {initials(user.name, user.email)}
                                         </span>
-                                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground">
+                                        <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                                             {user.email}
                                         </span>
                                         <Button
@@ -622,36 +681,30 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                                 </div>
                             </DialogContent>
                         </Dialog>
-                        <div className="min-w-0">
-                            <BrandLogo imageClassName="text-[1.35rem]" />
-                            <div className="mt-0.5 truncate font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                {activeSection?.label ?? "Workspace"}
-                            </div>
-                        </div>
+                        <BrandLogo imageClassName="text-[1.35rem]" />
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
+                        <GithubStarButton />
                         <AlertNotificationsTray />
                         <ThemeToggle />
                     </div>
                 </div>
             </header>
 
-            <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-[252px] min-[980px]:overflow-hidden">
+            <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-60 min-[980px]:overflow-hidden">
                 <div className="flex h-full w-full flex-col border-r border-border">
-                    <div className="flex h-18 items-center border-b border-border px-5 min-[980px]:h-20">
-                        <BrandLogo imageClassName="text-[1.5rem]" />
+                    <div className="flex h-16 items-center px-4">
+                        <BrandLogo imageClassName="text-[1.35rem]" />
                     </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-                        <NavigationGroups pathname={pathname} />
+                    <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+                        <NavigationGroups pathname={pathname} principal={principal} />
                     </div>
-                    <div className="mt-auto border-t border-border p-3">
-                        <div className="flex items-center gap-3 px-2 py-2">
-                            <span className="flex size-8 shrink-0 items-center justify-center !rounded-full border border-border bg-secondary font-mono text-[11px] font-bold text-secondary-foreground">
+                    <div className="mt-auto border-t border-border p-2">
+                        <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
                                 {initials(user.name, user.email)}
                             </span>
-                            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground">
-                                {user.email}
-                            </span>
+                            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{user.email}</span>
                             <Button
                                 aria-label="Sign out"
                                 className="size-8 shrink-0 text-muted-foreground hover:text-primary"
@@ -667,16 +720,18 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
                 </div>
             </aside>
 
-            <div className="min-[980px]:pl-[252px]">
-                <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-[252px] min-[980px]:flex min-[980px]:h-20 min-[980px]:items-center min-[980px]:px-10 min-[980px]:py-0">
+            <div className="min-[980px]:pl-60">
+                <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-60 min-[980px]:flex min-[980px]:h-16 min-[980px]:items-center min-[980px]:px-8 min-[980px]:py-0">
                     <div className="flex w-full items-center justify-end">
-                        <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <GithubStarButton />
                             <AlertNotificationsTray />
                             <ThemeToggle />
                         </div>
                     </div>
                 </header>
-                <div className="min-w-0 px-4 pb-6 pt-[calc(4rem+1.5rem+3px)] min-[760px]:px-8 min-[980px]:px-10 min-[980px]:pb-10 min-[980px]:pt-[7.5rem]">
+                <div className="min-w-0 px-4 pb-6 pt-[5.5rem] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10">
+                    <UpdateAvailableBanner />
                     {children}
                 </div>
             </div>

@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { ShimmeringText } from "@/components/ui/shimmering-text";
 import { Textarea } from "@/components/ui/textarea";
 import { useChatAutoScroll } from "@/hooks/use-chat-auto-scroll";
@@ -1703,35 +1703,33 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         <div className="flex flex-wrap items-center gap-2 border-t border-border bg-secondary/25 px-3 py-2">
                             <Label className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
                                 Provider
-                                <Select
+                                <SimpleSelect
                                     className="h-8 w-36 bg-background px-2 text-sm normal-case"
                                     disabled={!configuredProviders.length}
-                                    onChange={(event) => setProvider(event.target.value as LlmProvider)}
+                                    onValueChange={(nextProvider) => setProvider(nextProvider as LlmProvider)}
+                                    options={configuredProviders.map((item) => ({
+                                        value: item.provider,
+                                        label: providerName(item)
+                                    }))}
+                                    placeholder="Select provider"
+                                    size="sm"
                                     value={provider}
-                                >
-                                    <option value="">Select provider</option>
-                                    {configuredProviders.map((item) => (
-                                        <option key={item.provider} value={item.provider}>
-                                            {providerName(item)}
-                                        </option>
-                                    ))}
-                                </Select>
+                                />
                             </Label>
                             <Label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold uppercase text-muted-foreground min-[820px]:max-w-sm">
                                 Model
-                                <Select
+                                <SimpleSelect
                                     className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
                                     disabled={!selectedModels.length}
-                                    onChange={(event) => setModel(event.target.value)}
+                                    onValueChange={setModel}
+                                    options={selectedModels.map((item) => ({
+                                        value: item.model_id,
+                                        label: item.label || item.model_id
+                                    }))}
+                                    placeholder="Select model"
+                                    size="sm"
                                     value={model}
-                                >
-                                    <option value="">Select model</option>
-                                    {selectedModels.map((item) => (
-                                        <option key={item.id} value={item.model_id}>
-                                            {item.label || item.model_id}
-                                        </option>
-                                    ))}
-                                </Select>
+                                />
                             </Label>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-[1120px]:ml-auto">
                                 <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
@@ -1795,7 +1793,13 @@ export function BrokerChatWorkspace({ initialConfig, initialRuns, initialSession
                         </span>
                         <span>Enter sends · Shift + Enter adds a line</span>
                         <span>Tool activity is shown inline in the thinking trace</span>
-                        <span>{useMcp ? "MCP enabled for this chat" : "MCP disabled"}</span>
+                        <span>
+                            {useMcp
+                                ? "MCP enabled for this chat"
+                                : availableMcpServers.length
+                                  ? "MCP disabled"
+                                  : "MCP unavailable for your role or this workspace"}
+                        </span>
                         {queueHealth ? (
                             <span>
                                 Queue {queueHealth.queue_name}: {queueHealth.queued_count} queued ·{" "}

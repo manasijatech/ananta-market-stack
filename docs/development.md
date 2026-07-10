@@ -2,6 +2,132 @@
 
 This guide is for working on Ananta Market Stack from source. For Docker-based self-hosting, use [self-hosting.md](self-hosting.md).
 
+## Choose a workflow
+
+| Workflow | Best for |
+|----------|----------|
+| [Native setup](#requirements) below | Day-to-day coding, fastest reload on Windows |
+| [Docker Compose Watch](#docker-compose-watch-development) | One-command stack without local Python, Node, or Redis |
+
+## Docker Compose Watch development
+
+Run the full stack in Docker with hot reload via [Compose Watch](https://docs.docker.com/compose/how-tos/file-watch/). Compose syncs edited files into running containers; `uvicorn --reload` and `next dev` handle the reload.
+
+**Requirements:** [Docker Desktop](https://docs.docker.com/get-docker/) with Compose **2.22+** (Compose Watch).
+
+### First-time setup
+
+```bash
+cp .env.dev.example .env.dev
+```
+
+<details>
+<summary>PowerShell first-time setup</summary>
+
+```powershell
+Copy-Item .env.dev.example .env.dev
+```
+
+</details>
+
+Generate a stable `BETTER_AUTH_SECRET` in `.env.dev` (recommended):
+
+```bash
+openssl rand -base64 32
+```
+
+Optionally set `CREDENTIAL_ENCRYPTION_KEY` in `.env.dev` as well. If you leave it empty, dev Compose enables `ALLOW_INSECURE_DEV_CREDENTIALS=true` for local-only broker credential encryption.
+
+### Start with watch
+
+```bash
+docker compose -f docker-compose.dev.yml watch
+```
+
+Equivalent:
+
+```bash
+docker compose -f docker-compose.dev.yml up --watch
+```
+
+Open `http://localhost:3000`. The dev stack exposes:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000`
+- API docs: `http://127.0.0.1:8000/docs`
+
+SQLite data is stored on the host at `backend/data/` (shared by backend and frontend auth).
+
+### How file sync works
+
+| Change | Compose action | Reload |
+|--------|----------------|--------|
+| Backend `.py` files | `sync` into `/app` | `uvicorn --reload` |
+| Frontend `.tsx` / `.ts` / CSS | `sync` into `/app` | Next.js dev server |
+| `backend/requirements.txt` | `rebuild` backend image | container recreate |
+| `frontend/package.json` / lockfile | `rebuild` frontend image | container recreate |
+| `frontend/next.config.ts`, `tsconfig.json` | `sync+restart` | Next.js restart |
+| `backend/.env`, `frontend/.env.local` | `sync+restart` | service restart |
+
+`node_modules` and `.next` stay inside the image; only application source is synced.
+
+### Useful dev commands
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f backend
+docker compose -f docker-compose.dev.yml logs -f frontend
+docker compose -f docker-compose.dev.yml ps
+docker compose -f docker-compose.dev.yml down
+```
+
+Run migrations after pulling new revisions:
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python -c "from db.session import init_db; init_db()"
+```
+
+The dev backend entrypoint uses the same `init_db()` path as the API on startup. On a fresh database it creates the full schema and stamps Alembic to `head`; on an existing Alembic-managed database it runs `upgrade head`.
+
+Generate a migration from a running backend container:
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend alembic revision --autogenerate -m "describe_change"
+```
+
+Optional workers (separate terminals):
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend python -m app.workers.live_market_data
+docker compose -f docker-compose.dev.yml exec backend python -m app.workers.alert_evaluator
+docker compose -f docker-compose.dev.yml exec backend python -m app.workers.alert_delivery
+docker compose -f docker-compose.dev.yml exec backend python -m app.workers.broker_chat
+```
+
+### Windows notes
+
+Compose Watch syncs files into Linux containers instead of bind-mounting the whole repo, which is usually more reliable than host mounts on Windows. If a change is not picked up, save the file again or restart with `docker compose -f docker-compose.dev.yml watch`.
+
+If the backend container restarts repeatedly during first boot, check `docker compose -f docker-compose.dev.yml logs backend`. A failed migration on a partially created database can usually be fixed by stopping Compose, deleting `backend/data/app.db` (and any `app.db-*` journal files), and starting again.
+
+```bash
+docker compose -f docker-compose.dev.yml down
+rm -f backend/data/app.db backend/data/app.db-*
+docker compose -f docker-compose.dev.yml watch
+```
+
+For the fastest edit-run loop on Windows, the [native setup](#requirements) below is still preferred.
+
+### Dev vs production Compose
+
+| | `docker-compose.dev.yml` | `docker-compose.yml` |
+|--|--------------------------|----------------------|
+| Purpose | Hot-reload development | Self-hosted / production-like runs |
+| Frontend | `next dev` | Built Next.js standalone |
+| Backend | `uvicorn --reload` | `uvicorn` (no reload) |
+| Redis | No password | Password from bootstrap volume |
+| Secrets | `.env.dev` (+ optional per-app env files) | Generated config volume |
+| Data | `backend/data/` on host | Docker named volume |
+
 ## Requirements
 
 - [Python](https://www.python.org/downloads/) 3.12 recommended for the backend.
@@ -69,13 +195,12 @@ Set the local frontend environment values:
 ```env
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
-MARKET_STACK_PUBLIC_APP_URL=http://localhost:3000
-MARKET_STACK_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api/v1
-MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
 BETTER_AUTH_SECRET=
 BETTER_AUTH_URL=http://localhost:3000
 BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
+
+If you run the backend on a non-default port, change only `NEXT_PUBLIC_API_BASE_URL`; Next.js server actions use that same value unless `MARKET_STACK_API_INTERNAL_URL` is explicitly set.
 
 Generate `BETTER_AUTH_SECRET`:
 
@@ -118,7 +243,7 @@ The repository is split into two apps:
 - `frontend/` - Next.js app with Better Auth, broker account screens, integration guides, session workflows, quotes, portfolio views, alerts workspace, and alert channel settings.
 - `backend/` - FastAPI service with broker account persistence, encrypted credential storage, broker session helpers, unified portfolio/order endpoints, alert workflow APIs, SQLite, Alembic, and Redis-backed workers.
 
-The frontend talks to the backend through the configured API base URL. In Docker, server-side frontend calls use `http://backend:8000/api/v1` inside the Compose network while browser-facing websocket/testing URLs use `http://localhost:8000/api/v1` by default.
+The frontend talks to the backend through `NEXT_PUBLIC_API_BASE_URL`. In Docker, server-side frontend calls use `http://backend:8000/api/v1` automatically while browser-facing websocket/testing URLs use `NEXT_PUBLIC_API_BASE_URL` by default.
 
 Server actions add `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` headers from the Better Auth session. In backend-only development, missing `X-User-Id` falls back to `local-dev-user`.
 

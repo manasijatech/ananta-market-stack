@@ -13,7 +13,60 @@ import { RippleButton } from "@/components/ui/ripple-button";
 
 type AuthMode = "sign-in" | "sign-up";
 
-export function AuthForm({ mode }: { mode: AuthMode }) {
+type RbacSnapshot = {
+    status?: string;
+};
+
+const POST_AUTH_ATTEMPTS = 10;
+
+function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, ms);
+    });
+}
+
+async function fetchCurrentSession() {
+    const response = await fetch("/api/auth/get-session", {
+        cache: "no-store",
+        credentials: "include"
+    });
+    if (!response.ok) {
+        return null;
+    }
+    return (await response.json()) as unknown;
+}
+
+async function fetchRbacSnapshot(): Promise<RbacSnapshot | null> {
+    const response = await fetch("/api/rbac/me", {
+        cache: "no-store",
+        credentials: "include"
+    });
+
+    if (response.status === 401) {
+        return null;
+    }
+    if (!response.ok) {
+        throw new Error("Could not verify workspace access yet.");
+    }
+    return (await response.json()) as RbacSnapshot;
+}
+
+async function resolvePostAuthRoute(): Promise<"/dashboard" | "/pending-approval"> {
+    for (let attempt = 0; attempt < POST_AUTH_ATTEMPTS; attempt += 1) {
+        const session = await fetchCurrentSession();
+        if (session) {
+            const rbac = await fetchRbacSnapshot();
+            if (rbac?.status) {
+                return rbac.status === "active" ? "/dashboard" : "/pending-approval";
+            }
+        }
+        await delay(250 + attempt * 150);
+    }
+
+    return "/dashboard";
+}
+
+export function AuthForm({ mode, signUpNotice }: { mode: AuthMode; signUpNotice?: string | null }) {
     const router = useRouter();
     const { signIn, signUp } = useSession();
     const [error, setError] = useState("");
@@ -50,7 +103,9 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
             } else {
                 await signIn({ email, password, rememberMe });
             }
-            router.replace("/dashboard");
+            const nextRoute = await resolvePostAuthRoute();
+            router.replace(nextRoute);
+            router.refresh();
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : "Something went wrong.");
         } finally {
@@ -123,6 +178,12 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                 <Alert variant="destructive">
                     <AlertDescription>{error}</AlertDescription>
                 </Alert>
+            ) : null}
+
+            {mode === "sign-up" && signUpNotice ? (
+                <div className="border border-primary/30 bg-primary/10 p-3 text-sm leading-6 text-muted-foreground">
+                    {signUpNotice}
+                </div>
             ) : null}
 
             {mode === "sign-in" ? (

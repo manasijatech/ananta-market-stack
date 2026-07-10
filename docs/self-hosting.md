@@ -64,13 +64,10 @@ BETTER_AUTH_URL=https://your-frontend-domain.example
 BETTER_AUTH_TRUSTED_ORIGINS=https://your-frontend-domain.example
 NEXT_PUBLIC_APP_URL=https://your-frontend-domain.example
 NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
-MARKET_STACK_PUBLIC_APP_URL=https://your-frontend-domain.example
-MARKET_STACK_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
-MARKET_STACK_API_INTERNAL_URL=http://backend:8000/api/v1
 APP_PUBLIC_BASE_URL=https://your-backend-domain.example
 ```
 
-Most HTTP API calls are made by the Next.js server, so a private backend can work for normal pages. The backend still needs a browser-reachable URL for websocket features such as broker data websocket testing and market-intelligence live feeds. If you use those features, expose the backend through a reverse proxy or subdomain and point `MARKET_STACK_PUBLIC_API_BASE_URL` at that public backend URL.
+Most HTTP API calls are made by the Next.js server. Docker Compose automatically uses `http://backend:8000/api/v1` for server-side calls, while browser websocket/testing URLs use `NEXT_PUBLIC_API_BASE_URL`. If you use those browser features, expose the backend through a reverse proxy or subdomain and point `NEXT_PUBLIC_API_BASE_URL` at that public backend URL.
 
 For Railway or the published single-image deployment, use the same public app domain for frontend, auth, and broker callbacks, and keep browser API traffic on `/api/v1`. See [Railway](docker-image.md#railway) and [Broker Callback URLs](environment.md#broker-callback-urls).
 
@@ -221,7 +218,6 @@ If port `8000` is already used locally, set these in root `.env`:
 ```env
 BACKEND_PORT=8004
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
-MARKET_STACK_PUBLIC_API_BASE_URL=http://localhost:8004/api/v1
 APP_PUBLIC_BASE_URL=http://localhost:8004
 ```
 

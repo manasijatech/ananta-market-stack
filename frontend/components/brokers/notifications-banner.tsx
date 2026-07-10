@@ -1,20 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { getNotifications, markNotificationRead } from "@/service/actions/broker";
+import { useMemo } from "react";
+import {
+    useBrokerNotifications,
+    useMarkBrokerNotificationRead
+} from "@/hooks/use-broker-notifications";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import type { Notification } from "@/service/types/broker";
 
+/** Dismissible banner for unread broker connection notifications. */
 export function NotificationsBanner() {
-    const [notifications, setNotifications] = useState<Notification[]>([]);
-    const [isPending, startTransition] = useTransition();
-
-    useEffect(() => {
-        startTransition(async () => {
-            setNotifications((await getNotifications()).filter((item) => !item.is_read));
-        });
-    }, []);
+    const { data: notifications = [] } = useBrokerNotifications();
+    const markRead = useMarkBrokerNotificationRead();
 
     const sorted = useMemo(() => {
         return [...notifications].sort((left, right) => {
@@ -23,13 +20,6 @@ export function NotificationsBanner() {
             return leftWarning - rightWarning;
         });
     }, [notifications]);
-
-    function dismiss(id: string) {
-        startTransition(async () => {
-            await markNotificationRead(id);
-            setNotifications((current) => current.filter((item) => item.id !== id));
-        });
-    }
 
     if (!sorted.length) {
         return null;
@@ -46,11 +36,11 @@ export function NotificationsBanner() {
                             <AlertDescription className="mt-1">{item.message}</AlertDescription>
                         </div>
                         <Button
+                            disabled={markRead.isPending}
+                            onClick={() => markRead.mutate(item.id)}
                             size="sm"
-                            variant="outline"
-                            disabled={isPending}
-                            onClick={() => dismiss(item.id)}
                             type="button"
+                            variant="outline"
                         >
                             Dismiss
                         </Button>

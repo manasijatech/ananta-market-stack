@@ -3,6 +3,9 @@ import type { AnnouncementBatchResponse, AnnouncementDetail, EarningsDetail } fr
 /** Announcement list/detail rows from alpha-api (`important`, not legacy `imp_announcement`). */
 export type AlphaAnnouncementDetail = AnnouncementDetail;
 
-export type AlphaEarningsDetail = EarningsDetail;
+/** Earnings rows may include quarter labels even when the SDK type omits them. */
+export type AlphaEarningsDetail = EarningsDetail & {
+    quarter?: string | null;
+};
 
 export type AlphaAnnouncementBatchResponse = AnnouncementBatchResponse;

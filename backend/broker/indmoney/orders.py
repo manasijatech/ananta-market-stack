@@ -7,11 +7,22 @@ from broker.indmoney.http_api import IndmoneyHTTP
 
 
 def order_book(http: IndmoneyHTTP) -> dict[str, Any]:
-    return http.request("GET", "/order", None, None)
+    return http.request("GET", "/order-book", None, None)
 
 
 def trade_book(http: IndmoneyHTTP) -> dict[str, Any]:
-    return http.request("GET", "/order/trades", None, None)
+    equity = http.request("GET", "/trade-book", {"segment": "EQUITY"}, None)
+    derivative = http.request("GET", "/trade-book", {"segment": "DERIVATIVE"}, None)
+    if equity.get("status") == "error":
+        return equity
+    if derivative.get("status") == "error":
+        return derivative
+    rows: list[dict[str, Any]] = []
+    for payload in (equity, derivative):
+        value = payload.get("data")
+        if isinstance(value, list):
+            rows.extend(item for item in value if isinstance(item, dict))
+    return {"status": "success", "data": rows or None}
 
 
 def positions(http: IndmoneyHTTP) -> dict[str, Any]:

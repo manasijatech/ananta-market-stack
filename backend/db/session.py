@@ -63,8 +63,25 @@ def init_db() -> None:
             Base.metadata.create_all(bind=engine)
             _apply_sqlite_legacy_patches_if_needed()
             _stamp_database_at_head()
+            _repair_installation_access_after_migration()
             return
         _upgrade_database_to_head()
+        _repair_installation_access_after_migration()
+
+
+def _repair_installation_access_after_migration() -> None:
+    try:
+        from app.services.rbac import repair_installation_without_admin
+
+        db = SessionLocal()
+        try:
+            repaired = repair_installation_without_admin(db)
+            if repaired:
+                logger.info("Repaired RBAC admin access for %s pending member(s)", repaired)
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("Failed to repair installation RBAC access")
 
 
 def _check_database_health() -> None:

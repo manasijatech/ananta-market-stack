@@ -15,6 +15,8 @@ import type {
     FieldErrors,
     GreeksRequest,
     HistoricalRequest,
+    MarketChartRequest,
+    MarketChartSnapshot,
     InstrumentSearchRow,
     InstrumentSyncResult,
     JsonObject,
@@ -563,6 +565,13 @@ export async function getDataOhlc(id: string, payload: OhlcRequest): Promise<Jso
 
 export async function getHistoricalData(id: string, payload: HistoricalRequest): Promise<JsonObject> {
     return request<JsonObject>(`/broker-accounts/${id}/data/historical`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
+export async function getMarketChartData(id: string, payload: MarketChartRequest): Promise<MarketChartSnapshot> {
+    return request<MarketChartSnapshot>(`/broker-accounts/${id}/data/market-chart`, {
         method: "POST",
         body: JSON.stringify(payload)
     });

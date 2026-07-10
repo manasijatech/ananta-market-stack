@@ -12,6 +12,7 @@ class BrokerAccountOut(BaseModel):
     """Public representation of a broker account without sensitive credentials."""
 
     id: str = Field(..., description="Unique ID for the broker account.")
+    workspace_id: str | None = Field(None, description="Workspace that owns this broker account.")
     user_id: str = Field(..., description="The user owning this account.")
     broker_code: str = Field(..., description="The broker identifier (e.g., 'zerodha', 'upstox').")
     label: str = Field(..., description="A friendly name for the account.")
@@ -26,6 +27,11 @@ class BrokerAccountOut(BaseModel):
         False,
         description="Whether this account is pinned as the user's preferred symbol-search broker.",
     )
+    access_permissions: list[str] = Field(
+        default_factory=list,
+        description="RBAC permissions granted to the current user for this account.",
+    )
+    is_shared: bool = Field(False, description="Whether the account is accessible through workspace sharing.")
     created_at: datetime
     updated_at: datetime
 
@@ -367,6 +373,43 @@ class HistoricalRequest(BaseModel):
     interval: str = Field(..., description="Broker-native interval such as minute, day, 5minute.")
     from_date: datetime
     to_date: datetime
+
+
+class MarketChartRequest(BaseModel):
+    instrument: InstrumentRef
+    history_days: int = Field(default=90, ge=1, le=1825)
+    daily_interval: str = Field(default="day")
+    intraday_interval: str = Field(default="1minute")
+    intraday_lookback_days: int = Field(default=1, ge=0, le=30)
+    include_live_quote: bool = Field(default=True)
+
+
+class MarketChartCandleOut(BaseModel):
+    time: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None = None
+    interval: str
+    raw_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class MarketChartCacheStatusOut(BaseModel):
+    used_cached_daily: bool = False
+    used_cached_intraday: bool = False
+    fetched_daily: bool = False
+    fetched_intraday: bool = False
+
+
+class MarketChartSnapshotOut(BaseModel):
+    broker_code: str
+    symbol: str
+    exchange: str | None = None
+    candles: list[MarketChartCandleOut] = Field(default_factory=list)
+    latest_quote: QuoteRow | None = None
+    last_price_time: datetime | None = None
+    cache_status: MarketChartCacheStatusOut = Field(default_factory=MarketChartCacheStatusOut)
 
 
 class OptionChainRequest(BaseModel):

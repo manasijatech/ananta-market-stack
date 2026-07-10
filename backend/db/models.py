@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.session import Base
@@ -17,6 +17,12 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    workspace_memberships: Mapped[list[WorkspaceMember]] = relationship(
+        "WorkspaceMember",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     broker_accounts: Mapped[list[BrokerAccount]] = relationship(
         "BrokerAccount", back_populates="user", cascade="all, delete-orphan"
     )
@@ -90,12 +96,151 @@ class User(Base):
     )
 
 
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(256), default="Default workspace")
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    members: Mapped[list[WorkspaceMember]] = relationship(
+        "WorkspaceMember",
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    broker_accounts: Mapped[list[BrokerAccount]] = relationship(
+        "BrokerAccount",
+        back_populates="workspace",
+        passive_deletes=True,
+    )
+
+
+class WorkspaceMember(Base):
+    __tablename__ = "workspace_members"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_members_workspace_user"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(64), default="pending", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    workspace: Mapped[Workspace] = relationship("Workspace", back_populates="members")
+    user: Mapped[User] = relationship("User", back_populates="workspace_memberships")
+
+
+class Role(Base):
+    __tablename__ = "roles"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_roles_workspace_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), index=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    permissions: Mapped[list[RolePermission]] = relationship(
+        "RolePermission",
+        back_populates="role",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role_id", "permission", name="uq_role_permissions_role_permission"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    role_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("roles.id", ondelete="CASCADE"), index=True
+    )
+    permission: Mapped[str] = mapped_column(String(128), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    role: Mapped[Role] = relationship("Role", back_populates="permissions")
+
+
+class BrokerAccountGrant(Base):
+    __tablename__ = "broker_account_grants"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "subject_type",
+            "subject_id",
+            name="uq_broker_account_grants_account_subject",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    account_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), index=True
+    )
+    subject_type: Mapped[str] = mapped_column(String(16), index=True)
+    subject_id: Mapped[str] = mapped_column(String(64), index=True)
+    permissions_json: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    actor_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    resource_type: Mapped[str] = mapped_column(String(64), index=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class BrokerAccount(Base):
     """Logical broker connection: one row per linked account (multiple per user and per broker)."""
 
     __tablename__ = "broker_accounts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
@@ -114,6 +259,7 @@ class BrokerAccount(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="broker_accounts")
+    workspace: Mapped[Workspace | None] = relationship("Workspace", back_populates="broker_accounts")
 
     zerodha: Mapped[ZerodhaCredentials | None] = relationship(
         "ZerodhaCredentials",
@@ -839,6 +985,22 @@ class SystemMaintenanceLog(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
+class SystemDeploymentState(Base):
+    __tablename__ = "system_deployment_state"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    running_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    running_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    running_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    latest_digest: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    update_available: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_check_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
 class UserWatchlist(Base):
     __tablename__ = "user_watchlists"
     __table_args__ = (
@@ -1006,6 +1168,37 @@ class BrokerInstrument(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class BrokerMarketCandleCache(Base):
+    __tablename__ = "broker_market_candle_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "broker_code",
+            "symbol",
+            "exchange",
+            "interval",
+            "candle_time",
+            name="uq_broker_market_candle_cache_series_time",
+        ),
+    )
+
+    broker_code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(128), primary_key=True)
+    exchange: Mapped[str] = mapped_column(String(32), primary_key=True, default="")
+    interval: Mapped[str] = mapped_column(String(32), primary_key=True)
+    candle_time: Mapped[datetime] = mapped_column(DateTime, primary_key=True, index=True)
+    open: Mapped[float] = mapped_column(Float, nullable=False)
+    high: Mapped[float] = mapped_column(Float, nullable=False)
+    low: Mapped[float] = mapped_column(Float, nullable=False)
+    close: Mapped[float] = mapped_column(Float, nullable=False)
+    volume: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
     )
 
 

@@ -14,11 +14,13 @@ from app.api.v1 import (
     broker_accounts,
     broker_data_config,
     broker_ops,
+    deployment,
     health,
     live_streams,
     llm_usage,
     meta,
     notifications,
+    rbac,
     system_config,
     users,
     watchlists,
@@ -26,6 +28,7 @@ from app.api.v1 import (
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
+api_router.include_router(deployment.router, tags=["deployment"])
 api_router.include_router(meta.router, tags=["meta"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(
@@ -81,4 +84,7 @@ api_router.include_router(
 )
 api_router.include_router(
     broker_ops.router, prefix="/broker-accounts", tags=["broker-operations"]
+)
+api_router.include_router(
+    rbac.router, prefix="/rbac", tags=["rbac"]
 )

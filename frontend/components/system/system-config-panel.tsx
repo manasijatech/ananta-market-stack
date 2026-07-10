@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { CircleHelpIcon } from "lucide-react";
 import {
@@ -37,8 +38,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { formatIstDateTime } from "@/lib/datetime";
+import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
 
 type ProviderDraftState = {
@@ -206,10 +208,17 @@ function providerKey(provider: LlmProvider) {
 
 export function SystemConfigPanel({
     initialConfig,
-    section = "all"
+    section = "all",
+    permissions
 }: {
     initialConfig: SystemConfig;
     section?: SystemConfigPanelSection;
+    permissions: {
+        canManageAlpha: boolean;
+        canManageLlm: boolean;
+        canManageMcp: boolean;
+        canUseMcp: boolean;
+    };
 }) {
     const [config, setConfig] = useState(initialConfig);
     const [selectedDefaultAccountId, setSelectedDefaultAccountId] = useState(
@@ -243,6 +252,9 @@ export function SystemConfigPanel({
         )
     );
     const [isPending, startTransition] = useTransition();
+    const alphaReadOnly = !permissions.canManageAlpha;
+    const llmReadOnly = !permissions.canManageLlm;
+    const mcpReadOnly = !permissions.canManageMcp;
 
     function replaceMcpServer(next: SystemConfig["mcp_server"]) {
         setMcpServers((current) => {
@@ -602,20 +614,18 @@ export function SystemConfigPanel({
                     active account.
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Select
+                    <SimpleSelect
                         className="h-9 min-w-[240px] max-w-sm border border-input bg-background px-3 text-sm"
                         disabled={isDefaultBrokerSaving || !config.broker_data_default.accounts.length}
-                        onChange={(event) => {
-                            void autosaveDefaultBrokerPreference(event.target.value);
+                        onValueChange={(accountId) => {
+                            void autosaveDefaultBrokerPreference(accountId);
                         }}
+                        options={config.broker_data_default.accounts.map((account) => ({
+                            value: account.account_id,
+                            label: `${account.label} · ${account.broker_code}`
+                        }))}
                         value={selectedDefaultAccountId}
-                    >
-                        {config.broker_data_default.accounts.map((account) => (
-                            <option key={account.account_id} value={account.account_id}>
-                                {account.label} · {account.broker_code}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                 </div>
                 {isDefaultBrokerSaving ? <div className="mt-3 text-xs text-muted-foreground">Saving default broker...</div> : null}
                 {config.broker_data_default.effective_default_account_id ? (
@@ -696,11 +706,11 @@ export function SystemConfigPanel({
                 {section === "all" ? (
                 <div>
                     <div className="flex items-center gap-2">
-                        <div className="text-sm font-bold">Manasija Alpha API</div>
+                        <div className="text-sm font-bold">Drishti API</div>
                         <Dialog>
                             <DialogTrigger asChild>
                                 <Button
-                                    aria-label="Manasija Alpha API help"
+                                    aria-label="Drishti API help"
                                     className="size-6 border-transparent bg-transparent p-0 text-muted-foreground hover:bg-transparent hover:text-primary"
                                     size="icon"
                                     type="button"
@@ -711,9 +721,9 @@ export function SystemConfigPanel({
                             </DialogTrigger>
                             <DialogContent className="max-w-lg p-0">
                                 <DialogHeader className="border-b border-border px-5 py-4 pr-14">
-                                    <DialogTitle>Manasija Alpha API</DialogTitle>
+                                    <DialogTitle>Drishti API</DialogTitle>
                                     <DialogDescription>
-                                        This key connects Ananta Market Stack to Manasija Alpha market intelligence services.
+                                        This key connects Ananta Market Stack to Drishti market intelligence services.
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
@@ -723,19 +733,51 @@ export function SystemConfigPanel({
                                     </p>
                                     <p>
                                         The key is saved server-side and shown here only as a masked hint. Replace it
-                                        when the key rotates, or clear it to disable Alpha-backed intelligence calls.
+                                        when the key rotates, or clear it to disable Drishti-backed intelligence calls.
+                                    </p>
+                                    <p>
+                                        Don&apos;t have a key yet?{" "}
+                                        <Link
+                                            className="font-medium text-primary underline underline-offset-2"
+                                            href={DRISHTI_API_SIGNUP_URL}
+                                            rel="noopener noreferrer"
+                                            target="_blank"
+                                        >
+                                            Create one at drishti.manasija.in
+                                        </Link>
+                                        .
                                     </p>
                                 </div>
                             </DialogContent>
                         </Dialog>
                     </div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
-                        Store the Alpha API key used for market intelligence, company metadata, announcements, concalls,
+                        Store the Drishti API key used for market intelligence, company metadata, announcements, concalls,
                         and daily summaries.
                     </p>
                 </div>
                 ) : null}
                 <div className="border border-border p-4" data-onboarding="manasija-alpha-api-input-section">
+                    {alphaReadOnly ? (
+                        <div className="mb-4 border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                            This Drishti API key is shared for the whole workspace. You can use the configured
+                            services, but only an allowed admin can change this setup.
+                        </div>
+                    ) : null}
+                    {!config.alpha_api.has_api_key ? (
+                        <div className="mb-4 border border-primary/30 bg-primary/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                            Don&apos;t have a Drishti API key yet?{" "}
+                            <Link
+                                className="font-medium text-primary underline underline-offset-2"
+                                href={DRISHTI_API_SIGNUP_URL}
+                                rel="noopener noreferrer"
+                                target="_blank"
+                            >
+                                Create one at drishti.manasija.in
+                            </Link>
+                            , then paste it below.
+                        </div>
+                    ) : null}
                     <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
                             <div className="text-sm font-bold">{config.alpha_api.label}</div>
@@ -770,21 +812,28 @@ export function SystemConfigPanel({
                             data-1p-ignore="true"
                             data-form-type="other"
                             data-lpignore="true"
+                            disabled={alphaReadOnly}
                             onChange={(event) => setAlphaApiKey(event.target.value)}
                             placeholder={
                                 config.alpha_api.has_api_key
-                                    ? "Replace saved Manasija Alpha API key"
-                                    : "Add Manasija Alpha API key"
+                                    ? "Replace saved Drishti API key"
+                                    : "Add Drishti API key"
                             }
                             type="password"
                             value={alphaApiKey}
                         />
-                        <Button disabled={isPending || !alphaApiKey.trim()} onClick={saveAlphaApiKey} type="button">
+                        <Button
+                            disabled={alphaReadOnly || isPending || !alphaApiKey.trim()}
+                            onClick={saveAlphaApiKey}
+                            title={alphaReadOnly ? "Only a workspace admin can update the shared Drishti API key." : undefined}
+                            type="button"
+                        >
                             Save key
                         </Button>
                         <Button
-                            disabled={isPending || !config.alpha_api.has_api_key}
+                            disabled={alphaReadOnly || isPending || !config.alpha_api.has_api_key}
                             onClick={clearAlphaApiKey}
+                            title={alphaReadOnly ? "Only a workspace admin can clear the shared Drishti API key." : undefined}
                             type="button"
                             variant="ghost"
                         >
@@ -813,24 +862,34 @@ export function SystemConfigPanel({
                 </div>
                 ) : null}
                 <div className="border border-border p-4">
+                    {mcpReadOnly ? (
+                        <div className="mb-4 border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                            These MCP servers are shared for the workspace. You can use granted MCP access in broker
+                            chat, but only an allowed admin can change this shared setup.
+                        </div>
+                    ) : null}
                     <div className="mb-4 flex flex-wrap items-center gap-2">
-                        <Select
+                        <SimpleSelect
                             className="h-9 min-w-[260px]"
-                            onChange={(event) => {
-                                const next = mcpServers.find((server) => server.id === event.target.value);
-                                setSelectedMcpServerId(event.target.value);
+                            onValueChange={(serverId) => {
+                                const next = mcpServers.find((server) => server.id === serverId);
+                                setSelectedMcpServerId(serverId);
                                 setMcpApiKey("");
                                 setMcpExtraHeadersText(JSON.stringify(next?.extra_headers ?? {}, null, 2));
                             }}
+                            options={mcpServers.map((server, index) => ({
+                                value: server.id ?? "",
+                                label: server.name || server.url || `MCP server ${index + 1}`
+                            }))}
                             value={mcpConfig.id ?? ""}
+                        />
+                        <Button
+                            disabled={mcpReadOnly || isPending}
+                            onClick={addMcpServer}
+                            title={mcpReadOnly ? "Only a workspace admin can add shared MCP servers." : undefined}
+                            type="button"
+                            variant="outline"
                         >
-                            {mcpServers.map((server, index) => (
-                                <option key={server.id ?? `mcp-${index}`} value={server.id ?? ""}>
-                                    {server.name || server.url || `MCP server ${index + 1}`}
-                                </option>
-                            ))}
-                        </Select>
-                        <Button disabled={isPending} onClick={addMcpServer} type="button" variant="outline">
                             Add MCP server
                         </Button>
                     </div>
@@ -865,6 +924,7 @@ export function SystemConfigPanel({
                         <Label className="flex items-center gap-2 text-sm">
                             <Checkbox
                                 checked={mcpConfig.is_enabled}
+                                disabled={mcpReadOnly}
                                 onCheckedChange={(checked) => autosaveSelectedMcpServer({ is_enabled: Boolean(checked) })}
                             />
                             Enable this server
@@ -872,6 +932,7 @@ export function SystemConfigPanel({
                         <Label className="flex items-center gap-2 text-sm">
                             <Checkbox
                                 checked={mcpConfig.use_by_default}
+                                disabled={mcpReadOnly}
                                 onCheckedChange={(checked) =>
                                     autosaveSelectedMcpServer({ use_by_default: Boolean(checked) })
                                 }
@@ -883,57 +944,70 @@ export function SystemConfigPanel({
                     <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_180px]">
                         <Input
                             className="h-9 text-sm"
+                            disabled={mcpReadOnly}
                             onChange={(event) => patchSelectedMcpServer({ name: event.target.value })}
                             placeholder="Display name"
                             value={mcpConfig.name ?? ""}
                         />
                         <Input
                             className="h-9 text-sm"
+                            disabled={mcpReadOnly}
                             onChange={(event) => patchSelectedMcpServer({ url: event.target.value })}
                             placeholder="https://mcp.testing.manasija.in/"
                             value={mcpConfig.url}
                         />
-                        <Select
+                        <SimpleSelect
                             className="h-9"
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ transport: event.target.value as "streamable_http" | "sse" })
+                            disabled={mcpReadOnly}
+                            onValueChange={(transport) =>
+                                patchSelectedMcpServer({ transport: transport as "streamable_http" | "sse" })
                             }
+                            options={[
+                                { value: "streamable_http", label: "Streamable HTTP" },
+                                { value: "sse", label: "SSE" }
+                            ]}
                             value={mcpConfig.transport}
-                        >
-                            <option value="streamable_http">Streamable HTTP</option>
-                            <option value="sse">SSE</option>
-                        </Select>
+                        />
                     </div>
 
                     <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[180px_minmax(220px,1fr)]">
-                        <Select
+                        <SimpleSelect
                             className="h-9"
-                            onChange={(event) =>
-                                patchSelectedMcpServer({ auth_mode: event.target.value as "oauth" | "api_key" })
+                            disabled={mcpReadOnly}
+                            onValueChange={(authMode) =>
+                                patchSelectedMcpServer({ auth_mode: authMode as "oauth" | "api_key" })
                             }
+                            options={[
+                                { value: "oauth", label: "OAuth / browser authentication" },
+                                { value: "api_key", label: "Bearer API key fallback" }
+                            ]}
                             value={mcpConfig.auth_mode ?? "oauth"}
-                        >
-                            <option value="oauth">OAuth / browser authentication</option>
-                            <option value="api_key">Bearer API key fallback</option>
-                        </Select>
+                        />
                         <div className="flex flex-wrap gap-2">
                             <Button
-                                disabled={isPending || !mcpConfig.url}
+                                disabled={mcpReadOnly || isPending || !mcpConfig.url}
                                 onClick={startMcpAuthentication}
+                                title={mcpReadOnly ? "Only a workspace admin can authenticate shared MCP servers." : undefined}
                                 type="button"
                                 variant="outline"
                             >
                                 Authenticate MCP
                             </Button>
                             <Button
-                                disabled={isPending || !mcpConfig.oauth_authenticated}
+                                disabled={mcpReadOnly || isPending || !mcpConfig.oauth_authenticated}
                                 onClick={clearMcpAuthentication}
+                                title={mcpReadOnly ? "Only a workspace admin can clear shared MCP authentication." : undefined}
                                 type="button"
                                 variant="outline"
                             >
                                 Clear OAuth
                             </Button>
-                            <Button disabled={isPending || !mcpConfig.url} onClick={refreshMcpCapabilities} type="button">
+                            <Button
+                                disabled={mcpReadOnly || isPending || !mcpConfig.url}
+                                onClick={refreshMcpCapabilities}
+                                title={mcpReadOnly ? "Only a workspace admin can refresh shared MCP tools." : undefined}
+                                type="button"
+                            >
                                 Refresh tools
                             </Button>
                         </div>
@@ -946,6 +1020,7 @@ export function SystemConfigPanel({
                             data-1p-ignore="true"
                             data-form-type="other"
                             data-lpignore="true"
+                            disabled={mcpReadOnly}
                             onChange={(event) => setMcpApiKey(event.target.value)}
                             placeholder={mcpConfig.has_api_key ? "Replace MCP API key" : "Add MCP API key"}
                             type="password"
@@ -953,6 +1028,7 @@ export function SystemConfigPanel({
                         />
                         <Input
                             className="h-9 text-sm"
+                            disabled={mcpReadOnly}
                             onChange={(event) =>
                                 patchSelectedMcpServer({ api_key_header_name: event.target.value })
                             }
@@ -961,6 +1037,7 @@ export function SystemConfigPanel({
                         />
                         <Input
                             className="h-9 text-sm"
+                            disabled={mcpReadOnly}
                             onChange={(event) =>
                                 patchSelectedMcpServer({ api_key_prefix: event.target.value })
                             }
@@ -1008,6 +1085,7 @@ export function SystemConfigPanel({
                     <div className="mt-3 grid gap-2 min-[900px]:grid-cols-[140px_minmax(260px,1fr)]">
                         <Input
                             className="h-9 text-sm"
+                            disabled={mcpReadOnly}
                             min={1}
                             max={120}
                             onChange={(event) =>
@@ -1020,26 +1098,34 @@ export function SystemConfigPanel({
 
                     <textarea
                         className="mt-3 min-h-24 w-full border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-primary"
+                        disabled={mcpReadOnly}
                         onChange={(event) => setMcpExtraHeadersText(event.target.value)}
                         placeholder='{"X-Workspace": "ananta-market-stack"}'
                         value={mcpExtraHeadersText}
                     />
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                        <Button disabled={isPending} onClick={saveMcpConfig} type="button">
+                        <Button
+                            disabled={mcpReadOnly || isPending}
+                            onClick={saveMcpConfig}
+                            title={mcpReadOnly ? "Only a workspace admin can save shared MCP settings." : undefined}
+                            type="button"
+                        >
                             {isPending ? "Saving..." : "Save MCP config"}
                         </Button>
                         <Button
-                            disabled={isPending || !mcpConfig.has_api_key}
+                            disabled={mcpReadOnly || isPending || !mcpConfig.has_api_key}
                             onClick={clearMcpKey}
+                            title={mcpReadOnly ? "Only a workspace admin can clear the shared MCP key." : undefined}
                             type="button"
                             variant="outline"
                         >
                             Clear MCP key
                         </Button>
                         <Button
-                            disabled={isPending}
+                            disabled={mcpReadOnly || isPending}
                             onClick={clearMcpConfigCompletely}
+                            title={mcpReadOnly ? "Only a workspace admin can delete shared MCP servers." : undefined}
                             type="button"
                             variant="outline"
                         >
@@ -1059,6 +1145,12 @@ export function SystemConfigPanel({
 
             {showLlm ? (
             <section className="grid gap-4">
+                {llmReadOnly ? (
+                    <div className="border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                        These provider keys and models are shared across the workspace. You can use the configured
+                        providers in chat and alerts, but only an allowed admin can change them here.
+                    </div>
+                ) : null}
                 {section === "all" ? (
                 <div>
                     <div className="text-base font-bold tracking-tight">LLM providers</div>
@@ -1192,6 +1284,7 @@ export function SystemConfigPanel({
                                 data-1p-ignore="true"
                                 data-form-type="other"
                                 data-lpignore="true"
+                                disabled={llmReadOnly}
                                 onChange={(event) => updateDraft(provider.provider, { apiKey: event.target.value })}
                                 placeholder={
                                     provider.has_api_key ? "Replace saved API key" : `Add ${provider.label} API key`
@@ -1200,15 +1293,17 @@ export function SystemConfigPanel({
                                 value={drafts[providerKey(provider.provider)]?.apiKey ?? ""}
                             />
                             <Button
-                                disabled={isPending || !(drafts[providerKey(provider.provider)]?.apiKey ?? "").trim()}
+                                disabled={llmReadOnly || isPending || !(drafts[providerKey(provider.provider)]?.apiKey ?? "").trim()}
                                 onClick={() => saveProviderApiKey(provider.provider)}
+                                title={llmReadOnly ? "Only a workspace admin can update shared provider keys." : undefined}
                                 type="button"
                             >
                                 Save key
                             </Button>
                             <Button
-                                disabled={isPending || !provider.has_api_key}
+                                disabled={llmReadOnly || isPending || !provider.has_api_key}
                                 onClick={() => clearProviderApiKey(provider.provider)}
+                                title={llmReadOnly ? "Only a workspace admin can clear shared provider keys." : undefined}
                                 type="button"
                                 variant="outline"
                             >
@@ -1219,19 +1314,22 @@ export function SystemConfigPanel({
                         <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(180px,0.8fr)_minmax(160px,0.7fr)_auto]">
                             <Input
                                 className="h-9 text-sm"
+                                disabled={llmReadOnly}
                                 onChange={(event) => updateDraft(provider.provider, { modelId: event.target.value })}
                                 placeholder="Model id"
                                 value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
                             />
                             <Input
                                 className="h-9 text-sm"
+                                disabled={llmReadOnly}
                                 onChange={(event) => updateDraft(provider.provider, { label: event.target.value })}
                                 placeholder="Optional label"
                                 value={drafts[providerKey(provider.provider)]?.label ?? ""}
                             />
                             <Button
-                                disabled={isPending || !(drafts[providerKey(provider.provider)]?.modelId ?? "").trim()}
+                                disabled={llmReadOnly || isPending || !(drafts[providerKey(provider.provider)]?.modelId ?? "").trim()}
                                 onClick={() => addModel(provider.provider)}
+                                title={llmReadOnly ? "Only a workspace admin can add shared models." : undefined}
                                 type="button"
                                 variant="outline"
                             >
@@ -1254,7 +1352,9 @@ export function SystemConfigPanel({
                                     </div>
                                     <Button
                                         className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                        disabled={llmReadOnly || isPending}
                                         onClick={() => removeModel(provider.provider, model.id)}
+                                        title={llmReadOnly ? "Only a workspace admin can remove shared models." : undefined}
                                         size="sm"
                                         type="button"
                                         variant="outline"
