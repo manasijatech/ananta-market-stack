@@ -507,3 +507,37 @@
 .watchlist-table-scroll [data-slot="scroll-area-scrollbar"][data-scrolling] [data-slot="scroll-area-thumb"] {
     background: color-mix(in srgb, var(--primary) 75%, var(--foreground));
 }
+
+.onboarding-input-control {
+    position: relative;
+}
+
+.onboarding-input-control:has(.onboarding-input:focus)::after {
+    animation: caret-blink 1s linear infinite;
+    background: var(--warning);
+    content: "";
+    height: 1.1em;
+    pointer-events: none;
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1px;
+}
+
+.onboarding-input {
+    caret-color: var(--warning);
+}
+
+.onboarding-cta {
+    transition:
+        background-color 120ms linear,
+        border-color 120ms linear,
+        color 120ms linear;
+}
+
+.onboarding-cta:not(:disabled):hover {
+    background: var(--foreground);
+    border-color: var(--foreground);
+    color: var(--background);
+}

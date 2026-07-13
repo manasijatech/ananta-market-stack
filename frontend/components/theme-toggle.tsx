@@ -22,7 +22,7 @@ export function ThemeToggle() {
     return (
         <Button
             aria-label="Toggle theme"
-            className="relative"
+            className="relative size-9 rounded-lg"
             size="icon"
             type="button"
             variant="outline"

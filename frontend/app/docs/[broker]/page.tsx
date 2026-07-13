@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import type { ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { DocsShell } from "@/components/brokers/docs-shell";
 import { BrokerLogo, brokerNames } from "@/components/brokers/ui";
-import { Shell } from "@/components/brokers/shell";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getBrokerGuideMarkdown } from "@/service/broker-guide-markdown";
 import { brokerGuides, getBrokerGuide } from "@/service/broker-guides";
@@ -29,7 +29,7 @@ export default async function BrokerDocsPage({ params }: BrokerDocsPageProps) {
     const markdown = await getBrokerGuideMarkdown(guide.broker);
 
     return (
-        <Shell>
+        <DocsShell>
             <article className="mx-auto max-w-4xl">
                 <Link
                     className="mb-8 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground"
@@ -102,7 +102,7 @@ export default async function BrokerDocsPage({ params }: BrokerDocsPageProps) {
                     {markdown}
                 </ReactMarkdown>
             </article>
-        </Shell>
+        </DocsShell>
     );
 }
 

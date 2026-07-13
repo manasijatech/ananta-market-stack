@@ -37,6 +37,7 @@ import type { LlmUsageOverview } from "@/service/types/llm-usage";
 import { formatUserFacingError } from "@/lib/api-errors";
 import { parseActionError } from "@/components/brokers/action-error";
 import { withServerFetchRetry } from "@/lib/server-fetch-retry";
+import { getWorkspaceSetupReadiness } from "@/lib/setup-readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -94,22 +95,11 @@ function firstRuntimeError(workflows: AlertWorkflow[]): string | null {
     return workflows.find((workflow) => workflow.last_runtime_error)?.last_runtime_error ?? null;
 }
 
-function integrationState(config: SystemConfig | null) {
-    const llmProviders = config?.llm_providers.filter((provider) => provider.is_enabled && provider.has_api_key) ?? [];
-    const alphaReady = Boolean(config?.alpha_api.is_enabled && config.alpha_api.has_api_key);
-    const mcpServers = config
-        ? [config.mcp_server, ...config.mcp_servers].filter(
-              (server) => server.is_enabled && (server.oauth_authenticated || server.has_api_key)
-          )
-        : [];
-    const defaultBrokerReady = Boolean(config?.broker_data_default.effective_default_account_id);
-
-    return { llmProviders, alphaReady, mcpServers, defaultBrokerReady };
-}
-
 function getSetupItems(data: DashboardData): SetupChecklistItem[] {
-    const { llmProviders, alphaReady, mcpServers } = integrationState(data.systemConfig.data);
-    const hasBroker = data.accounts.data.length > 0;
+    const { alphaReady, hasBroker, llmReady, mcpReady } = getWorkspaceSetupReadiness(
+        data.accounts.data,
+        data.systemConfig.data
+    );
 
     return [
         {
@@ -133,7 +123,7 @@ function getSetupItems(data: DashboardData): SetupChecklistItem[] {
             label: "Configure LLM providers",
             description: "Store provider keys for broker chat and alert analysis.",
             href: "/settings#llm",
-            complete: llmProviders.length > 0,
+            complete: llmReady,
             icon: IconBrain
         },
         {
@@ -141,7 +131,7 @@ function getSetupItems(data: DashboardData): SetupChecklistItem[] {
             label: "Connect MCP servers",
             description: "Optional hosted tools for broker chat when MCP is enabled.",
             href: "/settings#mcp",
-            complete: mcpServers.length > 0,
+            complete: mcpReady,
             icon: IconPlugConnected
         }
     ];
@@ -415,11 +405,11 @@ function LlmOverviewCard({ data }: { data: DashboardData["llmOverview"] }) {
 
 function SettingsAttentionCard({ data }: { data: DashboardData["systemConfig"] }) {
     const config = data.data;
-    const { llmProviders, alphaReady, mcpServers } = integrationState(config);
+    const { alphaReady, llmReady, mcpReady } = getWorkspaceSetupReadiness([], config);
     const pendingItems = [
         !alphaReady && "Drishti API key",
-        llmProviders.length === 0 && "LLM providers",
-        mcpServers.length === 0 && "MCP servers",
+        !llmReady && "LLM providers",
+        !mcpReady && "MCP servers",
         !config?.broker_data_default.effective_default_account_id && "Default broker data"
     ].filter(Boolean) as string[];
     const tone: DashboardTone = data.error ? "danger" : pendingItems.length ? "warn" : "good";
@@ -491,8 +481,9 @@ function shouldShowLlmCard(data: DashboardData): boolean {
 
 function shouldShowSettingsCard(data: DashboardData): boolean {
     if (data.systemConfig.error) return true;
-    const { llmProviders, alphaReady, mcpServers, defaultBrokerReady } = integrationState(data.systemConfig.data);
-    return !alphaReady || llmProviders.length === 0 || mcpServers.length === 0 || !defaultBrokerReady;
+    const { alphaReady, llmReady, mcpReady } = getWorkspaceSetupReadiness([], data.systemConfig.data);
+    const defaultBrokerReady = Boolean(data.systemConfig.data?.broker_data_default.effective_default_account_id);
+    return !alphaReady || !llmReady || !mcpReady || !defaultBrokerReady;
 }
 
 function shouldShowBrokerCard(data: DashboardData): boolean {

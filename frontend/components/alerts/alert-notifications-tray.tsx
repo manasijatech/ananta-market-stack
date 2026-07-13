@@ -87,7 +87,7 @@ export function AlertNotificationsTray() {
     return (
         <div className="relative" ref={trayRef}>
             <Button
-                className="inline-flex items-center gap-2"
+                className="h-9 rounded-lg px-3"
                 onClick={() => setOpen((current) => !current)}
                 type="button"
                 variant="outline"

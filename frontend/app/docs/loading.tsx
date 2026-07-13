@@ -1,9 +1,11 @@
-import { CardGridSkeleton, HeaderSkeleton, LoadingShell } from "@/components/ui/loading-skeletons";
+import { DocsShell } from "@/components/brokers/docs-shell";
+import { CardGridSkeleton, HeaderSkeleton } from "@/components/ui/loading-skeletons";
 
 export default function BrokerDocsLoading() {
     return (
-        <LoadingShell header={<HeaderSkeleton action={false} titleWidth="w-80" />}>
+        <DocsShell>
+            <HeaderSkeleton action={false} titleWidth="w-80" />
             <CardGridSkeleton count={6} columns="min-[760px]:grid-cols-2 min-[1100px]:grid-cols-3" />
-        </LoadingShell>
+        </DocsShell>
     );
 }

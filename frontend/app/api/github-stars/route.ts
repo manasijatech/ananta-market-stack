@@ -5,9 +5,9 @@ const CACHE_CONTROL = "public, s-maxage=3600, stale-while-revalidate=86400";
 /** Public endpoint that exposes the cached GitHub star count for client components. */
 export async function GET(): Promise<Response> {
     try {
-        const stars = await fetchGithubStarsFromGitHub();
+        const details = await fetchGithubStarsFromGitHub();
         return Response.json(
-            { stars },
+            details,
             {
                 headers: {
                     "Cache-Control": CACHE_CONTROL
@@ -15,6 +15,6 @@ export async function GET(): Promise<Response> {
             }
         );
     } catch {
-        return Response.json({ stars: null });
+        return Response.json({ stars: null, stargazers: [], stargazersRequiresAuth: false });
     }
 }

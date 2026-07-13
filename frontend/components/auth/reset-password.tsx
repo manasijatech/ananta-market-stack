@@ -1,280 +1,229 @@
-"use client"
+"use client";
 
-import { useAuth, useResetPassword } from "@better-auth-ui/react"
-import { Eye, EyeOff } from "lucide-react"
-import { type SyntheticEvent, useEffect, useState } from "react"
-import { toast } from "sonner"
-
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useAuth, useResetPassword } from "@better-auth-ui/react";
+import { IconEye, IconEyeOff } from "@tabler/icons-react";
+import { type SyntheticEvent, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup
-} from "@/components/ui/field"
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput
-} from "@/components/ui/input-group"
-import { Label } from "@/components/ui/label"
-import { Spinner } from "@/components/ui/spinner"
-import { cn } from "@/lib/utils"
+    authFormInputGroupButtonClassName,
+    authFormInputGroupClassName,
+    authFormInputGroupInputClassName,
+    authFormInputInvalidClassName,
+    authFormPrimaryButtonClassName
+} from "@/components/auth/auth-form-styles";
+import { Button } from "@/components/ui/button";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 export type ResetPasswordProps = {
-  className?: string
-}
+    className?: string;
+};
 
-/**
- * Render a password reset form that validates the reset token from the URL, accepts a new password (and optional confirmation), and submits it to the auth client.
- *
- * The component checks for a `token` query parameter on mount and, if missing, shows an error toast and navigates to the sign-in page. It exposes per-field validation messages, toggles for password visibility, and disables inputs while the reset request is pending.
- *
- * @returns The password reset form UI ready to be mounted in the app layout.
- */
 export function ResetPassword({ className }: ResetPasswordProps) {
-  const {
-    authClient,
-    basePaths,
-    emailAndPassword,
-    localization,
-    viewPaths,
-    navigate,
-    Link
-  } = useAuth()
+    const { authClient, basePaths, emailAndPassword, localization, viewPaths, navigate, Link } = useAuth();
 
-  const { mutate: resetPassword, isPending } = useResetPassword(authClient, {
-    onSuccess: () => {
-      toast.success(localization.auth.passwordResetSuccess)
-      navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` })
-    }
-  })
+    const { mutate: resetPassword, isPending } = useResetPassword(authClient, {
+        onSuccess: () => {
+            toast.success(localization.auth.passwordResetSuccess);
+            navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` });
+        }
+    });
 
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false)
-  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] =
-    useState(false)
+    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+    const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState<{
+        password?: string;
+        confirmPassword?: string;
+    }>({});
 
-  const [fieldErrors, setFieldErrors] = useState<{
-    password?: string
-    confirmPassword?: string
-  }>({})
+    useEffect(() => {
+        const searchParams = new URLSearchParams(window.location.search);
+        const token = searchParams.get("token");
+        const error = searchParams.get("error");
 
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    const token = searchParams.get("token") as string
+        if (error || !token) {
+            toast.error(localization.auth.invalidResetPasswordToken);
+            navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` });
+        }
+    }, [basePaths.auth, localization.auth.invalidResetPasswordToken, navigate, viewPaths.auth.signIn]);
 
-    if (!token) {
-      toast.error(localization.auth.invalidResetPasswordToken)
-      navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` })
-    }
-  }, [
-    basePaths.auth,
-    localization.auth.invalidResetPasswordToken,
-    viewPaths.auth.signIn,
-    navigate
-  ])
+    function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
+        event.preventDefault();
 
-  function handleSubmit(e: SyntheticEvent<HTMLFormElement>) {
-    e.preventDefault()
+        const searchParams = new URLSearchParams(window.location.search);
+        const token = searchParams.get("token");
 
-    const searchParams = new URLSearchParams(window.location.search)
-    const token = searchParams.get("token") as string
+        if (!token) {
+            toast.error(localization.auth.invalidResetPasswordToken);
+            navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` });
+            return;
+        }
 
-    if (!token) {
-      toast.error(localization.auth.invalidResetPasswordToken)
-      navigate({ to: `${basePaths.auth}/${viewPaths.auth.signIn}` })
-      return
-    }
+        const formData = new FormData(event.currentTarget);
+        const password = formData.get("password") as string;
+        const confirmPassword = formData.get("confirmPassword") as string;
 
-    const formData = new FormData(e.currentTarget)
-    const password = formData.get("password") as string
-    const confirmPassword = formData.get("confirmPassword") as string
+        if (emailAndPassword?.confirmPassword && password !== confirmPassword) {
+            setFieldErrors((prev) => ({
+                ...prev,
+                confirmPassword: localization.auth.passwordsDoNotMatch
+            }));
+            return;
+        }
 
-    if (emailAndPassword?.confirmPassword && password !== confirmPassword) {
-      toast.error(localization.auth.passwordsDoNotMatch)
-      return
+        resetPassword({ token, newPassword: password });
     }
 
-    resetPassword({ token, newPassword: password })
-  }
+    function passwordInvalidMessage(element: HTMLInputElement) {
+        const min = emailAndPassword?.minPasswordLength;
+        const max = emailAndPassword?.maxPasswordLength;
 
-  return (
-    <Card className={cn("w-full max-w-sm", className)}>
-      <CardHeader>
-        <CardTitle className="text-xl font-semibold">
-          {localization.auth.resetPassword}
-        </CardTitle>
-      </CardHeader>
+        return element.validity.valueMissing
+            ? localization.auth.fieldRequired
+            : element.validity.tooShort
+              ? localization.auth.tooShort.replace("{{min}}", String(min))
+              : localization.auth.tooLong.replace("{{max}}", String(max));
+    }
 
-      <CardContent>
-        <form onSubmit={handleSubmit}>
-          <FieldGroup>
-            <Field data-invalid={!!fieldErrors.password}>
-              <Label htmlFor="password">{localization.auth.password}</Label>
-
-              <InputGroup>
-                <InputGroupInput
-                  id="password"
-                  name="password"
-                  type={isPasswordVisible ? "text" : "password"}
-                  autoComplete="new-password"
-                  placeholder={localization.auth.newPasswordPlaceholder}
-                  required
-                  minLength={emailAndPassword?.minPasswordLength}
-                  maxLength={emailAndPassword?.maxPasswordLength}
-                  disabled={isPending}
-                  onChange={() => {
-                    setFieldErrors((prev) => ({
-                      ...prev,
-                      password: undefined
-                    }))
-                  }}
-                  onInvalid={(e) => {
-                    e.preventDefault()
-                    const el = e.target as HTMLInputElement
-                    const min = emailAndPassword?.minPasswordLength
-                    const max = emailAndPassword?.maxPasswordLength
-                    const msg = el.validity.valueMissing
-                      ? localization.auth.fieldRequired
-                      : el.validity.tooShort
-                        ? localization.auth.tooShort.replace(
-                            "{{min}}",
-                            String(min)
-                          )
-                        : localization.auth.tooLong.replace(
-                            "{{max}}",
-                            String(max)
-                          )
-
-                    setFieldErrors((prev) => ({
-                      ...prev,
-                      password: msg
-                    }))
-                  }}
-                  aria-invalid={!!fieldErrors.password}
-                />
-
-                <InputGroupAddon align="inline-end">
-                  <InputGroupButton
-                    aria-label={
-                      isPasswordVisible
-                        ? localization.auth.hidePassword
-                        : localization.auth.showPassword
-                    }
-                    title={
-                      isPasswordVisible
-                        ? localization.auth.hidePassword
-                        : localization.auth.showPassword
-                    }
-                    onClick={() => {
-                      setIsPasswordVisible(!isPasswordVisible)
-                    }}
-                  >
-                    {isPasswordVisible ? <EyeOff /> : <Eye />}
-                  </InputGroupButton>
-                </InputGroupAddon>
-              </InputGroup>
-
-              <FieldError>{fieldErrors.password}</FieldError>
-            </Field>
-
-            {emailAndPassword?.confirmPassword && (
-              <Field data-invalid={!!fieldErrors.confirmPassword}>
-                <Label htmlFor="confirmPassword">
-                  {localization.auth.confirmPassword}
-                </Label>
-
-                <InputGroup>
-                  <InputGroupInput
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={isConfirmPasswordVisible ? "text" : "password"}
-                    autoComplete="new-password"
-                    placeholder={localization.auth.confirmPasswordPlaceholder}
-                    required
-                    minLength={emailAndPassword?.minPasswordLength}
-                    maxLength={emailAndPassword?.maxPasswordLength}
-                    disabled={isPending}
-                    onChange={() => {
-                      setFieldErrors((prev) => ({
-                        ...prev,
-                        confirmPassword: undefined
-                      }))
-                    }}
-                    onInvalid={(e) => {
-                      e.preventDefault()
-                      const el = e.target as HTMLInputElement
-                      const min = emailAndPassword?.minPasswordLength
-                      const max = emailAndPassword?.maxPasswordLength
-                      const msg = el.validity.valueMissing
-                        ? localization.auth.fieldRequired
-                        : el.validity.tooShort
-                          ? localization.auth.tooShort.replace(
-                              "{{min}}",
-                              String(min)
-                            )
-                          : localization.auth.tooLong.replace(
-                              "{{max}}",
-                              String(max)
-                            )
-
-                      setFieldErrors((prev) => ({
-                        ...prev,
-                        confirmPassword: msg
-                      }))
-                    }}
-                    aria-invalid={!!fieldErrors.confirmPassword}
-                  />
-
-                  <InputGroupAddon align="inline-end">
-                    <InputGroupButton
-                      aria-label={
-                        isConfirmPasswordVisible
-                          ? localization.auth.hidePassword
-                          : localization.auth.showPassword
-                      }
-                      title={
-                        isConfirmPasswordVisible
-                          ? localization.auth.hidePassword
-                          : localization.auth.showPassword
-                      }
-                      onClick={() => {
-                        setIsConfirmPasswordVisible(!isConfirmPasswordVisible)
-                      }}
-                    >
-                      {isConfirmPasswordVisible ? <EyeOff /> : <Eye />}
-                    </InputGroupButton>
-                  </InputGroupAddon>
-                </InputGroup>
-
-                <FieldError>{fieldErrors.confirmPassword}</FieldError>
-              </Field>
-            )}
-
-            <div className="flex flex-col gap-3">
-              <Button type="submit" disabled={isPending}>
-                {isPending && <Spinner />}
-
-                {localization.auth.resetPassword}
-              </Button>
+    return (
+        <div className={cn("flex w-full flex-col gap-5", className)}>
+            <div className="space-y-1.5">
+                <h1 className="text-2xl font-semibold tracking-tight">{localization.auth.resetPassword}</h1>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                    Choose a new password for your workspace account.
+                </p>
             </div>
-          </FieldGroup>
-        </form>
 
-        <div className="flex flex-col gap-3 items-center w-full mt-4">
-          <FieldDescription className="text-center">
-            {localization.auth.rememberYourPassword}{" "}
-            <Link
-              href={`${basePaths.auth}/${viewPaths.auth.signIn}`}
-              className="underline underline-offset-4"
-            >
-              {localization.auth.signIn}
-            </Link>
-          </FieldDescription>
+            <form className="grid gap-5" onSubmit={handleSubmit}>
+                <FieldGroup className="gap-3.5">
+                    <Field data-invalid={!!fieldErrors.password}>
+                        <FieldLabel htmlFor="reset-password">{localization.auth.password}</FieldLabel>
+                        <InputGroup
+                            className={cn(
+                                authFormInputGroupClassName,
+                                fieldErrors.password && authFormInputInvalidClassName
+                            )}
+                        >
+                            <InputGroupInput
+                                id="reset-password"
+                                name="password"
+                                type={isPasswordVisible ? "text" : "password"}
+                                autoComplete="new-password"
+                                placeholder={localization.auth.newPasswordPlaceholder}
+                                required
+                                minLength={emailAndPassword?.minPasswordLength}
+                                maxLength={emailAndPassword?.maxPasswordLength}
+                                disabled={isPending}
+                                className={authFormInputGroupInputClassName}
+                                onChange={() => setFieldErrors((prev) => ({ ...prev, password: undefined }))}
+                                onInvalid={(event) => {
+                                    event.preventDefault();
+                                    setFieldErrors((prev) => ({
+                                        ...prev,
+                                        password: passwordInvalidMessage(event.target as HTMLInputElement)
+                                    }));
+                                }}
+                                aria-invalid={fieldErrors.password ? true : undefined}
+                            />
+                            <InputGroupAddon align="inline-end">
+                                <InputGroupButton
+                                    type="button"
+                                    size="icon-sm"
+                                    className={authFormInputGroupButtonClassName}
+                                    aria-label={
+                                        isPasswordVisible
+                                            ? localization.auth.hidePassword
+                                            : localization.auth.showPassword
+                                    }
+                                    onClick={() => setIsPasswordVisible((current) => !current)}
+                                >
+                                    {isPasswordVisible ? (
+                                        <IconEyeOff className="size-5" stroke={1.75} />
+                                    ) : (
+                                        <IconEye className="size-5" stroke={1.75} />
+                                    )}
+                                </InputGroupButton>
+                            </InputGroupAddon>
+                        </InputGroup>
+                        <FieldError>{fieldErrors.password}</FieldError>
+                    </Field>
+
+                    {emailAndPassword?.confirmPassword ? (
+                        <Field data-invalid={!!fieldErrors.confirmPassword}>
+                            <FieldLabel htmlFor="reset-confirm-password">
+                                {localization.auth.confirmPassword}
+                            </FieldLabel>
+                            <InputGroup
+                                className={cn(
+                                    authFormInputGroupClassName,
+                                    fieldErrors.confirmPassword && authFormInputInvalidClassName
+                                )}
+                            >
+                                <InputGroupInput
+                                    id="reset-confirm-password"
+                                    name="confirmPassword"
+                                    type={isConfirmPasswordVisible ? "text" : "password"}
+                                    autoComplete="new-password"
+                                    placeholder={localization.auth.confirmPasswordPlaceholder}
+                                    required
+                                    minLength={emailAndPassword?.minPasswordLength}
+                                    maxLength={emailAndPassword?.maxPasswordLength}
+                                    disabled={isPending}
+                                    className={authFormInputGroupInputClassName}
+                                    onChange={() => setFieldErrors((prev) => ({ ...prev, confirmPassword: undefined }))}
+                                    onInvalid={(event) => {
+                                        event.preventDefault();
+                                        setFieldErrors((prev) => ({
+                                            ...prev,
+                                            confirmPassword: passwordInvalidMessage(event.target as HTMLInputElement)
+                                        }));
+                                    }}
+                                    aria-invalid={fieldErrors.confirmPassword ? true : undefined}
+                                />
+                                <InputGroupAddon align="inline-end">
+                                    <InputGroupButton
+                                        type="button"
+                                        size="icon-sm"
+                                        className={authFormInputGroupButtonClassName}
+                                        aria-label={
+                                            isConfirmPasswordVisible
+                                                ? localization.auth.hidePassword
+                                                : localization.auth.showPassword
+                                        }
+                                        onClick={() => setIsConfirmPasswordVisible((current) => !current)}
+                                    >
+                                        {isConfirmPasswordVisible ? (
+                                            <IconEyeOff className="size-5" stroke={1.75} />
+                                        ) : (
+                                            <IconEye className="size-5" stroke={1.75} />
+                                        )}
+                                    </InputGroupButton>
+                                </InputGroupAddon>
+                            </InputGroup>
+                            <FieldError>{fieldErrors.confirmPassword}</FieldError>
+                        </Field>
+                    ) : null}
+                </FieldGroup>
+
+                <div className="space-y-5">
+                    <Button type="submit" disabled={isPending} className={authFormPrimaryButtonClassName}>
+                        {isPending ? <Spinner /> : null}
+                        {localization.auth.resetPassword}
+                    </Button>
+
+                    <p className="text-center text-sm text-muted-foreground">
+                        {localization.auth.rememberYourPassword}{" "}
+                        <Link
+                            href={`${basePaths.auth}/${viewPaths.auth.signIn}`}
+                            className="font-medium text-foreground underline underline-offset-4"
+                        >
+                            {localization.auth.signIn}
+                        </Link>
+                    </p>
+                </div>
+            </form>
         </div>
-      </CardContent>
-    </Card>
-  )
+    );
 }

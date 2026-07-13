@@ -58,26 +58,6 @@ def update_default_config(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/default-config", response_model=BrokerDataDefaultConfigOut)
-def get_default_config(
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> BrokerDataDefaultConfigOut:
-    return broker_data_preferences.get_broker_data_default_config(db, user.id)
-
-
-@router.put("/default-config", response_model=BrokerDataDefaultConfigOut)
-def update_default_config(
-    body: BrokerDataDefaultConfigUpdateIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> BrokerDataDefaultConfigOut:
-    try:
-        return broker_data_preferences.update_broker_data_default_config(db, user.id, body)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
 @router.get("/instruments/search", response_model=list[InstrumentSearchRow])
 def search_instruments(
     q: str = Query(default=""),

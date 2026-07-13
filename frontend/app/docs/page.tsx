@@ -1,6 +1,6 @@
 import Link from "next/link";
+import { DocsShell } from "@/components/brokers/docs-shell";
 import { BrokerLogo, brokerNames, PageHeader } from "@/components/brokers/ui";
-import { Shell } from "@/components/brokers/shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { brokerGuides } from "@/service/broker-guides";
@@ -9,7 +9,7 @@ export default function BrokerDocsIndexPage() {
     const guides = Object.values(brokerGuides);
 
     return (
-        <Shell>
+        <DocsShell>
             <PageHeader
                 eyebrow="Broker docs"
                 title="Docs"
@@ -42,6 +42,6 @@ export default function BrokerDocsIndexPage() {
                     </Card>
                 ))}
             </section>
-        </Shell>
+        </DocsShell>
     );
 }
