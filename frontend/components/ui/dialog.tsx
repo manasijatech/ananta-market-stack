@@ -5,10 +5,15 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { XIcon } from "lucide-react";
 import type React from "react";
-import { Children, cloneElement, isValidElement } from "react";
+import { Children, createElement, isValidElement } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+
+function childRenderElement(child: React.ReactElement<{ children?: React.ReactNode }>): React.ReactElement {
+  const { children: _children, ...childProps } = child.props;
+  return createElement(child.type, { key: child.key, ...childProps });
+}
 
 function resolveTriggerAsChild(
   asChild: boolean | undefined,
@@ -25,7 +30,7 @@ function resolveTriggerAsChild(
   }
 
   return {
-    render: cloneElement(child, {}, null),
+    render: childRenderElement(child),
     children: child.props.children,
   };
 }
@@ -45,7 +50,7 @@ function resolveCloseAsChild(
   }
 
   return {
-    render: cloneElement(child, {}, null),
+    render: childRenderElement(child),
     children: child.props.children,
   };
 }

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { LockKeyhole } from "lucide-react";
 import { BackButton } from "@/components/access/back-button";
 import { PageHeader } from "@/components/brokers/ui";
-import { Shell } from "@/components/brokers/shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -20,7 +19,7 @@ export function AccessDeniedState({
     backLabel?: string;
 }) {
     return (
-        <Shell>
+        <>
             <PageHeader
                 eyebrow="Access control"
                 title={title}
@@ -44,6 +43,6 @@ export function AccessDeniedState({
                     </div>
                 </CardContent>
             </Card>
-        </Shell>
+        </>
     );
 }

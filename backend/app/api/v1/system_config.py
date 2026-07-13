@@ -56,9 +56,11 @@ def get_system_config(
 ) -> SystemConfigOut:
     mcp_server = McpServerConfigOut()
     mcp_servers: list[McpServerConfigOut] = []
+    mcp_connector_readiness = []
     if _mcp_read_allowed(principal):
         mcp_server = mcp_config.get_mcp_server_config(db, principal.user.id)
         mcp_servers = mcp_config.list_mcp_server_configs(db, principal.user.id)
+        mcp_connector_readiness = mcp_config.list_mcp_connector_readiness()
     return SystemConfigOut(
         broker_data_default=broker_data_preferences.get_broker_data_default_config(db, principal.user.id, principal),
         broker_data_search=broker_data_preferences.get_broker_data_search_config(db, principal.user.id, principal),
@@ -67,6 +69,7 @@ def get_system_config(
         alpha_websocket=alpha_websocket.alpha_ws_config_out(db, principal.user.id),
         mcp_server=mcp_server,
         mcp_servers=mcp_servers,
+        mcp_connector_readiness=mcp_connector_readiness,
     )
 
 

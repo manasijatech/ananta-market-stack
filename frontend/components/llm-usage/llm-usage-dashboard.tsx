@@ -11,7 +11,6 @@ import {
     IconShieldCheck
 } from "@tabler/icons-react";
 import { PageHeader } from "@/components/brokers/ui";
-import { Shell } from "@/components/brokers/shell";
 import { LlmUsageFilterBar, type LlmUsageFilterOptions } from "@/components/llm-usage/llm-usage-filter-bar";
 import { MetricInfoTooltip } from "@/components/llm-usage/llm-usage-metric-info-tooltip";
 import { StatCard, StatValueMuted, tableHeadClassName } from "@/components/llm-usage/llm-usage-stat-card";
@@ -559,7 +558,7 @@ export function LlmUsageDashboard({
     const activeFilters = hasActiveLlmUsageFilters(filters, granularity);
 
     return (
-        <Shell>
+        <>
             <PageHeader
                 description="Monitor provider calls, token volume, provider-reported cost, and workflow-level LLM activity."
                 eyebrow="Operations"
@@ -584,6 +583,6 @@ export function LlmUsageDashboard({
                 <BreakdownGrid overview={overview} />
                 <RecentEvents events={events} hasActiveFilters={activeFilters} />
             </div>
-        </Shell>
+        </>
     );
 }

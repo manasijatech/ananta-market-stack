@@ -489,6 +489,7 @@ export interface SystemConfig {
     alpha_websocket: AlphaWebSocketConfig;
     mcp_server: McpServerConfig;
     mcp_servers: McpServerConfig[];
+    mcp_connector_readiness: Array<{ id: string; is_ready: boolean; reason?: string | null }>;
 }
 
 export interface Notification {
