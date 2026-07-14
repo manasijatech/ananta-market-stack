@@ -74,6 +74,48 @@ def test_list_preset_catalog_hides_blacklisted_rows():
         db.close()
 
 
+def test_list_preset_catalog_refreshes_missing_constituent_counts(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    try:
+        now = datetime.utcnow()
+        db.add(
+            SystemWatchlistPreset(
+                id="midcap",
+                slug="nifty-midcap-100",
+                name="NIFTY Midcap 100",
+                trading_index_name="Nifty Midcap 100",
+                constituent_count=0,
+                search_text="nifty midcap 100",
+                sync_status="pending",
+                last_catalog_sync_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+
+        def fake_refresh(db, preset):
+            preset.constituent_count = 100
+            preset.sync_status = "ready"
+            preset.last_constituents_sync_at = datetime.utcnow()
+            db.add(preset)
+            db.commit()
+            return 100
+
+        monkeypatch.setattr(preset_svc, "refresh_preset_constituents", fake_refresh)
+
+        rows = preset_svc.list_preset_catalog(db, "u1", limit=20, offset=0)
+
+        assert rows[0]["id"] == "midcap"
+        assert rows[0]["constituent_count"] == 100
+        assert rows[0]["sync_status"] == "ready"
+    finally:
+        db.close()
+
+
 def test_create_watchlist_requires_alpha_api_key():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

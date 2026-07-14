@@ -158,7 +158,7 @@ export function FeedFilterChip({
         <button
             aria-pressed={active}
             className={cn(
-                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+                "inline-flex h-9 shrink-0 snap-start items-center gap-1.5 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition-colors sm:h-7 sm:px-2.5",
                 active
                     ? "border-primary/40 bg-primary/10 text-primary"
                     : "border-border/70 bg-transparent text-muted-foreground hover:border-primary/30 hover:text-foreground"
@@ -184,9 +184,9 @@ export function FeedFilterBar({
     trailing?: ReactNode;
 }) {
     return (
-        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border/50 pb-3">
+        <div className="flex min-w-0 flex-col gap-3 border-b border-border/50 pb-3 min-[640px]:flex-row min-[640px]:items-center min-[640px]:justify-between min-[640px]:gap-3">
             <div
-                className="-mx-1 flex min-w-0 flex-1 gap-2 overflow-x-auto px-1 md:flex-wrap md:overflow-visible"
+                className="-mx-1 flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] md:flex-wrap md:overflow-visible [&::-webkit-scrollbar]:hidden"
                 aria-label="Feed filters"
             >
                 {children}

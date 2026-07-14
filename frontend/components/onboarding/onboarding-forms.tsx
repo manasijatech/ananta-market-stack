@@ -55,6 +55,14 @@ function defaultBrokerLabel(broker: BrokerCode) {
     return `${brokerNames[broker]} main`;
 }
 
+function OnboardingFormError({ message }: { message: string }) {
+    return (
+        <p className="text-xs text-destructive-foreground" role="alert">
+            {message}
+        </p>
+    );
+}
+
 function makeBrokerPayload(
     broker: BrokerCode,
     growwMode: GrowwMode,
@@ -132,7 +140,7 @@ function SetupField({
     }, [defaultValue, resetKey]);
 
     return (
-        <Field data-onboarding-motion-item>
+        <Field data-onboarding-motion-item invalid={Boolean(error)}>
             <FieldLabel htmlFor={`onboarding-${name}`}>{label}</FieldLabel>
             <Input
                 autoComplete="off"
@@ -147,6 +155,7 @@ function SetupField({
                 placeholder={placeholder}
                 type={type}
                 value={value}
+                aria-invalid={error ? true : undefined}
             />
             {description ? <FieldDescription>{description}</FieldDescription> : null}
             {error ? <FieldError>{error}</FieldError> : null}
@@ -442,7 +451,7 @@ export function BrokerStep({ data }: { data: OnboardingSetupData }) {
                         />
                     </>
                 ) : null}
-                {formError ? <FieldError>{formError}</FieldError> : null}
+                {formError ? <OnboardingFormError message={formError} /> : null}
                 <Button className="onboarding-cta w-fit" data-onboarding-motion-item disabled={isPending} type="submit">
                     {isPending ? "Saving..." : "Connect broker"}
                 </Button>
@@ -491,7 +500,7 @@ export function DrishtiStep({ config }: { config: SystemConfig }) {
                         <FieldDescription>Keep this enabled for setup readiness.</FieldDescription>
                     </div>
                 </Field>
-                {formError ? <FieldError>{formError}</FieldError> : null}
+                {formError ? <OnboardingFormError message={formError} /> : null}
                 <Button
                     className="onboarding-cta w-fit"
                     data-onboarding-motion-item
@@ -557,7 +566,7 @@ export function LlmProviderStep({ config }: { config: SystemConfig }) {
                     placeholder="Paste API key"
                     type="password"
                 />
-                {formError ? <FieldError>{formError}</FieldError> : null}
+                {formError ? <OnboardingFormError message={formError} /> : null}
                 <Button className="onboarding-cta w-fit" data-onboarding-motion-item disabled={isPending} type="submit">
                     {isPending ? "Saving..." : "Save LLM provider"}
                 </Button>
@@ -614,7 +623,7 @@ export function McpStep() {
                     name="mcp_api_key"
                     type="password"
                 />
-                {formError ? <FieldError>{formError}</FieldError> : null}
+                {formError ? <OnboardingFormError message={formError} /> : null}
                 <div className="flex flex-col gap-2 min-[520px]:flex-row">
                     <Button className="onboarding-cta" disabled={isPending} type="submit">
                         {isPending ? "Saving..." : "Connect MCP"}

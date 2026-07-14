@@ -13,9 +13,14 @@ import {
     type AlphaFeedParams
 } from "@/service/actions/alpha/shared";
 
+function normalizeStringList(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is string => typeof item === "string");
+}
+
 export async function getAlphaAnnouncementCategories(): Promise<string[]> {
     const result = await withAlphaSdk<AlphaStringListResponse>((client) => client.getAnnouncementsCategories());
-    return result.data ?? [];
+    return normalizeStringList(Array.isArray(result) ? result : result.data);
 }
 
 export async function getAlphaAnnouncements(

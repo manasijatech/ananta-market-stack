@@ -187,13 +187,6 @@ function NavigationGroups({
                                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                                         : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
                                 )}
-                                data-onboarding={
-                                    item.href === "/broker-connections"
-                                        ? "broker-connections-nav"
-                                        : item.href === "/settings"
-                                          ? "settings-nav"
-                                          : undefined
-                                }
                                 href={href}
                                 key={item.href}
                             >
@@ -267,7 +260,7 @@ export function WorkspaceShell({
                             <DialogTrigger asChild>
                                 <Button
                                     aria-label="Open navigation"
-                                    className="size-9"
+                                    className="size-9 shrink-0"
                                     size="icon"
                                     type="button"
                                     variant="outline"
@@ -305,9 +298,9 @@ export function WorkspaceShell({
                                 </div>
                             </DialogContent>
                         </Dialog>
-                        <BrandLogo imageClassName="text-[1.35rem]" />
+                        <BrandLogo compact className="min-w-0 overflow-hidden" imageClassName="text-base sm:text-[1.35rem]" />
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                         <GithubStarButton />
                         <AlertNotificationsTray />
                         <ThemeToggle />
@@ -354,7 +347,7 @@ export function WorkspaceShell({
                         </div>
                     </div>
                 </header>
-                <div className="min-w-0 px-4 pb-6 pt-[5.5rem] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10">
+                <div className="min-w-0 px-3 pb-6 pt-[calc(3.75rem+env(safe-area-inset-top))] sm:px-4 sm:pt-[calc(4.5rem+env(safe-area-inset-top))] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-10">
                     <UpdateAvailableBanner />
                     {children}
                 </div>

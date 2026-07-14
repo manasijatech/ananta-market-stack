@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { createSession, verifyBrokerAccount } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -106,7 +107,7 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
             setCallbackState({
                 tone: "warning",
                 message:
-                    "Broker login returned successfully, but this browser session cannot see any broker accounts. Open Ananta Market Stack using localhost:3000 before starting broker login, then use the same host for the callback."
+                    "Broker login returned successfully, but this browser session cannot see any broker accounts. Open Ananta using localhost:3000 before starting broker login, then use the same host for the callback."
             });
             return;
         }
@@ -130,6 +131,11 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
         });
 
         async function connect() {
+            // A sonner toast (unlike the inline Alert) survives the redirect below,
+            // so the user actually sees the outcome instead of waiting blind.
+            const toastId = toast.loading(`Connecting ${selectedAccount.label}…`, {
+                description: "Finishing broker login — this takes a moment."
+            });
             try {
                 const sessionResult = await createSession(
                     selectedAccount.id,
@@ -137,10 +143,9 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
                     selectedPayload.payload
                 );
                 if (!sessionResult.ok) {
-                    setCallbackState({
-                        tone: "destructive",
-                        message: sessionResult.message || "Broker session could not be established."
-                    });
+                    const message = sessionResult.message || "Broker session could not be established.";
+                    setCallbackState({ tone: "destructive", message });
+                    toast.error(`${selectedAccount.label} couldn't connect.`, { id: toastId, description: message });
                     return;
                 }
                 const verifyResult = await verifyBrokerAccount(selectedAccount.id);
@@ -152,6 +157,7 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
                     tone: "default",
                     message: `${selectedAccount.label} is connected. ${syncMessage}`
                 });
+                toast.success(`${selectedAccount.label} is connected.`, { id: toastId, description: syncMessage });
                 window.localStorage.removeItem(pendingLoginKey);
                 router.replace(`/broker-connections/${selectedAccount.id}`);
                 router.refresh();
@@ -159,8 +165,9 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
                 const message = parseActionError(caught).message;
                 setCallbackState({
                     tone: "destructive",
-                    message: `Broker login returned, but Ananta Market Stack could not finish setup automatically. ${message}`
+                    message: `Broker login returned, but Ananta could not finish setup automatically. ${message}`
                 });
+                toast.error(`${selectedAccount.label} couldn't finish setup.`, { id: toastId, description: message });
             }
         }
 

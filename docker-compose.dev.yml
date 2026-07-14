@@ -12,8 +12,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: backend/Dockerfile.dev
+      context: ./backend
+      dockerfile: Dockerfile.dev
     depends_on:
       redis:
         condition: service_healthy
@@ -37,34 +37,24 @@ services:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ./backend/data:/app/data
+      - backend-data:/app/data
+      - ./backend/app:/app/app
+      - ./backend/broker:/app/broker
+      - ./backend/common:/app/common
+      - ./backend/db:/app/db
+      - ./backend/alembic:/app/alembic
+      - ./backend/scripts:/app/scripts
+      - ./backend/alembic.ini:/app/alembic.ini
     develop:
       watch:
-        - path: ./backend
-          target: /app
-          action: sync
-          ignore:
-            - .venv/
-            - venv/
-            - data/
-            - __pycache__/
-            - "**/*.pyc"
-            - .pytest_cache/
-            - .mypy_cache/
-            - .ruff_cache/
-            - "*.db"
-            - "*.db-*"
         - path: ./backend/requirements.txt
           action: rebuild
-        - path: ./backend/.env
-          target: /app/.env
-          action: sync+restart
     restart: unless-stopped
 
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile.dev
+      context: ./frontend
+      dockerfile: Dockerfile.dev
     depends_on:
       - backend
     env_file:
@@ -82,31 +72,28 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     volumes:
-      - ./backend/data:/shared-data
+      - backend-data:/shared-data
+      - ./frontend/app:/app/app
+      - ./frontend/components:/app/components
+      - ./frontend/lib:/app/lib
+      - ./frontend/hooks:/app/hooks
+      - ./frontend/service:/app/service
+      - ./frontend/public:/app/public
+      - ./frontend/content:/app/content
+      - ./frontend/scripts:/app/scripts
+      - ./frontend/proxy.ts:/app/proxy.ts
+      - ./frontend/next.config.ts:/app/next.config.ts
+      - ./frontend/postcss.config.mjs:/app/postcss.config.mjs
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/eslint.config.mjs:/app/eslint.config.mjs
+      - ./frontend/components.json:/app/components.json
     develop:
       watch:
-        - path: ./frontend
-          target: /app
-          action: sync
-          ignore:
-            - node_modules/
-            - .next/
-            - data/
-            - "*.tsbuildinfo"
         - path: ./frontend/package.json
           action: rebuild
         - path: ./frontend/package-lock.json
           action: rebuild
-        - path: ./frontend/next.config.ts
-          target: /app/next.config.ts
-          action: sync+restart
-        - path: ./frontend/postcss.config.mjs
-          target: /app/postcss.config.mjs
-          action: sync+restart
-        - path: ./frontend/tsconfig.json
-          target: /app/tsconfig.json
-          action: sync+restart
-        - path: ./frontend/.env.local
-          target: /app/.env.local
-          action: sync+restart
     restart: unless-stopped
+
+volumes:
+  backend-data:

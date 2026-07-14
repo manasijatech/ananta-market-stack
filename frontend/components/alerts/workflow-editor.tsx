@@ -47,10 +47,12 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
     Dialog,
+    DialogClose,
     DialogContent,
     DialogDescription,
     DialogFooter,
     DialogHeader,
+    DialogPanel,
     DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -59,12 +61,18 @@ import { SimpleSelect } from "@/components/ui/simple-select";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
 import { WorkflowAiChatPanel } from "@/components/alerts/workflow-ai-chat-panel";
+import { LlmModelPicker } from "@/components/system/llm-model-picker";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
 import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
 import { formatMarketCap, formatMarketCapInCrores } from "@/lib/market-cap";
 import { cn } from "@/lib/utils";
 
 type EngineAction = "validate" | "compile" | "explain" | "samples" | "deploy";
+
+function asArray<T>(value: T[] | null | undefined): T[] {
+    return Array.isArray(value) ? value : [];
+}
 
 function normalizeEditorMode(mode: EditorMode | null | undefined): EditorMode {
     return mode === "graph" ? "rule" : (mode ?? "rule");
@@ -1295,7 +1303,7 @@ function StepHeader({
         <div className={cn("flex flex-wrap items-start justify-between gap-3", className)}>
             <div className="max-w-[760px]">
                 <div className="type-step-eyebrow">{step}</div>
-                <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">{title}</h2>
+                <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">{title}</h2>
                 <HelpText className="mt-1.5">{description}</HelpText>
             </div>
             {action}
@@ -1304,21 +1312,29 @@ function StepHeader({
 }
 
 export function WorkflowEditor({
-    accounts,
-    announcementCategories = [],
+    accounts: rawAccounts,
+    announcementCategories: rawAnnouncementCategories = [],
     initialWorkflow,
-    llmProviders = [],
-    presets = [],
-    watchlists = []
+    llmProviders: rawLlmProviders = [],
+    openRouterModels: rawOpenRouterModels = [],
+    presets: rawPresets = [],
+    watchlists: rawWatchlists = []
 }: {
-    accounts: BrokerAccount[];
+    accounts?: BrokerAccount[];
     announcementCategories?: string[];
     initialWorkflow?: AlertWorkflow | null;
     llmProviders?: LlmProviderConfig[];
+    openRouterModels?: OpenRouterModel[];
     presets?: Array<Record<string, unknown>>;
     watchlists?: Watchlist[];
 }) {
     const router = useRouter();
+    const accounts = asArray(rawAccounts);
+    const announcementCategories = asArray(rawAnnouncementCategories);
+    const llmProviders = asArray(rawLlmProviders);
+    const openRouterModels = asArray(rawOpenRouterModels);
+    const presets = asArray(rawPresets);
+    const watchlists = asArray(rawWatchlists);
     const [isPending, startTransition] = useTransition();
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
@@ -1502,6 +1518,9 @@ export function WorkflowEditor({
     );
     const [channelTelegram, setChannelTelegram] = useState(
         initialWorkflow?.workflow_dsl.channels.enabled.includes("telegram") ?? false
+    );
+    const [channelDesktopAudio, setChannelDesktopAudio] = useState(
+        initialWorkflow?.workflow_dsl.channels.enabled.includes("desktop_audio") ?? false
     );
     const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
     const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
@@ -2176,7 +2195,8 @@ export function WorkflowEditor({
         const enabled = [
             channelInApp ? "in_app" : null,
             channelDiscord ? "discord" : null,
-            channelTelegram ? "telegram" : null
+            channelTelegram ? "telegram" : null,
+            channelDesktopAudio ? "desktop_audio" : null
         ].filter(Boolean) as AlertChannelType[];
         return {
             inherit_defaults: inheritDefaults,
@@ -2736,6 +2756,7 @@ export function WorkflowEditor({
         setChannelInApp(nextEnabledChannels.includes("in_app"));
         setChannelDiscord(nextEnabledChannels.includes("discord"));
         setChannelTelegram(nextEnabledChannels.includes("telegram"));
+        setChannelDesktopAudio(nextEnabledChannels.includes("desktop_audio"));
         setLlmEnabled(Boolean(llm?.enabled));
         setLlmProvider(llm?.provider ?? firstLlmProvider?.provider ?? "");
         setLlmModelId(llm?.model_id ?? firstLlmModel?.model_id ?? "");
@@ -3398,37 +3419,35 @@ export function WorkflowEditor({
                     if (!open) setLlmCreditAction(null);
                 }}
             >
-                <DialogContent className="w-[min(92vw,520px)] gap-0 overflow-hidden p-0">
-                    <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+                <DialogContent className="max-w-[520px]">
+                    <DialogHeader>
                         <DialogTitle>API credits may be used</DialogTitle>
                         <DialogDescription>
-                            <span className="mt-1 block">
-                                {llmCreditActionLabel} resolves the saved workflow prompt context before showing the
-                                preview.
-                            </span>
+                            {llmCreditActionLabel} resolves the saved workflow prompt context before showing the
+                            preview.
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="grid gap-3 px-5 py-4 text-sm text-muted-foreground">
-                        <div className="border border-border bg-secondary/20 p-3 text-foreground">
-                            <div className="type-step-eyebrow mb-2">Prompt check</div>
-                            <p className="break-words leading-6">{llmCreditReason}</p>
-                        </div>
-                        {llmCreditAction === "test" ? (
+                    <DialogPanel>
+                        <div className="grid gap-3 text-sm text-muted-foreground">
+                            <div className="rounded-lg border border-border bg-secondary/20 p-3 text-foreground">
+                                <div className="type-step-eyebrow mb-2">Prompt check</div>
+                                <p className="break-words leading-6">{llmCreditReason}</p>
+                            </div>
+                            {llmCreditAction === "test" ? (
+                                <p className="leading-6">
+                                    This will also call the selected LLM
+                                    {llmProviderCreditLabel ? ` (${llmProviderCreditLabel})` : ""}, which may consume
+                                    provider credits.
+                                </p>
+                            ) : null}
                             <p className="leading-6">
-                                This will also call the selected LLM
-                                {llmProviderCreditLabel ? ` (${llmProviderCreditLabel})` : ""}, which may consume
-                                provider credits.
+                                Review the prompt before continuing. This run uses the current draft prompt and LLM settings
+                                without saving the workflow.
                             </p>
-                        ) : null}
-                        <p className="leading-6">
-                            Review the prompt before continuing. This run uses the current draft prompt and LLM settings
-                            without saving the workflow.
-                        </p>
-                    </div>
-                    <DialogFooter className="border-t border-border px-5 py-4">
-                        <Button onClick={() => setLlmCreditAction(null)} type="button" variant="secondary">
-                            Cancel
-                        </Button>
+                        </div>
+                    </DialogPanel>
+                    <DialogFooter>
+                        <DialogClose render={<Button type="button" variant="ghost" />}>Cancel</DialogClose>
                         <Button onClick={confirmLlmCreditAction} type="button">
                             Continue
                         </Button>
@@ -3441,25 +3460,25 @@ export function WorkflowEditor({
                 </div>
             ) : null}
             {notice ? (
-                <div className="max-w-5xl border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">
+                <div className="max-w-5xl rounded-lg border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">
                     {notice}
                 </div>
             ) : null}
             {isTemplateDraft ? (
-                <div className="max-w-5xl border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">
+                <div className="max-w-5xl rounded-lg border-l-2 border-primary bg-secondary/30 px-4 py-3 text-sm text-foreground">
                     Template loaded as a new workflow draft. Saving creates your own workflow and leaves the system
                     template unchanged.
                 </div>
             ) : null}
             {matchPreview ? (
-                <div className="type-body max-w-5xl border border-border px-4 py-3 text-muted-foreground">
+                <div className="type-body max-w-5xl rounded-lg border border-border px-4 py-3 text-muted-foreground">
                     {matchPreview}
                 </div>
             ) : null}
 
             <div className="grid gap-4">
                 <div className="grid gap-4">
-                    <div className="max-w-5xl border border-border p-3">
+                    <div className="max-w-5xl rounded-lg border border-border p-3">
                         <StepHeader
                             step={workflowBasicsStep}
                             title="Workflow basics"
@@ -3481,13 +3500,13 @@ export function WorkflowEditor({
                                     }}
                                     options={[
                                         { value: "market_data", label: "Broker market data trigger" },
-                                        { value: "alpha_feed", label: "Ananta Market Stack websocket feed trigger" }
+                                        { value: "alpha_feed", label: "Ananta websocket feed trigger" }
                                     ]}
                                     value={workflowType}
                                 />
                                 <HelpText>
                                     {workflowType === "alpha_feed"
-                                        ? "This workflow analyzes stored Ananta Market Stack websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
+                                        ? "This workflow analyzes stored Ananta websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
                                         : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
                                 </HelpText>
                             </Label>
@@ -3515,7 +3534,7 @@ export function WorkflowEditor({
                     </div>
 
                     {workflowType === "market_data" ? (
-                        <div className="max-w-5xl border border-border p-3">
+                        <div className="max-w-5xl rounded-lg border border-border p-3">
                             <StepHeader
                                 step={marketWindowStep}
                                 title="Market window"
@@ -3587,7 +3606,7 @@ export function WorkflowEditor({
                                     <HelpText>Common default is Monday-Friday.</HelpText>
                                 </div>
                             </div>
-                            <div className="mt-3 border border-border p-3">
+                            <div className="mt-3 rounded-lg border border-border p-3">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
                                         <SectionTitle>Advanced scope</SectionTitle>
@@ -3664,7 +3683,7 @@ export function WorkflowEditor({
                     ) : null}
 
                     {workflowType === "alpha_feed" ? (
-                        <div className="max-w-5xl border border-border p-3">
+                        <div className="max-w-5xl rounded-lg border border-border p-3">
                             <StepHeader
                                 step={feedWindowStep}
                                 title="Feed window"
@@ -3746,11 +3765,11 @@ export function WorkflowEditor({
                     ) : null}
 
                     {workflowType === "alpha_feed" ? (
-                        <div className="max-w-5xl border border-border p-3">
+                        <div className="max-w-5xl rounded-lg border border-border p-3">
                             <StepHeader
                                 step={feedTriggerStep}
                                 title="Feed trigger"
-                                description="Choose which Ananta Market Stack websocket products and symbol scopes can create alerts before optional trigger LLM classification runs."
+                                description="Choose which Ananta websocket products and symbol scopes can create alerts before optional trigger LLM classification runs."
                             />
                             <div className="grid max-w-3xl gap-4 min-[900px]:grid-cols-2">
                                 <div>
@@ -3789,7 +3808,7 @@ export function WorkflowEditor({
                                     />
                                     <HelpText>
                                         Events are only available for symbols currently subscribed by the background
-                                        Ananta Market Stack websocket worker unless full-market is enabled for the chosen
+                                        Ananta websocket worker unless full-market is enabled for the chosen
                                         products.
                                     </HelpText>
                                 </div>
@@ -3797,7 +3816,7 @@ export function WorkflowEditor({
                                     <div className="min-w-0">
                                         <FieldLabel>Announcement categories</FieldLabel>
                                         <div className="mt-3 grid gap-2.5">
-                                            <div className="inline-flex w-fit border border-border p-1">
+                                            <div className="inline-flex w-fit rounded-lg border border-border p-1">
                                                 <Button
                                                     className="h-7 px-2.5 text-xs"
                                                     onClick={useAllAnnouncementCategories}
@@ -3862,7 +3881,7 @@ export function WorkflowEditor({
                                                         />
                                                         Also match related announcement categories
                                                     </Label>
-                                                    <div className="max-h-48 overflow-auto border border-border">
+                                                    <div className="max-h-48 overflow-auto rounded-lg border border-border">
                                                         {filteredAnnouncementCategories.map((category) => (
                                                             <Label
                                                                 className="flex min-w-0 items-center justify-between gap-3 border-b border-border px-2.5 py-1.5 text-sm last:border-b-0"
@@ -3999,17 +4018,28 @@ export function WorkflowEditor({
                                         placeholder="Select provider"
                                         value={feedProvider}
                                     />
-                                    <SimpleSelect
-                                        className="h-10 border border-input bg-background px-3 text-sm"
-                                        disabled={!feedTriggerLlmEnabled}
-                                        onValueChange={setFeedModelId}
-                                        options={selectedFeedModels.map((model) => ({
-                                            value: model.model_id,
-                                            label: model.label || model.model_id
-                                        }))}
-                                        placeholder="Select model"
-                                        value={feedModelId}
-                                    />
+                                    {feedProvider ? (
+                                        <LlmModelPicker
+                                            allowedModels={selectedFeedModels}
+                                            disabled={!feedTriggerLlmEnabled}
+                                            models={openRouterModels}
+                                            onSelect={(id) => setFeedModelId(id)}
+                                            provider={feedProvider}
+                                            value={feedModelId}
+                                        />
+                                    ) : (
+                                        <SimpleSelect
+                                            className="h-10 border border-input bg-background px-3 text-sm"
+                                            disabled
+                                            onValueChange={setFeedModelId}
+                                            options={selectedFeedModels.map((model) => ({
+                                                value: model.model_id,
+                                                label: model.label || model.model_id
+                                            }))}
+                                            placeholder="Select model"
+                                            value={feedModelId}
+                                        />
+                                    )}
                                 </div>
                                 <HelpText>
                                     {feedTriggerLlmEnabled
@@ -4061,7 +4091,7 @@ export function WorkflowEditor({
                                     : "max-w-5xl"
                             )}
                         >
-                            <div className="border border-border p-3">
+                            <div className="rounded-lg border border-border p-3">
                                 <StepHeader
                                     step={targetStep}
                                     title="Target"
@@ -4176,7 +4206,7 @@ export function WorkflowEditor({
                                                 </Label>
                                                 {showSuggestions && suggestions.length ? (
                                                     <div
-                                                        className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto border border-border bg-background"
+                                                        className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-[280px] overflow-y-auto rounded-lg border border-border bg-background"
                                                         id="workflow-symbol-suggestions"
                                                         role="listbox"
                                                     >
@@ -4267,7 +4297,7 @@ export function WorkflowEditor({
                                         </div>
                                     ) : null}
                                     {targetMode === "symbol_list" ? (
-                                        <div className="mt-4 overflow-hidden border border-border">
+                                        <div className="mt-4 overflow-hidden rounded-lg border border-border">
                                             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
                                                 <div>
                                                     <SectionTitle>Target list</SectionTitle>
@@ -4334,7 +4364,7 @@ export function WorkflowEditor({
                                                             return (
                                                                 <div
                                                                     className={cn(
-                                                                        "group grid gap-3 border bg-background px-3 py-3 min-[640px]:grid-cols-[minmax(0,1fr)_auto]",
+                                                                        "group grid gap-3 rounded-lg border bg-background px-3 py-3 min-[640px]:grid-cols-[minmax(0,1fr)_auto]",
                                                                         isActiveTarget
                                                                             ? "border-primary bg-[var(--accent-glow)]"
                                                                             : "border-border"
@@ -4406,7 +4436,7 @@ export function WorkflowEditor({
                                                             );
                                                         })}
                                                         {!targetEntries.length ? (
-                                                            <div className="border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+                                                            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
                                                                 Search above and select a suggestion to add the first
                                                                 target.
                                                             </div>
@@ -4437,7 +4467,7 @@ export function WorkflowEditor({
                                         </div>
                                     ) : null}
                                     {targetMode === "preset_universe" ? (
-                                        <div className="mt-4 overflow-hidden border border-border">
+                                        <div className="mt-4 overflow-hidden rounded-lg border border-border">
                                             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
                                                 <div>
                                                     <SectionTitle>Watchlist universe</SectionTitle>
@@ -4526,7 +4556,7 @@ export function WorkflowEditor({
                                                             return (
                                                                 <button
                                                                     className={cn(
-                                                                        "grid min-h-[64px] grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 border bg-background px-3 py-2 text-left transition-colors hover:border-primary hover:bg-[var(--accent-glow)] focus-visible:border-primary focus-visible:outline-none",
+                                                                        "grid min-h-[64px] grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border bg-background px-3 py-2 text-left transition-colors hover:border-primary hover:bg-[var(--accent-glow)] focus-visible:border-primary focus-visible:outline-none",
                                                                         isActiveTarget
                                                                             ? "border-primary bg-[var(--accent-glow)]"
                                                                             : "border-border"
@@ -4587,7 +4617,7 @@ export function WorkflowEditor({
                                                             );
                                                         })}
                                                         {!universeSymbols.length ? (
-                                                            <div className="border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+                                                            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
                                                                 No symbols resolved for this universe yet.
                                                             </div>
                                                         ) : null}
@@ -4599,10 +4629,10 @@ export function WorkflowEditor({
                                 </div>
                             </div>
                             {hasPreviewTarget ? (
-                                <div className="border border-border p-4 min-[1280px]:sticky min-[1280px]:top-4">
+                                <div className="rounded-lg border border-border p-4 min-[1280px]:sticky min-[1280px]:top-4">
                                     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                                         <div className="max-w-[760px]">
-                                            <h2 className="text-xl font-semibold leading-6 text-foreground">
+                                            <h2 className="text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">
                                                 Validate target
                                             </h2>
                                             <HelpText className="mt-1.5">
@@ -4610,7 +4640,7 @@ export function WorkflowEditor({
                                                 before building alert rules.
                                             </HelpText>
                                         </div>
-                                        <div className="inline-flex border border-border p-1">
+                                        <div className="inline-flex rounded-lg border border-border p-1">
                                             <Button
                                                 className={
                                                     previewMode === "summary"
@@ -4652,7 +4682,7 @@ export function WorkflowEditor({
                                             symbol={symbol}
                                         />
                                     ) : (
-                                        <div className=" border border-border p-3">
+                                        <div className=" rounded-lg border border-border p-3">
                                             <div className="type-step-eyebrow">Raw payload</div>
                                             <pre className="type-meta mt-2 max-h-[320px] overflow-auto">
                                                 {compactPreview({
@@ -4669,7 +4699,7 @@ export function WorkflowEditor({
                 </div>
             </div>
 
-            <div className="grid max-w-5xl gap-2 border border-border p-3">
+            <div className="grid max-w-5xl gap-2 rounded-lg border border-border p-3">
                 <StepHeader
                     className="mb-0"
                     step={marketCapStep}
@@ -4708,7 +4738,7 @@ export function WorkflowEditor({
                     </div>
                     <div
                         className={cn(
-                            "grid gap-4 border border-border bg-secondary/20 p-4 transition-opacity",
+                            "grid gap-4 rounded-lg border border-border bg-secondary/20 p-4 transition-opacity",
                             marketCapMode !== "custom" && "opacity-55"
                         )}
                     >
@@ -4798,10 +4828,10 @@ export function WorkflowEditor({
             </div>
 
             <div className="max-w-5xl">
-                <div className="grid gap-3 border border-border p-3">
+                <div className="grid gap-3 rounded-lg border border-border p-3">
                     <div className="max-w-[760px]">
                         <div className="type-step-eyebrow">{buildTriggerStep}</div>
-                        <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Build trigger</h2>
+                        <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">Build trigger</h2>
                         <HelpText className="mt-1.5">
                             Start with the rule logic first, then refine the outgoing alert content underneath it.
                         </HelpText>
@@ -4846,11 +4876,11 @@ export function WorkflowEditor({
                 </div>
             </div>
 
-            <div className="grid max-w-5xl gap-3 border border-border p-3">
+            <div className="grid max-w-5xl gap-3 rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="max-w-[760px]">
                         <div className="type-step-eyebrow">{optionalAnalysisStep}</div>
-                        <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Optional analysis</h2>
+                        <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">Optional analysis</h2>
                         <HelpText className="mt-1.5">
                             Post-trigger analysis is optional and stays tucked away until you need it.
                         </HelpText>
@@ -4883,17 +4913,28 @@ export function WorkflowEditor({
                             <HelpText>Uses the encrypted provider key from Settings.</HelpText>
                         </div>
                         <div className="grid gap-2">
-                            <SimpleSelect
-                                className="h-10 border border-input bg-background px-3 text-sm"
-                                disabled={!llmEnabled || !selectedLlmModels.length}
-                                onValueChange={setLlmModelId}
-                                options={selectedLlmModels.map((model) => ({
-                                    value: model.model_id,
-                                    label: model.label || model.model_id
-                                }))}
-                                placeholder="Select model"
-                                value={llmModelId}
-                            />
+                            {llmProvider ? (
+                                <LlmModelPicker
+                                    allowedModels={selectedLlmModels}
+                                    disabled={!llmEnabled}
+                                    models={openRouterModels}
+                                    onSelect={(id) => setLlmModelId(id)}
+                                    provider={llmProvider}
+                                    value={llmModelId}
+                                />
+                            ) : (
+                                <SimpleSelect
+                                    className="h-10 border border-input bg-background px-3 text-sm"
+                                    disabled
+                                    onValueChange={setLlmModelId}
+                                    options={selectedLlmModels.map((model) => ({
+                                        value: model.model_id,
+                                        label: model.label || model.model_id
+                                    }))}
+                                    placeholder="Select model"
+                                    value={llmModelId}
+                                />
+                            )}
                             <HelpText>Saved enabled models for the selected provider.</HelpText>
                         </div>
                         <div className="grid gap-2">
@@ -4928,7 +4969,7 @@ export function WorkflowEditor({
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="inline-flex border border-border p-1">
+                        <div className="inline-flex rounded-lg border border-border p-1">
                             <Button
                                 className={
                                     llmPromptTab === "prompt" ? "bg-secondary text-foreground" : "text-muted-foreground"
@@ -5072,7 +5113,7 @@ export function WorkflowEditor({
                             />
                             {showLlmSuggestions && filteredLlmPlaceholders.length ? (
                                 <div
-                                    className="absolute z-30 max-h-[220px] overflow-y-auto border border-border bg-background shadow-sm"
+                                    className="absolute z-30 max-h-[220px] overflow-y-auto rounded-lg border border-border bg-background shadow-sm"
                                     style={{
                                         left: llmSuggestionPosition?.left ?? 0,
                                         top: llmSuggestionPosition?.top ?? "calc(100% + 4px)",
@@ -5106,11 +5147,11 @@ export function WorkflowEditor({
                     ) : (
                         <div className="grid gap-3">
                             {llmFeedback ? (
-                                <AlertLlmMarkdown className="border border-border px-3 py-2 text-muted-foreground">
+                                <AlertLlmMarkdown className="rounded-lg border border-border px-3 py-2 text-muted-foreground">
                                     {llmFeedback}
                                 </AlertLlmMarkdown>
                             ) : null}
-                            <pre className="type-meta max-h-[420px] overflow-auto border border-border bg-secondary/20 p-3">
+                            <pre className="type-meta max-h-[420px] overflow-auto rounded-lg border border-border bg-secondary/20 p-3">
                                 {llmDetails ? compactPreview(llmDetails) : "No context preview yet."}
                             </pre>
                         </div>
@@ -5118,11 +5159,11 @@ export function WorkflowEditor({
                 </>
             </div>
 
-            <div className="grid max-w-5xl gap-3 border border-border p-3">
+            <div className="grid max-w-5xl gap-3 rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="max-w-[760px]">
                         <div className="type-step-eyebrow">{advancedDeploymentStep}</div>
-                        <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">
+                        <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">
                             Advanced script and deployment
                         </h2>
                         <HelpText className="mt-1.5">
@@ -5190,7 +5231,7 @@ export function WorkflowEditor({
                             value={dslText}
                         />
                         {showDslSuggestions && dslSuggestions.length ? (
-                            <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-72 overflow-y-auto border border-border bg-background shadow-lg">
+                            <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-72 overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
                                 {dslSuggestions.map((item) => (
                                     <Button
                                         className="grid w-full gap-1 border-b border-border px-3 py-2 text-left text-xs last:border-b-0 hover:bg-[var(--accent-glow)]"
@@ -5211,7 +5252,7 @@ export function WorkflowEditor({
                             </div>
                         ) : null}
                     </div>
-                    <div className="type-meta flex max-w-[820px] flex-wrap items-start justify-between gap-3 border border-border px-3 py-2">
+                    <div className="type-meta flex max-w-[820px] flex-wrap items-start justify-between gap-3 rounded-lg border border-border px-3 py-2">
                         <div>
                             <span className="font-bold uppercase">Generated from visual logic:</span>{" "}
                             <code className="font-mono">{suggestedDsl}</code>
@@ -5224,7 +5265,7 @@ export function WorkflowEditor({
                         Use Ctrl+Space for suggestions. Tab accepts the highlighted suggestion; when empty, Tab inserts
                         the generated script from the visual rule builder.
                     </HelpText>
-                    <div className="flex max-w-[820px] flex-wrap items-center justify-between gap-3 border border-border bg-secondary/20 px-3 py-3">
+                    <div className="flex max-w-[820px] flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-secondary/20 px-3 py-3">
                         <div>
                             <div className="type-step-eyebrow">Engine actions</div>
                             <HelpText className="mt-1">
@@ -5259,14 +5300,14 @@ export function WorkflowEditor({
                         </div>
                     </div>
                     <div className="grid max-w-[820px] gap-3 min-[900px]:grid-cols-3">
-                        <div className="border border-border p-3">
+                        <div className="rounded-lg border border-border p-3">
                             <div className="type-step-eyebrow">Deployment</div>
                             <div className="type-body mt-2 text-muted-foreground">
                                 {persistedWorkflow?.deployment_status ?? "draft"} · version{" "}
                                 {persistedWorkflow?.deploy_version ?? 0}
                             </div>
                         </div>
-                        <div className="border border-border p-3">
+                        <div className="rounded-lg border border-border p-3">
                             <div className="type-step-eyebrow">Last validation</div>
                             <div className="type-body mt-2 text-muted-foreground">
                                 {persistedWorkflow?.last_validated_at
@@ -5274,7 +5315,7 @@ export function WorkflowEditor({
                                     : "-"}
                             </div>
                         </div>
-                        <div className="border border-border p-3">
+                        <div className="rounded-lg border border-border p-3">
                             <div className="type-step-eyebrow">Runtime error</div>
                             <div className="type-body mt-2 text-muted-foreground">
                                 {persistedWorkflow?.last_runtime_error || "-"}
@@ -5304,7 +5345,7 @@ export function WorkflowEditor({
                                         <FileJson className="size-4 shrink-0" />
                                         <span className="type-step-eyebrow">{engineDetailsLabel}</span>
                                     </div>
-                                    <pre className="type-meta max-h-[220px] max-w-full overflow-auto border border-border p-3">
+                                    <pre className="type-meta max-h-[220px] max-w-full overflow-auto rounded-lg border border-border p-3">
                                         {compactPreview(engineDetails)}
                                     </pre>
                                 </div>
@@ -5314,21 +5355,21 @@ export function WorkflowEditor({
                 </>
             </div>
 
-            <div className="grid max-w-5xl gap-3 border border-border p-3">
+            <div className="grid max-w-5xl gap-3 rounded-lg border border-border p-3">
                 <div>
                     <div className="type-step-eyebrow">{deliveryLifecycleStep}</div>
-                    <h2 className="mt-1 text-xl font-semibold leading-6 text-foreground">Delivery and lifecycle</h2>
+                    <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">Delivery and lifecycle</h2>
                     <HelpText className="mt-1.5">
                         Choose where the alert goes, set the workflow state, and then save or test it.
                     </HelpText>
                 </div>
                 <div className="grid gap-3 min-[860px]:grid-cols-[240px_minmax(0,1fr)]">
                     <div className="grid gap-3">
-                        <div className="border border-border p-3">
+                        <div className="rounded-lg border border-border p-3">
                             <SectionTitle className="mb-2">Workflow scope</SectionTitle>
                             <HelpText>{targetScopeSummary(workflowTargetingPayload())}</HelpText>
                         </div>
-                        <div className="border border-border p-3">
+                        <div className="rounded-lg border border-border p-3">
                             <SectionTitle className="mb-2">Lifecycle</SectionTitle>
                             <HelpText>
                                 Active workflows are evaluated by the alert worker. Inactive workflows stay saved but do
@@ -5345,7 +5386,7 @@ export function WorkflowEditor({
                             />
                         </div>
                     </div>
-                    <div className="border border-border p-3">
+                    <div className="rounded-lg border border-border p-3">
                         <SectionTitle className="mb-2">Channels</SectionTitle>
                         <HelpText>
                             Choose where the alert should be delivered. Inherit defaults uses the alert delivery
@@ -5384,6 +5425,16 @@ export function WorkflowEditor({
                             </Label>
                             <Label
                                 className="flex items-center gap-2"
+                                title="Send generated audio to paired desktop tray apps."
+                            >
+                                <Checkbox
+                                    checked={channelDesktopAudio}
+                                    onCheckedChange={(checked) => setChannelDesktopAudio(Boolean(checked))}
+                                />
+                                Desktop audio
+                            </Label>
+                            <Label
+                                className="flex items-center gap-2"
                                 title="When enabled, default alert delivery channels from Settings are included automatically."
                             >
                                 <Checkbox
@@ -5412,7 +5463,7 @@ export function WorkflowEditor({
                     ) : null}
                 </div>
                 {persistedWorkflowId ? (
-                    <div className="type-help grid gap-1 border border-border px-3 py-2 text-muted-foreground">
+                    <div className="type-help grid gap-1 rounded-lg border border-border px-3 py-2 text-muted-foreground">
                         <div>
                             `Send test alert` renders the current title and message templates with the preview payload
                             and attempts delivery through the selected channels.
@@ -5426,6 +5477,7 @@ export function WorkflowEditor({
                 getEditorPayload={() => workflowPayload() as Record<string, unknown>}
                 llmProviders={llmProviders}
                 onWorkflowApplied={applyWorkflowToEditor}
+                openRouterModels={openRouterModels}
             />
         </div>
     );
@@ -5459,7 +5511,7 @@ function LivePreviewSummary({
     return (
         <div className="grid max-w-5xl gap-3">
             <div className="grid gap-3 min-[760px]:grid-cols-[minmax(220px,0.9fr)_minmax(0,1.1fr)]">
-                <div className="border border-border bg-background p-4">
+                <div className="rounded-lg border border-border bg-background p-4">
                     <div className="type-step-eyebrow">Last traded price</div>
                     <div className="mt-3 grid gap-3 min-[520px]:grid-cols-[40px_minmax(0,1fr)]">
                         {metadata?.logo ? (
@@ -5496,7 +5548,7 @@ function LivePreviewSummary({
                     </div>
                 </div>
                 <div className="grid gap-3 min-[620px]:grid-cols-2">
-                    <div className="border border-border bg-background p-4">
+                    <div className="rounded-lg border border-border bg-background p-4">
                         <div className="type-step-eyebrow">OHLC</div>
                         <div className="mt-3 grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
                             <PreviewMetric label="Open" value={displayValue(preview.ohlc?.open)} />
@@ -5507,7 +5559,7 @@ function LivePreviewSummary({
                             <PreviewMetric label="52w low" value={displayValue(quoteRaw.week_52_low)} />
                         </div>
                     </div>
-                    <div className="border border-border bg-background p-4">
+                    <div className="rounded-lg border border-border bg-background p-4">
                         <div className="type-step-eyebrow">Market internals</div>
                         <div className="mt-3 grid gap-3 text-sm">
                             <PreviewMetric label="Total buy qty" value={displayValue(quoteRaw.total_buy_quantity)} />
@@ -5551,7 +5603,7 @@ function MarketDepth({ buyRows, sellRows }: { buyRows: unknown[]; sellRows: unkn
     const sellPct = total ? 100 - buyPct : 50;
     const maxQty = Math.max(1, ...buyRows.map(depthQuantity), ...sellRows.map(depthQuantity));
     return (
-        <div className="border border-border bg-background p-4">
+        <div className="rounded-lg border border-border bg-background p-4">
             <div className="grid gap-3">
                 <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
@@ -5630,7 +5682,7 @@ function DepthColumn({
                     );
                 })}
                 {!rows.length ? (
-                    <div className="border border-dashed border-border px-3 py-5 text-sm text-muted-foreground">
+                    <div className="rounded-lg border border-dashed border-border px-3 py-5 text-sm text-muted-foreground">
                         No depth available.
                     </div>
                 ) : null}
@@ -5711,7 +5763,7 @@ function RuleEditor({
 }) {
     return (
         <div className="grid max-w-4xl gap-3">
-            <div className="max-w-xl border border-border p-3">
+            <div className="max-w-xl rounded-lg border border-border p-3">
                 <SectionTitle className="mb-3">Trigger settings</SectionTitle>
                 <div className="grid items-start gap-3 min-[760px]:grid-cols-[150px_120px_120px]">
                     <div className="grid content-start self-start gap-2">
@@ -5755,7 +5807,7 @@ function RuleEditor({
             </div>
             <div className="grid max-w-4xl gap-3">
                 {conditions.map((condition, index) => (
-                    <div className="border border-border p-3" key={`${condition.field}-${index}`}>
+                    <div className="rounded-lg border border-border p-3" key={`${condition.field}-${index}`}>
                         <ConditionEditor
                             condition={condition}
                             index={index}
@@ -5769,7 +5821,7 @@ function RuleEditor({
                 <Plus />
                 Add condition
             </Button>
-            <div className="max-w-4xl border border-border p-3">
+            <div className="max-w-4xl rounded-lg border border-border p-3">
                 <SectionTitle className="mb-3">Alert content</SectionTitle>
                 <div className="grid max-w-3xl gap-3">
                     <div className="grid max-w-[260px] gap-2">
@@ -5841,7 +5893,7 @@ function RuleEditor({
                             />
                             {showMessageFieldSuggestions && filteredMessageFields.length ? (
                                 <div
-                                    className="absolute z-30 max-h-[220px] overflow-y-auto border border-border bg-background shadow-sm"
+                                    className="absolute z-30 max-h-[220px] overflow-y-auto rounded-lg border border-border bg-background shadow-sm"
                                     style={{
                                         left: messageFieldPosition?.left ?? 0,
                                         top: messageFieldPosition?.top ?? "calc(100% + 4px)",
@@ -5873,7 +5925,7 @@ function RuleEditor({
                             open-interest, account, connection, and derived change fields.
                         </HelpText>
                         {!currentTemplatesMatchSuggestion ? (
-                            <div className="grid max-w-[720px] gap-2 border border-border bg-secondary/20 p-3">
+                            <div className="grid max-w-[720px] gap-2 rounded-lg border border-border bg-secondary/20 p-3">
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <HelpText>Suggested copy based on the current conditions.</HelpText>
                                     <Button onClick={applySuggestedCopy} size="sm" type="button">
@@ -6058,7 +6110,7 @@ function ConditionEditor({
                 </div>
             </div>
             {isRollingOperator || isVolumeOperator ? (
-                <div className="grid max-w-4xl gap-3 border border-border bg-secondary/20 p-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]">
+                <div className="grid max-w-4xl gap-3 rounded-lg border border-border bg-secondary/20 p-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]">
                     {isRollingOperator ? (
                         <>
                             <div className="grid gap-2">
@@ -6133,7 +6185,7 @@ function ConditionEditor({
                     </HelpText>
                 </div>
             ) : null}
-            <div className="grid max-w-4xl gap-3 border border-border p-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]">
+            <div className="grid max-w-4xl gap-3 rounded-lg border border-border p-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]">
                 <div className="grid gap-2">
                     <FieldLabel>Trigger mode</FieldLabel>
                     <SimpleSelect

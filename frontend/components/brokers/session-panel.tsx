@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { createSession, refreshSession, startDhanSession } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { formatDate } from "@/components/brokers/ui";
@@ -141,8 +142,17 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                     result.instrument_sync_message
                 ].filter(Boolean);
                 setMessage(parts.join(" "));
+                if (result.ok) {
+                    toast.success(`${account.label} session is active.`, {
+                        description: result.instrument_sync_message || undefined
+                    });
+                } else {
+                    toast.error(`${account.label} session failed.`, { description: result.message || undefined });
+                }
             } catch (error) {
-                setMessage(parseActionError(error).message);
+                const message = parseActionError(error).message;
+                setMessage(message);
+                toast.error(`${account.label} session failed.`, { description: message });
             }
         });
     }
@@ -152,9 +162,13 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         startTransition(async () => {
             try {
                 const result = await refreshSession(account.id, broker);
-                setMessage("message" in result ? result.message : result.guidance);
+                const message = "message" in result ? result.message : result.guidance;
+                setMessage(message);
+                toast.success(`${account.label} session refreshed.`, { description: message || undefined });
             } catch (error) {
-                setMessage(parseActionError(error).message);
+                const message = parseActionError(error).message;
+                setMessage(message);
+                toast.error(`Could not refresh ${account.label}.`, { description: message });
             }
         });
     }
@@ -201,7 +215,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         <section className="border-t border-border py-8">
             <div className="flex flex-col justify-between gap-4 min-[760px]:flex-row min-[760px]:items-start">
                 <div>
-                    <h2 className="text-xl font-bold">Session status</h2>
+                    <h2 className="text-xl font-heading font-bold tracking-tight">Session status</h2>
                     <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{sessionStatus.guidance}</p>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold">
                         <Badge

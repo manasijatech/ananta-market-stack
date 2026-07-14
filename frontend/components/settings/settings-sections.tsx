@@ -6,7 +6,8 @@ import { StreamManager } from "@/components/alerts/stream-manager";
 import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager";
 import { SystemConfigPanel } from "@/components/system/system-config-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { AlertChannel, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
+import type { AlertChannel, DesktopAudioDevice, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import type { BrokerAccount, SystemConfig } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
 
@@ -28,11 +29,13 @@ type SettingsSectionsProps = {
         canUseMcp: boolean;
     };
     alertChannels: AlertChannel[];
+    desktopAudioDevices: DesktopAudioDevice[];
     accounts: BrokerAccount[];
     subscriptions: LiveSubscription[];
     streamStatus: LiveStreamsStatus;
     symbolMetadata: ComponentProps<typeof SubscriptionsManager>["symbolMetadata"];
     watchlists: Watchlist[];
+    openRouterModels: OpenRouterModel[];
 };
 
 const sections: Array<{ value: SettingsSection; label: string; title: string; description: string }> = [
@@ -76,7 +79,7 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
         value: "alert-channels",
         label: "Delivery",
         title: "Alert delivery channels",
-        description: "Manage Discord and Telegram delivery credentials, defaults, and test sends."
+        description: "Manage desktop audio, Discord, and Telegram delivery credentials, defaults, and test sends."
     }
 ];
 
@@ -92,11 +95,13 @@ export function SettingsSections({
     config,
     permissions,
     alertChannels,
+    desktopAudioDevices,
     accounts,
     subscriptions,
     streamStatus,
     symbolMetadata,
-    watchlists
+    watchlists,
+    openRouterModels
 }: SettingsSectionsProps) {
     const visibleSections = useMemo(
         () => sections.filter((section) => section.value !== "mcp" || permissions.canUseMcp || permissions.canManageMcp),
@@ -138,7 +143,7 @@ export function SettingsSections({
             </div>
 
             <div className="grid min-w-0 max-w-full gap-1">
-                <h2 className="text-xl font-semibold tracking-normal">{activeMeta.title}</h2>
+                <h2 className="text-xl font-heading font-semibold tracking-tight">{activeMeta.title}</h2>
                 <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{activeMeta.description}</p>
             </div>
 
@@ -152,7 +157,12 @@ export function SettingsSections({
                 <SystemConfigPanel initialConfig={config} permissions={permissions} section="mcp" />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="llm">
-                <SystemConfigPanel initialConfig={config} permissions={permissions} section="llm" />
+                <SystemConfigPanel
+                    initialConfig={config}
+                    openRouterModels={openRouterModels}
+                    permissions={permissions}
+                    section="llm"
+                />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="live-subscriptions">
                 <SubscriptionsManager
@@ -167,7 +177,7 @@ export function SettingsSections({
                 <StreamManager initialStatus={streamStatus} />
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="alert-channels">
-                <ChannelSettings initialChannels={alertChannels} />
+                <ChannelSettings initialChannels={alertChannels} initialDesktopAudioDevices={desktopAudioDevices} />
             </TabsContent>
         </Tabs>
     );

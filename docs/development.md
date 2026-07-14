@@ -69,7 +69,27 @@ SQLite data is stored on the host at `backend/data/` (shared by backend and fron
 | `frontend/next.config.ts`, `tsconfig.json` | `sync+restart` | Next.js restart |
 | `backend/.env`, `frontend/.env.local` | `sync+restart` | service restart |
 
-`node_modules` and `.next` stay inside the image; only application source is synced.
+`node_modules` and `.next` stay inside the image; only application source is synced. Frontend watch rules target source directories (`app/`, `components/`, etc.) rather than the whole `frontend/` tree so macOS file watchers do not traverse `node_modules`.
+
+### Troubleshooting watch on macOS
+
+If `docker compose watch` exits immediately with:
+
+```text
+notify.Add(".../frontend"): ... node_modules/...: too many open files
+```
+
+Compose is registering watchers on `node_modules`. The dev compose file avoids that by syncing source subdirectories only. If you still hit the limit:
+
+1. Ensure you are on the current `docker-compose.dev.yml` (not an older single-path `./frontend` watch rule).
+2. Upgrade Docker Compose to **v5.0.2+** (Docker Desktop 4.58+). Compose **v5.0.1** on macOS shipped without `fsevents` and walks ignored folders anyway.
+3. As a last resort before starting watch: `ulimit -n 65536`
+
+Then restart:
+
+```bash
+docker compose -f docker-compose.dev.yml watch
+```
 
 ### Useful dev commands
 

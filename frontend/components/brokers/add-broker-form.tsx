@@ -4,6 +4,7 @@ import { BookOpen } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { createBrokerAccount } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { BrokerLogo, brokerNames } from "@/components/brokers/ui";
@@ -249,7 +250,7 @@ function BrokerSelector({
     supportedBrokers: BrokerCode[];
 }) {
     return (
-        <nav aria-label="Choose broker" className="flex flex-col gap-2" data-onboarding="broker-selector">
+        <nav aria-label="Choose broker" className="flex flex-col gap-2">
             {supportedBrokers.map((code) => {
                 const isSelected = broker === code;
 
@@ -317,11 +318,15 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
         startTransition(async () => {
             try {
                 const created = await createBrokerAccount(payload);
+                toast.success(`${selectedName} account added.`, {
+                    description: "Next, finish the broker login to start receiving data."
+                });
                 router.push(`/broker-connections/${created.id}`);
             } catch (error) {
                 const parsed = parseActionError(error);
                 setMessage(parsed.message);
                 setFieldErrors(parsed.fieldErrors);
+                toast.error(parsed.message || `Could not add ${selectedName}.`);
             }
         });
     }

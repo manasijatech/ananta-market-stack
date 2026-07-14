@@ -11,21 +11,26 @@ import {
     deleteAlphaApiCredential,
     deleteLlmProviderCredential,
     deleteLlmProviderModel,
+    deleteLlmModelPricing,
     getBrokerDataSearchConfig,
+    refreshOpenRouterModelPricing,
     startMcpOAuth,
     updateBrokerDataDefaultConfig,
     updateMcpServerConfig,
     upsertAlphaApiCredential,
-    upsertLlmProviderCredential
+    upsertLlmProviderCredential,
+    upsertLlmModelPricing
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Button } from "@/components/ui/button";
+import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import {
     Dialog,
     DialogContent,
     DialogDescription,
     DialogHeader,
+    DialogPanel,
     DialogTitle,
     DialogTrigger
 } from "@/components/ui/dialog";
@@ -35,11 +40,20 @@ import { SimpleSelect } from "@/components/ui/simple-select";
 import { formatIstDateTime } from "@/lib/datetime";
 import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
+import type { OpenRouterModel } from "@/service/actions/llm-models";
+import { LlmModelPicker } from "@/components/system/llm-model-picker";
 
 type ProviderDraftState = {
     apiKey: string;
     modelId: string;
     label: string;
+};
+
+type PricingDraftState = {
+    provider: LlmProvider;
+    modelId: string;
+    inputCost: string;
+    outputCost: string;
 };
 
 export type SystemConfigPanelSection = "all" | "broker-data" | "alpha" | "mcp" | "llm";
@@ -89,6 +103,13 @@ type SuggestedMcpTemplate = {
         }>;
     };
 };
+
+const LLM_PROVIDER_OPTIONS = [
+    { value: "openai", label: "OpenAI" },
+    { value: "openrouter", label: "OpenRouter" },
+    { value: "gemini", label: "Gemini" },
+    { value: "anthropic", label: "Anthropic" }
+];
 
 type CustomMcpDraft = {
     name: string;
@@ -282,13 +303,19 @@ function providerKey(provider: LlmProvider) {
     return provider;
 }
 
+function formatPricingRate(value?: number | null) {
+    return value == null ? "not set" : `$${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 6 }).format(value)}`;
+}
+
 export function SystemConfigPanel({
     initialConfig,
     section = "all",
-    permissions
+    permissions,
+    openRouterModels = []
 }: {
     initialConfig: SystemConfig;
     section?: SystemConfigPanelSection;
+    openRouterModels?: OpenRouterModel[];
     permissions: {
         canManageAlpha: boolean;
         canManageLlm: boolean;
@@ -319,6 +346,13 @@ export function SystemConfigPanel({
     const [customMcpError, setCustomMcpError] = useState("");
     const [mcpError, setMcpError] = useState("");
     const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
+    const [pricingError, setPricingError] = useState("");
+    const [pricingDraft, setPricingDraft] = useState<PricingDraftState>({
+        provider: "openrouter",
+        modelId: "",
+        inputCost: "",
+        outputCost: ""
+    });
     const [drafts, setDrafts] = useState<Record<string, ProviderDraftState>>(
         Object.fromEntries(
             initialConfig.llm_providers.map((provider) => [
@@ -327,6 +361,12 @@ export function SystemConfigPanel({
             ])
         )
     );
+    // Progressive disclosure: collapse providers by default, open the first one
+    // that still needs setup so the user is guided to a single next step.
+    const [openLlmProviders, setOpenLlmProviders] = useState<string[]>(() => {
+        const firstUnconfigured = initialConfig.llm_providers.find((provider) => !provider.has_api_key);
+        return firstUnconfigured ? [firstUnconfigured.provider] : [];
+    });
     const [isPending, startTransition] = useTransition();
     const alphaReadOnly = !permissions.canManageAlpha;
     const llmReadOnly = !permissions.canManageLlm;
@@ -463,6 +503,13 @@ export function SystemConfigPanel({
         setConfig((current) => ({
             ...current,
             llm_providers: nextProviders
+        }));
+    }
+
+    function replacePricing(nextPricing: SystemConfig["llm_model_pricing"]) {
+        setConfig((current) => ({
+            ...current,
+            llm_model_pricing: nextPricing
         }));
     }
 
@@ -752,6 +799,51 @@ export function SystemConfigPanel({
     });
     const mcpSetupGuideTemplate = SUGGESTED_MCP_TEMPLATES.find((template) => template.id === mcpSetupGuideTemplateId);
 
+    function savePricing() {
+        setPricingError("");
+        startTransition(async () => {
+            try {
+                const next = await upsertLlmModelPricing({
+                    provider: pricingDraft.provider,
+                    model_id: pricingDraft.modelId,
+                    input_cost_per_1m_tokens: pricingDraft.inputCost.trim() ? Number(pricingDraft.inputCost) : null,
+                    output_cost_per_1m_tokens: pricingDraft.outputCost.trim() ? Number(pricingDraft.outputCost) : null
+                });
+                replacePricing([
+                    ...config.llm_model_pricing.filter(
+                        (row) => !(row.provider === next.provider && row.model_id === next.model_id)
+                    ),
+                    next
+                ].sort((a, b) => `${a.provider}:${a.model_id}`.localeCompare(`${b.provider}:${b.model_id}`)));
+                setPricingDraft((current) => ({ ...current, modelId: "", inputCost: "", outputCost: "" }));
+            } catch (caught) {
+                setPricingError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function refreshOpenRouterPricing() {
+        setPricingError("");
+        startTransition(async () => {
+            try {
+                replacePricing(await refreshOpenRouterModelPricing());
+            } catch (caught) {
+                setPricingError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function removePricing(pricingId: string) {
+        setPricingError("");
+        startTransition(async () => {
+            try {
+                replacePricing(await deleteLlmModelPricing(pricingId));
+            } catch (caught) {
+                setPricingError(parseActionError(caught).message);
+            }
+        });
+    }
+
     const showBrokerData = section === "all" || section === "broker-data";
     const showAlpha = section === "all" || section === "alpha";
     const showMcp = section === "all" || section === "mcp";
@@ -761,8 +853,8 @@ export function SystemConfigPanel({
         <div className="grid gap-5">
             {showBrokerData ? (
                 <>
-            <section className="border border-border p-4">
-                <div className="text-sm font-bold">Default broker</div>
+            <section className="rounded-lg border border-border p-4">
+                <div className="text-sm font-semibold">Default broker</div>
                 <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
                     Background subscriptions, broker-backed market data, and symbol search use this broker first. If
                     the selected broker is unavailable for a specific task, the backend falls back to the next eligible
@@ -792,7 +884,7 @@ export function SystemConfigPanel({
                         {config.broker_data_default.fallback_used ? " · fallback active right now" : ""}
                     </div>
                 ) : config.broker_data_default.accounts.length ? (
-                    <div className="mt-3 text-xs text-amber-700 dark:text-amber-300">
+                    <div className="mt-3 text-xs text-warning-foreground">
                         No verified active broker session is currently available for default broker data.
                     </div>
                 ) : null}
@@ -800,12 +892,12 @@ export function SystemConfigPanel({
             </section>
 
             <section className="grid gap-2.5">
-                <div className="text-sm font-bold">Broker data status</div>
+                <div className="text-sm font-semibold">Broker data status</div>
                 {config.broker_data_search.accounts.map((account) => (
-                    <div className="border border-border p-3.5" key={account.account_id}>
+                    <div className="rounded-lg border border-border p-3.5" key={account.account_id}>
                         <div className="flex flex-wrap items-start justify-between gap-2">
                             <div>
-                                <div className="text-sm font-bold">
+                                <div className="text-sm font-semibold">
                                     {account.label} · {account.broker_code}
                                 </div>
                                 <div className="mt-1 text-xs text-muted-foreground">
@@ -839,10 +931,10 @@ export function SystemConfigPanel({
                                     : ""}
                             </div>
                             {account.last_error ? (
-                                <div className="text-amber-700 dark:text-amber-300">{account.last_error}</div>
+                                <div className="text-warning-foreground">{account.last_error}</div>
                             ) : null}
                             {account.latest_instrument_sync_error ? (
-                                <div className="text-amber-700 dark:text-amber-300">
+                                <div className="text-warning-foreground">
                                     {account.latest_instrument_sync_error}
                                 </div>
                             ) : null}
@@ -861,7 +953,7 @@ export function SystemConfigPanel({
                 {section === "all" ? (
                 <div>
                     <div className="flex items-center gap-2">
-                        <div className="text-sm font-bold">Drishti API</div>
+                        <div className="text-sm font-semibold">Drishti API</div>
                         <Dialog>
                             <DialogTrigger asChild>
                                 <Button
@@ -874,35 +966,37 @@ export function SystemConfigPanel({
                                     <CircleHelpIcon className="size-4" />
                                 </Button>
                             </DialogTrigger>
-                            <DialogContent className="max-w-lg p-0">
-                                <DialogHeader className="border-b border-border px-5 py-4 pr-14">
+                            <DialogContent className="max-w-lg">
+                                <DialogHeader>
                                     <DialogTitle>Drishti API</DialogTitle>
                                     <DialogDescription>
-                                        This key connects Ananta Market Stack to Drishti market intelligence services.
+                                        This key connects Ananta to Drishti market intelligence services.
                                     </DialogDescription>
                                 </DialogHeader>
-                                <div className="grid gap-3 px-5 py-4 text-sm leading-6 text-muted-foreground">
-                                    <p>
-                                        It powers company metadata, announcements, concalls, news, daily summaries, and
-                                        related market intelligence data used throughout the workspace.
-                                    </p>
-                                    <p>
-                                        The key is saved server-side and shown here only as a masked hint. Replace it
-                                        when the key rotates, or clear it to disable Drishti-backed intelligence calls.
-                                    </p>
-                                    <p>
-                                        Don&apos;t have a key yet?{" "}
-                                        <Link
-                                            className="font-medium text-primary underline underline-offset-2"
-                                            href={DRISHTI_API_SIGNUP_URL}
-                                            rel="noopener noreferrer"
-                                            target="_blank"
-                                        >
-                                            Create one at drishti.manasija.in
-                                        </Link>
-                                        .
-                                    </p>
-                                </div>
+                                <DialogPanel>
+                                    <div className="grid gap-3 text-sm leading-6 text-muted-foreground">
+                                        <p>
+                                            It powers company metadata, announcements, concalls, news, daily summaries, and
+                                            related market intelligence data used throughout the workspace.
+                                        </p>
+                                        <p>
+                                            The key is saved server-side and shown here only as a masked hint. Replace it
+                                            when the key rotates, or clear it to disable Drishti-backed intelligence calls.
+                                        </p>
+                                        <p>
+                                            Don&apos;t have a key yet?{" "}
+                                            <Link
+                                                className="font-medium text-primary underline underline-offset-2"
+                                                href={DRISHTI_API_SIGNUP_URL}
+                                                rel="noopener noreferrer"
+                                                target="_blank"
+                                            >
+                                                Create one at drishti.manasija.in
+                                            </Link>
+                                            .
+                                        </p>
+                                    </div>
+                                </DialogPanel>
                             </DialogContent>
                         </Dialog>
                     </div>
@@ -912,15 +1006,15 @@ export function SystemConfigPanel({
                     </p>
                 </div>
                 ) : null}
-                <div className="border border-border p-4" data-onboarding="manasija-alpha-api-input-section">
+                <div className="rounded-lg border border-border p-4">
                     {alphaReadOnly ? (
-                        <div className="mb-4 border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                        <div className="mb-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
                             This Drishti API key is shared for the whole workspace. You can use the configured
                             services, but only an allowed admin can change this setup.
                         </div>
                     ) : null}
                     {!config.alpha_api.has_api_key ? (
-                        <div className="mb-4 border border-primary/30 bg-primary/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                        <div className="mb-4 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs leading-5 text-muted-foreground">
                             Don&apos;t have a Drishti API key yet?{" "}
                             <Link
                                 className="font-medium text-primary underline underline-offset-2"
@@ -935,7 +1029,7 @@ export function SystemConfigPanel({
                     ) : null}
                     <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                            <div className="text-sm font-bold">{config.alpha_api.label}</div>
+                            <div className="text-sm font-semibold">{config.alpha_api.label}</div>
                             <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <Badge
                                     className={
@@ -998,7 +1092,7 @@ export function SystemConfigPanel({
                     {alphaError ? <div className="mt-3 text-sm text-destructive">{alphaError}</div> : null}
                 </div>
                 {config.alpha_api.account_error ? (
-                    <div className="border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                    <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
                         {config.alpha_api.account_error}
                     </div>
                 ) : null}
@@ -1006,10 +1100,10 @@ export function SystemConfigPanel({
             ) : null}
 
             {showMcp ? (
-            <section className="grid gap-4">
+            <section className="@container grid gap-4">
                 {section === "all" ? (
                 <div>
-                    <div className="text-base font-bold tracking-tight">Hosted MCP servers</div>
+                    <div className="text-base font-semibold tracking-tight">Hosted MCP servers</div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
                         Configure one or more hosted MCP endpoints that broker chat can attach when MCP is enabled.
                         Enabled default servers are selected automatically in chat; users can narrow the set per run.
@@ -1513,16 +1607,16 @@ export function SystemConfigPanel({
             ) : null}
 
             {showLlm ? (
-            <section className="grid gap-4">
+            <section className="@container grid gap-4">
                 {llmReadOnly ? (
-                    <div className="border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
                         These provider keys and models are shared across the workspace. You can use the configured
                         providers in chat and alerts, but only an allowed admin can change them here.
                     </div>
                 ) : null}
                 {section === "all" ? (
                 <div>
-                    <div className="text-base font-bold tracking-tight">LLM providers</div>
+                    <div className="text-base font-semibold tracking-tight">LLM providers</div>
                     <p className="mt-1.5 max-w-3xl text-xs leading-5 text-muted-foreground">
                         Configure OpenAI, OpenRouter, or Gemini API keys and save one or more models per provider. All
                         provider calls in the backend are routed through the OpenAI SDK with provider-specific base
@@ -1530,35 +1624,48 @@ export function SystemConfigPanel({
                     </p>
                 </div>
                 ) : null}
+                <Accordion
+                    className="overflow-hidden rounded-lg border border-border"
+                    multiple={false}
+                    onValueChange={(value) => setOpenLlmProviders(value as string[])}
+                    value={openLlmProviders}
+                >
                 {config.llm_providers.map((provider) => (
-                    <div className="border border-border p-4" key={provider.provider}>
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                                <div className="flex items-center gap-2.5">
-                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center">
-                                        <img
-                                            alt={PROVIDER_LOGOS[provider.provider].alt}
-                                            className={`${PROVIDER_LOGOS[provider.provider].imageClassName} object-contain`}
-                                            draggable={false}
-                                            src={PROVIDER_LOGOS[provider.provider].src}
-                                        />
-                                    </span>
-                                    <div className="text-base font-bold leading-none tracking-tight">
-                                        {provider.label}
-                                    </div>
-                                </div>
-                                <div className="mt-1 text-xs text-muted-foreground">{provider.base_url}</div>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                    <Badge
-                                        className={
-                                            provider.has_api_key
-                                                ? "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]"
-                                                : "border-destructive bg-destructive/10 text-destructive"
-                                        }
-                                        variant="outline"
-                                    >
-                                        {provider.has_api_key ? "Key saved" : "Key missing"}
-                                    </Badge>
+                    <AccordionItem className="@container px-4" key={provider.provider} value={provider.provider}>
+                        <AccordionTrigger className="items-center gap-3 py-3">
+                            <span className="flex size-7 shrink-0 items-center justify-center">
+                                <img
+                                    alt={PROVIDER_LOGOS[provider.provider].alt}
+                                    className={`${PROVIDER_LOGOS[provider.provider].imageClassName} object-contain`}
+                                    draggable={false}
+                                    src={PROVIDER_LOGOS[provider.provider].src}
+                                />
+                            </span>
+                            <span className="min-w-0 flex-1 text-left">
+                                <span className="block font-heading text-sm font-semibold tracking-tight text-foreground">
+                                    {provider.label}
+                                </span>
+                                <span className="block text-xs font-normal text-muted-foreground">
+                                    {provider.has_api_key
+                                        ? `Connected${provider.models.length ? ` · ${provider.models.length} model${provider.models.length === 1 ? "" : "s"}` : ""}`
+                                        : "Not connected"}
+                                </span>
+                            </span>
+                            <Badge
+                                className={
+                                    provider.has_api_key
+                                        ? "border-[var(--success)] bg-[var(--success-subtle)] font-normal text-[var(--success)]"
+                                        : "font-normal text-muted-foreground"
+                                }
+                                variant="outline"
+                            >
+                                {provider.has_api_key ? "Connected" : "Connect"}
+                            </Badge>
+                        </AccordionTrigger>
+                        <AccordionPanel className="grid gap-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <span className="text-xs text-muted-foreground">{provider.base_url}</span>
                                     {provider.api_key_hint ? (
                                         <span className="font-mono text-xs font-semibold text-foreground">
                                             {provider.api_key_hint}
@@ -1570,11 +1677,10 @@ export function SystemConfigPanel({
                                         </span>
                                     ) : null}
                                 </div>
-                            </div>
-                            <LlmProviderSetupGuideDialog label={provider.label} provider={provider.provider} />
+                                <LlmProviderSetupGuideDialog label={provider.label} provider={provider.provider} />
                         </div>
 
-                        <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(220px,1fr)_auto_auto]">
+                        <div className="mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_auto_auto]">
                             <Input
                                 autoComplete="off"
                                 className="h-9 text-sm"
@@ -1608,37 +1714,60 @@ export function SystemConfigPanel({
                             </Button>
                         </div>
 
-                        <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[minmax(180px,0.8fr)_minmax(160px,0.7fr)_auto]">
-                            <Input
-                                className="h-9 text-sm"
-                                disabled={llmReadOnly}
-                                onChange={(event) => updateDraft(provider.provider, { modelId: event.target.value })}
-                                placeholder="Model id"
-                                value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
-                            />
-                            <Input
-                                className="h-9 text-sm"
-                                disabled={llmReadOnly}
-                                onChange={(event) => updateDraft(provider.provider, { label: event.target.value })}
-                                placeholder="Optional label"
-                                value={drafts[providerKey(provider.provider)]?.label ?? ""}
-                            />
-                            <Button
-                                disabled={llmReadOnly || isPending || !(drafts[providerKey(provider.provider)]?.modelId ?? "").trim()}
-                                onClick={() => addModel(provider.provider)}
-                                title={llmReadOnly ? "Only a workspace admin can add shared models." : undefined}
-                                type="button"
-                                variant="outline"
-                            >
-                                Add model
-                            </Button>
-                        </div>
+                        {provider.has_api_key ? (
+                            <div className="mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_minmax(140px,0.6fr)_auto]">
+                                {openRouterModels.length ? (
+                                    <LlmModelPicker
+                                        disabled={llmReadOnly}
+                                        models={openRouterModels}
+                                        onSelect={(modelId, modelName) =>
+                                            updateDraft(provider.provider, {
+                                                modelId,
+                                                label: drafts[providerKey(provider.provider)]?.label || modelName
+                                            })
+                                        }
+                                        provider={provider.provider}
+                                        value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
+                                    />
+                                ) : (
+                                    <Input
+                                        className="h-9 text-sm"
+                                        disabled={llmReadOnly}
+                                        onChange={(event) =>
+                                            updateDraft(provider.provider, { modelId: event.target.value })
+                                        }
+                                        placeholder="Model id"
+                                        value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
+                                    />
+                                )}
+                                <Input
+                                    className="h-9 text-sm"
+                                    disabled={llmReadOnly}
+                                    onChange={(event) => updateDraft(provider.provider, { label: event.target.value })}
+                                    placeholder="Optional label"
+                                    value={drafts[providerKey(provider.provider)]?.label ?? ""}
+                                />
+                                <Button
+                                    disabled={llmReadOnly || isPending || !(drafts[providerKey(provider.provider)]?.modelId ?? "").trim()}
+                                    onClick={() => addModel(provider.provider)}
+                                    title={llmReadOnly ? "Only a workspace admin can add shared models." : undefined}
+                                    type="button"
+                                    variant="outline"
+                                >
+                                    Add model
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="mt-4 rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+                                Save your {provider.label} API key above, then pick a model from the catalog.
+                            </div>
+                        )}
 
                         <div className="mt-4 grid gap-2">
-                            <div className="text-xs font-bold uppercase text-muted-foreground">Saved models</div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved models</div>
                             {provider.models.map((model) => (
                                 <div
-                                    className="flex flex-wrap items-center justify-between gap-2 border border-border px-3 py-2"
+                                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
                                     key={model.id}
                                 >
                                     <div>
@@ -1668,8 +1797,101 @@ export function SystemConfigPanel({
                         {providerErrors[provider.provider] ? (
                             <div className="mt-3 text-sm text-destructive">{providerErrors[provider.provider]}</div>
                         ) : null}
-                    </div>
+                        </AccordionPanel>
+                    </AccordionItem>
                 ))}
+                </Accordion>
+
+                <div className="border border-border p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div className="text-base font-bold tracking-tight">Model pricing</div>
+                            <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+                                Configure USD rates per 1M tokens for estimated costs when a provider does not return
+                                cost in the response. Estimated costs are labeled as estimates in usage screens.
+                            </p>
+                        </div>
+                        <Button
+                            disabled={llmReadOnly || isPending}
+                            onClick={refreshOpenRouterPricing}
+                            type="button"
+                            variant="outline"
+                        >
+                            Refresh OpenRouter pricing
+                        </Button>
+                    </div>
+
+                    <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[160px_minmax(180px,1fr)_140px_140px_auto]">
+                        <SimpleSelect
+                            aria-label="Pricing provider"
+                            disabled={llmReadOnly}
+                            onValueChange={(value) =>
+                                setPricingDraft((current) => ({ ...current, provider: value as LlmProvider }))
+                            }
+                            options={LLM_PROVIDER_OPTIONS}
+                            value={pricingDraft.provider}
+                        />
+                        <Input
+                            className="h-9 text-sm"
+                            disabled={llmReadOnly}
+                            onChange={(event) => setPricingDraft((current) => ({ ...current, modelId: event.target.value }))}
+                            placeholder="Model id"
+                            value={pricingDraft.modelId}
+                        />
+                        <Input
+                            className="h-9 text-sm"
+                            disabled={llmReadOnly}
+                            inputMode="decimal"
+                            onChange={(event) => setPricingDraft((current) => ({ ...current, inputCost: event.target.value }))}
+                            placeholder="Input $/1M"
+                            value={pricingDraft.inputCost}
+                        />
+                        <Input
+                            className="h-9 text-sm"
+                            disabled={llmReadOnly}
+                            inputMode="decimal"
+                            onChange={(event) => setPricingDraft((current) => ({ ...current, outputCost: event.target.value }))}
+                            placeholder="Output $/1M"
+                            value={pricingDraft.outputCost}
+                        />
+                        <Button
+                            disabled={llmReadOnly || isPending || !pricingDraft.modelId.trim()}
+                            onClick={savePricing}
+                            type="button"
+                        >
+                            Save pricing
+                        </Button>
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                        {config.llm_model_pricing.map((row) => (
+                            <div className="flex flex-wrap items-center justify-between gap-2 border border-border px-3 py-2" key={row.id}>
+                                <div>
+                                    <div className="text-sm font-semibold">{row.provider} / {row.model_id}</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                        Input {formatPricingRate(row.input_cost_per_1m_tokens)} · output{" "}
+                                        {formatPricingRate(row.output_cost_per_1m_tokens)} · {row.source}
+                                    </div>
+                                </div>
+                                <Button
+                                    className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    disabled={llmReadOnly || isPending}
+                                    onClick={() => removePricing(row.id)}
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                >
+                                    Remove
+                                </Button>
+                            </div>
+                        ))}
+                        {!config.llm_model_pricing.length ? (
+                            <div className="text-sm text-muted-foreground">No model pricing configured yet.</div>
+                        ) : null}
+                    </div>
+
+                    {pricingError ? <div className="mt-3 text-sm text-destructive">{pricingError}</div> : null}
+                </div>
             </section>
             ) : null}
         </div>

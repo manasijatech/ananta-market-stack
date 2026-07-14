@@ -2,7 +2,25 @@ import type { LlmUsageEvent, LlmUsageGroup, LlmUsageTotals } from "@/service/typ
 
 export function formatLlmCost(value: number, pricedRequestCount: number): string {
     if (!pricedRequestCount) return "Not reported";
-    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 6, minimumFractionDigits: 0 }).format(value || 0);
+    return `$${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 6, minimumFractionDigits: 0 }).format(value || 0)}`;
+}
+
+export function costSourceLabel(source?: string | null): string {
+    if (source === "provider_reported") return "Provider-reported cost";
+    if (source === "pricing_config") return "Estimated cost";
+    if (source === "openrouter_pricing") return "Estimated cost";
+    return "Not priced";
+}
+
+export function formatDisplayLlmCost(value?: number | null, requestCount = 0): string {
+    if (!requestCount || value === null || value === undefined) return "Not priced";
+    return formatLlmCost(value, requestCount);
+}
+
+export function aggregateCostSource(totals: LlmUsageTotals): string {
+    if (totals.display_cost_request_count <= 0) return "unpriced";
+    if (totals.estimated_cost_request_count > 0) return "pricing_config";
+    return "provider_reported";
 }
 
 export function metricReportingLabel(total: number, reportedCount: number, requestCount: number, label: string): string {

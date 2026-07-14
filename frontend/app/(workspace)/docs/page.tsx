@@ -12,7 +12,7 @@ export default function BrokerDocsIndexPage() {
             <PageHeader
                 eyebrow="Broker docs"
                 title="Docs"
-                description="First-party Ananta Market Stack setup notes for each supported broker and the exact fields our backend accepts."
+                description="First-party Ananta setup notes for each supported broker and the exact fields our backend accepts."
                 action={
                     <Button asChild variant="outline">
                         <Link href="/broker-connections/new">Add broker</Link>

@@ -3,6 +3,18 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
     output: "standalone",
     reactStrictMode: true,
+    experimental: {
+        // Re-enable client-side Router Cache reuse on navigation. Next 15+ defaults
+        // `dynamic` to 0, so revisiting a route refetches/re-renders and re-trips
+        // loading.tsx every time. Caching the rendered payload for a short window
+        // makes back/forward and quick re-navigation instant (no loading flash).
+        // Trade-off: a revisited route can be up to `dynamic` seconds stale — fine
+        // here since live prices stream over the client websocket independently.
+        staleTimes: {
+            dynamic: 30,
+            static: 180
+        }
+    },
     async redirects() {
         return [
             {

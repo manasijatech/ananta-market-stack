@@ -42,7 +42,7 @@ export default async function BrokerDocsPage({ params }: BrokerDocsPageProps) {
                         <BrokerLogo broker={guide.broker} className="mt-1 h-12 w-20" />
                         <div>
                             <p className="mb-2 text-sm font-bold text-primary">{brokerNames[guide.broker]}</p>
-                            <h1 className="text-3xl font-bold tracking-tight min-[720px]:text-4xl">{guide.title}</h1>
+                            <h1 className="text-3xl font-heading font-bold tracking-tight min-[720px]:text-4xl">{guide.title}</h1>
                             <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{guide.summary}</p>
                         </div>
                     </div>
@@ -53,7 +53,7 @@ export default async function BrokerDocsPage({ params }: BrokerDocsPageProps) {
                     components={{
                         h1: () => null,
                         h2: ({ children }) => (
-                            <h2 className="mb-3 mt-10 text-xl font-bold tracking-tight">{children}</h2>
+                            <h2 className="mb-3 mt-10 text-xl font-heading font-bold tracking-tight">{children}</h2>
                         ),
                         h3: ({ children }) => <h3 className="mb-2 mt-7 text-base font-bold">{children}</h3>,
                         p: ({ children }) => <p className="mb-4 text-sm leading-7 text-muted-foreground">{children}</p>,

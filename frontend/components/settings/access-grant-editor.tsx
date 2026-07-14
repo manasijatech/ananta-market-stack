@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { IconLock } from "@tabler/icons-react";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -189,6 +190,9 @@ export function AccessGrantEditor({
     }
 
     const effectivePermissions = normalizePermissions(selectedPermissions, selectedSubject?.isAdmin ?? false);
+    const savedPermissions = selectedGrant
+        ? normalizePermissions(selectedGrant.permissions, selectedSubject?.isAdmin ?? false)
+        : effectivePermissions;
 
     return (
         <div className="grid gap-4">
@@ -235,10 +239,15 @@ export function AccessGrantEditor({
                 </div>
                 <div className="grid gap-2">
                     <div className="text-sm font-semibold">Saved access for this selection</div>
-                    <div className="border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-                        {selectedGrant
-                            ? permissionSummary(normalizePermissions(selectedGrant.permissions, selectedSubject?.isAdmin ?? false))
-                            : permissionSummary(effectivePermissions)}
+                    <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
+                        {savedPermissions.length ? (
+                            permissionSummary(savedPermissions)
+                        ) : (
+                            <span className="flex items-center gap-2 text-muted-foreground">
+                                <IconLock aria-hidden className="size-4 shrink-0" />
+                                No access saved yet
+                            </span>
+                        )}
                     </div>
                 </div>
             </div>

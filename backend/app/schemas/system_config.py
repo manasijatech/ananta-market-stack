@@ -48,6 +48,42 @@ class LlmModelCreateIn(BaseModel):
     is_enabled: bool = True
 
 
+class LlmModelPricingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    provider: str
+    model_id: str
+    input_cost_per_1m_tokens: float | None = None
+    output_cost_per_1m_tokens: float | None = None
+    cached_input_cost_per_1m_tokens: float | None = None
+    cache_write_cost_per_1m_tokens: float | None = None
+    reasoning_cost_per_1m_tokens: float | None = None
+    input_audio_cost_per_1m_tokens: float | None = None
+    output_audio_cost_per_1m_tokens: float | None = None
+    source: str = "manual"
+    source_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    effective_from: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class LlmModelPricingUpsertIn(BaseModel):
+    provider: LlmProvider
+    model_id: str = Field(..., min_length=1, max_length=256)
+    input_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+    output_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+    cached_input_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+    cache_write_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+    reasoning_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+    input_audio_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+    output_audio_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+    source_url: str | None = Field(default=None, max_length=512)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    effective_from: datetime | None = None
+
+
 class AlphaApiConfigOut(BaseModel):
     label: str = "Drishti API"
     has_api_key: bool = False
@@ -183,6 +219,7 @@ class SystemConfigOut(BaseModel):
     broker_data_default: BrokerDataDefaultConfigOut
     broker_data_search: BrokerDataSearchConfigOut
     llm_providers: list[LlmProviderConfigOut] = Field(default_factory=list)
+    llm_model_pricing: list[LlmModelPricingOut] = Field(default_factory=list)
     alpha_api: AlphaApiConfigOut
     alpha_websocket: AlphaWebSocketConfigOut
     mcp_server: McpServerConfigOut

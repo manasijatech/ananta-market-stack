@@ -30,6 +30,10 @@ def _filters(
     workflow_id: str | None = None,
     request_kind: str | None = None,
     api_surface: str | None = None,
+    source_kind: str | None = None,
+    source_id: str | None = None,
+    session_id: str | None = None,
+    workflow_run_id: str | None = None,
 ) -> LlmUsageFilterOut:
     return LlmUsageFilterOut(
         date_from=date_from,
@@ -39,6 +43,10 @@ def _filters(
         workflow_id=workflow_id,
         request_kind=request_kind,
         api_surface=api_surface,
+        source_kind=source_kind,
+        source_id=source_id,
+        session_id=session_id,
+        workflow_run_id=workflow_run_id,
     )
 
 
@@ -60,6 +68,10 @@ def get_llm_usage_overview(
     workflow_id: str | None = Query(default=None, description="Optional workflow id filter."),
     request_kind: str | None = Query(default=None, description="Optional backend request-kind filter."),
     api_surface: str | None = Query(default=None, description="Optional SDK API surface filter."),
+    source_kind: str | None = Query(default=None, description="Optional source kind filter."),
+    source_id: str | None = Query(default=None, description="Optional source id filter."),
+    session_id: str | None = Query(default=None, description="Optional chat session id filter."),
+    workflow_run_id: str | None = Query(default=None, description="Optional workflow run id filter."),
     db: Session = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ) -> LlmUsageOverviewOut:
@@ -75,6 +87,10 @@ def get_llm_usage_overview(
             workflow_id=workflow_id,
             request_kind=request_kind,
             api_surface=api_surface,
+            source_kind=source_kind,
+            source_id=source_id,
+            session_id=session_id,
+            workflow_run_id=workflow_run_id,
         ),
     )
 
@@ -85,7 +101,7 @@ def get_llm_usage_overview(
     summary="LLM usage timeseries",
     description=(
         "Returns ordered daily, weekly, or monthly LLM usage buckets for charting. "
-        "Costs only reflect provider-reported values; no local price estimation is applied."
+        "Display costs use provider-reported USD when available, otherwise configured model pricing estimates."
     ),
 )
 def get_llm_usage_timeseries(
@@ -100,6 +116,10 @@ def get_llm_usage_timeseries(
     workflow_id: str | None = Query(default=None, description="Optional workflow id filter."),
     request_kind: str | None = Query(default=None, description="Optional backend request-kind filter."),
     api_surface: str | None = Query(default=None, description="Optional SDK API surface filter."),
+    source_kind: str | None = Query(default=None, description="Optional source kind filter."),
+    source_id: str | None = Query(default=None, description="Optional source id filter."),
+    session_id: str | None = Query(default=None, description="Optional chat session id filter."),
+    workflow_run_id: str | None = Query(default=None, description="Optional workflow run id filter."),
     db: Session = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ) -> LlmUsageTimeseriesOut:
@@ -115,6 +135,10 @@ def get_llm_usage_timeseries(
             workflow_id=workflow_id,
             request_kind=request_kind,
             api_surface=api_surface,
+            source_kind=source_kind,
+            source_id=source_id,
+            session_id=session_id,
+            workflow_run_id=workflow_run_id,
         ),
         granularity=granularity,
     )
@@ -138,6 +162,10 @@ def get_llm_usage_events(
     workflow_id: str | None = Query(default=None, description="Optional workflow id filter."),
     request_kind: str | None = Query(default=None, description="Optional backend request-kind filter."),
     api_surface: str | None = Query(default=None, description="Optional SDK API surface filter."),
+    source_kind: str | None = Query(default=None, description="Optional source kind filter."),
+    source_id: str | None = Query(default=None, description="Optional source id filter."),
+    session_id: str | None = Query(default=None, description="Optional chat session id filter."),
+    workflow_run_id: str | None = Query(default=None, description="Optional workflow run id filter."),
     db: Session = Depends(get_db),
     principal: Principal = Depends(get_current_principal),
 ) -> LlmUsageEventsPageOut:
@@ -153,6 +181,10 @@ def get_llm_usage_events(
             workflow_id=workflow_id,
             request_kind=request_kind,
             api_surface=api_surface,
+            source_kind=source_kind,
+            source_id=source_id,
+            session_id=session_id,
+            workflow_run_id=workflow_run_id,
         ),
         limit=limit,
     )

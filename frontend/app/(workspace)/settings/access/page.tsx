@@ -62,7 +62,7 @@ export default async function AccessSettingsPage() {
                     <AccessSetupNotice />
 
                     <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
-                        <section className="grid gap-4 rounded-md bg-card p-5">
+                        <section className="grid gap-4 rounded-lg bg-card p-5">
                             <div className="grid gap-2">
                                 <p className={typography.sectionEyebrow}>Broker accounts</p>
                                 <h2 className={typography.sectionTitle}>Share specific accounts</h2>
@@ -75,7 +75,7 @@ export default async function AccessSettingsPage() {
                             <BrokerSharingPanel accountGrants={accountGrants} members={members} roles={roles} />
                         </section>
 
-                        <section className="grid gap-4 rounded-md bg-card p-5">
+                        <section className="grid gap-4 rounded-lg bg-card p-5">
                             <div className="grid gap-2">
                                 <div className="flex flex-wrap items-center gap-2">
                                     <p className={typography.sectionEyebrow}>Members</p>
@@ -90,7 +90,7 @@ export default async function AccessSettingsPage() {
                                 </p>
                             </div>
 
-                            <div className="grid rounded-md bg-card">
+                            <div className="grid rounded-lg bg-card">
                                 {members.map((member: WorkspaceMember) => (
                                     <WorkspaceMemberRow
                                         currentUserId={me.user_id}

@@ -2,6 +2,7 @@ from functools import lru_cache
 from urllib.parse import urlparse
 
 from pydantic import Field
+from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -215,6 +216,18 @@ class Settings(BaseSettings):
         default=5 * 60,
         validation_alias="LIVE_UI_DEMAND_TTL_SECONDS",
     )
+    desktop_audio_storage_dir: str = Field(
+        default="./data/alert-audio",
+        validation_alias="DESKTOP_AUDIO_STORAGE_DIR",
+    )
+    desktop_audio_retention_days: int = Field(
+        default=15,
+        validation_alias="DESKTOP_AUDIO_RETENTION_DAYS",
+    )
+    desktop_audio_pairing_ttl_seconds: int = Field(
+        default=5 * 60,
+        validation_alias="DESKTOP_AUDIO_PAIRING_TTL_SECONDS",
+    )
     watchlist_preset_worker_interval_seconds: int = Field(
         default=60 * 60,
         validation_alias="WATCHLIST_PRESET_WORKER_INTERVAL_SECONDS",
@@ -222,6 +235,13 @@ class Settings(BaseSettings):
 
     # Development-only fallback if no key set (not for production).
     allow_insecure_dev_credentials: bool = False
+
+    @field_validator("log_to_file", mode="before")
+    @classmethod
+    def _empty_log_to_file_is_unset(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
 
     @model_validator(mode="after")
     def _apply_redis_url(self) -> "Settings":

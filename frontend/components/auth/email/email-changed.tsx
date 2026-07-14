@@ -206,7 +206,7 @@ export const EmailChangedEmail = ({
               {(oldEmail || newEmail) && (
                 <Section
                   className={cn(
-                    "my-6 border border-border bg-muted p-4",
+                    "my-6 rounded-lg border border-border bg-muted p-4",
                     classNames?.codeBlock
                   )}
                 >

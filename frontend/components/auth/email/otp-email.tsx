@@ -224,7 +224,7 @@ export const OtpEmail = ({
 
               <Section
                 className={cn(
-                  "my-6 border border-border bg-muted p-6",
+                  "my-6 rounded-lg border border-border bg-muted p-6",
                   classNames?.codeBlock
                 )}
               >

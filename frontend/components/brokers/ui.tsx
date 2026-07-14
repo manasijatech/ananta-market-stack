@@ -112,7 +112,7 @@ export function StatusBadge({
 	variant?: BadgeProps["variant"];
 }) {
 	return (
-		<Badge className={cn("px-2.5 py-1 font-bold", className)} variant={variant}>
+		<Badge className={cn("px-2.5 py-1 font-medium", className)} variant={variant}>
 			{children}
 		</Badge>
 	);
@@ -136,7 +136,8 @@ export function BrokerAccountsEmpty({
 					<CardFrameAction>
 						<Button
 							asChild
-							className="min-h-11 w-full font-extrabold min-[520px]:w-auto"
+							className="min-h-11 w-full font-semibold min-[520px]:w-auto"
+							data-onboarding="add-broker-action"
 						>
 							<Link data-onboarding="add-broker-action" href="/broker-connections/new">
 								<IconPlus aria-hidden="true" className="size-4" stroke={1.75} />
@@ -171,19 +172,17 @@ export function BrokerAccountsEmpty({
 
 export function BrokerCard({ account }: { account: BrokerAccount }) {
 	const verified = Boolean(account.last_verified_at);
-	const ready = isBrokerAccountReady(account);
 
 	return (
 		<CardFrame
 			className="group w-full transition-colors duration-100 ease-out hover:border-primary/60"
-			data-onboarding={ready ? "active-broker-ready" : undefined}
 			render={<Link href={`/broker-connections/${account.id}`} />}
 		>
 			<CardFrameHeader>
 				<CardFrameTitle className="truncate text-lg font-bold">
 					{account.label}
 				</CardFrameTitle>
-				<CardFrameDescription className="font-mono text-xs font-bold uppercase tracking-[0.14em]">
+				<CardFrameDescription className="font-mono text-xs font-medium uppercase tracking-[0.14em]">
 					{brokerNames[account.broker_code]}
 				</CardFrameDescription>
 				<CardFrameAction>
@@ -232,14 +231,14 @@ export function PageHeader({
 	action?: React.ReactNode;
 }) {
 	return (
-		<header className="mb-6 flex min-w-0 flex-col justify-between gap-5 border-b border-border pb-5 min-[860px]:flex-row min-[860px]:items-end">
+		<header className="mb-6 flex min-w-0 flex-col justify-between gap-4 border-b border-border pb-5 min-[860px]:flex-row min-[860px]:items-end min-[860px]:gap-5">
 			<div className="min-w-0">
 				<p className={cn(typography.pageEyebrow, "mb-3")}>{eyebrow}</p>
 				<h1 className={cn(typography.pageTitle, "break-words")}>{title}</h1>
 				<p className={typography.pageLead}>{description}</p>
 			</div>
 			{action ? (
-				<div className="flex w-full flex-col min-[520px]:w-auto">{action}</div>
+				<div className="flex w-full shrink-0 flex-col items-start min-[520px]:w-auto min-[860px]:items-end">{action}</div>
 			) : null}
 		</header>
 	);
@@ -255,7 +254,7 @@ export function PrimaryLink({
 	return (
 		<Button
 			asChild
-			className="min-h-11 w-full font-extrabold min-[520px]:w-auto"
+			className="min-h-11 w-full font-semibold min-[520px]:w-auto"
 		>
 			<Link href={href}>{children}</Link>
 		</Button>
