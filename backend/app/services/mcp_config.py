@@ -17,7 +17,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.schemas.system_config import McpOAuthStartOut, McpServerConfigOut, McpServerConfigUpdateIn
+from app.schemas.system_config import (
+    McpConnectorReadinessOut,
+    McpOAuthStartOut,
+    McpServerConfigOut,
+    McpServerConfigUpdateIn,
+)
 from app.services import rbac
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import User, UserMcpServerConfig
@@ -36,6 +41,12 @@ class McpConnectionConfig:
     headers: dict[str, str]
     timeout_seconds: int
     inventory: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class OAuthClientCredentials:
+    client_id: str
+    client_secret: str
 
 
 def _now() -> datetime:
@@ -181,6 +192,28 @@ def list_mcp_server_configs(db: Session, user_id: str) -> list[McpServerConfigOu
     _ensure_user(db, user_id)
     owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     return [config_to_schema(row) for row in _mcp_server_rows(db, owner_user_id)]
+
+
+def list_mcp_connector_readiness() -> list[McpConnectorReadinessOut]:
+    return [
+        McpConnectorReadinessOut(id="drishti", is_ready=True),
+        McpConnectorReadinessOut(
+            id="google-drive",
+            is_ready=_preconfigured_oauth_client("https://drivemcp.googleapis.com/mcp/v1") is not None,
+            reason="Google Drive needs an Ananta Google OAuth app before users can connect.",
+        ),
+        McpConnectorReadinessOut(
+            id="slack",
+            is_ready=_preconfigured_oauth_client("https://mcp.slack.com/mcp") is not None,
+            reason="Slack needs an Ananta Slack OAuth app before users can connect.",
+        ),
+        McpConnectorReadinessOut(
+            id="discord",
+            is_ready=False,
+            reason="Discord needs a hosted MCP endpoint before users can connect.",
+        ),
+        McpConnectorReadinessOut(id="notion", is_ready=True),
+    ]
 
 
 def _mcp_server_rows(db: Session, user_id: str) -> list[UserMcpServerConfig]:
@@ -502,6 +535,30 @@ async def _discover_authorization_metadata(resource_metadata: dict[str, Any], ti
     raise ValueError("Could not discover MCP OAuth authorization metadata.")
 
 
+def _registration_auth_method(auth_metadata: dict[str, Any]) -> str:
+    methods = auth_metadata.get("token_endpoint_auth_methods_supported") or []
+    if not isinstance(methods, list):
+        methods = []
+    supported = {str(method) for method in methods}
+    if "none" in supported:
+        return "none"
+    if "client_secret_post" in supported:
+        return "client_secret_post"
+    if "client_secret_basic" in supported:
+        return "client_secret_basic"
+    return "none"
+
+
+def _scope_from_resource_metadata(resource_metadata: dict[str, Any]) -> str:
+    challenged_scope = str(resource_metadata.get("scope") or "").strip()
+    if challenged_scope:
+        return challenged_scope
+    supported_scopes = resource_metadata.get("scopes_supported") or []
+    if isinstance(supported_scopes, list):
+        return " ".join(str(scope).strip() for scope in supported_scopes if str(scope).strip())
+    return DEFAULT_MCP_SCOPE
+
+
 async def _register_oauth_client(auth_metadata: dict[str, Any], redirect_uri: str, timeout: int) -> dict[str, Any]:
     registration_endpoint = str(auth_metadata.get("registration_endpoint") or "").strip()
     if not registration_endpoint:
@@ -511,7 +568,7 @@ async def _register_oauth_client(auth_metadata: dict[str, Any], redirect_uri: st
         "redirect_uris": [redirect_uri],
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
-        "token_endpoint_auth_method": "none",
+        "token_endpoint_auth_method": _registration_auth_method(auth_metadata),
     }
     async with httpx.AsyncClient(timeout=float(timeout), follow_redirects=True) as client:
         response = await client.post(registration_endpoint, json=payload)
@@ -519,7 +576,38 @@ async def _register_oauth_client(auth_metadata: dict[str, Any], redirect_uri: st
         registered = response.json()
     if not registered.get("client_id"):
         raise ValueError("MCP authorization server did not return a client_id.")
+    registered.setdefault("token_endpoint_auth_method", payload["token_endpoint_auth_method"])
     return registered
+
+
+def _preconfigured_oauth_client(url: str) -> OAuthClientCredentials | None:
+    hostname = urlparse(url).hostname or ""
+    settings = get_settings()
+    if hostname == "drivemcp.googleapis.com":
+        client_id = (settings.mcp_google_drive_oauth_client_id or "").strip()
+        client_secret = (settings.mcp_google_drive_oauth_client_secret or "").strip()
+        if not client_id or not client_secret:
+            return None
+    elif hostname == "mcp.slack.com":
+        client_id = (settings.mcp_slack_oauth_client_id or "").strip()
+        client_secret = (settings.mcp_slack_oauth_client_secret or "").strip()
+        if not client_id:
+            return None
+    else:
+        return None
+    return OAuthClientCredentials(client_id=client_id, client_secret=client_secret)
+
+
+def _preconfigured_oauth_client_required_message(url: str) -> str | None:
+    hostname = urlparse(url).hostname or ""
+    if hostname == "drivemcp.googleapis.com":
+        return (
+            "Google Drive MCP requires an Ananta OAuth client configured with "
+            "MCP_GOOGLE_DRIVE_OAUTH_CLIENT_ID and MCP_GOOGLE_DRIVE_OAUTH_CLIENT_SECRET."
+        )
+    if hostname == "mcp.slack.com":
+        return "Slack MCP requires an Ananta OAuth client configured with MCP_SLACK_OAUTH_CLIENT_ID."
+    return None
 
 
 async def start_mcp_oauth(
@@ -548,9 +636,22 @@ async def start_mcp_oauth(
     client_id = row.oauth_client_id or ""
     client_secret = _decrypt_or_empty(row.oauth_client_secret_cipher)
     if not client_id or (row.oauth_redirect_uri and row.oauth_redirect_uri != redirect_uri):
-        registered = await _register_oauth_client(auth_metadata, redirect_uri, timeout)
-        client_id = str(registered.get("client_id") or "")
-        client_secret = str(registered.get("client_secret") or "")
+        preconfigured = _preconfigured_oauth_client(url)
+        if preconfigured:
+            client_id = preconfigured.client_id
+            client_secret = preconfigured.client_secret
+            auth_metadata["_token_endpoint_auth_method"] = "client_secret_post"
+        else:
+            if not auth_metadata.get("registration_endpoint"):
+                message = _preconfigured_oauth_client_required_message(url)
+                if message:
+                    raise ValueError(message)
+            registered = await _register_oauth_client(auth_metadata, redirect_uri, timeout)
+            client_id = str(registered.get("client_id") or "")
+            client_secret = str(registered.get("client_secret") or "")
+            auth_metadata["_token_endpoint_auth_method"] = str(
+                registered.get("token_endpoint_auth_method") or _registration_auth_method(auth_metadata)
+            )
 
     authorization_endpoint = str(auth_metadata.get("authorization_endpoint") or "").strip()
     if not authorization_endpoint:
@@ -558,7 +659,7 @@ async def start_mcp_oauth(
 
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
-    scope = str(resource_metadata.get("scope") or DEFAULT_MCP_SCOPE).strip()
+    scope = _scope_from_resource_metadata(resource_metadata)
     query = {
         "response_type": "code",
         "client_id": client_id,
@@ -610,10 +711,14 @@ async def complete_mcp_oauth(db: Session, state: str, code: str, user_id: str | 
         "resource": str(auth_metadata.get("_mcp_resource") or row.url),
     }
     client_secret = _decrypt_or_empty(row.oauth_client_secret_cipher)
-    if client_secret:
+    token_auth_method = str(auth_metadata.get("_token_endpoint_auth_method") or "").strip()
+    request_auth = None
+    if client_secret and token_auth_method == "client_secret_basic":
+        request_auth = httpx.BasicAuth(row.oauth_client_id, client_secret)
+    elif client_secret:
         data["client_secret"] = client_secret
     async with httpx.AsyncClient(timeout=float(row.timeout_seconds or 15), follow_redirects=True) as client:
-        response = await client.post(token_endpoint, data=data)
+        response = await client.post(token_endpoint, data=data, auth=request_auth)
         response.raise_for_status()
         payload = response.json()
 

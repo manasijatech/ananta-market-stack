@@ -2,13 +2,9 @@
 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
-import { ChevronDownIcon, CircleHelpIcon } from "lucide-react";
+import { CheckIcon, CircleHelpIcon, PlugIcon, PlusIcon, SearchIcon } from "lucide-react";
 import {
     addLlmProviderModel,
-    clearMcpOAuthById,
-    clearMcpOAuth,
-    clearMcpServerApiKeyById,
-    clearMcpServerApiKey,
     createMcpServerConfig,
     deleteMcpServerConfigById,
     deleteMcpServerConfig,
@@ -18,8 +14,6 @@ import {
     deleteLlmModelPricing,
     getBrokerDataSearchConfig,
     refreshOpenRouterModelPricing,
-    refreshMcpInventoryById,
-    refreshMcpInventory,
     startMcpOAuth,
     updateBrokerDataDefaultConfig,
     updateMcpServerConfig,
@@ -31,8 +25,6 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionItem, AccordionPanel, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
     Dialog,
     DialogContent,
@@ -43,7 +35,7 @@ import {
     DialogTrigger
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { LlmProviderSetupGuideDialog } from "@/components/system/llm-provider-setup-guide";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { formatIstDateTime } from "@/lib/datetime";
 import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
@@ -89,6 +81,29 @@ const PROVIDER_LOGOS: Record<LlmProvider, { src: string; alt: string; imageClass
     }
 };
 
+type SuggestedMcpTemplate = {
+    id: string;
+    name: string;
+    logoSrc: string;
+    logoAlt: string;
+    category: string;
+    useCase: string;
+    setupHint: string;
+    url: string;
+    transport: "streamable_http" | "sse";
+    authMode: "oauth" | "api_key";
+    useByDefault: boolean;
+    setupGuide?: {
+        title: string;
+        intro: string;
+        steps: Array<{
+            text: string;
+            links?: Array<{ label: string; href: string }>;
+            codeItems?: string[];
+        }>;
+    };
+};
+
 const LLM_PROVIDER_OPTIONS = [
     { value: "openai", label: "OpenAI" },
     { value: "openrouter", label: "OpenRouter" },
@@ -96,129 +111,189 @@ const LLM_PROVIDER_OPTIONS = [
     { value: "anthropic", label: "Anthropic" }
 ];
 
-const PROVIDER_SETUP_GUIDES: Record<
-    LlmProvider,
-    {
-        summary: string;
-        steps: Array<{
-            before: string;
-            label?: string;
-            href?: string;
-            after?: string;
-        }>;
-        modelExamples: string[];
-        notes: string[];
-    }
-> = {
-    openai: {
-        summary: "Use an OpenAI project API key and save one or more OpenAI model IDs.",
-        steps: [
-            {
-                before: "Open ",
-                label: "OpenAI API keys",
-                href: "https://platform.openai.com/api-keys",
-                after: " and create a project API key."
-            },
-            {
-                before: "Copy the full key once from the key creation screen. OpenAI will not show it again later."
-            },
-            { before: "Paste the key in the OpenAI API key field and click Save key." },
-            {
-                before: "Choose a model from the ",
-                label: "OpenAI model catalog",
-                href: "https://developers.openai.com/api/docs/models",
-                after: ", paste the model ID, then click Add model."
-            }
-        ],
-        modelExamples: ["gpt-5.4-nano", "gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
-        notes: [
-            "Cheapest option: use gpt-5.4-nano for simple, high-volume alert analysis.",
-            "Use gpt-5.4-mini when you want a stronger low-cost default.",
-            "Use gpt-5.5 only when you need stronger reasoning and accept higher cost.",
-            "Do not paste an organization ID, project ID, or environment variable name here."
-        ]
-    },
-    openrouter: {
-        summary: "Use one OpenRouter key to access many providers through OpenRouter model IDs.",
-        steps: [
-            {
-                before: "Open ",
-                label: "OpenRouter API keys",
-                href: "https://openrouter.ai/settings/keys",
-                after: " and create a new key."
-            },
-            {
-                before: "Check ",
-                label: "OpenRouter credits",
-                href: "https://openrouter.ai/settings/credits",
-                after: " so the selected model can run."
-            },
-            { before: "Paste the key in the OpenRouter API key field and click Save key." },
-            {
-                before: "Pick the exact provider/model slug from ",
-                label: "OpenRouter models",
-                href: "https://openrouter.ai/models",
-                after: ", paste it as the model ID, then click Add model."
-            }
-        ],
-        modelExamples: ["openai/gpt-5.4-nano", "google/gemini-3.5-flash", "openrouter/free"],
-        notes: [
-            "OpenRouter model IDs normally look like provider/model-name.",
-            "If a model fails, check credits, model availability, and whether the model needs a paid account.",
-            "OpenRouter is useful when you want to switch model providers without changing Ananta code."
-        ]
-    },
-    gemini: {
-        summary: "Use a Gemini API key from Google AI Studio with Gemini's OpenAI-compatible endpoint.",
-        steps: [
-            {
-                before: "Open ",
-                label: "Google AI Studio API keys",
-                href: "https://aistudio.google.com/app/apikey",
-                after: " and create a Gemini API key."
-            },
-            { before: "Copy the API key from AI Studio." },
-            { before: "Paste the key in the Gemini API key field and click Save key." },
-            {
-                before: "Use a Gemini model ID from the ",
-                label: "Gemini OpenAI-compatible model guide",
-                href: "https://ai.google.dev/gemini-api/docs/openai",
-                after: ", paste it, then click Add model."
-            }
-        ],
-        modelExamples: ["gemini-3.5-flash", "gemini-3.1-pro", "gemini-2.5-flash"],
-        notes: [
-            "Gemini is a good choice for fast, lower-cost analysis.",
-            "Use Flash models first for alerts unless you specifically need a larger Pro model.",
-            "The key should be a Gemini API key, not a Google Cloud service-account JSON file."
-        ]
-    },
-    anthropic: {
-        summary: "Use an Anthropic API key with Claude's OpenAI SDK compatibility endpoint.",
-        steps: [
-            {
-                before: "Open ",
-                label: "Anthropic Console API keys",
-                href: "https://console.anthropic.com/settings/keys",
-                after: " and create a Claude API key."
-            },
-            { before: "Copy the key from the console." },
-            { before: "Paste the key in the Anthropic API key field and click Save key." },
-            {
-                before: "Use a Claude model ID from the ",
-                label: "Claude OpenAI SDK compatibility guide",
-                href: "https://platform.claude.com/docs/en/api/openai-sdk",
-                after: ", paste it, then click Add model."
-            }
-        ],
-        modelExamples: ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
-        notes: [
-            "Ananta uses Anthropic through Claude's OpenAI-compatible Chat Completions endpoint.",
-            "Prompt caching, citations, PDF processing, and full extended-thinking features need Anthropic's native API.",
-            "For broker chat, Claude runs through the Agents SDK Chat Completions model path."
-        ]
-    }
+type CustomMcpDraft = {
+    name: string;
+    url: string;
+    transport: "streamable_http" | "sse";
+    authMode: "oauth" | "api_key";
+    apiKey: string;
+    apiKeyHeaderName: string;
+    apiKeyPrefix: string;
 };
+
+const EMPTY_CUSTOM_MCP_DRAFT: CustomMcpDraft = {
+    name: "",
+    url: "",
+    transport: "streamable_http",
+    authMode: "oauth",
+    apiKey: "",
+    apiKeyHeaderName: "Authorization",
+    apiKeyPrefix: "Bearer"
+};
+
+const SUGGESTED_MCP_TEMPLATES: SuggestedMcpTemplate[] = [
+    {
+        id: "drishti",
+        name: "Drishti MCP",
+        logoSrc: "/brand/mcp/drishti.svg",
+        logoAlt: "Drishti logo",
+        category: "Market intelligence",
+        useCase: "Indian equities news, filings, earnings, concalls, events, and movement context.",
+        setupHint: "One-click setup opens Drishti OAuth; API-key fallback still works after setup.",
+        url: "https://mcp.drishti.manasija.in",
+        transport: "streamable_http",
+        authMode: "oauth",
+        useByDefault: true
+    },
+    {
+        id: "google-drive",
+        name: "Google Drive MCP",
+        logoSrc: "/brand/mcp/google-drive.svg",
+        logoAlt: "Google Drive logo",
+        category: "Documents",
+        useCase: "Broker statements, tax docs, research PDFs, CSV exports, screenshots, and reports.",
+        setupHint: "One-click setup uses Google's hosted Drive MCP and opens OAuth.",
+        url: "https://drivemcp.googleapis.com/mcp/v1",
+        transport: "streamable_http",
+        authMode: "oauth",
+        useByDefault: false,
+        setupGuide: {
+            title: "Set up Google Drive MCP",
+            intro: "Google Drive needs an Ananta-owned Google OAuth app before users can connect their Drive account.",
+            steps: [
+                {
+                    text: "Open Google Cloud Console and choose the project Ananta should use.",
+                    links: [{ label: "Google Cloud OAuth clients", href: "https://console.cloud.google.com/auth/clients" }]
+                },
+                {
+                    text: "Enable the Google Drive API and Google Drive MCP API for that project.",
+                    links: [
+                        {
+                            label: "Google Drive MCP setup guide",
+                            href: "https://developers.google.com/workspace/drive/api/guides/configure-mcp-server"
+                        }
+                    ]
+                },
+                {
+                    text: "Configure the OAuth consent screen, audience, and Drive MCP scopes.",
+                    codeItems: ["https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.file"]
+                },
+                { text: "Create an OAuth 2.0 Web application client." },
+                { text: "Add this redirect URI to the OAuth client: <your Ananta URL>/api/mcp/oauth/callback." },
+                {
+                    text: "Copy the client ID and secret into Ananta's backend environment, then restart the backend.",
+                    codeItems: ["MCP_GOOGLE_DRIVE_OAUTH_CLIENT_ID", "MCP_GOOGLE_DRIVE_OAUTH_CLIENT_SECRET"]
+                }
+            ]
+        }
+    },
+    {
+        id: "slack",
+        name: "Slack MCP",
+        logoSrc: "/brand/mcp/slack.svg",
+        logoAlt: "Slack logo",
+        category: "Support",
+        useCase: "Support and incident channels for broker outages, sync failures, and customer reports.",
+        setupHint: "One-click setup uses Slack's hosted MCP and opens OAuth.",
+        url: "https://mcp.slack.com/mcp",
+        transport: "streamable_http",
+        authMode: "oauth",
+        useByDefault: false,
+        setupGuide: {
+            title: "Set up Slack MCP",
+            intro: "Slack needs an Ananta-owned Slack OAuth app before users can connect their workspace.",
+            steps: [
+                {
+                    text: "Create or open the Slack app that Ananta should use for MCP OAuth; Slack MCP requires an internal app or a directory-published app.",
+                    links: [
+                        { label: "Slack app dashboard", href: "https://api.slack.com/apps" },
+                        { label: "Slack MCP app identity", href: "https://docs.slack.dev/ai/slack-mcp-server/#app-identity" }
+                    ]
+                },
+                { text: "In OAuth & Permissions, add this redirect URI: <your Ananta URL>/api/mcp/oauth/callback." },
+                {
+                    text: "Choose only the Slack MCP user-token scopes needed for Ananta support workflows.",
+                    links: [
+                        {
+                            label: "Slack MCP scopes",
+                            href: "https://docs.slack.dev/ai/slack-mcp-server/#oauth-scopes-needed-on-user-token-for-different-tools"
+                        }
+                    ]
+                },
+                {
+                    text: "Copy the Slack app client ID and client secret into Ananta's backend environment.",
+                    codeItems: ["MCP_SLACK_OAUTH_CLIENT_ID", "MCP_SLACK_OAUTH_CLIENT_SECRET"]
+                },
+                { text: "Restart the backend, then users can connect Slack from this catalog." }
+            ]
+        }
+    },
+    {
+        id: "discord",
+        name: "Discord MCP",
+        logoSrc: "/brand/mcp/discord.svg",
+        logoAlt: "Discord logo",
+        category: "Community",
+        useCase: "Community support, alert-delivery feedback, and broker issue reports.",
+        setupHint: "Needs an Ananta-hosted or workspace-hosted Discord MCP endpoint before one-click setup.",
+        url: "",
+        transport: "streamable_http",
+        authMode: "oauth",
+        useByDefault: false,
+        setupGuide: {
+            title: "Set up Discord MCP",
+            intro: "Discord does not have an Ananta-hosted connector URL yet, so you need to host or choose a Discord MCP server first.",
+            steps: [
+                {
+                    text: "Create a Discord application or bot for the workspace data Ananta should be allowed to reach.",
+                    links: [
+                        {
+                            label: "Discord Developer Portal",
+                            href: "https://discord.com/developers/applications"
+                        }
+                    ]
+                },
+                {
+                    text: "If the connector needs per-user consent, implement Discord OAuth behind the MCP server.",
+                    links: [{ label: "Discord OAuth2 docs", href: "https://docs.discord.com/developers/topics/oauth2" }]
+                },
+                {
+                    text: "Expose the Discord MCP server as a hosted Streamable HTTP endpoint reachable by Ananta.",
+                    links: [
+                        {
+                            label: "MCP Streamable HTTP transport",
+                            href: "https://modelcontextprotocol.io/specification/2025-03-26/basic/transports"
+                        }
+                    ]
+                },
+                {
+                    text: "For OAuth-protected Discord tools, make the MCP server handle the delegated authorization flow and token binding.",
+                    links: [
+                        {
+                            label: "MCP delegated authorization",
+                            href: "https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization"
+                        }
+                    ]
+                },
+                { text: "Add that hosted endpoint to Ananta's connector catalog before enabling one-click setup." },
+                { text: "After a hosted endpoint exists, Ananta can wire the connector like the other hosted MCPs." }
+            ],
+        }
+    },
+    {
+        id: "notion",
+        name: "Notion MCP",
+        logoSrc: "/brand/mcp/notion.svg",
+        logoAlt: "Notion logo",
+        category: "Knowledge",
+        useCase: "Research notes, support playbooks, broker setup notes, and product decisions.",
+        setupHint: "One-click setup uses Notion's hosted MCP and opens OAuth.",
+        url: "https://mcp.notion.com/mcp",
+        transport: "streamable_http",
+        authMode: "oauth",
+        useByDefault: false
+    }
+];
 
 function formatConfigDate(value?: string | null) {
     return value ? formatIstDateTime(value) : null;
@@ -263,12 +338,12 @@ export function SystemConfigPanel({
     const [selectedMcpServerId, setSelectedMcpServerId] = useState(
         initialConfig.mcp_servers[0]?.id ?? initialConfig.mcp_server.id ?? ""
     );
-    const mcpConfig =
-        mcpServers.find((server) => server.id === selectedMcpServerId) ?? mcpServers[0] ?? initialConfig.mcp_server;
-    const [mcpApiKey, setMcpApiKey] = useState("");
-    const [mcpExtraHeadersText, setMcpExtraHeadersText] = useState(
-        JSON.stringify((mcpConfig ?? initialConfig.mcp_server).extra_headers ?? {}, null, 2)
-    );
+    const [isMcpConnectorCatalogOpen, setIsMcpConnectorCatalogOpen] = useState(false);
+    const [mcpConnectorSearch, setMcpConnectorSearch] = useState("");
+    const [mcpSetupGuideTemplateId, setMcpSetupGuideTemplateId] = useState<string | null>(null);
+    const [isCustomMcpDialogOpen, setIsCustomMcpDialogOpen] = useState(false);
+    const [customMcpDraft, setCustomMcpDraft] = useState<CustomMcpDraft>(EMPTY_CUSTOM_MCP_DRAFT);
+    const [customMcpError, setCustomMcpError] = useState("");
     const [mcpError, setMcpError] = useState("");
     const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
     const [pricingError, setPricingError] = useState("");
@@ -296,6 +371,96 @@ export function SystemConfigPanel({
     const alphaReadOnly = !permissions.canManageAlpha;
     const llmReadOnly = !permissions.canManageLlm;
     const mcpReadOnly = !permissions.canManageMcp;
+    const filteredMcpTemplates = SUGGESTED_MCP_TEMPLATES.filter((template) => {
+        const query = mcpConnectorSearch.trim().toLowerCase();
+        if (!query) {
+            return true;
+        }
+        return [template.name, template.category, template.useCase, template.setupHint]
+            .join(" ")
+            .toLowerCase()
+            .includes(query);
+    });
+
+    function suggestedMcpServerForTemplate(template: SuggestedMcpTemplate) {
+        return mcpServers.find((server) => {
+            if (template.url && server.url === template.url) {
+                return true;
+            }
+            return (server.name || "").toLowerCase() === template.name.toLowerCase();
+        });
+    }
+
+    function suggestedMcpTemplateForServer(server: SystemConfig["mcp_server"]) {
+        return SUGGESTED_MCP_TEMPLATES.find((template) => {
+            if (template.url && server.url === template.url) {
+                return true;
+            }
+            return (server.name || "").toLowerCase() === template.name.toLowerCase();
+        });
+    }
+
+    function isSuggestedMcpConfigured(template: SuggestedMcpTemplate) {
+        return Boolean(suggestedMcpServerForTemplate(template));
+    }
+
+    function isMcpServerConnected(server?: SystemConfig["mcp_server"]) {
+        return Boolean(server?.oauth_authenticated || server?.has_api_key);
+    }
+
+    function isSuggestedMcpConnected(template: SuggestedMcpTemplate) {
+        return isMcpServerConnected(suggestedMcpServerForTemplate(template));
+    }
+
+    function mcpConnectorReadiness(template: SuggestedMcpTemplate) {
+        return (
+            (config.mcp_connector_readiness ?? []).find((item) => item.id === template.id) ?? {
+                id: template.id,
+                is_ready: true,
+                reason: null
+            }
+        );
+    }
+
+    function mcpConnectorIsReady(template: SuggestedMcpTemplate) {
+        return Boolean(template.url && mcpConnectorReadiness(template).is_ready);
+    }
+
+    function selectSuggestedMcpConnector(template: SuggestedMcpTemplate) {
+        const existing = suggestedMcpServerForTemplate(template);
+        if (
+            existing &&
+            (!template.url || existing.url === template.url) &&
+            existing.is_enabled &&
+            existing.use_by_default &&
+            isMcpServerConnected(existing)
+        ) {
+            setSelectedMcpServerId(existing.id ?? "");
+            setIsMcpConnectorCatalogOpen(false);
+            return;
+        }
+        configureSuggestedMcpConnector(template);
+    }
+
+    function friendlyMcpError(message?: string | null) {
+        const text = (message || "").trim();
+        if (!text) {
+            return "";
+        }
+        if (text.includes("401") || text.toLowerCase().includes("unauthorized")) {
+            return "Connect this connector to authorize Ananta.";
+        }
+        if (text.toLowerCase().includes("url is required")) {
+            return "Choose a connector from the catalog.";
+        }
+        if (text.includes("MCP_GOOGLE_DRIVE_OAUTH_CLIENT_ID") || text.includes("MCP_SLACK_OAUTH_CLIENT_ID")) {
+            return "This connector needs an Ananta OAuth app configured by an admin before users can connect.";
+        }
+        if (text.toLowerCase().includes("dynamic client registration")) {
+            return "This connector needs an Ananta OAuth app configured before users can connect.";
+        }
+        return "This connector needs attention. Try connecting it again.";
+    }
 
     function replaceMcpServer(next: SystemConfig["mcp_server"]) {
         setMcpServers((current) => {
@@ -315,37 +480,6 @@ export function SystemConfigPanel({
                     : [next, ...current.mcp_servers]
                 : current.mcp_servers
         }));
-    }
-
-    function patchSelectedMcpServer(patch: Partial<SystemConfig["mcp_server"]>) {
-        setMcpServers((current) => current.map((server) => (server.id === mcpConfig.id ? { ...server, ...patch } : server)));
-    }
-
-    function autosaveSelectedMcpServer(patch: Partial<SystemConfig["mcp_server"]>) {
-        const nextDraft = { ...mcpConfig, ...patch };
-        patchSelectedMcpServer(patch);
-        setMcpError("");
-        startTransition(async () => {
-            try {
-                const next = await updateMcpServerConfig({
-                    id: nextDraft.id,
-                    is_enabled: nextDraft.is_enabled,
-                    use_by_default: nextDraft.use_by_default,
-                    name: nextDraft.name ?? null,
-                    url: nextDraft.url,
-                    transport: nextDraft.transport,
-                    auth_mode: nextDraft.auth_mode ?? "oauth",
-                    api_key: null,
-                    api_key_header_name: nextDraft.api_key_header_name,
-                    api_key_prefix: nextDraft.api_key_prefix,
-                    extra_headers: readMcpExtraHeaders(),
-                    timeout_seconds: nextDraft.timeout_seconds
-                });
-                replaceMcpServer(next);
-            } catch (caught) {
-                setMcpError(parseActionError(caught).message);
-            }
-        });
     }
 
     function updateDraft(provider: LlmProvider, patch: Partial<ProviderDraftState>) {
@@ -437,68 +571,26 @@ export function SystemConfigPanel({
         });
     }
 
-    function readMcpExtraHeaders(): Record<string, string> {
-        if (!mcpExtraHeadersText.trim()) {
-            return {};
-        }
-        const parsed = JSON.parse(mcpExtraHeadersText) as unknown;
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-            throw new Error("MCP extra headers must be a JSON object.");
-        }
-        return Object.fromEntries(
-            Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [key, String(value)])
-        );
-    }
-
-    function saveMcpConfig() {
+    function startMcpAuthentication(server: SystemConfig["mcp_server"]) {
         setMcpError("");
-        startTransition(async () => {
-            try {
-                const extraHeaders = readMcpExtraHeaders();
-                const next = await updateMcpServerConfig({
-                    id: mcpConfig.id,
-                    is_enabled: mcpConfig.is_enabled,
-                    use_by_default: mcpConfig.use_by_default,
-                    name: mcpConfig.name ?? null,
-                    url: mcpConfig.url,
-                    transport: mcpConfig.transport,
-                    auth_mode: mcpConfig.auth_mode ?? "oauth",
-                    api_key: mcpApiKey || null,
-                    api_key_header_name: mcpConfig.api_key_header_name,
-                    api_key_prefix: mcpConfig.api_key_prefix,
-                    extra_headers: extraHeaders,
-                    timeout_seconds: mcpConfig.timeout_seconds
-                });
-                replaceMcpServer(next);
-                setMcpApiKey("");
-                setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
-            } catch (caught) {
-                setMcpError(parseActionError(caught).message);
-            }
-        });
-    }
-
-    function startMcpAuthentication() {
-        setMcpError("");
+        setSelectedMcpServerId(server.id ?? "");
         startTransition(async () => {
             try {
                 const saved = await updateMcpServerConfig({
-                    id: mcpConfig.id,
-                    is_enabled: mcpConfig.is_enabled,
-                    use_by_default: mcpConfig.use_by_default,
-                    name: mcpConfig.name ?? null,
-                    url: mcpConfig.url,
-                    transport: mcpConfig.transport,
-                    auth_mode: mcpConfig.auth_mode ?? "oauth",
-                    api_key: mcpApiKey || null,
-                    api_key_header_name: mcpConfig.api_key_header_name,
-                    api_key_prefix: mcpConfig.api_key_prefix,
-                    extra_headers: readMcpExtraHeaders(),
-                    timeout_seconds: mcpConfig.timeout_seconds
+                    id: server.id,
+                    is_enabled: true,
+                    use_by_default: true,
+                    name: server.name ?? null,
+                    url: server.url,
+                    transport: server.transport,
+                    auth_mode: server.auth_mode ?? "oauth",
+                    api_key: null,
+                    api_key_header_name: server.api_key_header_name,
+                    api_key_prefix: server.api_key_prefix,
+                    extra_headers: server.extra_headers ?? {},
+                    timeout_seconds: server.timeout_seconds
                 });
                 replaceMcpServer(saved);
-                setMcpApiKey("");
-                setMcpExtraHeadersText(JSON.stringify(saved.extra_headers ?? {}, null, 2));
                 const auth = await startMcpOAuth(`${window.location.origin}/api/mcp/oauth/callback`, saved.id);
                 window.open(auth.authorization_url, "_blank", "noopener,noreferrer");
             } catch (caught) {
@@ -507,83 +599,136 @@ export function SystemConfigPanel({
         });
     }
 
-    function clearMcpAuthentication() {
+    function clearMcpConfigCompletely(server: SystemConfig["mcp_server"]) {
         setMcpError("");
+        setSelectedMcpServerId(server.id ?? "");
         startTransition(async () => {
             try {
-                const next = mcpConfig.id ? await clearMcpOAuthById(mcpConfig.id) : await clearMcpOAuth();
-                replaceMcpServer(next);
-            } catch (caught) {
-                setMcpError(parseActionError(caught).message);
-            }
-        });
-    }
-
-    function refreshMcpCapabilities() {
-        setMcpError("");
-        startTransition(async () => {
-            try {
-                const next = mcpConfig.id ? await refreshMcpInventoryById(mcpConfig.id) : await refreshMcpInventory();
-                replaceMcpServer(next);
-            } catch (caught) {
-                setMcpError(parseActionError(caught).message);
-            }
-        });
-    }
-
-    function clearMcpConfigCompletely() {
-        setMcpError("");
-        startTransition(async () => {
-            try {
-                const next = mcpConfig.id ? await deleteMcpServerConfigById(mcpConfig.id) : await deleteMcpServerConfig();
+                const next = server.id ? await deleteMcpServerConfigById(server.id) : await deleteMcpServerConfig();
                 setMcpServers((current) => {
-                    const remaining = current.filter((server) => server.id !== mcpConfig.id);
+                    const remaining = current.filter((item) => item.id !== server.id);
                     return remaining.length ? remaining : [next];
                 });
                 setSelectedMcpServerId(next.id ?? "");
-                setMcpApiKey("");
-                setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
             } catch (caught) {
                 setMcpError(parseActionError(caught).message);
             }
         });
     }
 
-    function clearMcpKey() {
+    function configureSuggestedMcpConnector(template: SuggestedMcpTemplate) {
         setMcpError("");
+        if (!template.url) {
+            setMcpError(`${template.name} needs a hosted MCP endpoint before Ananta can configure it automatically.`);
+            return;
+        }
+        const readiness = mcpConnectorReadiness(template);
+        if (!readiness.is_ready) {
+            setMcpError(readiness.reason || `${template.name} needs admin setup before users can connect.`);
+            return;
+        }
         startTransition(async () => {
+            let createdServerId: string | null = null;
             try {
-                const next = mcpConfig.id ? await clearMcpServerApiKeyById(mcpConfig.id) : await clearMcpServerApiKey();
-                replaceMcpServer(next);
-                setMcpApiKey("");
-            } catch (caught) {
-                setMcpError(parseActionError(caught).message);
-            }
-        });
-    }
-
-    function addMcpServer() {
-        setMcpError("");
-        startTransition(async () => {
-            try {
-                const next = await createMcpServerConfig({
-                    is_enabled: false,
+                const existing = suggestedMcpServerForTemplate(template);
+                const payload = {
+                    id: existing?.id,
+                    is_enabled: true,
                     use_by_default: true,
-                    name: "New MCP server",
-                    url: "",
-                    transport: "streamable_http",
-                    auth_mode: "oauth",
+                    name: template.name,
+                    url: template.url,
+                    transport: template.transport,
+                    auth_mode: template.authMode,
                     api_key: null,
                     api_key_header_name: "Authorization",
                     api_key_prefix: "Bearer",
                     extra_headers: {},
                     timeout_seconds: 15
+                };
+                const next = existing ? await updateMcpServerConfig(payload) : await createMcpServerConfig(payload);
+                createdServerId = existing ? null : next.id ?? null;
+                replaceMcpServer(next);
+                setIsMcpConnectorCatalogOpen(false);
+                if (template.authMode === "oauth" && !next.oauth_authenticated) {
+                    const auth = await startMcpOAuth(`${window.location.origin}/api/mcp/oauth/callback`, next.id);
+                    window.open(auth.authorization_url, "_blank", "noopener,noreferrer");
+                }
+            } catch (caught) {
+                if (createdServerId) {
+                    try {
+                        const next = await deleteMcpServerConfigById(createdServerId);
+                        setMcpServers((current) => {
+                            const remaining = current.filter((server) => server.id !== createdServerId);
+                            return remaining.length ? remaining : [next];
+                        });
+                        setSelectedMcpServerId(next.id ?? "");
+                    } catch {
+                        // Best effort: the visible error below is more useful than a rollback failure.
+                    }
+                }
+                setMcpError(parseActionError(caught).message);
+            }
+        });
+    }
+
+    function updateCustomMcpDraft(patch: Partial<CustomMcpDraft>) {
+        setCustomMcpDraft((current) => ({ ...current, ...patch }));
+    }
+
+    function openCustomMcpSetup() {
+        setCustomMcpError("");
+        setIsMcpConnectorCatalogOpen(false);
+        setIsCustomMcpDialogOpen(true);
+    }
+
+    function saveCustomMcpConnector() {
+        const name = customMcpDraft.name.trim();
+        const url = customMcpDraft.url.trim();
+        const apiKey = customMcpDraft.apiKey.trim();
+        const apiKeyHeaderName = customMcpDraft.apiKeyHeaderName.trim() || "Authorization";
+        const apiKeyPrefix = customMcpDraft.apiKeyPrefix.trim();
+        setCustomMcpError("");
+        setMcpError("");
+        if (!name) {
+            setCustomMcpError("Add a display name for this MCP server.");
+            return;
+        }
+        if (!url) {
+            setCustomMcpError("Add the hosted MCP endpoint URL.");
+            return;
+        }
+        if (customMcpDraft.authMode === "api_key" && !apiKey) {
+            setCustomMcpError("Add the API key for this MCP server.");
+            return;
+        }
+        startTransition(async () => {
+            try {
+                const next = await createMcpServerConfig({
+                    is_enabled: true,
+                    use_by_default: true,
+                    name,
+                    url,
+                    transport: customMcpDraft.transport,
+                    auth_mode: customMcpDraft.authMode,
+                    api_key: customMcpDraft.authMode === "api_key" ? apiKey : null,
+                    api_key_header_name: apiKeyHeaderName,
+                    api_key_prefix: apiKeyPrefix,
+                    extra_headers: {},
+                    timeout_seconds: 15
                 });
                 replaceMcpServer(next);
-                setMcpApiKey("");
-                setMcpExtraHeadersText(JSON.stringify(next.extra_headers ?? {}, null, 2));
+                setCustomMcpDraft(EMPTY_CUSTOM_MCP_DRAFT);
+                setIsCustomMcpDialogOpen(false);
+                if (customMcpDraft.authMode === "oauth" && next.id) {
+                    try {
+                        const auth = await startMcpOAuth(`${window.location.origin}/api/mcp/oauth/callback`, next.id);
+                        window.open(auth.authorization_url, "_blank", "noopener,noreferrer");
+                    } catch (caught) {
+                        setMcpError(parseActionError(caught).message);
+                    }
+                }
             } catch (caught) {
-                setMcpError(parseActionError(caught).message);
+                setCustomMcpError(parseActionError(caught).message);
             }
         });
     }
@@ -644,6 +789,15 @@ export function SystemConfigPanel({
             }
         });
     }
+
+    const visibleMcpServers = mcpServers.filter((server) => {
+        const template = suggestedMcpTemplateForServer(server);
+        if (!server.url && !server.name && !template) {
+            return false;
+        }
+        return isMcpServerConnected(server) || !template || mcpConnectorIsReady(template);
+    });
+    const mcpSetupGuideTemplate = SUGGESTED_MCP_TEMPLATES.find((template) => template.id === mcpSetupGuideTemplateId);
 
     function savePricing() {
         setPricingError("");
@@ -956,332 +1110,498 @@ export function SystemConfigPanel({
                     </p>
                 </div>
                 ) : null}
-                <div className="rounded-lg border border-border p-4">
+                <div className="grid gap-3">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                            <div className="text-sm font-bold">Connector catalog</div>
+                            <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+                                Add hosted MCP connectors without entering server details.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                disabled={mcpReadOnly}
+                                onClick={openCustomMcpSetup}
+                                title={mcpReadOnly ? "Only a workspace admin can add shared MCP servers." : undefined}
+                                type="button"
+                                variant="outline"
+                            >
+                                <PlugIcon className="size-4" />
+                                Custom MCP
+                            </Button>
+                            <Dialog open={isMcpConnectorCatalogOpen} onOpenChange={setIsMcpConnectorCatalogOpen}>
+                                <DialogTrigger asChild>
+                                <Button
+                                    disabled={mcpReadOnly}
+                                    title={mcpReadOnly ? "Only a workspace admin can add shared MCP servers." : undefined}
+                                    type="button"
+                                    variant="outline"
+                                >
+                                    <PlusIcon className="size-4" />
+                                    Browse connectors
+                                </Button>
+                                </DialogTrigger>
+                            <DialogContent className="max-h-[88vh] w-[min(1120px,calc(100vw-2rem))] max-w-none p-0">
+                                <DialogHeader className="border-b border-border px-8 py-6 pr-16">
+                                    <DialogTitle className="text-2xl">MCP connectors</DialogTitle>
+                                    <DialogDescription className="mt-2 max-w-3xl text-sm leading-6">
+                                        Pick a connector and Ananta will create the hosted MCP config with the right
+                                        endpoint, transport, and auth mode.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="border-b border-border px-8 py-5">
+                                    <div className="relative">
+                                        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                            className="h-11 pl-8"
+                                            inputClassName="pl-8"
+                                            onChange={(event) => setMcpConnectorSearch(event.target.value)}
+                                            placeholder="Search connectors..."
+                                            type="search"
+                                            value={mcpConnectorSearch}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="max-h-[62vh] overflow-y-auto px-8 py-6">
+                                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-border bg-muted/20 p-4">
+                                        <div>
+                                            <div className="text-sm font-bold">Have your own hosted MCP server?</div>
+                                            <div className="mt-1 text-sm text-muted-foreground">
+                                                Add a custom Streamable HTTP or SSE endpoint with OAuth or API-key auth.
+                                            </div>
+                                        </div>
+                                        <Button disabled={mcpReadOnly || isPending} onClick={openCustomMcpSetup} type="button">
+                                            <PlugIcon className="size-4" />
+                                            Custom MCP
+                                        </Button>
+                                    </div>
+                                    <div className="mb-4 text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+                                        Recommended for Ananta
+                                    </div>
+                                    <div className="grid gap-4 lg:grid-cols-2 min-[1180px]:grid-cols-3">
+                                        {filteredMcpTemplates.map((template) => {
+                                            const configured = isSuggestedMcpConfigured(template);
+                                            const connected = isSuggestedMcpConnected(template);
+                                            const unavailable = !template.url;
+                                            const readiness = mcpConnectorReadiness(template);
+                                            const ready = mcpConnectorIsReady(template);
+                                            return (
+                                                <div
+                                                    className="min-h-56 border border-border bg-muted/20 p-5"
+                                                    key={template.id}
+                                                >
+                                                    <div className="flex items-start gap-4">
+                                                        <span className="flex size-12 shrink-0 items-center justify-center border border-border bg-white p-2">
+                                                            <img
+                                                                alt={template.logoAlt}
+                                                                className="max-h-full max-w-full object-contain"
+                                                                draggable={false}
+                                                                src={template.logoSrc}
+                                                            />
+                                                        </span>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                                                <div className="truncate text-base font-bold">
+                                                                    {template.name}
+                                                                </div>
+                                                                <Badge variant={connected || ready ? "success" : "warning"}>
+                                                                    {connected
+                                                                        ? "Connected"
+                                                                        : unavailable
+                                                                          ? "Hosted endpoint needed"
+                                                                          : ready
+                                                                            ? "Ready to connect"
+                                                                            : "Admin setup needed"}
+                                                                </Badge>
+                                                            </div>
+                                                            <div className="mt-1 text-sm text-muted-foreground">
+                                                                {template.category}
+                                                            </div>
+                                                        </div>
+                                                        {connected ? (
+                                                            <span className="inline-flex size-9 shrink-0 items-center justify-center text-[var(--success)]">
+                                                                <CheckIcon className="size-4" />
+                                                            </span>
+                                                        ) : ready ? (
+                                                            <Button
+                                                                aria-label={`${configured ? "Connect" : "Add"} ${template.name}`}
+                                                                disabled={mcpReadOnly || isPending}
+                                                                onClick={() => selectSuggestedMcpConnector(template)}
+                                                                size="icon"
+                                                                title={
+                                                                    configured
+                                                                        ? "Connect this connector"
+                                                                        : unavailable
+                                                                          ? "Show setup requirement"
+                                                                          : `Add ${template.name}`
+                                                                }
+                                                                type="button"
+                                                                variant="outline"
+                                                            >
+                                                                <PlusIcon className="size-4" />
+                                                            </Button>
+                                                        ) : template.setupGuide ? (
+                                                            <Button
+                                                                aria-label={`How to set up ${template.name}`}
+                                                                onClick={() => setMcpSetupGuideTemplateId(template.id)}
+                                                                size="icon"
+                                                                title={`How to set up ${template.name}`}
+                                                                type="button"
+                                                                variant="outline"
+                                                            >
+                                                                <CircleHelpIcon className="size-4" />
+                                                            </Button>
+                                                        ) : null}
+                                                    </div>
+                                                    <div className="mt-5 text-sm leading-6 text-muted-foreground">
+                                                        {template.useCase}
+                                                    </div>
+                                                    <div className="mt-3 text-sm leading-6 text-muted-foreground">
+                                                        {connected
+                                                            ? "Connected."
+                                                            : !ready
+                                                              ? readiness.reason || "Admin setup is required before users can connect."
+                                                            : configured
+                                                              ? "Saved. Connect to authorize Ananta."
+                                                              : template.setupHint}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    {filteredMcpTemplates.length ? null : (
+                                        <div className="border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                                            No connectors match this search.
+                                        </div>
+                                    )}
+                                </div>
+                            </DialogContent>
+                            </Dialog>
+                        </div>
+                        <Dialog
+                            open={Boolean(mcpSetupGuideTemplate)}
+                            onOpenChange={(open) => {
+                                if (!open) {
+                                    setMcpSetupGuideTemplateId(null);
+                                }
+                            }}
+                        >
+                            <DialogContent className="w-[min(720px,calc(100vw-2rem))] max-w-none p-0">
+                                <DialogHeader className="border-b border-border px-6 py-5 pr-14">
+                                    <DialogTitle>{mcpSetupGuideTemplate?.setupGuide?.title ?? "Connector setup"}</DialogTitle>
+                                    <DialogDescription className="mt-2 max-w-2xl leading-6">
+                                        {mcpSetupGuideTemplate?.setupGuide?.intro}
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="grid gap-5 px-6 py-5">
+                                    <div>
+                                        <div className="text-sm font-bold">Setup steps</div>
+                                        <ol className="mt-3 grid gap-3">
+                                            {(mcpSetupGuideTemplate?.setupGuide?.steps ?? []).map((step, index) => (
+                                                <li
+                                                    className="flex gap-3 text-sm leading-6 text-muted-foreground"
+                                                    key={step.text}
+                                                >
+                                                    <span className="flex size-6 shrink-0 items-center justify-center border border-border bg-muted/30 text-xs font-semibold text-foreground">
+                                                        {index + 1}
+                                                    </span>
+                                                    <span>
+                                                        {step.text}
+                                                        {step.links?.length ? (
+                                                            <span className="ml-1 inline-flex flex-wrap gap-x-2 gap-y-1">
+                                                                {step.links.map((link) => (
+                                                                    <a
+                                                                        className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+                                                                        href={link.href}
+                                                                        key={link.href}
+                                                                        rel="noreferrer"
+                                                                        target="_blank"
+                                                                    >
+                                                                        {link.label}
+                                                                    </a>
+                                                                ))}
+                                                            </span>
+                                                        ) : null}
+                                                        {step.codeItems?.length ? (
+                                                            <span className="mt-2 flex flex-wrap gap-2">
+                                                                {step.codeItems.map((codeItem) => (
+                                                                    <code
+                                                                        className="border border-border bg-muted/30 px-2.5 py-1 text-xs text-foreground"
+                                                                        key={codeItem}
+                                                                    >
+                                                                        {codeItem}
+                                                                    </code>
+                                                                ))}
+                                                            </span>
+                                                        ) : null}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    </div>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                        <Dialog
+                            open={isCustomMcpDialogOpen}
+                            onOpenChange={(open) => {
+                                setIsCustomMcpDialogOpen(open);
+                                if (!open) {
+                                    setCustomMcpError("");
+                                }
+                            }}
+                        >
+                            <DialogContent className="w-[min(760px,calc(100vw-2rem))] max-w-none p-0">
+                                <DialogHeader className="border-b border-border px-6 py-5 pr-14">
+                                    <DialogTitle>Custom MCP server</DialogTitle>
+                                    <DialogDescription className="mt-2 max-w-2xl leading-6">
+                                        Add a hosted MCP endpoint that is not in the connector catalog. Ananta will save
+                                        it as an enabled broker-chat connector.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="grid gap-5 px-6 py-5">
+                                    <div className="grid gap-4 min-[720px]:grid-cols-2">
+                                        <label className="grid gap-1.5 text-sm font-medium">
+                                            Display name
+                                            <Input
+                                                autoComplete="off"
+                                                disabled={mcpReadOnly || isPending}
+                                                onChange={(event) => updateCustomMcpDraft({ name: event.target.value })}
+                                                placeholder="Company docs MCP"
+                                                value={customMcpDraft.name}
+                                            />
+                                        </label>
+                                        <label className="grid gap-1.5 text-sm font-medium">
+                                            Endpoint URL
+                                            <Input
+                                                autoComplete="off"
+                                                disabled={mcpReadOnly || isPending}
+                                                onChange={(event) => updateCustomMcpDraft({ url: event.target.value })}
+                                                placeholder="https://mcp.example.com/mcp"
+                                                type="url"
+                                                value={customMcpDraft.url}
+                                            />
+                                        </label>
+                                    </div>
+                                    <div className="grid gap-4 min-[720px]:grid-cols-2">
+                                        <label className="grid gap-1.5 text-sm font-medium">
+                                            Transport
+                                            <SimpleSelect
+                                                disabled={mcpReadOnly || isPending}
+                                                onValueChange={(value) =>
+                                                    updateCustomMcpDraft({
+                                                        transport: value === "sse" ? "sse" : "streamable_http"
+                                                    })
+                                                }
+                                                options={[
+                                                    { value: "streamable_http", label: "Streamable HTTP" },
+                                                    { value: "sse", label: "SSE" }
+                                                ]}
+                                                value={customMcpDraft.transport}
+                                            />
+                                        </label>
+                                        <label className="grid gap-1.5 text-sm font-medium">
+                                            Authentication
+                                            <SimpleSelect
+                                                disabled={mcpReadOnly || isPending}
+                                                onValueChange={(value) =>
+                                                    updateCustomMcpDraft({
+                                                        authMode: value === "api_key" ? "api_key" : "oauth"
+                                                    })
+                                                }
+                                                options={[
+                                                    { value: "oauth", label: "OAuth" },
+                                                    { value: "api_key", label: "API key" }
+                                                ]}
+                                                value={customMcpDraft.authMode}
+                                            />
+                                        </label>
+                                    </div>
+                                    {customMcpDraft.authMode === "api_key" ? (
+                                        <div className="grid gap-4 border border-border bg-muted/20 p-4">
+                                            <label className="grid gap-1.5 text-sm font-medium">
+                                                API key
+                                                <Input
+                                                    autoComplete="off"
+                                                    data-1p-ignore="true"
+                                                    data-form-type="other"
+                                                    data-lpignore="true"
+                                                    disabled={mcpReadOnly || isPending}
+                                                    onChange={(event) =>
+                                                        updateCustomMcpDraft({ apiKey: event.target.value })
+                                                    }
+                                                    placeholder="Paste the connector API key"
+                                                    type="password"
+                                                    value={customMcpDraft.apiKey}
+                                                />
+                                            </label>
+                                            <div className="grid gap-4 min-[720px]:grid-cols-2">
+                                                <label className="grid gap-1.5 text-sm font-medium">
+                                                    Header name
+                                                    <Input
+                                                        autoComplete="off"
+                                                        disabled={mcpReadOnly || isPending}
+                                                        onChange={(event) =>
+                                                            updateCustomMcpDraft({
+                                                                apiKeyHeaderName: event.target.value
+                                                            })
+                                                        }
+                                                        placeholder="Authorization"
+                                                        value={customMcpDraft.apiKeyHeaderName}
+                                                    />
+                                                </label>
+                                                <label className="grid gap-1.5 text-sm font-medium">
+                                                    Prefix
+                                                    <Input
+                                                        autoComplete="off"
+                                                        disabled={mcpReadOnly || isPending}
+                                                        onChange={(event) =>
+                                                            updateCustomMcpDraft({ apiKeyPrefix: event.target.value })
+                                                        }
+                                                        placeholder="Bearer"
+                                                        value={customMcpDraft.apiKeyPrefix}
+                                                    />
+                                                </label>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="border border-border bg-muted/20 px-4 py-3 text-sm leading-6 text-muted-foreground">
+                                            Ananta will open this MCP server&apos;s OAuth authorization flow after saving.
+                                            The server must expose MCP-compatible OAuth metadata.
+                                        </div>
+                                    )}
+                                    {customMcpError ? <div className="text-sm text-destructive">{customMcpError}</div> : null}
+                                    <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-5">
+                                        <Button
+                                            disabled={isPending}
+                                            onClick={() => setIsCustomMcpDialogOpen(false)}
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            Cancel
+                                        </Button>
+                                        <Button disabled={mcpReadOnly || isPending} onClick={saveCustomMcpConnector} type="button">
+                                            {customMcpDraft.authMode === "oauth" ? "Save and connect" : "Save connector"}
+                                        </Button>
+                                    </div>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
+                </div>
+                <div className="grid gap-3" data-onboarding="mcp-server-config-section">
                     {mcpReadOnly ? (
-                        <div className="mb-4 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                        <div className="border border-border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
                             These MCP servers are shared for the workspace. You can use granted MCP access in broker
                             chat, but only an allowed admin can change this shared setup.
                         </div>
                     ) : null}
-                    <div className="mb-4 flex flex-wrap items-center gap-2">
-                        <SimpleSelect
-                            className="h-9 min-w-[260px]"
-                            onValueChange={(serverId) => {
-                                const next = mcpServers.find((server) => server.id === serverId);
-                                setSelectedMcpServerId(serverId);
-                                setMcpApiKey("");
-                                setMcpExtraHeadersText(JSON.stringify(next?.extra_headers ?? {}, null, 2));
-                            }}
-                            options={mcpServers.map((server, index) => ({
-                                value: server.id ?? "",
-                                label: server.name || server.url || `MCP server ${index + 1}`
-                            }))}
-                            value={mcpConfig.id ?? ""}
-                        />
-                        <Button
-                            disabled={mcpReadOnly || isPending}
-                            onClick={addMcpServer}
-                            title={mcpReadOnly ? "Only a workspace admin can add shared MCP servers." : undefined}
-                            type="button"
-                            variant="outline"
-                        >
-                            Add MCP server
-                        </Button>
-                    </div>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                            <div className="text-sm font-semibold">MCP connection</div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                                {mcpConfig.is_enabled ? "Enabled" : "Disabled"} · OAuth{" "}
-                                {mcpConfig.oauth_authenticated ? "connected" : "not connected"} · API key{" "}
-                                {mcpConfig.has_api_key ? "fallback configured" : "fallback not configured"}
-                                {mcpConfig.updated_at ? ` · updated ${formatIstDateTime(mcpConfig.updated_at)}` : ""}
-                            </div>
-                            {mcpConfig.oauth_authorized_at ? (
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    Authorized {formatIstDateTime(mcpConfig.oauth_authorized_at)}
-                                    {mcpConfig.oauth_token_expires_at
-                                        ? ` · token expires ${formatIstDateTime(mcpConfig.oauth_token_expires_at)}`
-                                        : ""}
-                                </div>
-                            ) : null}
-                            {mcpConfig.api_key_hint ? (
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    Saved fallback key: {mcpConfig.api_key_hint}
-                                </div>
-                            ) : null}
-                            {mcpConfig.inventory_checked_at ? (
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                    Capabilities refreshed {formatIstDateTime(mcpConfig.inventory_checked_at)}
-                                </div>
-                            ) : null}
+                    {visibleMcpServers.length ? (
+                        <div className="grid gap-3 min-[760px]:grid-cols-2">
+                            {visibleMcpServers.map((server) => {
+                                const template = suggestedMcpTemplateForServer(server);
+                                const logoSrc = template?.logoSrc ?? "/logo-mark.svg";
+                                const logoAlt = template?.logoAlt ?? "MCP connector logo";
+                                const name = server.name || template?.name || "MCP connector";
+                                const connected = isMcpServerConnected(server);
+                                const error = friendlyMcpError(
+                                    (server.id === selectedMcpServerId ? mcpError : "") ||
+                                        server.oauth_last_error ||
+                                        server.inventory_error
+                                );
+                                return (
+                                    <div className="border border-border p-4" key={server.id || `${server.url}-${name}`}>
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <span className="flex size-10 shrink-0 items-center justify-center border border-border bg-white p-1.5">
+                                                    <img
+                                                        alt={logoAlt}
+                                                        className="max-h-full max-w-full object-contain"
+                                                        draggable={false}
+                                                        src={logoSrc}
+                                                    />
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="truncate text-sm font-bold">{name}</div>
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        {connected
+                                                            ? "Ready for broker chat."
+                                                            : "Connect this connector to use it in broker chat."}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <Badge variant={connected ? "success" : "warning"}>
+                                                {connected ? "Connected" : "Connect required"}
+                                            </Badge>
+                                        </div>
+
+                                        {connected ? (
+                                            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                                                <div className="flex items-center gap-2 text-xs font-medium text-[var(--success)]">
+                                                    <CheckIcon className="size-4" />
+                                                    Available in broker chat when MCP is enabled.
+                                                </div>
+                                                <Button
+                                                    disabled={mcpReadOnly || isPending}
+                                                    onClick={() => clearMcpConfigCompletely(server)}
+                                                    title={
+                                                        mcpReadOnly
+                                                            ? "Only a workspace admin can remove shared MCP servers."
+                                                            : undefined
+                                                    }
+                                                    type="button"
+                                                    variant="destructive"
+                                                >
+                                                    Remove connector
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-4 flex flex-wrap gap-2">
+                                                <Button
+                                                    disabled={mcpReadOnly || isPending || !server.url}
+                                                    onClick={() => startMcpAuthentication(server)}
+                                                    title={
+                                                        mcpReadOnly
+                                                            ? "Only a workspace admin can connect shared MCP servers."
+                                                            : undefined
+                                                    }
+                                                    type="button"
+                                                >
+                                                    Connect
+                                                </Button>
+                                                <Button
+                                                    disabled={mcpReadOnly || isPending}
+                                                    onClick={() => clearMcpConfigCompletely(server)}
+                                                    title={
+                                                        mcpReadOnly
+                                                            ? "Only a workspace admin can remove shared MCP servers."
+                                                            : undefined
+                                                    }
+                                                    type="button"
+                                                    variant="destructive"
+                                                >
+                                                    Remove
+                                                </Button>
+                                            </div>
+                                        )}
+
+                                        {error ? <div className="mt-3 text-sm text-destructive">{error}</div> : null}
+                                    </div>
+                                );
+                            })}
                         </div>
-                        <Label className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                                checked={mcpConfig.is_enabled}
-                                disabled={mcpReadOnly}
-                                onCheckedChange={(checked) => autosaveSelectedMcpServer({ is_enabled: Boolean(checked) })}
-                            />
-                            Enable this server
-                        </Label>
-                        <Label className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                                checked={mcpConfig.use_by_default}
-                                disabled={mcpReadOnly}
-                                onCheckedChange={(checked) =>
-                                    autosaveSelectedMcpServer({ use_by_default: Boolean(checked) })
-                                }
-                            />
-                            Use by default in chat
-                        </Label>
-                    </div>
-
-                    <div className="@container mt-4">
-                        <div className="grid gap-3 @lg:grid-cols-2">
-                            <div className="grid gap-1.5">
-                                <Label className="text-xs font-medium text-muted-foreground">Display name</Label>
-                                <Input
-                                    className="h-9 text-sm"
-                                    disabled={mcpReadOnly}
-                                    onChange={(event) => patchSelectedMcpServer({ name: event.target.value })}
-                                    placeholder="Display name"
-                                    value={mcpConfig.name ?? ""}
-                                />
-                            </div>
-                            <div className="grid gap-1.5">
-                                <Label className="text-xs font-medium text-muted-foreground">Transport</Label>
-                                <SimpleSelect
-                                    className="h-9"
-                                    disabled={mcpReadOnly}
-                                    onValueChange={(transport) =>
-                                        patchSelectedMcpServer({ transport: transport as "streamable_http" | "sse" })
-                                    }
-                                    options={[
-                                        { value: "streamable_http", label: "Streamable HTTP" },
-                                        { value: "sse", label: "SSE" }
-                                    ]}
-                                    value={mcpConfig.transport}
-                                />
-                            </div>
-                            <div className="grid gap-1.5 @lg:col-span-2">
-                                <Label className="text-xs font-medium text-muted-foreground">Server URL</Label>
-                                <Input
-                                    className="h-9 text-sm"
-                                    disabled={mcpReadOnly}
-                                    onChange={(event) => patchSelectedMcpServer({ url: event.target.value })}
-                                    placeholder="https://mcp.manasija.in/"
-                                    value={mcpConfig.url}
-                                />
-                            </div>
+                    ) : (
+                        <div className="flex min-h-32 flex-col items-center justify-center text-center">
+                            <span className="flex size-16 items-center justify-center border border-dashed border-border bg-muted/30 text-muted-foreground">
+                                <PlugIcon className="size-7" />
+                            </span>
+                            <div className="mt-3 text-sm font-bold">No MCP connector selected</div>
+                            <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+                                Pick a hosted connector from the catalog to add market, document, or support tools to
+                                broker chat.
+                            </p>
                         </div>
-                    </div>
-
-                    <Collapsible className="mt-4 border-t border-border pt-3">
-                        <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 text-left text-sm font-semibold text-foreground">
-                            <span>Authentication</span>
-                            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-180" />
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                            <div className="@container grid gap-3 pt-3">
-                                <div className="grid gap-3 @lg:grid-cols-2">
-                                    <div className="grid gap-1.5">
-                                        <Label className="text-xs font-medium text-muted-foreground">Auth mode</Label>
-                                        <SimpleSelect
-                                            className="h-9"
-                                            disabled={mcpReadOnly}
-                                            onValueChange={(authMode) =>
-                                                patchSelectedMcpServer({ auth_mode: authMode as "oauth" | "api_key" })
-                                            }
-                                            options={[
-                                                { value: "oauth", label: "OAuth / browser authentication" },
-                                                { value: "api_key", label: "Bearer API key fallback" }
-                                            ]}
-                                            value={mcpConfig.auth_mode ?? "oauth"}
-                                        />
-                                    </div>
-                                    <div className="flex flex-wrap items-end gap-2">
-                                        <Button
-                                            disabled={mcpReadOnly || isPending || !mcpConfig.url}
-                                            onClick={startMcpAuthentication}
-                                            title={mcpReadOnly ? "Only a workspace admin can authenticate shared MCP servers." : undefined}
-                                            type="button"
-                                            variant="outline"
-                                        >
-                                            Authenticate MCP
-                                        </Button>
-                                        <Button
-                                            disabled={mcpReadOnly || isPending || !mcpConfig.oauth_authenticated}
-                                            onClick={clearMcpAuthentication}
-                                            title={mcpReadOnly ? "Only a workspace admin can clear shared MCP authentication." : undefined}
-                                            type="button"
-                                            variant="outline"
-                                        >
-                                            Clear OAuth
-                                        </Button>
-                                        <Button
-                                            disabled={mcpReadOnly || isPending || !mcpConfig.url}
-                                            onClick={refreshMcpCapabilities}
-                                            title={mcpReadOnly ? "Only a workspace admin can refresh shared MCP tools." : undefined}
-                                            type="button"
-                                        >
-                                            Refresh tools
-                                        </Button>
-                                    </div>
-                                </div>
-                                <div className="grid gap-3 @lg:grid-cols-2">
-                                    <div className="grid gap-1.5">
-                                        <Label className="text-xs font-medium text-muted-foreground">API key</Label>
-                                        <Input
-                                            autoComplete="off"
-                                            className="h-9 text-sm"
-                                            data-1p-ignore="true"
-                                            data-form-type="other"
-                                            data-lpignore="true"
-                                            disabled={mcpReadOnly}
-                                            onChange={(event) => setMcpApiKey(event.target.value)}
-                                            placeholder={mcpConfig.has_api_key ? "Replace MCP API key" : "Add MCP API key"}
-                                            type="password"
-                                            value={mcpApiKey}
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="grid gap-1.5">
-                                            <Label className="text-xs font-medium text-muted-foreground">Header name</Label>
-                                            <Input
-                                                className="h-9 text-sm"
-                                                disabled={mcpReadOnly}
-                                                onChange={(event) =>
-                                                    patchSelectedMcpServer({ api_key_header_name: event.target.value })
-                                                }
-                                                placeholder="Authorization"
-                                                value={mcpConfig.api_key_header_name}
-                                            />
-                                        </div>
-                                        <div className="grid gap-1.5">
-                                            <Label className="text-xs font-medium text-muted-foreground">Prefix</Label>
-                                            <Input
-                                                className="h-9 text-sm"
-                                                disabled={mcpReadOnly}
-                                                onChange={(event) =>
-                                                    patchSelectedMcpServer({ api_key_prefix: event.target.value })
-                                                }
-                                                placeholder="Bearer"
-                                                value={mcpConfig.api_key_prefix}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </CollapsibleContent>
-                    </Collapsible>
-
-                    <Collapsible className="mt-3 border-t border-border pt-3">
-                        <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 text-left text-sm font-semibold text-foreground">
-                            <span>Advanced</span>
-                            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-180" />
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                            <div className="@container grid gap-3 pt-3">
-                                <div className="grid gap-3 @lg:grid-cols-2">
-                                    <div className="grid gap-1.5">
-                                        <Label className="text-xs font-medium text-muted-foreground">Timeout (seconds)</Label>
-                                        <Input
-                                            className="h-9 text-sm"
-                                            disabled={mcpReadOnly}
-                                            min={1}
-                                            max={120}
-                                            onChange={(event) =>
-                                                patchSelectedMcpServer({ timeout_seconds: Number(event.target.value || 15) })
-                                            }
-                                            type="number"
-                                            value={mcpConfig.timeout_seconds}
-                                        />
-                                    </div>
-                                    <div className="grid gap-1.5">
-                                        <Label className="text-xs font-medium text-muted-foreground">Extra headers (JSON)</Label>
-                                        <textarea
-                                            className="min-h-24 w-full border border-input bg-background px-3 py-2 font-mono text-xs outline-none focus:border-primary"
-                                            disabled={mcpReadOnly}
-                                            onChange={(event) => setMcpExtraHeadersText(event.target.value)}
-                                            placeholder='{"X-Workspace": "ananta-market-stack"}'
-                                            value={mcpExtraHeadersText}
-                                        />
-                                    </div>
-                                </div>
-                                <div className="grid gap-2 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
-                                    <div className="font-semibold text-foreground">
-                                        MCP capabilities · {(mcpConfig.inventory.tools ?? []).length} tools ·{" "}
-                                        {(mcpConfig.inventory.prompts ?? []).length} prompts ·{" "}
-                                        {(mcpConfig.inventory.resources ?? []).length} resources
-                                    </div>
-                                    {(mcpConfig.inventory.tools ?? []).length ? (
-                                        <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">
-                                            {(mcpConfig.inventory.tools ?? []).map((tool, index) => (
-                                                <Badge key={`${String(tool.name || "tool")}-${index}`} variant="secondary">
-                                                    {tool.name}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div>No MCP tools cached yet. Authenticate, then refresh tools.</div>
-                                    )}
-                                    {(mcpConfig.inventory.prompts ?? []).length || (mcpConfig.inventory.resources ?? []).length ? (
-                                        <div>
-                                            Context: {(mcpConfig.inventory.prompts ?? []).map((item) => item.name).filter(Boolean).join(", ") || "no prompts"} ·{" "}
-                                            {(mcpConfig.inventory.resources ?? [])
-                                                .map((item) => item.name || item.uri)
-                                                .filter(Boolean)
-                                                .join(", ") || "no resources"}
-                                        </div>
-                                    ) : null}
-                                    {mcpConfig.inventory.errors && Object.keys(mcpConfig.inventory.errors).length ? (
-                                        <div className="text-warning-foreground">
-                                            Inventory notes:{" "}
-                                            {Object.entries(mcpConfig.inventory.errors)
-                                                .map(([key, value]) => `${key}: ${value}`)
-                                                .join(" · ")}
-                                        </div>
-                                    ) : null}
-                                </div>
-                            </div>
-                        </CollapsibleContent>
-                    </Collapsible>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        <Button
-                            disabled={mcpReadOnly || isPending}
-                            onClick={saveMcpConfig}
-                            title={mcpReadOnly ? "Only a workspace admin can save shared MCP settings." : undefined}
-                            type="button"
-                        >
-                            {isPending ? "Saving..." : "Save MCP config"}
-                        </Button>
-                        <Button
-                            disabled={mcpReadOnly || isPending || !mcpConfig.has_api_key}
-                            onClick={clearMcpKey}
-                            title={mcpReadOnly ? "Only a workspace admin can clear the shared MCP key." : undefined}
-                            type="button"
-                            variant="outline"
-                        >
-                            Clear MCP key
-                        </Button>
-                        <Button
-                            disabled={mcpReadOnly || isPending}
-                            onClick={clearMcpConfigCompletely}
-                            title={mcpReadOnly ? "Only a workspace admin can delete shared MCP servers." : undefined}
-                            type="button"
-                            variant="outline"
-                        >
-                            Delete MCP config
-                        </Button>
-                    </div>
-                    {mcpError ? <div className="mt-3 text-sm text-destructive">{mcpError}</div> : null}
-                    {mcpConfig.oauth_last_error ? (
-                        <div className="mt-3 text-sm text-destructive">{mcpConfig.oauth_last_error}</div>
-                    ) : null}
-                    {mcpConfig.inventory_error ? (
-                        <div className="mt-3 text-sm text-destructive">{mcpConfig.inventory_error}</div>
-                    ) : null}
+                    )}
                 </div>
             </section>
             ) : null}
@@ -1357,81 +1677,7 @@ export function SystemConfigPanel({
                                         </span>
                                     ) : null}
                                 </div>
-                            <Dialog>
-                                <DialogTrigger asChild>
-                                    <Button
-                                        aria-label={`${provider.label} setup guide`}
-                                        className="size-6 border-transparent bg-transparent p-0 text-muted-foreground hover:bg-transparent hover:text-primary"
-                                        size="icon"
-                                        type="button"
-                                        variant="ghost"
-                                    >
-                                        <CircleHelpIcon className="size-4" />
-                                    </Button>
-                                </DialogTrigger>
-                                <DialogContent className="max-w-2xl">
-                                    <DialogHeader>
-                                        <DialogTitle>{provider.label} setup</DialogTitle>
-                                        <DialogDescription>
-                                            {PROVIDER_SETUP_GUIDES[provider.provider].summary}
-                                        </DialogDescription>
-                                    </DialogHeader>
-                                    <DialogPanel>
-                                        <div className="grid gap-5 text-sm leading-6">
-                                        <div>
-                                            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                                Steps
-                                            </div>
-                                            <ol className="mt-2 list-decimal space-y-2 pl-5 text-muted-foreground">
-                                                {PROVIDER_SETUP_GUIDES[provider.provider].steps.map((step) => (
-                                                    <li key={`${step.before}-${step.label ?? ""}`}>
-                                                        {step.before}
-                                                        {step.href && step.label ? (
-                                                            <a
-                                                                className="font-medium text-primary underline-offset-4 hover:underline"
-                                                                href={step.href}
-                                                                rel="noreferrer"
-                                                                target="_blank"
-                                                            >
-                                                                {step.label}
-                                                            </a>
-                                                        ) : null}
-                                                        {step.after}
-                                                    </li>
-                                                ))}
-                                            </ol>
-                                        </div>
-                                        <div>
-                                            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                                Model IDs to try
-                                            </div>
-                                            <div className="mt-2 flex flex-wrap gap-2">
-                                                {PROVIDER_SETUP_GUIDES[provider.provider].modelExamples.map(
-                                                    (modelId) => (
-                                                        <code
-                                                            className="rounded-lg border border-border bg-muted px-2 py-1 text-xs text-foreground"
-                                                            key={modelId}
-                                                        >
-                                                            {modelId}
-                                                        </code>
-                                                    )
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                                Notes
-                                            </div>
-                                            <ul className="mt-2 list-disc space-y-2 pl-5 text-muted-foreground">
-                                                {PROVIDER_SETUP_GUIDES[provider.provider].notes.map((note) => (
-                                                    <li key={note}>{note}</li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                        </div>
-                                    </DialogPanel>
-                                </DialogContent>
-                            </Dialog>
+                                <LlmProviderSetupGuideDialog label={provider.label} provider={provider.provider} />
                         </div>
 
                         <div className="mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_auto_auto]">

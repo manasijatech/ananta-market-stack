@@ -1,5 +1,4 @@
 import { PageHeader } from "@/components/brokers/ui";
-import { Shell } from "@/components/brokers/shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -416,18 +415,18 @@ export function FeedSkeleton({ rows = 4 }: { rows?: number }) {
 
 export function LoadingShell({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
     return (
-        <Shell>
+        <>
             {header}
             {children}
-        </Shell>
+        </>
     );
 }
 
 export function GenericDashboardLoading() {
     return (
-        <Shell>
+        <>
             <PageHeader eyebrow="Workspace" title="Loading" description="Preparing your workspace view." />
             <CardGridSkeleton count={4} columns="min-[960px]:grid-cols-3" />
-        </Shell>
+        </>
     );
 }

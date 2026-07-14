@@ -20,6 +20,7 @@ const PROTECTED_PREFIXES = [
     "/alerts-workspace",
     "/settings",
     "/llm-usage",
+    "/onboarding",
     "/docs",
     "/system-config",
     "/alert-channels"
@@ -44,7 +45,7 @@ function redirectTo(request: NextRequest, pathname: string): NextResponse {
 /**
  * Edge proxy for coarse session routing.
  *
- * RBAC-aware redirects (active vs pending) are handled in server components via {@link requireActiveWorkspace}.
+ * RBAC-aware redirects (active vs pending) are handled in server components via requireActiveWorkspace.
  */
 export function proxy(request: NextRequest): NextResponse {
     const { pathname } = request.nextUrl;
@@ -77,6 +78,7 @@ export const config = {
         "/auth/sign-in",
         "/auth/sign-up",
         "/auth/onboarding",
+        "/onboarding",
         "/dashboard/:path*",
         "/broker-connections/:path*",
         "/watchlists/:path*",
@@ -86,6 +88,7 @@ export const config = {
         "/alerts-workspace/:path*",
         "/settings/:path*",
         "/llm-usage/:path*",
+        "/onboarding/:path*",
         "/docs/:path*",
         "/system-config/:path*",
         "/alert-channels/:path*"

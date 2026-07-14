@@ -174,6 +174,12 @@ class McpServerConfigOut(BaseModel):
     updated_at: datetime | None = None
 
 
+class McpConnectorReadinessOut(BaseModel):
+    id: str
+    is_ready: bool = True
+    reason: str | None = None
+
+
 class McpServerConfigUpdateIn(BaseModel):
     is_enabled: bool = False
     use_by_default: bool = True
@@ -218,3 +224,4 @@ class SystemConfigOut(BaseModel):
     alpha_websocket: AlphaWebSocketConfigOut
     mcp_server: McpServerConfigOut
     mcp_servers: list[McpServerConfigOut] = Field(default_factory=list)
+    mcp_connector_readiness: list[McpConnectorReadinessOut] = Field(default_factory=list)

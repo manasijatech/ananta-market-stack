@@ -180,6 +180,23 @@ class Settings(BaseSettings):
         validation_alias="MARKET_STACK_IMAGE_DIGEST",
     )
 
+    mcp_google_drive_oauth_client_id: str | None = Field(
+        default=None,
+        validation_alias="MCP_GOOGLE_DRIVE_OAUTH_CLIENT_ID",
+    )
+    mcp_google_drive_oauth_client_secret: str | None = Field(
+        default=None,
+        validation_alias="MCP_GOOGLE_DRIVE_OAUTH_CLIENT_SECRET",
+    )
+    mcp_slack_oauth_client_id: str | None = Field(
+        default=None,
+        validation_alias="MCP_SLACK_OAUTH_CLIENT_ID",
+    )
+    mcp_slack_oauth_client_secret: str | None = Field(
+        default=None,
+        validation_alias="MCP_SLACK_OAUTH_CLIENT_SECRET",
+    )
+
     # Fernet key (urlsafe base64 32-byte). Required for production; see AGENTS.md.
     credential_encryption_key: str | None = None
     enable_order_mutations: bool = Field(default=False, validation_alias="ENABLE_ORDER_MUTATIONS")

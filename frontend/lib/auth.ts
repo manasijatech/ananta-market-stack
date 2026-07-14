@@ -10,6 +10,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { betterAuth } from "better-auth";
+import { storeDevPasswordResetLink } from "@/lib/dev-password-reset-links";
 import { getPublicAppUrl } from "@/lib/runtime-config";
 
 type SqliteDatabase = {
@@ -91,6 +92,44 @@ if (!process.env.BETTER_AUTH_SECRET && process.env.NODE_ENV === "production") {
     throw new Error("BETTER_AUTH_SECRET is required in production.");
 }
 
+async function sendResetPasswordLink(data: {
+    user: { email: string; name?: string | null };
+    url: string;
+    token: string;
+}) {
+    const webhookUrl = process.env.AUTH_PASSWORD_RESET_WEBHOOK_URL;
+
+    if (webhookUrl) {
+        const response = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                type: "password_reset",
+                to: data.user.email,
+                name: data.user.name,
+                url: data.url,
+                token: data.token
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Password reset webhook failed with status ${response.status}`);
+        }
+
+        return;
+    }
+
+    console.info(
+        [
+            "Password reset requested.",
+            `Recipient: ${data.user.email}`,
+            `Reset link: ${data.url}`,
+            "Set AUTH_PASSWORD_RESET_WEBHOOK_URL to deliver this link through an email service."
+        ].join("\n")
+    );
+    storeDevPasswordResetLink(data.user.email, data.url);
+}
+
 const localDevOrigins =
     process.env.NODE_ENV === "production"
         ? []
@@ -120,6 +159,8 @@ export const auth = betterAuth({
         enabled: true,
         minPasswordLength: 8,
         maxPasswordLength: 128,
+        sendResetPassword: sendResetPasswordLink,
+        resetPasswordTokenExpiresIn: 60 * 60,
         autoSignIn: true
     },
     session: {

@@ -12,6 +12,10 @@ This page summarizes the main environment variables used by Ananta Market Stack.
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000/api/v1` | Browser-facing backend API base URL. |
 | `MARKET_STACK_API_INTERNAL_URL` | `http://backend:8000/api/v1` in Docker Compose | Optional internal frontend-to-backend URL for server actions. |
 | `APP_PUBLIC_BASE_URL` | `http://localhost:8000` | Backend public URL used by backend API links and fallback session flows. |
+| `MCP_GOOGLE_DRIVE_OAUTH_CLIENT_ID` | empty | Optional Google OAuth client ID for one-click Google Drive MCP connect. |
+| `MCP_GOOGLE_DRIVE_OAUTH_CLIENT_SECRET` | empty | Optional Google OAuth client secret for one-click Google Drive MCP connect. |
+| `MCP_SLACK_OAUTH_CLIENT_ID` | empty | Optional Slack OAuth client ID for one-click Slack MCP connect. |
+| `MCP_SLACK_OAUTH_CLIENT_SECRET` | empty | Optional Slack OAuth client secret for one-click Slack MCP connect when your Slack app issues one. |
 | `CREDENTIAL_ENCRYPTION_KEY` | empty | Optional first-run seed for broker credential encryption. Generated if empty in Docker. |
 | `BETTER_AUTH_SECRET` | empty | Optional first-run seed for auth signing. Generated if empty in Docker. |
 | `REDIS_PASSWORD` | empty | Optional first-run seed for bundled Redis auth. Generated if empty in Docker. |
@@ -26,6 +30,10 @@ This page summarizes the main environment variables used by Ananta Market Stack.
 | --- | --- | --- |
 | `DATABASE_URL` | `sqlite:///./data/app.db` locally, `sqlite:////data/app.db` in Docker | SQLAlchemy database URL. |
 | `APP_PUBLIC_BASE_URL` | `http://localhost:8000` | Public backend URL for backend API links and fallback session flows. |
+| `MCP_GOOGLE_DRIVE_OAUTH_CLIENT_ID` | empty | Optional Google OAuth client ID for one-click Google Drive MCP connect. Register the frontend callback URL `/api/mcp/oauth/callback`. |
+| `MCP_GOOGLE_DRIVE_OAUTH_CLIENT_SECRET` | empty | Optional Google OAuth client secret for one-click Google Drive MCP connect. |
+| `MCP_SLACK_OAUTH_CLIENT_ID` | empty | Optional Slack OAuth client ID for one-click Slack MCP connect. |
+| `MCP_SLACK_OAUTH_CLIENT_SECRET` | empty | Optional Slack OAuth client secret for one-click Slack MCP connect when your Slack app issues one. |
 | `MANASIJA_API_BASE_URL` | `https://developers.manasija.in` | Base URL for Manasija developer APIs. |
 | `REDIS_HOST` | `127.0.0.1` locally, `redis` in Docker | Redis host. |
 | `REDIS_PORT` | `6379` | Redis port. |
@@ -55,6 +63,7 @@ This page summarizes the main environment variables used by Ananta Market Stack.
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000/api/v1` | Browser-facing backend API URL. |
 | `MARKET_STACK_API_INTERNAL_URL` | `NEXT_PUBLIC_API_BASE_URL` locally, `http://backend:8000/api/v1` in Docker | Optional internal backend URL used by frontend server actions. |
 | `MANASIJA_API_BASE_URL` | `https://developers.manasija.in` | Base URL for Manasija developer APIs. |
+| `GITHUB_TOKEN` | empty | Optional server-side GitHub token for fetching stargazer profiles in the top bar. Star count still works without it. |
 
 `MARKET_STACK_PUBLIC_APP_URL` and `MARKET_STACK_PUBLIC_API_BASE_URL` are still accepted as compatibility aliases, but new installs should prefer `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_API_BASE_URL`.
 

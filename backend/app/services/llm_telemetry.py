@@ -115,12 +115,14 @@ def start_span(name: str, attributes: Mapping[str, Any] | None = None) -> Iterat
 
     if tracer is not None:
         with tracer.start_as_current_span(name) as span:
-            for key, value in attrs.items():
-                clean = _clean_attr_value(value)
-                if clean is not None:
-                    span.set_attribute(key, clean)
-            yield current_span_context()
-            return
+            span_context = current_span_context()
+            if span_context.trace_id and span_context.span_id:
+                for key, value in attrs.items():
+                    clean = _clean_attr_value(value)
+                    if clean is not None:
+                        span.set_attribute(key, clean)
+                yield span_context
+                return
 
     parent_trace_id = _fallback_trace_id.get()
     trace_id = parent_trace_id or _new_trace_id()

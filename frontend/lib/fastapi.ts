@@ -2,9 +2,35 @@ import "server-only";
 
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
-import { getInternalApiBaseUrl } from "@/lib/runtime-config";
+import { getInternalApiBaseUrl, getPublicApiBaseUrl } from "@/lib/runtime-config";
 
 const apiBaseUrl = getInternalApiBaseUrl();
+const fallbackApiBaseUrl = getPublicApiBaseUrl();
+
+function absoluteFallbackApiBaseUrl(): string | null {
+    if (fallbackApiBaseUrl === apiBaseUrl) {
+        return null;
+    }
+
+    try {
+        const url = new URL(fallbackApiBaseUrl);
+        return url.protocol === "http:" || url.protocol === "https:" ? fallbackApiBaseUrl : null;
+    } catch {
+        return null;
+    }
+}
+
+async function fetchBackend(path: string, init: RequestInit): Promise<Response> {
+    try {
+        return await fetch(`${apiBaseUrl}${path}`, init);
+    } catch (error) {
+        const fallback = absoluteFallbackApiBaseUrl();
+        if (!(error instanceof TypeError) || init.signal?.aborted || !fallback) {
+            throw error;
+        }
+        return fetch(`${fallback}${path}`, init);
+    }
+}
 
 /**
  * Builds headers for authenticated FastAPI requests.
@@ -44,7 +70,7 @@ export async function fetchFastApi(path: string, init: RequestInit = {}): Promis
         authHeaders.set(key, value);
     });
 
-    return fetch(`${apiBaseUrl}${path}`, {
+    return fetchBackend(path, {
         ...init,
         headers: authHeaders,
         cache: init.cache ?? "no-store"
@@ -52,7 +78,7 @@ export async function fetchFastApi(path: string, init: RequestInit = {}): Promis
 }
 
 export async function fetchFastApiPublic(path: string, init: RequestInit = {}): Promise<Response> {
-    return fetch(`${apiBaseUrl}${path}`, {
+    return fetchBackend(path, {
         ...init,
         headers: init.headers,
         cache: init.cache ?? "no-store"

@@ -15,14 +15,15 @@ import {
     EarningsTab,
     NewsTab
 } from "@/components/market-intelligence/market-intelligence-tabs";
+import { useSession } from "@/components/session-provider";
 import { itemKey } from "@/components/market-intelligence/market-intelligence-utils";
-import { getAlphaWebSocketConfig } from "@/service/actions/alpha/websocket";
 import type { AlphaAlert } from "@/service/types/alpha/alerts";
 import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/types/alpha/announcements";
 import type { AlphaConcall } from "@/service/types/alpha/concalls";
 import type { AlphaNewsItem } from "@/service/types/alpha/news";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
+import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 
 const MAX_FEED_ITEMS = 50;
 
@@ -105,8 +106,25 @@ function mergeItem<T>(items: T[], item: T) {
     return [item, ...items.filter((existing) => itemKey(existing) !== nextKey)].slice(0, MAX_FEED_ITEMS);
 }
 
+function alphaWebSocketUrl(userId: string, products: string[]): string {
+    const configured = new URL(getPublicApiBaseUrl());
+    const loopbackHosts = new Set(["127.0.0.1", "localhost"]);
+    const shouldUseBrowserOrigin =
+        typeof window !== "undefined" &&
+        loopbackHosts.has(configured.hostname) &&
+        !loopbackHosts.has(window.location.hostname);
+    const url = shouldUseBrowserOrigin ? new URL(window.location.origin) : configured;
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = `${configured.pathname.replace(/\/+$/, "")}/alpha/ws`;
+    url.search = "";
+    url.searchParams.set("user_id", userId);
+    if (products.length) url.searchParams.set("products", products.join(","));
+    return url.toString();
+}
+
 export function MarketIntelligenceLiveFeed({
     activeSection,
+    enableLiveUpdates = true,
     feedSearch,
     initialFeeds,
     onFeedSearchSymbol,
@@ -115,6 +133,7 @@ export function MarketIntelligenceLiveFeed({
     symbols
 }: {
     activeSection: AlphaSection;
+    enableLiveUpdates?: boolean;
     feedSearch: string;
     initialFeeds: MarketIntelligenceFeeds;
     onFeedSearchSymbol?: (symbol: string) => void;
@@ -122,6 +141,7 @@ export function MarketIntelligenceLiveFeed({
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
     symbols: string[];
 }) {
+    const { user } = useSession();
     const [feeds, setFeeds] = useState(initialFeeds);
     const [liveUpdateCounts, setLiveUpdateCounts] = useState<Record<AlphaSection, number>>(emptyLiveUpdateCounts);
     const [socketState, setSocketState] = useState<MarketIntelligenceSocketState>("connecting");
@@ -141,17 +161,36 @@ export function MarketIntelligenceLiveFeed({
     }, [onSocketStateChange, socketState]);
 
     useEffect(() => {
+        if (!enableLiveUpdates) {
+            setSocketState("offline");
+            setSocketError("");
+            return;
+        }
         let socket: WebSocket | null = null;
         let cancelled = false;
+        let opened = false;
+        let failedAttempts = 0;
+        let reconnectTimer: number | null = null;
+
+        function scheduleReconnect() {
+            if (cancelled || reconnectTimer) return;
+            reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = null;
+                if (failedAttempts < 3) setSocketState("connecting");
+                void connect();
+            }, 1500);
+        }
 
         async function connect() {
             try {
-                const config = await getAlphaWebSocketConfig([...marketIntelligenceProducts]);
                 if (cancelled) return;
-                socket = new WebSocket(config.url);
+                setSocketError("");
+                socket = new WebSocket(alphaWebSocketUrl(user?.id ?? "local-dev-user", [...marketIntelligenceProducts]));
 
                 socket.onopen = () => {
                     if (cancelled || !socket) return;
+                    opened = true;
+                    failedAttempts = 0;
                     setSocketState("live");
                     setSocketError("");
                     const subscribedSymbols = Array.from(watchlistSymbols);
@@ -203,12 +242,24 @@ export function MarketIntelligenceLiveFeed({
                 };
 
                 socket.onerror = () => {
-                    setSocketState("offline");
-                    setSocketError("Could not keep the Alpha websocket connected.");
+                    // The browser follows error with close; let close decide user-visible state.
                 };
 
-                socket.onclose = () => {
-                    if (!cancelled) setSocketState("offline");
+                socket.onclose = (event) => {
+                    if (cancelled) return;
+                    failedAttempts += 1;
+                    if (event.code === 1000) {
+                        setSocketState("offline");
+                        return;
+                    }
+                    if (!opened && failedAttempts >= 3) {
+                        setSocketState("offline");
+                        setSocketError("Could not connect to the Alpha websocket.");
+                    } else if (opened) {
+                        setSocketState("connecting");
+                        setSocketError("");
+                    }
+                    scheduleReconnect();
                 };
             } catch (caught) {
                 if (!cancelled) {
@@ -226,9 +277,10 @@ export function MarketIntelligenceLiveFeed({
 
         return () => {
             cancelled = true;
+            if (reconnectTimer) window.clearTimeout(reconnectTimer);
             socket?.close();
         };
-    }, [watchlistSymbols]);
+    }, [enableLiveUpdates, user?.id, watchlistSymbols]);
 
     const sharedTabProps = {
         feedSearch,

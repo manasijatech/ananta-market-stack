@@ -352,61 +352,52 @@ function candleMatchesTime(candle: HoveredCandle, isoTime: string): boolean {
     return dayKeyFromDate(candle.time) === dayKeyFromDate(isoTime);
 }
 
-function cssVar(name: string, fallback: string): string {
-    if (typeof window === "undefined") return fallback;
-    const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return value || fallback;
+function normalizeCssColor(value: string, fallback: string): string {
+    if (typeof window === "undefined" || typeof document === "undefined") return fallback;
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d");
+    if (!context) return fallback;
+
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = fallback;
+    context.fillStyle = value;
+    context.fillRect(0, 0, 1, 1);
+
+    const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+    if (alpha === 255) return `rgb(${red}, ${green}, ${blue})`;
+    return `rgba(${red}, ${green}, ${blue}, ${Number((alpha / 255).toFixed(4))})`;
 }
 
-function toRgba(value: string, alpha: number): string {
-    const normalized = value.trim();
-    if (normalized.startsWith("#")) {
-        const hex = normalized.slice(1);
-        const fullHex =
-            hex.length === 3
-                ? hex
-                      .split("")
-                      .map((part) => `${part}${part}`)
-                      .join("")
-                : hex;
-        if (fullHex.length === 6) {
-            const red = Number.parseInt(fullHex.slice(0, 2), 16);
-            const green = Number.parseInt(fullHex.slice(2, 4), 16);
-            const blue = Number.parseInt(fullHex.slice(4, 6), 16);
-            return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-        }
-    }
-
+function withAlpha(value: string, alpha: number): string {
+    const normalized = normalizeCssColor(value, value);
     const rgbMatch = normalized.match(/^rgba?\(([^)]+)\)$/i);
-    if (rgbMatch) {
-        const [red, green, blue] = rgbMatch[1].split(",").map((part) => part.trim());
-        if (red && green && blue) {
-            return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-        }
-    }
-
-    return normalized;
+    if (!rgbMatch) return normalized;
+    const [red = "0", green = "0", blue = "0"] = rgbMatch[1].split(",").map((part) => part.trim());
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function readChartPalette(): ChartPalette {
-    const background = cssVar("--card", "#ffffff");
-    const text = cssVar("--foreground", "#171717");
-    const border = cssVar("--border", "rgba(0, 0, 0, 0.1)");
-    const primary = cssVar("--primary", "#ffcd2e");
-    const success = cssVar("--success", "#10b981");
-    const warning = cssVar("--warning", "#f59e0b");
+    const rootStyle = typeof window === "undefined" ? null : window.getComputedStyle(document.documentElement);
+    const background = normalizeCssColor(rootStyle?.getPropertyValue("--card").trim() || "#ffffff", "#ffffff");
+    const text = normalizeCssColor(rootStyle?.getPropertyValue("--foreground").trim() || "#171717", "#171717");
+    const border = normalizeCssColor(rootStyle?.getPropertyValue("--border").trim() || "rgba(0, 0, 0, 0.1)", "rgba(0, 0, 0, 0.1)");
+    const primary = normalizeCssColor(rootStyle?.getPropertyValue("--primary").trim() || "#ffcd2e", "#ffcd2e");
+    const success = normalizeCssColor(rootStyle?.getPropertyValue("--success").trim() || "#10b981", "#10b981");
+    const warning = normalizeCssColor(rootStyle?.getPropertyValue("--warning").trim() || "#f59e0b", "#f59e0b");
 
     return {
         background,
-        border: toRgba(border, 0.85),
-        crosshair: toRgba(primary, 0.32),
+        border: withAlpha(border, 0.85),
+        crosshair: withAlpha(primary, 0.32),
         down: warning,
-        grid: toRgba(border, 0.45),
-        overlay: toRgba(background, 0.86),
+        grid: withAlpha(border, 0.45),
+        overlay: withAlpha(background, 0.86),
         text,
         up: success,
-        volumeDown: toRgba(warning, 0.24),
-        volumeUp: toRgba(success, 0.24)
+        volumeDown: withAlpha(warning, 0.24),
+        volumeUp: withAlpha(success, 0.24)
     };
 }
 
@@ -457,13 +448,27 @@ export function MarketIntelligenceSymbolChart({
     const latestPrice = snapshot?.latest_quote?.ltp ?? null;
     const activeRange = RANGE_PRESETS.find((item) => item.id === activeRangeId) ?? RANGE_PRESETS[3];
     const aggregatedMarkers = useMemo(() => buildAggregatedMarkers(snapshot, feeds), [feeds, snapshot]);
-    const chartPalette = useMemo(() => readChartPalette(), [resolvedTheme]);
+    const [chartPalette, setChartPalette] = useState<ChartPalette>(() => readChartPalette());
     useEffect(() => {
         aggregatedMarkersRef.current = aggregatedMarkers;
     }, [aggregatedMarkers]);
     useEffect(() => {
         candlesRef.current = snapshot?.candles ?? [];
     }, [snapshot?.candles]);
+    useEffect(() => {
+        let frame = 0;
+        const updatePalette = () => {
+            window.cancelAnimationFrame(frame);
+            frame = window.requestAnimationFrame(() => setChartPalette(readChartPalette()));
+        };
+        updatePalette();
+        const observer = new MutationObserver(updatePalette);
+        observer.observe(document.documentElement, { attributeFilter: ["class"], attributes: true });
+        return () => {
+            window.cancelAnimationFrame(frame);
+            observer.disconnect();
+        };
+    }, [resolvedTheme]);
 
     async function loadRange(nextRangeId: RangePreset["id"]) {
         if (!account?.account_id || !instrument) return;

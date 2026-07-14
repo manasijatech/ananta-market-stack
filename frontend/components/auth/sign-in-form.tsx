@@ -2,16 +2,26 @@
 
 import { authMutationKeys } from "@better-auth-ui/core";
 import { useAuth, useFetchOptions, useSignInEmail } from "@better-auth-ui/react";
+import { IconEye, IconEyeOff } from "@tabler/icons-react";
 import { useIsMutating } from "@tanstack/react-query";
 import { type SyntheticEvent, useState } from "react";
-import { authFormPrimaryButtonClassName } from "@/components/auth/auth-form-styles";
+import {
+    authFormInputClassName,
+    authFormInputGroupButtonClassName,
+    authFormInputGroupClassName,
+    authFormInputGroupInputClassName,
+    authFormInputInvalidClassName,
+    authFormPrimaryButtonClassName
+} from "@/components/auth/auth-form-styles";
 import { ProviderButtons, type SocialLayout } from "@/components/auth/provider-buttons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldError, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 export type SignInFormProps = {
     socialLayout?: SocialLayout;
@@ -34,6 +44,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
 
     const { fetchOptions, resetFetchOptions } = useFetchOptions();
     const [password, setPassword] = useState("");
+    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
     const { mutate: signInEmail, isPending: signInEmailPending } = useSignInEmail(authClient, {
@@ -81,9 +92,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
             {socialPosition === "top" && socialProviders && socialProviders.length > 0 ? (
                 <>
                     <ProviderButtons socialLayout={socialLayout} />
-                    {showSeparator ? (
-                        <FieldSeparator className="text-xs">{localization.auth.or}</FieldSeparator>
-                    ) : null}
+                    {showSeparator ? <FieldSeparator className="text-xs">{localization.auth.or}</FieldSeparator> : null}
                 </>
             ) : null}
 
@@ -100,7 +109,10 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                                 placeholder={localization.auth.emailPlaceholder}
                                 required
                                 disabled={isPending}
-                                size="lg"
+                                className={cn(
+                                    authFormInputClassName,
+                                    fieldErrors.email && authFormInputInvalidClassName
+                                )}
                                 onChange={() => setFieldErrors((prev) => ({ ...prev, email: undefined }))}
                                 onInvalid={(event) => {
                                     event.preventDefault();
@@ -129,38 +141,64 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                                     </Link>
                                 ) : null}
                             </div>
-                            <Input
-                                id="sign-in-password"
-                                name="password"
-                                type="password"
-                                autoComplete="current-password"
-                                value={password}
-                                onChange={(event) => {
-                                    setPassword(event.target.value);
-                                    setFieldErrors((prev) => ({ ...prev, password: undefined }));
-                                }}
-                                placeholder={localization.auth.passwordPlaceholder}
-                                required
-                                minLength={emailAndPassword.minPasswordLength}
-                                maxLength={emailAndPassword.maxPasswordLength}
-                                disabled={isPending}
-                                size="lg"
-                                onInvalid={(event) => {
-                                    event.preventDefault();
-                                    const element = event.target as HTMLInputElement;
-                                    const min = emailAndPassword.minPasswordLength;
-                                    const max = emailAndPassword.maxPasswordLength;
-                                    setFieldErrors((prev) => ({
-                                        ...prev,
-                                        password: element.validity.valueMissing
-                                            ? localization.auth.fieldRequired
-                                            : element.validity.tooShort
-                                              ? localization.auth.tooShort.replace("{{min}}", String(min))
-                                              : localization.auth.tooLong.replace("{{max}}", String(max))
-                                    }));
-                                }}
-                                aria-invalid={fieldErrors.password ? true : undefined}
-                            />
+                            <InputGroup
+                                className={cn(
+                                    authFormInputGroupClassName,
+                                    fieldErrors.password && authFormInputInvalidClassName
+                                )}
+                            >
+                                <InputGroupInput
+                                    id="sign-in-password"
+                                    name="password"
+                                    type={isPasswordVisible ? "text" : "password"}
+                                    autoComplete="current-password"
+                                    value={password}
+                                    onChange={(event) => {
+                                        setPassword(event.target.value);
+                                        setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                                    }}
+                                    placeholder={localization.auth.passwordPlaceholder}
+                                    required
+                                    minLength={emailAndPassword.minPasswordLength}
+                                    maxLength={emailAndPassword.maxPasswordLength}
+                                    disabled={isPending}
+                                    className={authFormInputGroupInputClassName}
+                                    onInvalid={(event) => {
+                                        event.preventDefault();
+                                        const element = event.target as HTMLInputElement;
+                                        const min = emailAndPassword.minPasswordLength;
+                                        const max = emailAndPassword.maxPasswordLength;
+                                        setFieldErrors((prev) => ({
+                                            ...prev,
+                                            password: element.validity.valueMissing
+                                                ? localization.auth.fieldRequired
+                                                : element.validity.tooShort
+                                                  ? localization.auth.tooShort.replace("{{min}}", String(min))
+                                                  : localization.auth.tooLong.replace("{{max}}", String(max))
+                                        }));
+                                    }}
+                                    aria-invalid={fieldErrors.password ? true : undefined}
+                                />
+                                <InputGroupAddon align="inline-end">
+                                    <InputGroupButton
+                                        type="button"
+                                        size="icon-sm"
+                                        className={authFormInputGroupButtonClassName}
+                                        aria-label={
+                                            isPasswordVisible
+                                                ? localization.auth.hidePassword
+                                                : localization.auth.showPassword
+                                        }
+                                        onClick={() => setIsPasswordVisible((current) => !current)}
+                                    >
+                                        {isPasswordVisible ? (
+                                            <IconEyeOff className="size-5" stroke={1.75} />
+                                        ) : (
+                                            <IconEye className="size-5" stroke={1.75} />
+                                        )}
+                                    </InputGroupButton>
+                                </InputGroupAddon>
+                            </InputGroup>
                             <FieldError>{fieldErrors.password}</FieldError>
                         </Field>
 
@@ -168,7 +206,10 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
                             <Field>
                                 <div className="flex items-center gap-3">
                                     <Checkbox id="rememberMe" name="rememberMe" disabled={isPending} />
-                                    <Label htmlFor="rememberMe" className="cursor-pointer text-sm font-normal text-muted-foreground">
+                                    <Label
+                                        htmlFor="rememberMe"
+                                        className="cursor-pointer text-sm font-normal text-muted-foreground"
+                                    >
                                         {localization.auth.rememberMe}
                                     </Label>
                                 </div>
@@ -205,9 +246,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
 
             {socialPosition === "bottom" && socialProviders && socialProviders.length > 0 ? (
                 <>
-                    {showSeparator ? (
-                        <FieldSeparator className="text-xs">{localization.auth.or}</FieldSeparator>
-                    ) : null}
+                    {showSeparator ? <FieldSeparator className="text-xs">{localization.auth.or}</FieldSeparator> : null}
                     <ProviderButtons socialLayout={socialLayout} />
                 </>
             ) : null}

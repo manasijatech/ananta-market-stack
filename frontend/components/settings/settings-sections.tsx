@@ -5,7 +5,6 @@ import { ChannelSettings } from "@/components/alerts/channel-settings";
 import { StreamManager } from "@/components/alerts/stream-manager";
 import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager";
 import { SystemConfigPanel } from "@/components/system/system-config-panel";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { OpenRouterModel } from "@/service/actions/llm-models";
 import type { AlertChannel, DesktopAudioDevice, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
@@ -19,8 +18,7 @@ type SettingsSection =
     | "llm"
     | "live-subscriptions"
     | "stream-manager"
-    | "alert-channels"
-    | "preferences";
+    | "alert-channels";
 
 type SettingsSectionsProps = {
     config: SystemConfig;
@@ -82,19 +80,8 @@ const sections: Array<{ value: SettingsSection; label: string; title: string; de
         label: "Delivery",
         title: "Alert delivery channels",
         description: "Manage desktop audio, Discord, and Telegram delivery credentials, defaults, and test sends."
-    },
-    {
-        value: "preferences",
-        label: "Preferences",
-        title: "Preferences",
-        description: "Reset lightweight workspace preferences stored in this browser."
     }
 ];
-
-const ONBOARDING_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-complete";
-const ONBOARDING_PHASE_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-phase";
-const ONBOARDING_STEP_STORAGE_KEY = "ananta-market-stack-joyride-broker-system-config-alpha-guide-v2-step";
-const ONBOARDING_RESET_EVENT = "ananta-market-stack-reset-onboarding";
 
 function sectionFromHash(): SettingsSection {
     if (typeof window === "undefined") {
@@ -139,13 +126,6 @@ export function SettingsSections({
         const next = value as SettingsSection;
         setActiveSection(next);
         window.history.replaceState(null, "", `#${next}`);
-    }
-
-    function resetOnboardingTour() {
-        localStorage.removeItem(ONBOARDING_STORAGE_KEY);
-        localStorage.removeItem(ONBOARDING_PHASE_STORAGE_KEY);
-        localStorage.removeItem(ONBOARDING_STEP_STORAGE_KEY);
-        window.dispatchEvent(new Event(ONBOARDING_RESET_EVENT));
     }
 
     const activeMeta = visibleSections.find((section) => section.value === activeSection) ?? visibleSections[0] ?? sections[0];
@@ -198,21 +178,6 @@ export function SettingsSections({
             </TabsContent>
             <TabsContent className="mt-0 min-w-0 max-w-full" value="alert-channels">
                 <ChannelSettings initialChannels={alertChannels} initialDesktopAudioDevices={desktopAudioDevices} />
-            </TabsContent>
-            <TabsContent className="mt-0 min-w-0 max-w-full" value="preferences">
-                <section className="border border-border p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <div className="text-sm font-bold">Onboarding tour</div>
-                            <p className="mt-1.5 max-w-2xl text-xs leading-5 text-muted-foreground">
-                                Clear the saved tour completion flag in this browser and start the onboarding guide again.
-                            </p>
-                        </div>
-                        <Button onClick={resetOnboardingTour} type="button" variant="outline">
-                            Restart tour
-                        </Button>
-                    </div>
-                </section>
             </TabsContent>
         </Tabs>
     );
