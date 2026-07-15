@@ -156,6 +156,31 @@ function BrokerModeSwitch<TMode extends string>({
     );
 }
 
+function brokerFieldPlaceholder(name: string, label: string): string {
+    const placeholders: Record<string, string> = {
+        access_token: "Paste access token",
+        api_key: "Paste API key",
+        api_secret: "Paste API secret",
+        app_id: "Paste API key",
+        app_secret: "Paste API secret",
+        client_code: "Enter client code",
+        client_id: "Enter client ID",
+        label: "Enter account label",
+        login_password: "Enter login password",
+        login_user_id: "Enter login user ID",
+        mobile_number: "Enter mobile number",
+        mpin: "Enter MPIN",
+        pin: "Enter PIN",
+        portal_access_token: "Paste portal access token",
+        redirect_uri: "Enter redirect URI",
+        totp_secret: "Paste TOTP secret",
+        totp_token: "Paste TOTP API key",
+        ucc: "Enter UCC"
+    };
+
+    return placeholders[name] ?? `Enter ${label.toLowerCase()}`;
+}
+
 function BrokerField({
     name,
     label,
@@ -191,6 +216,7 @@ function BrokerField({
                 defaultValue={defaultValue}
                 id={inputName}
                 name={inputName}
+                placeholder={brokerFieldPlaceholder(name, label)}
                 required={!optional}
                 type={type}
             />
@@ -261,13 +287,7 @@ function BrokerSelector({
                             isSelected && "border-primary ring-1 ring-primary/25"
                         )}
                         key={code}
-                        render={
-                            <button
-                                aria-pressed={isSelected}
-                                onClick={() => onSelect(code)}
-                                type="button"
-                            />
-                        }
+                        render={<button aria-pressed={isSelected} onClick={() => onSelect(code)} type="button" />}
                     >
                         <CardPanel className="flex items-center gap-3 p-3">
                             <BrokerLogo broker={code} className="size-10" imageClassName="size-8" />
@@ -280,9 +300,19 @@ function BrokerSelector({
     );
 }
 
-export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCode[] }) {
+export function AddBrokerForm({
+    compact = false,
+    initialBroker,
+    showBrokerSelector = true,
+    supportedBrokers
+}: {
+    compact?: boolean;
+    initialBroker?: BrokerCode;
+    showBrokerSelector?: boolean;
+    supportedBrokers: BrokerCode[];
+}) {
     const router = useRouter();
-    const [broker, setBroker] = useState<BrokerCode>(supportedBrokers[0] ?? "zerodha");
+    const [broker, setBroker] = useState<BrokerCode>(initialBroker ?? supportedBrokers[0] ?? "zerodha");
     const [zerodhaMode, setZerodhaMode] = useState<ZerodhaMode>("official");
     const [angelMode, setAngelMode] = useState<AngelMode>("manual");
     const [dhanMode, setDhanMode] = useState<DhanMode>("consent");
@@ -332,36 +362,43 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
     }
 
     return (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)] lg:items-start">
-            <BrokerSelector broker={broker} onSelect={setBroker} supportedBrokers={supportedBrokers} />
+        <div
+            className={cn(
+                "grid gap-6 lg:items-start",
+                showBrokerSelector ? "lg:grid-cols-[minmax(0,240px)_minmax(0,1fr)]" : "lg:grid-cols-1"
+            )}
+        >
+            {showBrokerSelector ? (
+                <BrokerSelector broker={broker} onSelect={setBroker} supportedBrokers={supportedBrokers} />
+            ) : null}
 
-            <CardFrame className="min-w-0">
-                <CardFrameHeader>
-                    <CardFrameTitle className="text-lg font-semibold">Broker credentials</CardFrameTitle>
-                    <CardFrameDescription className="leading-6">
-                        Add {selectedName}. Secrets are encrypted by the FastAPI backend before storage.
-                    </CardFrameDescription>
-                    <CardFrameAction>
-                        <Badge
-                            render={
-                                <Link href={`/docs/${broker}`} rel="noreferrer" target="_blank" />
-                            }
-                            variant="outline"
-                        >
-                            <BookOpen data-icon="inline-start" />
-                            Docs
-                        </Badge>
-                    </CardFrameAction>
-                </CardFrameHeader>
-                <Card>
-                    <CardPanel>
+            <CardFrame className={cn("min-w-0", compact && "border-0 bg-transparent before:hidden")}>
+                {compact ? null : (
+                    <CardFrameHeader>
+                        <CardFrameTitle className="text-lg font-semibold">Broker credentials</CardFrameTitle>
+                        <CardFrameDescription className="leading-6">
+                            Add {selectedName}. Secrets are encrypted by the FastAPI backend before storage.
+                        </CardFrameDescription>
+                        <CardFrameAction>
+                            <Badge
+                                render={<Link href={`/docs/${broker}`} rel="noreferrer" target="_blank" />}
+                                variant="outline"
+                            >
+                                <BookOpen data-icon="inline-start" />
+                                Docs
+                            </Badge>
+                        </CardFrameAction>
+                    </CardFrameHeader>
+                )}
+                <Card className={cn(compact && "border-0 bg-transparent shadow-none")}>
+                    <CardPanel className={cn(compact && "p-0")}>
                         <Form
                             autoComplete="off"
                             className="flex flex-col gap-4"
                             data-form-type="other"
                             onSubmit={onSubmit}
                         >
-                            <BrokerGuidePanel broker={broker} />
+                            {compact ? null : <BrokerGuidePanel broker={broker} />}
 
                             <FieldGroup>
                                 <BrokerField error={fieldErrors.label} label="Account label" name="label" />
@@ -448,7 +485,12 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                         />
                                         {angelMode === "automation" ? (
                                             <>
-                                                <BrokerField error={fieldErrors.pin} label="PIN" name="pin" type="password" />
+                                                <BrokerField
+                                                    error={fieldErrors.pin}
+                                                    label="PIN"
+                                                    name="pin"
+                                                    type="password"
+                                                />
                                                 <BrokerField
                                                     description="Base32 authenticator secret for SmartAPI automation."
                                                     error={fieldErrors.totp_secret}
@@ -478,14 +520,15 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                             name="app_secret"
                                             type="password"
                                         />
-                                        <BrokerField
-                                            error={fieldErrors.client_id}
-                                            label="Client ID"
-                                            name="client_id"
-                                        />
+                                        <BrokerField error={fieldErrors.client_id} label="Client ID" name="client_id" />
                                         {dhanMode === "automation" ? (
                                             <>
-                                                <BrokerField error={fieldErrors.pin} label="PIN" name="pin" type="password" />
+                                                <BrokerField
+                                                    error={fieldErrors.pin}
+                                                    label="PIN"
+                                                    name="pin"
+                                                    type="password"
+                                                />
                                                 <BrokerField
                                                     description="QR/authenticator secret used for official Dhan TOTP automation."
                                                     error={fieldErrors.totp_secret}
@@ -522,7 +565,12 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                                     label="Mobile number"
                                                     name="mobile_number"
                                                 />
-                                                <BrokerField error={fieldErrors.mpin} label="MPIN" name="mpin" type="password" />
+                                                <BrokerField
+                                                    error={fieldErrors.mpin}
+                                                    label="MPIN"
+                                                    name="mpin"
+                                                    type="password"
+                                                />
                                                 <BrokerField
                                                     description="Base32 authenticator secret used for Kotak TOTP generation."
                                                     error={fieldErrors.totp_secret}
@@ -548,7 +596,11 @@ export function AddBrokerForm({ supportedBrokers }: { supportedBrokers: BrokerCo
                                         />
                                         {growwMode === "approval" ? (
                                             <>
-                                                <BrokerField error={fieldErrors.api_key} label="API key" name="api_key" />
+                                                <BrokerField
+                                                    error={fieldErrors.api_key}
+                                                    label="API key"
+                                                    name="api_key"
+                                                />
                                                 <BrokerField
                                                     error={fieldErrors.api_secret}
                                                     label="API secret"

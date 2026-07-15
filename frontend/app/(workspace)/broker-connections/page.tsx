@@ -1,81 +1,94 @@
 import { Suspense } from "react";
 import { AccessDeniedState } from "@/components/access/access-denied-state";
-import { getBrokerAccounts } from "@/service/actions/broker";
+import { getBrokerAccounts, getSupportedBrokers } from "@/service/actions/broker";
+import { BrokerAddOptions } from "@/components/brokers/broker-add-options";
 import { BrokerCallbackHandler } from "@/components/brokers/broker-callback-handler";
 import { NotificationsBanner } from "@/components/brokers/notifications-banner";
-import {
-	BrokerAccountsEmpty,
-	BrokerCard,
-	PageHeader,
-} from "@/components/brokers/ui";
+import { BrokerAccountsEmpty, BrokerCard, PageHeader } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { BrokerAccount } from "@/service/types/broker";
+import type { BrokerAccount, BrokerCode } from "@/service/types/broker";
 import { canManageBrokerCredentials } from "@/lib/rbac";
-import {
-	formatUserFacingError,
-	isPermissionDeniedError,
-} from "@/lib/api-errors";
+import { formatUserFacingError, isPermissionDeniedError } from "@/lib/api-errors";
 import { getRbacMe } from "@/service/actions/rbac";
 
 export default async function BrokersPage() {
-	let accounts: BrokerAccount[] = [];
-	let error = "";
-	let principal = null;
+    let accounts: BrokerAccount[] = [];
+    let supportedBrokers: BrokerCode[] = [];
+    let error = "";
+    let brokerOptionsError = "";
+    let principal = null;
 
-	try {
-		[accounts, principal] = await Promise.all([
-			getBrokerAccounts(),
-			getRbacMe(),
-		]);
-	} catch (caught) {
-		if (isPermissionDeniedError(caught)) {
-			return (
-				<AccessDeniedState
-					title="Broker connections"
-					description="Connected broker accounts appear here when your role is allowed to use them."
-					reason="Your account is not allowed to browse broker connections right now."
-					backHref="/broker-connections"
-				/>
-			);
-		}
-		error = formatUserFacingError(caught, "Could not load broker accounts.");
-	}
+    try {
+        [accounts, principal] = await Promise.all([getBrokerAccounts(), getRbacMe()]);
+    } catch (caught) {
+        if (isPermissionDeniedError(caught)) {
+            return (
+                <AccessDeniedState
+                    title="Broker connections"
+                    description="Connected broker accounts appear here when your role is allowed to use them."
+                    reason="Your account is not allowed to browse broker connections right now."
+                    backHref="/broker-connections"
+                />
+            );
+        }
+        error = formatUserFacingError(caught, "Could not load broker accounts.");
+    }
 
-	const canAddBroker = canManageBrokerCredentials(principal);
+    const canAddBroker = canManageBrokerCredentials(principal);
 
-	return (
-		<>
-			<PageHeader
-				eyebrow="Broker accounts"
-				title="Broker Connections"
-				description="Manage broker credentials, session status, quotes, and portfolio data for your trading workspace."
-			/>
+    if (!error && canAddBroker) {
+        try {
+            supportedBrokers = await getSupportedBrokers();
+        } catch (caught) {
+            brokerOptionsError = formatUserFacingError(caught, "Could not load broker options.");
+        }
+    }
 
-			<div className="mb-6">
-				<NotificationsBanner />
-			</div>
+    return (
+        <>
+            <PageHeader
+                eyebrow="Broker accounts"
+                title="Broker Connections"
+                description="Manage broker credentials, session status, quotes, and portfolio data for your trading workspace."
+            />
 
-			<Suspense fallback={null}>
-				<BrokerCallbackHandler accounts={accounts} />
-			</Suspense>
+            <div className="mb-6">
+                <NotificationsBanner />
+            </div>
 
-			{error ? (
-				<Alert variant="warning">
-					<AlertDescription>{error}</AlertDescription>
-				</Alert>
-			) : null}
+            <Suspense fallback={null}>
+                <BrokerCallbackHandler accounts={accounts} />
+            </Suspense>
 
-			{!error && accounts.length === 0 ? (
-				<BrokerAccountsEmpty canAddBroker={canAddBroker} />
-			) : null}
+            {error ? (
+                <Alert variant="warning">
+                    <AlertDescription>{error}</AlertDescription>
+                </Alert>
+            ) : null}
 
-			{accounts.length ? (
-				<section className="grid gap-4 min-[760px]:grid-cols-2 min-[1100px]:grid-cols-3">
-					{accounts.map((account) => (
-						<BrokerCard account={account} key={account.id} />
-					))}
-				</section>
-			) : null}
-		</>
-	);
+            {!error && brokerOptionsError ? (
+                <div className="mb-6">
+                    <Alert variant="warning">
+                        <AlertDescription>{brokerOptionsError}</AlertDescription>
+                    </Alert>
+                </div>
+            ) : null}
+
+            {!error && canAddBroker ? (
+                <div className="mb-6">
+                    <BrokerAddOptions connectedCount={accounts.length} supportedBrokers={supportedBrokers} />
+                </div>
+            ) : null}
+
+            {!error && accounts.length === 0 ? <BrokerAccountsEmpty canAddBroker={canAddBroker} /> : null}
+
+            {accounts.length ? (
+                <section className="grid gap-4 min-[760px]:grid-cols-2 min-[1100px]:grid-cols-3">
+                    {accounts.map((account) => (
+                        <BrokerCard account={account} key={account.id} />
+                    ))}
+                </section>
+            ) : null}
+        </>
+    );
 }

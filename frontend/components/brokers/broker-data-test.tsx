@@ -1,16 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Clipboard, X } from "lucide-react";
 import {
     deleteInstrumentStorage,
     getDataCapabilities,
-    getDataOhlc,
-    getDataQuotes,
-    getGreeksData,
-    getHistoricalData,
     getHoldings,
-    getOptionChainData,
     getOrders,
     getPortfolioFunds,
     getPositions,
@@ -56,22 +51,6 @@ function pretty(value: unknown): string {
 function isoLocal(date: Date): string {
     const offsetMs = date.getTimezoneOffset() * 60_000;
     return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function numberOrUndefined(value: string): number | undefined {
-    if (!value.trim()) {
-        return undefined;
-    }
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function integerOrUndefined(value: string): number | undefined {
-    if (!value.trim()) {
-        return undefined;
-    }
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 const SAMPLE_SYMBOL = "RELIANCE";
@@ -198,7 +177,7 @@ export function BrokerDataTest({
     const [responseBody, setResponseBody] = useState("");
     const [responseToastOpen, setResponseToastOpen] = useState(false);
     const [error, setError] = useState("");
-    const [marketMode, setMarketMode] = useState<MarketMode>("quote");
+    const marketMode: MarketMode = "quote";
     const [marketSymbol, setMarketSymbol] = useState(SAMPLE_SYMBOL);
     const [marketExchange, setMarketExchange] = useState(SAMPLE_EXCHANGE);
     const [marketInterval, setMarketInterval] = useState("day");
@@ -365,13 +344,6 @@ export function BrokerDataTest({
                 instruments: [{ symbol: wsSymbol.trim(), exchange: wsExchange.trim() || "NSE" }]
             })
         );
-    }
-
-    function marketInstrument() {
-        return {
-            symbol: marketSymbol.trim(),
-            exchange: marketExchange.trim() || "NSE"
-        };
     }
 
     function marketFieldIsActive(field: string) {
@@ -642,49 +614,7 @@ export function BrokerDataTest({
                 title="Market data"
                 description="Run quote, OHLC, historical, option-chain, and greeks requests through the broker data layer."
             >
-                <div className="flex flex-wrap gap-2">
-                    <Group>
-                        {(
-                            Object.entries(MARKET_MODE_COPY) as Array<
-                                [MarketMode, { title: string; description: string }]
-                            >
-                        )
-                            .slice(0, 3)
-                            .map(([mode, meta], index) => (
-                                <Fragment key={mode}>
-                                    {index ? <GroupSeparator /> : null}
-                                    <Button
-                                        onClick={() => setMarketMode(mode)}
-                                        type="button"
-                                        variant={marketMode === mode ? "default" : "outline"}
-                                    >
-                                        {meta.title}
-                                    </Button>
-                                </Fragment>
-                            ))}
-                    </Group>
-                    <Group>
-                        {(
-                            Object.entries(MARKET_MODE_COPY) as Array<
-                                [MarketMode, { title: string; description: string }]
-                            >
-                        )
-                            .slice(3)
-                            .map(([mode, meta], index) => (
-                                <Fragment key={mode}>
-                                    {index ? <GroupSeparator /> : null}
-                                    <Button
-                                        onClick={() => setMarketMode(mode)}
-                                        type="button"
-                                        variant={marketMode === mode ? "default" : "outline"}
-                                    >
-                                        {meta.title}
-                                    </Button>
-                                </Fragment>
-                            ))}
-                    </Group>
-                </div>
-                <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
                     <div className="text-sm font-semibold">{MARKET_MODE_COPY[marketMode].title}</div>
                     <div className="mt-1 text-sm text-muted-foreground">{MARKET_MODE_COPY[marketMode].description}</div>
                     <div className="mt-2 text-xs text-muted-foreground">
@@ -860,105 +790,6 @@ export function BrokerDataTest({
                         </div>
                     </div>
                 ) : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                    <Group>
-                        <Button
-                            disabled={isPending || !sessionActive}
-                            onClick={() => {
-                                setMarketMode("quote");
-                                run(
-                                    () => getDataQuotes(account.id, { instruments: [marketInstrument()] }),
-                                    "Data quotes"
-                                );
-                            }}
-                            type="button"
-                            variant={marketMode === "quote" ? "default" : "outline"}
-                        >
-                            Quote
-                        </Button>
-                        <GroupSeparator />
-                        <Button
-                            disabled={isPending || !sessionActive}
-                            onClick={() => {
-                                setMarketMode("ohlc");
-                                run(() => getDataOhlc(account.id, { instruments: [marketInstrument()] }), "Data OHLC");
-                            }}
-                            type="button"
-                            variant={marketMode === "ohlc" ? "default" : "outline"}
-                        >
-                            OHLC
-                        </Button>
-                        <GroupSeparator />
-                        <Button
-                            disabled={isPending || !sessionActive}
-                            onClick={() => {
-                                setMarketMode("historical");
-                                run(
-                                    () =>
-                                        getHistoricalData(account.id, {
-                                            instrument: marketInstrument(),
-                                            interval: marketInterval,
-                                            from_date: new Date(marketFromDate).toISOString(),
-                                            to_date: new Date(marketToDate).toISOString()
-                                        }),
-                                    "Historical data"
-                                );
-                            }}
-                            type="button"
-                            variant={marketMode === "historical" ? "default" : "outline"}
-                        >
-                            Historical
-                        </Button>
-                    </Group>
-                    <Group>
-                        <Button
-                            disabled={isPending || !sessionActive || !capabilities.capabilities.option_chain?.supported}
-                            onClick={() => {
-                                setMarketMode("option_chain");
-                                run(
-                                    () =>
-                                        getOptionChainData(account.id, {
-                                            symbol: marketSymbol.trim(),
-                                            exchange: marketExchange.trim() || "NSE",
-                                            expiry: marketExpiry.trim() || undefined
-                                        }),
-                                    "Option chain"
-                                );
-                            }}
-                            type="button"
-                            variant={marketMode === "option_chain" ? "default" : "outline"}
-                        >
-                            Option chain
-                        </Button>
-                        <GroupSeparator />
-                        <Button
-                            disabled={isPending || !sessionActive || !capabilities.capabilities.greeks?.supported}
-                            onClick={() => {
-                                setMarketMode("greeks");
-                                run(
-                                    () =>
-                                        getGreeksData(account.id, {
-                                            symbol: marketSymbol.trim(),
-                                            exchange: marketExchange.trim() || "NSE",
-                                            expiry: marketExpiry.trim() || undefined,
-                                            strike: marketStrike.trim() || undefined,
-                                            option_type: marketOptionType.trim() || undefined,
-                                            price: numberOrUndefined(marketPrice),
-                                            underlying_price: numberOrUndefined(marketUnderlyingPrice),
-                                            volatility: numberOrUndefined(marketVolatility),
-                                            interest_rate: numberOrUndefined(marketInterestRate),
-                                            days_to_expiry: integerOrUndefined(marketDaysToExpiry)
-                                        }),
-                                    "Greeks"
-                                );
-                            }}
-                            type="button"
-                            variant={marketMode === "greeks" ? "default" : "outline"}
-                        >
-                            Greeks
-                        </Button>
-                    </Group>
-                </div>
             </Section>
 
             <Section title="WebSocket test" description="On-demand quote streaming over the unified websocket route.">

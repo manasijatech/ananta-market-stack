@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { IconPlus, IconWallet } from "@tabler/icons-react";
+import { IconWallet } from "@tabler/icons-react";
 import type { BrokerAccount, BrokerCode } from "@/service/types/broker";
 import { BrokerCardActions } from "@/components/brokers/broker-card-actions";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -111,20 +111,6 @@ export function BrokerAccountsEmpty({ canAddBroker }: { canAddBroker: boolean })
                 <CardFrameDescription className="leading-7">
                     Sessions, quotes, and portfolio data for each broker you connect.
                 </CardFrameDescription>
-                {canAddBroker ? (
-                    <CardFrameAction>
-                        <Button
-                            asChild
-                            className="min-h-11 w-full font-semibold min-[520px]:w-auto"
-                            data-onboarding="add-broker-action"
-                        >
-                            <Link data-onboarding="add-broker-action" href="/broker-connections/new">
-                                <IconPlus aria-hidden="true" className="size-4" stroke={1.75} />
-                                Add broker
-                            </Link>
-                        </Button>
-                    </CardFrameAction>
-                ) : null}
             </CardFrameHeader>
             <Card>
                 <Empty className="py-16 md:py-20">
@@ -137,7 +123,7 @@ export function BrokerAccountsEmpty({ canAddBroker }: { canAddBroker: boolean })
                         </EmptyTitle>
                         <EmptyDescription>
                             {canAddBroker
-                                ? "Add your first broker account to start setting up sessions, quotes, and portfolio views."
+                                ? "Choose a broker above to start setting up sessions, quotes, and portfolio views."
                                 : "Ask a workspace admin to share a broker account with at least View account access. Shared accounts will appear here automatically."}
                         </EmptyDescription>
                     </EmptyHeader>

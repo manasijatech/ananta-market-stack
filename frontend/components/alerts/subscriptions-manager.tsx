@@ -865,18 +865,21 @@ export function SubscriptionsManager({
                         return (
                             <Card
                                 key={item.id}
-                                render={<Label className="cursor-pointer transition-colors hover:bg-accent/40" />}
+                                render={
+                                    <Label className="flex w-full cursor-pointer transition-colors hover:bg-accent/40" />
+                                }
                             >
-                                <CardPanel className="flex flex-wrap items-center justify-between gap-3 p-3">
-                                    <div className="flex min-w-0 items-center gap-3">
+                                <CardPanel className="flex w-full items-center justify-between gap-3 p-3">
+                                    <div className="flex min-w-0 flex-1 items-center gap-3">
                                         <Checkbox
                                             checked={selectedIds.includes(item.id)}
+                                            className="shrink-0"
                                             onCheckedChange={(checked) => toggleSelected(item.id, Boolean(checked))}
                                         />
                                         <SymbolLogo metadata={metadata} symbol={item.symbol} />
-                                        <div className="min-w-0">
-                                            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                                                <div className="font-mono text-base font-bold leading-5 text-foreground">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex min-w-0 items-baseline gap-x-2">
+                                                <div className="shrink-0 font-mono text-base font-bold leading-5 text-foreground">
                                                     {item.symbol}
                                                 </div>
                                                 {companyName ? (
@@ -885,7 +888,7 @@ export function SubscriptionsManager({
                                                     </div>
                                                 ) : null}
                                             </div>
-                                            <div className="text-[12px] leading-5 text-muted-foreground">
+                                            <div className="truncate text-[12px] leading-5 text-muted-foreground">
                                                 {[
                                                     item.exchange ?? "-",
                                                     item.broker_code ?? "-",
@@ -898,7 +901,7 @@ export function SubscriptionsManager({
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="text-[12px] leading-5 text-muted-foreground">
+                                    <div className="shrink-0 text-right text-[12px] leading-5 text-muted-foreground">
                                         {item.last_received_at
                                             ? `Last tick ${parseApiDate(item.last_received_at).toLocaleTimeString(
                                                   "en-IN",
