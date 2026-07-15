@@ -110,7 +110,7 @@ function tickFromSubscription(subscription: LiveSubscription): LivePriceTick | n
 }
 
 function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
-    const [socketState, setSocketState] = useState<SocketState>("connecting");
+    const [, setSocketState] = useState<SocketState>("connecting");
     const [message, setMessage] = useState("");
     const [prices, setPrices] = useState<Record<string, LivePriceTick>>({});
     const [visibleCount, setVisibleCount] = useState(LIVE_PRICE_PAGE_SIZE);
@@ -290,17 +290,6 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                 <CardFrameAction className="flex-wrap gap-2">
                     <span className="type-meta whitespace-nowrap text-muted-foreground">
                         Showing {visibleRows.length} / {desiredRows.length}
-                    </span>
-                    <span
-                        className={`type-meta border px-2.5 py-1 ${
-                            socketState === "connected"
-                                ? "border-[var(--success)] text-[var(--success)]"
-                                : socketState === "error"
-                                  ? "border-[var(--danger)] text-[var(--danger)]"
-                                  : "border-border text-muted-foreground"
-                        }`}
-                    >
-                        {socketState}
                     </span>
                 </CardFrameAction>
             </CardFrameHeader>

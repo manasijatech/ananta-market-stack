@@ -54,8 +54,12 @@ function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
     };
 }
 
-const inputBase =
-    " border-0 border-b border-input bg-transparent px-0 text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-0";
+const symbolPickerControlClassName =
+    "h-10 rounded-lg border border-input bg-background/80 px-3 text-sm shadow-xs/5 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/24";
+const exchangeOptions = [
+    { value: "NSE", label: "NSE" },
+    { value: "BSE", label: "BSE" }
+];
 
 type FeedConfigCategory = "products" | "scope" | "watchlists";
 
@@ -401,10 +405,7 @@ export function SubscriptionsManager({
                             Refresh plan
                         </Button>
                         <Popover onOpenChange={handleFeedConfigOpenChange} open={feedConfigOpen}>
-                            <PopoverTrigger
-                                className={cn(buttonVariants({ variant: "outline" }), "h-9")}
-                                type="button"
-                            >
+                            <PopoverTrigger className={cn(buttonVariants({ variant: "outline" }), "h-9")} type="button">
                                 <SlidersHorizontal aria-hidden data-icon="inline-start" />
                                 Configure feed
                                 {selectedFeedItems ? (
@@ -441,7 +442,9 @@ export function SubscriptionsManager({
                                                         variant="ghost"
                                                     >
                                                         <span className="min-w-0 flex-1 pr-1">
-                                                            <span className="block truncate leading-5">{category.label}</span>
+                                                            <span className="block truncate leading-5">
+                                                                {category.label}
+                                                            </span>
                                                             <span className="mt-0.5 block truncate text-xs leading-4 text-muted-foreground">
                                                                 {category.description}
                                                             </span>
@@ -549,7 +552,9 @@ export function SubscriptionsManager({
                                                                 }
                                                                 type="button"
                                                             >
-                                                                <span className="block text-sm font-medium">{scope.label}</span>
+                                                                <span className="block text-sm font-medium">
+                                                                    {scope.label}
+                                                                </span>
                                                                 <span className="mt-1 block text-xs text-muted-foreground">
                                                                     {scope.detail}
                                                                 </span>
@@ -584,7 +589,8 @@ export function SubscriptionsManager({
                                                         "flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-accent",
                                                         alphaWsConfig.scope_mode !== "alerts_and_watchlists" &&
                                                             "cursor-not-allowed opacity-50",
-                                                        alphaWsConfig.include_all_watchlists && "border-primary bg-accent"
+                                                        alphaWsConfig.include_all_watchlists &&
+                                                            "border-primary bg-accent"
                                                     )}
                                                 >
                                                     <Checkbox
@@ -601,7 +607,9 @@ export function SubscriptionsManager({
                                                 </Label>
                                                 <div className="flex max-h-[18rem] flex-col gap-2 overflow-y-auto pr-1">
                                                     {watchlists.map((watchlist) => {
-                                                        const checked = alphaWsConfig.watchlist_ids.includes(watchlist.id);
+                                                        const checked = alphaWsConfig.watchlist_ids.includes(
+                                                            watchlist.id
+                                                        );
                                                         const disabled =
                                                             alphaWsConfig.scope_mode !== "alerts_and_watchlists" ||
                                                             alphaWsConfig.include_all_watchlists;
@@ -626,7 +634,9 @@ export function SubscriptionsManager({
                                                                         {watchlist.name}
                                                                     </span>
                                                                     <span className="block truncate text-xs text-muted-foreground">
-                                                                        {watchlist.items.length || watchlist.symbols.length} symbols
+                                                                        {watchlist.items.length ||
+                                                                            watchlist.symbols.length}{" "}
+                                                                        symbols
                                                                     </span>
                                                                 </span>
                                                             </Label>
@@ -640,7 +650,8 @@ export function SubscriptionsManager({
                                                                 </EmptyMedia>
                                                                 <EmptyTitle>No watchlists available</EmptyTitle>
                                                                 <EmptyDescription>
-                                                                    Create a watchlist to include its symbols in the live scope.
+                                                                    Create a watchlist to include its symbols in the
+                                                                    live scope.
                                                                 </EmptyDescription>
                                                             </EmptyHeader>
                                                         </Empty>
@@ -651,7 +662,9 @@ export function SubscriptionsManager({
                                     </div>
 
                                     <div className="p-4">
-                                        <p className="text-sm font-medium">{selectedFeedItems} feed settings selected</p>
+                                        <p className="text-sm font-medium">
+                                            {selectedFeedItems} feed settings selected
+                                        </p>
                                         <Separator className="my-4" />
                                         <div className="flex flex-col gap-2.5">
                                             <div className="rounded-lg bg-muted/60 px-4 py-3">
@@ -663,8 +676,12 @@ export function SubscriptionsManager({
                                                 </p>
                                             </div>
                                             <div className="rounded-lg bg-muted/60 px-4 py-3">
-                                                <p className="text-xs font-medium text-muted-foreground">Symbol scope</p>
-                                                <p className="mt-1 truncate text-sm">{scopeModeLabel(alphaWsConfig.scope_mode)}</p>
+                                                <p className="text-xs font-medium text-muted-foreground">
+                                                    Symbol scope
+                                                </p>
+                                                <p className="mt-1 truncate text-sm">
+                                                    {scopeModeLabel(alphaWsConfig.scope_mode)}
+                                                </p>
                                             </div>
                                             <div className="rounded-lg bg-muted/60 px-4 py-3">
                                                 <p className="text-xs font-medium text-muted-foreground">Watchlists</p>
@@ -674,7 +691,9 @@ export function SubscriptionsManager({
                                                         : alphaWsConfig.include_all_watchlists
                                                           ? "All watchlists"
                                                           : selectedWatchlists.length
-                                                            ? selectedWatchlists.map((watchlist) => watchlist.name).join(", ")
+                                                            ? selectedWatchlists
+                                                                  .map((watchlist) => watchlist.name)
+                                                                  .join(", ")
                                                             : "No watchlists selected"}
                                                 </p>
                                             </div>
@@ -689,7 +708,12 @@ export function SubscriptionsManager({
                                         <Button onClick={closeFeedConfig} size="sm" type="button" variant="outline">
                                             Cancel
                                         </Button>
-                                        <Button disabled={isPending} onClick={saveAlphaWebSocketConfig} size="sm" type="button">
+                                        <Button
+                                            disabled={isPending}
+                                            onClick={saveAlphaWebSocketConfig}
+                                            size="sm"
+                                            type="button"
+                                        >
                                             Apply
                                         </Button>
                                     </div>
@@ -708,7 +732,7 @@ export function SubscriptionsManager({
                     </Card>
                 ) : null}
             </CardFrame>
-            <CardFrame>
+            <CardFrame className="overflow-visible">
                 <CardFrameHeader>
                     <CardFrameTitle>Add subscribed symbols</CardFrameTitle>
                     <CardFrameDescription>
@@ -725,174 +749,182 @@ export function SubscriptionsManager({
                         </Button>
                     </CardFrameAction>
                 </CardFrameHeader>
-                <Card>
-                    <CardPanel className="grid gap-3">
-                <div className="grid gap-3 min-[760px]:grid-cols-[240px_minmax(0,1fr)_96px]">
-                    <SimpleSelect
-                        className={`${inputBase} h-9 text-sm`}
-                        onValueChange={(nextAccountId) => {
-                            setAccountId(nextAccountId);
-                            setSymbolSearch("");
-                            setSuggestions([]);
-                            setActiveSuggestionIndex(-1);
-                        }}
-                        options={accounts.map((account) => ({
-                            value: account.id,
-                            label: `${account.label} · ${account.broker_code}`
-                        }))}
-                        value={accountId}
-                    />
-                    <div className="relative" ref={searchWrapRef}>
-                        <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
-                        <Input
-                            className={`${inputBase} h-9 pl-7 pr-9 font-mono text-sm uppercase`}
-                            aria-activedescendant={
-                                activeSuggestionIndex >= 0
-                                    ? `subscription-symbol-suggestion-${activeSuggestionIndex}`
-                                    : undefined
-                            }
-                            aria-autocomplete="list"
-                            aria-expanded={showSuggestions && symbolSearch.trim() ? "true" : "false"}
-                            aria-controls="subscription-symbol-suggestions"
-                            onChange={(event) => setSymbolSearch(event.target.value.toUpperCase())}
-                            onFocus={() => {
-                                if (suggestions.length) setShowSuggestions(true);
-                            }}
-                            onKeyDown={handleSearchKeyDown}
-                            placeholder="SEARCH SYMBOL, TRADING SYMBOL, COMPANY"
-                            role="combobox"
-                            value={symbolSearch}
-                        />
-                        {searchLoading ? (
-                            <Loader2 className="absolute right-0 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-                        ) : null}
-                        {showSuggestions && symbolSearch.trim() ? (
-                            <div
-                                className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover"
-                                id="subscription-symbol-suggestions"
-                                role="listbox"
-                            >
-                                {suggestions.map((row, index) => (
-                                    <Button
-                                        aria-selected={index === activeSuggestionIndex}
-                                        className={[
-                                            "h-auto w-full justify-between gap-4 rounded-none border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
-                                            index === activeSuggestionIndex
-                                                ? "border-l-primary bg-[var(--accent-glow)] text-foreground"
-                                                : "border-l-transparent text-foreground"
-                                        ].join(" ")}
-                                        disabled={isPending}
-                                        id={`subscription-symbol-suggestion-${index}`}
-                                        key={[row.symbol, row.exchange, row.trading_symbol, row.expiry].join(":")}
-                                        onClick={() => addSearchedSymbol(row)}
-                                        onMouseEnter={() => setActiveSuggestionIndex(index)}
-                                        role="option"
-                                        variant="ghost"
-                                        type="button"
+                <Card className="overflow-visible">
+                    <CardPanel className="relative z-[60] grid gap-3 overflow-visible">
+                        <div className="relative z-[70] grid items-start gap-3 min-[760px]:grid-cols-[minmax(13rem,15rem)_minmax(18rem,1fr)_6rem]">
+                            <SimpleSelect
+                                aria-label="Broker account"
+                                className={symbolPickerControlClassName}
+                                onValueChange={(nextAccountId) => {
+                                    setAccountId(nextAccountId);
+                                    setSymbolSearch("");
+                                    setSuggestions([]);
+                                    setActiveSuggestionIndex(-1);
+                                }}
+                                options={accounts.map((account) => ({
+                                    value: account.id,
+                                    label: `${account.label} · ${account.broker_code}`
+                                }))}
+                                value={accountId}
+                            />
+                            <div className="relative z-[80]" ref={searchWrapRef}>
+                                <Search className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-primary" />
+                                <Input
+                                    aria-activedescendant={
+                                        activeSuggestionIndex >= 0
+                                            ? `subscription-symbol-suggestion-${activeSuggestionIndex}`
+                                            : undefined
+                                    }
+                                    aria-autocomplete="list"
+                                    aria-controls="subscription-symbol-suggestions"
+                                    aria-expanded={showSuggestions && symbolSearch.trim() ? "true" : "false"}
+                                    className={symbolPickerControlClassName}
+                                    inputClassName="pl-8 pr-9 font-mono text-sm uppercase"
+                                    onChange={(event) => setSymbolSearch(event.target.value.toUpperCase())}
+                                    onFocus={() => {
+                                        if (suggestions.length) setShowSuggestions(true);
+                                    }}
+                                    onKeyDown={handleSearchKeyDown}
+                                    placeholder="SEARCH SYMBOL, TRADING SYMBOL, COMPANY"
+                                    role="combobox"
+                                    value={symbolSearch}
+                                />
+                                {searchLoading ? (
+                                    <Loader2 className="absolute right-3 top-1/2 z-10 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                                ) : null}
+                                {showSuggestions && symbolSearch.trim() ? (
+                                    <div
+                                        className="absolute z-[120] mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover shadow-xl ring-1 ring-black/20"
+                                        id="subscription-symbol-suggestions"
+                                        role="listbox"
                                     >
-                                        <span className="min-w-0">
-                                            <span className="block font-mono text-sm font-semibold">{row.symbol}</span>
-                                            <span className="type-meta block truncate">
-                                                {[row.name, row.trading_symbol, row.account_label]
-                                                    .filter(Boolean)
-                                                    .join(" / ")}
-                                            </span>
-                                        </span>
-                                        <span className="type-meta shrink-0 font-mono uppercase text-primary">
-                                            {[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}
-                                        </span>
-                                    </Button>
-                                ))}
-                                {!suggestions.length && !searchLoading ? (
-                                    <div className="type-body px-3 py-3 text-muted-foreground">
-                                        No matching instruments found.
+                                        {suggestions.map((row, index) => (
+                                            <Button
+                                                aria-selected={index === activeSuggestionIndex}
+                                                className={[
+                                                    "h-auto w-full justify-between gap-4 rounded-none border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
+                                                    index === activeSuggestionIndex
+                                                        ? "border-l-primary bg-[var(--accent-glow)] text-foreground"
+                                                        : "border-l-transparent text-foreground"
+                                                ].join(" ")}
+                                                disabled={isPending}
+                                                id={`subscription-symbol-suggestion-${index}`}
+                                                key={[row.symbol, row.exchange, row.trading_symbol, row.expiry].join(
+                                                    ":"
+                                                )}
+                                                onClick={() => addSearchedSymbol(row)}
+                                                onMouseEnter={() => setActiveSuggestionIndex(index)}
+                                                role="option"
+                                                type="button"
+                                                variant="ghost"
+                                            >
+                                                <span className="min-w-0">
+                                                    <span className="block font-mono text-sm font-semibold">
+                                                        {row.symbol}
+                                                    </span>
+                                                    <span className="type-meta block truncate">
+                                                        {[row.name, row.trading_symbol, row.account_label]
+                                                            .filter(Boolean)
+                                                            .join(" / ")}
+                                                    </span>
+                                                </span>
+                                                <span className="type-meta shrink-0 font-mono uppercase text-primary">
+                                                    {[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}
+                                                </span>
+                                            </Button>
+                                        ))}
+                                        {!suggestions.length && !searchLoading ? (
+                                            <div className="type-body px-3 py-3 text-muted-foreground">
+                                                No matching instruments found.
+                                            </div>
+                                        ) : null}
                                     </div>
                                 ) : null}
                             </div>
+                            <SimpleSelect
+                                aria-label="Exchange"
+                                className={`${symbolPickerControlClassName} font-mono uppercase`}
+                                onValueChange={setExchange}
+                                options={exchangeOptions}
+                                value={exchange}
+                            />
+                        </div>
+                        {!accounts.length ? (
+                            <div className="type-help mt-3 text-muted-foreground">
+                                Connect a broker account before adding subscriptions.
+                            </div>
                         ) : null}
-                    </div>
-                    <Input
-                        className={`${inputBase} h-9 font-mono text-sm uppercase`}
-                        onChange={(event) => setExchange(event.target.value.toUpperCase())}
-                        placeholder="NSE"
-                        value={exchange}
-                    />
-                </div>
-                {!accounts.length ? (
-                    <div className="type-help mt-3 text-muted-foreground">
-                        Connect a broker account before adding subscriptions.
-                    </div>
-                ) : null}
                     </CardPanel>
                 </Card>
             </CardFrame>
             <div className="@container">
                 <div className="grid gap-2 @2xl:grid-cols-2">
-                {items.map((item) => {
-                    const metadata = symbolMetadata[item.symbol.toUpperCase()];
-                    const companyName = metadata?.company_name?.trim();
-                    return (
-                        <Card
-                            key={item.id}
-                            render={
-                                <Label className="cursor-pointer transition-colors hover:bg-accent/40" />
-                            }
-                        >
-                            <CardPanel className="flex flex-wrap items-center justify-between gap-3 p-3">
-                                <div className="flex min-w-0 items-center gap-3">
-                                    <Checkbox
-                                        checked={selectedIds.includes(item.id)}
-                                        onCheckedChange={(checked) => toggleSelected(item.id, Boolean(checked))}
-                                    />
-                                    <SymbolLogo metadata={metadata} symbol={item.symbol} />
-                                    <div className="min-w-0">
-                                        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                                            <div className="font-mono text-base font-bold leading-5 text-foreground">
-                                                {item.symbol}
-                                            </div>
-                                            {companyName ? (
-                                                <div className="truncate text-sm font-semibold text-muted-foreground">
-                                                    {companyName}
+                    {items.map((item) => {
+                        const metadata = symbolMetadata[item.symbol.toUpperCase()];
+                        const companyName = metadata?.company_name?.trim();
+                        return (
+                            <Card
+                                key={item.id}
+                                render={<Label className="cursor-pointer transition-colors hover:bg-accent/40" />}
+                            >
+                                <CardPanel className="flex flex-wrap items-center justify-between gap-3 p-3">
+                                    <div className="flex min-w-0 items-center gap-3">
+                                        <Checkbox
+                                            checked={selectedIds.includes(item.id)}
+                                            onCheckedChange={(checked) => toggleSelected(item.id, Boolean(checked))}
+                                        />
+                                        <SymbolLogo metadata={metadata} symbol={item.symbol} />
+                                        <div className="min-w-0">
+                                            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                                                <div className="font-mono text-base font-bold leading-5 text-foreground">
+                                                    {item.symbol}
                                                 </div>
-                                            ) : null}
-                                        </div>
-                                        <div className="text-[12px] leading-5 text-muted-foreground">
-                                            {[
-                                                item.exchange ?? "-",
-                                                item.broker_code ?? "-",
-                                                item.source_kind,
-                                                metadata?.sector,
-                                                metadata?.industry
-                                            ]
-                                                .filter(Boolean)
-                                                .join(" · ")}
+                                                {companyName ? (
+                                                    <div className="truncate text-sm font-semibold text-muted-foreground">
+                                                        {companyName}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                            <div className="text-[12px] leading-5 text-muted-foreground">
+                                                {[
+                                                    item.exchange ?? "-",
+                                                    item.broker_code ?? "-",
+                                                    item.source_kind,
+                                                    metadata?.sector,
+                                                    metadata?.industry
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" · ")}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                <div className="text-[12px] leading-5 text-muted-foreground">
-                                    {item.last_received_at
-                                        ? `Last tick ${parseApiDate(item.last_received_at).toLocaleTimeString("en-IN", {
-                                              timeZone: INDIA_TIME_ZONE
-                                          })}`
-                                        : "Awaiting tick"}
-                                </div>
-                            </CardPanel>
-                        </Card>
-                    );
-                })}
-                {!items.length ? (
-                    <Empty className="py-10 @2xl:col-span-2">
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <Inbox />
-                            </EmptyMedia>
-                            <EmptyTitle>No subscribed symbols yet</EmptyTitle>
-                            <EmptyDescription>
-                                Search a broker instrument above to subscribe a symbol to live data.
-                            </EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
-                ) : null}
+                                    <div className="text-[12px] leading-5 text-muted-foreground">
+                                        {item.last_received_at
+                                            ? `Last tick ${parseApiDate(item.last_received_at).toLocaleTimeString(
+                                                  "en-IN",
+                                                  {
+                                                      timeZone: INDIA_TIME_ZONE
+                                                  }
+                                              )}`
+                                            : "Awaiting tick"}
+                                    </div>
+                                </CardPanel>
+                            </Card>
+                        );
+                    })}
+                    {!items.length ? (
+                        <Empty className="py-10 @2xl:col-span-2">
+                            <EmptyHeader>
+                                <EmptyMedia variant="icon">
+                                    <Inbox />
+                                </EmptyMedia>
+                                <EmptyTitle>No subscribed symbols yet</EmptyTitle>
+                                <EmptyDescription>
+                                    Search a broker instrument above to subscribe a symbol to live data.
+                                </EmptyDescription>
+                            </EmptyHeader>
+                        </Empty>
+                    ) : null}
                 </div>
             </div>
         </div>

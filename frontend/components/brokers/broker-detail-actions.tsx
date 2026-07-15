@@ -24,7 +24,8 @@ export function BrokerDetailActions({
     const canUseData = permissions.includes("broker.use_data");
     const canDelete = permissions.includes("broker.delete");
     const verifyDisabledReason = "You need session-management access on this broker account to verify or refresh it.";
-    const dataDisabledReason = "You need portfolio and market-data access on this broker account to open the data tools.";
+    const dataDisabledReason =
+        "You need portfolio and market-data access on this broker account to open the data tools.";
     const deleteDisabledReason = "Only users with delete access can remove this broker account.";
 
     function verify() {
@@ -60,8 +61,9 @@ export function BrokerDetailActions({
 
     return (
         <div>
-            <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-muted-foreground">Account actions</h2>
-            <div className="mt-4 flex flex-wrap gap-3">
+            <h2 className="text-sm font-semibold">Actions</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Verify the connection or open broker data tools.</p>
+            <div className="mt-4 flex flex-wrap gap-2">
                 {canManageSessions ? (
                     <Button disabled={isPending} onClick={verify} type="button">
                         Verify
@@ -76,12 +78,12 @@ export function BrokerDetailActions({
                 {verified ? (
                     canUseData ? (
                         <Button asChild disabled={isPending} type="button" variant="outline">
-                            <Link href={`/broker-connections/${accountId}/data-test`}>Test data APIs</Link>
+                            <Link href={`/broker-connections/${accountId}/data-test`}>Open data tools</Link>
                         </Button>
                     ) : (
                         <span title={dataDisabledReason}>
                             <Button disabled type="button" variant="outline">
-                                Test data APIs
+                                Open data tools
                             </Button>
                         </span>
                     )
@@ -98,7 +100,9 @@ export function BrokerDetailActions({
                     </span>
                 )}
                 {!canManageSessions && !canUseData && !canDelete ? (
-                    <p className="text-sm text-muted-foreground">You currently have view-only access to this broker account.</p>
+                    <p className="text-sm text-muted-foreground">
+                        You currently have view-only access to this broker account.
+                    </p>
                 ) : null}
             </div>
             {message ? (
