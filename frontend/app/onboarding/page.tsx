@@ -3,7 +3,9 @@ import { onboardingStepPath } from "@/lib/setup-readiness";
 import { loadOnboardingContext } from "@/lib/onboarding-server";
 
 export default async function OnboardingIndexPage() {
-    const { readiness } = await loadOnboardingContext();
+	const { readiness } = await loadOnboardingContext();
 
-    redirect(readiness.requiredReady ? "/dashboard" : onboardingStepPath("welcome"));
+	redirect(
+		readiness.requiredReady ? "/broker-connections" : onboardingStepPath("welcome"),
+	);
 }

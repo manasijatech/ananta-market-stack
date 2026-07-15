@@ -34,7 +34,7 @@ export default async function BrokersPage() {
 					title="Broker connections"
 					description="Connected broker accounts appear here when your role is allowed to use them."
 					reason="Your account is not allowed to browse broker connections right now."
-					backHref="/dashboard"
+					backHref="/broker-connections"
 				/>
 			);
 		}

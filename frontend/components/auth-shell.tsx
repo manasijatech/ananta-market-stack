@@ -10,7 +10,7 @@ type AuthShellProps = {
 
 export function AuthShell({ children, size = "default" }: AuthShellProps) {
 	return (
-		<main className="relative flex min-h-svh flex-col items-center justify-center bg-background p-6 md:p-10">
+		<main className="app-page-background relative flex min-h-svh flex-col items-center justify-center p-6 md:p-10">
 			<div className="absolute right-5 top-5 z-10">
 				<ThemeToggle />
 			</div>

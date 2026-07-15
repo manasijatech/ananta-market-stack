@@ -28,7 +28,7 @@ export async function getUnauthenticatedAuthRoute(): Promise<"/auth/onboarding" 
  *
  * @throws When RBAC cannot be verified after all retry attempts.
  */
-export async function resolvePostAuthRoute(): Promise<"/dashboard" | "/pending-approval" | `/onboarding/${OnboardingStepSlug}`> {
+export async function resolvePostAuthRoute(): Promise<"/broker-connections" | "/pending-approval" | `/onboarding/${OnboardingStepSlug}`> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
@@ -39,7 +39,7 @@ export async function resolvePostAuthRoute(): Promise<"/dashboard" | "/pending-a
             }
             const [accounts, systemConfig] = await Promise.all([getBrokerAccounts(), getSystemConfig()]);
             const readiness = getWorkspaceSetupReadiness(accounts, systemConfig);
-            return readiness.requiredReady ? "/dashboard" : onboardingStepPath(firstIncompleteRequiredStep(readiness));
+            return readiness.requiredReady ? "/broker-connections" : onboardingStepPath(firstIncompleteRequiredStep(readiness));
         } catch (error) {
             lastError = error instanceof Error ? error : new Error("Could not verify workspace access.");
             if (attempt < MAX_ATTEMPTS - 1) {

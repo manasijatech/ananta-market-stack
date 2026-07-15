@@ -8,7 +8,6 @@ import {
     IconExternalLink,
     IconBrain,
     IconLayoutGrid,
-    IconLayoutDashboard,
     IconListCheck,
     IconLogout,
     IconMenu2,
@@ -51,7 +50,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     {
         label: "Main",
         items: [
-            { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
             { href: "/broker-connections", label: "Broker Connections", icon: IconWallet },
             { href: "/watchlists", label: "Watchlists", icon: IconListCheck }
         ]
@@ -89,9 +87,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 ];
 
 function isNavItemActive(pathname: string, href: string) {
-    if (href === "/dashboard") {
-        return pathname === "/dashboard";
-    }
     if (href === "/settings") {
         return pathname === "/settings";
     }
@@ -243,7 +238,7 @@ export function WorkspaceShell({
 
     if (isLoading || !user) {
         return (
-            <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
+            <main className="app-page-background flex min-h-screen items-center justify-center">
                 <div className="border-l-2 border-primary px-4 py-2 text-sm font-medium text-muted-foreground">
                     Checking session...
                 </div>
@@ -252,8 +247,8 @@ export function WorkspaceShell({
     }
 
     return (
-        <main className="min-h-screen overflow-x-hidden bg-background text-foreground">
-            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background min-[980px]:hidden">
+        <main className="app-page-background min-h-screen overflow-x-hidden">
+            <header className="app-page-background fixed inset-x-0 top-0 z-[70] border-b border-border min-[980px]:hidden">
                 <div className="flex min-h-16 items-center justify-between gap-3 px-4">
                     <div className="flex min-w-0 items-center gap-3">
                         <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -268,7 +263,7 @@ export function WorkspaceShell({
                                     <IconMenu2 className="size-4" stroke={1.8} />
                                 </Button>
                             </DialogTrigger>
-                            <DialogContent className="left-0 top-0 h-dvh max-h-dvh w-[min(22rem,calc(100vw-1.5rem))] max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-0 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left">
+                            <DialogContent className="left-0 top-0 h-dvh max-h-dvh w-[min(22rem,calc(100vw-1.5rem))] max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-muted p-0 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left">
                                 <DialogHeader className="border-b border-border px-5 py-5 pr-16">
                                     <DialogTitle className="sr-only">Workspace navigation</DialogTitle>
                                     <BrandLogo imageClassName="max-w-full text-[1.5rem]" />
@@ -308,7 +303,7 @@ export function WorkspaceShell({
                 </div>
             </header>
 
-            <aside className="hidden border-border bg-background min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-60 min-[980px]:overflow-hidden">
+            <aside className="hidden border-border bg-muted min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-60 min-[980px]:overflow-hidden">
                 <div className="flex h-full w-full flex-col border-r border-border">
                     <div className="flex h-16 items-center px-4">
                         <BrandLogo imageClassName="text-[1.35rem]" />
@@ -338,7 +333,7 @@ export function WorkspaceShell({
             </aside>
 
             <div className="min-[980px]:pl-60">
-                <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-60 min-[980px]:flex min-[980px]:h-16 min-[980px]:items-center min-[980px]:px-8 min-[980px]:py-0">
+                <header className="app-page-background fixed right-0 top-0 z-[70] hidden border-b border-border px-5 py-4 min-[760px]:px-8 min-[980px]:left-60 min-[980px]:flex min-[980px]:h-16 min-[980px]:items-center min-[980px]:px-8 min-[980px]:py-0">
                     <div className="flex w-full items-center justify-end">
                         <div className="flex flex-wrap items-center gap-2">
                             <GithubStarButton />

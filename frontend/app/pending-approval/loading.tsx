@@ -6,8 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
  */
 export default function PendingApprovalLoading() {
     return (
-        <main className="flex min-h-screen items-center justify-center bg-background p-6">
-            <section className="w-full max-w-xl rounded-lg border border-border bg-card p-8">
+        <main className="app-page-background flex min-h-screen items-center justify-center p-6">
+            <section className="app-card-surface w-full max-w-xl bg-card p-8">
                 <Skeleton className="h-6 w-40" />
                 <Skeleton className="mt-8 h-4 w-32" />
                 <Skeleton className="mt-3 h-9 w-3/4" />

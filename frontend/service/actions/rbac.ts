@@ -4,16 +4,86 @@ import { revalidatePath } from "next/cache";
 import { fetchFastApi, fetchFastApiPublic } from "@/lib/fastapi";
 import type { BrokerAccountGrant, RbacPrincipal, RoleDefinition, SignupStatus, WorkspaceMember } from "@/service/types/rbac";
 
-async function readResponse<T>(response: Response): Promise<T> {
-    const text = await response.text();
-    const payload = text ? (JSON.parse(text) as unknown) : null;
-    if (!response.ok) {
-        const detail =
-            payload && typeof payload === "object" && "detail" in payload
-                ? String((payload as { detail?: unknown }).detail)
-                : "Request failed.";
-        throw new Error(JSON.stringify({ status: response.status, message: detail, fieldErrors: {} }));
+type FastApiValidationItem = {
+    loc?: (string | number)[];
+    msg?: string;
+};
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function parseJson(response: Response): Promise<unknown> {
+    if (response.status === 204) {
+        return null;
     }
+
+    const text = await response.text();
+    if (!text) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(text) as unknown;
+    } catch {
+        return { detail: text };
+    }
+}
+
+function validationFieldErrors(detail: unknown): Record<string, string> {
+    if (!Array.isArray(detail)) {
+        return {};
+    }
+
+    return detail.reduce<Record<string, string>>((acc, item: unknown) => {
+        if (!isJsonObject(item)) {
+            return acc;
+        }
+
+        const loc = Array.isArray(item.loc) ? item.loc : [];
+        const field = loc.length ? String(loc[loc.length - 1]) : "form";
+        const message = typeof item.msg === "string" ? item.msg : "Invalid value";
+        acc[field] = message;
+        return acc;
+    }, {});
+}
+
+function extractMessage(payload: unknown, fallback: string): string {
+    if (!isJsonObject(payload)) {
+        return fallback;
+    }
+
+    const detail = payload.detail;
+    if (typeof detail === "string") {
+        return detail;
+    }
+    if (Array.isArray(detail)) {
+        const first = detail.find((item: unknown): item is FastApiValidationItem => {
+            return isJsonObject(item) && typeof item.msg === "string";
+        });
+        if (first?.msg) {
+            return first.msg;
+        }
+    }
+    if (typeof payload.message === "string") {
+        return payload.message;
+    }
+    return fallback;
+}
+
+async function readResponse<T>(response: Response): Promise<T> {
+    const payload = await parseJson(response);
+
+    if (!response.ok) {
+        const fieldErrors =
+            response.status === 422 && isJsonObject(payload) ? validationFieldErrors(payload.detail) : {};
+        const message =
+            response.status >= 500
+                ? "The workspace access service is unavailable. Please try again."
+                : extractMessage(payload, "Request failed.");
+        throw new Error(JSON.stringify({ status: response.status, message, fieldErrors }));
+    }
+
     return payload as T;
 }
 

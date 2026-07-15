@@ -12,7 +12,7 @@ import { authClient } from "@/lib/auth-client";
 import { getQueryClient } from "@/lib/query-client";
 import { resolvePostAuthRoute } from "@/service/actions/auth-routing";
 
-const postAuthTargets = new Set(["/", "/dashboard"]);
+const postAuthTargets = new Set(["/", "/broker-connections"]);
 
 export function Providers({ children }: { children: ReactNode }) {
     const router = useRouter();
@@ -38,7 +38,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <QueryClientProvider client={queryClient}>
             <AuthProvider
                 authClient={authClient}
-                redirectTo="/dashboard"
+                redirectTo="/broker-connections"
                 emailAndPassword={{
                     enabled: true,
                     forgotPassword: true,

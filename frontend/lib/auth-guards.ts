@@ -32,7 +32,7 @@ export async function requireSession() {
 }
 
 /**
- * Redirects authenticated users to their RBAC-aware destination (`/dashboard` or `/pending-approval`).
+ * Redirects authenticated users to their RBAC-aware destination (`/broker-connections` or `/pending-approval`).
  * No-op when there is no session.
  */
 export async function redirectIfAuthenticated(): Promise<void> {
@@ -42,7 +42,8 @@ export async function redirectIfAuthenticated(): Promise<void> {
         return;
     }
 
-    redirect(await resolvePostAuthRoute());
+    const route = await resolvePostAuthRoute().catch(() => "/pending-approval" as const);
+    redirect(route);
 }
 
 /**

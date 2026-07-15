@@ -652,7 +652,7 @@ function ThinkingTrace({
 
 function MarkdownTable({ children }: { children: ReactNode }) {
     return (
-        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card shadow-sm last:mb-0">
+        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card last:mb-0">
             <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
                 {children}
             </table>
@@ -692,7 +692,7 @@ function PlainTextTable({ source }: { source: string }) {
     }
 
     return (
-        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card shadow-sm last:mb-0">
+        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card last:mb-0">
             <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
                 <colgroup>
                     {table.headers.map((header, index) => (
@@ -1651,7 +1651,7 @@ export function BrokerChatWorkspace({
                                 : "Scroll to latest broker chat message"
                         }
                         className={cn(
-                            "absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground shadow-lg transition duration-150 hover:border-primary hover:text-primary motion-reduce:transition-none",
+                            "absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground transition duration-150 hover:border-primary hover:text-primary motion-reduce:transition-none",
                             showScrollButton
                                 ? "translate-y-0 opacity-100"
                                 : "pointer-events-none translate-y-2 opacity-0"

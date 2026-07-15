@@ -65,7 +65,7 @@ export default async function LlmUsagePage({ searchParams }: LlmUsagePageProps) 
                     title="LLM usage not available"
                     description="This workspace role cannot open the LLM usage dashboard."
                     reason="Ask a workspace admin to grant LLM usage visibility if you need to inspect provider and workflow consumption."
-                    backHref="/dashboard"
+                    backHref="/broker-connections"
                     backLabel="Go to dashboard"
                 />
             );

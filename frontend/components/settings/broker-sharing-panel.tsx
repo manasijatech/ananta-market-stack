@@ -136,7 +136,7 @@ export function BrokerSharingPanel({
                     <div className="grid gap-2">
                         {selected.grants.map((grant) => (
                             <div
-                                className="grid gap-2 rounded-lg border border-border bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]"
+                                className="app-card-surface grid gap-2 bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]"
                                 key={grant.id}
                             >
                                 <div className="min-w-0">
@@ -177,7 +177,7 @@ export function BrokerSharingPanel({
                 </div>
 
                 {expandedForm ? (
-                    <div className="rounded-lg border border-border bg-card p-4">
+                    <div className="app-card-surface bg-card p-4">
                         <AccessGrantEditor
                             accountId={selected.account.id}
                             grants={selected.grants}

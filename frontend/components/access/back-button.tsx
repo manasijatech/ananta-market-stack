@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function BackButton({ fallbackHref = "/dashboard" }: { fallbackHref?: string }) {
+export function BackButton({ fallbackHref = "/broker-connections" }: { fallbackHref?: string }) {
     const router = useRouter();
 
     return (

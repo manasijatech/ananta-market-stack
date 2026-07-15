@@ -40,7 +40,7 @@ export function StatGridSkeleton({ count = 4 }: { count?: number }) {
     return (
         <section className="mb-8 grid gap-4 min-[960px]:grid-cols-4">
             {Array.from({ length: count }).map((_, index) => (
-                <div className="border border-border p-4" key={index}>
+                <div className="app-card-surface bg-card p-4" key={index}>
                     <Skeleton className="h-3 w-24" />
                     <Skeleton className="mt-3 h-9 w-16" />
                 </div>
@@ -53,7 +53,7 @@ export function BrokerCardsSkeleton({ count = 6 }: { count?: number }) {
     return (
         <section className="grid gap-4 min-[760px]:grid-cols-2 min-[1100px]:grid-cols-3">
             {Array.from({ length: count }).map((_, index) => (
-                <div className="border border-border bg-card p-5" key={index}>
+                <div className="app-card-surface bg-card p-5" key={index}>
                     <div className="mb-5 flex items-start justify-between gap-4">
                         <div className="flex min-w-0 items-start gap-3">
                             <Skeleton className="size-12 shrink-0" />
@@ -85,7 +85,7 @@ export function CardGridSkeleton({
     return (
         <section className={`grid gap-4 ${columns}`}>
             {Array.from({ length: count }).map((_, index) => (
-                <div className="border border-border bg-card p-6" key={index}>
+                <div className="app-card-surface bg-card p-6" key={index}>
                     <Skeleton className="h-6 w-2/3" />
                     <Skeleton className="mt-4 h-4 w-full" />
                     <Skeleton className="mt-2 h-4 w-5/6" />
@@ -127,7 +127,7 @@ export function TableSkeleton({ rows = 6, columns = 5 }: { rows?: number; column
 
 export function FormSkeleton({ fields = 6 }: { fields?: number }) {
     return (
-        <section className="grid gap-5 border border-border bg-card p-6">
+        <section className="app-card-surface grid gap-5 bg-card p-6">
             {Array.from({ length: fields }).map((_, index) => (
                 <div key={index}>
                     <Skeleton className="mb-2 h-3 w-28" />
@@ -142,7 +142,7 @@ export function FormSkeleton({ fields = 6 }: { fields?: number }) {
 export function SystemConfigSkeleton() {
     return (
         <div className="grid gap-8">
-            <section className="border border-border p-5">
+            <section className="app-card-surface bg-card p-5">
                 <Skeleton className="h-5 w-52" />
                 <Skeleton className="mt-3 h-4 w-full max-w-3xl" />
                 <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -153,7 +153,7 @@ export function SystemConfigSkeleton() {
             <section className="grid gap-3">
                 <Skeleton className="h-5 w-40" />
                 {Array.from({ length: 3 }).map((_, index) => (
-                    <div className="border border-border p-4" key={index}>
+                    <div className="app-card-surface bg-card p-4" key={index}>
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <Skeleton className="h-5 w-40" />
@@ -171,7 +171,7 @@ export function SystemConfigSkeleton() {
                     <Skeleton className="h-5 w-44" />
                     <Skeleton className="mt-2 h-4 w-full max-w-3xl" />
                 </div>
-                <div className="border border-border p-5">
+                <div className="app-card-surface bg-card p-5">
                     <div>
                         <Skeleton className="h-5 w-40" />
                         <Skeleton className="mt-2 h-3 w-72" />
@@ -191,7 +191,7 @@ export function SystemConfigSkeleton() {
                     <Skeleton className="mt-2 h-4 w-full max-w-3xl" />
                 </div>
                 {Array.from({ length: 3 }).map((_, index) => (
-                    <div className="border border-border p-5" key={index}>
+                    <div className="app-card-surface bg-card p-5" key={index}>
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <Skeleton className="h-5 w-32" />
@@ -242,7 +242,7 @@ export function BrokerDetailSkeleton() {
                     <Skeleton className="h-10 w-full" />
                 </div>
             </section>
-            <section className="border border-border p-5">
+            <section className="app-card-surface bg-card p-5">
                 <Skeleton className="h-6 w-40" />
                 <Skeleton className="mt-4 h-4 w-full max-w-2xl" />
                 <div className="mt-5 grid gap-3 min-[760px]:grid-cols-2">
@@ -268,7 +268,7 @@ export function DataTestSkeleton() {
     return (
         <div className="grid gap-6">
             {Array.from({ length: 4 }).map((_, index) => (
-                <section className="border border-border p-5" key={index}>
+                <section className="app-card-surface bg-card p-5" key={index}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <Skeleton className="h-6 w-44" />
@@ -291,7 +291,7 @@ export function DataTestSkeleton() {
 export function WorkflowEditorSkeleton() {
     return (
         <div className="grid gap-6">
-            <section className="grid gap-4 border border-border p-5">
+            <section className="app-card-surface grid gap-4 bg-card p-5">
                 <Skeleton className="h-5 w-40" />
                 <div className="grid gap-4 min-[900px]:grid-cols-2">
                     <Skeleton className="h-10" />
@@ -299,7 +299,7 @@ export function WorkflowEditorSkeleton() {
                 </div>
                 <Skeleton className="h-28 w-full" />
             </section>
-            <section className="grid gap-4 border border-border p-5">
+            <section className="app-card-surface grid gap-4 bg-card p-5">
                 <div className="flex flex-wrap gap-2">
                     <Skeleton className="h-9 w-32" />
                     <Skeleton className="h-9 w-32" />
@@ -307,7 +307,7 @@ export function WorkflowEditorSkeleton() {
                 </div>
                 {Array.from({ length: 3 }).map((_, index) => (
                     <div
-                        className="grid gap-3 border border-border p-4 min-[900px]:grid-cols-[1fr_1fr_1fr_auto]"
+                        className="app-card-surface grid gap-3 bg-card p-4 min-[900px]:grid-cols-[1fr_1fr_1fr_auto]"
                         key={index}
                     >
                         <Skeleton className="h-10" />

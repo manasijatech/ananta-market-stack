@@ -107,7 +107,7 @@ export function AlertNotificationsTray() {
                 ) : null}
             </Button>
             {open ? (
-                <Card className="absolute right-0 top-11 z-30 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl shadow-lg sm:w-80">
+                <Card className="absolute right-0 top-11 z-30 w-[min(20rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl sm:w-80">
                     <div className="flex items-center justify-between gap-2 border-b px-3.5 py-2.5">
                         <div className="min-w-0">
                             <CardTitle className="text-sm font-semibold leading-none">Alerts</CardTitle>
