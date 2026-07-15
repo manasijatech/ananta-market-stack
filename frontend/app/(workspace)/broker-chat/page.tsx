@@ -14,7 +14,7 @@ export default async function BrokerChatPage() {
 
     return (
         <>
-            <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col min-[980px]:h-[calc(100dvh-10rem)]">
+            <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-1 flex-col min-[980px]:h-auto">
                 <BrokerChatWorkspace
                     initialConfig={config}
                     initialRuns={runs}

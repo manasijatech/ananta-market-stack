@@ -740,7 +740,6 @@ export function MarketIntelligenceChrome({
 			<AlphaCreditWarningTrigger message={creditWarningMessage} />
 			<PageHeader
 				description={activeSection.description}
-				eyebrow="Drishti Intelligence"
 				title="Market Intelligence"
 			/>
 

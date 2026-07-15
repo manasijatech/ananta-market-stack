@@ -343,9 +343,8 @@ export default async function HeatmapPage({
 
     return (
         <>
-            <div className="flex h-[calc(100dvh-7.25rem)] min-h-0 min-w-0 flex-col overflow-hidden min-[980px]:h-[calc(100dvh-10rem)]">
+            <div className="flex h-[calc(100dvh-8.25rem)] min-h-0 min-w-0 flex-1 flex-col overflow-hidden min-[980px]:h-auto">
                 <header className={`shrink-0 border-b border-border ${isDenseHeatmap ? "mb-2 pb-2" : "mb-3 pb-3"}`}>
-                    <p className={cn(typography.pageEyebrow, isDenseHeatmap ? "mb-1" : "mb-2")}>Intelligence</p>
                     <h1 className={cn(typography.pageTitle, "truncate")}>Heatmap</h1>
                 </header>
 

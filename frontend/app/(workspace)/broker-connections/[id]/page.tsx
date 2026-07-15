@@ -54,7 +54,6 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
         return (
             <>
                 <PageHeader
-                    eyebrow="Broker account"
                     title="Broker account"
                     description="Review account status, update broker sessions, fetch quotes, and inspect broker-native portfolio data."
                     action={
@@ -79,7 +78,6 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
     return (
         <>
             <PageHeader
-                eyebrow={brokerNames[account.broker_code]}
                 title={account.label}
                 description="Manage the broker session used for live data, quotes, and portfolio views."
                 action={

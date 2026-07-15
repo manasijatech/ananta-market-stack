@@ -6,7 +6,6 @@ export default function WatchlistsLoading() {
             header={
                 <HeaderSkeleton
                     descriptionWidth="w-full max-w-xl"
-                    eyebrowWidth="w-36"
                     titleWidth="w-48"
                 />
             }

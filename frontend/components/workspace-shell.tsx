@@ -208,6 +208,15 @@ function NavigationGroups({
     );
 }
 
+function isFullHeightPath(pathname: string) {
+    return (
+        pathname === "/watchlists" ||
+        pathname === "/heatmap" ||
+        pathname === "/settings" ||
+        pathname.startsWith("/broker-chat")
+    );
+}
+
 export function WorkspaceShell({
     children,
     principal = null
@@ -219,6 +228,7 @@ export function WorkspaceShell({
     const router = useRouter();
     const { user, isLoading, signOut } = useSession();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const fullHeight = isFullHeightPath(pathname);
 
     useEffect(() => {
         if (!isLoading && !user) {
@@ -248,7 +258,12 @@ export function WorkspaceShell({
     }
 
     return (
-        <main className="app-page-background min-h-screen overflow-x-hidden">
+        <main
+            className={cn(
+                "app-page-background min-h-screen overflow-x-hidden",
+                fullHeight && "min-[980px]:h-dvh min-[980px]:overflow-hidden"
+            )}
+        >
             <header className="app-page-background fixed inset-x-0 top-0 z-[70] border-b border-border min-[980px]:hidden">
                 <div className="flex min-h-16 items-center justify-between gap-3 px-4">
                     <div className="flex min-w-0 items-center gap-3">
@@ -345,7 +360,9 @@ export function WorkspaceShell({
                 </header>
                 <div
                     className={cn(
-                        "min-w-0 px-3 pb-6 pt-[calc(3.75rem+env(safe-area-inset-top))] sm:px-4 sm:pt-[calc(4.5rem+env(safe-area-inset-top))] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-10",
+                        "min-w-0 px-3 pb-8 pt-[calc(3.75rem+0.75rem+env(safe-area-inset-top))] sm:px-4 sm:pb-10 sm:pt-[calc(4.5rem+0.75rem+env(safe-area-inset-top))] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-5",
+                        fullHeight &&
+                            "min-[980px]:flex min-[980px]:h-dvh min-[980px]:flex-col min-[980px]:overflow-hidden",
                         pathname === "/settings" &&
                             "min-[980px]:mt-16 min-[980px]:h-[calc(100vh-4rem)] min-[980px]:overflow-hidden min-[980px]:pb-0 min-[980px]:pt-0"
                     )}
@@ -354,7 +371,11 @@ export function WorkspaceShell({
                     {pathname === "/settings" ? (
                         children
                     ) : (
-                        <PageContainer>{children}</PageContainer>
+                        <PageContainer
+                            className={cn(fullHeight && "flex min-h-0 flex-1 flex-col")}
+                        >
+                            {children}
+                        </PageContainer>
                     )}
                 </div>
             </div>

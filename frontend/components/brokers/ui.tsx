@@ -173,12 +173,10 @@ export function BrokerCard({ account }: { account: BrokerAccount }) {
     );
 }
 export function PageHeader({
-    eyebrow,
     title,
     description,
     action
 }: {
-    eyebrow: string;
     title: string;
     description: string;
     action?: React.ReactNode;
@@ -186,7 +184,6 @@ export function PageHeader({
     return (
         <header className="mb-6 flex min-w-0 flex-col justify-between gap-4 border-b border-border pb-5 min-[860px]:flex-row min-[860px]:items-end min-[860px]:gap-5">
             <div className="min-w-0">
-                <p className={cn(typography.pageEyebrow, "mb-3")}>{eyebrow}</p>
                 <h1 className={cn(typography.pageTitle, "break-words")}>{title}</h1>
                 <p className={typography.pageLead}>{description}</p>
             </div>

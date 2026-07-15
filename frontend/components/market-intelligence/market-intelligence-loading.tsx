@@ -9,7 +9,6 @@ export function MarketIntelligenceLoading() {
 		<LoadingShell
 			header={
 				<HeaderSkeleton
-					eyebrowWidth="w-36"
 					titleWidth="w-40"
 					descriptionWidth="w-full max-w-lg"
 				/>

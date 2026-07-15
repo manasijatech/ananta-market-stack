@@ -167,7 +167,7 @@ export function SettingsSections({
 
     return (
         <Tabs
-            className="settings-neutral-surface -mx-3 -mb-6 -mt-[calc(3.75rem+env(safe-area-inset-top))] min-h-[calc(100vh-3.75rem)] min-w-0 gap-0 overflow-hidden bg-muted/30 sm:-mx-4 sm:-mt-[calc(4.5rem+env(safe-area-inset-top))] sm:min-h-[calc(100vh-4.5rem)] min-[760px]:-mx-8 min-[980px]:my-0 min-[980px]:h-full min-[980px]:min-h-0"
+            className="settings-neutral-surface -mx-3 -mb-8 -mt-[calc(3.75rem+0.75rem+env(safe-area-inset-top))] min-h-[calc(100vh-3.75rem)] min-w-0 gap-0 overflow-hidden bg-muted/30 sm:-mx-4 sm:-mb-10 sm:-mt-[calc(4.5rem+0.75rem+env(safe-area-inset-top))] sm:min-h-[calc(100vh-4.5rem)] min-[760px]:-mx-8 min-[980px]:my-0 min-[980px]:h-full min-[980px]:min-h-0"
             onValueChange={changeSection}
             value={activeSection}
         >

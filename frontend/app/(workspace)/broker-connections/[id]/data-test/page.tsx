@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { BrokerDataTest } from "@/components/brokers/broker-data-test";
-import { PageHeader, brokerNames } from "@/components/brokers/ui";
+import { PageHeader } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { formatUserFacingError, isMissingOrInaccessibleError, isPermissionDeniedError } from "@/lib/api-errors";
@@ -42,7 +42,6 @@ export default async function BrokerDataTestPage({ params }: BrokerDataTestPageP
         return (
             <>
                 <PageHeader
-                    eyebrow={brokerNames[account.broker_code]}
                     title={`${account.label} data APIs`}
                     description="Exercise the uniform read-only broker data layer, inspect raw payloads, and test the websocket inspection flow."
                     action={
@@ -81,7 +80,6 @@ export default async function BrokerDataTestPage({ params }: BrokerDataTestPageP
     return (
         <>
             <PageHeader
-                eyebrow="Broker account"
                 title="Broker data tools"
                 description="Exercise the uniform read-only broker data layer, inspect raw payloads, and test the websocket inspection flow."
                 action={

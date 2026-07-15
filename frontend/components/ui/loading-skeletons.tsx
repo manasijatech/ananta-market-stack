@@ -8,17 +8,14 @@ import {
     CardFrameTitle,
     CardPanel
 } from "@/components/ui/card";
-import { PageContainer } from "@/components/ui/page-container";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export function HeaderSkeleton({
-    eyebrowWidth = "w-32",
     titleWidth = "w-72",
     descriptionWidth = "w-full max-w-2xl",
     action = false
 }: {
-    eyebrowWidth?: string;
     titleWidth?: string;
     descriptionWidth?: string;
     action?: boolean;
@@ -26,7 +23,6 @@ export function HeaderSkeleton({
     return (
         <header className="mb-8 flex flex-col justify-between gap-5 border-b border-border pb-6 min-[860px]:flex-row min-[860px]:items-end">
             <div className="w-full">
-                <Skeleton className={`mb-3 h-3 ${eyebrowWidth}`} />
                 <Skeleton className={`h-14 ${titleWidth}`} />
                 <Skeleton className={`mt-4 h-4 ${descriptionWidth}`} />
                 <Skeleton className="mt-2 h-4 w-full max-w-lg" />
@@ -337,7 +333,7 @@ export function WorkflowEditorSkeleton() {
 
 export function WatchlistsSkeleton() {
     return (
-        <div className="flex min-h-0 flex-col gap-4 min-[980px]:h-[calc(100dvh-8rem)] min-[980px]:overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 min-[980px]:overflow-hidden">
             <div className="flex min-h-0 flex-1 flex-col gap-4 min-[1080px]:grid min-[1080px]:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] min-[1080px]:overflow-hidden">
                 <aside className="min-h-0 min-w-0">
                     <CardFrame>
@@ -467,17 +463,17 @@ export function FeedSkeleton({ rows = 4 }: { rows?: number }) {
 
 export function LoadingShell({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
     return (
-        <PageContainer>
+        <div className="flex min-h-0 w-full flex-1 flex-col">
             {header}
             {children}
-        </PageContainer>
+        </div>
     );
 }
 
 export function GenericDashboardLoading() {
     return (
         <>
-            <PageHeader eyebrow="Workspace" title="Loading" description="Preparing your workspace view." />
+            <PageHeader title="Loading" description="Preparing your workspace view." />
             <CardGridSkeleton count={4} columns="min-[960px]:grid-cols-3" />
         </>
     );

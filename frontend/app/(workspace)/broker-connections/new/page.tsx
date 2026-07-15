@@ -21,7 +21,6 @@ export default async function NewBrokerPage({ searchParams }: NewBrokerPageProps
     return (
         <>
             <PageHeader
-                eyebrow="New broker"
                 title="Add broker credentials"
                 description="Choose a broker and enter the required credentials. Session authorization can be completed on the detail page."
                 action={

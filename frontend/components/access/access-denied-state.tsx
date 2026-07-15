@@ -21,7 +21,6 @@ export function AccessDeniedState({
     return (
         <>
             <PageHeader
-                eyebrow="Access control"
                 title={title}
                 description={description}
                 action={<BackButton fallbackHref={backHref} />}

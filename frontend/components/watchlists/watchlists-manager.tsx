@@ -1284,7 +1284,7 @@ export function WatchlistsManager({
     }
 
     return (
-        <section className="flex min-h-0 flex-col min-[980px]:h-[calc(100dvh-8rem)] min-[980px]:overflow-hidden">
+        <section className="flex min-h-0 flex-1 flex-col min-[980px]:overflow-hidden">
             {error ? (
                 <div className="mb-4 shrink-0 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                     {error}
@@ -1299,7 +1299,6 @@ export function WatchlistsManager({
             <div className="shrink-0">
                 <PageHeader
                     description="Search instruments, maintain focused symbol lists, and keep broker-native identifiers attached to every selected ticker."
-                    eyebrow="Market workspace"
                     title="Watchlists"
                 />
             </div>

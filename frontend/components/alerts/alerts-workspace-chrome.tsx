@@ -8,7 +8,6 @@ import { PageHeader, PrimaryLink } from "@/components/brokers/ui";
 import { Button } from "@/components/ui/button";
 
 type HeaderConfig = {
-    eyebrow: string;
     title: string;
     description: string;
     action?: React.ReactNode;
@@ -26,7 +25,6 @@ const HeaderOverrideContext = createContext<((header: HeaderOverride) => void) |
 function headerForRoute(pathname: string, status: string | null): HeaderConfig {
     if (pathname === "/alerts-workspace") {
         return {
-            eyebrow: "Alerts Workspace",
             title: "Alerts Workspace",
             description:
                 "Create, run, and review live market workflows, user alerts, and outbound channels from one workspace.",
@@ -45,7 +43,6 @@ function headerForRoute(pathname: string, status: string | null): HeaderConfig {
 
     if (pathname === "/alerts-workspace/templates") {
         return {
-            eyebrow: "Alerts Workspace",
             title: "Templates",
             description: "Immutable system templates that you can instantiate into editable user workflows."
         };
@@ -53,7 +50,6 @@ function headerForRoute(pathname: string, status: string | null): HeaderConfig {
 
     if (pathname === "/alerts-workspace/workflows/new") {
         return {
-            eyebrow: "Alerts Workspace",
             title: "Create Workflow",
             description:
                 "Build a live alert workflow with either the rule form or the graph editor over the same workflow model."
@@ -63,7 +59,6 @@ function headerForRoute(pathname: string, status: string | null): HeaderConfig {
     if (pathname === "/alerts-workspace/workflows") {
         const inactive = status === "inactive";
         return {
-            eyebrow: "Alerts Workspace",
             title: inactive ? "Inactive Workflows" : "Active Workflows",
             description:
                 "Review configured workflows, including shared multi-symbol rule sets, then jump into editing or switch between active and inactive tracking.",
@@ -73,7 +68,6 @@ function headerForRoute(pathname: string, status: string | null): HeaderConfig {
 
     if (pathname.startsWith("/alerts-workspace/workflows/")) {
         return {
-            eyebrow: "Alerts Workspace",
             title: "Workflow Editor",
             description:
                 "Edit workflow target sets, conditions, notification channels, and inspect the latest live evaluation history."
@@ -81,7 +75,6 @@ function headerForRoute(pathname: string, status: string | null): HeaderConfig {
     }
 
     return {
-        eyebrow: "Alerts Workspace",
         title: "Alerts Workspace",
         description:
             "Create, run, and review live market workflows, user alerts, and outbound channels from one workspace."
@@ -108,7 +101,6 @@ export function AlertsWorkspaceChrome({ children }: { children: React.ReactNode 
             <PageHeader
                 action={header.action}
                 description={header.description}
-                eyebrow={header.eyebrow}
                 title={header.title}
             />
             <AlertsNav />
@@ -117,16 +109,15 @@ export function AlertsWorkspaceChrome({ children }: { children: React.ReactNode 
     );
 }
 
-export function AlertsHeaderOverride({ description, eyebrow, title }: HeaderOverride) {
+export function AlertsHeaderOverride({ description, title }: HeaderOverride) {
     const setHeader = useContext(HeaderOverrideContext);
 
     useEffect(() => {
         const nextHeader: HeaderOverride = {};
         if (description !== undefined) nextHeader.description = description;
-        if (eyebrow !== undefined) nextHeader.eyebrow = eyebrow;
         if (title !== undefined) nextHeader.title = title;
         setHeader?.(nextHeader);
-    }, [description, eyebrow, setHeader, title]);
+    }, [description, setHeader, title]);
 
     return null;
 }

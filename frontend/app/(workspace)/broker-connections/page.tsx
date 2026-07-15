@@ -47,7 +47,6 @@ export default async function BrokersPage() {
     return (
         <>
             <PageHeader
-                eyebrow="Broker accounts"
                 title="Broker Connections"
                 description="Manage broker credentials, session status, quotes, and portfolio data for your trading workspace."
             />
