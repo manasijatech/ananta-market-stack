@@ -52,6 +52,14 @@ import {
 import type { AlphaSection } from "@/components/market-intelligence/market-intelligence-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardPanel } from "@/components/ui/card";
+import {
+    Empty,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle
+} from "@/components/ui/empty";
 import { LiveWaveform } from "@/components/ui/live-waveform";
 import type { AlphaAlert } from "@/service/types/alpha/alerts";
 import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/types/alpha/announcements";
@@ -76,13 +84,15 @@ function EmptyFeed({ section }: { section: AlphaSection }) {
     const visual = sectionVisuals[section];
     const Icon = visual.icon;
     return (
-        <div className="flex min-h-48 flex-col items-center justify-center py-12 text-center">
-            <div className="flex size-10 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">
-                <Icon className="size-4" />
-            </div>
-            <h2 className="mt-3 text-sm font-semibold text-foreground">{visual.title}</h2>
-            <p className="mt-1 max-w-md text-sm text-muted-foreground">{visual.description}</p>
-        </div>
+        <Empty className="min-h-48 py-12 md:py-12">
+            <EmptyHeader>
+                <EmptyMedia variant="icon">
+                    <Icon aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle>{visual.title}</EmptyTitle>
+                <EmptyDescription>{visual.description}</EmptyDescription>
+            </EmptyHeader>
+        </Empty>
     );
 }
 
@@ -193,7 +203,7 @@ export function NewsTab({
     if (!items.length) return <EmptyFeed section="news" />;
 
     return (
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col gap-2">
             <FeedFilterBar>
                 <FeedFilterChip active={sentimentFilter === "all"} count={counts.all} label="All" onClick={() => setSentimentFilter("all")} />
                 <FeedFilterChip active={sentimentFilter === "positive"} count={counts.positive} label="Positive" onClick={() => setSentimentFilter("positive")} />
@@ -315,7 +325,7 @@ export function AnnouncementsTab({
     if (!items.length) return <EmptyFeed section="announcements" />;
 
     return (
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col gap-2">
             <FeedFilterBar>
                 <FeedFilterChip active={typeFilter === "all"} count={typeCounts.all} label="All" onClick={() => setTypeFilter("all")} />
                 {ANNOUNCEMENT_FILTERS.map((kind) => (
@@ -418,7 +428,7 @@ export function EarningsTab({
     if (!items.length) return <EmptyFeed section="earnings" />;
 
     return (
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col gap-2">
             {filtered.length ? null : <EmptyFeed section="earnings" />}
             {filtered.map((item) => {
                 const symbol = item.symbol ?? "";
@@ -509,7 +519,7 @@ export function ConcallsTab({
     if (!items.length) return <EmptyFeed section="concalls" />;
 
     return (
-        <div className="relative min-w-0 pb-24">
+        <div className="relative flex min-w-0 flex-col gap-2 pb-24">
             {filtered.length ? null : <EmptyFeed section="concalls" />}
 
             {filtered.map((item) => (
@@ -525,8 +535,8 @@ export function ConcallsTab({
             ))}
 
             {activeAudio ? (
-                <div className="sticky bottom-0 z-20 mt-4 border border-border bg-[var(--bg-elevated)] p-3 shadow-lg">
-                    <div className="flex items-center gap-3">
+                <Card className="sticky bottom-0 z-20 mt-4 shadow-lg">
+                    <CardPanel className="flex items-center gap-3 p-3">
                         <TickerAvatar
                             metadata={symbolMetadata[activeAudio.symbol.trim().toUpperCase()]}
                             symbol={activeAudio.symbol}
@@ -562,10 +572,10 @@ export function ConcallsTab({
                             type="button"
                             variant="ghost"
                         >
-                            <X className="size-4" />
+                            <X aria-hidden="true" />
                         </Button>
-                    </div>
-                </div>
+                    </CardPanel>
+                </Card>
             ) : null}
         </div>
     );
@@ -596,124 +606,133 @@ function ConcallCard({
     const metricRows = financialMetrics ? parseFinancialMetricsTable(financialMetrics.markdown) : [];
 
     return (
-        <article className="border-b border-border/50 py-3">
-            <div className="flex flex-col gap-3 min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between">
-                <div className="flex min-w-0 gap-2.5">
-                    <TickerAvatar metadata={metadata} symbol={symbol || "NA"} />
-                    <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <TickerChipRow onTickerClick={onTickerClick} symbol={symbol} />
-                            <CompanyMetaLine metadata={metadata} />
-                            {item.quarter ? (
-                                <Badge className="font-mono" size="sm" variant="outline">
-                                    {item.quarter}
-                                </Badge>
-                            ) : null}
-                            {redFlagCount > 0 ? (
-                                <Badge size="sm" variant="warning">
-                                    ⚠ {redFlagCount} red flags
-                                </Badge>
-                            ) : null}
-                            <time className="ml-auto text-xs text-muted-foreground">{formatFeedTimestamp(item.date)}</time>
+        <Card>
+            <CardPanel className="p-3">
+                <div className="flex flex-col gap-3 min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between">
+                    <div className="flex min-w-0 gap-2.5">
+                        <TickerAvatar metadata={metadata} symbol={symbol || "NA"} />
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <TickerChipRow onTickerClick={onTickerClick} symbol={symbol} />
+                                <CompanyMetaLine metadata={metadata} />
+                                {item.quarter ? (
+                                    <Badge className="font-mono" size="sm" variant="outline">
+                                        {item.quarter}
+                                    </Badge>
+                                ) : null}
+                                {redFlagCount > 0 ? (
+                                    <Badge size="sm" variant="warning">
+                                        ⚠ {redFlagCount} red flags
+                                    </Badge>
+                                ) : null}
+                                <time className="ml-auto text-xs text-muted-foreground">
+                                    {formatFeedTimestamp(item.date)}
+                                </time>
+                            </div>
                         </div>
                     </div>
+                    <div className="flex shrink-0 gap-1.5">
+                        {item.transcript_url ? (
+                            <Button
+                                render={<a href={item.transcript_url} rel="noreferrer" target="_blank" />}
+                                size="sm"
+                                variant="outline"
+                            >
+                                <FileText aria-hidden="true" />
+                                PDF
+                            </Button>
+                        ) : null}
+                        {item.audio_url ? (
+                            <Button
+                                onClick={() => onPlayAudio(item.audio_url!)}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                            >
+                                <Play aria-hidden="true" />
+                                Audio
+                            </Button>
+                        ) : null}
+                    </div>
                 </div>
-                <div className="flex shrink-0 gap-1.5">
-                    {item.transcript_url ? (
-                        <a
-                            className="inline-flex h-8 items-center gap-1.5 border border-border px-2.5 text-xs font-medium text-muted-foreground hover:border-primary hover:text-primary"
-                            href={item.transcript_url}
-                            rel="noreferrer"
-                            target="_blank"
-                        >
-                            <FileText className="size-3.5" />
-                            PDF
-                        </a>
-                    ) : null}
-                    {item.audio_url ? (
+
+                {!expanded ? (
+                    <div className="mt-3 flex flex-col gap-3 pl-9">
+                        {guidance ? (
+                            <ConcallBulletPreview label="Guidance" limit={3} markdown={guidance.markdown} />
+                        ) : null}
+                        {summarization ? (
+                            <ConcallBulletPreview label="Summarization" limit={2} markdown={summarization.markdown} />
+                        ) : null}
                         <Button
-                            className="h-8 px-2.5 text-xs"
-                            onClick={() => onPlayAudio(item.audio_url!)}
+                            className="h-auto w-fit px-0"
+                            onClick={() => setExpanded(true)}
                             size="sm"
                             type="button"
-                            variant="outline"
+                            variant="link"
                         >
-                            <Play className="size-3.5" />
-                            Audio
+                            Show full analysis ↓
                         </Button>
-                    ) : null}
-                </div>
-            </div>
-
-            {!expanded ? (
-                <div className="mt-3 space-y-3 pl-9">
-                    {guidance ? (
-                        <ConcallBulletPreview label="Guidance" limit={3} markdown={guidance.markdown} />
-                    ) : null}
-                    {summarization ? (
-                        <ConcallBulletPreview label="Summarization" limit={2} markdown={summarization.markdown} />
-                    ) : null}
-                    <button
-                        className="text-xs font-medium text-primary hover:underline"
-                        onClick={() => setExpanded(true)}
-                        type="button"
-                    >
-                        Show full analysis ↓
-                    </button>
-                </div>
-            ) : (
-                <div className="mt-3 space-y-4 pl-9">
-                    {sections.map((section) => {
-                        const isRedFlags = section.key.toLowerCase().replace(/[_\s-]+/g, "").includes("redflags");
-                        const isFinancial = section.key
-                            .toLowerCase()
-                            .replace(/[_\s-]+/g, "")
-                            .includes("financialmetrics");
-                        return (
-                            <section
-                                className={cn(
-                                    isRedFlags && "border-l-[3px] border-l-destructive bg-destructive/5 pl-3"
-                                )}
-                                key={section.key}
-                            >
-                                <h4 className="mt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                                    {section.label}
-                                </h4>
-                                {isFinancial && metricRows.length ? (
-                                    <table className="mt-2 w-full text-xs">
-                                        <thead>
-                                            <tr className="text-muted-foreground">
-                                                <th className="py-1 text-left font-medium">Metric</th>
-                                                <th className="py-1 text-right font-medium">Q4 FY26</th>
-                                                <th className="py-1 text-right font-medium">FY26</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {metricRows.map((row) => (
-                                                <tr className="border-t border-border/40" key={row.metric}>
-                                                    <td className="py-1 pr-2 text-left">{row.metric}</td>
-                                                    <td className="py-1 text-right font-mono">{row.q4}</td>
-                                                    <td className="py-1 text-right font-mono">{row.fy}</td>
+                    </div>
+                ) : (
+                    <div className="mt-3 flex flex-col gap-4 pl-9">
+                        {sections.map((section) => {
+                            const isRedFlags = section.key
+                                .toLowerCase()
+                                .replace(/[_\s-]+/g, "")
+                                .includes("redflags");
+                            const isFinancial = section.key
+                                .toLowerCase()
+                                .replace(/[_\s-]+/g, "")
+                                .includes("financialmetrics");
+                            return (
+                                <section
+                                    className={cn(
+                                        isRedFlags && "border-l-[3px] border-l-destructive bg-destructive/5 pl-3"
+                                    )}
+                                    key={section.key}
+                                >
+                                    <h4 className="mt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                        {section.label}
+                                    </h4>
+                                    {isFinancial && metricRows.length ? (
+                                        <table className="mt-2 w-full text-xs">
+                                            <thead>
+                                                <tr className="text-muted-foreground">
+                                                    <th className="py-1 text-left font-medium">Metric</th>
+                                                    <th className="py-1 text-right font-medium">Q4 FY26</th>
+                                                    <th className="py-1 text-right font-medium">FY26</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                ) : (
-                                    <ConcallMarkdown>{section.markdown}</ConcallMarkdown>
-                                )}
-                            </section>
-                        );
-                    })}
-                    <button
-                        className="text-xs font-medium text-primary hover:underline"
-                        onClick={() => setExpanded(false)}
-                        type="button"
-                    >
-                        Collapse ↑
-                    </button>
-                </div>
-            )}
-        </article>
+                                            </thead>
+                                            <tbody>
+                                                {metricRows.map((row) => (
+                                                    <tr className="border-t border-border/40" key={row.metric}>
+                                                        <td className="py-1 pr-2 text-left">{row.metric}</td>
+                                                        <td className="py-1 text-right font-mono">{row.q4}</td>
+                                                        <td className="py-1 text-right font-mono">{row.fy}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    ) : (
+                                        <ConcallMarkdown>{section.markdown}</ConcallMarkdown>
+                                    )}
+                                </section>
+                            );
+                        })}
+                        <Button
+                            className="h-auto w-fit px-0"
+                            onClick={() => setExpanded(false)}
+                            size="sm"
+                            type="button"
+                            variant="link"
+                        >
+                            Collapse ↑
+                        </Button>
+                    </div>
+                )}
+            </CardPanel>
+        </Card>
     );
 }
 
@@ -905,16 +924,17 @@ export function AlertsTab({
     if (!items.length) return <EmptyFeed section="alerts" />;
 
     return (
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col gap-2">
             <FeedFilterBar
                 trailing={
-                    <button
-                        className="text-xs font-medium text-muted-foreground hover:text-primary"
+                    <Button
                         onClick={() => markAllRead(items.map((item) => itemKey(item)))}
+                        size="sm"
                         type="button"
+                        variant="ghost"
                     >
                         Mark all read
-                    </button>
+                    </Button>
                 }
             >
                 <FeedFilterChip active={filter === "all"} count={filterCounts.all} label="All" onClick={() => setFilter("all")} />

@@ -33,6 +33,7 @@ import { UpdateAvailableBanner } from "@/components/system/update-available-bann
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { PageContainer } from "@/components/ui/page-container";
 import { hasRbacPermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import type { RbacPrincipal } from "@/service/types/rbac";
@@ -350,7 +351,11 @@ export function WorkspaceShell({
                     )}
                 >
                     <UpdateAvailableBanner />
-                    {children}
+                    {pathname === "/settings" ? (
+                        children
+                    ) : (
+                        <PageContainer>{children}</PageContainer>
+                    )}
                 </div>
             </div>
         </main>

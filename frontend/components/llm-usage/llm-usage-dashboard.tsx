@@ -401,7 +401,7 @@ export function LlmUsageDashboard({
     const activeFilters = hasActiveLlmUsageFilters(filters, granularity);
 
     return (
-        <div className="mx-auto grid w-full max-w-6xl gap-5">
+        <div className="grid w-full gap-5">
             <UsagePageTop overview={overview} />
 
             <Suspense fallback={<FilterBarFallback />}>

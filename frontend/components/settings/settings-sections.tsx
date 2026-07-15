@@ -15,6 +15,7 @@ import { ChannelSettings } from "@/components/alerts/channel-settings";
 import { StreamManager } from "@/components/alerts/stream-manager";
 import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager";
 import { SystemConfigPanel } from "@/components/system/system-config-panel";
+import { PageContainer } from "@/components/ui/page-container";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { OpenRouterModel } from "@/service/actions/llm-models";
@@ -219,7 +220,7 @@ export function SettingsSections({
 
                 <section className="min-h-0 min-w-0 overflow-y-auto bg-accent/20">
                     <div className="min-w-0 px-5 py-8 min-[760px]:px-10">
-                        <div className="mx-auto grid w-full max-w-7xl gap-7">
+                        <PageContainer className="mx-0 grid gap-7">
                             <div>
                                 <h2 className="font-heading text-2xl font-semibold tracking-tight text-foreground">
                                     {activeMeta.title}
@@ -260,7 +261,7 @@ export function SettingsSections({
                             <TabsContent className="mt-0 min-w-0 max-w-full" value="alert-channels">
                                 <ChannelSettings initialChannels={alertChannels} initialDesktopAudioDevices={desktopAudioDevices} />
                             </TabsContent>
-                        </div>
+                        </PageContainer>
                     </div>
                 </section>
             </div>

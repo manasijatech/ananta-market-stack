@@ -1,4 +1,14 @@
 import { PageHeader } from "@/components/brokers/ui";
+import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
+import { PageContainer } from "@/components/ui/page-container";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -327,69 +337,111 @@ export function WorkflowEditorSkeleton() {
 
 export function WatchlistsSkeleton() {
     return (
-        <section className="-mx-5 -my-8 h-[calc(100vh-73px)] overflow-hidden bg-background text-foreground min-[760px]:-mx-8 min-[980px]:-mx-10 min-[980px]:-my-10 min-[980px]:h-[calc(100vh-80px)]">
-            <div className="flex h-full min-h-0 flex-col px-5 py-5 min-[760px]:px-8 min-[980px]:px-10">
-                <header className="mb-7 flex flex-col gap-3 border-b border-border pb-5 min-[760px]:flex-row min-[760px]:items-end min-[760px]:justify-between">
-                    <div>
-                        <Skeleton className="h-3 w-36" />
-                        <Skeleton className="mt-3 h-12 w-64" />
-                    </div>
-                    <div className="w-full max-w-xl">
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="mt-2 h-4 w-5/6" />
-                    </div>
-                </header>
-                <div className="flex min-h-0 flex-1 flex-col gap-8 min-[980px]:grid min-[980px]:grid-cols-[260px_320px_minmax(0,1fr)] min-[980px]:gap-8">
-                    <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
-                        <div className="mb-4 flex items-center justify-between gap-3">
-                            <Skeleton className="h-3 w-36" />
-                            <Skeleton className="size-8" />
-                        </div>
-                        {Array.from({ length: 5 }).map((_, index) => (
-                            <div className="border-l-2 border-transparent px-3 py-3" key={index}>
-                                <Skeleton className="h-4 w-40" />
-                                <Skeleton className="mt-2 h-3 w-20" />
-                            </div>
-                        ))}
-                    </aside>
-                    <aside className="w-full shrink-0 border-b border-border pb-6 min-[980px]:border-b-0 min-[980px]:border-r min-[980px]:pb-0 min-[980px]:pr-5">
-                        <Skeleton className="mb-2 h-3 w-32" />
-                        <Skeleton className="h-9 w-full" />
-                        <div className="mt-3 grid gap-2">
-                            {Array.from({ length: 6 }).map((_, index) => (
-                                <div className="border-l-2 border-transparent px-3 py-3" key={index}>
-                                    <Skeleton className="h-4 w-48" />
-                                    <Skeleton className="mt-2 h-3 w-32" />
+        <div className="flex min-h-0 flex-col gap-4 min-[980px]:h-[calc(100dvh-8rem)] min-[980px]:overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 min-[1080px]:grid min-[1080px]:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] min-[1080px]:overflow-hidden">
+                <aside className="min-h-0 min-w-0">
+                    <CardFrame>
+                        <CardFrameHeader className="border-b px-4 py-3">
+                            <CardFrameTitle>
+                                <Skeleton className="h-4 w-28" />
+                            </CardFrameTitle>
+                            <CardFrameDescription>
+                                <Skeleton className="h-3 w-40" />
+                            </CardFrameDescription>
+                            <CardFrameAction>
+                                <Skeleton className="size-8" />
+                            </CardFrameAction>
+                        </CardFrameHeader>
+                        <Card>
+                            <CardPanel className="flex flex-col gap-2 p-3 max-[1079px]:max-h-72">
+                                {Array.from({ length: 6 }).map((_, index) => (
+                                    <div
+                                        className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-3"
+                                        key={index}
+                                    >
+                                        <div className="min-w-0 flex-1">
+                                            <Skeleton className="h-4 w-36" />
+                                            <Skeleton className="mt-2 h-3 w-20" />
+                                        </div>
+                                        <Skeleton className="h-5 w-10" />
+                                    </div>
+                                ))}
+                            </CardPanel>
+                        </Card>
+                    </CardFrame>
+                </aside>
+
+                <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+                    <CardFrame className="shrink-0">
+                        <CardFrameHeader>
+                            <CardFrameTitle>
+                                <Skeleton className="h-5 w-48" />
+                            </CardFrameTitle>
+                            <CardFrameDescription>
+                                <Skeleton className="h-3 w-56" />
+                            </CardFrameDescription>
+                            <CardFrameAction>
+                                <div className="flex gap-2">
+                                    <Skeleton className="size-8" />
+                                    <Skeleton className="size-8" />
                                 </div>
-                            ))}
-                        </div>
-                    </aside>
-                    <main className="min-w-0 flex-1 overflow-hidden">
-                        <div className="mb-7 flex flex-col gap-4 border-b border-border pb-5 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
-                            <div>
-                                <Skeleton className="h-10 w-72" />
-                                <Skeleton className="mt-3 h-3 w-44" />
-                            </div>
-                            <div className="flex gap-2">
-                                <Skeleton className="size-9" />
-                                <Skeleton className="size-9" />
-                            </div>
-                        </div>
-                        <div className="mb-7 grid gap-3 min-[760px]:grid-cols-[1fr_8rem]">
-                            <div>
-                                <Skeleton className="mb-2 h-3 w-24" />
-                                <Skeleton className="h-11 w-full" />
-                            </div>
-                            <div>
-                                <Skeleton className="mb-2 h-3 w-20" />
-                                <Skeleton className="h-11 w-full" />
-                            </div>
-                        </div>
-                        <TableSkeleton columns={8} rows={6} />
-                    </main>
-                </div>
+                            </CardFrameAction>
+                        </CardFrameHeader>
+                        <Card>
+                            <CardPanel className="grid gap-3 p-4 min-[760px]:grid-cols-[minmax(0,1fr)_5.5rem_auto]">
+                                <Skeleton className="h-9 w-full" />
+                                <Skeleton className="h-9 w-full" />
+                                <Skeleton className="h-9 w-24" />
+                            </CardPanel>
+                        </Card>
+                    </CardFrame>
+
+                    <CardFrame className="hidden min-h-0 min-[760px]:flex min-[760px]:flex-1 min-[760px]:flex-col">
+                        <Card>
+                            <CardPanel className="p-0">
+                                <div className="border-b border-border px-4 py-3">
+                                    <div className="flex gap-6">
+                                        {Array.from({ length: 6 }).map((_, index) => (
+                                            <Skeleton className="h-3 w-16" key={index} />
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-0">
+                                    {Array.from({ length: 7 }).map((_, index) => (
+                                        <div
+                                            className="flex items-center gap-4 border-b border-border px-4 py-3 last:border-b-0"
+                                            key={index}
+                                        >
+                                            <Skeleton className="size-8 shrink-0 rounded-full" />
+                                            <Skeleton className="h-4 w-20" />
+                                            <Skeleton className="h-4 w-40 flex-1" />
+                                            <Skeleton className="h-4 w-14" />
+                                            <Skeleton className="h-4 w-16" />
+                                            <Skeleton className="size-8 shrink-0" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </CardPanel>
+                        </Card>
+                    </CardFrame>
+
+                    <div className="grid gap-3 min-[760px]:hidden">
+                        {Array.from({ length: 4 }).map((_, index) => (
+                            <Card key={index}>
+                                <CardPanel className="flex items-center gap-3 p-3">
+                                    <Skeleton className="size-9 shrink-0 rounded-full" />
+                                    <div className="min-w-0 flex-1">
+                                        <Skeleton className="h-4 w-24" />
+                                        <Skeleton className="mt-2 h-3 w-40" />
+                                    </div>
+                                    <Skeleton className="size-8 shrink-0" />
+                                </CardPanel>
+                            </Card>
+                        ))}
+                    </div>
+                </main>
             </div>
-        </section>
+        </div>
     );
 }
 
@@ -415,10 +467,10 @@ export function FeedSkeleton({ rows = 4 }: { rows?: number }) {
 
 export function LoadingShell({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
     return (
-        <>
+        <PageContainer>
             {header}
             {children}
-        </>
+        </PageContainer>
     );
 }
 

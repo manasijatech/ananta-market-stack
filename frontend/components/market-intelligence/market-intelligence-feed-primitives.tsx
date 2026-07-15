@@ -1,8 +1,16 @@
 "use client";
 
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardPanel } from "@/components/ui/card";
+import {
+    InputGroup,
+    InputGroupAddon,
+    InputGroupButton,
+    InputGroupInput
+} from "@/components/ui/input-group";
 import {
     Tooltip,
     TooltipPopup,
@@ -24,16 +32,16 @@ import { cn } from "@/lib/utils";
 export function LiveStatusPill({ state }: { state: "connecting" | "live" | "offline" }) {
     if (state === "offline") {
         return (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-muted-foreground/50" />
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-muted-foreground/50" aria-hidden="true" />
                 Offline
             </span>
         );
     }
 
     return (
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-success-foreground">
-            <span className="relative flex size-1.5">
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success-foreground">
+            <span className="relative flex size-1.5" aria-hidden="true">
                 <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
                 <span className="relative inline-flex size-1.5 rounded-full bg-success" />
             </span>
@@ -91,22 +99,25 @@ export function TickerChip({
     onClick?: (symbol: string) => void;
     highlight?: boolean;
 }) {
-    const className = cn(
-        "inline-flex items-center rounded-sm px-1.5 py-0.5 font-mono text-[11px] font-medium",
-        highlight
-            ? "bg-primary/15 text-primary"
-            : "bg-secondary text-secondary-foreground"
-    );
-
     if (onClick) {
         return (
-            <button className={cn(className, "transition-colors hover:bg-primary/20")} onClick={() => onClick(symbol)} type="button">
+            <Badge
+                render={<button type="button" />}
+                onClick={() => onClick(symbol)}
+                size="sm"
+                variant={highlight ? "default" : "secondary"}
+                className="font-mono"
+            >
                 {symbol}
-            </button>
+            </Badge>
         );
     }
 
-    return <span className={className}>{symbol}</span>;
+    return (
+        <Badge className="font-mono" size="sm" variant={highlight ? "default" : "secondary"}>
+            {symbol}
+        </Badge>
+    );
 }
 
 export function TickerChipRow({
@@ -137,7 +148,7 @@ export function SentimentBadge({ sentiment }: { sentiment?: string | null }) {
     };
     const { label, variant } = config[kind];
     return (
-        <Badge className="h-5 rounded-full px-2 text-[11px] font-medium" size="sm" variant={variant}>
+        <Badge size="sm" variant={variant}>
             {label}
         </Badge>
     );
@@ -155,24 +166,26 @@ export function FeedFilterChip({
     onClick: () => void;
 }) {
     return (
-        <button
+        <Badge
+            render={<button type="button" />}
             aria-pressed={active}
-            className={cn(
-                "inline-flex h-9 shrink-0 snap-start items-center gap-1.5 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition-colors sm:h-7 sm:px-2.5",
-                active
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border/70 bg-transparent text-muted-foreground hover:border-primary/30 hover:text-foreground"
-            )}
+            className="h-8 shrink-0 gap-1.5 px-3 sm:h-7 sm:px-2.5"
             onClick={onClick}
-            type="button"
+            size="sm"
+            variant={active ? "default" : "outline"}
         >
             {label}
             {typeof count === "number" ? (
-                <span className="rounded-full bg-background/70 px-1.5 font-mono text-[10px] leading-4 text-muted-foreground">
+                <span
+                    className={cn(
+                        "rounded-sm px-1 font-mono text-[10px] leading-4",
+                        active ? "bg-primary-foreground/15 text-primary-foreground" : "bg-muted text-muted-foreground"
+                    )}
+                >
                     {count}
                 </span>
             ) : null}
-        </button>
+        </Badge>
     );
 }
 
@@ -184,9 +197,9 @@ export function FeedFilterBar({
     trailing?: ReactNode;
 }) {
     return (
-        <div className="flex min-w-0 flex-col gap-3 border-b border-border/50 pb-3 min-[640px]:flex-row min-[640px]:items-center min-[640px]:justify-between min-[640px]:gap-3">
+        <div className="mb-3 flex min-w-0 flex-col gap-3 min-[640px]:flex-row min-[640px]:items-center min-[640px]:justify-between">
             <div
-                className="-mx-1 flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] md:flex-wrap md:overflow-visible [&::-webkit-scrollbar]:hidden"
+                className="-mx-1 flex min-w-0 snap-x snap-mandatory gap-1.5 overflow-x-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] md:flex-wrap md:overflow-visible [&::-webkit-scrollbar]:hidden"
                 aria-label="Feed filters"
             >
                 {children}
@@ -215,14 +228,19 @@ export function ExpandableBody({
         <div className={cn("text-[13px] leading-5 text-muted-foreground", className)}>
             <p className="whitespace-pre-wrap break-words">{expanded || !needsExpand ? text : preview}</p>
             {needsExpand ? (
-                <button
-                    className="mt-1 inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline"
+                <Button
+                    className="mt-1 h-auto px-0 text-xs"
                     onClick={() => setExpanded((current) => !current)}
+                    size="sm"
                     type="button"
+                    variant="link"
                 >
                     {expanded ? "Collapse" : "Expand"}
-                    <ChevronDown className={cn("size-3 transition-transform", expanded && "rotate-180")} />
-                </button>
+                    <ChevronDown
+                        aria-hidden="true"
+                        className={cn("size-3 transition-transform", expanded && "rotate-180")}
+                    />
+                </Button>
             ) : null}
         </div>
     );
@@ -279,41 +297,32 @@ export function FeedCard({
                 : "";
 
     return (
-        <article
-            className={cn(
-                "group border-b border-border/50 py-3 pl-3 pr-1 transition-opacity",
-                borderClass,
-                dimmed && "opacity-70",
-                className
-            )}
-        >
-            <div className="flex gap-2.5">
-                <div className="pt-0.5">{avatar}</div>
+        <Card className={cn("group", borderClass, dimmed && "opacity-70", className)}>
+            <CardPanel className="flex gap-3 p-3">
+                <div className="shrink-0 pt-0.5">{avatar}</div>
                 <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        {metaLeading}
-                        {categoryBadge}
-                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                            {metaLeading}
+                            {categoryBadge}
                             {metaTrailing}
                         </div>
-                        <div className="ml-auto flex shrink-0 items-center gap-2">
-                            {timestamp ? (
-                                <time className="text-xs text-muted-foreground">
-                                    {formatFeedTimestamp(timestamp)}
-                                </time>
-                            ) : null}
-                        </div>
+                        {timestamp ? (
+                            <time className="shrink-0 text-xs text-muted-foreground">
+                                {formatFeedTimestamp(timestamp)}
+                            </time>
+                        ) : null}
                     </div>
                     <h3 className="mt-1.5 text-[15px] font-medium leading-snug text-foreground">{headline}</h3>
                     {body ? <div className="mt-1.5">{body}</div> : null}
                     {actions ? (
-                        <div className="mt-2 flex flex-wrap items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                             {actions}
                         </div>
                     ) : null}
                 </div>
-            </div>
-        </article>
+            </CardPanel>
+        </Card>
     );
 }
 
@@ -333,26 +342,30 @@ export function FeedSearchInput({
     value: string;
 }) {
     return (
-        <label className="relative min-w-0 flex-1">
-            <span className="sr-only">{placeholder}</span>
-            <input
+        <InputGroup className="h-9 w-full min-w-0">
+            <InputGroupAddon>
+                <Search aria-hidden="true" />
+            </InputGroupAddon>
+            <InputGroupInput
+                aria-label={placeholder}
                 autoComplete="off"
-                className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 pr-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-[var(--accent-glow)]"
                 onChange={(event) => onChange(event.target.value)}
                 placeholder={placeholder}
                 value={value}
             />
             {value ? (
-                <button
-                    aria-label="Clear search"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    onClick={() => onChange("")}
-                    type="button"
-                >
-                    <X className="size-3.5" />
-                </button>
+                <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                        aria-label="Clear search"
+                        onClick={() => onChange("")}
+                        size="icon-xs"
+                        type="button"
+                    >
+                        <X aria-hidden="true" />
+                    </InputGroupButton>
+                </InputGroupAddon>
             ) : null}
-        </label>
+        </InputGroup>
     );
 }
 
@@ -386,12 +399,8 @@ export function FeedCardAction({
     onClick?: () => void;
 }) {
     return (
-        <button
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-            onClick={onClick}
-            type="button"
-        >
+        <Button onClick={onClick} size="sm" type="button" variant="outline">
             {children}
-        </button>
+        </Button>
     );
 }
