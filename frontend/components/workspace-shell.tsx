@@ -342,7 +342,13 @@ export function WorkspaceShell({
                         </div>
                     </div>
                 </header>
-                <div className="min-w-0 px-3 pb-6 pt-[calc(3.75rem+env(safe-area-inset-top))] sm:px-4 sm:pt-[calc(4.5rem+env(safe-area-inset-top))] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-10">
+                <div
+                    className={cn(
+                        "min-w-0 px-3 pb-6 pt-[calc(3.75rem+env(safe-area-inset-top))] sm:px-4 sm:pt-[calc(4.5rem+env(safe-area-inset-top))] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-10",
+                        pathname === "/settings" &&
+                            "min-[980px]:mt-16 min-[980px]:h-[calc(100vh-4rem)] min-[980px]:overflow-hidden min-[980px]:pb-0 min-[980px]:pt-0"
+                    )}
+                >
                     <UpdateAvailableBanner />
                     {children}
                 </div>

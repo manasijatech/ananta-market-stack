@@ -5,6 +5,15 @@ import { CheckCircle2, ChevronDown, Radio, Server } from "lucide-react";
 import { getLivePricesWebSocketConfig, getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
 import type { LivePriceTick, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
+import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -269,20 +278,20 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
     }, [visibleRefKey]);
 
     return (
-        <section className="grid min-w-0 max-w-full gap-3">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                    <div className="type-section-title">Live prices</div>
-                    <div className="type-help text-muted-foreground">
+        <CardFrame className="min-w-0 max-w-full">
+            <CardFrameHeader>
+                <CardFrameTitle>Live prices</CardFrameTitle>
+                <CardFrameDescription>
+                    <span>
                         {visibleAvailableCount}/{visibleRows.length} visible rows have a live price snapshot.
                         {message ? ` ${message}.` : ""}
-                    </div>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="type-meta whitespace-nowrap text-muted-foreground">
+                    </span>
+                </CardFrameDescription>
+                <CardFrameAction className="flex-wrap gap-2">
+                    <span className="type-meta whitespace-nowrap text-muted-foreground">
                         Showing {visibleRows.length} / {desiredRows.length}
-                    </div>
-                    <div
+                    </span>
+                    <span
                         className={`type-meta border px-2.5 py-1 ${
                             socketState === "connected"
                                 ? "border-[var(--success)] text-[var(--success)]"
@@ -292,133 +301,137 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                         }`}
                     >
                         {socketState}
-                    </div>
-                </div>
-            </div>
-            <div
-                className="relative left-1/2 max-h-[32rem] w-[70vw] max-w-[70vw] min-w-0 -translate-x-1/2 overflow-y-auto overflow-x-hidden rounded-lg border border-border bg-card"
-                onScroll={handleTableScroll}
-            >
-                <table className="w-full table-fixed border-separate border-spacing-0 text-left text-xs">
-                    <colgroup>
-                        <col className="w-[18%]" />
-                        <col className="w-[10%]" />
-                        <col className="w-[8%]" />
-                        <col className="w-[9%]" />
-                        <col className="w-[9%]" />
-                        <col className="w-[9%]" />
-                        <col className="w-[11%]" />
-                        <col className="w-[14%]" />
-                        <col className="w-[12%]" />
-                    </colgroup>
-                    <thead className="sticky top-0 z-10">
-                        <tr className="bg-secondary text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                            <th className="border-b border-r border-border px-3 py-2.5">Symbol</th>
-                            <th className="border-b border-r border-border px-3 py-2.5 text-right">LTP</th>
-                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Change</th>
-                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Open</th>
-                            <th className="border-b border-r border-border px-3 py-2.5 text-right">High</th>
-                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Low</th>
-                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Volume</th>
-                            <th className="border-b border-r border-border px-3 py-2.5 text-right">Bid / Ask</th>
-                            <th className="border-b border-border px-3 py-2.5 text-right">Time</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {visibleRows.map((row) => {
-                            const price = prices[row.key];
-                            const hasRenderablePrice = hasRenderableTick(price);
-                            const change = toNumber(price?.change_pct ?? price?.day_change_perc);
-                            const unavailableReason = !hasLivePrice(price) ? price?.unavailable_reason || row.health_reason : "";
-                            const unavailableLabel =
-                                price?.status === "rate_limited"
-                                    ? "rate limited"
-                                    : price?.status === "action_required"
-                                      ? "action needed"
-                                      : "unavailable";
-                            return (
-                                <tr key={row.key}>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 align-middle">
-                                        <div className="truncate text-sm font-semibold leading-5" title={row.symbol}>
-                                            {row.symbol}
-                                        </div>
-                                        <div className="text-[11px] leading-4 text-muted-foreground">
-                                            {row.exchange ?? "-"} · {row.broker_code ?? "-"}
-                                        </div>
-                                    </td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono font-semibold tabular-nums">
-                                        {!hasRenderablePrice ? (
-                                            <Skeleton className="ml-auto h-3 w-16" />
-                                        ) : unavailableReason ? (
-                                            <span className="text-xs font-medium text-[var(--danger)]" title={unavailableReason}>
-                                                {unavailableLabel}
-                                            </span>
-                                        ) : (
-                                            formatPrice(price?.ltp ?? price?.last_price)
-                                        )}
-                                    </td>
-                                    <td
-                                        className={`border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums ${
-                                            change === null
-                                                ? "text-muted-foreground"
-                                                : change >= 0
-                                                  ? "text-[var(--success)]"
-                                                  : "text-[var(--danger)]"
-                                        }`}
-                                    >
-                                        {hasRenderablePrice ? formatPercent(change) : <Skeleton className="ml-auto h-3 w-14" />}
-                                    </td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
-                                        {hasRenderablePrice ? formatPrice(price?.open) : <Skeleton className="ml-auto h-3 w-16" />}
-                                    </td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
-                                        {hasRenderablePrice ? formatPrice(price?.high) : <Skeleton className="ml-auto h-3 w-16" />}
-                                    </td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
-                                        {hasRenderablePrice ? formatPrice(price?.low) : <Skeleton className="ml-auto h-3 w-16" />}
-                                    </td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
-                                        {hasRenderablePrice ? (
-                                            formatNumber(price?.volume, { maximumFractionDigits: 0 })
-                                        ) : (
-                                            <Skeleton className="ml-auto h-3 w-16" />
-                                        )}
-                                    </td>
-                                    <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
-                                        {hasRenderablePrice ? (
-                                            `${formatPrice(price?.best_bid_price)} / ${formatPrice(price?.best_ask_price)}`
-                                        ) : (
-                                            <Skeleton className="ml-auto h-3 w-24" />
-                                        )}
-                                    </td>
-                                    <td className="border-b border-border/80 px-3 py-2.5 text-right font-mono text-[11px] text-muted-foreground">
-                                        {hasRenderablePrice ? formatTime(price?.received_at) : <Skeleton className="ml-auto h-3 w-16" />}
-                                    </td>
+                    </span>
+                </CardFrameAction>
+            </CardFrameHeader>
+            <Card>
+                <CardPanel className="p-0">
+                    <div
+                        className="max-h-[32rem] min-w-0 overflow-y-auto overflow-x-auto"
+                        onScroll={handleTableScroll}
+                    >
+                        <table className="w-full min-w-[60rem] table-fixed border-separate border-spacing-0 text-left text-xs">
+                            <colgroup>
+                                <col className="w-[18%]" />
+                                <col className="w-[10%]" />
+                                <col className="w-[8%]" />
+                                <col className="w-[9%]" />
+                                <col className="w-[9%]" />
+                                <col className="w-[9%]" />
+                                <col className="w-[11%]" />
+                                <col className="w-[14%]" />
+                                <col className="w-[12%]" />
+                            </colgroup>
+                            <thead className="sticky top-0 z-10">
+                                <tr className="bg-secondary text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                                    <th className="border-b border-r border-border px-3 py-2.5">Symbol</th>
+                                    <th className="border-b border-r border-border px-3 py-2.5 text-right">LTP</th>
+                                    <th className="border-b border-r border-border px-3 py-2.5 text-right">Change</th>
+                                    <th className="border-b border-r border-border px-3 py-2.5 text-right">Open</th>
+                                    <th className="border-b border-r border-border px-3 py-2.5 text-right">High</th>
+                                    <th className="border-b border-r border-border px-3 py-2.5 text-right">Low</th>
+                                    <th className="border-b border-r border-border px-3 py-2.5 text-right">Volume</th>
+                                    <th className="border-b border-r border-border px-3 py-2.5 text-right">Bid / Ask</th>
+                                    <th className="border-b border-border px-3 py-2.5 text-right">Time</th>
                                 </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-                {!visibleRows.length ? (
-                    <Empty className="py-8">
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <Radio />
-                            </EmptyMedia>
-                            <EmptyTitle>No live symbols</EmptyTitle>
-                            <EmptyDescription>
-                                Desired symbols stream here once subscriptions are active.
-                            </EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
-                ) : null}
-                {visibleRows.length < desiredRows.length ? (
-                    <div className="border-t border-border p-3 text-center text-xs text-muted-foreground">
-                        Scroll for more rows
+                            </thead>
+                            <tbody>
+                                {visibleRows.map((row) => {
+                                    const price = prices[row.key];
+                                    const hasRenderablePrice = hasRenderableTick(price);
+                                    const change = toNumber(price?.change_pct ?? price?.day_change_perc);
+                                    const unavailableReason = !hasLivePrice(price) ? price?.unavailable_reason || row.health_reason : "";
+                                    const unavailableLabel =
+                                        price?.status === "rate_limited"
+                                            ? "rate limited"
+                                            : price?.status === "action_required"
+                                              ? "action needed"
+                                              : "unavailable";
+                                    return (
+                                        <tr key={row.key}>
+                                            <td className="border-b border-r border-border/80 px-3 py-2.5 align-middle">
+                                                <div className="truncate text-sm font-semibold leading-5" title={row.symbol}>
+                                                    {row.symbol}
+                                                </div>
+                                                <div className="text-[11px] leading-4 text-muted-foreground">
+                                                    {row.exchange ?? "-"} · {row.broker_code ?? "-"}
+                                                </div>
+                                            </td>
+                                            <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono font-semibold tabular-nums">
+                                                {!hasRenderablePrice ? (
+                                                    <Skeleton className="ml-auto h-3 w-16" />
+                                                ) : unavailableReason ? (
+                                                    <span className="text-xs font-medium text-[var(--danger)]" title={unavailableReason}>
+                                                        {unavailableLabel}
+                                                    </span>
+                                                ) : (
+                                                    formatPrice(price?.ltp ?? price?.last_price)
+                                                )}
+                                            </td>
+                                            <td
+                                                className={`border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums ${
+                                                    change === null
+                                                        ? "text-muted-foreground"
+                                                        : change >= 0
+                                                          ? "text-[var(--success)]"
+                                                          : "text-[var(--danger)]"
+                                                }`}
+                                            >
+                                                {hasRenderablePrice ? formatPercent(change) : <Skeleton className="ml-auto h-3 w-14" />}
+                                            </td>
+                                            <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                                {hasRenderablePrice ? formatPrice(price?.open) : <Skeleton className="ml-auto h-3 w-16" />}
+                                            </td>
+                                            <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                                {hasRenderablePrice ? formatPrice(price?.high) : <Skeleton className="ml-auto h-3 w-16" />}
+                                            </td>
+                                            <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                                {hasRenderablePrice ? formatPrice(price?.low) : <Skeleton className="ml-auto h-3 w-16" />}
+                                            </td>
+                                            <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                                {hasRenderablePrice ? (
+                                                    formatNumber(price?.volume, { maximumFractionDigits: 0 })
+                                                ) : (
+                                                    <Skeleton className="ml-auto h-3 w-16" />
+                                                )}
+                                            </td>
+                                            <td className="border-b border-r border-border/80 px-3 py-2.5 text-right font-mono tabular-nums">
+                                                {hasRenderablePrice ? (
+                                                    `${formatPrice(price?.best_bid_price)} / ${formatPrice(price?.best_ask_price)}`
+                                                ) : (
+                                                    <Skeleton className="ml-auto h-3 w-24" />
+                                                )}
+                                            </td>
+                                            <td className="border-b border-border/80 px-3 py-2.5 text-right font-mono text-[11px] text-muted-foreground">
+                                                {hasRenderablePrice ? formatTime(price?.received_at) : <Skeleton className="ml-auto h-3 w-16" />}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                        {!visibleRows.length ? (
+                            <Empty className="py-8">
+                                <EmptyHeader>
+                                    <EmptyMedia variant="icon">
+                                        <Radio />
+                                    </EmptyMedia>
+                                    <EmptyTitle>No live symbols</EmptyTitle>
+                                    <EmptyDescription>
+                                        Desired symbols stream here once subscriptions are active.
+                                    </EmptyDescription>
+                                </EmptyHeader>
+                            </Empty>
+                        ) : null}
+                        {visibleRows.length < desiredRows.length ? (
+                            <div className="border-t border-border p-3 text-center text-xs text-muted-foreground">
+                                Scroll for more rows
+                            </div>
+                        ) : null}
                     </div>
-                ) : null}
-            </div>
-        </section>
+                </CardPanel>
+            </Card>
+        </CardFrame>
     );
 }
 
@@ -434,7 +447,7 @@ function CollapsibleSection({
     children: ReactNode;
 }) {
     return (
-        <Collapsible defaultOpen={defaultOpen} className="grid gap-3 border border-border">
+        <Card render={<Collapsible defaultOpen={defaultOpen} />}>
             <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/60">
                 <div className="flex items-center gap-2">
                     <ChevronDown className="size-4 text-muted-foreground transition-transform duration-200 group-data-[panel-open]:rotate-180" />
@@ -445,7 +458,7 @@ function CollapsibleSection({
             <CollapsibleContent>
                 <div className="grid gap-3 px-4 pb-4">{children}</div>
             </CollapsibleContent>
-        </Collapsible>
+        </Card>
     );
 }
 
@@ -475,23 +488,27 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
 
     return (
         <div className="grid min-w-0 max-w-full gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 border border-border p-4">
-                <div>
-                    <div className="type-section-title">{status.worker_mode}</div>
-                    <div className="type-help text-muted-foreground">
+            <CardFrame>
+                <CardFrameHeader>
+                    <CardFrameTitle>{status.worker_mode}</CardFrameTitle>
+                    <CardFrameDescription>
                         Redis {status.redis_ok ? "connected" : "degraded"}{" "}
                         {status.redis_error ? `· ${status.redis_error}` : ""}
-                    </div>
-                </div>
-                <Button disabled={isPending} onClick={refresh} type="button" variant="outline">
-                    Refresh
-                </Button>
-                <Button disabled={isPending} onClick={reconcile} type="button" variant="outline">
-                    Reconcile
-                </Button>
-            </div>
+                    </CardFrameDescription>
+                    <CardFrameAction className="flex-wrap gap-2">
+                        <Button disabled={isPending} onClick={refresh} type="button" variant="outline">
+                            Refresh
+                        </Button>
+                        <Button disabled={isPending} onClick={reconcile} type="button" variant="outline">
+                            Reconcile
+                        </Button>
+                    </CardFrameAction>
+                </CardFrameHeader>
+            </CardFrame>
             {reconcileNotice ? (
-                <div className="type-body border border-border px-4 py-3 text-muted-foreground">{reconcileNotice}</div>
+                <Card>
+                    <CardPanel className="type-body px-4 py-3 text-muted-foreground">{reconcileNotice}</CardPanel>
+                </Card>
             ) : null}
 
             <LivePricesPanel status={status} />
@@ -505,10 +522,8 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                     <div className="@container">
                         <div className="grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
                             {status.broker_statuses.map((broker) => (
-                                <div
-                                    className="border border-border p-4"
-                                    key={`${broker.account_id}-${broker.broker_code}`}
-                                >
+                                <Card key={`${broker.account_id}-${broker.broker_code}`}>
+                                    <CardPanel className="p-4">
                                     <div className="flex flex-wrap items-start justify-between gap-3">
                                         <div>
                                             <div className="type-section-title">
@@ -535,7 +550,8 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                                     {broker.last_error && !broker.session_active ? (
                                         <div className="type-meta mt-2 text-[var(--danger)]">{broker.last_error}</div>
                                     ) : null}
-                                </div>
+                                    </CardPanel>
+                                </Card>
                             ))}
                         </div>
                     </div>
@@ -555,10 +571,8 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                     <div className="@container">
                         <div className="grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
                             {status.active_sessions.map((session) => (
-                                <div
-                                    className="border border-border p-4"
-                                    key={`${session.user_id}-${session.account_id}-${session.broker_code}-${session.connection_index}`}
-                                >
+                                <Card key={`${session.user_id}-${session.account_id}-${session.broker_code}-${session.connection_index}`}>
+                                    <CardPanel className="p-4">
                                     <div className="type-section-title">
                                         {session.broker_code} · {session.account_id} · Connection{" "}
                                         {session.connection_index}
@@ -570,7 +584,8 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                                     <div className="type-meta mt-2 text-muted-foreground">
                                         Symbols: {session.symbols.join(", ") || "None"}
                                     </div>
-                                </div>
+                                    </CardPanel>
+                                </Card>
                             ))}
                         </div>
                     </div>
@@ -601,7 +616,8 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                     <div className="@container">
                         <div className="grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
                             {status.inactive_subscriptions.map((subscription) => (
-                                <div className="border border-border p-4" key={subscription.id}>
+                                <Card key={subscription.id}>
+                                    <CardPanel className="p-4">
                                     <div className="type-section-title">{subscription.symbol}</div>
                                     <div className="type-meta text-muted-foreground">
                                         {subscription.exchange ?? "-"} · {subscription.broker_code ?? "-"} ·{" "}
@@ -622,7 +638,8 @@ export function StreamManager({ initialStatus }: { initialStatus: LiveStreamsSta
                                             {subscription.health_reason}
                                         </div>
                                     ) : null}
-                                </div>
+                                    </CardPanel>
+                                </Card>
                             ))}
                         </div>
                     </div>

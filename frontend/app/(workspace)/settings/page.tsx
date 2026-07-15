@@ -1,5 +1,4 @@
 import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warning-modal";
-import { PageHeader } from "@/components/brokers/ui";
 import { hasRbacPermission } from "@/lib/rbac";
 import { SettingsSections } from "@/components/settings/settings-sections";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,12 +16,14 @@ export default async function SettingsPage() {
     if (!principal || principal.status !== "active") {
         return (
             <>
-                <div className="grid w-full max-w-6xl min-w-0 gap-8">
-                    <PageHeader
-                        eyebrow="Workspace"
-                        title="Settings"
-                        description="Workspace settings become available after an admin approves this account."
-                    />
+                <div className="grid w-full min-w-0 gap-5">
+                    <div className="border-b border-border bg-background px-5 py-5">
+                        <p className="text-sm font-medium text-muted-foreground">Workspace</p>
+                        <h1 className="mt-2 font-heading text-3xl font-semibold tracking-tight">Settings</h1>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                            Workspace settings become available after an admin approves this account.
+                        </p>
+                    </div>
                     <Alert variant="warning">
                         <AlertDescription>
                             Your account is pending admin approval. You can continue after an active admin approves your access.
@@ -62,12 +63,7 @@ export default async function SettingsPage() {
     return (
         <>
             <AlphaCreditWarningTrigger message={creditWarningMessage} />
-            <div className="grid w-full max-w-6xl min-w-0 gap-8">
-                <PageHeader
-                    eyebrow="Workspace"
-                    title="Settings"
-                    description="Manage broker data, live subscriptions, stream operations, alert delivery, encrypted provider credentials, and saved provider models."
-                />
+            <div className="h-full w-full min-w-0">
                 <SettingsSections
                     accounts={accounts}
                     alertChannels={alertChannels}

@@ -1,14 +1,10 @@
-import Link from "next/link";
 import { Suspense } from "react";
 import {
-    IconActivity,
     IconCalendarStats,
     IconDatabase
 } from "@tabler/icons-react";
 import { LlmUsageFilterBar, type LlmUsageFilterOptions } from "@/components/llm-usage/llm-usage-filter-bar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatIstDateTime } from "@/lib/datetime";
 import {
@@ -20,7 +16,6 @@ import {
 } from "@/lib/llm-usage";
 import {
     hasActiveLlmUsageFilters,
-    isLlmUsageEmpty,
     type LlmUsageFilterOption
 } from "@/lib/llm-usage-filters";
 import { cn } from "@/lib/utils";
@@ -46,6 +41,10 @@ type LlmUsageDashboardProps = {
 };
 
 const tokenFormatter = new Intl.NumberFormat("en-IN");
+const compactNumberFormatter = new Intl.NumberFormat("en-IN", {
+    compactDisplay: "short",
+    notation: "compact"
+});
 const surfaceClassName = "app-card-surface bg-card";
 
 const DEFAULT_REQUEST_KIND_OPTIONS: LlmUsageFilterOption[] = [
@@ -68,6 +67,10 @@ const DEFAULT_API_SURFACE_OPTIONS: LlmUsageFilterOption[] = [
 
 function formatTokens(value: number): string {
     return tokenFormatter.format(value || 0);
+}
+
+function compactNumber(value: number): string {
+    return compactNumberFormatter.format(value || 0);
 }
 
 function labelOrEmpty(value?: string | null): string {
@@ -364,26 +367,6 @@ function RecentRequests({ events, hasActiveFilters }: { events: LlmUsageEventsPa
     );
 }
 
-function UsageEmptyNotice() {
-    return (
-        <Empty className={cn(surfaceClassName, "py-12 md:py-16")}>
-            <EmptyHeader>
-                <EmptyMedia variant="icon">
-                    <IconActivity />
-                </EmptyMedia>
-                <EmptyTitle>No usage yet</EmptyTitle>
-                <EmptyDescription>Run a workflow with an LLM step and usage will show up here.</EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-                <Button render={<Link href="/alerts-workspace/workflows/new" />}>
-                    <IconActivity className="size-4" />
-                    Create workflow
-                </Button>
-            </EmptyContent>
-        </Empty>
-    );
-}
-
 function FilterBarFallback() {
     return <div className={cn(surfaceClassName, "h-28 animate-pulse")} />;
 }
@@ -415,7 +398,6 @@ export function LlmUsageDashboard({
     filters,
     granularity
 }: LlmUsageDashboardProps) {
-    const showEmptyNotice = isLlmUsageEmpty(overview) && !hasActiveLlmUsageFilters(filters, granularity);
     const activeFilters = hasActiveLlmUsageFilters(filters, granularity);
 
     return (
@@ -431,9 +413,7 @@ export function LlmUsageDashboard({
                 />
             </Suspense>
 
-            {showEmptyNotice ? <UsageEmptyNotice /> : null}
-
-            <div className={cn("grid gap-5", showEmptyNotice ? "opacity-70" : undefined)}>
+            <div className="grid gap-5">
                 <div className="grid gap-3">
                     <h2 className="text-lg font-semibold">LLM usage</h2>
                     <UsageSummary overview={overview} />

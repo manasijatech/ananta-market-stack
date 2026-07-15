@@ -16,6 +16,15 @@ import {
 import type { AlertChannel, DesktopAudioDevice, DesktopAudioVoiceOption, EdgeAudioVoiceOption } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
+import {
     Dialog,
     DialogContent,
     DialogDescription,
@@ -366,25 +375,30 @@ export function ChannelSettings({
                     {error}
                 </div>
             ) : null}
-            <div className="border border-border p-4">
-                <div className="mb-3 text-sm font-bold tracking-tight">Shared test message</div>
-                <div className="grid max-w-md gap-2">
-                    <Input
-                        className={compactFieldClassName}
-                        onChange={(event) => setMessage(event.target.value)}
-                        value={message}
-                    />
-                    <Button
-                        className="h-9 w-fit px-4"
-                        disabled={isPending}
-                        onClick={sendInAppTest}
-                        type="button"
-                        variant="outline"
-                    >
-                        Test in-app alert
-                    </Button>
-                </div>
-            </div>
+            <CardFrame>
+                <CardFrameHeader>
+                    <CardFrameTitle>Shared test message</CardFrameTitle>
+                    <CardFrameDescription>Use one message to test each alert delivery path.</CardFrameDescription>
+                </CardFrameHeader>
+                <Card>
+                    <CardPanel className="grid max-w-md gap-2">
+                        <Input
+                            className={compactFieldClassName}
+                            onChange={(event) => setMessage(event.target.value)}
+                            value={message}
+                        />
+                        <Button
+                            className="h-9 w-fit px-4"
+                            disabled={isPending}
+                            onClick={sendInAppTest}
+                            type="button"
+                            variant="outline"
+                        >
+                            Test in-app alert
+                        </Button>
+                    </CardPanel>
+                </Card>
+            </CardFrame>
             <DesktopAudioCard
                 channel={desktopAudio}
                 devices={devices}
@@ -477,24 +491,26 @@ function DesktopAudioCard({
 }) {
     const activeDevices = devices.filter((device) => device.status === "active");
     return (
-        <div className="border border-border p-4">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <div className="flex items-center gap-3 text-lg font-bold leading-none tracking-tight">
+        <CardFrame>
+            <CardFrameHeader>
+                <CardFrameTitle className="flex items-center gap-3">
                         <MonitorSpeakerIcon className="size-5 text-primary" />
                         Desktop Audio
-                    </div>
-                    <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+                </CardFrameTitle>
+                <CardFrameDescription className="max-w-2xl leading-5">
                         Pair the tray app once, then Ananta sends spoken alerts to all active devices. Edge voice is
                         the default free hosted path, desktop voice stays available as a local fallback, and OpenRouter
                         remains optional when you want a different paid model.
-                    </p>
-                </div>
+                </CardFrameDescription>
+                <CardFrameAction>
                 <Button className="h-9 gap-2 px-4" disabled={isPending} onClick={onConnect} type="button">
                     <PlugZapIcon className="size-4" />
                     Connect app
                 </Button>
-            </div>
+                </CardFrameAction>
+            </CardFrameHeader>
+            <Card>
+                <CardPanel>
             {pairingStatus ? (
                 <div className="mb-4 border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
                     {pairingStatus}
@@ -759,7 +775,9 @@ function DesktopAudioCard({
                     </div>
                 )}
             </div>
-        </div>
+                </CardPanel>
+            </Card>
+        </CardFrame>
     );
 }
 
@@ -789,10 +807,9 @@ function ChannelCard({
     const brandIconClassName = title === "Telegram" ? "h-6 w-6" : "h-5 w-5";
 
     return (
-        <div className="border border-border p-4">
-            <div className="mb-4 grid gap-3">
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-3 text-lg font-bold leading-none tracking-tight">
+        <CardFrame>
+            <CardFrameHeader>
+                <CardFrameTitle className="flex items-center gap-3">
                         {brandIcon ? (
                             <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center">
                                 <img
@@ -804,10 +821,14 @@ function ChannelCard({
                             </span>
                         ) : null}
                         <span>{title}</span>
-                    </div>
+                </CardFrameTitle>
+                <CardFrameAction>
                     <SetupGuide guide={guide} />
-                </div>
-                <div className="flex flex-col gap-2 text-sm">
+                </CardFrameAction>
+            </CardFrameHeader>
+            <Card>
+                <CardPanel>
+                <div className="mb-4 flex flex-col gap-2 text-sm">
                     <Label className="flex items-center gap-2">
                         <Checkbox
                             checked={channel.is_enabled}
@@ -823,7 +844,6 @@ function ChannelCard({
                         Default
                     </Label>
                 </div>
-            </div>
             <div className={compactFieldGridClassName}>
                 <LabeledField label="Label" required={false}>
                     <Input
@@ -858,7 +878,9 @@ function ChannelCard({
                     Test
                 </Button>
             </div>
-        </div>
+                </CardPanel>
+            </Card>
+        </CardFrame>
     );
 }
 

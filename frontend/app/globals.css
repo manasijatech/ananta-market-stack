@@ -525,6 +525,36 @@
     .dark .app-page-background {
         --app-page-grid-line: color-mix(in oklab, var(--muted-foreground) 3%, transparent);
     }
+
+    .settings-neutral-surface {
+        background-color: color-mix(in oklab, var(--muted) 82%, var(--background));
+    }
+
+    .settings-neutral-surface button[data-slot="button"][class*="bg-primary"] {
+        background-color: var(--accent);
+        border-color: var(--border);
+        box-shadow: none;
+        color: var(--accent-foreground);
+    }
+
+    .settings-neutral-surface button[data-slot="button"][class*="bg-primary"]:hover {
+        background-color: color-mix(in oklab, var(--accent) 86%, var(--foreground));
+    }
+
+    .settings-neutral-surface [class*="bg-primary/"] {
+        background-color: color-mix(in oklab, var(--accent) 72%, transparent);
+    }
+
+    .settings-neutral-surface .text-primary,
+    .settings-neutral-surface [class*="text-primary"],
+    .settings-neutral-surface [class*="text-[var(--primary)]"] {
+        color: var(--muted-foreground);
+    }
+
+    .settings-neutral-surface .border-primary,
+    .settings-neutral-surface [class*="border-primary"] {
+        border-color: var(--border);
+    }
 }
 
 .watchlist-table-scroll [data-slot="scroll-area-scrollbar"] {
