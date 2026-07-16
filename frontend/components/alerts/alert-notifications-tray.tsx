@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, BellOff, Loader2 } from "lucide-react";
+import { Bell, BellOff, Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
     useAlertNotificationTray,
     useMarkAlertNotificationRead,
     useReadAllAlertNotifications
 } from "@/hooks/use-alert-notifications";
+import { usePendingAccessRequests } from "@/hooks/use-pending-access-requests";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,6 +18,8 @@ import {
     CardTitle
 } from "@/components/ui/card";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
+import { hasRbacPermission } from "@/lib/rbac";
+import type { RbacPrincipal } from "@/service/types/rbac";
 
 function llmOutput(payload: Record<string, unknown>) {
     const analysis = payload.llm_analysis;
@@ -51,9 +54,15 @@ function AlertTrayLoadingState() {
     );
 }
 
-/** Header dropdown for unread user alert notifications with SSE-backed updates. */
-export function AlertNotificationsTray() {
+/** Header dropdown for unread user alert notifications and admin access requests. */
+export function AlertNotificationsTray({ principal }: { principal?: RbacPrincipal | null }) {
     const { data, isPending: isLoadingTray, isError, refetch } = useAlertNotificationTray();
+    const canManageAccess = hasRbacPermission(principal, "workspace.manage_members");
+    const {
+        data: pendingAccessRequests = [],
+        isPending: isLoadingAccessRequests,
+        isError: isAccessRequestsError
+    } = usePendingAccessRequests(canManageAccess);
     const markRead = useMarkAlertNotificationRead();
     const markAllRead = useReadAllAlertNotifications();
     const [open, setOpen] = useState(false);
@@ -61,6 +70,8 @@ export function AlertNotificationsTray() {
 
     const items = data?.items ?? [];
     const unreadCount = data?.unreadCount ?? 0;
+    const pendingAccessCount = pendingAccessRequests.length;
+    const totalCount = unreadCount + pendingAccessCount;
     const isMutationPending = markRead.isPending || markAllRead.isPending;
 
     useEffect(() => {
@@ -87,7 +98,7 @@ export function AlertNotificationsTray() {
     return (
         <div className="relative" ref={trayRef}>
             <Button
-                aria-label={unreadCount > 0 ? `Alerts (${unreadCount} unread)` : "Alerts"}
+                aria-label={totalCount > 0 ? `Alerts (${totalCount} requiring attention)` : "Alerts"}
                 className="relative size-9 shrink-0 px-0 sm:h-9 sm:w-auto sm:px-3"
                 onClick={() => setOpen((current) => !current)}
                 type="button"
@@ -95,14 +106,14 @@ export function AlertNotificationsTray() {
             >
                 <Bell className="size-4 shrink-0" />
                 <span className="hidden sm:inline">Alerts</span>
-                {unreadCount > 0 ? (
+                {totalCount > 0 ? (
                     <Badge className="hidden sm:inline-flex" size="sm" variant="secondary">
-                        {unreadCount}
+                        {totalCount}
                     </Badge>
                 ) : null}
-                {unreadCount > 0 ? (
+                {totalCount > 0 ? (
                     <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground sm:hidden">
-                        {unreadCount > 9 ? "9+" : unreadCount}
+                        {totalCount > 9 ? "9+" : totalCount}
                     </span>
                 ) : null}
             </Button>
@@ -112,7 +123,7 @@ export function AlertNotificationsTray() {
                         <div className="min-w-0">
                             <CardTitle className="text-sm font-semibold leading-none">Alerts</CardTitle>
                             <CardDescription className="text-xs">
-                                {unreadCount === 0 ? "No unread alerts" : `${unreadCount} unread`}
+                                {totalCount === 0 ? "No unread alerts" : `${totalCount} needs review`}
                             </CardDescription>
                         </div>
                         <Button
@@ -127,6 +138,40 @@ export function AlertNotificationsTray() {
                         </Button>
                     </div>
                     <CardPanel className="max-h-80 divide-y divide-border overflow-y-auto p-0">
+                        {pendingAccessRequests.map((member) => (
+                            <Link
+                                className="block px-3.5 py-2.5 hover:bg-muted/40"
+                                href="/settings/access"
+                                key={member.user_id}
+                                onClick={() => setOpen(false)}
+                            >
+                                <div className="flex items-start gap-2">
+                                    <ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning-foreground" aria-hidden />
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium leading-snug text-foreground">
+                                            New access request
+                                        </p>
+                                        <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                            {(member.display_name || member.auth_name || member.email || "A workspace user")} is waiting for approval.
+                                        </p>
+                                    </div>
+                                    <Badge className="shrink-0" size="sm" variant="warning">
+                                        Review
+                                    </Badge>
+                                </div>
+                            </Link>
+                        ))}
+                        {canManageAccess && isLoadingAccessRequests && !pendingAccessRequests.length ? (
+                            <div className="flex items-center justify-center gap-2 py-3 text-muted-foreground">
+                                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                                <p className="text-xs">Checking access requests...</p>
+                            </div>
+                        ) : null}
+                        {canManageAccess && isAccessRequestsError ? (
+                            <div className="px-3.5 py-2.5 text-xs text-muted-foreground">
+                                Could not load access requests.
+                            </div>
+                        ) : null}
                         {isLoadingTray && !items.length ? <AlertTrayLoadingState /> : null}
                         {isError ? (
                             <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
@@ -164,7 +209,9 @@ export function AlertNotificationsTray() {
                                 </div>
                             </div>
                         ))}
-                        {!items.length && !isLoadingTray && !isError ? <AlertTrayEmptyState /> : null}
+                        {!items.length && !pendingAccessRequests.length && !isLoadingTray && !isError ? (
+                            <AlertTrayEmptyState />
+                        ) : null}
                     </CardPanel>
                 </Card>
             ) : null}

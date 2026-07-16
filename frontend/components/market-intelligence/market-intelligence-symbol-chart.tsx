@@ -638,7 +638,7 @@ export function MarketIntelligenceSymbolChart({
         const intradayRange = activeRange.id === "1D" || activeRange.id === "5D";
         if (!intradayRange) return;
 
-        const url = new URL(getPublicApiBaseUrl());
+        const url = new URL(getPublicApiBaseUrl(), window.location.origin);
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         url.pathname = `${url.pathname.replace(/\/+$/, "")}/broker-accounts/${account.account_id}/data/stream/ws`;
         url.searchParams.set("user_id", user.id);

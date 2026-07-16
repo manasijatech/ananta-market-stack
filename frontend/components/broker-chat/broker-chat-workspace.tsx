@@ -1287,11 +1287,6 @@ export function BrokerChatWorkspace({
                                     </div>
                                 }
                                 status={brokerChatStatus}
-                                suggestions={
-                                    runsForActiveSession.length
-                                        ? []
-                                        : starterPrompts.map((prompt) => ({ id: prompt, label: prompt, value: prompt }))
-                                }
                                 value={message}
                             />
                             {useMcp && availableMcpServers.length > 1 ? (
