@@ -414,7 +414,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                         ))}
                     </div>
 
-                    {canManageSessions && setup.requiresCallbackUrl && !sessionStatus.session_active ? (
+                    {canManageSessions && broker !== "dhan" && setup.requiresCallbackUrl && !sessionStatus.session_active ? (
                         <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-4">
                             <div>
                                 <h3 className="text-sm font-semibold">Broker callback URL</h3>

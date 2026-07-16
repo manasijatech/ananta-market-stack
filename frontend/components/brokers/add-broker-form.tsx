@@ -272,7 +272,7 @@ function BrokerGuidePanel({ broker }: { broker: BrokerCode }) {
 
 function BrokerCallbackUrlHint({ broker, url }: { broker: BrokerCode; url: string }) {
     const setup = brokerSessionSetup[broker];
-    if (!setup.requiresCallbackUrl) {
+    if (broker === "dhan" || !setup.requiresCallbackUrl) {
         return null;
     }
 
