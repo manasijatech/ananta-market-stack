@@ -5,15 +5,18 @@ import { useRouter } from "next/navigation";
 import { IconLock } from "@tabler/icons-react";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
     Select,
-    SelectContent,
     SelectGroup,
+    SelectGroupLabel,
     SelectItem,
-    SelectLabel,
-    SelectTrigger
+    SelectPopup,
+    SelectTrigger,
+    SelectValue
 } from "@/components/ui/select";
 import { upsertBrokerAccountGrant } from "@/service/actions/rbac";
 import type { BrokerAccountGrant, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
@@ -52,13 +55,25 @@ function permissionLabel(permission: BrokerPermission): string {
     return "Delete account";
 }
 
+function permissionDescription(permission: BrokerPermission): string {
+    if (permission === "broker.view") return "See account readiness and summary details.";
+    if (permission === "broker.use_data") return "Open portfolio, positions, quotes, and market data tools.";
+    if (permission === "broker.manage_sessions") return "Refresh login sessions and submit broker tokens.";
+    if (permission === "broker.manage_credentials") return "Change stored broker credentials.";
+    return "Remove this broker account from the workspace.";
+}
+
+function permissionTone(permission: BrokerPermission): "secondary" | "warning" | "error" {
+    if (permission === "broker.delete") return "error";
+    if (permission === "broker.manage_credentials") return "warning";
+    return "secondary";
+}
+
 function permissionSummary(permissions: string[]): string {
     if (!permissions.length) {
         return "No access saved yet";
     }
-    return permissions
-        .map((permission) => permissionLabel(permission as BrokerPermission))
-        .join(", ");
+    return permissions.map((permission) => permissionLabel(permission as BrokerPermission)).join(", ");
 }
 
 function subjectSelectLabel(option?: SubjectOption): string {
@@ -105,12 +120,16 @@ function buildSubjectOptions(members: WorkspaceMember[], roles: RoleDefinition[]
 export function AccessGrantEditor({
     accountId,
     grants,
+    onCancel,
+    onSaved,
     members,
     roles,
     initialSubjectKey
 }: {
     accountId: string;
     grants: BrokerAccountGrant[];
+    onCancel?: () => void;
+    onSaved?: () => void;
     members: WorkspaceMember[];
     roles: RoleDefinition[];
     initialSubjectKey?: string;
@@ -183,6 +202,7 @@ export function AccessGrantEditor({
                 });
                 setMessage("Access grant saved.");
                 router.refresh();
+                onSaved?.();
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }
@@ -196,18 +216,16 @@ export function AccessGrantEditor({
 
     return (
         <div className="grid gap-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
-                <div className="grid gap-2">
-                    <label className="text-sm font-semibold" htmlFor={`subject-${accountId}`}>
-                        Grant access to
-                    </label>
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+                <Field>
+                    <FieldLabel htmlFor={`subject-${accountId}`}>Grant access to</FieldLabel>
                     <Select onValueChange={(value) => setSelectedKey(value ?? "")} value={selectedSubject?.key ?? ""}>
                         <SelectTrigger id={`subject-${accountId}`}>
-                            <span className="min-w-0 truncate">
-                                {subjectSelectLabel(selectedSubject) || "Select person or role"}
-                            </span>
+                            <SelectValue placeholder="Select person or role">
+                                {subjectSelectLabel(selectedSubject)}
+                            </SelectValue>
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectPopup>
                             {(["People", "Role defaults"] as const).map((group) => {
                                 const options = subjectOptions.filter((option) => option.group === group);
                                 if (!options.length) {
@@ -215,7 +233,7 @@ export function AccessGrantEditor({
                                 }
                                 return (
                                     <SelectGroup key={group}>
-                                        <SelectLabel>{group}</SelectLabel>
+                                        <SelectGroupLabel>{group}</SelectGroupLabel>
                                         {options.map((option) => (
                                             <SelectItem key={option.key} value={option.key}>
                                                 <span className="flex min-w-0 flex-col">
@@ -231,14 +249,14 @@ export function AccessGrantEditor({
                                     </SelectGroup>
                                 );
                             })}
-                        </SelectContent>
+                        </SelectPopup>
                     </Select>
                     {selectedSubject?.subtitle ? (
-                        <div className="text-sm text-muted-foreground">{selectedSubject.subtitle}</div>
+                        <FieldDescription>{selectedSubject.subtitle}</FieldDescription>
                     ) : null}
-                </div>
-                <div className="grid gap-2">
-                    <div className="text-sm font-semibold">Saved access for this selection</div>
+                </Field>
+                <Field>
+                    <FieldLabel>Saved access</FieldLabel>
                     <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
                         {savedPermissions.length ? (
                             permissionSummary(savedPermissions)
@@ -249,7 +267,7 @@ export function AccessGrantEditor({
                             </span>
                         )}
                     </div>
-                </div>
+                </Field>
             </div>
 
             {selectedSubject?.isAdmin ? (
@@ -259,23 +277,39 @@ export function AccessGrantEditor({
                     </AlertDescription>
                 </Alert>
             ) : (
-                <div className="text-sm text-muted-foreground">
-                    Start with `View account` and `Use portfolio and market data`, then add session or credential access only when needed.
+                <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
+                    Start with view and market-data access. Add session or credential access only when needed.
                 </div>
             )}
 
-            <div className="grid gap-3">
+            <div className="grid gap-2">
                 {brokerPermissions.map((permission) => {
                     const checked = effectivePermissions.includes(permission);
+                    const checkboxId = `${accountId}-${permission}`;
                     return (
-                        <label className="flex items-center gap-3" key={permission}>
+                        <div
+                            className="grid gap-3 rounded-lg border border-border bg-background p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+                            key={permission}
+                        >
                             <Checkbox
+                                id={checkboxId}
                                 checked={checked}
+                                className="mt-0.5"
                                 disabled={isPending || selectedSubject?.isAdmin}
                                 onCheckedChange={(value) => togglePermission(permission, value === true)}
                             />
-                            <span className="text-sm font-semibold">{permissionLabel(permission)}</span>
-                        </label>
+                            <div className="grid min-w-0 gap-1">
+                                <label className="text-sm font-semibold" htmlFor={checkboxId}>
+                                    {permissionLabel(permission)}
+                                </label>
+                                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                                    {permissionDescription(permission)}
+                                </p>
+                            </div>
+                            <Badge className="self-start" size="sm" variant={permissionTone(permission)}>
+                                {checked ? "Enabled" : "Off"}
+                            </Badge>
+                        </div>
                     );
                 })}
             </div>
@@ -284,6 +318,11 @@ export function AccessGrantEditor({
                 <Button disabled={isPending || !selectedSubject} onClick={saveGrant} type="button">
                     {isPending ? "Saving..." : "Save access grant"}
                 </Button>
+                {onCancel ? (
+                    <Button disabled={isPending} onClick={onCancel} type="button" variant="ghost">
+                        Cancel
+                    </Button>
+                ) : null}
                 {message ? <div className="text-sm text-muted-foreground">{message}</div> : null}
             </div>
         </div>

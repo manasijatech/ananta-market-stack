@@ -19,11 +19,26 @@ def _header_user_id(x_user_id: str | None = Header(None, alias="X-User-Id")) -> 
 def get_current_user(
     db: Session = Depends(get_db),
     user_id: str = Depends(_header_user_id),
+    x_user_email: str | None = Header(None, alias="X-User-Email"),
+    x_user_name: str | None = Header(None, alias="X-User-Name"),
 ) -> User:
+    display_name = (x_user_name or "").strip() or (x_user_email or "").strip() or None
+    email = (x_user_email or "").strip() or None
     user = db.get(User, user_id)
     if user:
+        changed = False
+        if display_name and not user.display_name:
+            user.display_name = display_name
+            changed = True
+        if email and user.email != email:
+            user.email = email
+            changed = True
+        if changed:
+            db.add(user)
+            db.commit()
+            db.refresh(user)
         return user
-    user = User(id=user_id, display_name=None)
+    user = User(id=user_id, display_name=display_name, email=email)
     db.add(user)
     try:
         db.commit()

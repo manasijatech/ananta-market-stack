@@ -20,6 +20,13 @@ export default tseslint.config(
         }
     },
     {
+        files: ["components/agent-elements/**/*.{ts,tsx}"],
+        rules: {
+            "@typescript-eslint/no-explicit-any": "off",
+            "no-case-declarations": "off"
+        }
+    },
+    {
         files: ["scripts/**/*.cjs"],
         languageOptions: {
             sourceType: "commonjs",

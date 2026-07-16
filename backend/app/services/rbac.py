@@ -375,7 +375,7 @@ def list_members(db: Session, principal: Principal) -> list[WorkspaceMember]:
     auth_users = _auth_user_rows(db, [member.user_id for member in members])
     if auth_users is None:
         return members
-    return [member for member in members if member.user_id in auth_users]
+    return [member for member in members if member.user_id in auth_users or db.get(User, member.user_id) is not None]
 
 
 def audit(
@@ -557,6 +557,7 @@ def _ensure_owned_account_grants(db: Session, workspace_id: str, user_id: str) -
 
 
 def reconcile_workspace_members(db: Session, workspace_id: str) -> None:
+    _sync_auth_users_to_workspace(db, workspace_id)
     members = list(
         db.scalars(select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace_id)).all()
     )
@@ -569,17 +570,54 @@ def reconcile_workspace_members(db: Session, workspace_id: str) -> None:
     for member in members:
         auth_user = auth_users.get(member.user_id)
         if auth_user is None:
-            _purge_member_access(db, workspace_id, member)
-            changed = True
+            if db.get(User, member.user_id) is None:
+                _purge_member_access(db, workspace_id, member)
+                changed = True
             continue
         user = db.get(User, member.user_id)
         if user is None:
             continue
         auth_name = auth_user.get("name")
+        auth_email = auth_user.get("email")
         if auth_name and not user.display_name:
             user.display_name = auth_name
             db.add(user)
             changed = True
+        if auth_email and user.email != auth_email:
+            user.email = auth_email
+            db.add(user)
+            changed = True
+    if changed:
+        db.commit()
+
+
+def _sync_auth_users_to_workspace(db: Session, workspace_id: str) -> None:
+    auth_users = _all_auth_user_rows(db)
+    if auth_users is None:
+        return
+    existing_member_user_ids = set(
+        db.scalars(select(WorkspaceMember.user_id)).all()
+    )
+    changed = False
+    for user_id, auth_user in auth_users.items():
+        if user_id in existing_member_user_ids:
+            continue
+        user = db.get(User, user_id)
+        if user is not None:
+            continue
+        user = User(id=user_id, display_name=auth_user.get("name"), email=auth_user.get("email"))
+        db.add(user)
+        db.add(
+            WorkspaceMember(
+                id=str(uuid.uuid4()),
+                workspace_id=workspace_id,
+                user_id=user_id,
+                role="pending",
+                status="pending",
+            )
+        )
+        existing_member_user_ids.add(user_id)
+        changed = True
     if changed:
         db.commit()
 
@@ -960,6 +998,20 @@ def _auth_user_rows(db: Session, user_ids: list[str]) -> dict[str, dict[str, str
             text(f'SELECT id, name, email FROM "user" WHERE id IN ({placeholders})'),
             params,
         ).mappings().all()
+    except OperationalError:
+        return None
+    return {
+        str(row["id"]): {
+            "name": str(row.get("name")) if row.get("name") else None,
+            "email": str(row.get("email")) if row.get("email") else None,
+        }
+        for row in rows
+    }
+
+
+def _all_auth_user_rows(db: Session) -> dict[str, dict[str, str | None]] | None:
+    try:
+        rows = db.execute(text('SELECT id, name, email FROM "user"')).mappings().all()
     except OperationalError:
         return None
     return {

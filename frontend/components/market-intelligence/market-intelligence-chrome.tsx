@@ -2,15 +2,19 @@
 
 import {
 	Bell,
+	ArrowRight,
 	IndianRupee,
 	Info,
+	ListPlus,
 	Megaphone,
 	MessageSquare,
 	Newspaper,
+	Radio,
 	Search,
 	X,
 	type LucideIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warning-modal";
@@ -52,6 +56,13 @@ import {
 	InputGroupAddon,
 	InputGroupInput,
 } from "@/components/ui/input-group";
+import {
+	Empty,
+	EmptyContent,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyTitle,
+} from "@/components/ui/empty";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getAlphaAlerts } from "@/service/actions/alpha/alerts";
@@ -306,6 +317,68 @@ async function loadFeeds(symbols: string[]): Promise<MarketIntelligenceFeeds> {
 	};
 }
 
+function EmptyWatchlistState({ onSearchSymbol }: { onSearchSymbol: () => void }) {
+	return (
+		<Empty className="mb-5 grid min-h-[15rem] w-full grid-cols-1 items-center gap-6 rounded-lg border border-dashed border-border bg-card/40 p-6 text-left [text-wrap:initial] min-[860px]:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
+			<div className="min-w-0">
+				<EmptyHeader className="max-w-2xl items-start text-left">
+					<div className="mb-3 flex size-9 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
+						<ListPlus aria-hidden="true" />
+					</div>
+					<EmptyTitle className="text-lg">
+						Build a watchlist to unlock market intelligence
+					</EmptyTitle>
+					<EmptyDescription className="max-w-xl leading-6">
+						This page needs a symbol universe before it can stream relevant
+						news, announcements, earnings, concalls, and alerts. Create or
+						import a watchlist once, then monitor only the companies you care
+						about.
+					</EmptyDescription>
+				</EmptyHeader>
+				<EmptyContent className="mt-5 max-w-none items-start gap-3">
+					<div className="flex flex-wrap items-center gap-2">
+						<Button asChild>
+							<Link href="/watchlists">
+								<ListPlus aria-hidden="true" />
+								Open Watchlists
+								<ArrowRight aria-hidden="true" />
+							</Link>
+						</Button>
+						<Button onClick={onSearchSymbol} type="button" variant="outline">
+							<Search aria-hidden="true" />
+							Search one symbol
+						</Button>
+					</div>
+					<span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+						<Radio aria-hidden="true" className="size-3.5" />
+						Live feed starts after at least one watchlist has symbols.
+					</span>
+				</EmptyContent>
+			</div>
+			<div className="grid min-w-0 gap-2 text-sm">
+				<div className="rounded-lg border border-border bg-background/45 p-3">
+					<p className="font-medium text-foreground">1. Create the universe</p>
+					<p className="mt-1 leading-5 text-muted-foreground">
+						Add symbols manually or import a preset index list.
+					</p>
+				</div>
+				<div className="rounded-lg border border-border bg-background/45 p-3">
+					<p className="font-medium text-foreground">2. Stream relevant events</p>
+					<p className="mt-1 leading-5 text-muted-foreground">
+						Get Drishti updates filtered to your tracked companies.
+					</p>
+				</div>
+				<div className="rounded-lg border border-border bg-background/45 p-3">
+					<p className="font-medium text-foreground">3. Switch scopes later</p>
+					<p className="mt-1 leading-5 text-muted-foreground">
+						Compare all watchlists or narrow the feed to one list.
+					</p>
+				</div>
+			</div>
+		</Empty>
+	);
+}
+
 export function MarketIntelligenceChrome({
 	allSymbolsCount,
 	children,
@@ -363,6 +436,7 @@ export function MarketIntelligenceChrome({
 		width: number;
 	} | null>(null);
 	const searchAnchorRef = useRef<HTMLDivElement | null>(null);
+	const searchInputRef = useRef<HTMLInputElement | null>(null);
 	const [chartState, setChartState] = useState<BrokerChartState>({
 		error: "",
 		isLoading: false,
@@ -735,6 +809,12 @@ export function MarketIntelligenceChrome({
 		commitSymbol(symbol, manualInstrument(symbol));
 	}
 
+	function focusSymbolSearch() {
+		searchInputRef.current?.focus();
+		searchInputRef.current?.select();
+		setShowSuggestions(Boolean(searchText.trim()));
+	}
+
 	return (
 		<>
 			<AlphaCreditWarningTrigger message={creditWarningMessage} />
@@ -773,7 +853,7 @@ export function MarketIntelligenceChrome({
 								<DialogHeader>
 									<DialogTitle>Understanding Market Intelligence</DialogTitle>
 									<DialogDescription>
-										How each Alpha product feed supports research and
+										How each Drishti product feed supports research and
 										monitoring.
 									</DialogDescription>
 								</DialogHeader>
@@ -849,6 +929,7 @@ export function MarketIntelligenceChrome({
 												if (searchText.trim()) setShowSuggestions(true);
 											}}
 											placeholder="Search a symbol chart"
+											ref={searchInputRef}
 											role="combobox"
 											value={searchText}
 										/>
@@ -975,7 +1056,7 @@ export function MarketIntelligenceChrome({
 			{symbolError ? <StateMessage message={symbolError} tone="error" /> : null}
 			{filterError ? <StateMessage message={filterError} tone="error" /> : null}
 			{!error && !symbolModeActive && !symbols.length ? (
-				<StateMessage message="Add symbols to a watchlist to view Alpha market intelligence." />
+				<EmptyWatchlistState onSearchSymbol={focusSymbolSearch} />
 			) : null}
 			{!error && visibleSymbols.length ? (
 				<CardFrame>

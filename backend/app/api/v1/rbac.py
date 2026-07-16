@@ -45,10 +45,11 @@ def _auth_user_row(db: Session, user_id: str) -> dict[str, str | None]:
 def _member_label(db: Session, user_id: str) -> tuple[str, str | None]:
     user = db.get(User, user_id)
     auth_user = _auth_user_row(db, user_id)
-    if not auth_user["email"] and not auth_user["name"] and (user is None or not user.display_name):
+    email = auth_user["email"] or (user.email if user else None)
+    if not email and not auth_user["name"] and (user is None or not user.display_name):
         return "Removed account", None
-    label = (user.display_name if user and user.display_name else None) or auth_user["name"] or auth_user["email"] or "Unnamed member"
-    subtitle = auth_user["email"] or ("Ask this user to add their name during signup." if label == "Unnamed member" else None)
+    label = (user.display_name if user and user.display_name else None) or auth_user["name"] or email or "Unnamed member"
+    subtitle = email or ("Ask this user to add their name during signup." if label == "Unnamed member" else None)
     return label, subtitle
 
 
@@ -70,7 +71,7 @@ def _member_out(db: Session, member) -> WorkspaceMemberOut:
         user_id=member.user_id,
         display_name=user.display_name if user else None,
         auth_name=auth_user["name"],
-        email=auth_user["email"],
+        email=auth_user["email"] or (user.email if user else None),
         role=member.role,
         status=member.status,
         created_at=member.created_at,

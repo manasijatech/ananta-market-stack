@@ -56,7 +56,7 @@ import {
     DialogPanel,
     DialogTitle
 } from "@/components/ui/dialog";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1187,8 +1187,7 @@ export function WatchlistsManager({
                 setWatchlists(next);
                 setSelectedId(next[0]?.id ?? "");
                 setConfirmDelete(false);
-                setNotice("Watchlist deleted.");
-                toast.success("Watchlist deleted.");
+                toast.success("Watchlist deleted.", { id: "watchlist-deleted" });
             } catch (caught) {
                 fail(caught, "Could not delete watchlist.");
             }
@@ -1676,11 +1675,11 @@ export function WatchlistsManager({
             <div className="flex min-h-0 flex-1 flex-col gap-4 min-[1080px]:grid min-[1080px]:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] min-[1080px]:overflow-hidden">
                 <aside className="min-h-0 min-w-0 min-[1080px]:overflow-hidden">
                     <CardFrame className="min-h-0 min-[1080px]:h-full">
-                        <CardFrameHeader className="border-b px-4 py-3">
-                            <CardFrameTitle className={cn(typography.small, "self-start")}>
+                        <CardFrameHeader className="gap-y-1.5 border-b px-4 py-3.5">
+                            <CardFrameTitle className={cn(typography.small, "self-start leading-none")}>
                                 Configuration
                             </CardFrameTitle>
-                            <CardFrameDescription className="self-start text-xs">
+                            <CardFrameDescription className="max-w-[15rem] self-start text-xs leading-5">
                                 Choose a saved list or import an index preset.
                             </CardFrameDescription>
                             <CardFrameAction>
@@ -1799,28 +1798,9 @@ export function WatchlistsManager({
                                         );
                                     })}
                                     {!watchlists.length ? (
-                                        <Card className="border-dashed shadow-none">
-                                            <Empty className="py-8">
-                                                <EmptyHeader>
-                                                    <EmptyMedia variant="icon">
-                                                        <CandlestickChart />
-                                                    </EmptyMedia>
-                                                    <EmptyTitle className="text-base">No watchlists yet</EmptyTitle>
-                                                    <EmptyDescription>
-                                                        Create a watchlist to track symbols and watch live prices.
-                                                    </EmptyDescription>
-                                                </EmptyHeader>
-                                                <Button
-                                                    className="mt-2"
-                                                    onClick={requestCreateWatchlist}
-                                                    type="button"
-                                                    variant="outline"
-                                                >
-                                                    <Plus className="size-4" />
-                                                    New watchlist
-                                                </Button>
-                                            </Empty>
-                                        </Card>
+                                        <div className="mt-3 rounded-lg border border-dashed bg-card/40 px-3 py-8 text-center text-sm text-muted-foreground">
+                                            Saved watchlists will appear here.
+                                        </div>
                                     ) : null}
                                 </nav>
                             </TabsContent>
@@ -1849,7 +1829,7 @@ export function WatchlistsManager({
                                         {presetResults.map((item) => (
                                             <Card
                                                 className={cn(
-                                                    "shadow-none transition-colors",
+                                                    "first:mt-3 shadow-none transition-colors",
                                                     item.is_added
                                                         ? "border-primary/25 bg-primary/5"
                                                         : "hover:border-primary/25"
@@ -1936,7 +1916,7 @@ export function WatchlistsManager({
                                             </div>
                                         ) : null}
                                         {!presetResults.length ? (
-                                            <Card className="border-dashed shadow-none">
+                                            <Card className="mt-3 border-dashed shadow-none">
                                                 <Empty className="py-8">
                                                     <EmptyHeader>
                                                         <EmptyTitle className="text-base">
@@ -2516,8 +2496,8 @@ export function WatchlistsManager({
                             </div>
                         </div>
                     ) : (
-                        <Card className="border-dashed shadow-none">
-                            <Empty className="py-16">
+                        <Card className="min-h-[22rem] border-dashed bg-card/45 shadow-none">
+                            <Empty className="px-6 py-14 sm:py-16">
                                 <EmptyHeader>
                                     <EmptyMedia variant="icon">
                                         <Plus />
@@ -2528,15 +2508,12 @@ export function WatchlistsManager({
                                         cache to add symbols. You can also add an index preset from the left panel.
                                     </EmptyDescription>
                                 </EmptyHeader>
-                                <Button
-                                    className="mt-2"
-                                    onClick={requestCreateWatchlist}
-                                    type="button"
-                                    variant="outline"
-                                >
-                                    <Plus className="size-4" />
-                                    New watchlist
-                                </Button>
+                                <EmptyContent>
+                                    <Button onClick={requestCreateWatchlist} type="button" variant="outline">
+                                        <Plus className="size-4" />
+                                        New watchlist
+                                    </Button>
+                                </EmptyContent>
                             </Empty>
                         </Card>
                     )}

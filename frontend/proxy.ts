@@ -52,7 +52,7 @@ export function proxy(request: NextRequest): NextResponse {
     const hasSession = hasSessionCookie(request);
 
     if (pathname === "/") {
-        return redirectTo(request, hasSession ? "/dashboard" : "/auth/sign-in");
+        return redirectTo(request, hasSession ? "/broker-connections" : "/auth/sign-in");
     }
 
     if (!hasSession && isProtectedRoute(pathname)) {

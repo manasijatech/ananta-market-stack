@@ -35,7 +35,7 @@ async function fetchBackend(path: string, init: RequestInit): Promise<Response> 
 /**
  * Builds headers for authenticated FastAPI requests.
  *
- * Forwards `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` when a session exists.
+ * Forwards user identity and session headers when a session exists.
  */
 export async function getAuthenticatedBackendHeaders(): Promise<Headers> {
     const session = await auth.api.getSession({
@@ -48,6 +48,9 @@ export async function getAuthenticatedBackendHeaders(): Promise<Headers> {
     if (session?.user) {
         requestHeaders.set("X-User-Id", session.user.id);
         requestHeaders.set("X-User-Email", session.user.email);
+        if (session.user.name) {
+            requestHeaders.set("X-User-Name", session.user.name);
+        }
     }
 
     if (session?.session?.token) {

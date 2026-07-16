@@ -1,11 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-    useBrokerNotifications,
-    useMarkBrokerNotificationRead
-} from "@/hooks/use-broker-notifications";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useBrokerNotifications, useMarkBrokerNotificationRead } from "@/hooks/use-broker-notifications";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 /** Dismissible banner for unread broker connection notifications. */
@@ -26,25 +23,31 @@ export function NotificationsBanner() {
     }
 
     return (
-        <section className="grid gap-3">
+        <section className="grid gap-2.5">
             {sorted.map((item) => (
-                <Alert key={item.id} variant={item.kind.includes("session") ? "warning" : "default"}>
-                    <div className="flex items-start justify-between gap-4">
-                        <div>
-                            <p className="text-sm font-extrabold uppercase">{item.level}</p>
-                            <AlertTitle className="mt-1">{item.title}</AlertTitle>
-                            <AlertDescription className="mt-1">{item.message}</AlertDescription>
-                        </div>
+                <Alert
+                    className="rounded-lg px-3 py-2.5"
+                    key={item.id}
+                    variant={item.kind.includes("session") ? "warning" : "default"}
+                >
+                    <AlertTitle className="flex flex-col gap-0.5">
+                        <span className="text-[11px] font-semibold uppercase leading-none text-foreground">
+                            {item.level}
+                        </span>
+                        <span>{item.title}</span>
+                    </AlertTitle>
+                    <AlertDescription className="mt-1 text-[13px] leading-relaxed">{item.message}</AlertDescription>
+                    <AlertAction className="max-sm:col-start-1">
                         <Button
                             disabled={markRead.isPending}
                             onClick={() => markRead.mutate(item.id)}
-                            size="sm"
+                            size="xs"
                             type="button"
                             variant="outline"
                         >
                             Dismiss
                         </Button>
-                    </div>
+                    </AlertAction>
                 </Alert>
             ))}
         </section>

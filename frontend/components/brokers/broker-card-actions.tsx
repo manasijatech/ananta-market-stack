@@ -69,18 +69,31 @@ export function BrokerCardActions({ account }: { account: BrokerAccount }) {
     }
 
     return (
-        <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm" type="button" variant="outline">
+        <div className="mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
+            <Button asChild className="min-w-20 font-semibold" size="sm" type="button" variant="outline">
                 <Link href={`/broker-connections/${account.id}`}>Open</Link>
             </Button>
             {canManageSessions && !verified ? (
-                <Button disabled={isPending} onClick={verify} size="sm" type="button" variant="outline">
+                <Button
+                    className="min-w-24 font-semibold"
+                    disabled={isPending}
+                    onClick={verify}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                >
                     <ShieldCheck aria-hidden="true" className="size-4" />
                     Verify
                 </Button>
             ) : null}
             {canManageSessions && !sessionReady ? (
-                <Button disabled={isPending} onClick={openLogin} size="sm" type="button">
+                <Button
+                    className="min-w-24 font-semibold"
+                    disabled={isPending}
+                    onClick={openLogin}
+                    size="sm"
+                    type="button"
+                >
                     <ExternalLink aria-hidden="true" className="size-4" />
                     Login
                 </Button>

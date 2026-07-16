@@ -9,7 +9,7 @@ export const marketIntelligenceSections = [
     { id: "announcements", label: "Announcements", description: "Exchange announcements and corporate disclosures." },
     { id: "earnings", label: "Earnings", description: "Earnings-related announcements and management guidance." },
     { id: "concalls", label: "Concalls", description: "Conference call summaries, transcripts, and analysis." },
-    { id: "alerts", label: "Alerts", description: "Signal-style alerts produced by the Alpha API." }
+    { id: "alerts", label: "Alerts", description: "Signal-style alerts produced by the Drishti API." }
 ] as const;
 
 export const marketIntelligenceProducts = ["news", "announcements", "earnings", "concalls", "alerts"] as const;

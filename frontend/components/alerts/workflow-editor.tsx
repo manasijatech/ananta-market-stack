@@ -1121,9 +1121,9 @@ function buildContextCreditReason(prompt: string) {
         return `Reason: this prompt includes API-backed context placeholders (${apiPlaceholders.join(", ")}), so previewing has to fetch that context.`;
     }
     if (placeholders.length) {
-        return `Reason: this prompt only shows local/runtime placeholders (${placeholders.map((placeholder) => String(placeholder.raw)).join(", ")}), so it should not spend Alpha API credits unless the saved workflow prompt is different.`;
+        return `Reason: this prompt only shows local/runtime placeholders (${placeholders.map((placeholder) => String(placeholder.raw)).join(", ")}), so it should not spend Drishti API credits unless the saved workflow prompt is different.`;
     }
-    return "Reason: this prompt does not include context placeholders, so it should not spend Alpha API credits unless the saved workflow prompt is different.";
+    return "Reason: this prompt does not include context placeholders, so it should not spend Drishti API credits unless the saved workflow prompt is different.";
 }
 
 function compileLocalDslToAst(text: string, baseAst: Record<string, unknown>): Record<string, unknown> | null {
@@ -3798,7 +3798,7 @@ export function WorkflowEditor({
                                         options={[
                                             {
                                                 value: "current_alpha_subscription",
-                                                label: "Current configured Alpha subscription"
+                                                label: "Current configured Drishti subscription"
                                             },
                                             { value: "watchlists", label: "Specific watchlists" },
                                             { value: "preset_lists", label: "Preset lists" },
@@ -4821,7 +4821,7 @@ export function WorkflowEditor({
                             : "No market cap check runs in the backend when all market caps are allowed."}
                     </HelpText>
                     <HelpText>
-                        Custom mode uses cached Alpha symbol metadata first and falls back to the developer API only
+                        Custom mode uses cached Drishti symbol metadata first and falls back to the developer API only
                         when market cap is missing locally.
                     </HelpText>
                 </div>

@@ -151,9 +151,9 @@ export function HeatmapFilters({
     }
 
     return (
-        <section className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
-            <div className="grid min-w-[15rem] flex-[0_1_auto] gap-1">
-                <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <section className="grid w-full min-w-0 gap-3 min-[760px]:grid-cols-[minmax(15rem,auto)_minmax(16rem,1fr)] min-[1040px]:grid-cols-[minmax(16rem,auto)_minmax(22rem,32rem)_minmax(0,1fr)]">
+            <div className="grid min-w-0 gap-1">
+                <span className="text-sm font-medium text-muted-foreground">
                     Heatmap source
                 </span>
                 <ToggleGroup
@@ -171,7 +171,7 @@ export function HeatmapFilters({
                     {SOURCE_OPTIONS.map((option) => (
                         <ToggleGroupItem
                             aria-label={`Show ${option.label.toLowerCase()} heatmap`}
-                            className="min-w-20 px-3 text-xs font-semibold"
+                            className="min-w-20 px-3 text-sm font-medium"
                             key={option.value}
                             value={option.value}
                         >
@@ -182,13 +182,13 @@ export function HeatmapFilters({
             </div>
 
             {currentScope === "watchlist" ? (
-                <div className="grid min-w-[12rem] flex-[1_1_18rem] gap-1">
-                    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <div className="grid min-w-0 gap-1">
+                    <span className="text-sm font-medium text-muted-foreground">
                         Watchlist
                     </span>
                     <SimpleSelect
                         aria-label="Select watchlist"
-                        className="h-8 border-border bg-background px-2 text-xs font-semibold"
+                        className="h-8 border-border bg-background px-2 text-sm font-medium"
                         disabled={!watchlists.length}
                         onValueChange={(watchlistId) => {
                             replaceSearch((params) => {
@@ -216,13 +216,13 @@ export function HeatmapFilters({
             ) : null}
 
             {currentScope === "portfolio_holdings" ? (
-                <div className="grid min-w-[12rem] flex-[1_1_18rem] gap-1">
-                    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <div className="grid min-w-0 gap-1">
+                    <span className="text-sm font-medium text-muted-foreground">
                         Broker account
                     </span>
                     <SimpleSelect
                         aria-label="Select broker account"
-                        className="h-8 border-border bg-background px-2 text-xs font-semibold"
+                        className="h-8 border-border bg-background px-2 text-sm font-medium"
                         disabled={!accounts.length}
                         onValueChange={(accountId) => {
                             replaceSearch((params) => {

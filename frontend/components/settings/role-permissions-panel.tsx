@@ -36,8 +36,18 @@ const featureRows = Object.entries(workspaceCapabilityLabels)
     .map(([permission, label]) => ({ permission, label }))
     .sort((left, right) => left.label.localeCompare(right.label));
 
-function roleHasPermission(role: RoleDefinition | undefined, permission: string): boolean {
-    return Boolean(role?.permissions.includes(permission));
+function permissionLabel(permission: string): string {
+    return (
+        workspaceCapabilityLabels[permission] ??
+        permission
+            .split(".")
+            .map((part) => part.replaceAll("_", " "))
+            .join(" / ")
+    );
+}
+
+function roleHasPermission(role: RoleDefinition, permission: string): boolean {
+    return role.permissions.includes(permission);
 }
 
 function PermissionCell({ allowed }: { allowed: boolean }) {
@@ -58,14 +68,17 @@ function PermissionCell({ allowed }: { allowed: boolean }) {
 
 export function RolePermissionsPanel({ roles }: { roles: RoleDefinition[] }) {
     const [open, setOpen] = useState(false);
-    const adminRole = roles.find((role) => role.name === "admin");
-    const viewerRole = roles.find((role) => role.name === "viewer");
+    const permissionRows = Array.from(
+        new Set([...featureRows.map((row) => row.permission), ...roles.flatMap((role) => role.permissions)])
+    )
+        .map((permission) => ({ permission, label: permissionLabel(permission) }))
+        .sort((left, right) => left.label.localeCompare(right.label));
 
     return (
-        <Collapsible className="border-y border-border/50" onOpenChange={setOpen} open={open}>
+        <Collapsible className="rounded-lg border border-border bg-background" onOpenChange={setOpen} open={open}>
             <CollapsibleTrigger
                 className={cn(
-                    "flex min-h-10 w-full items-center justify-between gap-3 px-1 text-left",
+                    "flex min-h-11 w-full items-center justify-between gap-3 px-4 text-left",
                     typography.sectionTitle,
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 )}
@@ -80,29 +93,39 @@ export function RolePermissionsPanel({ roles }: { roles: RoleDefinition[] }) {
                 />
             </CollapsibleTrigger>
             <CollapsiblePanel>
-                <div className="pb-4 pt-2">
-                    <Table>
+                <div className="px-4 pb-4">
+                    <Table className="min-w-[720px]" variant="card">
                         <TableHeader>
                             <TableRow className="hover:bg-transparent">
-                                <TableHead className="h-9 text-xs font-medium text-muted-foreground">Feature</TableHead>
-                                <TableHead className="h-9 w-24 text-center text-xs font-medium text-muted-foreground">
-                                    Admin
+                                <TableHead className="h-9 min-w-72 text-xs font-medium text-muted-foreground">
+                                    Permission
                                 </TableHead>
-                                <TableHead className="h-9 w-24 text-center text-xs font-medium text-muted-foreground">
-                                    Viewer
-                                </TableHead>
+                                {roles.map((role) => (
+                                    <TableHead
+                                        className="h-9 w-28 text-center text-xs font-medium text-muted-foreground"
+                                        key={role.name}
+                                    >
+                                        {role.label}
+                                    </TableHead>
+                                ))}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {featureRows.map(({ permission, label }) => (
+                            {permissionRows.map(({ permission, label }) => (
                                 <TableRow key={permission}>
-                                    <TableCell className="py-2.5 text-[13px] text-foreground">{label}</TableCell>
-                                    <TableCell className="py-2.5 text-center">
-                                        <PermissionCell allowed={roleHasPermission(adminRole, permission)} />
+                                    <TableCell className="py-2.5 align-top">
+                                        <div className="grid gap-1">
+                                            <span className="text-[13px] text-foreground">{label}</span>
+                                            <span className="font-mono text-[11px] text-muted-foreground">
+                                                {permission}
+                                            </span>
+                                        </div>
                                     </TableCell>
-                                    <TableCell className="py-2.5 text-center">
-                                        <PermissionCell allowed={roleHasPermission(viewerRole, permission)} />
-                                    </TableCell>
+                                    {roles.map((role) => (
+                                        <TableCell className="py-2.5 text-center align-top" key={role.name}>
+                                            <PermissionCell allowed={roleHasPermission(role, permission)} />
+                                        </TableCell>
+                                    ))}
                                 </TableRow>
                             ))}
                         </TableBody>

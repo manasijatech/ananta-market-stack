@@ -48,6 +48,11 @@ const nextConfig: NextConfig = {
                 permanent: false
             },
             {
+                source: "/dashboard",
+                destination: "/broker-connections",
+                permanent: false
+            },
+            {
                 source: "/dashboard/system-config",
                 destination: "/settings",
                 permanent: false

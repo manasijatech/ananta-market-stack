@@ -51,7 +51,7 @@ export default async function BrokersPage() {
                 description="Manage broker credentials, session status, quotes, and portfolio data for your trading workspace."
             />
 
-            <div className="mb-6">
+            <div className="mb-5">
                 <NotificationsBanner />
             </div>
 
@@ -66,7 +66,7 @@ export default async function BrokersPage() {
             ) : null}
 
             {!error && brokerOptionsError ? (
-                <div className="mb-6">
+                <div className="mb-5">
                     <Alert variant="warning">
                         <AlertDescription>{brokerOptionsError}</AlertDescription>
                     </Alert>
@@ -74,7 +74,7 @@ export default async function BrokersPage() {
             ) : null}
 
             {!error && canAddBroker ? (
-                <div className="mb-6">
+                <div className="mb-5">
                     <BrokerAddOptions connectedCount={accounts.length} supportedBrokers={supportedBrokers} />
                 </div>
             ) : null}
@@ -82,7 +82,7 @@ export default async function BrokersPage() {
             {!error && accounts.length === 0 ? <BrokerAccountsEmpty canAddBroker={canAddBroker} /> : null}
 
             {accounts.length ? (
-                <section className="grid gap-4 min-[760px]:grid-cols-2 min-[1100px]:grid-cols-3">
+                <section className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-4">
                     {accounts.map((account) => (
                         <BrokerCard account={account} key={account.id} />
                     ))}

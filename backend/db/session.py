@@ -135,6 +135,13 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
             return
         _ensure_table_columns(
             conn,
+            "users",
+            {
+                "email": "VARCHAR(320)",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "broker_accounts",
             {
                 "session_status": "VARCHAR(32)",

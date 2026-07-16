@@ -3,23 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from "@/components/ui/select";
-import {
-    Tooltip,
-    TooltipPopup,
-    TooltipProvider,
-    TooltipTrigger
-} from "@/components/ui/tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import { approveWorkspaceMember, updateWorkspaceMemberRole } from "@/service/actions/rbac";
 import type { RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
 import { memberLabel } from "@/components/settings/workspace-member-utils";
-import { cn } from "@/lib/utils";
 
 type WorkspaceMemberRoleControlsProps = {
     member: WorkspaceMember;
@@ -75,7 +64,7 @@ export function WorkspaceMemberRoleControls({
             }}
             value={draftRole}
         >
-            <SelectTrigger className="h-8 w-[140px] text-sm">
+            <SelectTrigger className="h-8 w-full min-w-0 text-sm md:w-[180px]">
                 <SelectValue placeholder="Select role" />
             </SelectTrigger>
             <SelectContent>
@@ -89,13 +78,13 @@ export function WorkspaceMemberRoleControls({
     );
 
     return (
-        <div className="contents">
-            <div className="flex w-[140px] flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-2 md:items-start">
+            <div className="flex w-full min-w-0 flex-col gap-1 md:w-[180px]">
                 {isSelf ? (
                     <TooltipProvider>
                         <Tooltip>
                             <TooltipTrigger
-                                render={<span className="inline-flex w-[140px]">{select}</span>}
+                                render={<span className="inline-flex w-full md:w-[180px]">{select}</span>}
                             />
                             <TooltipPopup>You can&apos;t change your own role</TooltipPopup>
                         </Tooltip>
@@ -103,38 +92,17 @@ export function WorkspaceMemberRoleControls({
                 ) : (
                     select
                 )}
-                {isSelf ? (
-                    <p className="text-[11px] text-muted-foreground">You can&apos;t change your own role</p>
-                ) : null}
             </div>
 
-            <div className="flex w-[120px] items-center">
+            <div className="flex min-h-0 w-full items-center md:w-[180px] md:justify-start">
                 {!isSelf && hasChanges ? (
                     <div className="flex items-center gap-2">
-                        <button
-                            className={cn(
-                                "text-[13px] font-medium text-primary underline-offset-4 hover:underline",
-                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                                isPending && "pointer-events-none opacity-40"
-                            )}
-                            disabled={isPending}
-                            onClick={onSave}
-                            type="button"
-                        >
+                        <Button disabled={isPending} loading={isPending} onClick={onSave} size="xs" type="button">
                             {member.status === "pending" ? "Approve" : "Save"}
-                        </button>
-                        <button
-                            className={cn(
-                                "text-[13px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline",
-                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                                isPending && "pointer-events-none opacity-40"
-                            )}
-                            disabled={isPending}
-                            onClick={onCancel}
-                            type="button"
-                        >
+                        </Button>
+                        <Button disabled={isPending} onClick={onCancel} size="xs" type="button" variant="ghost">
                             Cancel
-                        </button>
+                        </Button>
                     </div>
                 ) : null}
             </div>
