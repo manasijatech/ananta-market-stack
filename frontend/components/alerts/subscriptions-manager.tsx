@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ChevronDown, Inbox, ListChecks, Loader2, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { Inbox, ListChecks, Loader2, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import { addLiveSubscription, deleteLiveSubscriptions } from "@/service/actions/alerts";
 import {
     refreshAlphaWebSocketAccount,
@@ -12,14 +12,25 @@ import type { InstrumentRef, LiveSubscription } from "@/service/types/alerts";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { AlphaWebSocketConfig, BrokerAccount, InstrumentSearchRow } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import { SimpleSelect } from "@/components/ui/simple-select";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { INDIA_TIME_ZONE, formatIstDateTime, parseApiDate } from "@/lib/datetime";
+import { cn } from "@/lib/utils";
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
     return {
@@ -43,8 +54,42 @@ function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
     };
 }
 
-const inputBase =
-    " border-0 border-b border-input bg-transparent px-0 text-foreground outline-none ring-0 placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-0";
+const symbolPickerControlClassName =
+    "h-10 rounded-lg border border-input bg-background/80 px-3 text-sm shadow-xs/5 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/24";
+const exchangeOptions = [
+    { value: "NSE", label: "NSE" },
+    { value: "BSE", label: "BSE" }
+];
+
+type FeedConfigCategory = "products" | "scope" | "watchlists";
+
+const feedConfigCategories: {
+    key: FeedConfigCategory;
+    label: string;
+    description: string;
+}[] = [
+    {
+        key: "products",
+        label: "Products",
+        description: "Choose websocket products from your account."
+    },
+    {
+        key: "scope",
+        label: "Symbol scope",
+        description: "Pick how feed symbols are resolved."
+    },
+    {
+        key: "watchlists",
+        label: "Watchlists",
+        description: "Include saved watchlists in the live scope."
+    }
+];
+
+function scopeModeLabel(scopeMode: AlphaWebSocketConfig["scope_mode"]): string {
+    if (scopeMode === "full_market") return "Full market";
+    if (scopeMode === "alerts_and_watchlists") return "Alert subscriptions + watchlists";
+    return "Alert subscriptions only";
+}
 
 export function SubscriptionsManager({
     alphaWebSocketConfig,
@@ -61,6 +106,7 @@ export function SubscriptionsManager({
 }) {
     const [items, setItems] = useState(initialSubscriptions);
     const [alphaWsConfig, setAlphaWsConfig] = useState(alphaWebSocketConfig);
+    const [savedAlphaWsConfig, setSavedAlphaWsConfig] = useState(alphaWebSocketConfig);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
     const [symbolSearch, setSymbolSearch] = useState("");
@@ -70,6 +116,8 @@ export function SubscriptionsManager({
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [exchange, setExchange] = useState("NSE");
     const [error, setError] = useState("");
+    const [feedConfigOpen, setFeedConfigOpen] = useState(false);
+    const [activeFeedConfigCategory, setActiveFeedConfigCategory] = useState<FeedConfigCategory>("products");
     const [isPending, startTransition] = useTransition();
     const searchWrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -242,6 +290,8 @@ export function SubscriptionsManager({
                     full_market: alphaWsConfig.full_market
                 });
                 setAlphaWsConfig(next);
+                setSavedAlphaWsConfig(next);
+                setFeedConfigOpen(false);
             } catch (caught) {
                 setError(caught instanceof Error ? caught.message : "Could not save Alpha websocket config.");
             }
@@ -254,6 +304,7 @@ export function SubscriptionsManager({
             try {
                 const next = await refreshAlphaWebSocketAccount();
                 setAlphaWsConfig(next);
+                setSavedAlphaWsConfig(next);
             } catch (caught) {
                 setError(caught instanceof Error ? caught.message : "Could not refresh Alpha account plan.");
             }
@@ -283,12 +334,40 @@ export function SubscriptionsManager({
         return symbols.size;
     }
 
-    const scopeSummary =
-        alphaWsConfig.scope_mode === "full_market"
-            ? "Full market"
-            : alphaWsConfig.scope_mode === "alerts_and_watchlists"
-              ? "Alert subscriptions + watchlists"
-              : "Alert subscriptions only";
+    const scopeSummary = scopeModeLabel(alphaWsConfig.scope_mode);
+    const selectedWatchlists = watchlists.filter((watchlist) => alphaWsConfig.watchlist_ids.includes(watchlist.id));
+    const selectedFeedItems =
+        alphaWsConfig.products.length +
+        1 +
+        (alphaWsConfig.scope_mode === "alerts_and_watchlists"
+            ? alphaWsConfig.include_all_watchlists
+                ? 1
+                : selectedWatchlists.length
+            : 0);
+
+    function closeFeedConfig() {
+        setAlphaWsConfig(savedAlphaWsConfig);
+        setFeedConfigOpen(false);
+    }
+
+    function handleFeedConfigOpenChange(open: boolean) {
+        if (open) {
+            setFeedConfigOpen(true);
+            return;
+        }
+        closeFeedConfig();
+    }
+
+    function clearFeedConfig() {
+        setAlphaWsConfig((current) => ({
+            ...current,
+            products: [],
+            scope_mode: "alert_subscriptions",
+            watchlist_ids: [],
+            include_all_watchlists: false,
+            full_market: false
+        }));
+    }
 
     return (
         <div className="grid w-full gap-4">
@@ -297,19 +376,17 @@ export function SubscriptionsManager({
                     {error}
                 </div>
             ) : null}
-            <Collapsible className="border border-border p-3" defaultOpen={false}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                        <div className="text-base font-semibold leading-5 text-foreground">
-                            Ananta websocket subscriptions
-                        </div>
-                        <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
+            <CardFrame>
+                <CardFrameHeader>
+                    <CardFrameTitle>Ananta websocket subscriptions</CardFrameTitle>
+                    <CardFrameDescription>
+                        <span className="block">
                             Backend worker status: {alphaWsConfig.status}
                             {alphaWsConfig.last_event_at
                                 ? ` · last event ${formatIstDateTime(alphaWsConfig.last_event_at)}`
                                 : ""}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
+                        </span>
+                        <span className="mt-1 block text-xs">
                             Ananta plan: {alphaWsConfig.plan_name ?? alphaWsConfig.plan_id ?? "Unknown"} ·{" "}
                             {alphaWsConfig.scope_mode === "full_market"
                                 ? "full market"
@@ -317,374 +394,540 @@ export function SubscriptionsManager({
                             {typeof alphaWsConfig.monthly_unique_symbol_limit === "number"
                                 ? ` · ${alphaWsConfig.monthly_unique_symbol_limit} unique/month`
                                 : ""}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
+                        </span>
+                        <span className="mt-1 block text-xs">
                             Scope: {scopeSummary} · {alphaWsConfig.effective_products.length} products
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
+                        </span>
+                    </CardFrameDescription>
+                    <CardFrameAction className="flex-wrap gap-2">
                         <Button disabled={isPending} onClick={refreshAlphaEntitlements} type="button" variant="outline">
-                            <RefreshCw className="mr-2 size-4" />
+                            <RefreshCw aria-hidden data-icon="inline-start" />
                             Refresh plan
                         </Button>
-                        <CollapsibleTrigger className="group inline-flex h-9 items-center gap-2 border border-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-[var(--accent-glow)]">
-                            <SlidersHorizontal className="size-4" />
-                            Configure feed
-                            <ChevronDown className="size-4 transition-transform group-data-[panel-open]:rotate-180" />
-                        </CollapsibleTrigger>
-                    </div>
-                </div>
-                {alphaWsConfig.last_error ? (
-                    <div className="mt-3 border-l-2 border-destructive px-3 py-2 text-sm text-destructive">
-                        {alphaWsConfig.last_error}
-                    </div>
-                ) : null}
-                <CollapsibleContent>
-                    <div className="@container mt-4 border-t border-border pt-4">
-                        <div className="grid gap-6 @lg:grid-cols-2 @3xl:grid-cols-3">
-                            <div>
-                                <div className="type-step-eyebrow">Products from account</div>
-                                <div className="mt-3 grid gap-2">
-                                    {enabledAddons.map((addon) => (
-                                        <Label className="flex items-center gap-2 text-sm" key={addon.product}>
-                                            <Checkbox
-                                                checked={alphaWsConfig.products.includes(addon.product)}
-                                                onCheckedChange={(checked) =>
-                                                    toggleAlphaProduct(addon.product, Boolean(checked))
-                                                }
-                                            />
-                                            <span>
-                                                {addon.product} · {addon.tier ?? "tier unknown"}
-                                            </span>
-                                        </Label>
-                                    ))}
-                                    {!enabledAddons.length ? (
-                                        <div className="type-body text-muted-foreground">
-                                            No websocket addons were found for the saved key.
-                                        </div>
-                                    ) : null}
-                                </div>
-                            </div>
-                            <div>
-                                <div className="type-step-eyebrow">Symbol scope</div>
-                                <div className="mt-3 grid gap-2 text-sm">
-                                    <Label className="flex items-start gap-2">
-                                        <input
-                                            checked={alphaWsConfig.scope_mode === "alert_subscriptions"}
-                                            className="mt-1 accent-[var(--primary)]"
-                                            name="alpha-symbol-scope"
-                                            onChange={() =>
-                                                setAlphaWsConfig((current) => ({
-                                                    ...current,
-                                                    scope_mode: "alert_subscriptions",
-                                                    full_market: false
-                                                }))
-                                            }
-                                            type="radio"
-                                        />
-                                        <span>
-                                            <span className="block font-semibold text-foreground">
-                                                Alert subscriptions only
-                                            </span>
-                                            <span className="block text-[12px] leading-5 text-muted-foreground">
-                                                Use only symbols added on this page.
-                                            </span>
-                                        </span>
-                                    </Label>
-                                    <Label className="flex items-start gap-2">
-                                        <input
-                                            checked={alphaWsConfig.scope_mode === "alerts_and_watchlists"}
-                                            className="mt-1 accent-[var(--primary)]"
-                                            name="alpha-symbol-scope"
-                                            onChange={() =>
-                                                setAlphaWsConfig((current) => ({
-                                                    ...current,
-                                                    scope_mode: "alerts_and_watchlists",
-                                                    full_market: false
-                                                }))
-                                            }
-                                            type="radio"
-                                        />
-                                        <span>
-                                            <span className="block font-semibold text-foreground">
-                                                Alert subscriptions + watchlists
-                                            </span>
-                                            <span className="block text-[12px] leading-5 text-muted-foreground">
-                                                Include selected watchlists below with alert subscriptions.
-                                            </span>
-                                        </span>
-                                    </Label>
-                                    <Label
-                                        className={`flex items-start gap-2 ${alphaWsConfig.full_market_allowed ? "" : "opacity-50"}`}
-                                    >
-                                        <input
-                                            checked={alphaWsConfig.scope_mode === "full_market"}
-                                            className="mt-1 accent-[var(--primary)]"
-                                            disabled={!alphaWsConfig.full_market_allowed}
-                                            name="alpha-symbol-scope"
-                                            onChange={() =>
-                                                setAlphaWsConfig((current) => ({
-                                                    ...current,
-                                                    scope_mode: "full_market",
-                                                    full_market: true
-                                                }))
-                                            }
-                                            type="radio"
-                                        />
-                                        <span>
-                                            <span className="block font-semibold text-foreground">Full market</span>
-                                            <span className="block text-[12px] leading-5 text-muted-foreground">
-                                                Use full-market products when your plan allows it.
-                                            </span>
-                                        </span>
-                                    </Label>
-                                </div>
-                                <div className="mt-3 text-xs text-muted-foreground">
-                                    Effective: {alphaWsConfig.effective_products.length} products /{" "}
-                                    {alphaWsConfig.scope_mode === "full_market"
-                                        ? "full-feed"
-                                        : `${activeLiveSymbols} symbols`}
-                                </div>
-                                {fullMarketProducts.length ? (
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                        Full-market products: {fullMarketProducts.join(", ")}
-                                    </div>
+                        <Popover onOpenChange={handleFeedConfigOpenChange} open={feedConfigOpen}>
+                            <PopoverTrigger className={cn(buttonVariants({ variant: "outline" }), "h-9")} type="button">
+                                <SlidersHorizontal aria-hidden data-icon="inline-start" />
+                                Configure feed
+                                {selectedFeedItems ? (
+                                    <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+                                        {selectedFeedItems}
+                                    </span>
                                 ) : null}
-                            </div>
-                            <div>
-                                <div className="type-step-eyebrow">Watchlists</div>
-                                <Label className="mt-3 flex items-center gap-2 text-sm">
-                                    <Checkbox
-                                        checked={alphaWsConfig.include_all_watchlists}
-                                        disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists"}
-                                        onCheckedChange={(checked) =>
-                                            setAlphaWsConfig((current) => ({
-                                                ...current,
-                                                include_all_watchlists: Boolean(checked)
-                                            }))
-                                        }
-                                    />
-                                    All watchlists
-                                </Label>
-                                <div className="mt-2 grid max-h-64 gap-2 overflow-auto">
-                                    {watchlists.map((watchlist) => (
-                                        <Label className="flex items-center gap-2 text-sm" key={watchlist.id}>
-                                            <Checkbox
-                                                checked={alphaWsConfig.watchlist_ids.includes(watchlist.id)}
-                                                disabled={
-                                                    alphaWsConfig.scope_mode !== "alerts_and_watchlists" ||
-                                                    alphaWsConfig.include_all_watchlists
-                                                }
-                                                onCheckedChange={(checked) =>
-                                                    toggleWatchlist(watchlist.id, Boolean(checked))
-                                                }
-                                            />
-                                            <span>
-                                                {watchlist.name} · {watchlist.items.length || watchlist.symbols.length}
-                                            </span>
-                                        </Label>
-                                    ))}
-                                    {!watchlists.length ? (
-                                        <Empty className="py-8">
-                                            <EmptyHeader>
-                                                <EmptyMedia variant="icon">
-                                                    <ListChecks />
-                                                </EmptyMedia>
-                                                <EmptyTitle>No watchlists available</EmptyTitle>
-                                                <EmptyDescription>
-                                                    Create a watchlist to include its symbols in the live scope.
-                                                </EmptyDescription>
-                                            </EmptyHeader>
-                                        </Empty>
-                                    ) : null}
-                                </div>
-                            </div>
-                        </div>
-                        <div className="mt-5 border-t border-border pt-3">
-                            <Button disabled={isPending} onClick={saveAlphaWebSocketConfig} type="button">
-                                Save websocket config
-                            </Button>
-                        </div>
-                    </div>
-                </CollapsibleContent>
-            </Collapsible>
-            <div className=" border border-border p-3">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                        <div className="text-base font-semibold leading-5 text-foreground">Add subscribed symbols</div>
-                        <div className="text-[13px] leading-5 text-muted-foreground">
-                            Search the selected broker instrument cache and pick a symbol to subscribe.
-                        </div>
-                    </div>
-                    <Button
-                        disabled={isPending || !selectedIds.length}
-                        onClick={removeSelected}
-                        type="button"
-                        variant="outline"
-                    >
-                        Remove selected
-                    </Button>
-                </div>
-                <div className="grid gap-3 min-[760px]:grid-cols-[240px_minmax(0,1fr)_96px]">
-                    <SimpleSelect
-                        className={`${inputBase} h-9 text-sm`}
-                        onValueChange={(nextAccountId) => {
-                            setAccountId(nextAccountId);
-                            setSymbolSearch("");
-                            setSuggestions([]);
-                            setActiveSuggestionIndex(-1);
-                        }}
-                        options={accounts.map((account) => ({
-                            value: account.id,
-                            label: `${account.label} · ${account.broker_code}`
-                        }))}
-                        value={accountId}
-                    />
-                    <div className="relative" ref={searchWrapRef}>
-                        <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-primary" />
-                        <Input
-                            className={`${inputBase} h-9 pl-7 pr-9 font-mono text-sm uppercase`}
-                            aria-activedescendant={
-                                activeSuggestionIndex >= 0
-                                    ? `subscription-symbol-suggestion-${activeSuggestionIndex}`
-                                    : undefined
-                            }
-                            aria-autocomplete="list"
-                            aria-expanded={showSuggestions && symbolSearch.trim() ? "true" : "false"}
-                            aria-controls="subscription-symbol-suggestions"
-                            onChange={(event) => setSymbolSearch(event.target.value.toUpperCase())}
-                            onFocus={() => {
-                                if (suggestions.length) setShowSuggestions(true);
-                            }}
-                            onKeyDown={handleSearchKeyDown}
-                            placeholder="SEARCH SYMBOL, TRADING SYMBOL, COMPANY"
-                            role="combobox"
-                            value={symbolSearch}
-                        />
-                        {searchLoading ? (
-                            <Loader2 className="absolute right-0 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-                        ) : null}
-                        {showSuggestions && symbolSearch.trim() ? (
-                            <div
-                                className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover"
-                                id="subscription-symbol-suggestions"
-                                role="listbox"
-                            >
-                                {suggestions.map((row, index) => (
-                                    <Button
-                                        aria-selected={index === activeSuggestionIndex}
-                                        className={[
-                                            "h-auto w-full justify-between gap-4 rounded-none border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
-                                            index === activeSuggestionIndex
-                                                ? "border-l-primary bg-[var(--accent-glow)] text-foreground"
-                                                : "border-l-transparent text-foreground"
-                                        ].join(" ")}
-                                        disabled={isPending}
-                                        id={`subscription-symbol-suggestion-${index}`}
-                                        key={[row.symbol, row.exchange, row.trading_symbol, row.expiry].join(":")}
-                                        onClick={() => addSearchedSymbol(row)}
-                                        onMouseEnter={() => setActiveSuggestionIndex(index)}
-                                        role="option"
-                                        variant="ghost"
-                                        type="button"
-                                    >
-                                        <span className="min-w-0">
-                                            <span className="block font-mono text-sm font-semibold">{row.symbol}</span>
-                                            <span className="type-meta block truncate">
-                                                {[row.name, row.trading_symbol, row.account_label]
-                                                    .filter(Boolean)
-                                                    .join(" / ")}
-                                            </span>
-                                        </span>
-                                        <span className="type-meta shrink-0 font-mono uppercase text-primary">
-                                            {[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}
-                                        </span>
-                                    </Button>
-                                ))}
-                                {!suggestions.length && !searchLoading ? (
-                                    <div className="type-body px-3 py-3 text-muted-foreground">
-                                        No matching instruments found.
-                                    </div>
-                                ) : null}
-                            </div>
-                        ) : null}
-                    </div>
-                    <Input
-                        className={`${inputBase} h-9 font-mono text-sm uppercase`}
-                        onChange={(event) => setExchange(event.target.value.toUpperCase())}
-                        placeholder="NSE"
-                        value={exchange}
-                    />
-                </div>
-                {!accounts.length ? (
-                    <div className="type-help mt-3 text-muted-foreground">
-                        Connect a broker account before adding subscriptions.
-                    </div>
-                ) : null}
-            </div>
-            <div className="@container">
-                <div className="grid gap-2 @2xl:grid-cols-2">
-                {items.map((item) => {
-                    const metadata = symbolMetadata[item.symbol.toUpperCase()];
-                    const companyName = metadata?.company_name?.trim();
-                    return (
-                        <Label
-                            className="flex cursor-pointer flex-wrap items-center justify-between gap-3 border border-border px-3 py-2.5"
-                            key={item.id}
-                        >
-                            <div className="flex min-w-0 items-center gap-3">
-                                <Checkbox
-                                    checked={selectedIds.includes(item.id)}
-                                    onCheckedChange={(checked) => toggleSelected(item.id, Boolean(checked))}
-                                />
-                                <SymbolLogo metadata={metadata} symbol={item.symbol} />
-                                <div className="min-w-0">
-                                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                                        <div className="font-mono text-base font-bold leading-5 text-foreground">
-                                            {item.symbol}
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="w-[min(62rem,calc(100vw-2rem))] p-0">
+                                <div className="grid min-h-[28rem] md:grid-cols-[16rem_minmax(20rem,1fr)_18rem]">
+                                    <div className="border-b p-4 md:border-e md:border-b-0">
+                                        <h2 className="px-2 text-lg font-semibold">Configure feed</h2>
+                                        <Separator className="my-4" />
+                                        <div className="flex flex-col gap-2">
+                                            {feedConfigCategories.map((category) => {
+                                                const isActive = activeFeedConfigCategory === category.key;
+                                                const hasSelection =
+                                                    category.key === "products"
+                                                        ? Boolean(alphaWsConfig.products.length)
+                                                        : category.key === "scope"
+                                                          ? true
+                                                          : alphaWsConfig.include_all_watchlists ||
+                                                            Boolean(alphaWsConfig.watchlist_ids.length);
+                                                return (
+                                                    <Button
+                                                        className={cn(
+                                                            "min-h-16 justify-start gap-4 rounded-md text-left",
+                                                            isActive && "bg-accent"
+                                                        )}
+                                                        key={category.key}
+                                                        onClick={() => setActiveFeedConfigCategory(category.key)}
+                                                        size="auto"
+                                                        type="button"
+                                                        variant="ghost"
+                                                    >
+                                                        <span className="min-w-0 flex-1 pr-1">
+                                                            <span className="block truncate leading-5">
+                                                                {category.label}
+                                                            </span>
+                                                            <span className="mt-0.5 block truncate text-xs leading-4 text-muted-foreground">
+                                                                {category.description}
+                                                            </span>
+                                                        </span>
+                                                        {hasSelection ? (
+                                                            <span className="mr-0.5 size-1.5 shrink-0 rounded-full bg-primary" />
+                                                        ) : null}
+                                                    </Button>
+                                                );
+                                            })}
                                         </div>
-                                        {companyName ? (
-                                            <div className="truncate text-sm font-semibold text-muted-foreground">
-                                                {companyName}
+                                    </div>
+
+                                    <div className="border-b p-4 md:border-e md:border-b-0">
+                                        {activeFeedConfigCategory === "products" ? (
+                                            <div className="flex flex-col gap-3">
+                                                <div>
+                                                    <h3 className="text-sm font-semibold">Products from account</h3>
+                                                    <p className="mt-1 text-sm text-muted-foreground">
+                                                        Select the websocket products this feed should request.
+                                                    </p>
+                                                </div>
+                                                <div className="flex max-h-[21rem] flex-col gap-2 overflow-y-auto pr-1">
+                                                    {enabledAddons.map((addon) => {
+                                                        const checked = alphaWsConfig.products.includes(addon.product);
+                                                        return (
+                                                            <Label
+                                                                className={cn(
+                                                                    "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-accent",
+                                                                    checked && "border-primary bg-accent"
+                                                                )}
+                                                                key={addon.product}
+                                                            >
+                                                                <Checkbox
+                                                                    checked={checked}
+                                                                    onCheckedChange={(next) =>
+                                                                        toggleAlphaProduct(addon.product, Boolean(next))
+                                                                    }
+                                                                />
+                                                                <span className="min-w-0">
+                                                                    <span className="block truncate text-sm font-medium">
+                                                                        {addon.product}
+                                                                    </span>
+                                                                    <span className="block truncate text-xs text-muted-foreground">
+                                                                        {addon.tier ?? "tier unknown"}
+                                                                    </span>
+                                                                </span>
+                                                            </Label>
+                                                        );
+                                                    })}
+                                                    {!enabledAddons.length ? (
+                                                        <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                                                            No websocket addons were found for the saved key.
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        {activeFeedConfigCategory === "scope" ? (
+                                            <div className="flex flex-col gap-3">
+                                                <div>
+                                                    <h3 className="text-sm font-semibold">Symbol scope</h3>
+                                                    <p className="mt-1 text-sm text-muted-foreground">
+                                                        Choose which symbol universe powers the live feed.
+                                                    </p>
+                                                </div>
+                                                <div className="flex flex-col gap-2">
+                                                    {[
+                                                        {
+                                                            value: "alert_subscriptions",
+                                                            label: "Alert subscriptions only",
+                                                            detail: "Use only symbols added on this page.",
+                                                            disabled: false
+                                                        },
+                                                        {
+                                                            value: "alerts_and_watchlists",
+                                                            label: "Alert subscriptions + watchlists",
+                                                            detail: "Include selected watchlists with alert subscriptions.",
+                                                            disabled: false
+                                                        },
+                                                        {
+                                                            value: "full_market",
+                                                            label: "Full market",
+                                                            detail: "Use full-market products when your plan allows it.",
+                                                            disabled: !alphaWsConfig.full_market_allowed
+                                                        }
+                                                    ].map((scope) => {
+                                                        const selected = alphaWsConfig.scope_mode === scope.value;
+                                                        return (
+                                                            <button
+                                                                className={cn(
+                                                                    "rounded-lg border px-3 py-3 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50",
+                                                                    selected && "border-primary bg-accent"
+                                                                )}
+                                                                disabled={scope.disabled}
+                                                                key={scope.value}
+                                                                onClick={() =>
+                                                                    setAlphaWsConfig((current) => ({
+                                                                        ...current,
+                                                                        scope_mode:
+                                                                            scope.value as AlphaWebSocketConfig["scope_mode"],
+                                                                        full_market: scope.value === "full_market"
+                                                                    }))
+                                                                }
+                                                                type="button"
+                                                            >
+                                                                <span className="block text-sm font-medium">
+                                                                    {scope.label}
+                                                                </span>
+                                                                <span className="mt-1 block text-xs text-muted-foreground">
+                                                                    {scope.detail}
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                                                    Effective: {alphaWsConfig.effective_products.length} products /{" "}
+                                                    {alphaWsConfig.scope_mode === "full_market"
+                                                        ? "full-feed"
+                                                        : `${activeLiveSymbols} symbols`}
+                                                    {fullMarketProducts.length ? (
+                                                        <span className="mt-1 block">
+                                                            Full-market products: {fullMarketProducts.join(", ")}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        {activeFeedConfigCategory === "watchlists" ? (
+                                            <div className="flex flex-col gap-3">
+                                                <div>
+                                                    <h3 className="text-sm font-semibold">Watchlists</h3>
+                                                    <p className="mt-1 text-sm text-muted-foreground">
+                                                        Watchlists are used when symbol scope includes watchlists.
+                                                    </p>
+                                                </div>
+                                                <Label
+                                                    className={cn(
+                                                        "flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-accent",
+                                                        alphaWsConfig.scope_mode !== "alerts_and_watchlists" &&
+                                                            "cursor-not-allowed opacity-50",
+                                                        alphaWsConfig.include_all_watchlists &&
+                                                            "border-primary bg-accent"
+                                                    )}
+                                                >
+                                                    <Checkbox
+                                                        checked={alphaWsConfig.include_all_watchlists}
+                                                        disabled={alphaWsConfig.scope_mode !== "alerts_and_watchlists"}
+                                                        onCheckedChange={(next) =>
+                                                            setAlphaWsConfig((current) => ({
+                                                                ...current,
+                                                                include_all_watchlists: Boolean(next)
+                                                            }))
+                                                        }
+                                                    />
+                                                    <span className="text-sm font-medium">All watchlists</span>
+                                                </Label>
+                                                <div className="flex max-h-[18rem] flex-col gap-2 overflow-y-auto pr-1">
+                                                    {watchlists.map((watchlist) => {
+                                                        const checked = alphaWsConfig.watchlist_ids.includes(
+                                                            watchlist.id
+                                                        );
+                                                        const disabled =
+                                                            alphaWsConfig.scope_mode !== "alerts_and_watchlists" ||
+                                                            alphaWsConfig.include_all_watchlists;
+                                                        return (
+                                                            <Label
+                                                                className={cn(
+                                                                    "flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-accent",
+                                                                    disabled && "cursor-not-allowed opacity-50",
+                                                                    checked && "border-primary bg-accent"
+                                                                )}
+                                                                key={watchlist.id}
+                                                            >
+                                                                <Checkbox
+                                                                    checked={checked}
+                                                                    disabled={disabled}
+                                                                    onCheckedChange={(next) =>
+                                                                        toggleWatchlist(watchlist.id, Boolean(next))
+                                                                    }
+                                                                />
+                                                                <span className="min-w-0">
+                                                                    <span className="block truncate text-sm font-medium">
+                                                                        {watchlist.name}
+                                                                    </span>
+                                                                    <span className="block truncate text-xs text-muted-foreground">
+                                                                        {watchlist.items.length ||
+                                                                            watchlist.symbols.length}{" "}
+                                                                        symbols
+                                                                    </span>
+                                                                </span>
+                                                            </Label>
+                                                        );
+                                                    })}
+                                                    {!watchlists.length ? (
+                                                        <Empty className="py-8">
+                                                            <EmptyHeader>
+                                                                <EmptyMedia variant="icon">
+                                                                    <ListChecks />
+                                                                </EmptyMedia>
+                                                                <EmptyTitle>No watchlists available</EmptyTitle>
+                                                                <EmptyDescription>
+                                                                    Create a watchlist to include its symbols in the
+                                                                    live scope.
+                                                                </EmptyDescription>
+                                                            </EmptyHeader>
+                                                        </Empty>
+                                                    ) : null}
+                                                </div>
                                             </div>
                                         ) : null}
                                     </div>
-                                    <div className="text-[12px] leading-5 text-muted-foreground">
-                                        {[
-                                            item.exchange ?? "-",
-                                            item.broker_code ?? "-",
-                                            item.source_kind,
-                                            metadata?.sector,
-                                            metadata?.industry
-                                        ]
-                                            .filter(Boolean)
-                                            .join(" · ")}
+
+                                    <div className="p-4">
+                                        <p className="text-sm font-medium">
+                                            {selectedFeedItems} feed settings selected
+                                        </p>
+                                        <Separator className="my-4" />
+                                        <div className="flex flex-col gap-2.5">
+                                            <div className="rounded-lg bg-muted/60 px-4 py-3">
+                                                <p className="text-xs font-medium text-muted-foreground">Products</p>
+                                                <p className="mt-1 truncate text-sm">
+                                                    {alphaWsConfig.products.length
+                                                        ? alphaWsConfig.products.join(", ")
+                                                        : "No products selected"}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-lg bg-muted/60 px-4 py-3">
+                                                <p className="text-xs font-medium text-muted-foreground">
+                                                    Symbol scope
+                                                </p>
+                                                <p className="mt-1 truncate text-sm">
+                                                    {scopeModeLabel(alphaWsConfig.scope_mode)}
+                                                </p>
+                                            </div>
+                                            <div className="rounded-lg bg-muted/60 px-4 py-3">
+                                                <p className="text-xs font-medium text-muted-foreground">Watchlists</p>
+                                                <p className="mt-1 truncate text-sm">
+                                                    {alphaWsConfig.scope_mode !== "alerts_and_watchlists"
+                                                        ? "Not included"
+                                                        : alphaWsConfig.include_all_watchlists
+                                                          ? "All watchlists"
+                                                          : selectedWatchlists.length
+                                                            ? selectedWatchlists
+                                                                  .map((watchlist) => watchlist.name)
+                                                                  .join(", ")
+                                                            : "No watchlists selected"}
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-t p-3">
+                                    <Button onClick={clearFeedConfig} size="sm" type="button" variant="ghost">
+                                        Clear feed
+                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                        <Button onClick={closeFeedConfig} size="sm" type="button" variant="outline">
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            disabled={isPending}
+                                            onClick={saveAlphaWebSocketConfig}
+                                            size="sm"
+                                            type="button"
+                                        >
+                                            Apply
+                                        </Button>
+                                    </div>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                    </CardFrameAction>
+                </CardFrameHeader>
+                {alphaWsConfig.last_error ? (
+                    <Card>
+                        <CardPanel>
+                            <div className="border-l-2 border-destructive px-3 py-2 text-sm text-destructive">
+                                {alphaWsConfig.last_error}
                             </div>
-                            <div className="text-[12px] leading-5 text-muted-foreground">
-                                {item.last_received_at
-                                    ? `Last tick ${parseApiDate(item.last_received_at).toLocaleTimeString("en-IN", {
-                                          timeZone: INDIA_TIME_ZONE
-                                      })}`
-                                    : "Awaiting tick"}
-                            </div>
-                        </Label>
-                    );
-                })}
-                {!items.length ? (
-                    <Empty className="py-10 @2xl:col-span-2">
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <Inbox />
-                            </EmptyMedia>
-                            <EmptyTitle>No subscribed symbols yet</EmptyTitle>
-                            <EmptyDescription>
-                                Search a broker instrument above to subscribe a symbol to live data.
-                            </EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
+                        </CardPanel>
+                    </Card>
                 ) : null}
+            </CardFrame>
+            <CardFrame className="overflow-visible">
+                <CardFrameHeader>
+                    <CardFrameTitle>Add subscribed symbols</CardFrameTitle>
+                    <CardFrameDescription>
+                        Search the selected broker instrument cache and pick a symbol to subscribe.
+                    </CardFrameDescription>
+                    <CardFrameAction>
+                        <Button
+                            disabled={isPending || !selectedIds.length}
+                            onClick={removeSelected}
+                            type="button"
+                            variant="outline"
+                        >
+                            Remove selected
+                        </Button>
+                    </CardFrameAction>
+                </CardFrameHeader>
+                <Card className="overflow-visible">
+                    <CardPanel className="relative z-[60] grid gap-3 overflow-visible">
+                        <div className="relative z-[70] grid items-start gap-3 min-[760px]:grid-cols-[minmax(13rem,15rem)_minmax(18rem,1fr)_6rem]">
+                            <SimpleSelect
+                                aria-label="Broker account"
+                                className={symbolPickerControlClassName}
+                                onValueChange={(nextAccountId) => {
+                                    setAccountId(nextAccountId);
+                                    setSymbolSearch("");
+                                    setSuggestions([]);
+                                    setActiveSuggestionIndex(-1);
+                                }}
+                                options={accounts.map((account) => ({
+                                    value: account.id,
+                                    label: `${account.label} · ${account.broker_code}`
+                                }))}
+                                value={accountId}
+                            />
+                            <div className="relative z-[80]" ref={searchWrapRef}>
+                                <Search className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-primary" />
+                                <Input
+                                    aria-activedescendant={
+                                        activeSuggestionIndex >= 0
+                                            ? `subscription-symbol-suggestion-${activeSuggestionIndex}`
+                                            : undefined
+                                    }
+                                    aria-autocomplete="list"
+                                    aria-controls="subscription-symbol-suggestions"
+                                    aria-expanded={showSuggestions && symbolSearch.trim() ? "true" : "false"}
+                                    className={symbolPickerControlClassName}
+                                    inputClassName="pl-8 pr-9 font-mono text-sm uppercase"
+                                    onChange={(event) => setSymbolSearch(event.target.value.toUpperCase())}
+                                    onFocus={() => {
+                                        if (suggestions.length) setShowSuggestions(true);
+                                    }}
+                                    onKeyDown={handleSearchKeyDown}
+                                    placeholder="SEARCH SYMBOL, TRADING SYMBOL, COMPANY"
+                                    role="combobox"
+                                    value={symbolSearch}
+                                />
+                                {searchLoading ? (
+                                    <Loader2 className="absolute right-3 top-1/2 z-10 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                                ) : null}
+                                {showSuggestions && symbolSearch.trim() ? (
+                                    <div
+                                        className="absolute z-[120] mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-popover shadow-xl ring-1 ring-black/20"
+                                        id="subscription-symbol-suggestions"
+                                        role="listbox"
+                                    >
+                                        {suggestions.map((row, index) => (
+                                            <Button
+                                                aria-selected={index === activeSuggestionIndex}
+                                                className={[
+                                                    "h-auto w-full justify-between gap-4 rounded-none border-b border-l-2 border-border px-3 py-2 text-left transition-colors duration-100 ease-out hover:bg-[var(--accent-glow)]",
+                                                    index === activeSuggestionIndex
+                                                        ? "border-l-primary bg-[var(--accent-glow)] text-foreground"
+                                                        : "border-l-transparent text-foreground"
+                                                ].join(" ")}
+                                                disabled={isPending}
+                                                id={`subscription-symbol-suggestion-${index}`}
+                                                key={[row.symbol, row.exchange, row.trading_symbol, row.expiry].join(
+                                                    ":"
+                                                )}
+                                                onClick={() => addSearchedSymbol(row)}
+                                                onMouseEnter={() => setActiveSuggestionIndex(index)}
+                                                role="option"
+                                                type="button"
+                                                variant="ghost"
+                                            >
+                                                <span className="min-w-0">
+                                                    <span className="block font-mono text-sm font-semibold">
+                                                        {row.symbol}
+                                                    </span>
+                                                    <span className="type-meta block truncate">
+                                                        {[row.name, row.trading_symbol, row.account_label]
+                                                            .filter(Boolean)
+                                                            .join(" / ")}
+                                                    </span>
+                                                </span>
+                                                <span className="type-meta shrink-0 font-mono uppercase text-primary">
+                                                    {[row.exchange, row.instrument_type].filter(Boolean).join(" / ")}
+                                                </span>
+                                            </Button>
+                                        ))}
+                                        {!suggestions.length && !searchLoading ? (
+                                            <div className="type-body px-3 py-3 text-muted-foreground">
+                                                No matching instruments found.
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+                            </div>
+                            <SimpleSelect
+                                aria-label="Exchange"
+                                className={`${symbolPickerControlClassName} font-mono uppercase`}
+                                onValueChange={setExchange}
+                                options={exchangeOptions}
+                                value={exchange}
+                            />
+                        </div>
+                        {!accounts.length ? (
+                            <div className="type-help mt-3 text-muted-foreground">
+                                Connect a broker account before adding subscriptions.
+                            </div>
+                        ) : null}
+                    </CardPanel>
+                </Card>
+            </CardFrame>
+            <div className="@container">
+                <div className="grid gap-2 @2xl:grid-cols-2">
+                    {items.map((item) => {
+                        const metadata = symbolMetadata[item.symbol.toUpperCase()];
+                        const companyName = metadata?.company_name?.trim();
+                        return (
+                            <Card
+                                key={item.id}
+                                render={
+                                    <Label className="flex w-full cursor-pointer transition-colors hover:bg-accent/40" />
+                                }
+                            >
+                                <CardPanel className="flex w-full items-center justify-between gap-3 p-3">
+                                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                                        <Checkbox
+                                            checked={selectedIds.includes(item.id)}
+                                            className="shrink-0"
+                                            onCheckedChange={(checked) => toggleSelected(item.id, Boolean(checked))}
+                                        />
+                                        <SymbolLogo metadata={metadata} symbol={item.symbol} />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex min-w-0 items-baseline gap-x-2">
+                                                <div className="shrink-0 font-mono text-base font-bold leading-5 text-foreground">
+                                                    {item.symbol}
+                                                </div>
+                                                {companyName ? (
+                                                    <div className="truncate text-sm font-semibold text-muted-foreground">
+                                                        {companyName}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                            <div className="truncate text-[12px] leading-5 text-muted-foreground">
+                                                {[
+                                                    item.exchange ?? "-",
+                                                    item.broker_code ?? "-",
+                                                    item.source_kind,
+                                                    metadata?.sector,
+                                                    metadata?.industry
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" · ")}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="shrink-0 text-right text-[12px] leading-5 text-muted-foreground">
+                                        {item.last_received_at
+                                            ? `Last tick ${parseApiDate(item.last_received_at).toLocaleTimeString(
+                                                  "en-IN",
+                                                  {
+                                                      timeZone: INDIA_TIME_ZONE
+                                                  }
+                                              )}`
+                                            : "Awaiting tick"}
+                                    </div>
+                                </CardPanel>
+                            </Card>
+                        );
+                    })}
+                    {!items.length ? (
+                        <Empty className="py-10 @2xl:col-span-2">
+                            <EmptyHeader>
+                                <EmptyMedia variant="icon">
+                                    <Inbox />
+                                </EmptyMedia>
+                                <EmptyTitle>No subscribed symbols yet</EmptyTitle>
+                                <EmptyDescription>
+                                    Search a broker instrument above to subscribe a symbol to live data.
+                                </EmptyDescription>
+                            </EmptyHeader>
+                        </Empty>
+                    ) : null}
                 </div>
             </div>
         </div>

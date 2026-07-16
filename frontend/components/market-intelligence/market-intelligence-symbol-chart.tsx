@@ -683,8 +683,8 @@ export function MarketIntelligenceSymbolChart({
     }, []);
 
     return (
-        <section className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xs/5">
-            <div className="border-b border-border/60 bg-[color-mix(in_srgb,var(--card),var(--primary)_3%)] px-4 py-4">
+        <section className="overflow-hidden rounded-2xl border border-border/70 bg-card">
+            <div className="border-b border-border/60 bg-muted px-4 py-4">
                 <div className="flex flex-col gap-4 min-[980px]:flex-row min-[980px]:items-start min-[980px]:justify-between">
                     <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Broker chart</p>
@@ -756,7 +756,7 @@ export function MarketIntelligenceSymbolChart({
                 ) : null}
             </div>
 
-            <div className="grid gap-3 border-t border-border/40 bg-[color-mix(in_srgb,var(--background),var(--card)_35%)] px-4 py-3 text-sm min-[820px]:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(90px,1fr))]">
+            <div className="grid gap-3 border-t border-border/40 bg-background px-4 py-3 text-sm min-[820px]:grid-cols-[minmax(0,1.5fr)_repeat(5,minmax(90px,1fr))]">
                 <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Candle</p>
                     <p className="mt-1 truncate font-medium text-foreground">
@@ -779,7 +779,7 @@ export function MarketIntelligenceSymbolChart({
                     <span>Markers are grouped by day. Click a marker bubble to inspect the linked items.</span>
                 </div>
                 {selectedMarker ? (
-                    <div className="mt-3 rounded-xl border border-border/70 bg-card p-4 shadow-xs/5">
+                    <div className="mt-3 rounded-xl border border-border/70 bg-card p-4">
                         <div className="flex items-center justify-between gap-3">
                             <div>
                                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Selected event day</p>

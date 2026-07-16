@@ -11,6 +11,7 @@ import {
     type StoredHeatmapFilters
 } from "@/components/heatmap/heatmap-filter-state";
 import { SimpleSelect } from "@/components/ui/simple-select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { HeatmapScope } from "@/service/types/heatmap";
 import type { Watchlist } from "@/service/types/watchlist";
@@ -26,6 +27,12 @@ type Props = {
 function labelForAccount(account: BrokerAccount) {
     return `${account.label} · ${account.broker_code}`;
 }
+
+const SOURCE_OPTIONS: readonly { value: HeatmapScope; label: string }[] = [
+    { value: "tracked", label: "Tracked" },
+    { value: "watchlist", label: "Watchlist" },
+    { value: "portfolio_holdings", label: "Holdings" }
+];
 
 function readStoredFilters(): StoredHeatmapFilters {
     try {
@@ -108,57 +115,70 @@ export function HeatmapFilters({
         router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
     }
 
+    function applyScope(nextScope: HeatmapScope) {
+        replaceSearch((params) => {
+            params.set("scope", nextScope);
+            if (nextScope === "watchlist") {
+                const stored = readStoredFilters();
+                const watchlistId = watchlists.some((watchlist) => watchlist.id === stored.watchlistId)
+                    ? stored.watchlistId
+                    : watchlists[0]?.id;
+                if (watchlistId) {
+                    params.set("watchlist_id", watchlistId);
+                } else {
+                    params.delete("watchlist_id");
+                }
+                params.delete("account_id");
+            } else if (nextScope === "portfolio_holdings") {
+                const stored = readStoredFilters();
+                const accountId = accounts.some((account) => account.id === stored.accountId) ? stored.accountId : accounts[0]?.id;
+                if (accountId) {
+                    params.set("account_id", accountId);
+                } else {
+                    params.delete("account_id");
+                }
+                params.delete("watchlist_id");
+            } else {
+                params.delete("watchlist_id");
+                params.delete("account_id");
+            }
+            writeStoredFilters({
+                accountId: params.get("account_id") || currentAccountId || undefined,
+                scope: nextScope,
+                watchlistId: params.get("watchlist_id") || currentWatchlistId || undefined
+            });
+        });
+    }
+
     return (
-        <section className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <div className="grid min-w-[9.5rem] flex-[0_1_13rem] gap-1">
+        <section className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
+            <div className="grid min-w-[15rem] flex-[0_1_auto] gap-1">
                 <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                     Heatmap source
                 </span>
-                <SimpleSelect
+                <ToggleGroup
                     aria-label="Select heatmap source"
-                    className="h-8 border-border bg-background px-2 text-xs font-semibold"
-                    onValueChange={(nextScope) => {
-                        replaceSearch((params) => {
-                            params.set("scope", nextScope);
-                            if (nextScope === "watchlist") {
-                                const stored = readStoredFilters();
-                                const watchlistId = watchlists.some((watchlist) => watchlist.id === stored.watchlistId)
-                                    ? stored.watchlistId
-                                    : watchlists[0]?.id;
-                                if (watchlistId) {
-                                    params.set("watchlist_id", watchlistId);
-                                } else {
-                                    params.delete("watchlist_id");
-                                }
-                                params.delete("account_id");
-                            } else if (nextScope === "portfolio_holdings") {
-                                const stored = readStoredFilters();
-                                const accountId = accounts.some((account) => account.id === stored.accountId) ? stored.accountId : accounts[0]?.id;
-                                if (accountId) {
-                                    params.set("account_id", accountId);
-                                } else {
-                                    params.delete("account_id");
-                                }
-                                params.delete("watchlist_id");
-                            } else {
-                                params.delete("watchlist_id");
-                                params.delete("account_id");
-                            }
-                            writeStoredFilters({
-                                accountId: params.get("account_id") || currentAccountId || undefined,
-                                scope: nextScope as HeatmapScope,
-                                watchlistId: params.get("watchlist_id") || currentWatchlistId || undefined
-                            });
-                        });
+                    className="flex-wrap"
+                    onValueChange={(next) => {
+                        if (next.length === 1 && isHeatmapScope(next[0])) {
+                            applyScope(next[0]);
+                        }
                     }}
-                    options={[
-                        { value: "tracked", label: "Tracked symbols" },
-                        { value: "watchlist", label: "Watchlist" },
-                        { value: "portfolio_holdings", label: "Portfolio holdings" }
-                    ]}
                     size="sm"
-                    value={currentScope}
-                />
+                    value={[currentScope]}
+                    variant="outline"
+                >
+                    {SOURCE_OPTIONS.map((option) => (
+                        <ToggleGroupItem
+                            aria-label={`Show ${option.label.toLowerCase()} heatmap`}
+                            className="min-w-20 px-3 text-xs font-semibold"
+                            key={option.value}
+                            value={option.value}
+                        >
+                            {option.label}
+                        </ToggleGroupItem>
+                    ))}
+                </ToggleGroup>
             </div>
 
             {currentScope === "watchlist" ? (

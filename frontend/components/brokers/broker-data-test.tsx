@@ -1,15 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { Clipboard, X } from "lucide-react";
 import {
     deleteInstrumentStorage,
     getDataCapabilities,
-    getDataOhlc,
-    getDataQuotes,
-    getGreeksData,
-    getHistoricalData,
     getHoldings,
-    getOptionChainData,
     getOrders,
     getPortfolioFunds,
     getPositions,
@@ -20,10 +16,20 @@ import {
     syncInstrumentCsv
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
-import { brokerNames, formatDate, StatusBadge, statusTone } from "@/components/brokers/ui";
+import { brokerNames, formatDate, StatusBadge } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Group, GroupSeparator } from "@/components/ui/group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,22 +51,6 @@ function pretty(value: unknown): string {
 function isoLocal(date: Date): string {
     const offsetMs = date.getTimezoneOffset() * 60_000;
     return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function numberOrUndefined(value: string): number | undefined {
-    if (!value.trim()) {
-        return undefined;
-    }
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function integerOrUndefined(value: string): number | undefined {
-    if (!value.trim()) {
-        return undefined;
-    }
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 const SAMPLE_SYMBOL = "RELIANCE";
@@ -114,15 +104,28 @@ const MARKET_MODE_COPY: Record<MarketMode, { title: string; description: string 
     }
 };
 
-function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function Section({
+    action,
+    children,
+    description,
+    title
+}: {
+    action?: React.ReactNode;
+    children: React.ReactNode;
+    description: string;
+    title: string;
+}) {
     return (
-        <section className="border-t border-border py-6">
-            <div className="mb-4">
-                <h2 className="text-lg font-bold">{title}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-            </div>
-            {children}
-        </section>
+        <CardFrame>
+            <CardFrameHeader>
+                <CardFrameTitle className="text-lg font-semibold">{title}</CardFrameTitle>
+                <CardFrameDescription className="max-w-4xl">{description}</CardFrameDescription>
+                {action ? <CardFrameAction>{action}</CardFrameAction> : null}
+            </CardFrameHeader>
+            <Card>
+                <CardPanel>{children}</CardPanel>
+            </Card>
+        </CardFrame>
     );
 }
 
@@ -138,8 +141,13 @@ function MarketField({
     label: string;
 }) {
     return (
-        <div className={cn("grid gap-2 border p-3", active ? "border-primary/50 bg-primary/5" : "border-border")}>
-            <div className="text-xs font-bold uppercase text-muted-foreground">{label}</div>
+        <div
+            className={cn(
+                "grid gap-2 rounded-lg border p-3",
+                active ? "border-primary/50 bg-primary/5" : "border-border bg-muted/30"
+            )}
+        >
+            <div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div>
             {children}
             {help ? <div className="text-xs text-muted-foreground">{help}</div> : null}
         </div>
@@ -167,8 +175,9 @@ export function BrokerDataTest({
     const [searchRows, setSearchRows] = useState<InstrumentSearchRow[]>([]);
     const [responseTitle, setResponseTitle] = useState("");
     const [responseBody, setResponseBody] = useState("");
+    const [responseToastOpen, setResponseToastOpen] = useState(false);
     const [error, setError] = useState("");
-    const [marketMode, setMarketMode] = useState<MarketMode>("quote");
+    const marketMode: MarketMode = "quote";
     const [marketSymbol, setMarketSymbol] = useState(SAMPLE_SYMBOL);
     const [marketExchange, setMarketExchange] = useState(SAMPLE_EXCHANGE);
     const [marketInterval, setMarketInterval] = useState("day");
@@ -211,6 +220,14 @@ export function BrokerDataTest({
     function setPayload(title: string, body: unknown) {
         setResponseTitle(title);
         setResponseBody(pretty(body));
+        setResponseToastOpen(true);
+    }
+
+    async function copyResponse() {
+        if (!responseBody) {
+            return;
+        }
+        await navigator.clipboard.writeText(responseBody);
     }
 
     function refreshMeta() {
@@ -245,14 +262,9 @@ export function BrokerDataTest({
         startTransition(async () => {
             try {
                 const result =
-                    storage === "csv"
-                        ? await syncInstrumentCsv(account.id)
-                        : await deleteInstrumentStorage(account.id);
+                    storage === "csv" ? await syncInstrumentCsv(account.id) : await deleteInstrumentStorage(account.id);
                 setSyncResult(result);
-                setPayload(
-                    storage === "csv" ? "Instrument sync to CSV" : "Instrument storage delete",
-                    result
-                );
+                setPayload(storage === "csv" ? "Instrument sync to CSV" : "Instrument storage delete", result);
                 if (storage === "delete") {
                     setSearchRows([]);
                 }
@@ -334,13 +346,6 @@ export function BrokerDataTest({
         );
     }
 
-    function marketInstrument() {
-        return {
-            symbol: marketSymbol.trim(),
-            exchange: marketExchange.trim() || "NSE"
-        };
-    }
-
     function marketFieldIsActive(field: string) {
         return MARKET_MODE_FIELDS[marketMode].includes(field);
     }
@@ -364,72 +369,77 @@ export function BrokerDataTest({
             <Section
                 title="Account"
                 description="Session state, broker capabilities, and the current stream manager status."
+                action={
+                    <Button disabled={isPending} onClick={refreshMeta} type="button" variant="outline">
+                        Refresh status
+                    </Button>
+                }
             >
                 <div className="grid gap-3 min-[820px]:grid-cols-3">
-                    <div className="border-t border-border py-3">
-                        <div className="text-xs font-bold uppercase text-muted-foreground">Broker</div>
-                        <div className="mt-2 text-lg font-bold">{brokerNames[account.broker_code]}</div>
+                    <div className="rounded-lg border border-border bg-muted/40 p-4">
+                        <div className="text-xs font-semibold uppercase text-muted-foreground">Broker</div>
+                        <div className="mt-2 text-lg font-semibold">{brokerNames[account.broker_code]}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">{account.label}</div>
                     </div>
-                    <div className="border-t border-border py-3">
-                        <div className="text-xs font-bold uppercase text-muted-foreground">Session</div>
+                    <div className="rounded-lg border border-border bg-muted/40 p-4">
+                        <div className="text-xs font-semibold uppercase text-muted-foreground">Session</div>
                         <div className="mt-2 flex flex-wrap gap-2">
-                            <StatusBadge
-                                className={
-                                    account.last_verified_at
-                                        ? "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]"
-                                        : "border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent-dim)] dark:text-[var(--accent)]"
-                                }
-                            >
+                            <StatusBadge variant={account.last_verified_at ? "success" : "warning"}>
                                 {account.last_verified_at ? "Verified" : "Unverified"}
                             </StatusBadge>
-                            <StatusBadge className={statusTone(account.session_status)}>
+                            <StatusBadge
+                                variant={
+                                    account.session_status === "active" || account.session_status === "automation_ready"
+                                        ? "success"
+                                        : "warning"
+                                }
+                            >
                                 {account.session_status ?? "pending"}
                             </StatusBadge>
                         </div>
                     </div>
-                    <div className="border-t border-border py-3">
-                        <div className="text-xs font-bold uppercase text-muted-foreground">Stream status</div>
-                        <div className="mt-2 text-lg font-bold">{streamStatus.subscription_count} subscriptions</div>
-                        <div className="text-sm text-muted-foreground">{streamStatus.guidance}</div>
+                    <div className="rounded-lg border border-border bg-muted/40 p-4">
+                        <div className="text-xs font-semibold uppercase text-muted-foreground">Stream status</div>
+                        <div className="mt-2 text-lg font-semibold">
+                            {streamStatus.subscription_count} subscriptions
+                        </div>
+                        <div className="mt-1 text-sm text-muted-foreground">{streamStatus.guidance}</div>
                     </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                     {Object.entries(capabilities.capabilities).map(([key, value]) => (
-                        <StatusBadge
-                            className={
-                                value.supported
-                                    ? "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]"
-                                    : "border-border bg-card text-muted-foreground"
-                            }
-                            key={key}
-                        >
+                        <StatusBadge variant={value.supported ? "success" : "secondary"} key={key}>
                             {key}
                         </StatusBadge>
                     ))}
-                    <Button disabled={isPending} onClick={refreshMeta} type="button" variant="outline">
-                        Refresh status
-                    </Button>
                 </div>
             </Section>
 
             <Section
                 title="Instrument sync"
-                description="Download the broker instrument master to a local CSV under backend/data/instruments. Background verify flows use the same CSV-only sync."
+                description="Refresh the local broker instrument cache used by symbol search and live subscriptions."
             >
                 <div className="flex flex-wrap items-center gap-3">
-                    <Button disabled={isPending || !sessionActive} onClick={() => syncInstruments("csv")} type="button">
-                        {isPending ? "Working..." : "Sync to CSV"}
-                    </Button>
-                    <Button
-                        disabled={isPending}
-                        onClick={() => syncInstruments("delete")}
-                        type="button"
-                        variant="destructive"
-                    >
-                        {isPending ? "Working..." : "Delete DB + CSV"}
-                    </Button>
+                    <Group>
+                        <Button
+                            disabled={isPending || !sessionActive}
+                            onClick={() => syncInstruments("csv")}
+                            type="button"
+                        >
+                            {isPending ? "Working..." : "Refresh instruments"}
+                        </Button>
+                        <GroupSeparator />
+                        <Button
+                            disabled={isPending}
+                            onClick={() => syncInstruments("delete")}
+                            type="button"
+                            variant="destructive"
+                        >
+                            {isPending ? "Working..." : "Clear cache"}
+                        </Button>
+                    </Group>
                     {syncResult ? (
-                        <div className="grid gap-1 text-sm text-muted-foreground">
+                        <div className="grid gap-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                             <div>
                                 {syncResult.storage_target ?? "db"} · {syncResult.sync_status} · {syncResult.row_count}{" "}
                                 rows · {formatDate(syncResult.finished_at ?? syncResult.started_at)}
@@ -448,7 +458,7 @@ export function BrokerDataTest({
 
             <Section
                 title="Instrument search"
-                description="Search the broker instrument cache after a sync completes, with CSV fallback when the local export is available."
+                description="Find broker instruments after the local cache is refreshed."
             >
                 <div className="grid gap-3 min-[900px]:grid-cols-[1fr_140px_140px]">
                     <Input
@@ -538,83 +548,77 @@ export function BrokerDataTest({
 
             <Section
                 title="Portfolio reads"
-                description="Run the existing read-only broker operations and inspect raw broker payloads."
+                description="Run read-only broker portfolio operations and inspect the latest payload."
             >
                 <div className="flex flex-wrap gap-2">
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => run(() => getProfile(account.id), "Profile")}
-                        type="button"
-                        variant="outline"
-                    >
-                        Profile
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => run(() => getPortfolioFunds(account.id), "Funds")}
-                        type="button"
-                        variant="outline"
-                    >
-                        Funds
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => run(() => getPositions(account.id), "Positions")}
-                        type="button"
-                        variant="outline"
-                    >
-                        Positions
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => run(() => getHoldings(account.id), "Holdings")}
-                        type="button"
-                        variant="outline"
-                    >
-                        Holdings
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => run(() => getOrders(account.id), "Orders")}
-                        type="button"
-                        variant="outline"
-                    >
-                        Orders
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => run(() => getTrades(account.id), "Trades")}
-                        type="button"
-                        variant="outline"
-                    >
-                        Trades
-                    </Button>
+                    <Group>
+                        <Button
+                            disabled={isPending || !sessionActive}
+                            onClick={() => run(() => getProfile(account.id), "Profile")}
+                            type="button"
+                            variant="outline"
+                        >
+                            Profile
+                        </Button>
+                        <GroupSeparator />
+                        <Button
+                            disabled={isPending || !sessionActive}
+                            onClick={() => run(() => getPortfolioFunds(account.id), "Funds")}
+                            type="button"
+                            variant="outline"
+                        >
+                            Funds
+                        </Button>
+                        <GroupSeparator />
+                        <Button
+                            disabled={isPending || !sessionActive}
+                            onClick={() => run(() => getPositions(account.id), "Positions")}
+                            type="button"
+                            variant="outline"
+                        >
+                            Positions
+                        </Button>
+                    </Group>
+                    <Group>
+                        <Button
+                            disabled={isPending || !sessionActive}
+                            onClick={() => run(() => getHoldings(account.id), "Holdings")}
+                            type="button"
+                            variant="outline"
+                        >
+                            Holdings
+                        </Button>
+                        <GroupSeparator />
+                        <Button
+                            disabled={isPending || !sessionActive}
+                            onClick={() => run(() => getOrders(account.id), "Orders")}
+                            type="button"
+                            variant="outline"
+                        >
+                            Orders
+                        </Button>
+                        <GroupSeparator />
+                        <Button
+                            disabled={isPending || !sessionActive}
+                            onClick={() => run(() => getTrades(account.id), "Trades")}
+                            type="button"
+                            variant="outline"
+                        >
+                            Trades
+                        </Button>
+                    </Group>
                 </div>
             </Section>
 
             <Section
                 title="Market data"
-                description="Quote, OHLC, historical, option-chain, and greeks requests through the uniform backend interface."
+                description="Run quote, OHLC, historical, option-chain, and greeks requests through the broker data layer."
             >
-                <div className="flex flex-wrap gap-2">
-                    {(
-                        Object.entries(MARKET_MODE_COPY) as Array<[MarketMode, { title: string; description: string }]>
-                    ).map(([mode, meta]) => (
-                        <Button
-                            key={mode}
-                            onClick={() => setMarketMode(mode)}
-                            type="button"
-                            variant={marketMode === mode ? "default" : "outline"}
-                        >
-                            {meta.title}
-                        </Button>
-                    ))}
-                </div>
-                <div className="mt-3 rounded-lg border border-border p-3">
-                    <div className="text-sm font-bold">{MARKET_MODE_COPY[marketMode].title}</div>
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                    <div className="text-sm font-semibold">{MARKET_MODE_COPY[marketMode].title}</div>
                     <div className="mt-1 text-sm text-muted-foreground">{MARKET_MODE_COPY[marketMode].description}</div>
                     <div className="mt-2 text-xs text-muted-foreground">
-                        Highlighted fields below are used for the currently selected request mode.
+                        Highlighted fields are used for the selected request mode.
                     </div>
                 </div>
                 <div className="mt-3 grid gap-3 min-[960px]:grid-cols-4">
@@ -786,109 +790,23 @@ export function BrokerDataTest({
                         </div>
                     </div>
                 ) : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => {
-                            setMarketMode("quote");
-                            run(() => getDataQuotes(account.id, { instruments: [marketInstrument()] }), "Data quotes");
-                        }}
-                        type="button"
-                        variant={marketMode === "quote" ? "default" : "outline"}
-                    >
-                        Quote
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => {
-                            setMarketMode("ohlc");
-                            run(() => getDataOhlc(account.id, { instruments: [marketInstrument()] }), "Data OHLC");
-                        }}
-                        type="button"
-                        variant={marketMode === "ohlc" ? "default" : "outline"}
-                    >
-                        OHLC
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive}
-                        onClick={() => {
-                            setMarketMode("historical");
-                            run(
-                                () =>
-                                    getHistoricalData(account.id, {
-                                        instrument: marketInstrument(),
-                                        interval: marketInterval,
-                                        from_date: new Date(marketFromDate).toISOString(),
-                                        to_date: new Date(marketToDate).toISOString()
-                                    }),
-                                "Historical data"
-                            );
-                        }}
-                        type="button"
-                        variant={marketMode === "historical" ? "default" : "outline"}
-                    >
-                        Historical
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive || !capabilities.capabilities.option_chain?.supported}
-                        onClick={() => {
-                            setMarketMode("option_chain");
-                            run(
-                                () =>
-                                    getOptionChainData(account.id, {
-                                        symbol: marketSymbol.trim(),
-                                        exchange: marketExchange.trim() || "NSE",
-                                        expiry: marketExpiry.trim() || undefined
-                                    }),
-                                "Option chain"
-                            );
-                        }}
-                        type="button"
-                        variant={marketMode === "option_chain" ? "default" : "outline"}
-                    >
-                        Option chain
-                    </Button>
-                    <Button
-                        disabled={isPending || !sessionActive || !capabilities.capabilities.greeks?.supported}
-                        onClick={() => {
-                            setMarketMode("greeks");
-                            run(
-                                () =>
-                                    getGreeksData(account.id, {
-                                        symbol: marketSymbol.trim(),
-                                        exchange: marketExchange.trim() || "NSE",
-                                        expiry: marketExpiry.trim() || undefined,
-                                        strike: marketStrike.trim() || undefined,
-                                        option_type: marketOptionType.trim() || undefined,
-                                        price: numberOrUndefined(marketPrice),
-                                        underlying_price: numberOrUndefined(marketUnderlyingPrice),
-                                        volatility: numberOrUndefined(marketVolatility),
-                                        interest_rate: numberOrUndefined(marketInterestRate),
-                                        days_to_expiry: integerOrUndefined(marketDaysToExpiry)
-                                    }),
-                                "Greeks"
-                            );
-                        }}
-                        type="button"
-                        variant={marketMode === "greeks" ? "default" : "outline"}
-                    >
-                        Greeks
-                    </Button>
-                </div>
             </Section>
 
             <Section title="WebSocket test" description="On-demand quote streaming over the unified websocket route.">
                 <div className="flex flex-wrap items-center gap-3">
-                    <Button
-                        disabled={!streamStatus.websocket_enabled || wsConnected}
-                        onClick={connectSocket}
-                        type="button"
-                    >
-                        Connect
-                    </Button>
-                    <Button disabled={!wsConnected} onClick={disconnectSocket} type="button" variant="outline">
-                        Disconnect
-                    </Button>
+                    <Group>
+                        <Button
+                            disabled={!streamStatus.websocket_enabled || wsConnected}
+                            onClick={connectSocket}
+                            type="button"
+                        >
+                            Connect
+                        </Button>
+                        <GroupSeparator />
+                        <Button disabled={!wsConnected} onClick={disconnectSocket} type="button" variant="outline">
+                            Disconnect
+                        </Button>
+                    </Group>
                     <Input
                         className="w-[180px]"
                         onChange={(event) => setWsSymbol(event.target.value)}
@@ -925,7 +843,7 @@ export function BrokerDataTest({
                         See all received messages
                     </Label>
                 </div>
-                <div className="mt-4 text-sm text-muted-foreground">
+                <div className="mt-4 inline-flex rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                     {wsConnected ? "Connected" : "Disconnected"} · {streamStatus.subscription_count} active
                     subscriptions
                 </div>
@@ -946,24 +864,43 @@ export function BrokerDataTest({
                 </div>
             </Section>
 
-            <Section
-                title={responseTitle || "Latest response"}
-                description="Raw payloads returned by the backend or broker."
-            >
-                {isPending ? (
-                    <div className="rounded-lg border border-border bg-muted/30 p-4">
-                        <Skeleton className="h-4 w-48" />
-                        <Skeleton className="mt-3 h-4 w-full" />
-                        <Skeleton className="mt-2 h-4 w-5/6" />
-                        <Skeleton className="mt-2 h-4 w-2/3" />
-                        <Skeleton className="mt-2 h-4 w-4/5" />
+            {responseToastOpen && responseBody ? (
+                <div
+                    aria-label="Latest raw payload"
+                    className="fixed right-5 top-1/2 z-[90] flex max-h-[72vh] w-[min(38rem,calc(100vw-2rem))] -translate-y-1/2 flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl"
+                    role="status"
+                >
+                    <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+                        <div className="min-w-0">
+                            <div className="text-sm font-semibold">{responseTitle || "Latest response"}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                                Raw payload from the backend or broker.
+                            </div>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                            <Button
+                                aria-label="Copy payload"
+                                onClick={copyResponse}
+                                size="sm"
+                                type="button"
+                                variant="ghost"
+                            >
+                                <Clipboard className="size-4" aria-hidden="true" />
+                            </Button>
+                            <Button
+                                aria-label="Close payload"
+                                onClick={() => setResponseToastOpen(false)}
+                                size="sm"
+                                type="button"
+                                variant="ghost"
+                            >
+                                <X className="size-4" aria-hidden="true" />
+                            </Button>
+                        </div>
                     </div>
-                ) : (
-                    <pre className="overflow-x-auto rounded-lg border border-border bg-muted/30 p-4 text-xs">
-                        {responseBody || "{}"}
-                    </pre>
-                )}
-            </Section>
+                    <pre className="min-h-0 overflow-auto p-4 text-xs leading-5">{responseBody}</pre>
+                </div>
+            ) : null}
         </div>
     );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth, useSignUpEmail } from "@better-auth-ui/react";
-import { IconCheck, IconEye, IconEyeOff, IconInfoCircle } from "@tabler/icons-react";
+import { IconCheck, IconEye, IconEyeOff } from "@tabler/icons-react";
 import { type FormEvent, useMemo, useState } from "react";
 import {
     authFormCardClassName,
@@ -39,15 +39,20 @@ function RequirementRow({ met, label }: { met: boolean; label: string }) {
 
 export function OnboardingSetupForm() {
     const { authClient, redirectTo, navigate } = useAuth();
-    const [name, setName] = useState("");
+    const [firstName, setFirstName] = useState("");
+    const [lastName, setLastName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+    const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
     const [error, setError] = useState("");
     const [fieldErrors, setFieldErrors] = useState<{
-        name?: string;
+        firstName?: string;
+        lastName?: string;
         email?: string;
         password?: string;
+        confirmPassword?: string;
     }>({});
 
     const passwordChecks = useMemo(() => getPasswordChecks(password), [password]);
@@ -56,6 +61,7 @@ export function OnboardingSetupForm() {
     const { mutate: signUpEmail, isPending } = useSignUpEmail(authClient, {
         onError: (signUpError) => {
             setPassword("");
+            setConfirmPassword("");
             setError(signUpError.error?.message ?? "Could not create your account. Try again.");
         },
         onSuccess: () => {
@@ -69,16 +75,26 @@ export function OnboardingSetupForm() {
 
         const nextErrors: typeof fieldErrors = {};
 
-        if (!name.trim()) {
-            nextErrors.name = "Enter your full name.";
+        if (!firstName.trim()) {
+            nextErrors.firstName = "Enter your first name.";
+        }
+
+        if (!lastName.trim()) {
+            nextErrors.lastName = "Enter your last name.";
         }
 
         if (!email.trim()) {
-            nextErrors.email = "Enter your work email.";
+            nextErrors.email = "Enter your email.";
         }
 
         if (!passwordChecks.length) {
             nextErrors.password = "Use at least 8 characters.";
+        }
+
+        if (!confirmPassword) {
+            nextErrors.confirmPassword = "Confirm your password.";
+        } else if (password !== confirmPassword) {
+            nextErrors.confirmPassword = "Passwords do not match.";
         }
 
         if (Object.keys(nextErrors).length > 0) {
@@ -87,7 +103,11 @@ export function OnboardingSetupForm() {
         }
 
         setFieldErrors({});
-        signUpEmail({ name: name.trim(), email: email.trim(), password });
+        signUpEmail({
+            name: `${firstName.trim()} ${lastName.trim()}`,
+            email: email.trim(),
+            password
+        });
     }
 
     return (
@@ -99,7 +119,6 @@ export function OnboardingSetupForm() {
 
             <CardPanel className="flex flex-col gap-6">
                 <Alert variant="info">
-                    <IconInfoCircle aria-hidden="true" />
                     <AlertTitle>Workspace setup</AlertTitle>
                     <AlertDescription>
                         <p>
@@ -121,34 +140,56 @@ export function OnboardingSetupForm() {
 
                 <form className="flex flex-col gap-6" onSubmit={handleSubmit}>
                     <FieldGroup className="gap-5">
-                        <Field data-invalid={!!fieldErrors.name}>
-                            <FieldLabel htmlFor="onboarding-name">Full name</FieldLabel>
-                            <Input
-                                id="onboarding-name"
-                                name="name"
-                                type="text"
-                                autoComplete="name"
-                                placeholder="Your full name"
-                                value={name}
-                                disabled={isPending}
-                                size="lg"
-                                onChange={(event) => {
-                                    setName(event.target.value);
-                                    setFieldErrors((current) => ({ ...current, name: undefined }));
-                                }}
-                                aria-invalid={fieldErrors.name ? true : undefined}
-                            />
-                            <FieldError>{fieldErrors.name}</FieldError>
-                        </Field>
+                        <div className="grid gap-5 sm:grid-cols-2">
+                            <Field data-invalid={!!fieldErrors.firstName}>
+                                <FieldLabel htmlFor="onboarding-first-name">First name</FieldLabel>
+                                <Input
+                                    id="onboarding-first-name"
+                                    name="firstName"
+                                    type="text"
+                                    autoComplete="given-name"
+                                    placeholder="First Name"
+                                    value={firstName}
+                                    disabled={isPending}
+                                    size="lg"
+                                    onChange={(event) => {
+                                        setFirstName(event.target.value);
+                                        setFieldErrors((current) => ({ ...current, firstName: undefined }));
+                                    }}
+                                    aria-invalid={fieldErrors.firstName ? true : undefined}
+                                />
+                                <FieldError>{fieldErrors.firstName}</FieldError>
+                            </Field>
+
+                            <Field data-invalid={!!fieldErrors.lastName}>
+                                <FieldLabel htmlFor="onboarding-last-name">Last name</FieldLabel>
+                                <Input
+                                    id="onboarding-last-name"
+                                    name="lastName"
+                                    type="text"
+                                    autoComplete="family-name"
+                                    placeholder="Last Name"
+                                    value={lastName}
+                                    disabled={isPending}
+                                    size="lg"
+                                    onChange={(event) => {
+                                        setLastName(event.target.value);
+                                        setFieldErrors((current) => ({ ...current, lastName: undefined }));
+                                    }}
+                                    aria-invalid={fieldErrors.lastName ? true : undefined}
+                                />
+                                <FieldError>{fieldErrors.lastName}</FieldError>
+                            </Field>
+                        </div>
 
                         <Field data-invalid={!!fieldErrors.email}>
-                            <FieldLabel htmlFor="onboarding-email">Work email</FieldLabel>
+                            <FieldLabel htmlFor="onboarding-email">Email</FieldLabel>
                             <Input
                                 id="onboarding-email"
                                 name="email"
                                 type="email"
                                 autoComplete="email"
-                                placeholder="you@company.com"
+                                placeholder="Email"
                                 value={email}
                                 disabled={isPending}
                                 size="lg"
@@ -163,18 +204,25 @@ export function OnboardingSetupForm() {
 
                         <Field data-invalid={!!fieldErrors.password}>
                             <FieldLabel htmlFor="onboarding-password">Password</FieldLabel>
-                            <InputGroup>
+                            <InputGroup className="h-9.5">
                                 <InputGroupInput
                                     id="onboarding-password"
                                     name="password"
                                     type={isPasswordVisible ? "text" : "password"}
                                     autoComplete="new-password"
-                                    placeholder="At least 8 characters"
+                                    placeholder="Password"
                                     value={password}
                                     disabled={isPending}
                                     onChange={(event) => {
                                         setPassword(event.target.value);
-                                        setFieldErrors((current) => ({ ...current, password: undefined }));
+                                        setFieldErrors((current) => ({
+                                            ...current,
+                                            confirmPassword:
+                                                confirmPassword && event.target.value !== confirmPassword
+                                                    ? current.confirmPassword
+                                                    : undefined,
+                                            password: undefined
+                                        }));
                                     }}
                                     aria-invalid={fieldErrors.password ? true : undefined}
                                 />
@@ -196,13 +244,13 @@ export function OnboardingSetupForm() {
                             </InputGroup>
 
                             {password ? (
-                                <div className="flex flex-col gap-3 pt-1">
-                                    <div className="flex flex-col gap-2">
+                                <div className="flex w-full flex-col gap-3 pt-1">
+                                    <div className="flex w-full flex-col gap-2">
                                         <div className="flex items-center justify-between text-xs">
                                             <span className="text-muted-foreground">Password strength</span>
                                             <span className="font-medium text-foreground">{passwordStrength.label}</span>
                                         </div>
-                                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                                             <div
                                                 className={cn(
                                                     "h-full rounded-full transition-all duration-300",
@@ -222,6 +270,43 @@ export function OnboardingSetupForm() {
 
                             <FieldError>{fieldErrors.password}</FieldError>
                         </Field>
+
+                        <Field data-invalid={!!fieldErrors.confirmPassword}>
+                            <FieldLabel htmlFor="onboarding-confirm-password">Confirm password</FieldLabel>
+                            <InputGroup className="h-9.5">
+                                <InputGroupInput
+                                    id="onboarding-confirm-password"
+                                    name="confirmPassword"
+                                    type={isConfirmPasswordVisible ? "text" : "password"}
+                                    autoComplete="new-password"
+                                    placeholder="Confirm Password"
+                                    value={confirmPassword}
+                                    disabled={isPending}
+                                    onChange={(event) => {
+                                        setConfirmPassword(event.target.value);
+                                        setFieldErrors((current) => ({ ...current, confirmPassword: undefined }));
+                                    }}
+                                    aria-invalid={fieldErrors.confirmPassword ? true : undefined}
+                                />
+                                <InputGroupAddon align="inline-end">
+                                    <InputGroupButton
+                                        type="button"
+                                        size="icon-sm"
+                                        className={authFormInputGroupButtonClassName}
+                                        aria-label={isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password"}
+                                        onClick={() => setIsConfirmPasswordVisible((current) => !current)}
+                                    >
+                                        {isConfirmPasswordVisible ? (
+                                            <IconEyeOff aria-hidden="true" />
+                                        ) : (
+                                            <IconEye aria-hidden="true" />
+                                        )}
+                                    </InputGroupButton>
+                                </InputGroupAddon>
+                            </InputGroup>
+
+                            <FieldError>{fieldErrors.confirmPassword}</FieldError>
+                        </Field>
                     </FieldGroup>
 
                     {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -237,10 +322,6 @@ export function OnboardingSetupForm() {
                             Create workspace
                         </Button>
 
-                        <div className="flex items-start justify-center gap-2 text-center text-sm text-muted-foreground lg:hidden">
-                            <IconCheck className="mt-0.5 size-4 shrink-0 text-primary" stroke={2} aria-hidden="true" />
-                            <span>Your password is encrypted and never stored in plain text.</span>
-                        </div>
                     </div>
                 </form>
             </CardPanel>

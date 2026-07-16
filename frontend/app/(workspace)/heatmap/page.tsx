@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { Activity, ArrowRight, Grid2X2, RadioTower } from "lucide-react";
+import { Activity, ArrowRight, Grid2X2, Minus, RadioTower, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
 import {
     HEATMAP_FILTER_COOKIE_KEY,
     isHeatmapScope,
@@ -10,7 +10,10 @@ import { HeatmapFilters } from "@/components/heatmap/heatmap-filters";
 import { HeatmapMeasuredGrid } from "@/components/heatmap/heatmap-measured-grid";
 import { brokerNames } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardDescription, CardHeader, CardPanel, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { formatUserFacingError } from "@/lib/api-errors";
 import { typography } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -99,6 +102,11 @@ function trendLabel(value?: number | null) {
     return "Flat";
 }
 
+function breadthPercent(count: number, total: number) {
+    if (!total) return "0%";
+    return `${Math.round((count / total) * 100)}%`;
+}
+
 function symbolCountLabel(watchlist: Watchlist) {
     return watchlist.items.length || watchlist.symbols.length;
 }
@@ -138,9 +146,11 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
 
     return (
         <article
+            aria-label={`${item.symbol} ${percent} ${trendLabel(item.day_change_perc)}`}
             className={`group relative isolate flex h-full min-h-0 min-w-0 overflow-visible rounded-lg border text-white shadow-sm outline-none transition-transform duration-150 hover:z-20 ${dense ? "p-1" : "p-1.5"} ${heatmapTileClass(index, item.day_change_perc, dense)}`}
             data-heatmap-tile
             style={tone}
+            tabIndex={0}
         >
             <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(0,0,0,0.1))]" />
             <div className="pointer-events-none absolute inset-0 rounded-lg opacity-0 ring-2 ring-white/40 transition-opacity group-hover:opacity-100" />
@@ -158,7 +168,7 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
                         ) : null}
                     </div>
                     {item.logo ? (
-                        <img alt="" className={`${dense ? "size-4.5" : "size-6"} shrink-0 object-contain`} draggable={false} src={item.logo} />
+                        <img alt="" className={`${dense ? "size-4" : "size-6"} shrink-0 object-contain`} draggable={false} src={item.logo} />
                     ) : (
                         <div className={`flex shrink-0 items-center justify-center rounded-lg border border-white/24 bg-black/12 ${dense ? "size-5" : "size-6"}`}>
                             <span className="font-mono text-[8px] font-bold text-white/88">{symbolInitials(item.symbol)}</span>
@@ -182,7 +192,7 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
             </div>
 
             <div
-                className="pointer-events-none absolute left-[var(--heatmap-hover-left,0px)] top-[var(--heatmap-hover-top,0px)] z-10 flex min-h-[var(--heatmap-hover-min-height,100%)] w-[var(--heatmap-hover-width,100%)] flex-col overflow-visible rounded-lg border border-white/30 bg-inherit p-3 opacity-0 shadow-2xl ring-1 ring-black/25 transition-[opacity,left,top] duration-150 group-hover:opacity-100"
+                className="pointer-events-none absolute left-[var(--heatmap-hover-left,0px)] top-[var(--heatmap-hover-top,0px)] z-10 flex min-h-[var(--heatmap-hover-min-height,100%)] w-[var(--heatmap-hover-width,100%)] flex-col overflow-visible rounded-lg border border-white/30 bg-inherit p-3 opacity-0 shadow-2xl ring-1 ring-black/25 transition-[opacity,left,top] duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
                 data-heatmap-hover-card
             >
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.12),rgba(0,0,0,0.12))]" />
@@ -228,6 +238,32 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
                 </div>
             </div>
         </article>
+    );
+}
+
+function BreadthCell({
+    count,
+    icon: Icon,
+    label,
+    tone,
+    total
+}: {
+    count: number;
+    icon: LucideIcon;
+    label: string;
+    tone: string;
+    total: number;
+}) {
+    return (
+        <div className="min-w-0 px-3 py-2">
+            <p className={cn("flex items-center gap-1.5 font-semibold", tone)}>
+                <Icon className="size-3.5" aria-hidden="true" />
+                <span className="truncate">
+                    {count} {label}
+                </span>
+            </p>
+            <p className="mt-1 font-mono text-[10px] text-muted-foreground">{breadthPercent(count, total)}</p>
+        </div>
     );
 }
 
@@ -298,6 +334,7 @@ export default async function HeatmapPage({
     const advancingCount = cards.filter((item) => (item.day_change_perc ?? 0) > 0).length;
     const decliningCount = cards.filter((item) => (item.day_change_perc ?? 0) < 0).length;
     const neutralCount = Math.max(cards.length - advancingCount - decliningCount, 0);
+    const strongestMove = cards[0]?.day_change_perc ?? null;
     const isDenseHeatmap = cards.length > 72;
     const selectedBrokerCode =
         heatmap?.broker_code || accounts.find((account) => account.id === (heatmap?.account_id || effectiveAccountId))?.broker_code || null;
@@ -306,53 +343,74 @@ export default async function HeatmapPage({
 
     return (
         <>
-            <div className="flex h-[calc(100dvh-7.25rem)] min-h-0 min-w-0 flex-col overflow-hidden min-[980px]:h-[calc(100dvh-10rem)]">
+            <div className="flex h-[calc(100dvh-8.25rem)] min-h-0 min-w-0 flex-1 flex-col overflow-hidden min-[980px]:h-auto">
                 <header className={`shrink-0 border-b border-border ${isDenseHeatmap ? "mb-2 pb-2" : "mb-3 pb-3"}`}>
-                    <p className={cn(typography.pageEyebrow, isDenseHeatmap ? "mb-1" : "mb-2")}>Intelligence</p>
                     <h1 className={cn(typography.pageTitle, "truncate")}>Heatmap</h1>
                 </header>
 
-                <section className="mb-2 flex min-w-0 shrink-0 flex-col gap-2 rounded-lg border border-border bg-card/80 p-2 min-[980px]:flex-row min-[980px]:items-end">
-                    <div className="flex min-w-0 flex-1 flex-col gap-2">
-                        <HeatmapFilters
-                            accounts={accounts}
-                            currentAccountId={effectiveAccountId}
-                            currentScope={scope}
-                            currentWatchlistId={effectiveWatchlistId}
-                            watchlists={watchlists}
-                        />
-                        <p className="text-xs font-medium leading-5 text-muted-foreground">
-                            Broker for heatmap data is inherited from your default broker setting:{" "}
-                            <span className="font-semibold text-foreground">{selectedBrokerName}</span>. Change it from{" "}
-                            <Link className="font-semibold text-primary underline-offset-4 hover:underline" href="/settings">
-                                Settings
-                            </Link>
-                            .
-                        </p>
-                    </div>
-
+                <section className="mb-2 grid min-w-0 shrink-0 gap-2 min-[1120px]:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
+                    <Card className="min-w-0 border-border/80 bg-card/95 shadow-xs">
+                        <CardPanel className="flex min-w-0 flex-col gap-3 p-3">
+                            <HeatmapFilters
+                                accounts={accounts}
+                                currentAccountId={effectiveAccountId}
+                                currentScope={scope}
+                                currentWatchlistId={effectiveWatchlistId}
+                                watchlists={watchlists}
+                            />
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t border-border/70 pt-2 text-xs font-medium text-muted-foreground">
+                                <span className="min-w-0">Default broker</span>
+                                <Badge className="max-w-44 truncate" variant="outline">
+                                    {selectedBrokerName}
+                                </Badge>
+                                <Button asChild className="h-6 px-2 text-xs" size="xs" variant="ghost">
+                                    <Link href="/settings">Change in Settings</Link>
+                                </Button>
+                            </div>
+                        </CardPanel>
+                    </Card>
                     {heatmap ? (
-                        <div className="flex min-w-0 flex-[1_1_auto] flex-wrap items-center justify-start gap-1 text-[11px] min-[980px]:justify-end">
-                            <span className="min-w-0 truncate rounded-lg border border-border bg-background px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                                {heatmap.scope_label}
-                            </span>
-                            <span className="rounded-lg border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
-                                {heatmap.returned_count}/{heatmap.tracked_symbol_count} live
-                            </span>
-                            <span className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
-                                <RadioTower className="size-3" aria-hidden="true" />
-                                {heatmap.broker_code ? `${heatmap.broker_code} · ${days}d` : `${days}d`}
-                            </span>
-                            <span className="rounded-lg border border-[var(--success)] bg-[var(--success-subtle)] px-2 py-1 font-semibold text-[var(--success)]">
-                                {advancingCount} up
-                            </span>
-                            <span className="rounded-lg border border-[var(--danger)] bg-[var(--danger-subtle)] px-2 py-1 font-semibold text-[var(--danger)]">
-                                {decliningCount} down
-                            </span>
-                            <span className="rounded-lg border border-border bg-background px-2 py-1 font-semibold text-muted-foreground">
-                                {neutralCount} flat
-                            </span>
-                        </div>
+                        <Card className="min-w-0 border-border/80 bg-card/95 shadow-xs">
+                            <CardHeader className="grid-cols-[minmax(0,1fr)_auto] gap-2 p-3 pb-2">
+                                <CardTitle className="truncate font-mono text-xs uppercase tracking-[0.12em]">{heatmap.scope_label}</CardTitle>
+                                <CardDescription className="text-xs">
+                                    {heatmap.returned_count}/{heatmap.tracked_symbol_count} live
+                                </CardDescription>
+                                <CardAction className="self-center">
+                                    <Badge variant="outline">
+                                        <RadioTower className="size-3" aria-hidden="true" />
+                                        {heatmap.broker_code ? `${heatmap.broker_code} · ${days}d` : `${days}d`}
+                                    </Badge>
+                                </CardAction>
+                            </CardHeader>
+                            <CardPanel className="p-0">
+                                <div className="grid grid-cols-3 overflow-hidden border-t border-border/70 text-xs">
+                                    <BreadthCell
+                                        count={advancingCount}
+                                        icon={TrendingUp}
+                                        label="up"
+                                        tone="text-[var(--success)]"
+                                        total={cards.length}
+                                    />
+                                    <div className="border-x border-border/70">
+                                        <BreadthCell
+                                            count={decliningCount}
+                                            icon={TrendingDown}
+                                            label="down"
+                                            tone="text-[var(--danger)]"
+                                            total={cards.length}
+                                        />
+                                    </div>
+                                    <div className="min-w-0 px-3 py-2">
+                                        <p className="flex items-center gap-1.5 font-semibold text-muted-foreground">
+                                            <Minus className="size-3.5" aria-hidden="true" />
+                                            <span className="truncate">{neutralCount} flat</span>
+                                        </p>
+                                        <p className="mt-1 font-mono text-[10px] text-muted-foreground">max {formatPercent(strongestMove)}</p>
+                                    </div>
+                                </div>
+                            </CardPanel>
+                        </Card>
                     ) : null}
                 </section>
 
@@ -363,21 +421,26 @@ export default async function HeatmapPage({
                 ) : null}
 
                 {!loadError && !canLoadHeatmap ? (
-                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/40 p-8 text-center">
-                        <p className="text-lg font-semibold">{sourceEmptyMessage(scope)}</p>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            {scope === "watchlist" ? "Watchlists become available after you add symbols." : null}
-                            {scope === "portfolio_holdings" ? "Broker holdings appear after the broker session is active." : null}
-                        </p>
-                        <div className="mt-5 flex justify-center">
+                    <Empty className="min-h-0 rounded-lg border border-dashed border-border bg-card/40">
+                        <EmptyHeader>
+                            <EmptyMedia variant="icon">
+                                <Grid2X2 aria-hidden="true" />
+                            </EmptyMedia>
+                            <EmptyTitle>{sourceEmptyMessage(scope)}</EmptyTitle>
+                            <EmptyDescription>
+                                {scope === "watchlist" ? "Watchlists become available after you add symbols." : null}
+                                {scope === "portfolio_holdings" ? "Broker holdings appear after the broker session is active." : null}
+                            </EmptyDescription>
+                        </EmptyHeader>
+                        <EmptyContent>
                             <Button asChild variant="outline">
                                 <Link href={scope === "watchlist" ? "/watchlists" : "/broker-connections"}>
                                     {scope === "watchlist" ? "Open Watchlists" : "Open Broker Connections"}
                                     <ArrowRight className="size-4" aria-hidden="true" />
                                 </Link>
                             </Button>
-                        </div>
-                    </div>
+                        </EmptyContent>
+                    </Empty>
                 ) : null}
 
                 {heatmapError ? (
@@ -387,46 +450,74 @@ export default async function HeatmapPage({
                 ) : null}
 
                 {heatmap ? (
-                    <section className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-                        {hasPartialData ? (
-                            <Alert className={`shrink-0 px-3 text-xs ${isDenseHeatmap ? "py-1.5" : "py-2"}`} variant="warning">
-                                <AlertDescription>
-                                    Showing {heatmap.returned_count} symbols with usable pricing data; some symbols could not be quoted live.
-                                </AlertDescription>
-                            </Alert>
-                        ) : null}
+                    <Card className="min-h-0 flex-1 border-border/80 bg-card/95 shadow-xs">
+                        <CardPanel className="flex min-h-0 flex-1 flex-col gap-2 p-2">
+                            {hasPartialData ? (
+                                <Alert className={`shrink-0 rounded-md border-warning/35 bg-warning/8 px-3 text-xs ${isDenseHeatmap ? "py-1.5" : "py-2"}`} variant="warning">
+                                    <AlertDescription>
+                                        Showing {heatmap.returned_count} symbols with usable pricing data; some symbols could not be quoted live.
+                                    </AlertDescription>
+                                </Alert>
+                            ) : null}
 
-                        {!cards.length ? (
-                            <div className="flex min-h-0 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/40 p-8 text-center">
-                                <Grid2X2 className="mx-auto mb-3 size-8 text-muted-foreground" aria-hidden="true" />
-                                <p className="text-lg font-semibold">{noQuotableSymbolsTitle(scope, heatmap.scope_label)}</p>
-                                <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                                    {hasConnectedBroker
-                                        ? `${selectedBrokerName} is connected, but it did not return live prices for this heatmap selection. This usually means the instruments are not available through the current default broker plan, the market-data entitlement is limited, or this broker does not support these symbols for live heatmap data. Upgrade the broker data plan or try a different connected broker.`
-                                        : "Connect an active broker account with live market-data access, then try loading the heatmap again."}
-                                </p>
-                                <div className="mt-5 flex flex-wrap justify-center gap-2">
-                                    <Button asChild variant="outline">
-                                        <Link href="/broker-connections">
-                                            Try another broker
-                                            <ArrowRight className="size-4" aria-hidden="true" />
-                                        </Link>
-                                    </Button>
-                                    {scope === "watchlist" ? (
-                                        <Button asChild variant="ghost">
-                                            <Link href="/watchlists">Review watchlist</Link>
+                            {!cards.length ? (
+                                <Empty className="min-h-0 rounded-lg border border-dashed border-border bg-card/40">
+                                    <EmptyHeader className="max-w-2xl">
+                                        <EmptyMedia variant="icon">
+                                            <Grid2X2 aria-hidden="true" />
+                                        </EmptyMedia>
+                                        <EmptyTitle>{noQuotableSymbolsTitle(scope, heatmap.scope_label)}</EmptyTitle>
+                                        <EmptyDescription className="leading-6">
+                                            {hasConnectedBroker
+                                                ? `${selectedBrokerName} is connected, but it did not return live prices for this heatmap selection. This usually means the instruments are not available through the current default broker plan, the market-data entitlement is limited, or this broker does not support these symbols for live heatmap data. Upgrade the broker data plan or try a different connected broker.`
+                                                : "Connect an active broker account with live market-data access, then try loading the heatmap again."}
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                    <EmptyContent className="flex-row flex-wrap justify-center">
+                                        <Button asChild variant="outline">
+                                            <Link href="/broker-connections">
+                                                Try another broker
+                                                <ArrowRight className="size-4" aria-hidden="true" />
+                                            </Link>
                                         </Button>
-                                    ) : null}
-                                </div>
-                            </div>
-                        ) : (
-                            <HeatmapMeasuredGrid dense={isDenseHeatmap}>
-                                {cards.map((item, index) => (
-                                    <HeatmapCard dense={isDenseHeatmap} index={index} item={item} key={`${item.symbol}:${item.exchange ?? ""}`} />
-                                ))}
-                            </HeatmapMeasuredGrid>
-                        )}
-                    </section>
+                                        {scope === "watchlist" ? (
+                                            <Button asChild variant="ghost">
+                                                <Link href="/watchlists">Review watchlist</Link>
+                                            </Button>
+                                        ) : null}
+                                    </EmptyContent>
+                                </Empty>
+                            ) : (
+                                <>
+                                    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs">
+                                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                                            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">Heat scale</span>
+                                            {[
+                                                ["<-5%", "hsl(0 70% 37%)"],
+                                                ["-1%", "hsl(0 58% 54%)"],
+                                                ["0", "hsl(220 8% 42% / 0.72)"],
+                                                ["+1%", "hsl(151 50% 45%)"],
+                                                [">+5%", "hsl(149 72% 30%)"]
+                                            ].map(([label, color]) => (
+                                                <span className="inline-flex items-center gap-1" key={label}>
+                                                    <span className="size-2.5 rounded-sm border border-border" style={{ backgroundColor: color }} />
+                                                    <span>{label}</span>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <p className="font-medium text-muted-foreground">
+                                            Sorted by absolute intraday move, then symbol.
+                                        </p>
+                                    </div>
+                                    <HeatmapMeasuredGrid dense={isDenseHeatmap}>
+                                        {cards.map((item, index) => (
+                                            <HeatmapCard dense={isDenseHeatmap} index={index} item={item} key={`${item.symbol}:${item.exchange ?? ""}`} />
+                                        ))}
+                                    </HeatmapMeasuredGrid>
+                                </>
+                            )}
+                        </CardPanel>
+                    </Card>
                 ) : null}
 
                 {scope === "watchlist" && watchlists.length ? (

@@ -18,10 +18,10 @@ export const authFormInputGroupButtonClassName =
     "size-9 shrink-0 text-muted-foreground hover:text-foreground";
 
 export const authFormCardClassName =
-    "gap-0 overflow-hidden rounded-xl border-border bg-card py-0 shadow-[0_18px_48px_-30px_rgba(0,0,0,0.55)]";
+    "gap-0 border-border bg-card py-0";
 
 export const authFormPrimaryButtonClassName =
-    "h-10 w-full rounded-lg border-primary bg-primary text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition-[background-color,box-shadow,transform] duration-200 hover:-translate-y-px hover:border-[#f5c200] hover:!bg-[#ffe066] hover:!text-primary-foreground hover:shadow-lg hover:shadow-primary/35 active:translate-y-0 active:!bg-primary active:shadow-md disabled:hover:translate-y-0";
+    "h-10 w-full rounded-lg border-primary bg-primary text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition-[background-color,transform] duration-200 hover:-translate-y-px hover:border-[#f5c200] hover:!bg-[#ffe066] hover:!text-primary-foreground active:translate-y-0 active:!bg-primary active:shadow-md disabled:hover:translate-y-0";
 
 export type PasswordChecks = {
     length: boolean;

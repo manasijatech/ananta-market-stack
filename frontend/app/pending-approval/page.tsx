@@ -9,8 +9,8 @@ export default async function PendingApprovalPage() {
 
     try {
         const route = await resolvePostAuthRoute();
-        if (route === "/dashboard") {
-            redirect("/dashboard");
+        if (route === "/broker-connections") {
+            redirect("/broker-connections");
         }
     } catch {
         // Backend may be unavailable; the client view can retry.

@@ -5,5 +5,9 @@ import { getUnauthenticatedAuthRoute, resolvePostAuthRoute } from "@/service/act
 export default async function HomePage() {
     const session = await getServerSession();
 
-    redirect(session?.user ? await resolvePostAuthRoute() : await getUnauthenticatedAuthRoute());
+    const route = session?.user
+        ? await resolvePostAuthRoute().catch(() => "/pending-approval" as const)
+        : await getUnauthenticatedAuthRoute();
+
+    redirect(route);
 }

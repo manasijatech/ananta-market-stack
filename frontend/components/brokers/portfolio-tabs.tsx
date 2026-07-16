@@ -19,17 +19,27 @@ import {
     normalizeProfile,
     normalizeTrades
 } from "@/components/brokers/normalizers";
-import { Inbox } from "lucide-react";
+import { Inbox, KeyRound, Search } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
+import {
     Empty as EmptyState,
+    EmptyContent,
     EmptyDescription,
     EmptyHeader,
     EmptyMedia,
     EmptyTitle
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton as UISkeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -211,218 +221,299 @@ export function PortfolioTabs({ accountId, sessionActive }: { accountId: string;
     );
     const holdingsTotal = filteredHoldings.reduce((sum, row) => sum + (row.pnl ?? 0), 0);
     const hasProfileDetails = Boolean(state.profile?.name || state.profile?.email || state.profile?.broker_user_id);
+    const fundMetrics = state.funds
+        ? [
+              ["Available", state.funds.available],
+              ["Used", state.funds.used],
+              ["Opening", state.funds.opening_balance],
+              ["Total", state.funds.total]
+          ].filter((item): item is [string, number] => typeof item[1] === "number")
+        : [];
+
+    if (!sessionActive) {
+        return (
+            <CardFrame>
+                <CardFrameHeader>
+                    <CardFrameTitle className="text-lg font-semibold">Broker data</CardFrameTitle>
+                    <CardFrameDescription>
+                        Funds, orders, trades, positions, and holdings appear after the broker session is active.
+                    </CardFrameDescription>
+                </CardFrameHeader>
+                <Card>
+                    <EmptyState className="py-12">
+                        <EmptyHeader>
+                            <EmptyMedia variant="icon">
+                                <KeyRound />
+                            </EmptyMedia>
+                            <EmptyTitle>Activate the broker session first</EmptyTitle>
+                            <EmptyDescription>
+                                Use the session setup above to connect this broker before loading portfolio data.
+                            </EmptyDescription>
+                        </EmptyHeader>
+                        <EmptyContent>
+                            <Button
+                                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                                type="button"
+                                variant="outline"
+                            >
+                                Go to session setup
+                            </Button>
+                        </EmptyContent>
+                    </EmptyState>
+                </Card>
+            </CardFrame>
+        );
+    }
 
     return (
-        <section className="border-t border-border py-8">
-            <div className="sticky top-0 z-10 border-b border-border bg-background/95 py-4 backdrop-blur">
-                <div className="flex flex-col gap-3 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
-                    <Tabs value={active} onValueChange={(value) => load(value as Tab)}>
-                        <TabsList className="max-w-full overflow-x-auto overflow-y-hidden">
+        <CardFrame>
+            <CardFrameHeader>
+                <CardFrameTitle className="text-lg font-semibold">Broker data</CardFrameTitle>
+                <CardFrameDescription>
+                    Review funds, orders, trades, positions, and holdings from the active broker session.
+                </CardFrameDescription>
+                {active !== "funds" ? (
+                    <CardFrameAction>
+                        <InputGroup className="h-9 w-full min-[760px]:w-64">
+                            <InputGroupAddon>
+                                <Search className="size-4" aria-hidden="true" />
+                            </InputGroupAddon>
+                            <InputGroupInput
+                                onChange={(event) => setFilter(event.target.value)}
+                                placeholder="Filter symbol"
+                                value={filter}
+                            />
+                        </InputGroup>
+                    </CardFrameAction>
+                ) : null}
+            </CardFrameHeader>
+            <Card>
+                <Tabs value={active} onValueChange={(value) => load(value as Tab)}>
+                    <div className="border-b border-border px-4 pt-2">
+                        <TabsList className="max-w-full overflow-x-auto overflow-y-hidden" variant="underline">
                             {tabs.map((tab) => (
-                                <TabsTrigger className="whitespace-nowrap font-extrabold" key={tab.id} value={tab.id}>
+                                <TabsTrigger className="whitespace-nowrap font-semibold" key={tab.id} value={tab.id}>
                                     {tab.label}
                                 </TabsTrigger>
                             ))}
                         </TabsList>
-                    </Tabs>
-                    {active !== "funds" ? (
-                        <Input
-                            className="min-[760px]:w-[220px]"
-                            onChange={(event) => setFilter(event.target.value)}
-                            placeholder="Filter symbol"
-                            value={filter}
-                        />
-                    ) : null}
-                </div>
-            </div>
-
-            <div className="pt-5">
-                {!sessionActive ? (
-                    <div className="border-y border-dashed border-border py-8 text-center text-muted-foreground">
-                        Connect the broker session first. Portfolio, profile, orders, trades, positions, and holdings
-                        load after the access token is active.
                     </div>
-                ) : null}
 
-                {error ? (
-                    <Alert className="mb-4" variant="warning">
-                        <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                ) : null}
-                {sessionActive && isPending ? <Skeleton /> : null}
-
-                {sessionActive && active === "funds" && state.funds ? (
-                    <div>
-                        <div className="grid gap-3 min-[720px]:grid-cols-4">
-                            {[
-                                ["Available", state.funds.available],
-                                ["Used", state.funds.used],
-                                ["Opening", state.funds.opening_balance],
-                                ["Total", state.funds.total]
-                            ].map(([label, value]) => (
-                                <div className="border-t border-border py-4" key={String(label)}>
-                                    <span className="text-xs font-extrabold uppercase text-muted-foreground">
-                                        {label}
-                                    </span>
-                                    <strong className="mt-2 block text-2xl">
-                                        {money(typeof value === "number" ? value : null)}
-                                    </strong>
-                                </div>
-                            ))}
-                        </div>
-                        {state.profile && hasProfileDetails ? (
-                            <details className="mt-4 border-t border-border pt-4">
-                                <summary className="cursor-pointer font-bold">Profile</summary>
-                                <dl className="mt-3 grid gap-2 text-sm text-muted-foreground">
-                                    <div>Name: {state.profile.name ?? "-"}</div>
-                                    <div>Email: {state.profile.email ?? "-"}</div>
-                                    <div>Broker user ID: {state.profile.broker_user_id ?? "-"}</div>
-                                </dl>
-                            </details>
+                    <CardPanel>
+                        {error ? (
+                            <Alert className="mb-4" variant="warning">
+                                <AlertDescription>{error}</AlertDescription>
+                            </Alert>
                         ) : null}
-                    </div>
-                ) : null}
+                        {isPending ? <Skeleton /> : null}
 
-                {sessionActive && active === "orders" && state.orders ? (
-                    filteredOrders.length ? (
-                        <Table className="min-w-[720px] text-left text-sm">
-                            <TableHeader className="text-xs uppercase text-muted-foreground">
-                                <TableRow className="border-b-0">
-                                    <TableHead className="py-2">Symbol</TableHead>
-                                    <TableHead>Action</TableHead>
-                                    <TableHead>Qty</TableHead>
-                                    <TableHead>Price</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Time</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {filteredOrders.map((row) => (
-                                    <TableRow className="border-t border-border" key={row.id}>
-                                        <TableCell className="py-3 font-bold">{row.symbol}</TableCell>
-                                        <TableCell>{row.action}</TableCell>
-                                        <TableCell>{row.quantity}</TableCell>
-                                        <TableCell>{money(row.price)}</TableCell>
-                                        <TableCell>{row.status}</TableCell>
-                                        <TableCell>{row.time ?? "-"}</TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    ) : (
-                        <Empty message="No orders found." />
-                    )
-                ) : null}
-
-                {sessionActive && active === "trades" && state.trades ? (
-                    filteredTrades.length ? (
-                        <Table className="min-w-[680px] text-left text-sm">
-                            <TableHeader className="text-xs uppercase text-muted-foreground">
-                                <TableRow className="border-b-0">
-                                    <TableHead className="py-2">Symbol</TableHead>
-                                    <TableHead>Action</TableHead>
-                                    <TableHead>Qty</TableHead>
-                                    <TableHead>Avg price</TableHead>
-                                    <TableHead>Time</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {filteredTrades.map((row) => (
-                                    <TableRow className="border-t border-border" key={row.id}>
-                                        <TableCell className="py-3 font-bold">{row.symbol}</TableCell>
-                                        <TableCell>{row.action}</TableCell>
-                                        <TableCell>{row.quantity}</TableCell>
-                                        <TableCell>{money(row.avg_price)}</TableCell>
-                                        <TableCell>{row.time ?? "-"}</TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    ) : (
-                        <Empty message="No trades found." />
-                    )
-                ) : null}
-
-                {sessionActive && active === "positions" && state.positions ? (
-                    <div>
-                        <Button className="mb-3" disabled type="button" variant="outline">
-                            Close all positions
-                        </Button>
-                        {filteredPositions.length ? (
-                            <Table className="min-w-[680px] text-left text-sm">
-                                <TableHeader className="text-xs uppercase text-muted-foreground">
-                                    <TableRow className="border-b-0">
-                                        <TableHead className="py-2">Symbol</TableHead>
-                                        <TableHead>Product</TableHead>
-                                        <TableHead>Qty</TableHead>
-                                        <TableHead>PNL</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {filteredPositions.map((row) => (
-                                        <TableRow className="border-t border-border" key={row.id}>
-                                            <TableCell className="py-3 font-bold">{row.symbol}</TableCell>
-                                            <TableCell>{row.product ?? "-"}</TableCell>
-                                            <TableCell>{row.quantity}</TableCell>
-                                            <TableCell
-                                                className={(row.pnl ?? 0) >= 0 ? "text-primary" : "text-destructive"}
+                        {active === "funds" && state.funds ? (
+                            <div className="grid gap-5">
+                                {fundMetrics.length ? (
+                                    <div className="grid gap-3 min-[640px]:grid-cols-2 min-[1080px]:grid-cols-4">
+                                        {fundMetrics.map(([label, value]) => (
+                                            <div
+                                                className="rounded-lg border border-border bg-muted/40 p-4"
+                                                key={label}
                                             >
-                                                {money(row.pnl)}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        ) : (
-                            <Empty message="No positions found." />
-                        )}
-                    </div>
-                ) : null}
+                                                <span className="text-xs font-semibold uppercase text-muted-foreground">
+                                                    {label}
+                                                </span>
+                                                <strong className="mt-2 block text-2xl font-semibold">
+                                                    {money(value)}
+                                                </strong>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <Empty message="No fund balance details were returned by this broker." />
+                                )}
+                                {state.profile && hasProfileDetails ? (
+                                    <div className="rounded-lg border border-border bg-muted/30 p-4">
+                                        <h3 className="text-sm font-semibold">Profile</h3>
+                                        <div className="mt-3 grid gap-3 text-sm min-[720px]:grid-cols-3">
+                                            {state.profile.name ? (
+                                                <div>
+                                                    <span className="block text-xs font-medium uppercase text-muted-foreground">
+                                                        Name
+                                                    </span>
+                                                    <span className="mt-1 block font-medium">{state.profile.name}</span>
+                                                </div>
+                                            ) : null}
+                                            {state.profile.email ? (
+                                                <div>
+                                                    <span className="block text-xs font-medium uppercase text-muted-foreground">
+                                                        Email
+                                                    </span>
+                                                    <span className="mt-1 block truncate font-medium">
+                                                        {state.profile.email}
+                                                    </span>
+                                                </div>
+                                            ) : null}
+                                            {state.profile.broker_user_id ? (
+                                                <div>
+                                                    <span className="block text-xs font-medium uppercase text-muted-foreground">
+                                                        Broker user
+                                                    </span>
+                                                    <span className="mt-1 block font-medium">
+                                                        {state.profile.broker_user_id}
+                                                    </span>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
 
-                {sessionActive && active === "holdings" && state.holdings ? (
-                    filteredHoldings.length ? (
-                        <Table className="min-w-[760px] text-left text-sm">
-                            <TableHeader className="text-xs uppercase text-muted-foreground">
-                                <TableRow className="border-b-0">
-                                    <TableHead className="py-2">Symbol</TableHead>
-                                    <TableHead>Qty</TableHead>
-                                    <TableHead>Avg</TableHead>
-                                    <TableHead>LTP</TableHead>
-                                    <TableHead>PNL</TableHead>
-                                    <TableHead>PNL %</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {filteredHoldings.map((row) => (
-                                    <TableRow className="border-t border-border" key={row.id}>
-                                        <TableCell className="py-3 font-bold">{row.symbol}</TableCell>
-                                        <TableCell>{row.quantity}</TableCell>
-                                        <TableCell>{money(row.average_price)}</TableCell>
-                                        <TableCell>{money(row.last_price)}</TableCell>
-                                        <TableCell
-                                            className={(row.pnl ?? 0) >= 0 ? "text-primary" : "text-destructive"}
-                                        >
-                                            {money(row.pnl)}
-                                        </TableCell>
-                                        <TableCell>{row.pnl_percent ?? "-"}</TableCell>
-                                    </TableRow>
-                                ))}
-                                <TableRow className="border-t-2 border-border font-bold">
-                                    <TableCell className="py-3" colSpan={4}>
-                                        Total PNL
-                                    </TableCell>
-                                    <TableCell className={holdingsTotal >= 0 ? "text-primary" : "text-destructive"}>
-                                        {money(holdingsTotal)}
-                                    </TableCell>
-                                    <TableCell />
-                                </TableRow>
-                            </TableBody>
-                        </Table>
-                    ) : (
-                        <Empty message="No holdings found." />
-                    )
-                ) : null}
-            </div>
-        </section>
+                        {active === "orders" && state.orders ? (
+                            filteredOrders.length ? (
+                                <Table className="min-w-[720px] text-left text-sm">
+                                    <TableHeader className="text-xs uppercase text-muted-foreground">
+                                        <TableRow className="border-b-0">
+                                            <TableHead className="py-2">Symbol</TableHead>
+                                            <TableHead>Action</TableHead>
+                                            <TableHead>Qty</TableHead>
+                                            <TableHead>Price</TableHead>
+                                            <TableHead>Status</TableHead>
+                                            <TableHead>Time</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredOrders.map((row) => (
+                                            <TableRow className="border-t border-border" key={row.id}>
+                                                <TableCell className="py-3 font-bold">{row.symbol}</TableCell>
+                                                <TableCell>{row.action}</TableCell>
+                                                <TableCell>{row.quantity}</TableCell>
+                                                <TableCell>{money(row.price)}</TableCell>
+                                                <TableCell>{row.status}</TableCell>
+                                                <TableCell>{row.time ?? "-"}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            ) : (
+                                <Empty message="No orders found." />
+                            )
+                        ) : null}
+
+                        {active === "trades" && state.trades ? (
+                            filteredTrades.length ? (
+                                <Table className="min-w-[680px] text-left text-sm">
+                                    <TableHeader className="text-xs uppercase text-muted-foreground">
+                                        <TableRow className="border-b-0">
+                                            <TableHead className="py-2">Symbol</TableHead>
+                                            <TableHead>Action</TableHead>
+                                            <TableHead>Qty</TableHead>
+                                            <TableHead>Avg price</TableHead>
+                                            <TableHead>Time</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredTrades.map((row) => (
+                                            <TableRow className="border-t border-border" key={row.id}>
+                                                <TableCell className="py-3 font-bold">{row.symbol}</TableCell>
+                                                <TableCell>{row.action}</TableCell>
+                                                <TableCell>{row.quantity}</TableCell>
+                                                <TableCell>{money(row.avg_price)}</TableCell>
+                                                <TableCell>{row.time ?? "-"}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            ) : (
+                                <Empty message="No trades found." />
+                            )
+                        ) : null}
+
+                        {active === "positions" && state.positions ? (
+                            <div>
+                                <Button className="mb-3" disabled type="button" variant="outline">
+                                    Close all positions
+                                </Button>
+                                {filteredPositions.length ? (
+                                    <Table className="min-w-[680px] text-left text-sm">
+                                        <TableHeader className="text-xs uppercase text-muted-foreground">
+                                            <TableRow className="border-b-0">
+                                                <TableHead className="py-2">Symbol</TableHead>
+                                                <TableHead>Product</TableHead>
+                                                <TableHead>Qty</TableHead>
+                                                <TableHead>PNL</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {filteredPositions.map((row) => (
+                                                <TableRow className="border-t border-border" key={row.id}>
+                                                    <TableCell className="py-3 font-bold">{row.symbol}</TableCell>
+                                                    <TableCell>{row.product ?? "-"}</TableCell>
+                                                    <TableCell>{row.quantity}</TableCell>
+                                                    <TableCell
+                                                        className={
+                                                            (row.pnl ?? 0) >= 0 ? "text-primary" : "text-destructive"
+                                                        }
+                                                    >
+                                                        {money(row.pnl)}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                ) : (
+                                    <Empty message="No positions found." />
+                                )}
+                            </div>
+                        ) : null}
+
+                        {active === "holdings" && state.holdings ? (
+                            filteredHoldings.length ? (
+                                <Table className="min-w-[760px] text-left text-sm">
+                                    <TableHeader className="text-xs uppercase text-muted-foreground">
+                                        <TableRow className="border-b-0">
+                                            <TableHead className="py-2">Symbol</TableHead>
+                                            <TableHead>Qty</TableHead>
+                                            <TableHead>Avg</TableHead>
+                                            <TableHead>LTP</TableHead>
+                                            <TableHead>PNL</TableHead>
+                                            <TableHead>PNL %</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredHoldings.map((row) => (
+                                            <TableRow className="border-t border-border" key={row.id}>
+                                                <TableCell className="py-3 font-bold">{row.symbol}</TableCell>
+                                                <TableCell>{row.quantity}</TableCell>
+                                                <TableCell>{money(row.average_price)}</TableCell>
+                                                <TableCell>{money(row.last_price)}</TableCell>
+                                                <TableCell
+                                                    className={
+                                                        (row.pnl ?? 0) >= 0 ? "text-primary" : "text-destructive"
+                                                    }
+                                                >
+                                                    {money(row.pnl)}
+                                                </TableCell>
+                                                <TableCell>{row.pnl_percent ?? "-"}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                        <TableRow className="border-t-2 border-border font-bold">
+                                            <TableCell className="py-3" colSpan={4}>
+                                                Total PNL
+                                            </TableCell>
+                                            <TableCell
+                                                className={holdingsTotal >= 0 ? "text-primary" : "text-destructive"}
+                                            >
+                                                {money(holdingsTotal)}
+                                            </TableCell>
+                                            <TableCell />
+                                        </TableRow>
+                                    </TableBody>
+                                </Table>
+                            ) : (
+                                <Empty message="No holdings found." />
+                            )
+                        ) : null}
+                    </CardPanel>
+                </Tabs>
+            </Card>
+        </CardFrame>
     );
 }

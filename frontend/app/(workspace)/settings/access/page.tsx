@@ -54,7 +54,6 @@ export default async function AccessSettingsPage() {
             <div className="w-full min-w-0">
                 <PageHeader
                     description="Approve people, assign clear roles, and share broker accounts without exposing raw ids or reconnecting credentials."
-                    eyebrow="Workspace access"
                     title="Access and broker sharing"
                 />
 

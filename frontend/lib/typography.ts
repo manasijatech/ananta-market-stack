@@ -15,8 +15,6 @@ export const typography = {
     small: "text-sm leading-none font-medium",
     muted: "text-sm text-muted-foreground",
     eyebrow: "text-sm font-medium text-muted-foreground",
-    /** Workspace page chrome — eyebrow above the title */
-    pageEyebrow: "text-xs font-medium text-muted-foreground",
     /** Workspace page chrome — primary page title */
     pageTitle: "font-heading text-[22px] font-bold tracking-tight text-foreground text-balance",
     /** Workspace page chrome — subtitle below the title */

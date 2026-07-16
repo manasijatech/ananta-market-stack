@@ -4,14 +4,23 @@ import { getSupportedBrokers } from "@/service/actions/broker";
 import { AddBrokerForm } from "@/components/brokers/add-broker-form";
 import { PageHeader } from "@/components/brokers/ui";
 import { Button } from "@/components/ui/button";
+import type { BrokerCode } from "@/service/types/broker";
 
-export default async function NewBrokerPage() {
+type NewBrokerPageProps = {
+    searchParams?: Promise<{ broker?: string | string[] }>;
+};
+
+export default async function NewBrokerPage({ searchParams }: NewBrokerPageProps) {
     const supportedBrokers = await getSupportedBrokers();
+    const params = await searchParams;
+    const requestedBroker = Array.isArray(params?.broker) ? params.broker[0] : params?.broker;
+    const initialBroker = supportedBrokers.includes(requestedBroker as BrokerCode)
+        ? (requestedBroker as BrokerCode)
+        : undefined;
 
     return (
         <>
             <PageHeader
-                eyebrow="New broker"
                 title="Add broker credentials"
                 description="Choose a broker and enter the required credentials. Session authorization can be completed on the detail page."
                 action={
@@ -21,7 +30,7 @@ export default async function NewBrokerPage() {
                     </Button>
                 }
             />
-            <AddBrokerForm supportedBrokers={supportedBrokers} />
+            <AddBrokerForm initialBroker={initialBroker} supportedBrokers={supportedBrokers} />
         </>
     );
 }

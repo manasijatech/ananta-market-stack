@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ShieldCheck, WalletCards } from "lucide-react";
 import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { getBrokerAccount, getSessionStatus } from "@/service/actions/broker";
 import { BrokerDetailActions } from "@/components/brokers/broker-detail-actions";
@@ -7,15 +7,18 @@ import { InstrumentSyncBanner } from "@/components/brokers/instrument-sync-banne
 import { NotificationsBanner } from "@/components/brokers/notifications-banner";
 import { PortfolioTabs } from "@/components/brokers/portfolio-tabs";
 import { SessionPanel } from "@/components/brokers/session-panel";
-import {
-    brokerNames,
-    formatDate,
-    PageHeader,
-    StatusBadge,
-    statusTone
-} from "@/components/brokers/ui";
+import { BrokerLogo, brokerNames, formatDate, PageHeader, StatusBadge } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
 import { formatUserFacingError, isMissingOrInaccessibleError, isPermissionDeniedError } from "@/lib/api-errors";
 import type { BrokerAccountDetail, SessionStatus } from "@/service/types/broker";
 
@@ -51,7 +54,6 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
         return (
             <>
                 <PageHeader
-                    eyebrow="Broker account"
                     title="Broker account"
                     description="Review account status, update broker sessions, fetch quotes, and inspect broker-native portfolio data."
                     action={
@@ -64,22 +66,20 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
                     }
                 />
                 <Alert variant="warning">
-                    <AlertDescription>
-                        {loadError || "This broker account could not be loaded."}
-                    </AlertDescription>
+                    <AlertDescription>{loadError || "This broker account could not be loaded."}</AlertDescription>
                 </Alert>
             </>
         );
     }
 
     const showInstrumentSync = sessionStatus.session_active || Boolean(account.last_verified_at);
+    const sessionReady = account.session_status === "active" || account.session_status === "automation_ready";
 
     return (
         <>
             <PageHeader
-                eyebrow={brokerNames[account.broker_code]}
                 title={account.label}
-                description="Review account status, update broker sessions, fetch quotes, and inspect broker-native portfolio data."
+                description="Manage the broker session used for live data, quotes, and portfolio views."
                 action={
                     <Button asChild variant="outline">
                         <Link href="/broker-connections">
@@ -95,67 +95,76 @@ export default async function BrokerDetailPage({ params }: BrokerDetailPageProps
                 {showInstrumentSync ? <InstrumentSyncBanner accountId={account.id} /> : null}
             </div>
 
-            <div className="grid gap-8">
-                <section
-                    className="grid gap-8 border-y border-border py-7 lg:grid-cols-[1fr_300px]"
-                >
-                    <div>
-                        <div className="flex flex-wrap gap-2">
-                            <StatusBadge
-                                className={
-                                    account.last_verified_at
-                                        ? "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]"
-                                        : "border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--accent-dim)] dark:text-[var(--accent)]"
-                                }
-                            >
-                                {account.last_verified_at ? "Verified" : "Unverified"}
-                            </StatusBadge>
-                            <StatusBadge className={statusTone(account.session_status)}>
-                                {account.session_status ?? "pending"}
-                            </StatusBadge>
-                        </div>
-                        <dl className="mt-5 grid gap-x-10 gap-y-4 text-sm min-[720px]:grid-cols-2">
-                            <div>
-                                <dt className="font-bold text-muted-foreground">Account ID</dt>
-                                <dd className="break-all">{account.id}</dd>
+            <div className="grid gap-6">
+                <CardFrame>
+                    <CardFrameHeader>
+                        <CardFrameTitle className="flex items-center gap-3 text-lg font-semibold">
+                            <BrokerLogo broker={account.broker_code} className="size-9" imageClassName="size-8" />
+                            Broker connection
+                        </CardFrameTitle>
+                        <CardFrameDescription>
+                            Current readiness for data refreshes and portfolio access.
+                        </CardFrameDescription>
+                        <CardFrameAction>
+                            <div className="flex flex-wrap justify-end gap-2">
+                                <StatusBadge variant={account.last_verified_at ? "success" : "warning"}>
+                                    {account.last_verified_at ? "Verified" : "Needs verification"}
+                                </StatusBadge>
+                                <StatusBadge variant={sessionReady ? "success" : "warning"}>
+                                    {account.session_status === "automation_ready"
+                                        ? "Automation ready"
+                                        : sessionReady
+                                          ? "Session active"
+                                          : "Session needed"}
+                                </StatusBadge>
                             </div>
-                            <div>
-                                <dt className="font-bold text-muted-foreground">Broker</dt>
-                                <dd>{brokerNames[account.broker_code]}</dd>
+                        </CardFrameAction>
+                    </CardFrameHeader>
+                    <Card>
+                        <CardPanel className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+                            <div className="grid gap-4 min-[720px]:grid-cols-3">
+                                <div className="rounded-lg bg-muted/50 p-4">
+                                    <div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+                                        <WalletCards className="size-4" aria-hidden="true" />
+                                        Broker
+                                    </div>
+                                    <p className="mt-2 text-sm font-semibold">{brokerNames[account.broker_code]}</p>
+                                </div>
+                                <div className="rounded-lg bg-muted/50 p-4">
+                                    <div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
+                                        <ShieldCheck className="size-4" aria-hidden="true" />
+                                        Last checked
+                                    </div>
+                                    <p className="mt-2 text-sm font-semibold">
+                                        {account.last_verified_at
+                                            ? formatDate(account.last_verified_at)
+                                            : "Not verified yet"}
+                                    </p>
+                                </div>
+                                <div className="rounded-lg bg-muted/50 p-4">
+                                    <div className="text-xs font-medium uppercase text-muted-foreground">Session</div>
+                                    <p className="mt-2 text-sm font-semibold">
+                                        {account.session_expires_at
+                                            ? `Expires ${formatDate(account.session_expires_at)}`
+                                            : "Sign in required"}
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <dt className="font-bold text-muted-foreground">Created</dt>
-                                <dd>{formatDate(account.created_at)}</dd>
+                            <div className="border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+                                <BrokerDetailActions
+                                    accountId={account.id}
+                                    permissions={account.access_permissions ?? []}
+                                    verified={Boolean(account.last_verified_at)}
+                                />
                             </div>
-                            <div>
-                                <dt className="font-bold text-muted-foreground">Last verified</dt>
-                                <dd>{formatDate(account.last_verified_at)}</dd>
-                            </div>
-                            <div>
-                                <dt className="font-bold text-muted-foreground">Session expires</dt>
-                                <dd>{formatDate(account.session_expires_at)}</dd>
-                            </div>
-                            <div>
-                                <dt className="font-bold text-muted-foreground">Automation</dt>
-                                <dd>
-                                    {account.automation_enabled ? (account.automation_mode ?? "Enabled") : "Disabled"}
-                                </dd>
-                            </div>
-                        </dl>
-                        {account.last_error ? (
-                            <Alert className="mt-5" variant="warning">
-                                <AlertDescription>{account.last_error}</AlertDescription>
-                            </Alert>
-                        ) : null}
-                    </div>
-                    <div className="border-t border-border pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-                        <BrokerDetailActions
-                            accountId={account.id}
-                            permissions={account.access_permissions ?? []}
-                            verified={Boolean(account.last_verified_at)}
-                        />
-                    </div>
-                </section>
+                            {account.last_error ? (
+                                <Alert className="lg:col-span-2" variant="warning">
+                                    <AlertDescription>{account.last_error}</AlertDescription>
+                                </Alert>
+                            ) : null}
+                        </CardPanel>
+                    </Card>
+                </CardFrame>
 
                 <SessionPanel account={account} sessionStatus={sessionStatus} />
                 <PortfolioTabs accountId={account.id} sessionActive={sessionStatus.session_active} />

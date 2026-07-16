@@ -12,7 +12,7 @@ import { BrandLogo } from "@/components/brand-logo";
  */
 export default function EntryLoading() {
     return (
-        <main className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6">
+        <main className="app-page-background flex min-h-svh flex-col items-center justify-center gap-6 p-6">
             <BrandLogo imageClassName="text-2xl motion-safe:animate-pulse" />
 
             <div

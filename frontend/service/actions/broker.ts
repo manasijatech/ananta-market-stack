@@ -247,7 +247,7 @@ export async function updateBrokerDataDefaultConfig(
     });
     revalidatePath("/broker-connections");
     revalidatePath("/alerts-workspace");
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/heatmap");
     revalidatePath("/market-intelligence");
     revalidatePath("/settings");
@@ -263,7 +263,7 @@ export async function updateBrokerDataSearchConfig(
         body: JSON.stringify({ preferred_search_account_id: preferredSearchAccountId })
     });
     revalidatePath("/broker-connections");
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     return result;
 }
@@ -283,7 +283,7 @@ export async function upsertAlphaApiCredential(payload: {
             is_enabled: payload.is_enabled ?? true
         })
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/market-intelligence");
     return result;
@@ -293,7 +293,7 @@ export async function deleteAlphaApiCredential(): Promise<AlphaApiConfig> {
     const result = await request<AlphaApiConfig>("/system-config/alpha", {
         method: "DELETE"
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/market-intelligence");
     return result;
@@ -354,7 +354,7 @@ export async function updateMcpServerConfig(payload: {
             timeout_seconds: payload.timeout_seconds ?? 15
         })
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -377,7 +377,7 @@ export async function createMcpServerConfig(payload: Parameters<typeof updateMcp
             timeout_seconds: payload.timeout_seconds ?? 15
         })
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -398,7 +398,7 @@ export async function completeMcpOAuth(payload: { code: string; state: string })
         method: "POST",
         body: JSON.stringify(payload)
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -408,7 +408,7 @@ export async function deleteMcpServerConfig(): Promise<SystemConfig["mcp_server"
     const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp", {
         method: "DELETE"
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -418,7 +418,7 @@ export async function deleteMcpServerConfigById(serverId: string): Promise<Syste
     const result = await request<SystemConfig["mcp_server"]>(`/system-config/mcp/servers/${serverId}`, {
         method: "DELETE"
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -428,7 +428,7 @@ export async function clearMcpOAuth(): Promise<SystemConfig["mcp_server"]> {
     const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp/oauth", {
         method: "DELETE"
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -438,7 +438,7 @@ export async function clearMcpOAuthById(serverId: string): Promise<SystemConfig[
     const result = await request<SystemConfig["mcp_server"]>(`/system-config/mcp/servers/${serverId}/oauth`, {
         method: "DELETE"
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -451,7 +451,7 @@ export async function refreshMcpInventory(): Promise<SystemConfig["mcp_server"]>
             method: "POST"
         }
     );
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result.config;
@@ -464,7 +464,7 @@ export async function refreshMcpInventoryById(serverId: string): Promise<SystemC
             method: "POST"
         }
     );
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result.config;
@@ -474,7 +474,7 @@ export async function clearMcpServerApiKey(): Promise<SystemConfig["mcp_server"]
     const result = await request<SystemConfig["mcp_server"]>("/system-config/mcp/key", {
         method: "DELETE"
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -484,7 +484,7 @@ export async function clearMcpServerApiKeyById(serverId: string): Promise<System
     const result = await request<SystemConfig["mcp_server"]>(`/system-config/mcp/servers/${serverId}/key`, {
         method: "DELETE"
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
     return result;
@@ -510,7 +510,7 @@ export async function upsertLlmProviderCredential(
             is_enabled: payload.is_enabled ?? true
         })
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     return result;
 }
@@ -519,7 +519,7 @@ export async function deleteLlmProviderCredential(provider: LlmProvider): Promis
     const result = await request<LlmProviderConfig[]>(`/system-config/llm/providers/${provider}`, {
         method: "DELETE"
     });
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     return result;
 }
@@ -638,7 +638,7 @@ export async function createBrokerAccount(payload: CreateBrokerAccountPayload): 
         body: JSON.stringify(payload)
     });
     revalidatePath("/broker-connections");
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
     return result;
 }
@@ -646,7 +646,7 @@ export async function createBrokerAccount(payload: CreateBrokerAccountPayload): 
 export async function deleteBrokerAccount(id: string): Promise<void> {
     await request<null>(`/broker-accounts/${id}`, { method: "DELETE" });
     revalidatePath("/broker-connections");
-    revalidatePath("/dashboard");
+    revalidatePath("/broker-connections");
     revalidatePath("/settings");
 }
 

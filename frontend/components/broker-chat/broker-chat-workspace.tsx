@@ -19,6 +19,7 @@ import {
 import { formatDate } from "@/components/brokers/ui";
 import { useSession } from "@/components/session-provider";
 import { Button } from "@/components/ui/button";
+import { Card, CardFooter, CardHeader, CardPanel } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -652,7 +653,7 @@ function ThinkingTrace({
 
 function MarkdownTable({ children }: { children: ReactNode }) {
     return (
-        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card shadow-sm last:mb-0">
+        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card last:mb-0">
             <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
                 {children}
             </table>
@@ -692,7 +693,7 @@ function PlainTextTable({ source }: { source: string }) {
     }
 
     return (
-        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card shadow-sm last:mb-0">
+        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card last:mb-0">
             <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
                 <colgroup>
                     {table.headers.map((header, index) => (
@@ -1418,8 +1419,8 @@ export function BrokerChatWorkspace({
 
     return (
         <section className="grid min-h-0 flex-1 gap-4 min-[1080px]:grid-cols-[284px_minmax(0,1fr)]">
-            <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] rounded-lg border border-border bg-background">
-                <div className="border-b border-border p-3">
+            <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+                <CardHeader className="border-b border-border p-3">
                     <Button
                         className="h-10 w-full justify-start gap-2"
                         disabled={isCreatingSession}
@@ -1447,9 +1448,9 @@ export function BrokerChatWorkspace({
                             value={sessionSearch}
                         />
                     </Label>
-                </div>
+                </CardHeader>
 
-                <div className="min-h-0 overflow-y-auto p-2">
+                <CardPanel className="min-h-0 overflow-y-auto p-2">
                     <div className="px-2 pb-2 pt-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                         Recents
                     </div>
@@ -1521,20 +1522,19 @@ export function BrokerChatWorkspace({
                             );
                         })}
                     </div>
-                </div>
-            </aside>
+                </CardPanel>
+            </Card>
 
-            <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] rounded-lg border border-border bg-background">
-                <div className="border-b border-border p-3">
-                    <div className="flex flex-col gap-4 min-[900px]:flex-row min-[900px]:items-end min-[900px]:justify-between">
+            <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+                <CardHeader className="border-b border-border p-4">
+                    <div className="flex flex-col gap-3 min-[900px]:flex-row min-[900px]:items-center min-[900px]:justify-between">
                         <div className="min-w-0">
                             <h2 className="truncate text-xl font-heading font-semibold tracking-tight">
                                 {activeSession?.title ?? "New broker chat"}
                             </h2>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                                {runsForActiveSession.length} message run
-                                {runsForActiveSession.length === 1 ? "" : "s"} in this chat
-                            </p>
+                        </div>
+                        <div className="shrink-0 rounded-lg border border-border bg-secondary/50 px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                            {runsForActiveSession.length || "No"} run{runsForActiveSession.length === 1 ? "" : "s"}
                         </div>
                     </div>
 
@@ -1562,12 +1562,12 @@ export function BrokerChatWorkspace({
                             Broker chat jobs are queued, but no RQ worker or in-process worker is currently available.
                         </div>
                     ) : null}
-                </div>
+                </CardHeader>
 
-                <div className="relative min-h-0 overflow-hidden">
+                <CardPanel className="relative min-h-0 overflow-hidden p-0">
                     <div
                         aria-label="Broker chat messages"
-                        className="h-full min-h-0 overflow-y-auto px-8 py-5 pb-20 [overflow-anchor:none] min-[900px]:px-10 min-[1400px]:px-14"
+                        className="h-full min-h-0 overflow-y-auto px-5 py-5 pb-20 [overflow-anchor:none] min-[900px]:px-8 min-[1400px]:px-10"
                         ref={chatScrollRef}
                         tabIndex={0}
                     >
@@ -1582,12 +1582,11 @@ export function BrokerChatWorkspace({
                                             Broker data assistant
                                         </p>
                                         <h3 className="mt-2 text-2xl font-heading font-semibold tracking-tight">
-                                            Start with a portfolio or market question
+                                            Ask a market or portfolio question
                                         </h3>
                                         <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-                                            Ask about connected accounts, funds, positions, holdings, quotes, option
-                                            chains, instruments, or stream health. Tool calls stay scoped to your saved
-                                            broker setup.
+                                            Use your connected broker data for holdings, positions, quotes, option
+                                            chains, and account health.
                                         </p>
                                         <div className="mx-auto mt-6 grid max-w-xl gap-2 min-[640px]:grid-cols-2">
                                             {starterPrompts.map((prompt) => (
@@ -1651,7 +1650,7 @@ export function BrokerChatWorkspace({
                                 : "Scroll to latest broker chat message"
                         }
                         className={cn(
-                            "absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground shadow-lg transition duration-150 hover:border-primary hover:text-primary motion-reduce:transition-none",
+                            "absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground transition duration-150 hover:border-primary hover:text-primary motion-reduce:transition-none",
                             showScrollButton
                                 ? "translate-y-0 opacity-100"
                                 : "pointer-events-none translate-y-2 opacity-0"
@@ -1667,182 +1666,165 @@ export function BrokerChatWorkspace({
                             ? "New broker chat activity is available below."
                             : ""}
                     </span>
-                </div>
+                </CardPanel>
 
-                <form
-                    className="border-t border-border bg-secondary/20 px-3 py-4"
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        void sendMessage();
-                    }}
-                >
-                    <div className="rounded-lg border border-border bg-background focus-within:border-primary focus-within:bg-card">
-                        <div className="flex min-w-0 items-center gap-3 p-2">
-                            <Textarea
-                                className="max-h-[260px] min-h-16 resize-none overflow-hidden border-0 bg-transparent px-2 py-5 shadow-none focus-visible:border-transparent disabled:bg-transparent"
-                                disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
-                                onChange={(event) => setMessage(event.target.value)}
-                                onKeyDown={(event) => {
-                                    if (event.key === "Enter" && !event.shiftKey) {
-                                        event.preventDefault();
-                                        void sendMessage();
-                                    }
-                                }}
-                                placeholder="Ask for connected broker status, holdings, positions, latest quotes, option chain data, or stream health."
-                                ref={messageInputRef}
-                                value={message}
-                            />
-                            <Button
-                                aria-label={activeRun ? "Stop active run" : "Send message"}
-                                className="size-11 px-0"
-                                disabled={activeRun ? false : sendDisabled}
-                                onClick={
-                                    activeRun
-                                        ? (event) => {
-                                              event.preventDefault();
-                                              void stopActiveRun();
-                                          }
-                                        : undefined
-                                }
-                                size="icon"
-                                type={activeRun ? "button" : "submit"}
-                                variant={activeRun ? "destructive" : "default"}
-                            >
-                                {activeRun ? (
-                                    <IconPlayerStop className="size-4" stroke={1.8} />
-                                ) : isSubmitting ? (
-                                    <IconLoader2 className="size-4 animate-spin" stroke={1.8} />
-                                ) : (
-                                    <IconArrowRight className="size-4" stroke={1.8} />
-                                )}
-                            </Button>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 border-t border-border bg-secondary/25 px-3 py-2">
-                            <Label className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                                Provider
-                                <SimpleSelect
-                                    className="h-8 w-36 bg-background px-2 text-sm normal-case"
-                                    disabled={!configuredProviders.length}
-                                    onValueChange={(nextProvider) => setProvider(nextProvider as LlmProvider)}
-                                    options={configuredProviders.map((item) => ({
-                                        value: item.provider,
-                                        label: providerName(item)
-                                    }))}
-                                    placeholder="Select provider"
-                                    size="sm"
-                                    value={provider}
+                <CardFooter className="border-t border-border bg-secondary/20 p-4">
+                    <form
+                        className="w-full"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            void sendMessage();
+                        }}
+                    >
+                        <div className="rounded-lg border border-border bg-background focus-within:border-primary">
+                            <div className="flex min-w-0 items-end gap-3 p-2">
+                                <Textarea
+                                    className="max-h-[220px] min-h-16 resize-none overflow-hidden border-0 bg-transparent px-2 py-4 shadow-none focus-visible:border-transparent disabled:bg-transparent"
+                                    disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
+                                    onChange={(event) => setMessage(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === "Enter" && !event.shiftKey) {
+                                            event.preventDefault();
+                                            void sendMessage();
+                                        }
+                                    }}
+                                    placeholder="Ask about holdings, positions, quotes, option chains, or broker health."
+                                    ref={messageInputRef}
+                                    value={message}
                                 />
-                            </Label>
-                            <Label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold uppercase text-muted-foreground min-[820px]:max-w-sm">
-                                Model
-                                {provider ? (
-                                    <LlmModelPicker
-                                        allowedModels={selectedModels}
-                                        models={openRouterModels}
-                                        onSelect={(id) => setModel(id)}
-                                        provider={provider}
-                                        value={model}
-                                    />
-                                ) : (
-                                    <SimpleSelect
-                                        className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
-                                        disabled
-                                        onValueChange={setModel}
-                                        options={selectedModels.map((item) => ({
-                                            value: item.model_id,
-                                            label: item.label || item.model_id
-                                        }))}
-                                        placeholder="Select model"
-                                        size="sm"
-                                        value={model}
-                                    />
-                                )}
-                            </Label>
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-[1120px]:ml-auto">
-                                <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
-                                    <Checkbox
-                                        checked={includeToolOutputs}
-                                        onCheckedChange={(value) => setIncludeToolOutputs(Boolean(value))}
-                                    />
-                                    Tool output
-                                </Label>
-                                <Label
-                                    className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground"
-                                    title="Include provider reasoning text when the model exposes it. Off hides reasoning events."
+                                <Button
+                                    aria-label={activeRun ? "Stop active run" : "Send message"}
+                                    className="size-11 px-0"
+                                    disabled={activeRun ? false : sendDisabled}
+                                    onClick={
+                                        activeRun
+                                            ? (event) => {
+                                                  event.preventDefault();
+                                                  void stopActiveRun();
+                                              }
+                                            : undefined
+                                    }
+                                    size="icon"
+                                    type={activeRun ? "button" : "submit"}
+                                    variant={activeRun ? "destructive" : "default"}
                                 >
-                                    <Checkbox
-                                        checked={includeReasoning}
-                                        onCheckedChange={(value) => setIncludeReasoning(Boolean(value))}
-                                    />
-                                    Reasoning
-                                </Label>
-                                <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
-                                    <Checkbox
-                                        checked={useMcp}
-                                        disabled={!availableMcpServers.length}
-                                        onCheckedChange={(value) => setUseMcp(Boolean(value))}
-                                    />
-                                    MCP
-                                </Label>
+                                    {activeRun ? (
+                                        <IconPlayerStop className="size-4" stroke={1.8} />
+                                    ) : isSubmitting ? (
+                                        <IconLoader2 className="size-4 animate-spin" stroke={1.8} />
+                                    ) : (
+                                        <IconArrowRight className="size-4" stroke={1.8} />
+                                    )}
+                                </Button>
                             </div>
-                        </div>
-                        {useMcp && availableMcpServers.length > 1 ? (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                                {availableMcpServers.map((server) => {
-                                    const serverId = server.id as string;
-                                    return (
-                                        <Label
-                                            className="flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground"
-                                            key={serverId}
-                                        >
-                                            <Checkbox
-                                                checked={selectedMcpServerIds.includes(serverId)}
-                                                onCheckedChange={(value) =>
-                                                    setSelectedMcpServerIds((current) => {
-                                                        const next = value
-                                                            ? Array.from(new Set([...current, serverId]))
-                                                            : current.filter((id) => id !== serverId);
-                                                        return next.length ? next : [serverId];
-                                                    })
-                                                }
+                            <div className="flex flex-col gap-3 border-t border-border bg-secondary/25 px-3 py-3 min-[980px]:flex-row min-[980px]:items-center min-[980px]:justify-between">
+                                <div className="grid min-w-0 flex-1 gap-2 min-[720px]:grid-cols-[minmax(160px,220px)_minmax(260px,1fr)]">
+                                    <Label className="grid gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                                        Provider
+                                        <SimpleSelect
+                                            className="h-8 w-full bg-background px-2 text-sm normal-case"
+                                            disabled={!configuredProviders.length}
+                                            onValueChange={(nextProvider) => setProvider(nextProvider as LlmProvider)}
+                                            options={configuredProviders.map((item) => ({
+                                                value: item.provider,
+                                                label: providerName(item)
+                                            }))}
+                                            placeholder="Select provider"
+                                            size="sm"
+                                            value={provider}
+                                        />
+                                    </Label>
+                                    <Label className="grid min-w-0 gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                                        Model
+                                        {provider ? (
+                                            <LlmModelPicker
+                                                allowedModels={selectedModels}
+                                                models={openRouterModels}
+                                                onSelect={(id) => setModel(id)}
+                                                provider={provider}
+                                                value={model}
                                             />
-                                            {server.name || server.url}
-                                        </Label>
-                                    );
-                                })}
+                                        ) : (
+                                            <SimpleSelect
+                                                className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
+                                                disabled
+                                                onValueChange={setModel}
+                                                options={selectedModels.map((item) => ({
+                                                    value: item.model_id,
+                                                    label: item.label || item.model_id
+                                                }))}
+                                                placeholder="Select model"
+                                                size="sm"
+                                                value={model}
+                                            />
+                                        )}
+                                    </Label>
+                                </div>
+                                <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 min-[980px]:justify-end">
+                                    <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                                        <Checkbox
+                                            checked={includeToolOutputs}
+                                            onCheckedChange={(value) => setIncludeToolOutputs(Boolean(value))}
+                                        />
+                                        Tools
+                                    </Label>
+                                    <Label
+                                        className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground"
+                                        title="Show model reasoning when the provider returns it."
+                                    >
+                                        <Checkbox
+                                            checked={includeReasoning}
+                                            onCheckedChange={(value) => setIncludeReasoning(Boolean(value))}
+                                        />
+                                        Reasoning
+                                    </Label>
+                                    <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                                        <Checkbox
+                                            checked={useMcp}
+                                            disabled={!availableMcpServers.length}
+                                            onCheckedChange={(value) => setUseMcp(Boolean(value))}
+                                        />
+                                        MCP
+                                    </Label>
+                                </div>
                             </div>
-                        ) : null}
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                            <IconCircleCheck className="size-3.5" stroke={1.8} />
-                            Uses saved broker and LLM credentials
-                        </span>
-                        <span>Enter sends · Shift + Enter adds a line</span>
-                        <span>Tool activity is shown inline in the thinking trace</span>
-                        <span>
-                            {useMcp
-                                ? "MCP enabled for this chat"
-                                : availableMcpServers.length
-                                  ? "MCP disabled"
-                                  : "MCP unavailable for your role or this workspace"}
-                        </span>
-                        {queueHealth ? (
-                            <span>
-                                Queue {queueHealth.queue_name}: {queueHealth.queued_count} queued ·{" "}
-                                {typeof queueHealth.oldest_queued_seconds === "number"
-                                    ? `oldest ${Math.round(queueHealth.oldest_queued_seconds)}s · `
-                                    : ""}
-                                {queueHealth.has_active_worker
-                                    ? `${queueHealth.external_worker_count ?? queueHealth.active_worker_count} RQ worker${(queueHealth.external_worker_count ?? queueHealth.active_worker_count) === 1 ? "" : "s"}${queueHealth.fallback_worker_count ? ` · ${queueHealth.fallback_worker_count} fallback` : ""}`
-                                    : queueHealth.in_process_worker_enabled
-                                      ? "fallback available"
-                                      : "no worker"}
+                            {useMcp && availableMcpServers.length > 1 ? (
+                                <div className="flex flex-wrap gap-2 border-t border-border px-3 py-2">
+                                    {availableMcpServers.map((server) => {
+                                        const serverId = server.id as string;
+                                        return (
+                                            <Label
+                                                className="flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground"
+                                                key={serverId}
+                                            >
+                                                <Checkbox
+                                                    checked={selectedMcpServerIds.includes(serverId)}
+                                                    onCheckedChange={(value) =>
+                                                        setSelectedMcpServerIds((current) => {
+                                                            const next = value
+                                                                ? Array.from(new Set([...current, serverId]))
+                                                                : current.filter((id) => id !== serverId);
+                                                            return next.length ? next : [serverId];
+                                                        })
+                                                    }
+                                                />
+                                                {server.name || server.url}
+                                            </Label>
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                                <IconCircleCheck className="size-3.5" stroke={1.8} />
+                                Saved credentials
                             </span>
-                        ) : null}
-                    </div>
-                </form>
-            </div>
+                            <span>Enter sends. Shift + Enter adds a line.</span>
+                        </div>
+                    </form>
+                </CardFooter>
+            </Card>
         </section>
     );
 }

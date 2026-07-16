@@ -51,19 +51,19 @@ async function fetchRbacSnapshot(): Promise<RbacSnapshot | null> {
     return (await response.json()) as RbacSnapshot;
 }
 
-async function resolvePostAuthRoute(): Promise<"/dashboard" | "/pending-approval"> {
+async function resolvePostAuthRoute(): Promise<"/broker-connections" | "/pending-approval"> {
     for (let attempt = 0; attempt < POST_AUTH_ATTEMPTS; attempt += 1) {
         const session = await fetchCurrentSession();
         if (session) {
             const rbac = await fetchRbacSnapshot();
             if (rbac?.status) {
-                return rbac.status === "active" ? "/dashboard" : "/pending-approval";
+                return rbac.status === "active" ? "/broker-connections" : "/pending-approval";
             }
         }
         await delay(250 + attempt * 150);
     }
 
-    return "/dashboard";
+    return "/broker-connections";
 }
 
 export function AuthForm({ mode, signUpNotice }: { mode: AuthMode; signUpNotice?: string | null }) {

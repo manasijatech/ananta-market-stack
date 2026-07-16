@@ -9,8 +9,8 @@ export function AccessDeniedState({
     title = "Access not available",
     description = "This area is restricted for your current workspace role.",
     reason = "Ask a workspace admin to grant the required access, then try again.",
-    backHref = "/dashboard",
-    backLabel = "Go to dashboard"
+    backHref = "/broker-connections",
+    backLabel = "Go to Broker Connections"
 }: {
     title?: string;
     description?: string;
@@ -21,7 +21,6 @@ export function AccessDeniedState({
     return (
         <>
             <PageHeader
-                eyebrow="Access control"
                 title={title}
                 description={description}
                 action={<BackButton fallbackHref={backHref} />}

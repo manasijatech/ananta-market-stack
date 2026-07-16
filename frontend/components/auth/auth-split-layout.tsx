@@ -20,7 +20,7 @@ export function ApprovalNoticeCard({ className }: { className?: string }) {
     return (
         <div
             className={cn(
-                "rounded-xl border border-border bg-card p-6 shadow-inner",
+                "app-card-surface bg-card p-6",
                 className
             )}
         >
@@ -39,7 +39,7 @@ function AuthVisualPanel({ variant }: { variant: "default" | "approval" }) {
                 {variant === "approval" ? (
                     <ApprovalNoticeCard className="w-full max-w-sm" />
                 ) : (
-                    <div className="flex w-full max-w-xs flex-col items-center justify-center rounded-xl border border-border bg-card p-8 text-center shadow-inner">
+                    <div className="app-card-surface flex w-full max-w-xs flex-col items-center justify-center bg-card p-8 text-center">
                         <BrandLogo imageClassName="text-lg" />
                         <p className="mt-3 max-w-[16rem] text-xs leading-relaxed text-muted-foreground">
                             Your workspace for broker APIs, portfolio data, and trading alerts.
@@ -64,14 +64,14 @@ function AuthVisualPanel({ variant }: { variant: "default" | "approval" }) {
 
 export function AuthSplitLayout({ children, className, panel = "default" }: AuthSplitLayoutProps) {
     return (
-        <main className="relative flex min-h-svh items-center justify-center bg-background p-4 text-foreground sm:p-6 md:p-10">
+        <main className="app-page-background relative isolate flex min-h-svh items-center justify-center overflow-hidden p-0 md:p-6">
             <div className="absolute right-5 top-5 z-10">
                 <ThemeToggle />
             </div>
 
             <div
                 className={cn(
-                    "grid w-full max-w-[800px] overflow-hidden rounded-xl border border-border bg-card lg:min-h-[500px] lg:grid-cols-2",
+                    "app-card-surface grid w-full max-w-[800px] bg-card lg:min-h-[500px] lg:grid-cols-2",
                     className
                 )}
             >

@@ -17,6 +17,8 @@ import {
 } from "@/components/market-intelligence/market-intelligence-tabs";
 import { useSession } from "@/components/session-provider";
 import { itemKey } from "@/components/market-intelligence/market-intelligence-utils";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import type { AlphaAlert } from "@/service/types/alpha/alerts";
 import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/types/alpha/announcements";
 import type { AlphaConcall } from "@/service/types/alpha/concalls";
@@ -319,16 +321,11 @@ export function StateMessage({
     tone?: "neutral" | "error";
 }) {
     return (
-        <div
-            className={
-                tone === "error"
-                    ? "mb-4 border-l-2 border-destructive px-4 py-3 text-sm text-destructive"
-                    : "mb-4 border-l-2 border-primary px-4 py-3 text-sm text-muted-foreground"
-            }
-        >
-            <div>{message}</div>
-            {action ? <div className="mt-3">{action}</div> : null}
-        </div>
+        <Alert className="mb-4" variant={tone === "error" ? "destructive" : "info"}>
+            <AlertTitle>{tone === "error" ? "Something went wrong" : "Heads up"}</AlertTitle>
+            <AlertDescription>{message}</AlertDescription>
+            {action ? <div className="mt-3" data-slot="alert-action">{action}</div> : null}
+        </Alert>
     );
 }
 
@@ -342,13 +339,14 @@ function LiveUpdateStrip({
     const label = count === 1 ? "1 new live record" : `${count} new live records`;
 
     return (
-        <button
-            className="mb-3 flex w-full items-center justify-between gap-3 border border-primary/30 bg-[var(--accent-glow)] px-3 py-2 text-left text-xs font-medium text-primary transition-colors hover:border-primary/60"
+        <Button
+            className="mb-3 h-auto w-full justify-between px-3 py-2 text-xs"
             onClick={onAcknowledge}
             type="button"
+            variant="outline"
         >
             <span>{label}</span>
-            <Check className="size-3.5" />
-        </button>
+            <Check aria-hidden="true" />
+        </Button>
     );
 }

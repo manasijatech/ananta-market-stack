@@ -11,15 +11,12 @@ import {
     deleteAlphaApiCredential,
     deleteLlmProviderCredential,
     deleteLlmProviderModel,
-    deleteLlmModelPricing,
     getBrokerDataSearchConfig,
-    refreshOpenRouterModelPricing,
     startMcpOAuth,
     updateBrokerDataDefaultConfig,
     updateMcpServerConfig,
     upsertAlphaApiCredential,
-    upsertLlmProviderCredential,
-    upsertLlmModelPricing
+    upsertLlmProviderCredential
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Button } from "@/components/ui/button";
@@ -47,13 +44,6 @@ type ProviderDraftState = {
     apiKey: string;
     modelId: string;
     label: string;
-};
-
-type PricingDraftState = {
-    provider: LlmProvider;
-    modelId: string;
-    inputCost: string;
-    outputCost: string;
 };
 
 export type SystemConfigPanelSection = "all" | "broker-data" | "alpha" | "mcp" | "llm";
@@ -103,13 +93,6 @@ type SuggestedMcpTemplate = {
         }>;
     };
 };
-
-const LLM_PROVIDER_OPTIONS = [
-    { value: "openai", label: "OpenAI" },
-    { value: "openrouter", label: "OpenRouter" },
-    { value: "gemini", label: "Gemini" },
-    { value: "anthropic", label: "Anthropic" }
-];
 
 type CustomMcpDraft = {
     name: string;
@@ -303,10 +286,6 @@ function providerKey(provider: LlmProvider) {
     return provider;
 }
 
-function formatPricingRate(value?: number | null) {
-    return value == null ? "not set" : `$${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 6 }).format(value)}`;
-}
-
 export function SystemConfigPanel({
     initialConfig,
     section = "all",
@@ -346,13 +325,6 @@ export function SystemConfigPanel({
     const [customMcpError, setCustomMcpError] = useState("");
     const [mcpError, setMcpError] = useState("");
     const [providerErrors, setProviderErrors] = useState<Record<string, string>>({});
-    const [pricingError, setPricingError] = useState("");
-    const [pricingDraft, setPricingDraft] = useState<PricingDraftState>({
-        provider: "openrouter",
-        modelId: "",
-        inputCost: "",
-        outputCost: ""
-    });
     const [drafts, setDrafts] = useState<Record<string, ProviderDraftState>>(
         Object.fromEntries(
             initialConfig.llm_providers.map((provider) => [
@@ -503,13 +475,6 @@ export function SystemConfigPanel({
         setConfig((current) => ({
             ...current,
             llm_providers: nextProviders
-        }));
-    }
-
-    function replacePricing(nextPricing: SystemConfig["llm_model_pricing"]) {
-        setConfig((current) => ({
-            ...current,
-            llm_model_pricing: nextPricing
         }));
     }
 
@@ -798,51 +763,6 @@ export function SystemConfigPanel({
         return isMcpServerConnected(server) || !template || mcpConnectorIsReady(template);
     });
     const mcpSetupGuideTemplate = SUGGESTED_MCP_TEMPLATES.find((template) => template.id === mcpSetupGuideTemplateId);
-
-    function savePricing() {
-        setPricingError("");
-        startTransition(async () => {
-            try {
-                const next = await upsertLlmModelPricing({
-                    provider: pricingDraft.provider,
-                    model_id: pricingDraft.modelId,
-                    input_cost_per_1m_tokens: pricingDraft.inputCost.trim() ? Number(pricingDraft.inputCost) : null,
-                    output_cost_per_1m_tokens: pricingDraft.outputCost.trim() ? Number(pricingDraft.outputCost) : null
-                });
-                replacePricing([
-                    ...config.llm_model_pricing.filter(
-                        (row) => !(row.provider === next.provider && row.model_id === next.model_id)
-                    ),
-                    next
-                ].sort((a, b) => `${a.provider}:${a.model_id}`.localeCompare(`${b.provider}:${b.model_id}`)));
-                setPricingDraft((current) => ({ ...current, modelId: "", inputCost: "", outputCost: "" }));
-            } catch (caught) {
-                setPricingError(parseActionError(caught).message);
-            }
-        });
-    }
-
-    function refreshOpenRouterPricing() {
-        setPricingError("");
-        startTransition(async () => {
-            try {
-                replacePricing(await refreshOpenRouterModelPricing());
-            } catch (caught) {
-                setPricingError(parseActionError(caught).message);
-            }
-        });
-    }
-
-    function removePricing(pricingId: string) {
-        setPricingError("");
-        startTransition(async () => {
-            try {
-                replacePricing(await deleteLlmModelPricing(pricingId));
-            } catch (caught) {
-                setPricingError(parseActionError(caught).message);
-            }
-        });
-    }
 
     const showBrokerData = section === "all" || section === "broker-data";
     const showAlpha = section === "all" || section === "alpha";
@@ -1802,96 +1722,6 @@ export function SystemConfigPanel({
                 ))}
                 </Accordion>
 
-                <div className="border border-border p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                            <div className="text-base font-bold tracking-tight">Model pricing</div>
-                            <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
-                                Configure USD rates per 1M tokens for estimated costs when a provider does not return
-                                cost in the response. Estimated costs are labeled as estimates in usage screens.
-                            </p>
-                        </div>
-                        <Button
-                            disabled={llmReadOnly || isPending}
-                            onClick={refreshOpenRouterPricing}
-                            type="button"
-                            variant="outline"
-                        >
-                            Refresh OpenRouter pricing
-                        </Button>
-                    </div>
-
-                    <div className="mt-4 grid gap-2 min-[900px]:grid-cols-[160px_minmax(180px,1fr)_140px_140px_auto]">
-                        <SimpleSelect
-                            aria-label="Pricing provider"
-                            disabled={llmReadOnly}
-                            onValueChange={(value) =>
-                                setPricingDraft((current) => ({ ...current, provider: value as LlmProvider }))
-                            }
-                            options={LLM_PROVIDER_OPTIONS}
-                            value={pricingDraft.provider}
-                        />
-                        <Input
-                            className="h-9 text-sm"
-                            disabled={llmReadOnly}
-                            onChange={(event) => setPricingDraft((current) => ({ ...current, modelId: event.target.value }))}
-                            placeholder="Model id"
-                            value={pricingDraft.modelId}
-                        />
-                        <Input
-                            className="h-9 text-sm"
-                            disabled={llmReadOnly}
-                            inputMode="decimal"
-                            onChange={(event) => setPricingDraft((current) => ({ ...current, inputCost: event.target.value }))}
-                            placeholder="Input $/1M"
-                            value={pricingDraft.inputCost}
-                        />
-                        <Input
-                            className="h-9 text-sm"
-                            disabled={llmReadOnly}
-                            inputMode="decimal"
-                            onChange={(event) => setPricingDraft((current) => ({ ...current, outputCost: event.target.value }))}
-                            placeholder="Output $/1M"
-                            value={pricingDraft.outputCost}
-                        />
-                        <Button
-                            disabled={llmReadOnly || isPending || !pricingDraft.modelId.trim()}
-                            onClick={savePricing}
-                            type="button"
-                        >
-                            Save pricing
-                        </Button>
-                    </div>
-
-                    <div className="mt-4 grid gap-2">
-                        {config.llm_model_pricing.map((row) => (
-                            <div className="flex flex-wrap items-center justify-between gap-2 border border-border px-3 py-2" key={row.id}>
-                                <div>
-                                    <div className="text-sm font-semibold">{row.provider} / {row.model_id}</div>
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                        Input {formatPricingRate(row.input_cost_per_1m_tokens)} · output{" "}
-                                        {formatPricingRate(row.output_cost_per_1m_tokens)} · {row.source}
-                                    </div>
-                                </div>
-                                <Button
-                                    className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                    disabled={llmReadOnly || isPending}
-                                    onClick={() => removePricing(row.id)}
-                                    size="sm"
-                                    type="button"
-                                    variant="outline"
-                                >
-                                    Remove
-                                </Button>
-                            </div>
-                        ))}
-                        {!config.llm_model_pricing.length ? (
-                            <div className="text-sm text-muted-foreground">No model pricing configured yet.</div>
-                        ) : null}
-                    </div>
-
-                    {pricingError ? <div className="mt-3 text-sm text-destructive">{pricingError}</div> : null}
-                </div>
             </section>
             ) : null}
         </div>

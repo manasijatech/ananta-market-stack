@@ -23,10 +23,23 @@ FROM python:3.12-slim AS backend-builder
 WORKDIR /app/backend
 
 COPY backend/requirements.txt ./
+ENV PIP_DEFAULT_TIMEOUT=100 \
+    PIP_RETRIES=10 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
     && grep -v '^winloop==' requirements.txt > requirements-linux.txt \
-    && /opt/venv/bin/pip install --no-cache-dir -r requirements-linux.txt
+    && ( \
+         /opt/venv/bin/pip install --no-cache-dir --prefer-binary -r requirements-linux.txt \
+         || (echo "pip install failed (attempt 1/5), retrying..." && sleep 5 \
+             && /opt/venv/bin/pip install --no-cache-dir --prefer-binary -r requirements-linux.txt) \
+         || (echo "pip install failed (attempt 2/5), retrying..." && sleep 10 \
+             && /opt/venv/bin/pip install --no-cache-dir --prefer-binary -r requirements-linux.txt) \
+         || (echo "pip install failed (attempt 3/5), retrying..." && sleep 15 \
+             && /opt/venv/bin/pip install --no-cache-dir --prefer-binary -r requirements-linux.txt) \
+         || (echo "pip install failed (attempt 4/5), retrying..." && sleep 20 \
+             && /opt/venv/bin/pip install --no-cache-dir --prefer-binary -r requirements-linux.txt) \
+       )
 
 FROM python:3.12-slim AS runtime
 

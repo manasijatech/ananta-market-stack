@@ -16,6 +16,15 @@ import {
 import type { AlertChannel, DesktopAudioDevice, DesktopAudioVoiceOption, EdgeAudioVoiceOption } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
+import {
     Dialog,
     DialogContent,
     DialogDescription,
@@ -26,7 +35,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from "@/components/ui/select";
 
 type ChannelState = {
     label: string;
@@ -51,8 +66,15 @@ type ChannelGuide = {
     notes: string[];
 };
 
+type SelectOption = {
+    label: string;
+    value: string;
+    disabled?: boolean;
+};
+
 const compactFieldClassName = "h-9 w-full max-w-md text-sm";
 const compactFieldGridClassName = "grid max-w-md gap-3";
+const emptySelectValue = "__channel_settings_empty__";
 
 const CHANNEL_GUIDES: Record<"discord" | "telegram", ChannelGuide> = {
     discord: {
@@ -140,6 +162,49 @@ function desktopStateFor(channel?: AlertChannel): ChannelState {
         config.edge_voice = config.voice && config.voice !== desktopDefaults.voice ? config.voice : desktopDefaults.edge_voice;
     }
     return { ...state, config };
+}
+
+function toSelectValue(value: string): string {
+    return value === "" ? emptySelectValue : value;
+}
+
+function fromSelectValue(value: string | null): string {
+    return value === emptySelectValue ? "" : value ?? "";
+}
+
+function SettingsSelect({
+    ariaLabel,
+    onValueChange,
+    options,
+    placeholder = "Select...",
+    value
+}: {
+    ariaLabel: string;
+    onValueChange: (value: string) => void;
+    options: SelectOption[];
+    placeholder?: string;
+    value: string;
+}) {
+    const selectedLabel = options.find((option) => option.value === value)?.label;
+
+    return (
+        <Select onValueChange={(next) => onValueChange(fromSelectValue(next))} value={toSelectValue(value)}>
+            <SelectTrigger aria-label={ariaLabel} className={compactFieldClassName}>
+                <SelectValue placeholder={placeholder}>{selectedLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false} className="max-w-[min(32rem,var(--available-width))]">
+                {options.map((option) => (
+                    <SelectItem
+                        disabled={option.disabled}
+                        key={`${toSelectValue(option.value)}-${option.label}`}
+                        value={toSelectValue(option.value)}
+                    >
+                        <span className="block truncate">{option.label}</span>
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    );
 }
 
 export function ChannelSettings({
@@ -366,25 +431,30 @@ export function ChannelSettings({
                     {error}
                 </div>
             ) : null}
-            <div className="border border-border p-4">
-                <div className="mb-3 text-sm font-bold tracking-tight">Shared test message</div>
-                <div className="grid max-w-md gap-2">
-                    <Input
-                        className={compactFieldClassName}
-                        onChange={(event) => setMessage(event.target.value)}
-                        value={message}
-                    />
-                    <Button
-                        className="h-9 w-fit px-4"
-                        disabled={isPending}
-                        onClick={sendInAppTest}
-                        type="button"
-                        variant="outline"
-                    >
-                        Test in-app alert
-                    </Button>
-                </div>
-            </div>
+            <CardFrame>
+                <CardFrameHeader>
+                    <CardFrameTitle>Shared test message</CardFrameTitle>
+                    <CardFrameDescription>Use one message to test each alert delivery path.</CardFrameDescription>
+                </CardFrameHeader>
+                <Card>
+                    <CardPanel className="grid max-w-md gap-2">
+                        <Input
+                            className={compactFieldClassName}
+                            onChange={(event) => setMessage(event.target.value)}
+                            value={message}
+                        />
+                        <Button
+                            className="h-9 w-fit px-4"
+                            disabled={isPending}
+                            onClick={sendInAppTest}
+                            type="button"
+                            variant="outline"
+                        >
+                            Test in-app alert
+                        </Button>
+                    </CardPanel>
+                </Card>
+            </CardFrame>
             <DesktopAudioCard
                 channel={desktopAudio}
                 devices={devices}
@@ -476,25 +546,46 @@ function DesktopAudioCard({
     showRevokedDevices: boolean;
 }) {
     const activeDevices = devices.filter((device) => device.status === "active");
+    const ttsProviderOptions: SelectOption[] = [
+        { label: "Edge voice - free", value: "edge_tts" },
+        { label: "Desktop app voice - free local", value: "web_speech" },
+        { label: "OpenRouter audio - paid", value: "openrouter" }
+    ];
+    const edgeVoiceOptions: SelectOption[] = edgeVoices.length
+        ? edgeVoices.map((voice) => ({
+              label: `${voice.friendly_name} (${voice.gender}, ${voice.locale})`,
+              value: voice.short_name
+          }))
+        : [{ label: "Loading Edge voices...", value: desktopDefaults.edge_voice }];
+    const desktopVoiceOptions: SelectOption[] = [
+        { label: "System default voice - free", value: "" },
+        ...availableVoices.map((voice) => ({
+            label: `${voice.name} (${voice.lang})${voice.default ? " default" : ""}`,
+            value: voice.name
+        }))
+    ];
+
     return (
-        <div className="border border-border p-4">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <div className="flex items-center gap-3 text-lg font-bold leading-none tracking-tight">
+        <CardFrame>
+            <CardFrameHeader>
+                <CardFrameTitle className="flex items-center gap-3">
                         <MonitorSpeakerIcon className="size-5 text-primary" />
                         Desktop Audio
-                    </div>
-                    <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
+                </CardFrameTitle>
+                <CardFrameDescription className="max-w-2xl leading-5">
                         Pair the tray app once, then Ananta sends spoken alerts to all active devices. Edge voice is
                         the default free hosted path, desktop voice stays available as a local fallback, and OpenRouter
                         remains optional when you want a different paid model.
-                    </p>
-                </div>
+                </CardFrameDescription>
+                <CardFrameAction>
                 <Button className="h-9 gap-2 px-4" disabled={isPending} onClick={onConnect} type="button">
                     <PlugZapIcon className="size-4" />
                     Connect app
                 </Button>
-            </div>
+                </CardFrameAction>
+            </CardFrameHeader>
+            <Card>
+                <CardPanel>
             {pairingStatus ? (
                 <div className="mb-4 border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
                     {pairingStatus}
@@ -518,15 +609,12 @@ function DesktopAudioCard({
             </div>
             <div className="grid gap-3 min-[760px]:grid-cols-2">
                 <LabeledField label="TTS provider" required>
-                    <Select
-                        className={compactFieldClassName}
-                        onChange={(event) => onChange({ ...channel, config: { ...channel.config, tts_provider: event.target.value } })}
+                    <SettingsSelect
+                        ariaLabel="TTS provider"
+                        onValueChange={(value) => onChange({ ...channel, config: { ...channel.config, tts_provider: value } })}
+                        options={ttsProviderOptions}
                         value={channel.config.tts_provider ?? desktopDefaults.tts_provider}
-                    >
-                        <option value="edge_tts">Edge voice - free</option>
-                        <option value="web_speech">Desktop app voice - free local</option>
-                        <option value="openrouter">OpenRouter audio - paid</option>
-                    </Select>
+                    />
                 </LabeledField>
                 <LabeledField label="Spoken template" required>
                     <Input
@@ -549,20 +637,12 @@ function DesktopAudioCard({
                     />
                 </LabeledField>
                 <LabeledField label="Edge voice" required={false}>
-                    <Select
-                        className={compactFieldClassName}
-                        onChange={(event) =>
-                            onChange({ ...channel, config: { ...channel.config, edge_voice: event.target.value } })
-                        }
+                    <SettingsSelect
+                        ariaLabel="Edge voice"
+                        onValueChange={(value) => onChange({ ...channel, config: { ...channel.config, edge_voice: value } })}
+                        options={edgeVoiceOptions}
                         value={channel.config.edge_voice ?? desktopDefaults.edge_voice}
-                    >
-                        {!edgeVoices.length ? <option value={desktopDefaults.edge_voice}>Loading Edge voices...</option> : null}
-                        {edgeVoices.map((voice) => (
-                            <option key={voice.short_name} value={voice.short_name}>
-                                {voice.friendly_name} ({voice.gender}, {voice.locale})
-                            </option>
-                        ))}
-                    </Select>
+                    />
                     <span className="mt-1 block max-w-md text-xs text-muted-foreground">{EDGE_VOICE_HINT}</span>
                 </LabeledField>
                 <LabeledField label="Edge speech rate" required={false}>
@@ -602,28 +682,22 @@ function DesktopAudioCard({
                     />
                 </LabeledField>
                 <LabeledField label="Desktop voice" required={false}>
-                    <Select
-                        className={compactFieldClassName}
-                        onChange={(event) => {
-                            const nextVoice = availableVoices.find((voice) => voice.name === event.target.value);
+                    <SettingsSelect
+                        ariaLabel="Desktop voice"
+                        onValueChange={(value) => {
+                            const nextVoice = availableVoices.find((voice) => voice.name === value);
                             onChange({
                                 ...channel,
                                 config: {
                                     ...channel.config,
-                                    web_speech_voice: event.target.value,
+                                    web_speech_voice: value,
                                     web_speech_lang: nextVoice?.lang ?? channel.config.web_speech_lang ?? ""
                                 }
                             });
                         }}
+                        options={desktopVoiceOptions}
                         value={channel.config.web_speech_voice ?? desktopDefaults.web_speech_voice}
-                    >
-                        <option value="">System default voice - free</option>
-                        {availableVoices.map((voice) => (
-                            <option key={`${voice.name}:${voice.lang}`} value={voice.name}>
-                                {voice.name} ({voice.lang}){voice.default ? " default" : ""}
-                            </option>
-                        ))}
-                    </Select>
+                    />
                     <span className="mt-1 block max-w-md text-xs text-muted-foreground">{ENGLISH_VOICE_HINT}</span>
                 </LabeledField>
                 <LabeledField label="Desktop speech rate" required={false}>
@@ -759,7 +833,9 @@ function DesktopAudioCard({
                     </div>
                 )}
             </div>
-        </div>
+                </CardPanel>
+            </Card>
+        </CardFrame>
     );
 }
 
@@ -789,10 +865,9 @@ function ChannelCard({
     const brandIconClassName = title === "Telegram" ? "h-6 w-6" : "h-5 w-5";
 
     return (
-        <div className="border border-border p-4">
-            <div className="mb-4 grid gap-3">
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-3 text-lg font-bold leading-none tracking-tight">
+        <CardFrame>
+            <CardFrameHeader>
+                <CardFrameTitle className="flex items-center gap-3">
                         {brandIcon ? (
                             <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center">
                                 <img
@@ -804,10 +879,14 @@ function ChannelCard({
                             </span>
                         ) : null}
                         <span>{title}</span>
-                    </div>
+                </CardFrameTitle>
+                <CardFrameAction>
                     <SetupGuide guide={guide} />
-                </div>
-                <div className="flex flex-col gap-2 text-sm">
+                </CardFrameAction>
+            </CardFrameHeader>
+            <Card>
+                <CardPanel>
+                <div className="mb-4 flex flex-col gap-2 text-sm">
                     <Label className="flex items-center gap-2">
                         <Checkbox
                             checked={channel.is_enabled}
@@ -823,7 +902,6 @@ function ChannelCard({
                         Default
                     </Label>
                 </div>
-            </div>
             <div className={compactFieldGridClassName}>
                 <LabeledField label="Label" required={false}>
                     <Input
@@ -858,7 +936,9 @@ function ChannelCard({
                     Test
                 </Button>
             </div>
-        </div>
+                </CardPanel>
+            </Card>
+        </CardFrame>
     );
 }
 

@@ -26,8 +26,8 @@ export function PendingApprovalView() {
 
     // Auto-route the moment approval lands, without a click.
     useEffect(() => {
-        if (data === "/dashboard") {
-            router.replace("/dashboard");
+        if (data === "/broker-connections") {
+            router.replace("/broker-connections");
         }
     }, [data, router]);
 
@@ -44,8 +44,8 @@ export function PendingApprovalView() {
               : "";
 
     return (
-        <main className="flex min-h-screen items-center justify-center bg-background p-6">
-            <section className="w-full max-w-xl rounded-lg border border-border bg-card p-8">
+        <main className="app-page-background flex min-h-screen items-center justify-center p-6">
+            <section className="app-card-surface w-full max-w-xl bg-card p-8">
                 <BrandLogo />
                 <p className="mt-8 type-step-eyebrow">Approval required</p>
                 <h1 className="mt-3 text-3xl font-heading font-bold tracking-tight">Your account is waiting for admin approval.</h1>
@@ -74,8 +74,8 @@ export function PendingApprovalView() {
                         disabled={isFetching}
                         onClick={() => {
                             void refetch().then((result) => {
-                                if (result.data === "/dashboard") {
-                                    router.replace("/dashboard");
+                                if (result.data === "/broker-connections") {
+                                    router.replace("/broker-connections");
                                 }
                             });
                         }}
