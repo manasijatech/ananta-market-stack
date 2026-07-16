@@ -489,12 +489,13 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                                 <a
                                     className="font-semibold text-primary hover:underline"
                                     href={dhanStart.login_url}
+                                    onClick={rememberPendingBrokerLogin}
                                     target="_blank"
                                     rel="noreferrer"
                                 >
                                     this Dhan login link
                                 </a>
-                                .
+                                . {dhanStart.guidance}
                             </AlertDescription>
                         </Alert>
                     ) : null}

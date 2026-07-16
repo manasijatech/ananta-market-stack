@@ -75,7 +75,9 @@ def default_expiry_from_now(hours: int = 24) -> datetime:
     return datetime.now(tz=UTC) + timedelta(hours=hours)
 
 
-def consume_consent(*, app_id: str, app_secret: str, token_id: str) -> tuple[str | None, str | None]:
+def consume_consent(
+    *, app_id: str, app_secret: str, token_id: str
+) -> tuple[dict[str, str] | None, str | None]:
     headers = {
         "app_id": app_id,
         "app_secret": app_secret,
@@ -90,4 +92,9 @@ def consume_consent(*, app_id: str, app_secret: str, token_id: str) -> tuple[str
         return None, r.text[:500]
     body = r.json()
     tok = body.get("accessToken")
-    return (tok, None) if tok else (None, str(body))
+    if not tok:
+        return None, str(body)
+    return {
+        "access_token": tok,
+        "expiry_time": body.get("expiryTime", "") or "",
+    }, None

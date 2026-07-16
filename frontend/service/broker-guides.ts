@@ -53,7 +53,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
         setupSteps: [
             "Enable Dhan API access.",
             "Copy the API key, API secret, and client ID.",
-            "If Dhan asks for a redirect URL, use your Ananta broker callback URL exactly.",
+            "Set the Dhan app redirect URL to the frontend /broker-connections URL shown in Ananta.",
             "Set up static IP allowlisting if Dhan requires it.",
             "Choose manual consent or TOTP automation mode.",
             "Add PIN and TOTP secret only if you want automated refresh."
@@ -77,6 +77,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
             "In automation mode, the backend can attempt refresh using stored client_id, PIN, and TOTP secret."
         ],
         notes: [
+            "The registered redirect URL must point to the public frontend; the backend does not need to be exposed.",
             "Manual consent avoids storing PIN and TOTP secret.",
             "The callback URL must include /broker-connections, not only the Ananta domain.",
             "PIN plus TOTP secret can enable unattended refresh."

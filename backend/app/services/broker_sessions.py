@@ -290,8 +290,10 @@ def get_broker_session_status(acc: BrokerAccount) -> BrokerSessionStatusOut:
         can_auto = bool(row.pin_cipher and row.totp_secret_cipher)
         guidance = (
             "Use Login with Dhan from the broker account page. Ananta opens Dhan consent login, "
-            "reads tokenId when Dhan redirects back, and activates the session automatically. "
-            "Manual fallback is only needed if automatic callback completion fails."
+            "reads tokenId when Dhan redirects to the registered frontend URL, and activates the "
+            "session automatically through POST /sessions/dhan. Manual fallback is only needed if "
+            "automatic callback completion fails. Official automation is available if client_id, "
+            "pin, and totp_secret are stored."
         )
         return BrokerSessionStatusOut(
             broker=code,
@@ -586,8 +588,9 @@ def start_dhan_consent(acc: BrokerAccount) -> SessionStartOut:
         login_url=dhan_auth.build_consent_login_url(consent_app_id),
         state=consent_app_id,
         guidance=(
-            "Open the login_url in the browser, let the user complete Dhan login and 2FA, "
-            "capture the tokenId from the redirect, then call POST /sessions/dhan."
+            "Open the login_url in the browser and complete Dhan login and 2FA. Dhan will "
+            "redirect tokenId to the frontend URL registered for this API key, and Ananta "
+            "will consume it automatically."
         ),
     )
 

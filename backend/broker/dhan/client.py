@@ -107,6 +107,7 @@ class DhanClient:
         return dmd.stream_capabilities()
 
     def consume_consent_token(self, token_id: str) -> tuple[str | None, str | None]:
-        return dauth.consume_consent(
+        payload, err = dauth.consume_consent(
             app_id=self.app_id, app_secret=self.app_secret, token_id=token_id
         )
+        return (payload.get("access_token") if payload else None), err

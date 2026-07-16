@@ -588,6 +588,21 @@ export function AddBrokerForm({
                                             label="Client ID"
                                             name="client_id"
                                         />
+                                        {dhanMode === "consent" ? (
+                                            <Field>
+                                                <FieldLabel htmlFor="dhan_redirect_url">Dhan redirect URL</FieldLabel>
+                                                <Input
+                                                    id="dhan_redirect_url"
+                                                    readOnly
+                                                    value={defaultBrokerRedirectUrl}
+                                                />
+                                                <FieldDescription>
+                                                    Register this exact frontend URL in the Dhan app. Dhan returns
+                                                    tokenId here, and the frontend completes the exchange through the
+                                                    authenticated backend proxy.
+                                                </FieldDescription>
+                                            </Field>
+                                        ) : null}
                                         {dhanMode === "automation" ? (
                                             <>
                                                 <BrokerField
