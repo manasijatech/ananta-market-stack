@@ -315,6 +315,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                             <a
                                 className="font-bold text-primary hover:underline"
                                 href={dhanStart.login_url}
+                                onClick={rememberPendingBrokerLogin}
                                 target="_blank"
                                 rel="noreferrer"
                             >

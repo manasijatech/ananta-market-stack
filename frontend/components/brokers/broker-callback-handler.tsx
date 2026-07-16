@@ -23,7 +23,7 @@ const pendingLoginKey = "ananta-market-stack:pending-broker-login";
 const pendingLoginMaxAgeMs = 10 * 60 * 1000;
 
 function callbackPayload(params: URLSearchParams): {
-    broker: "zerodha" | "upstox";
+    broker: "zerodha" | "upstox" | "dhan";
     token: string;
     payload: SessionLoginPayload;
 } | null {
@@ -33,6 +33,17 @@ function callbackPayload(params: URLSearchParams): {
             broker: "zerodha",
             token: requestToken,
             payload: { broker: "zerodha", request_token: requestToken }
+        };
+    }
+
+    // Dhan returns the one-time consent token to the redirect URL registered
+    // in the Dhan app as `?tokenId=...` (camel case).
+    const tokenId = params.get("tokenId") ?? params.get("token_id");
+    if (tokenId) {
+        return {
+            broker: "dhan",
+            token: tokenId,
+            payload: { broker: "dhan", token_id: tokenId }
         };
     }
 

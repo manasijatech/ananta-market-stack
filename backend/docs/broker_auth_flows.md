@@ -108,8 +108,8 @@ This is still official, and is preferable to any credential-scraping approach.
 - Official consent flow:
   1. `POST /api/v1/broker-accounts/{account_id}/sessions/dhan/start`
   2. user logs in through the broker login page
-  3. app receives `tokenId`
-  4. `POST /api/v1/broker-accounts/{account_id}/sessions/dhan`
+  3. Dhan redirects the browser to the registered public frontend `/broker-connections` URL with `?tokenId=...`
+  4. the frontend associates the callback with the pending Dhan account and proxies `POST /api/v1/broker-accounts/{account_id}/sessions/dhan` to the private backend
 - Official TOTP automation flow:
   - store `client_id`, `pin`, and `totp_secret`
   - use `POST /api/v1/broker-accounts/{account_id}/sessions/dhan/refresh`
@@ -207,7 +207,7 @@ Order placement, modification, cancellation, smart-order, and close-all routes r
 
 - Zerodha official docs: `kite.trade/docs/connect/v3/user/`
 - Upstox official docs: `upstox.com/developer/api-documentation/`
-- Dhan official docs: `dhanhq.co/docs/v2/authentication/`
+- Dhan official docs: `docs.dhanhq.co/api/v2/guides/authentication`
 - Groww official docs: `groww.in/trade-api/docs/python-sdk`
 - Kotak SDK reference: `github.com/Kotak-Neo/Kotak-neo-api-v2`
 

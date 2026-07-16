@@ -2,7 +2,7 @@
 
 Ananta Market Stack supports two Dhan setup styles:
 
-- manual consent, where you complete Dhan login and paste the returned `token_id`
+- browser consent, where Dhan redirects `tokenId` to the Ananta frontend and the connection finishes automatically
 - TOTP automation, where the backend stores PIN and TOTP secret for the official automation path
 
 ## What You Need
@@ -20,13 +20,14 @@ Ananta Market Stack supports two Dhan setup styles:
 1. Enable [Dhan API access](https://dhanhq.co/) for your account.
 2. Generate or copy the API key and API secret.
 3. Copy your Dhan client ID.
-4. Set up static IP allowlisting if Dhan requires it.
-5. Decide whether you want manual consent or TOTP automation.
-6. Keep PIN and TOTP secret ready only if you want automated refresh.
+4. Register the exact frontend URL shown by Ananta (ending in `/broker-connections`) as the Dhan app redirect URL.
+5. Set up static IP allowlisting if Dhan requires it.
+6. Decide whether you want browser consent or TOTP automation.
+7. Keep PIN and TOTP secret ready only if you want automated refresh.
 
-## Option 1: Manual Consent
+## Option 1: Browser Consent
 
-Use this when you want to avoid storing PIN and TOTP secret and are fine completing the Dhan consent flow when needed.
+Use this when you want to avoid storing PIN and TOTP secret and are fine completing the Dhan consent flow when needed. Dhan redirects to the public frontend as `?tokenId=...`; the frontend then uses its authenticated API proxy to ask the private backend to consume that one-time token.
 
 ## Option 2: TOTP Automation
 
@@ -44,13 +45,13 @@ Use this when you want the backend to attempt token generation with stored PIN a
 
 ## Connect The Session
 
-Manual session:
+Browser consent session:
 
 1. Open the saved Dhan broker account.
 2. Click **Start Dhan consent flow**.
 3. Complete Dhan login and 2FA.
-4. Paste the returned `token_id` into Ananta Market Stack.
-5. Submit to update the session.
+4. Dhan redirects to the registered Ananta frontend URL with `tokenId`.
+5. Ananta consumes the token automatically and opens the connected broker account.
 
 Automated refresh:
 
@@ -65,7 +66,7 @@ Automated refresh:
 
 ## Disadvantages
 
-- Manual mode requires a fresh `token_id` when the session expires.
+- Browser consent requires a fresh one-time `tokenId` when the access token expires.
 - Automation requires storing PIN and TOTP secret.
 - Static IP allowlisting may be required before live API calls work.
 
@@ -74,5 +75,6 @@ Automated refresh:
 ## Notes
 
 - Ananta Market Stack labels Dhan `app_id` as **API key** and `app_secret` as **API secret**.
-- Paste only the `token_id` value during manual session refresh.
+- Dhan names the redirect query parameter `tokenId`; Ananta maps it to the backend's `token_id` field automatically.
+- The Dhan redirect URL must be the public frontend URL, not the private Docker backend URL.
 - Keep API secret, PIN, and TOTP secret private.

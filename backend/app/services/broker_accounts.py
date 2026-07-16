@@ -487,17 +487,20 @@ def apply_dhan_session(db: Session, acc: BrokerAccount, token_id: str) -> tuple[
     row = acc.dhan
     if not row:
         return False, "not dhan"
-    tok, err = dhan_auth.consume_consent(
+    payload, err = dhan_auth.consume_consent(
         app_id=decrypt_value(row.app_id_cipher),
         app_secret=decrypt_value(row.app_secret_cipher),
         token_id=token_id,
     )
-    if err or not tok:
+    if err or not payload:
         return False, err or "failed"
     now = datetime.now(tz=UTC)
-    row.access_token_cipher = encrypt_value(tok)
+    row.access_token_cipher = encrypt_value(payload["access_token"])
     row.access_token_generated_at = now
-    row.access_token_expires_at = _next_groww_expiry_utc(now)
+    row.access_token_expires_at = (
+        dhan_auth.parse_expiry(payload.get("expiry_time"))
+        or dhan_auth.default_expiry_from_now()
+    )
     acc.last_error = None
     acc.session_status = "active"
     acc.session_expires_at = row.access_token_expires_at
