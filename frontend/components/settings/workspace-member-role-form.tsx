@@ -1,33 +1,35 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { approveWorkspaceMember, updateWorkspaceMemberRole } from "@/service/actions/rbac";
+import { queryKeys } from "@/lib/query-keys";
+import { updateWorkspaceMemberRole } from "@/service/actions/rbac";
 import type { RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
-import { memberLabel } from "@/components/settings/workspace-member-utils";
+import { memberLabel, roleDisplayLabel } from "@/components/settings/workspace-member-utils";
 
 type WorkspaceMemberRoleControlsProps = {
     member: WorkspaceMember;
     roles: RoleDefinition[];
-    viewerDefault: string;
     isSelf: boolean;
 };
 
 export function WorkspaceMemberRoleControls({
     member,
     roles,
-    viewerDefault,
     isSelf
 }: WorkspaceMemberRoleControlsProps) {
     const router = useRouter();
+    const queryClient = useQueryClient();
     const [isPending, startTransition] = useTransition();
-    const savedRole = member.status === "pending" ? viewerDefault : member.role;
+    const savedRole = member.role;
     const [draftRole, setDraftRole] = useState(savedRole);
     const hasChanges = draftRole !== savedRole;
+    const assignableRoles = roles.filter((role) => ["admin", "operator", "viewer"].includes(role.name));
 
     useEffect(() => {
         setDraftRole(savedRole);
@@ -40,13 +42,9 @@ export function WorkspaceMemberRoleControls({
     function onSave() {
         startTransition(async () => {
             try {
-                if (member.status === "pending") {
-                    await approveWorkspaceMember(member.user_id, draftRole);
-                    toast.success(`Approved ${memberLabel(member)}`);
-                } else {
-                    await updateWorkspaceMemberRole(member.user_id, draftRole);
-                    toast.success(`Role updated for ${memberLabel(member)}`);
-                }
+                await updateWorkspaceMemberRole(member.user_id, draftRole);
+                toast.success(`Role updated for ${memberLabel(member)}`);
+                void queryClient.invalidateQueries({ queryKey: queryKeys.access.members() });
                 router.refresh();
             } catch {
                 toast.error("Could not update role. Try again.");
@@ -68,9 +66,9 @@ export function WorkspaceMemberRoleControls({
                 <SelectValue placeholder="Select role" />
             </SelectTrigger>
             <SelectContent>
-                {roles.map((role) => (
+                {assignableRoles.map((role) => (
                     <SelectItem key={role.name} value={role.name}>
-                        {role.label}
+                        {roleDisplayLabel(role.name, role.label)}
                     </SelectItem>
                 ))}
             </SelectContent>
@@ -98,7 +96,7 @@ export function WorkspaceMemberRoleControls({
                 {!isSelf && hasChanges ? (
                     <div className="flex items-center gap-2">
                         <Button disabled={isPending} loading={isPending} onClick={onSave} size="xs" type="button">
-                            {member.status === "pending" ? "Approve" : "Save"}
+                            Save
                         </Button>
                         <Button disabled={isPending} onClick={onCancel} size="xs" type="button" variant="ghost">
                             Cancel

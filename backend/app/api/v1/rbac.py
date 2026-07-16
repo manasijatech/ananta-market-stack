@@ -67,6 +67,7 @@ def _principal_out(principal: rbac_svc.Principal) -> PrincipalOut:
 def _member_out(db: Session, member) -> WorkspaceMemberOut:
     user = db.get(User, member.user_id)
     auth_user = _auth_user_row(db, member.user_id)
+    owner_user_id = rbac_svc.workspace_owner_user_id(db, member.workspace_id)
     return WorkspaceMemberOut(
         user_id=member.user_id,
         display_name=user.display_name if user else None,
@@ -74,6 +75,7 @@ def _member_out(db: Session, member) -> WorkspaceMemberOut:
         email=auth_user["email"] or (user.email if user else None),
         role=member.role,
         status=member.status,
+        is_owner=owner_user_id == member.user_id,
         created_at=member.created_at,
         updated_at=member.updated_at,
     )
@@ -154,6 +156,15 @@ def disable_member(
     principal: rbac_svc.Principal = Depends(get_current_principal),
 ) -> WorkspaceMemberOut:
     return _member_out(db, rbac_svc.disable_member(db, principal, user_id))
+
+
+@router.post("/members/{user_id}/enable", response_model=WorkspaceMemberOut)
+def enable_member(
+    user_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac_svc.Principal = Depends(get_current_principal),
+) -> WorkspaceMemberOut:
+    return _member_out(db, rbac_svc.enable_member(db, principal, user_id))
 
 
 @router.post("/members/{user_id}/remove", status_code=204)

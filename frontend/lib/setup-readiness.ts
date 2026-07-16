@@ -38,7 +38,7 @@ export function getWorkspaceSetupReadiness(
         alphaReady,
         llmReady,
         mcpReady,
-        requiredReady: hasBroker && alphaReady && llmReady,
+        requiredReady: hasBroker && llmReady,
         llmProviders,
         mcpServers
     };
@@ -47,9 +47,6 @@ export function getWorkspaceSetupReadiness(
 export function firstIncompleteRequiredStep(readiness: WorkspaceSetupReadiness): Exclude<OnboardingStepSlug, "welcome" | "mcp"> {
     if (!readiness.hasBroker) {
         return "broker";
-    }
-    if (!readiness.alphaReady) {
-        return "drishti";
     }
     return "llm-provider";
 }

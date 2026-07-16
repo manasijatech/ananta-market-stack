@@ -62,7 +62,7 @@ export function BrokerDetailActions({
     return (
         <div>
             <h2 className="text-sm font-semibold">Actions</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Verify the connection or open broker data tools.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Verify the connection or open developer diagnostics.</p>
             <div className="mt-4 flex flex-wrap gap-2">
                 {canManageSessions ? (
                     <Button disabled={isPending} onClick={verify} type="button">
@@ -78,12 +78,12 @@ export function BrokerDetailActions({
                 {verified ? (
                     canUseData ? (
                         <Button asChild disabled={isPending} type="button" variant="outline">
-                            <Link href={`/broker-connections/${accountId}/data-test`}>Open data tools</Link>
+                            <Link href={`/broker-connections/${accountId}/data-test`}>Dev tools</Link>
                         </Button>
                     ) : (
                         <span title={dataDisabledReason}>
                             <Button disabled type="button" variant="outline">
-                                Open data tools
+                                Dev tools
                             </Button>
                         </span>
                     )

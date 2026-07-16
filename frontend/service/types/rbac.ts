@@ -19,6 +19,7 @@ export interface WorkspaceMember {
     email?: string | null;
     role: string;
     status: string;
+    is_owner?: boolean;
     created_at: string;
     updated_at: string;
 }

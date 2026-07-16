@@ -26,6 +26,7 @@ class WorkspaceMemberOut(BaseModel):
     email: str | None = None
     role: str
     status: str
+    is_owner: bool = False
     created_at: datetime
     updated_at: datetime
 

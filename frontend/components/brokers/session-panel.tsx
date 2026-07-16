@@ -5,7 +5,7 @@ import { CheckCircle2, ExternalLink, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { createSession, refreshSession, startDhanSession } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
-import { formatDate } from "@/components/brokers/ui";
+import { brokerNames, formatDate } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { brokerCallbackUrl, brokerSessionSetup } from "@/service/broker-setup";
 import type {
     BrokerAccount,
     BrokerCode,
@@ -35,6 +36,10 @@ function canRefresh(broker: BrokerCode): boolean {
 
 function isZerodhaStatus(status: SessionStatus): status is ZerodhaSessionStatus {
     return status.broker === "zerodha" && "access_token_generated_at" in status;
+}
+
+function isRedirectLoginBroker(broker: BrokerCode): boolean {
+    return broker === "zerodha" || broker === "upstox" || broker === "dhan";
 }
 
 function brokerSessionInputName(key: string): string {
@@ -105,9 +110,11 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
     const growwAutoAttemptedRef = useRef(false);
     const [mode, setMode] = useState<"auto" | "totp" | "token">("auto");
     const [message, setMessage] = useState("");
+    const [callbackUrl, setCallbackUrl] = useState("/broker-connections");
     const [dhanStart, setDhanStart] = useState<SessionStartResponse | null>(null);
     const [isPending, startTransition] = useTransition();
     const broker = account.broker_code;
+    const setup = brokerSessionSetup[broker];
     const canManageSessions = account.access_permissions?.includes("broker.manage_sessions") ?? false;
     const refreshedAt = isZerodhaStatus(sessionStatus)
         ? sessionStatus.access_token_generated_at
@@ -118,6 +125,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
     const shouldHighlightLogin =
         !sessionStatus.session_active && "login_url" in sessionStatus && Boolean(sessionStatus.login_url);
     const shouldPulseLogin = shouldHighlightLogin && isExpiredTokenStatus(sessionStatus, expiresAt);
+    const shouldUseManualFallback = isRedirectLoginBroker(broker);
     const hasManualSessionForm =
         broker === "indmoney" ||
         (!sessionStatus.session_active &&
@@ -131,12 +139,16 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
     const sessionDescription = sessionStatus.session_active
         ? "Portfolio, quotes, orders, trades, positions, and holdings can refresh from this broker."
         : canManageSessions
-          ? "Sign in with the broker to unlock portfolio and market-data views."
+          ? setup.activationDescription
           : "This broker needs a session update from someone with session-management access.";
     const sessionTimingItems = [
         refreshedAt ? { label: "Last refreshed", value: formatDate(refreshedAt) } : null,
         expiresAt ? { label: "Session expires", value: formatDate(expiresAt) } : null
     ].filter((item): item is { label: string; value: string } => Boolean(item));
+
+    useEffect(() => {
+        setCallbackUrl(brokerCallbackUrl(window.location.origin));
+    }, []);
 
     useEffect(() => {
         if (broker !== "groww" || mode !== "auto" || sessionStatus.session_active || growwAutoAttemptedRef.current) {
@@ -210,10 +222,13 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
     }
 
     function startDhan() {
-        setMessage("");
+        setMessage("Preparing Dhan login...");
+        rememberPendingBrokerLogin();
         startTransition(async () => {
             try {
-                setDhanStart(await startDhanSession(account.id));
+                const started = await startDhanSession(account.id);
+                setDhanStart(started);
+                window.location.assign(started.login_url);
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }
@@ -228,6 +243,141 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                 broker,
                 createdAt: Date.now()
             })
+        );
+    }
+
+    function copyCallbackUrl() {
+        void navigator.clipboard?.writeText(callbackUrl);
+        toast.success("Callback URL copied.");
+    }
+
+    function manualSessionForm(className?: string) {
+        return (
+            <form
+                ref={formRef}
+                autoComplete="off"
+                className={cn("grid gap-3 rounded-lg border border-border p-4", className)}
+                data-form-type="other"
+                onSubmit={submit}
+            >
+                <div>
+                    <h3 className="text-sm font-semibold">
+                        {shouldUseManualFallback ? setup.manualFallbackLabel : setup.activationLabel}
+                    </h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{setup.manualFallbackDescription}</p>
+                </div>
+                {broker === "zerodha" ? (
+                    <Input
+                        autoComplete="off"
+                        data-1p-ignore="true"
+                        data-form-type="other"
+                        data-lpignore="true"
+                        name={brokerSessionInputName("request_token")}
+                        placeholder="Paste request_token from redirect URL"
+                        required
+                    />
+                ) : null}
+                {broker === "upstox" ? (
+                    <Input
+                        autoComplete="off"
+                        data-1p-ignore="true"
+                        data-form-type="other"
+                        data-lpignore="true"
+                        name={brokerSessionInputName("authorization_code")}
+                        placeholder="Paste authorization code from redirect URL"
+                        required
+                    />
+                ) : null}
+                {broker === "angel" ? (
+                    <>
+                        <Input
+                            autoComplete="off"
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            name={brokerSessionInputName("client_code")}
+                            placeholder="Client code"
+                            required
+                        />
+                        <Input
+                            autoComplete="new-password"
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            name={brokerSessionInputName("pin")}
+                            placeholder="PIN"
+                            required
+                            type="password"
+                        />
+                        <TOTPInput onComplete={() => formRef.current?.requestSubmit()} />
+                    </>
+                ) : null}
+                {broker === "dhan" ? (
+                    <Input
+                        autoComplete="off"
+                        data-1p-ignore="true"
+                        data-form-type="other"
+                        data-lpignore="true"
+                        name={brokerSessionInputName("token_id")}
+                        placeholder="Paste tokenId from Dhan redirect URL"
+                        required
+                    />
+                ) : null}
+                {broker === "groww" && mode === "totp" ? (
+                    <TOTPInput onComplete={() => formRef.current?.requestSubmit()} />
+                ) : null}
+                {broker === "groww" && mode === "token" ? (
+                    <Input
+                        autoComplete="new-password"
+                        data-1p-ignore="true"
+                        data-form-type="other"
+                        data-lpignore="true"
+                        name={brokerSessionInputName("access_token")}
+                        placeholder="Paste access token"
+                        required
+                        type="password"
+                    />
+                ) : null}
+                {broker === "kotak" ? (
+                    <>
+                        <Input
+                            autoComplete="off"
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            name={brokerSessionInputName("mobile_number")}
+                            placeholder="Mobile number"
+                            required
+                        />
+                        <TOTPInput onComplete={() => undefined} />
+                        <Input
+                            autoComplete="new-password"
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            name={brokerSessionInputName("mpin")}
+                            placeholder="MPIN"
+                            required
+                            type="password"
+                        />
+                    </>
+                ) : null}
+                {broker === "indmoney" ? (
+                    <Input
+                        autoComplete="new-password"
+                        data-1p-ignore="true"
+                        data-form-type="other"
+                        data-lpignore="true"
+                        name={brokerSessionInputName("access_token")}
+                        placeholder="Paste access token"
+                        required
+                        type="password"
+                    />
+                ) : null}
+                <Button className="w-fit" disabled={isPending} type="submit">
+                    {isPending ? "Submitting..." : setup.manualSubmitLabel}
+                </Button>
+            </form>
         );
     }
 
@@ -264,16 +414,35 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                         ))}
                     </div>
 
+                    {canManageSessions && broker !== "dhan" && setup.requiresCallbackUrl && !sessionStatus.session_active ? (
+                        <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-4">
+                            <div>
+                                <h3 className="text-sm font-semibold">Broker callback URL</h3>
+                                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                                    If {brokerNames[broker]} asks for a redirect or callback URL, use this exact value.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                                <code className="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-background px-3 py-2 text-sm">
+                                    {callbackUrl}
+                                </code>
+                                <Button className="shrink-0" onClick={copyCallbackUrl} type="button" variant="outline">
+                                    Copy URL
+                                </Button>
+                            </div>
+                        </div>
+                    ) : null}
+
                     {canManageSessions &&
+                    broker !== "dhan" &&
                     "login_url" in sessionStatus &&
                     sessionStatus.login_url &&
                     !sessionStatus.session_active ? (
                         <div className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/10 p-4">
                             <div>
-                                <h3 className="text-sm font-semibold">Sign in with your broker</h3>
+                                <h3 className="text-sm font-semibold">{setup.activationLabel}</h3>
                                 <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                                    Complete the broker login in a new tab. When you return, the session will be ready
-                                    for data and portfolio views.
+                                    {setup.activationDescription}
                                 </p>
                             </div>
                             <Button
@@ -291,37 +460,43 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                                     rel="noreferrer"
                                     target="_blank"
                                 >
-                                    Open broker login
+                                    {setup.activationLabel}
                                     <ExternalLink className="size-4" aria-hidden="true" />
                                 </a>
                             </Button>
                         </div>
                     ) : null}
 
-                    {canManageSessions && broker === "dhan" ? (
-                        <Button
-                            className="w-fit"
-                            disabled={isPending}
-                            onClick={startDhan}
-                            type="button"
-                            variant="outline"
-                        >
-                            Start Dhan consent flow
-                        </Button>
+                    {canManageSessions && broker === "dhan" && !sessionStatus.session_active ? (
+                        <div className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/10 p-4">
+                            <div>
+                                <h3 className="text-sm font-semibold">{setup.activationLabel}</h3>
+                                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                                    {setup.activationDescription}
+                                </p>
+                            </div>
+                            <Button className="w-fit" disabled={isPending} onClick={startDhan} type="button">
+                                {isPending ? "Preparing login..." : setup.activationLabel}
+                                <ExternalLink className="size-4" aria-hidden="true" />
+                            </Button>
+                        </div>
                     ) : null}
 
                     {dhanStart ? (
                         <Alert>
-                            <a
-                                className="font-bold text-primary hover:underline"
-                                href={dhanStart.login_url}
-                                onClick={rememberPendingBrokerLogin}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                Open Dhan login
-                            </a>
-                            <AlertDescription className="mt-2">{dhanStart.guidance}</AlertDescription>
+                            <AlertDescription>
+                                Dhan login is opening. If it did not open, use{" "}
+                                <a
+                                    className="font-semibold text-primary hover:underline"
+                                    href={dhanStart.login_url}
+                                    onClick={rememberPendingBrokerLogin}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    this Dhan login link
+                                </a>
+                                . {dhanStart.guidance}
+                            </AlertDescription>
                         </Alert>
                     ) : null}
 
@@ -358,135 +533,16 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                     ) : null}
 
                     {canManageSessions && hasManualSessionForm ? (
-                        <form
-                            ref={formRef}
-                            autoComplete="off"
-                            className="grid gap-3 rounded-lg border border-border p-4"
-                            data-form-type="other"
-                            onSubmit={submit}
-                        >
-                            <div>
-                                <h3 className="text-sm font-semibold">Paste login details manually</h3>
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                    Use this only if the broker redirect does not complete automatically.
-                                </p>
-                            </div>
-                            {broker === "zerodha" ? (
-                                <Input
-                                    autoComplete="off"
-                                    data-1p-ignore="true"
-                                    data-form-type="other"
-                                    data-lpignore="true"
-                                    name={brokerSessionInputName("request_token")}
-                                    placeholder="Paste request token from redirect URL"
-                                    required
-                                />
-                            ) : null}
-                            {broker === "upstox" ? (
-                                <Input
-                                    autoComplete="off"
-                                    data-1p-ignore="true"
-                                    data-form-type="other"
-                                    data-lpignore="true"
-                                    name={brokerSessionInputName("authorization_code")}
-                                    placeholder="Paste authorization code"
-                                    required
-                                />
-                            ) : null}
-                            {broker === "angel" ? (
-                                <>
-                                    <Input
-                                        autoComplete="off"
-                                        data-1p-ignore="true"
-                                        data-form-type="other"
-                                        data-lpignore="true"
-                                        name={brokerSessionInputName("client_code")}
-                                        placeholder="Client code"
-                                        required
-                                    />
-                                    <Input
-                                        autoComplete="new-password"
-                                        data-1p-ignore="true"
-                                        data-form-type="other"
-                                        data-lpignore="true"
-                                        name={brokerSessionInputName("pin")}
-                                        placeholder="PIN"
-                                        required
-                                        type="password"
-                                    />
-                                    <TOTPInput onComplete={() => formRef.current?.requestSubmit()} />
-                                </>
-                            ) : null}
-                            {broker === "dhan" ? (
-                                <Input
-                                    autoComplete="off"
-                                    data-1p-ignore="true"
-                                    data-form-type="other"
-                                    data-lpignore="true"
-                                    name={brokerSessionInputName("token_id")}
-                                    placeholder="Paste Dhan token"
-                                    required
-                                />
-                            ) : null}
-                            {broker === "groww" && mode === "totp" ? (
-                                <TOTPInput onComplete={() => formRef.current?.requestSubmit()} />
-                            ) : null}
-                            {broker === "groww" && mode === "token" ? (
-                                <Input
-                                    autoComplete="new-password"
-                                    data-1p-ignore="true"
-                                    data-form-type="other"
-                                    data-lpignore="true"
-                                    name={brokerSessionInputName("access_token")}
-                                    placeholder="Paste access token"
-                                    required
-                                    type="password"
-                                />
-                            ) : null}
-                            {broker === "kotak" ? (
-                                <>
-                                    <Input
-                                        autoComplete="off"
-                                        data-1p-ignore="true"
-                                        data-form-type="other"
-                                        data-lpignore="true"
-                                        name={brokerSessionInputName("mobile_number")}
-                                        placeholder="Mobile number"
-                                        required
-                                    />
-                                    <TOTPInput onComplete={() => undefined} />
-                                    <Input
-                                        autoComplete="new-password"
-                                        data-1p-ignore="true"
-                                        data-form-type="other"
-                                        data-lpignore="true"
-                                        name={brokerSessionInputName("mpin")}
-                                        placeholder="MPIN"
-                                        required
-                                        type="password"
-                                    />
-                                </>
-                            ) : null}
-                            {broker === "indmoney" ? (
-                                <Input
-                                    autoComplete="new-password"
-                                    data-1p-ignore="true"
-                                    data-form-type="other"
-                                    data-lpignore="true"
-                                    name={brokerSessionInputName("access_token")}
-                                    placeholder="Paste access token"
-                                    required
-                                    type="password"
-                                />
-                            ) : null}
-                            <Button className="w-fit" disabled={isPending} type="submit">
-                                {isPending
-                                    ? "Submitting..."
-                                    : broker === "groww" && mode === "auto"
-                                      ? "Run automatic refresh"
-                                      : "Activate session"}
-                            </Button>
-                        </form>
+                        shouldUseManualFallback ? (
+                            <details className="rounded-lg border border-border bg-muted/20 p-4">
+                                <summary className="cursor-pointer text-sm font-semibold">
+                                    {setup.manualFallbackLabel}
+                                </summary>
+                                <div className="pt-3">{manualSessionForm("border-dashed bg-background")}</div>
+                            </details>
+                        ) : (
+                            manualSessionForm()
+                        )
                     ) : null}
 
                     {message ? (

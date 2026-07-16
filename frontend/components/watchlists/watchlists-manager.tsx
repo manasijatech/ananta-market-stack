@@ -1785,7 +1785,7 @@ export function WatchlistsManager({
                                 </nav>
                             </TabsContent>
 
-                            <TabsContent className="min-h-0 overflow-hidden p-3 pt-0" value="presets">
+                            <TabsContent className="min-h-0 overflow-hidden p-3" value="presets">
                                 <div className="flex h-full min-h-0 flex-col gap-3">
                                     <div className="grid gap-1">
                                         <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">

@@ -18,6 +18,7 @@ import {
 import type { RoleDefinition } from "@/service/types/rbac";
 import { typography } from "@/lib/typography";
 import { cn } from "@/lib/utils";
+import { roleDisplayLabel } from "@/components/settings/workspace-member-utils";
 
 const workspaceCapabilityLabels: Record<string, string> = {
     "workspace.manage_members": "Approve members and assign roles",
@@ -105,7 +106,7 @@ export function RolePermissionsPanel({ roles }: { roles: RoleDefinition[] }) {
                                         className="h-9 w-28 text-center text-xs font-medium text-muted-foreground"
                                         key={role.name}
                                     >
-                                        {role.label}
+                                        {roleDisplayLabel(role.name, role.label)}
                                     </TableHead>
                                 ))}
                             </TableRow>

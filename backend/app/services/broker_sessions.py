@@ -96,6 +96,23 @@ def _set_session_state(
 SESSION_NOTIFICATION_KINDS = ("session_action_required", "session_refresh_failed")
 
 
+def _session_action_message(acc: BrokerAccount, detail: str | None = None) -> str:
+    broker_label = acc.broker_code.capitalize()
+    messages = {
+        "zerodha": "Zerodha login is not complete. Open the broker account and click Login with Zerodha to activate this session.",
+        "upstox": "Upstox login is not complete. Open the broker account and click Login with Upstox to activate this session.",
+        "dhan": "Dhan login is not complete. Open the broker account and click Login with Dhan to activate this session.",
+        "angel": "Angel One session is not active. Open the broker account and enter client code, PIN, and TOTP to activate it.",
+        "groww": "Groww session is not active. Open the broker account and run automatic refresh, or use the manual Groww fallback.",
+        "indmoney": "INDmoney token is not active. Open the broker account and paste a fresh INDmoney access token.",
+        "kotak": "Kotak Neo session is not active. Open the broker account and enter mobile number, TOTP, and MPIN to activate it.",
+    }
+    base = messages.get(acc.broker_code, f"{broker_label} session is not active. Open the broker account to activate it.")
+    if detail and "service is unavailable" in detail.lower():
+        return f"{base} Broker service is temporarily unavailable; try again in a moment."
+    return base
+
+
 def mark_session_healthy(
     db: Session,
     acc: BrokerAccount,
@@ -130,6 +147,17 @@ def _create_notification_once_per_day(
     message: str,
     level: str = "info",
 ) -> None:
+    unresolved_q = select(BrokerNotification).where(
+        BrokerNotification.user_id == user_id,
+        BrokerNotification.account_id == account_id,
+        BrokerNotification.kind == kind,
+        BrokerNotification.is_read.is_(False),
+    )
+    if broker_code is not None:
+        unresolved_q = unresolved_q.where(BrokerNotification.broker_code == broker_code)
+    if db.scalars(unresolved_q).first():
+        return
+
     day_start = datetime.combine(_today_ist(), time.min, tzinfo=IST).astimezone(UTC)
     day_end = day_start + timedelta(days=1)
     q = select(BrokerNotification).where(
@@ -261,9 +289,11 @@ def get_broker_session_status(acc: BrokerAccount) -> BrokerSessionStatusOut:
         access_token = decrypt_value(row.access_token_cipher)
         can_auto = bool(row.pin_cipher and row.totp_secret_cipher)
         guidance = (
-            "Manual flow: Dhan redirects tokenId to the registered frontend URL; the frontend "
-            "then consumes it through POST /sessions/dhan. "
-            "Official automation is available if client_id, pin, and totp_secret are stored."
+            "Use Login with Dhan from the broker account page. Ananta opens Dhan consent login, "
+            "reads tokenId when Dhan redirects to the registered frontend URL, and activates the "
+            "session automatically through POST /sessions/dhan. Manual fallback is only needed if "
+            "automatic callback completion fails. Official automation is available if client_id, "
+            "pin, and totp_secret are stored."
         )
         return BrokerSessionStatusOut(
             broker=code,
@@ -688,7 +718,8 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
             refreshed, err = refresh_zerodha_session_experimental(db, acc)
             if refreshed is not None:
                 return
-            _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=err)
+            user_message = _session_action_message(acc, err or status.guidance)
+            _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=user_message)
             _create_notification_once_per_day(
                 db,
                 user_id=acc.user_id,
@@ -696,11 +727,12 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
                 broker_code=code,
                 kind="session_refresh_failed",
                 title=f"{acc.label}: Zerodha experimental refresh failed",
-                message=err or status.guidance,
+                message=user_message,
                 level="warning",
             )
         elif not status.session_active:
-            _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=status.guidance)
+            user_message = _session_action_message(acc, status.guidance)
+            _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=user_message)
             _create_notification_once_per_day(
                 db,
                 user_id=acc.user_id,
@@ -708,7 +740,7 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
                 broker_code=code,
                 kind="session_action_required",
                 title=f"{acc.label}: Zerodha login required",
-                message=status.guidance,
+                message=user_message,
                 level="warning",
             )
         db.add(acc)
@@ -718,7 +750,8 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
     if code == "upstox":
         status = get_broker_session_status(acc)
         if not status.session_active:
-            _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=status.guidance)
+            user_message = _session_action_message(acc, status.guidance)
+            _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=user_message)
             _create_notification_once_per_day(
                 db,
                 user_id=acc.user_id,
@@ -726,10 +759,7 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
                 broker_code=code,
                 kind="session_action_required",
                 title=f"{acc.label}: Upstox login required",
-                message=(
-                    f"{status.guidance} You can also use the official semi-automated "
-                    "token-request endpoint to ask the user for in-app approval."
-                ),
+                message=user_message,
                 level="warning",
             )
         db.add(acc)
@@ -739,7 +769,8 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
     if code == "indmoney":
         status = get_broker_session_status(acc)
         if not status.session_active:
-            _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=status.guidance)
+            user_message = _session_action_message(acc, status.guidance)
+            _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=user_message)
             _create_notification_once_per_day(
                 db,
                 user_id=acc.user_id,
@@ -747,7 +778,7 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
                 broker_code=code,
                 kind="session_action_required",
                 title=f"{acc.label}: INDmoney token update required",
-                message=status.guidance,
+                message=user_message,
                 level="warning",
             )
         db.add(acc)
@@ -765,7 +796,8 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
         return
     ok, msg = refresher(db, acc)
     if not ok:
-        _set_session_state(acc, status="action_required", expires_at=acc.session_expires_at, error=msg)
+        user_message = _session_action_message(acc, msg)
+        _set_session_state(acc, status="action_required", expires_at=acc.session_expires_at, error=user_message)
         _create_notification_once_per_day(
             db,
             user_id=acc.user_id,
@@ -773,7 +805,7 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
             broker_code=code,
             kind="session_refresh_failed",
             title=f"{acc.label}: {code} session refresh failed",
-            message=msg,
+            message=user_message,
             level="warning",
         )
         db.add(acc)

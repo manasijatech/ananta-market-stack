@@ -219,7 +219,7 @@ export function SettingsSections({
                 </aside>
 
                 <section className="min-h-0 min-w-0 overflow-y-auto bg-accent/20">
-                    <div className="min-w-0 px-5 py-8 min-[760px]:px-10">
+                    <div className="min-w-0 px-5 pb-0 pt-8 min-[760px]:px-10">
                         <PageContainer className="mx-0 grid gap-7">
                             <div>
                                 <h2 className="font-heading text-2xl font-semibold tracking-tight text-foreground">

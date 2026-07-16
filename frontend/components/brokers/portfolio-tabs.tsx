@@ -1,15 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import {
-    getQuotes,
-    getHoldings,
-    getOrders,
-    getPortfolioFunds,
-    getPositions,
-    getProfile,
-    getTrades
-} from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import {
     normalizeFunds,
@@ -43,7 +34,17 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/in
 import { Skeleton as UISkeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { FundsResponse, Holding, Order, Position, Profile, Trade } from "@/service/types/broker";
+import type {
+    FundsResponse,
+    Holding,
+    JsonObject,
+    Order,
+    Position,
+    Profile,
+    QuoteRequest,
+    QuoteResponse,
+    Trade
+} from "@/service/types/broker";
 
 type Tab = "funds" | "orders" | "trades" | "positions" | "holdings";
 type TabState = {
@@ -72,6 +73,90 @@ function money(value?: number | null): string {
 
 function containsSymbol(row: { symbol: string }, filter: string): boolean {
     return row.symbol.toLowerCase().includes(filter.trim().toLowerCase());
+}
+
+async function readBrokerResponse<T>(response: Response): Promise<T> {
+    const text = await response.text();
+    let payload: unknown = null;
+
+    if (text) {
+        try {
+            payload = JSON.parse(text) as unknown;
+        } catch {
+            payload = { detail: text };
+        }
+    }
+
+    if (!response.ok) {
+        let message = "Request failed.";
+        if (response.status >= 500) {
+            message = "The broker service is unavailable. Please try again.";
+        } else if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+            const detail = (payload as Record<string, unknown>).detail;
+            const payloadMessage = (payload as Record<string, unknown>).message;
+            if (typeof detail === "string") {
+                message = detail;
+            } else if (typeof payloadMessage === "string") {
+                message = payloadMessage;
+            }
+        }
+        throw new Error(JSON.stringify({ status: response.status, message, fieldErrors: {} }));
+    }
+
+    return payload as T;
+}
+
+async function brokerGet<T>(path: string): Promise<T> {
+    const response = await fetch(`/api/v1${path}`, {
+        cache: "no-store",
+        credentials: "include"
+    });
+    return readBrokerResponse<T>(response);
+}
+
+async function brokerPost<T>(path: string, body: JsonObject): Promise<T> {
+    const response = await fetch(`/api/v1${path}`, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+        headers: {
+            "content-type": "application/json"
+        },
+        body: JSON.stringify(body)
+    });
+    return readBrokerResponse<T>(response);
+}
+
+function accountPath(accountId: string, suffix: string): string {
+    return `/broker-accounts/${encodeURIComponent(accountId)}${suffix}`;
+}
+
+function getPortfolioFunds(accountId: string): Promise<JsonObject> {
+    return brokerGet<JsonObject>(accountPath(accountId, "/portfolio/funds"));
+}
+
+function getProfile(accountId: string): Promise<JsonObject> {
+    return brokerGet<JsonObject>(accountPath(accountId, "/profile"));
+}
+
+function getOrders(accountId: string): Promise<JsonObject> {
+    return brokerGet<JsonObject>(accountPath(accountId, "/portfolio/orders"));
+}
+
+function getTrades(accountId: string): Promise<JsonObject> {
+    return brokerGet<JsonObject>(accountPath(accountId, "/portfolio/trades"));
+}
+
+function getPositions(accountId: string): Promise<JsonObject> {
+    return brokerGet<JsonObject>(accountPath(accountId, "/portfolio/positions"));
+}
+
+function getHoldings(accountId: string): Promise<JsonObject> {
+    return brokerGet<JsonObject>(accountPath(accountId, "/portfolio/holdings"));
+}
+
+function getQuotes(accountId: string, payload: QuoteRequest): Promise<QuoteResponse[]> {
+    return brokerPost<QuoteResponse[]>(accountPath(accountId, "/quotes"), payload as unknown as JsonObject);
 }
 
 function Empty({ message }: { message: string }) {

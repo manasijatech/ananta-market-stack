@@ -340,6 +340,7 @@ def disable_member(db: Session, principal: Principal, user_id: str) -> Workspace
     if user_id == principal.user.id:
         raise HTTPException(status_code=400, detail="cannot disable yourself")
     member = _member_or_404(db, principal.workspace.id, user_id)
+    _ensure_not_workspace_owner(db, principal.workspace.id, user_id)
     if member.role == "admin":
         _ensure_not_last_admin(db, principal.workspace.id, excluding_user_id=user_id)
     member.status = "disabled"
@@ -350,11 +351,35 @@ def disable_member(db: Session, principal: Principal, user_id: str) -> Workspace
     return member
 
 
+def enable_member(db: Session, principal: Principal, user_id: str) -> WorkspaceMember:
+    require_workspace_permission(principal, WORKSPACE_MANAGE_MEMBERS)
+    if user_id == principal.user.id:
+        raise HTTPException(status_code=400, detail="cannot enable yourself")
+    member = _member_or_404(db, principal.workspace.id, user_id)
+    _ensure_not_workspace_owner(db, principal.workspace.id, user_id)
+    member.status = "active"
+    if member.role == "pending":
+        member.role = "viewer"
+    db.add(member)
+    audit(
+        db,
+        principal=principal,
+        action="member.enable",
+        resource_type="user",
+        resource_id=user_id,
+        metadata={"role": member.role},
+    )
+    db.commit()
+    db.refresh(member)
+    return member
+
+
 def remove_member(db: Session, principal: Principal, user_id: str) -> None:
     require_workspace_permission(principal, WORKSPACE_MANAGE_MEMBERS)
     if user_id == principal.user.id:
         raise HTTPException(status_code=400, detail="cannot remove yourself")
     member = _member_or_404(db, principal.workspace.id, user_id)
+    _ensure_not_workspace_owner(db, principal.workspace.id, user_id)
     if member.role == "admin" and member.status == "active":
         _ensure_not_last_admin(db, principal.workspace.id, excluding_user_id=user_id)
     _purge_member_access(db, principal.workspace.id, member)
@@ -907,6 +932,23 @@ def _ensure_not_last_admin(db: Session, workspace_id: str, *, excluding_user_id:
     ) or 0
     if remaining <= 0:
         raise HTTPException(status_code=400, detail="cannot remove the last active admin")
+
+
+def _ensure_not_workspace_owner(db: Session, workspace_id: str, user_id: str) -> None:
+    if workspace_owner_user_id(db, workspace_id) == user_id:
+        raise HTTPException(status_code=400, detail="cannot remove the workspace owner")
+
+
+def workspace_owner_user_id(db: Session, workspace_id: str) -> str | None:
+    workspace = db.get(Workspace, workspace_id)
+    if workspace and workspace.created_by_user_id:
+        return workspace.created_by_user_id
+    first_member = db.scalar(
+        select(WorkspaceMember)
+        .where(WorkspaceMember.workspace_id == workspace_id)
+        .order_by(WorkspaceMember.created_at.asc(), WorkspaceMember.id.asc())
+    )
+    return first_member.user_id if first_member is not None else None
 
 
 def workspace_config_owner_user_id(db: Session, user_id: str) -> str:
