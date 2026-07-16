@@ -1,11 +1,13 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { queryKeys } from "@/lib/query-keys";
 import { updateWorkspaceMemberRole } from "@/service/actions/rbac";
 import type { RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
 import { memberLabel, roleDisplayLabel } from "@/components/settings/workspace-member-utils";
@@ -22,6 +24,7 @@ export function WorkspaceMemberRoleControls({
     isSelf
 }: WorkspaceMemberRoleControlsProps) {
     const router = useRouter();
+    const queryClient = useQueryClient();
     const [isPending, startTransition] = useTransition();
     const savedRole = member.role;
     const [draftRole, setDraftRole] = useState(savedRole);
@@ -41,6 +44,7 @@ export function WorkspaceMemberRoleControls({
             try {
                 await updateWorkspaceMemberRole(member.user_id, draftRole);
                 toast.success(`Role updated for ${memberLabel(member)}`);
+                void queryClient.invalidateQueries({ queryKey: queryKeys.access.members() });
                 router.refresh();
             } catch {
                 toast.error("Could not update role. Try again.");

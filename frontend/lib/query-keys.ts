@@ -26,6 +26,6 @@ export const queryKeys = {
     },
     access: {
         all: ["access"] as const,
-        pendingRequests: () => [...queryKeys.access.all, "pending-requests"] as const
+        members: () => [...queryKeys.access.all, "members"] as const
     }
 } as const;

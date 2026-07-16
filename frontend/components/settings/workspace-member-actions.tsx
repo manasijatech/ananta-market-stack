@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Check, X } from "lucide-react";
@@ -39,6 +40,7 @@ import {
     enableWorkspaceMember,
     removeWorkspaceMember
 } from "@/service/actions/rbac";
+import { queryKeys } from "@/lib/query-keys";
 import type { RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
 import { memberLabel, roleDisplayLabel } from "@/components/settings/workspace-member-utils";
 
@@ -49,8 +51,12 @@ type WorkspaceMemberActionsProps = {
     viewerDefault: string;
 };
 
+const confirmHeaderClassName = "grid grid-cols-[2.5rem_minmax(0,1fr)] items-start gap-4 text-left sm:text-left";
+const confirmMediaClassName = "mx-0 size-10";
+
 export function WorkspaceMemberActions({ currentUserId, member, roles, viewerDefault }: WorkspaceMemberActionsProps) {
     const router = useRouter();
+    const queryClient = useQueryClient();
     const [isPending, startTransition] = useTransition();
     const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
     const [disableDialogOpen, setDisableDialogOpen] = useState(false);
@@ -65,6 +71,7 @@ export function WorkspaceMemberActions({ currentUserId, member, roles, viewerDef
     }
 
     function refresh() {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.access.members() });
         router.refresh();
     }
 
@@ -218,8 +225,8 @@ export function WorkspaceMemberActions({ currentUserId, member, roles, viewerDef
                 </Dialog>
                 <AlertDialog onOpenChange={setRemoveDialogOpen} open={removeDialogOpen}>
                     <AlertDialogContent>
-                        <AlertDialogHeader className="flex-row items-start gap-4 text-left sm:text-left">
-                            <AlertDialogMedia className="mx-0 bg-destructive/10 text-destructive">
+                        <AlertDialogHeader className={confirmHeaderClassName}>
+                            <AlertDialogMedia className={`${confirmMediaClassName} bg-destructive/10 text-destructive`}>
                                 <X className="size-5" />
                             </AlertDialogMedia>
                             <div className="grid min-w-0 gap-2">
@@ -285,8 +292,8 @@ export function WorkspaceMemberActions({ currentUserId, member, roles, viewerDef
             </MenuPopup>
             <AlertDialog onOpenChange={setDisableDialogOpen} open={disableDialogOpen}>
                 <AlertDialogContent>
-                    <AlertDialogHeader className="flex-row items-start gap-4 text-left sm:text-left">
-                        <AlertDialogMedia className="mx-0 bg-warning/10 text-warning-foreground">
+                    <AlertDialogHeader className={confirmHeaderClassName}>
+                        <AlertDialogMedia className={`${confirmMediaClassName} bg-warning/10 text-warning-foreground`}>
                             <IconBan className="size-5" />
                         </AlertDialogMedia>
                         <div className="grid min-w-0 gap-2">
@@ -306,8 +313,8 @@ export function WorkspaceMemberActions({ currentUserId, member, roles, viewerDef
             </AlertDialog>
             <AlertDialog onOpenChange={setRemoveDialogOpen} open={removeDialogOpen}>
                 <AlertDialogContent>
-                    <AlertDialogHeader className="flex-row items-start gap-4 text-left sm:text-left">
-                        <AlertDialogMedia className="mx-0 bg-destructive/10 text-destructive">
+                    <AlertDialogHeader className={confirmHeaderClassName}>
+                        <AlertDialogMedia className={`${confirmMediaClassName} bg-destructive/10 text-destructive`}>
                             <X className="size-5" />
                         </AlertDialogMedia>
                         <div className="grid min-w-0 gap-2">

@@ -26,8 +26,8 @@ export function PendingApprovalView() {
 
     // Auto-route the moment approval lands, without a click.
     useEffect(() => {
-        if (data === "/broker-connections") {
-            router.replace("/broker-connections");
+        if (data && data !== "/pending-approval") {
+            router.replace(data);
         }
     }, [data, router]);
 
@@ -74,8 +74,8 @@ export function PendingApprovalView() {
                         disabled={isFetching}
                         onClick={() => {
                             void refetch().then((result) => {
-                                if (result.data === "/broker-connections") {
-                                    router.replace("/broker-connections");
+                                if (result.data && result.data !== "/pending-approval") {
+                                    router.replace(result.data);
                                 }
                             });
                         }}
