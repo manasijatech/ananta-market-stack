@@ -1,6 +1,6 @@
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.deps import _header_user_id
@@ -243,6 +243,171 @@ def test_reconcile_workspace_members_removes_orphan_members():
     rbac.reconcile_workspace_members(db, workspace.id)
 
     assert db.scalar(select(func.count()).select_from(WorkspaceMember)) == 0
+    db.close()
+
+
+def test_list_members_adds_pending_auth_users_without_backend_user():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    db.execute(
+        text(
+            'CREATE TABLE "user" ('
+            'id TEXT PRIMARY KEY, name TEXT, email TEXT, '
+            '"emailVerified" INTEGER, "createdAt" TEXT, "updatedAt" TEXT)'
+        )
+    )
+    db.execute(
+        text(
+            'INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") '
+            "VALUES "
+            "('admin-user', 'Admin', 'admin@example.com', 1, 'now', 'now'), "
+            "('pending-user', 'Manasija', 'operations@manasija.in', 1, 'now', 'now')"
+        )
+    )
+
+    workspace = Workspace(id="workspace-1", name="Primary")
+    admin_user = User(id="admin-user", display_name="Admin")
+    db.add(workspace)
+    db.add(admin_user)
+    db.add(
+        WorkspaceMember(
+            id="member-admin",
+            workspace_id=workspace.id,
+            user_id=admin_user.id,
+            role="admin",
+            status="active",
+        )
+    )
+    db.commit()
+
+    principal = rbac.Principal(
+        user=admin_user,
+        workspace=workspace,
+        membership=db.get(WorkspaceMember, "member-admin"),
+        permissions=frozenset({rbac.WORKSPACE_MANAGE_MEMBERS}),
+    )
+
+    members = rbac.list_members(db, principal)
+    pending = next(member for member in members if member.user_id == "pending-user")
+
+    assert len(members) == 2
+    assert pending.role == "pending"
+    assert pending.status == "pending"
+    assert db.get(User, "pending-user").display_name == "Manasija"
+    assert db.get(User, "pending-user").email == "operations@manasija.in"
+    db.close()
+
+
+def test_reconcile_workspace_members_does_not_readd_removed_backend_user():
+    from sqlalchemy import func, select
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    db.execute(
+        text(
+            'CREATE TABLE "user" ('
+            'id TEXT PRIMARY KEY, name TEXT, email TEXT, '
+            '"emailVerified" INTEGER, "createdAt" TEXT, "updatedAt" TEXT)'
+        )
+    )
+    db.execute(
+        text(
+            'INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") '
+            "VALUES "
+            "('admin-user', 'Admin', 'admin@example.com', 1, 'now', 'now'), "
+            "('removed-user', 'Removed', 'removed@example.com', 1, 'now', 'now')"
+        )
+    )
+
+    workspace = Workspace(id="workspace-1", name="Primary")
+    admin_user = User(id="admin-user", display_name="Admin")
+    removed_user = User(id="removed-user", display_name="Removed")
+    db.add(workspace)
+    db.add(admin_user)
+    db.add(removed_user)
+    db.add(
+        WorkspaceMember(
+            id="member-admin",
+            workspace_id=workspace.id,
+            user_id=admin_user.id,
+            role="admin",
+            status="active",
+        )
+    )
+    db.commit()
+
+    rbac.reconcile_workspace_members(db, workspace.id)
+
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(WorkspaceMember)
+            .where(WorkspaceMember.user_id == "removed-user")
+        )
+        == 0
+    )
+    db.close()
+
+
+def test_list_members_keeps_backend_user_when_auth_metadata_is_missing():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    db.execute(
+        text(
+            'CREATE TABLE "user" ('
+            'id TEXT PRIMARY KEY, name TEXT, email TEXT, '
+            '"emailVerified" INTEGER, "createdAt" TEXT, "updatedAt" TEXT)'
+        )
+    )
+    db.execute(
+        text(
+            'INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") '
+            "VALUES ('admin-user', 'Admin', 'admin@example.com', 1, 'now', 'now')"
+        )
+    )
+
+    workspace = Workspace(id="workspace-1", name="Primary")
+    admin_user = User(id="admin-user", display_name="Admin")
+    pending_user = User(id="pending-user", display_name="Manasija")
+    db.add(workspace)
+    db.add(admin_user)
+    db.add(pending_user)
+    db.add(
+        WorkspaceMember(
+            id="member-admin",
+            workspace_id=workspace.id,
+            user_id=admin_user.id,
+            role="admin",
+            status="active",
+        )
+    )
+    db.add(
+        WorkspaceMember(
+            id="member-pending",
+            workspace_id=workspace.id,
+            user_id=pending_user.id,
+            role="pending",
+            status="pending",
+        )
+    )
+    db.commit()
+
+    principal = rbac.Principal(
+        user=admin_user,
+        workspace=workspace,
+        membership=db.get(WorkspaceMember, "member-admin"),
+        permissions=frozenset({rbac.WORKSPACE_MANAGE_MEMBERS}),
+    )
+
+    members = rbac.list_members(db, principal)
+
+    assert {member.user_id for member in members} == {"admin-user", "pending-user"}
     db.close()
 
 

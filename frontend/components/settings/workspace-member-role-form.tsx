@@ -64,7 +64,7 @@ export function WorkspaceMemberRoleControls({
             }}
             value={draftRole}
         >
-            <SelectTrigger className="h-8 w-full min-w-0 text-sm md:w-[160px]">
+            <SelectTrigger className="h-8 w-full min-w-0 text-sm md:w-[180px]">
                 <SelectValue placeholder="Select role" />
             </SelectTrigger>
             <SelectContent>
@@ -78,13 +78,13 @@ export function WorkspaceMemberRoleControls({
     );
 
     return (
-        <div className="flex min-w-0 flex-col gap-2 md:items-end">
-            <div className="flex w-full min-w-0 flex-col gap-1 md:w-[160px]">
+        <div className="flex min-w-0 flex-col gap-2 md:items-start">
+            <div className="flex w-full min-w-0 flex-col gap-1 md:w-[180px]">
                 {isSelf ? (
                     <TooltipProvider>
                         <Tooltip>
                             <TooltipTrigger
-                                render={<span className="inline-flex w-full md:w-[160px]">{select}</span>}
+                                render={<span className="inline-flex w-full md:w-[180px]">{select}</span>}
                             />
                             <TooltipPopup>You can&apos;t change your own role</TooltipPopup>
                         </Tooltip>
@@ -92,12 +92,9 @@ export function WorkspaceMemberRoleControls({
                 ) : (
                     select
                 )}
-                {isSelf ? (
-                    <p className="text-[11px] text-muted-foreground">You can&apos;t change your own role</p>
-                ) : null}
             </div>
 
-            <div className="flex min-h-7 w-full items-center md:w-[160px] md:justify-end">
+            <div className="flex min-h-0 w-full items-center md:w-[180px] md:justify-start">
                 {!isSelf && hasChanges ? (
                     <div className="flex items-center gap-2">
                         <Button disabled={isPending} loading={isPending} onClick={onSave} size="xs" type="button">

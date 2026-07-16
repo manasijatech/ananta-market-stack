@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { IconLock } from "@tabler/icons-react";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import {
     Select,
     SelectGroup,
@@ -61,6 +63,12 @@ function permissionDescription(permission: BrokerPermission): string {
     return "Remove this broker account from the workspace.";
 }
 
+function permissionTone(permission: BrokerPermission): "secondary" | "warning" | "error" {
+    if (permission === "broker.delete") return "error";
+    if (permission === "broker.manage_credentials") return "warning";
+    return "secondary";
+}
+
 function permissionSummary(permissions: string[]): string {
     if (!permissions.length) {
         return "No access saved yet";
@@ -112,12 +120,16 @@ function buildSubjectOptions(members: WorkspaceMember[], roles: RoleDefinition[]
 export function AccessGrantEditor({
     accountId,
     grants,
+    onCancel,
+    onSaved,
     members,
     roles,
     initialSubjectKey
 }: {
     accountId: string;
     grants: BrokerAccountGrant[];
+    onCancel?: () => void;
+    onSaved?: () => void;
     members: WorkspaceMember[];
     roles: RoleDefinition[];
     initialSubjectKey?: string;
@@ -190,6 +202,7 @@ export function AccessGrantEditor({
                 });
                 setMessage("Access grant saved.");
                 router.refresh();
+                onSaved?.();
             } catch (error) {
                 setMessage(parseActionError(error).message);
             }
@@ -203,11 +216,9 @@ export function AccessGrantEditor({
 
     return (
         <div className="grid gap-4">
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
-                <div className="grid gap-2">
-                    <label className="text-sm font-semibold" htmlFor={`subject-${accountId}`}>
-                        Grant access to
-                    </label>
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+                <Field>
+                    <FieldLabel htmlFor={`subject-${accountId}`}>Grant access to</FieldLabel>
                     <Select onValueChange={(value) => setSelectedKey(value ?? "")} value={selectedSubject?.key ?? ""}>
                         <SelectTrigger id={`subject-${accountId}`}>
                             <SelectValue placeholder="Select person or role">
@@ -241,11 +252,11 @@ export function AccessGrantEditor({
                         </SelectPopup>
                     </Select>
                     {selectedSubject?.subtitle ? (
-                        <div className="text-sm text-muted-foreground">{selectedSubject.subtitle}</div>
+                        <FieldDescription>{selectedSubject.subtitle}</FieldDescription>
                     ) : null}
-                </div>
-                <div className="grid gap-2">
-                    <div className="text-sm font-semibold">Saved access for this selection</div>
+                </Field>
+                <Field>
+                    <FieldLabel>Saved access</FieldLabel>
                     <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
                         {savedPermissions.length ? (
                             permissionSummary(savedPermissions)
@@ -256,7 +267,7 @@ export function AccessGrantEditor({
                             </span>
                         )}
                     </div>
-                </div>
+                </Field>
             </div>
 
             {selectedSubject?.isAdmin ? (
@@ -266,17 +277,20 @@ export function AccessGrantEditor({
                     </AlertDescription>
                 </Alert>
             ) : (
-                <div className="text-sm text-muted-foreground">
+                <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
                     Start with view and market-data access. Add session or credential access only when needed.
                 </div>
             )}
 
-            <div className="grid gap-3">
+            <div className="grid gap-2">
                 {brokerPermissions.map((permission) => {
                     const checked = effectivePermissions.includes(permission);
                     const checkboxId = `${accountId}-${permission}`;
                     return (
-                        <div className="flex items-start gap-3" key={permission}>
+                        <div
+                            className="grid gap-3 rounded-lg border border-border bg-background p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+                            key={permission}
+                        >
                             <Checkbox
                                 id={checkboxId}
                                 checked={checked}
@@ -284,7 +298,7 @@ export function AccessGrantEditor({
                                 disabled={isPending || selectedSubject?.isAdmin}
                                 onCheckedChange={(value) => togglePermission(permission, value === true)}
                             />
-                            <div className="grid gap-0.5">
+                            <div className="grid min-w-0 gap-1">
                                 <label className="text-sm font-semibold" htmlFor={checkboxId}>
                                     {permissionLabel(permission)}
                                 </label>
@@ -292,6 +306,9 @@ export function AccessGrantEditor({
                                     {permissionDescription(permission)}
                                 </p>
                             </div>
+                            <Badge className="self-start" size="sm" variant={permissionTone(permission)}>
+                                {checked ? "Enabled" : "Off"}
+                            </Badge>
                         </div>
                     );
                 })}
@@ -301,6 +318,11 @@ export function AccessGrantEditor({
                 <Button disabled={isPending || !selectedSubject} onClick={saveGrant} type="button">
                     {isPending ? "Saving..." : "Save access grant"}
                 </Button>
+                {onCancel ? (
+                    <Button disabled={isPending} onClick={onCancel} type="button" variant="ghost">
+                        Cancel
+                    </Button>
+                ) : null}
                 {message ? <div className="text-sm text-muted-foreground">{message}</div> : null}
             </div>
         </div>

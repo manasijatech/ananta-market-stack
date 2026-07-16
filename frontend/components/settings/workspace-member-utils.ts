@@ -12,6 +12,16 @@ export function memberLabel(member: WorkspaceMember): string {
     return member.display_name || member.auth_name || member.email || "Unnamed member";
 }
 
+export function memberSubtitle(member: WorkspaceMember): string {
+    if (member.email) {
+        return member.email;
+    }
+    if (member.auth_name && member.auth_name !== memberLabel(member)) {
+        return member.auth_name;
+    }
+    return member.user_id;
+}
+
 export function memberInitials(member: WorkspaceMember): string {
     const label = memberLabel(member);
     const parts = label.split(/\s+/).filter(Boolean);

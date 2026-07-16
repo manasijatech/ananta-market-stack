@@ -15,6 +15,7 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     workspace_memberships: Mapped[list[WorkspaceMember]] = relationship(

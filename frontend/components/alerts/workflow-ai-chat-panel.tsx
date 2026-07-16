@@ -2,20 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    Check,
-    ChevronDown,
     History,
     Plus,
-    Send,
-    Settings2,
-    Square
 } from "lucide-react";
+import type { ChatStatus } from "ai";
+import { InputBar } from "@/components/agent-elements/input-bar";
 import { AlertLlmMarkdown } from "@/components/alerts/llm-output-markdown";
-import { LlmModelPicker } from "@/components/system/llm-model-picker";
 import { useSession } from "@/components/session-provider";
 import type { OpenRouterModel } from "@/service/actions/llm-models";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { cn } from "@/lib/utils";
 import {
@@ -81,103 +78,6 @@ function mergeSnapshots(existing: AlertWorkflowChatSnapshot[], incoming: AlertWo
         map.set(snapshot.id, snapshot);
     }
     return Array.from(map.values()).sort((left, right) => left.version - right.version);
-}
-
-type PanelDropdownOption = {
-    label: string;
-    value: string;
-};
-
-function PanelDropdown({
-    className,
-    emptyLabel = "No options",
-    menuDirection = "down",
-    onValueChange,
-    options,
-    placeholder,
-    value
-}: {
-    className?: string;
-    emptyLabel?: string;
-    menuDirection?: "down" | "up";
-    onValueChange: (value: string) => void;
-    options: PanelDropdownOption[];
-    placeholder: string;
-    value: string;
-}) {
-    const [open, setOpen] = useState(false);
-    const rootRef = useRef<HTMLDivElement | null>(null);
-    const selected = options.find((option) => option.value === value);
-
-    useEffect(() => {
-        if (!open) return;
-
-        function handlePointerDown(event: PointerEvent) {
-            if (!rootRef.current?.contains(event.target as Node)) {
-                setOpen(false);
-            }
-        }
-
-        document.addEventListener("pointerdown", handlePointerDown);
-        return () => document.removeEventListener("pointerdown", handlePointerDown);
-    }, [open]);
-
-    return (
-        <div className={cn("relative min-w-0", className)} ref={rootRef}>
-            <button
-                aria-expanded={open}
-                aria-haspopup="listbox"
-                className="flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-left text-xs text-foreground outline-none transition-colors hover:border-primary focus-visible:border-ring disabled:cursor-not-allowed disabled:opacity-40"
-                onClick={() => setOpen((current) => !current)}
-                onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                        setOpen(false);
-                    }
-                }}
-                type="button"
-            >
-                <span className={cn("truncate", selected ? "text-foreground" : "text-muted-foreground")}>
-                    {selected?.label ?? placeholder}
-                </span>
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-            </button>
-            {open ? (
-                <div
-                    className={cn(
-                        "absolute left-0 right-0 z-[90] max-h-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl",
-                        menuDirection === "up" ? "bottom-[calc(100%+4px)]" : "top-[calc(100%+4px)]"
-                    )}
-                    role="listbox"
-                >
-                    {options.length ? (
-                        options.map((option) => {
-                            const selectedOption = option.value === value;
-                            return (
-                                <button
-                                    aria-selected={selectedOption}
-                                    className="flex h-8 w-full min-w-0 items-center gap-2 px-2 text-left text-sm outline-none hover:bg-primary hover:text-primary-foreground focus-visible:bg-primary focus-visible:text-primary-foreground"
-                                    key={option.value}
-                                    onClick={() => {
-                                        onValueChange(option.value);
-                                        setOpen(false);
-                                    }}
-                                    role="option"
-                                    type="button"
-                                >
-                                    <span className="flex size-4 shrink-0 items-center justify-center">
-                                        {selectedOption ? <Check className="size-4" /> : null}
-                                    </span>
-                                    <span className="truncate">{option.label}</span>
-                                </button>
-                            );
-                        })
-                    ) : (
-                        <div className="px-2 py-2 text-sm text-muted-foreground">{emptyLabel}</div>
-                    )}
-                </div>
-            ) : null}
-        </div>
-    );
 }
 
 function textPayload(payload: Record<string, unknown>, key: string) {
@@ -498,8 +398,7 @@ export function WorkflowAiChatPanel({
     disabled,
     getEditorPayload,
     llmProviders,
-    onWorkflowApplied,
-    openRouterModels
+    onWorkflowApplied
 }: {
     currentWorkflowId?: string | null;
     disabled?: boolean;
@@ -547,6 +446,7 @@ export function WorkflowAiChatPanel({
 
     const activeRun = runs.find((item) => item.id === activeRunId) ?? runs[0] ?? null;
     const busy = Boolean(activeRun && ["queued", "running"].includes(activeRun.status));
+    const chatStatus: ChatStatus = busy || isSending ? "streaming" : "ready";
     const orderedRuns = useMemo(
         () => runs.slice().sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime()),
         [runs]
@@ -767,11 +667,11 @@ export function WorkflowAiChatPanel({
         [onWorkflowApplied, user?.id]
     );
 
-    async function sendMessage() {
-        if (!message.trim() || isSending || disabled) return;
+    async function sendMessage(nextMessage = message) {
+        if (!nextMessage.trim() || isSending || disabled) return;
         setError("");
         setIsSending(true);
-        const outgoing = message.trim();
+        const outgoing = nextMessage.trim();
         setMessage("");
         try {
             const editorPayload = getEditorPayload();
@@ -834,7 +734,7 @@ export function WorkflowAiChatPanel({
                 onPointerDown={startResize}
                 role="separator"
             />
-            <div className="border-b border-border px-4 pb-3 pt-3 min-[980px]:min-h-[150px] min-[980px]:pt-[35px]">
+            <div className="border-b border-border px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <div className="type-step-eyebrow">Workflow AI Chat</div>
@@ -851,12 +751,15 @@ export function WorkflowAiChatPanel({
                 </div>
                 <div className="mt-3 flex min-w-0 items-center gap-2">
                     <History className="size-4 shrink-0 text-muted-foreground" />
-                    <PanelDropdown
+                    <SimpleSelect
+                        aria-label="Workflow AI chat history"
                         className="flex-1"
-                        emptyLabel="No chat history"
+                        contentClassName="z-[90]"
+                        disabled={!sessionOptions.length}
                         onValueChange={(value) => void loadSession(value)}
                         options={sessionOptions}
                         placeholder="Chat history"
+                        size="sm"
                         value={session?.id ?? ""}
                     />
                 </div>
@@ -925,15 +828,18 @@ export function WorkflowAiChatPanel({
                             );
                         })
                     ) : (
-                        <div className="grid gap-3 rounded-lg border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
-                            <div className="font-semibold text-foreground">Start with a request.</div>
-                            <div>
-                                Example: “Create a rolling price-volume breakout for my test watchlist and use Discord.”
-                            </div>
-                            {sessions.length ? (
-                                <div>Select a chat from History above to reopen earlier runs and snapshots.</div>
-                            ) : null}
-                        </div>
+                        <Empty className="items-start rounded-lg border border-dashed border-border bg-background px-4 py-8 text-left">
+                            <EmptyHeader className="items-start text-left">
+                                <EmptyMedia variant="icon">
+                                    <History className="size-4" />
+                                </EmptyMedia>
+                                <EmptyTitle className="text-sm">Start with a request.</EmptyTitle>
+                                <EmptyDescription className="text-sm leading-6">
+                                    Example: “Create a rolling price-volume breakout for my test watchlist and use Discord.”
+                                    {sessions.length ? " Select a chat from History above to reopen earlier runs and snapshots." : ""}
+                                </EmptyDescription>
+                            </EmptyHeader>
+                        </Empty>
                     )}
                 </div>
 
@@ -942,85 +848,48 @@ export function WorkflowAiChatPanel({
                 ) : null}
             </div>
 
-            <div className="border-t border-border bg-background px-4 py-3">
-                <div className="rounded-lg border border-input bg-background transition-colors focus-within:border-ring">
-                    <Textarea
-                        className="min-h-[98px] resize-none rounded-none border-0 bg-transparent px-3 py-3 text-sm shadow-none outline-none focus-visible:border-transparent"
-                        disabled={isSending || busy}
-                        onChange={(event) => setMessage(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter" && !event.shiftKey) {
-                                event.preventDefault();
-                                void sendMessage();
-                            }
-                        }}
-                        placeholder="Ask the agent to explain, create, or modify this workflow..."
-                        value={message}
-                    />
-                    <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-t border-border px-2 py-2">
-                        <div className="min-w-0 text-[11px] text-muted-foreground">
-                            <span className="truncate" title="Enter sends. Shift+Enter adds a new line.">
-                                Enter sends
-                            </span>
-                        </div>
-                        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
-                            <Settings2 className="size-4 shrink-0 text-muted-foreground" />
-                            <PanelDropdown
-                                className="w-[112px] flex-[0_1_112px]"
-                                emptyLabel="No providers"
-                                menuDirection="up"
-                                onValueChange={(value) => setProvider(value as LlmProvider)}
-                                options={providerOptions}
-                                placeholder="Provider"
-                                value={provider}
-                            />
-                            {provider ? (
-                                <div className="min-w-[132px] flex-[1_1_150px] max-w-[190px]">
-                                    <LlmModelPicker
-                                        allowedModels={selectedModels}
-                                        models={openRouterModels}
-                                        onSelect={(id) => setModel(id)}
-                                        provider={provider}
-                                        value={model}
-                                    />
-                                </div>
-                            ) : (
-                                <PanelDropdown
-                                    className="min-w-[132px] flex-[1_1_150px] max-w-[190px]"
-                                    emptyLabel="No models"
-                                    menuDirection="up"
+            <div className="border-t border-border bg-background px-4 py-3 [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px]">
+                <div className="rounded-lg border border-input bg-background">
+                    <InputBar
+                        className="px-0 pb-0"
+                        disabled={isSending || busy || !provider || !model}
+                        leftActions={
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                <SimpleSelect
+                                    aria-label="Workflow AI provider"
+                                    className="h-7 w-[112px] bg-background px-2 text-xs"
+                                    contentClassName="z-[90]"
+                                    disabled={!providerOptions.length}
+                                    onValueChange={(value) => setProvider(value as LlmProvider)}
+                                    options={providerOptions}
+                                    placeholder="Provider"
+                                    size="sm"
+                                    value={provider}
+                                />
+                                <SimpleSelect
+                                    aria-label="Workflow AI model"
+                                    className="h-7 w-[min(190px,42vw)] bg-background px-2 text-xs"
+                                    contentClassName="z-[90]"
+                                    disabled={!provider || !modelOptions.length}
                                     onValueChange={setModel}
                                     options={modelOptions}
                                     placeholder="Model"
+                                    size="sm"
                                     value={model}
                                 />
-                            )}
-                            {busy ? (
-                                <Button
-                                    aria-label="Stop workflow chat run"
-                                    className="size-8"
-                                    onClick={cancelActiveRun}
-                                    size="icon"
-                                    title="Stop"
-                                    type="button"
-                                    variant="secondary"
-                                >
-                                    <Square className="size-3.5" />
-                                </Button>
-                            ) : null}
-                            <Button
-                                aria-label="Send workflow chat message"
-                                className="size-8"
-                                disabled={!message.trim() || isSending || busy || !provider || !model}
-                                onClick={sendMessage}
-                                size="icon"
-                                title="Send"
-                                type="button"
-                            >
-                                <Send className="size-4" />
-                            </Button>
-                        </div>
-                    </div>
+                            </div>
+                        }
+                        onChange={setMessage}
+                        onSend={({ content }) => {
+                            void sendMessage(content);
+                        }}
+                        onStop={() => {
+                            void cancelActiveRun();
+                        }}
+                        placeholder="Ask the agent to explain, create, or modify this workflow..."
+                        status={chatStatus}
+                        value={message}
+                    />
                 </div>
                 {!enabledProviders.length ? (
                     <div className="mt-2 text-xs text-[var(--danger)]">

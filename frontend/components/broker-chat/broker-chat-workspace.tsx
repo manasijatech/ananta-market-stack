@@ -1,21 +1,20 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChatStatus, UIMessage } from "ai";
 import {
     IconAlertTriangle,
-    IconArrowDown,
-    IconArrowRight,
-    IconChevronDown,
     IconCircleCheck,
-    IconPlayerStop,
     IconLoader2,
     IconMessagePlus,
+    IconPlugConnected,
     IconSearch,
     IconTerminal2,
+    IconTool,
     IconTrash
 } from "@tabler/icons-react";
+import { InputBar } from "@/components/agent-elements/input-bar";
+import { MessageList } from "@/components/agent-elements/message-list";
 import { formatDate } from "@/components/brokers/ui";
 import { useSession } from "@/components/session-provider";
 import { Button } from "@/components/ui/button";
@@ -24,10 +23,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
-import { LlmModelPicker } from "@/components/system/llm-model-picker";
-import { ShimmeringText } from "@/components/ui/shimmering-text";
-import { Textarea } from "@/components/ui/textarea";
-import { useChatAutoScroll } from "@/hooks/use-chat-auto-scroll";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { cn } from "@/lib/utils";
 import {
@@ -69,14 +64,6 @@ type ParsedSseEvent = {
     data?: string;
 };
 
-type ToolStep = {
-    key: string;
-    toolName: string;
-    callId?: string | null;
-    start?: BrokerChatEvent;
-    output?: BrokerChatEvent;
-};
-
 type BrokerTraceItem =
     | {
           events: BrokerChatEvent[];
@@ -106,6 +93,15 @@ type BrokerChatConfigPayload = {
 };
 type BrokerChatConfigKeyPayload = Omit<BrokerChatConfigPayload, "default_provider"> & {
     default_provider: LlmProvider | "";
+};
+
+type ComposerToggleProps = {
+    checked: boolean;
+    disabled?: boolean;
+    icon: ComponentType<{ className?: string; stroke?: number }>;
+    label: string;
+    onChange: (checked: boolean) => void;
+    title?: string;
 };
 
 const liveStatuses = new Set(["queued", "running"]);
@@ -152,38 +148,6 @@ function payloadValue(payload: Record<string, unknown> | undefined, key: string)
     return payload && Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : undefined;
 }
 
-function formatPayload(value: unknown) {
-    if (value === undefined) {
-        return "";
-    }
-    if (typeof value === "string") {
-        return value;
-    }
-    return JSON.stringify(value, null, 2);
-}
-
-function textFromNode(node: ReactNode): string {
-    if (typeof node === "string" || typeof node === "number") {
-        return String(node);
-    }
-    if (Array.isArray(node)) {
-        return node.map(textFromNode).join("");
-    }
-    if (node && typeof node === "object" && "props" in node) {
-        const props = node.props as { children?: ReactNode };
-        return textFromNode(props.children);
-    }
-    return "";
-}
-
-function splitTableLine(line: string) {
-    return line
-        .trim()
-        .split(/\s{2,}/)
-        .map((cell) => cell.trim())
-        .filter(Boolean);
-}
-
 function isMarketQuoteHeader(line: string) {
     return /symbol/i.test(line) && /(price|ltp|change|quote)/i.test(line);
 }
@@ -203,69 +167,6 @@ function splitMarkdownTableRow(line: string) {
 
 function isNumericText(value: string) {
     return /^[+-−]?(?:₹|\$|€|£)?[\d,.]+%?$/.test(value.trim());
-}
-
-function normalizeHeaderCells(cells: string[], targetCount: number) {
-    const normalized = cells.flatMap((cell) => {
-        if (/^Day ChangeDay Change \(%\)$/i.test(cell)) {
-            return ["Day Change", "Day Change (%)"];
-        }
-        if (/^Day ChangeDay Change/i.test(cell)) {
-            return ["Day Change", cell.replace(/^Day Change/i, "").trim() || "Day Change (%)"];
-        }
-        return [cell];
-    });
-    while (normalized.length < targetCount) {
-        normalized.push(`Value ${normalized.length + 1}`);
-    }
-    return normalized.slice(0, targetCount);
-}
-
-function parseMarketQuoteRow(line: string) {
-    const tokens = line.trim().split(/\s+/).filter(Boolean);
-    const symbol = tokens[0] ?? "";
-    if (!symbol) {
-        return [];
-    }
-    const rest = tokens.slice(1);
-    const numericTokens = rest.filter(isNumericText);
-    if (numericTokens.length >= 3) {
-        const [ltp, dayChange, dayChangePercent] = numericTokens.slice(-3);
-        return [symbol, ltp, dayChange, dayChangePercent];
-    }
-    return [symbol, rest.join(" "), "", ""];
-}
-
-function parsePlainTextTable(value: string) {
-    const lines = value
-        .replace(/\r\n/g, "\n")
-        .split("\n")
-        .map((line) => line.trimEnd())
-        .filter((line) => line.trim());
-    if (lines.length < 3) {
-        return null;
-    }
-
-    const headerCells = splitTableLine(lines[0]);
-    const knownMarketTable = isMarketQuoteHeader(lines[0]);
-    const bodyRows = knownMarketTable ? lines.slice(1).map(parseMarketQuoteRow) : lines.slice(1).map(splitTableLine);
-    const maxColumns = Math.max(headerCells.length, ...bodyRows.map((row) => row.length));
-    const tableLikeRows = bodyRows.filter((row) => row.length >= 2).length;
-
-    if (maxColumns < 2 || (!knownMarketTable && tableLikeRows < 2)) {
-        return null;
-    }
-
-    return {
-        headers: knownMarketTable
-            ? ["Symbol", "Last Traded Price (LTP)", "Day Change", "Day Change (%)"]
-            : normalizeHeaderCells(headerCells, maxColumns),
-        rows: bodyRows.filter((row) => row.length)
-    };
-}
-
-function isNumericTableCell(value: ReactNode) {
-    return isNumericText(textFromNode(value));
 }
 
 function normalizeMarketQuoteCells(cells: string[]) {
@@ -343,19 +244,6 @@ function normalizeAssistantMarkdown(value: string) {
 
     flushTableBlock();
     return output.join("\n");
-}
-
-function tableColumnWidth(index: number, total: number) {
-    if (index === 0) {
-        return "16%";
-    }
-    if (total === 2) {
-        return "84%";
-    }
-    if (index === 1) {
-        return "30%";
-    }
-    return `${54 / Math.max(total - 2, 1)}%`;
 }
 
 function assistantText(events: BrokerChatEvent[], run: BrokerChatRun) {
@@ -497,355 +385,109 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
     return items.sort((left, right) => left.sequence - right.sequence);
 }
 
-function ToolDetailBlock({ label, value }: { label: string; value: unknown }) {
-    if (value === undefined) {
-        return null;
-    }
-    const formatted = formatPayload(value);
-    if (!formatted) {
-        return null;
-    }
-    return (
-        <div className="grid gap-1">
-            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                {label}
-            </div>
-            <pre className="max-h-72 overflow-auto rounded-lg border border-border bg-secondary/50 p-3 font-mono text-[11px] leading-5 text-foreground">
-                {formatted}
-            </pre>
-        </div>
-    );
+function safeToolName(name: string) {
+    return name.replace(/[^A-Za-z0-9_]/g, "_") || "broker_tool";
 }
 
-function ToolStepDetails({ step }: { step: ToolStep }) {
-    const startPayload = step.start?.payload;
-    const outputPayload = step.output?.payload;
-    const argumentsPayload = payloadValue(startPayload, "arguments");
-    const output = payloadValue(outputPayload, "output");
-
-    return (
-        <div className="ml-5 mt-1 grid max-w-5xl gap-3 border-l border-border px-3 py-2 text-xs">
-            <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                <span>Tool payload</span>
-                {step.callId ? <span>Call {step.callId}</span> : null}
-            </div>
-            <ToolDetailBlock label="Arguments" value={argumentsPayload} />
-            <ToolDetailBlock label="Output" value={output} />
-        </div>
-    );
+function brokerToolPart(item: Extract<BrokerTraceItem, { kind: "tool" }>, isRunActive: boolean) {
+    const startPayload = item.start?.payload;
+    const outputPayload = item.output?.payload;
+    return {
+        type: `tool-mcp__broker__${safeToolName(item.toolName)}`,
+        toolCallId: item.callId || item.key,
+        state: item.output ? "output-available" : isRunActive ? "input-available" : "output-error",
+        input: payloadValue(startPayload, "arguments") ?? {},
+        output: payloadValue(outputPayload, "output")
+    };
 }
 
-function ToolStepRow({
-    includeToolOutputs,
-    isRunActive,
-    step
-}: {
-    includeToolOutputs: boolean;
-    isRunActive: boolean;
-    step: ToolStep;
-}) {
-    const [open, setOpen] = useState(false);
-    const action = step.output ? "Checked" : "Calling";
-    const toolName = step.toolName.replace(/^broker_/, "").replace(/_/g, " ");
-    const text = `${action} ${toolName}`;
-    const showShimmer = isRunActive && !step.output;
-    const canExpand = includeToolOutputs && payloadValue(step.output?.payload, "output") !== undefined;
-
-    return (
-        <div className="grid gap-1 px-1 py-1.5 text-sm">
-            <div className="flex min-w-0 items-center gap-2">
-                <span className="size-1.5 shrink-0 rounded-full bg-primary/70" aria-hidden="true" />
-                {showShimmer ? (
-                    <ShimmeringText
-                        className="min-w-0 font-medium"
-                        color="var(--text-muted)"
-                        shimmerColor="var(--accent)"
-                        text={text}
-                    />
-                ) : (
-                    <span className="min-w-0 font-medium text-muted-foreground">{text}</span>
-                )}
-                {canExpand ? (
-                    <button
-                        aria-expanded={open}
-                        aria-label={`${open ? "Hide" : "Show"} ${toolName} tool output`}
-                        className="flex size-7 shrink-0 items-center justify-center text-muted-foreground transition hover:bg-[var(--accent-glow)] hover:text-primary"
-                        onClick={() => setOpen((current) => !current)}
-                        title={`${open ? "Hide" : "Show"} tool output`}
-                        type="button"
-                    >
-                        <IconChevronDown
-                            className={cn("size-4 transition-transform", open ? "rotate-180" : null)}
-                            stroke={1.8}
-                        />
-                    </button>
-                ) : null}
-            </div>
-            {open && canExpand ? <ToolStepDetails step={step} /> : null}
-        </div>
-    );
-}
-
-function ThinkingTrace({
-    collapsed,
+function buildBrokerMessages({
+    eventsByRun,
     includeReasoning,
     includeToolOutputs,
-    isRunActive,
-    items
+    runs,
+    streamingIds
 }: {
-    collapsed: boolean;
+    eventsByRun: Record<string, BrokerChatEvent[]>;
     includeReasoning: boolean;
     includeToolOutputs: boolean;
-    isRunActive: boolean;
-    items: BrokerTraceItem[];
-}) {
-    if (!items.length) return null;
-    const toolCount = items.filter((item) => item.kind === "tool").length;
-    const reasoningCount = items.filter((item) => item.kind === "reasoning").length;
-    return (
-        <details className="ml-11 max-w-6xl rounded-lg border border-border bg-secondary/20 p-3" open={!collapsed}>
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span className="font-mono uppercase tracking-[0.14em]">
-                    Thinking
-                </span>
-                <span>
-                    {toolCount ? `${toolCount} tool${toolCount === 1 ? "" : "s"}` : null}
-                    {toolCount && reasoningCount ? " · " : null}
-                    {reasoningCount ? `${reasoningCount} reasoning update${reasoningCount === 1 ? "" : "s"}` : null}
-                </span>
-            </summary>
-            <div className="mt-3 grid gap-2">
-                {items.map((item) => {
-                    if (item.kind === "tool") {
-                        return (
-                            <ToolStepRow
-                                includeToolOutputs={includeToolOutputs}
-                                isRunActive={isRunActive}
-                                key={item.key}
-                                step={{
-                                    callId: item.callId,
-                                    key: item.key,
-                                    output: item.output,
-                                    start: item.start,
-                                    toolName: item.toolName
-                                }}
-                            />
-                        );
-                    }
-                    const reasoningText = includeReasoning ? item.text : "Reasoning hidden";
-                    return (
-                        <div className="flex min-w-0 items-start gap-2 px-1 py-1.5 text-sm text-muted-foreground" key={item.key}>
-                            <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/50" aria-hidden="true" />
-                            {isRunActive ? (
-                                <div className="min-w-0 rounded-sm bg-secondary/20 px-2 py-1">
-                                    <ThinkingMarkdown text={reasoningText} />
-                                </div>
-                            ) : (
-                                <ThinkingMarkdown text={reasoningText} />
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
-        </details>
-    );
+    runs: BrokerChatRun[];
+    streamingIds: string[];
+}): UIMessage[] {
+    return runs.flatMap((run) => {
+        const events = eventsByRun[run.id] ?? [];
+        const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
+        const traceItems = buildBrokerTraceItems(events);
+        const text = assistantText(events, run);
+        const assistantParts: unknown[] = [];
+
+        for (const item of traceItems) {
+            if (item.kind === "reasoning") {
+                assistantParts.push({
+                    type: "tool-Thinking",
+                    toolCallId: item.key,
+                    state: running ? "input-available" : "output-available",
+                    input: {},
+                    output: includeReasoning ? item.text : "Reasoning hidden"
+                });
+                continue;
+            }
+            if (includeToolOutputs || running || !item.output) {
+                assistantParts.push(brokerToolPart(item, running));
+            }
+        }
+
+        if (text) {
+            assistantParts.push({ type: "text", text: normalizeAssistantMarkdown(text) });
+        } else if (!running && !assistantParts.length) {
+            assistantParts.push({
+                type: "text",
+                text: run.error ? `Run failed: ${run.error}` : "No assistant response was stored for this run."
+            });
+        }
+
+        const messages: UIMessage[] = [
+            {
+                id: `${run.id}:user`,
+                role: "user",
+                parts: [{ type: "text", text: run.message }],
+                createdAt: new Date(run.created_at)
+            } as UIMessage
+        ];
+
+        if (assistantParts.length || running) {
+            messages.push({
+                id: `${run.id}:assistant`,
+                role: "assistant",
+                parts: assistantParts as UIMessage["parts"],
+                createdAt: new Date(run.completed_at || run.updated_at || run.created_at)
+            } as UIMessage);
+        }
+
+        return messages;
+    });
 }
 
-function MarkdownTable({ children }: { children: ReactNode }) {
+function ComposerToggle({ checked, disabled, icon: Icon, label, onChange, title }: ComposerToggleProps) {
     return (
-        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card last:mb-0">
-            <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
-                {children}
-            </table>
-        </div>
-    );
-}
-
-function MarkdownTableHead({ children }: { children: ReactNode }) {
-    return (
-        <th className="border-b border-border bg-secondary px-3 py-2.5 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground first:pl-4 first:text-left last:pr-4">
-            {children}
-        </th>
-    );
-}
-
-function MarkdownTableCell({ children }: { children: ReactNode }) {
-    return (
-        <td
+        <button
+            aria-label={label}
+            aria-pressed={checked}
             className={cn(
-                "border-b border-border/70 px-3 py-2.5 align-top text-foreground first:pl-4 last:pr-4",
-                isNumericTableCell(children) ? "whitespace-nowrap text-center font-mono tabular-nums" : null
+                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold uppercase transition-colors",
+                checked
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:border-primary/35 hover:text-foreground",
+                disabled ? "cursor-not-allowed opacity-45 hover:border-border hover:text-muted-foreground" : null
             )}
+            disabled={disabled}
+            onClick={() => onChange(!checked)}
+            title={title ?? label}
+            type="button"
         >
-            {children}
-        </td>
-    );
-}
-
-function PlainTextTable({ source }: { source: string }) {
-    const table = parsePlainTextTable(source);
-    if (!table) {
-        return (
-            <pre className="mb-3 max-w-full overflow-auto rounded-lg border border-border bg-secondary/60 p-3 text-xs leading-5 last:mb-0">
-                {source}
-            </pre>
-        );
-    }
-
-    return (
-        <div className="my-4 max-w-full overflow-x-auto rounded-lg border border-border bg-card last:mb-0">
-            <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-[13px] leading-5">
-                <colgroup>
-                    {table.headers.map((header, index) => (
-                        <col
-                            key={`${header}-${index}-width`}
-                            style={{ width: tableColumnWidth(index, table.headers.length) }}
-                        />
-                    ))}
-                </colgroup>
-                <thead>
-                    <tr>
-                        {table.headers.map((header, index) => (
-                            <th
-                                className={cn(
-                                    "border-b border-border bg-secondary px-3 py-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground first:pl-4 last:pr-4",
-                                    index === 0 ? "text-left" : "text-center"
-                                )}
-                                key={`${header}-${index}`}
-                            >
-                                {header}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {table.rows.map((row, rowIndex) => {
-                        const hasStatusMessage =
-                            table.headers.length === 4 &&
-                            row.length === 4 &&
-                            Boolean(row[1]) &&
-                            !row[2] &&
-                            !row[3] &&
-                            !isNumericTableCell(row[1]);
-                        return (
-                            <tr className="odd:bg-background even:bg-secondary/25" key={`${row.join(":")}-${rowIndex}`}>
-                                {hasStatusMessage ? (
-                                    <>
-                                        <td className="border-b border-border/70 px-4 py-2.5 align-top font-mono text-xs font-semibold text-foreground">
-                                            {row[0]}
-                                        </td>
-                                        <td
-                                            className="break-words border-b border-border/70 px-3 py-2.5 align-top text-muted-foreground"
-                                            colSpan={table.headers.length - 1}
-                                        >
-                                            {row[1]}
-                                        </td>
-                                    </>
-                                ) : (
-                                    table.headers.map((_, cellIndex) => (
-                                        <td
-                                            className={cn(
-                                                "border-b border-border/70 px-3 py-2.5 align-top text-foreground first:pl-4 last:pr-4",
-                                                cellIndex === 0 ? "font-mono text-xs font-semibold" : null,
-                                                isNumericTableCell(row[cellIndex] ?? "")
-                                                    ? "whitespace-nowrap text-center font-mono tabular-nums"
-                                                    : null
-                                            )}
-                                            key={`${rowIndex}-${cellIndex}`}
-                                        >
-                                            {row[cellIndex] ?? "-"}
-                                        </td>
-                                    ))
-                                )}
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        </div>
-    );
-}
-
-function ThinkingMarkdown({ text }: { text: string }) {
-    return (
-        <div className="min-w-0 text-sm leading-6 text-muted-foreground">
-            <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                    ul: ({ children }) => <ul className="mb-2 list-disc pl-5 last:mb-0">{children}</ul>,
-                    ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 last:mb-0">{children}</ol>,
-                    code: ({ children }) => (
-                        <code className="rounded-lg bg-secondary/70 px-1 py-0.5 font-mono text-[0.92em] text-foreground">
-                            {children}
-                        </code>
-                    ),
-                    pre: ({ children }) => (
-                        <pre className="mb-2 max-w-full overflow-auto rounded-lg border border-border bg-secondary/40 p-2 text-xs leading-5 last:mb-0">
-                            {children}
-                        </pre>
-                    ),
-                    table: ({ children }) => <MarkdownTable>{children}</MarkdownTable>,
-                    thead: ({ children }) => <thead>{children}</thead>,
-                    tbody: ({ children }) => <tbody>{children}</tbody>,
-                    tr: ({ children }) => <tr className="odd:bg-background even:bg-secondary/25">{children}</tr>,
-                    th: ({ children }) => <MarkdownTableHead>{children}</MarkdownTableHead>,
-                    td: ({ children }) => <MarkdownTableCell>{children}</MarkdownTableCell>
-                }}
-            >
-                {normalizeAssistantMarkdown(text)}
-            </ReactMarkdown>
-        </div>
-    );
-}
-
-function AssistantMessage({ text, running }: { text: string; running: boolean }) {
-    return (
-        <div className="max-w-6xl px-1 text-sm leading-6 text-foreground">
-            {text ? (
-                <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                        p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-                        ul: ({ children }) => <ul className="mb-3 list-disc pl-5 last:mb-0">{children}</ul>,
-                        ol: ({ children }) => <ol className="mb-3 list-decimal pl-5 last:mb-0">{children}</ol>,
-                        code: ({ children }) => (
-                            <code className="rounded-lg bg-secondary px-1 py-0.5 font-mono text-[0.92em]">{children}</code>
-                        ),
-                        pre: ({ children }) => (
-                            <PlainTextTable source={textFromNode(children)} />
-                        ),
-                        table: ({ children }) => <MarkdownTable>{children}</MarkdownTable>,
-                        thead: ({ children }) => <thead>{children}</thead>,
-                        tbody: ({ children }) => <tbody>{children}</tbody>,
-                        tr: ({ children }) => <tr className="odd:bg-background even:bg-secondary/25">{children}</tr>,
-                        th: ({ children }) => <MarkdownTableHead>{children}</MarkdownTableHead>,
-                        td: ({ children }) => <MarkdownTableCell>{children}</MarkdownTableCell>
-                    }}
-                >
-                    {normalizeAssistantMarkdown(text)}
-                </ReactMarkdown>
-            ) : running ? (
-                <ShimmeringText
-                    className="text-sm font-medium"
-                    color="var(--text-muted)"
-                    shimmerColor="var(--accent)"
-                    text="Thinking..."
-                />
-            ) : (
-                <p className="text-sm text-muted-foreground">No assistant response was stored for this run.</p>
-            )}
-        </div>
-    );
-}
-
-function UserMessage({ text }: { text: string }) {
-    return (
-        <div className="flex justify-end">
-            <div className="max-w-[min(720px,82%)] rounded-lg border border-border bg-secondary px-4 py-3">
-                <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{text}</p>
-            </div>
-        </div>
+            <Icon className="size-3.5" stroke={1.8} />
+            <span>{label}</span>
+        </button>
     );
 }
 
@@ -854,7 +496,6 @@ export function BrokerChatWorkspace({
     initialRuns,
     initialSessions,
     llmProviders,
-    openRouterModels,
     mcpServer,
     mcpServers
 }: Props) {
@@ -865,9 +506,6 @@ export function BrokerChatWorkspace({
     const [activeSessionId, setActiveSessionId] = useState(initialSessions[0]?.id ?? initialRuns[0]?.session_id ?? "");
     const [message, setMessage] = useState("");
     const [sessionSearch, setSessionSearch] = useState("");
-    const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
-    const previousRunCountRef = useRef(0);
-    const previousActiveSessionIdRef = useRef<string | null>(null);
     const loadedSessionIdRef = useRef<string | null>(null);
     const [provider, setProvider] = useState<LlmProvider | "">(initialConfig.default_provider ?? "");
     const [model, setModel] = useState(initialConfig.default_model ?? "");
@@ -942,21 +580,6 @@ export function BrokerChatWorkspace({
         () => sortRuns(runs.filter((run) => run.session_id === activeSessionId)),
         [activeSessionId, runs]
     );
-    const activeRunCount = runsForActiveSession.length;
-    const {
-        contentRef: chatContentRef,
-        hasUnreadContent,
-        isAutoScrollEnabled,
-        isNearBottom,
-        onContentChange,
-        scrollRef: chatScrollRef,
-        scrollToBottom,
-        showScrollButton,
-        unreadCount
-    } = useChatAutoScroll({
-        enabled: true,
-        nearBottomThreshold: 120
-    });
     const activeSession = sessions.find((session) => session.id === activeSessionId);
 
     const latestRunBySession = useMemo(() => {
@@ -984,11 +607,22 @@ export function BrokerChatWorkspace({
 
     const hasConfiguredLlm = Boolean(provider && model);
     const activeRun = runsForActiveSession.find((run) => liveStatuses.has(run.status)) ?? null;
+    const brokerChatStatus: ChatStatus = activeRun || isSubmitting ? "streaming" : "ready";
+    const brokerMessages = useMemo(
+        () =>
+            buildBrokerMessages({
+                eventsByRun,
+                includeReasoning,
+                includeToolOutputs,
+                runs: runsForActiveSession,
+                streamingIds
+            }),
+        [eventsByRun, includeReasoning, includeToolOutputs, runsForActiveSession, streamingIds]
+    );
     const activeLiveRunIdsKey = useMemo(
         () => runsForActiveSession.filter((run) => liveStatuses.has(run.status)).map((run) => run.id).join("|"),
         [runsForActiveSession]
     );
-    const sendDisabled = Boolean(activeRun) || !message.trim() || !hasConfiguredLlm || isSubmitting;
     const configPayload = useMemo<BrokerChatConfigPayload | null>(() => {
         if (!provider || !model) {
             return null;
@@ -1299,31 +933,6 @@ export function BrokerChatWorkspace({
             .catch(() => setQueueHealth(null));
     }, []);
 
-    useEffect(() => {
-        const input = messageInputRef.current;
-        if (!input) return;
-        input.style.height = "auto";
-        input.style.height = `${Math.min(input.scrollHeight, 260)}px`;
-        onContentChange();
-    }, [message, onContentChange]);
-
-    useEffect(() => {
-        const nextRunCount = activeRunCount;
-        onContentChange({
-            unreadIncrement: nextRunCount > previousRunCountRef.current
-        });
-        previousRunCountRef.current = nextRunCount;
-    }, [activeRunCount, eventsByRun, onContentChange, runsForActiveSession, streamingIds]);
-
-    useEffect(() => {
-        if (previousActiveSessionIdRef.current === activeSessionId) {
-            return;
-        }
-        previousActiveSessionIdRef.current = activeSessionId;
-        previousRunCountRef.current = activeRunCount;
-        scrollToBottom({ behavior: "auto", force: true });
-    }, [activeRunCount, activeSessionId, scrollToBottom]);
-
     async function stopActiveRun() {
         if (!activeRun) return;
         setError(null);
@@ -1398,7 +1007,6 @@ export function BrokerChatWorkspace({
             if (!activeSessionId) {
                 setActiveSessionId(result.run.session_id);
             }
-            scrollToBottom({ behavior: "auto", force: true });
             void streamRun(result.run.id, 0);
             const nextSessions = await getBrokerChatSessions(80).catch(() => sessions);
             setSessions(sortSessions(nextSessions));
@@ -1525,7 +1133,7 @@ export function BrokerChatWorkspace({
                 </CardPanel>
             </Card>
 
-            <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
+            <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px] [--an-max-width:760px] [--an-tool-border-radius:8px]">
                 <CardHeader className="border-b border-border p-4">
                     <div className="flex flex-col gap-3 min-[900px]:flex-row min-[900px]:items-center min-[900px]:justify-between">
                         <div className="min-w-0">
@@ -1565,236 +1173,134 @@ export function BrokerChatWorkspace({
                 </CardHeader>
 
                 <CardPanel className="relative min-h-0 overflow-hidden p-0">
-                    <div
-                        aria-label="Broker chat messages"
-                        className="h-full min-h-0 overflow-y-auto px-5 py-5 pb-20 [overflow-anchor:none] min-[900px]:px-8 min-[1400px]:px-10"
-                        ref={chatScrollRef}
-                        tabIndex={0}
-                    >
-                        <div className="min-h-full" ref={chatContentRef}>
-                            {!runsForActiveSession.length ? (
-                                <div className="flex min-h-full items-center justify-center px-4 py-10 text-center">
-                                    <div className="w-full max-w-2xl">
-                                        <span className="mx-auto flex size-11 items-center justify-center rounded-lg border border-border bg-secondary text-muted-foreground">
-                                            <IconTerminal2 className="size-5" stroke={1.8} />
-                                        </span>
-                                        <p className="mt-5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
-                                            Broker data assistant
-                                        </p>
-                                        <h3 className="mt-2 text-2xl font-heading font-semibold tracking-tight">
-                                            Ask a market or portfolio question
-                                        </h3>
-                                        <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-                                            Use your connected broker data for holdings, positions, quotes, option
-                                            chains, and account health.
-                                        </p>
-                                        <div className="mx-auto mt-6 grid max-w-xl gap-2 min-[640px]:grid-cols-2">
-                                            {starterPrompts.map((prompt) => (
-                                                <button
-                                                    className="rounded-lg border border-border bg-background px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:border-primary hover:bg-[var(--accent-glow)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                                                    disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
-                                                    key={prompt}
-                                                    onClick={() => {
-                                                        void sendMessage(prompt);
-                                                    }}
-                                                    type="button"
-                                                >
-                                                    {prompt}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
+                    {!runsForActiveSession.length ? (
+                        <div className="flex h-full min-h-0 items-center justify-center px-4 py-10 text-center">
+                            <div className="w-full max-w-2xl">
+                                <span className="mx-auto flex size-11 items-center justify-center rounded-lg border border-border bg-secondary text-muted-foreground">
+                                    <IconTerminal2 className="size-5" stroke={1.8} />
+                                </span>
+                                <p className="mt-5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
+                                    Broker data assistant
+                                </p>
+                                <h3 className="mt-2 text-2xl font-heading font-semibold tracking-tight">
+                                    Ask a market or portfolio question
+                                </h3>
+                                <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
+                                    Use your connected broker data for holdings, positions, quotes, option chains, and
+                                    account health.
+                                </p>
+                                <div className="mx-auto mt-6 grid max-w-xl gap-2 min-[640px]:grid-cols-2">
+                                    {starterPrompts.map((prompt) => (
+                                        <button
+                                            className="rounded-lg border border-border bg-background px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:border-primary hover:bg-[var(--accent-glow)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                                            disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
+                                            key={prompt}
+                                            onClick={() => {
+                                                void sendMessage(prompt);
+                                            }}
+                                            type="button"
+                                        >
+                                            {prompt}
+                                        </button>
+                                    ))}
                                 </div>
-                            ) : (
-                                <div className="grid gap-6">
-                                    {runsForActiveSession.map((run) => {
-                                        const events = eventsByRun[run.id] ?? [];
-                                        const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
-                                        const traceItems = buildBrokerTraceItems(events);
-                                        const text = assistantText(events, run);
-                                        const showThinking = running && !text && !traceItems.length;
-                                        const showAssistant = Boolean(text) || showThinking || !running;
-                                        return (
-                                            <article className="grid gap-3" key={run.id}>
-                                                <UserMessage text={run.message} />
-                                                <ThinkingTrace
-                                                    collapsed={!running && Boolean(text)}
-                                                    includeReasoning={includeReasoning}
-                                                    includeToolOutputs={includeToolOutputs}
-                                                    isRunActive={running}
-                                                    items={traceItems}
-                                                />
-                                                {showAssistant ? (
-                                                    <AssistantMessage running={showThinking} text={text} />
-                                                ) : null}
-                                                {run.error ? (
-                                                    <div className="ml-11 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-                                                        <IconAlertTriangle
-                                                            className="mt-0.5 size-4 shrink-0"
-                                                            stroke={1.8}
-                                                        />
-                                                        {run.error}
-                                                    </div>
-                                                ) : null}
-                                            </article>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                            </div>
                         </div>
-                    </div>
-                    <button
-                        aria-label={
-                            hasUnreadContent
-                                ? "Scroll to latest unread broker chat activity"
-                                : "Scroll to latest broker chat message"
-                        }
-                        className={cn(
-                            "absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground transition duration-150 hover:border-primary hover:text-primary motion-reduce:transition-none",
-                            showScrollButton
-                                ? "translate-y-0 opacity-100"
-                                : "pointer-events-none translate-y-2 opacity-0"
-                        )}
-                        onClick={() => scrollToBottom({ behavior: "smooth", force: true })}
-                        type="button"
-                    >
-                        <IconArrowDown className="size-4" stroke={1.8} />
-                        <span>{unreadCount > 0 ? `${unreadCount} new` : "Latest"}</span>
-                    </button>
-                    <span aria-live="polite" className="sr-only">
-                        {!isAutoScrollEnabled && !isNearBottom && hasUnreadContent
-                            ? "New broker chat activity is available below."
-                            : ""}
-                    </span>
+                    ) : (
+                        <MessageList
+                            className="h-full"
+                            messages={brokerMessages}
+                            showCopyToolbar
+                            status={brokerChatStatus}
+                        />
+                    )}
                 </CardPanel>
 
-                <CardFooter className="border-t border-border bg-secondary/20 p-4">
-                    <form
-                        className="w-full"
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            void sendMessage();
-                        }}
-                    >
-                        <div className="rounded-lg border border-border bg-background focus-within:border-primary">
-                            <div className="flex min-w-0 items-end gap-3 p-2">
-                                <Textarea
-                                    className="max-h-[220px] min-h-16 resize-none overflow-hidden border-0 bg-transparent px-2 py-4 shadow-none focus-visible:border-transparent disabled:bg-transparent"
-                                    disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
-                                    onChange={(event) => setMessage(event.target.value)}
-                                    onKeyDown={(event) => {
-                                        if (event.key === "Enter" && !event.shiftKey) {
-                                            event.preventDefault();
-                                            void sendMessage();
-                                        }
-                                    }}
-                                    placeholder="Ask about holdings, positions, quotes, option chains, or broker health."
-                                    ref={messageInputRef}
-                                    value={message}
-                                />
-                                <Button
-                                    aria-label={activeRun ? "Stop active run" : "Send message"}
-                                    className="size-11 px-0"
-                                    disabled={activeRun ? false : sendDisabled}
-                                    onClick={
-                                        activeRun
-                                            ? (event) => {
-                                                  event.preventDefault();
-                                                  void stopActiveRun();
-                                              }
-                                            : undefined
-                                    }
-                                    size="icon"
-                                    type={activeRun ? "button" : "submit"}
-                                    variant={activeRun ? "destructive" : "default"}
-                                >
-                                    {activeRun ? (
-                                        <IconPlayerStop className="size-4" stroke={1.8} />
-                                    ) : isSubmitting ? (
-                                        <IconLoader2 className="size-4 animate-spin" stroke={1.8} />
-                                    ) : (
-                                        <IconArrowRight className="size-4" stroke={1.8} />
-                                    )}
-                                </Button>
-                            </div>
-                            <div className="flex flex-col gap-3 border-t border-border bg-secondary/25 px-3 py-3 min-[980px]:flex-row min-[980px]:items-center min-[980px]:justify-between">
-                                <div className="grid min-w-0 flex-1 gap-2 min-[720px]:grid-cols-[minmax(160px,220px)_minmax(260px,1fr)]">
-                                    <Label className="grid gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
-                                        Provider
+                <CardFooter className="border-t border-border bg-secondary/20 px-4 pb-3 pt-4">
+                    <div className="mx-auto w-full max-w-[760px]">
+                        <div className="rounded-lg border border-border/80 bg-background">
+                            <InputBar
+                                className="px-0 pb-0"
+                                disabled={!hasConfiguredLlm || isSubmitting || Boolean(activeRun)}
+                                leftActions={
+                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                         <SimpleSelect
-                                            className="h-8 w-full bg-background px-2 text-sm normal-case"
+                                            aria-label="Broker chat provider"
+                                            className="h-7 w-[128px] bg-background px-2 text-xs"
                                             disabled={!configuredProviders.length}
                                             onValueChange={(nextProvider) => setProvider(nextProvider as LlmProvider)}
                                             options={configuredProviders.map((item) => ({
                                                 value: item.provider,
                                                 label: providerName(item)
                                             }))}
-                                            placeholder="Select provider"
+                                            placeholder="Provider"
                                             size="sm"
                                             value={provider}
                                         />
-                                    </Label>
-                                    <Label className="grid min-w-0 gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
-                                        Model
-                                        {provider ? (
-                                            <LlmModelPicker
-                                                allowedModels={selectedModels}
-                                                models={openRouterModels}
-                                                onSelect={(id) => setModel(id)}
-                                                provider={provider}
-                                                value={model}
-                                            />
-                                        ) : (
-                                            <SimpleSelect
-                                                className="h-8 min-w-0 bg-background px-2 text-sm normal-case"
-                                                disabled
-                                                onValueChange={setModel}
-                                                options={selectedModels.map((item) => ({
-                                                    value: item.model_id,
-                                                    label: item.label || item.model_id
-                                                }))}
-                                                placeholder="Select model"
-                                                size="sm"
-                                                value={model}
-                                            />
-                                        )}
-                                    </Label>
-                                </div>
-                                <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 min-[980px]:justify-end">
-                                    <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
-                                        <Checkbox
+                                        <SimpleSelect
+                                            aria-label="Broker chat model"
+                                            className="h-7 w-[min(280px,42vw)] bg-background px-2 text-xs"
+                                            disabled={!provider || !selectedModels.length}
+                                            onValueChange={setModel}
+                                            options={selectedModels.map((item) => ({
+                                                value: item.model_id,
+                                                label: item.label || item.model_id
+                                            }))}
+                                            placeholder={provider ? "Model" : "Select provider"}
+                                            size="sm"
+                                            value={model}
+                                        />
+                                    </div>
+                                }
+                                onChange={setMessage}
+                                onSend={({ content }) => {
+                                    void sendMessage(content);
+                                }}
+                                onStop={() => {
+                                    void stopActiveRun();
+                                }}
+                                placeholder="Ask about holdings, positions, quotes, option chains, or broker health."
+                                rightActions={
+                                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                                        <ComposerToggle
                                             checked={includeToolOutputs}
-                                            onCheckedChange={(value) => setIncludeToolOutputs(Boolean(value))}
+                                            icon={IconTool}
+                                            label="Tools"
+                                            onChange={setIncludeToolOutputs}
+                                            title="Show broker tool calls and outputs"
                                         />
-                                        Tools
-                                    </Label>
-                                    <Label
-                                        className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground"
-                                        title="Show model reasoning when the provider returns it."
-                                    >
-                                        <Checkbox
+                                        <ComposerToggle
                                             checked={includeReasoning}
-                                            onCheckedChange={(value) => setIncludeReasoning(Boolean(value))}
+                                            icon={IconTerminal2}
+                                            label="Reasoning"
+                                            onChange={setIncludeReasoning}
+                                            title="Show model reasoning when the provider returns it"
                                         />
-                                        Reasoning
-                                    </Label>
-                                    <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
-                                        <Checkbox
+                                        <ComposerToggle
                                             checked={useMcp}
                                             disabled={!availableMcpServers.length}
-                                            onCheckedChange={(value) => setUseMcp(Boolean(value))}
+                                            icon={IconPlugConnected}
+                                            label="MCP"
+                                            onChange={setUseMcp}
+                                            title="Use configured MCP servers for broker chat"
                                         />
-                                        MCP
-                                    </Label>
-                                </div>
-                            </div>
+                                    </div>
+                                }
+                                status={brokerChatStatus}
+                                suggestions={
+                                    runsForActiveSession.length
+                                        ? []
+                                        : starterPrompts.map((prompt) => ({ id: prompt, label: prompt, value: prompt }))
+                                }
+                                value={message}
+                            />
                             {useMcp && availableMcpServers.length > 1 ? (
-                                <div className="flex flex-wrap gap-2 border-t border-border px-3 py-2">
+                                <div className="flex flex-wrap gap-1.5 border-t border-border/70 px-3 py-2">
                                     {availableMcpServers.map((server) => {
                                         const serverId = server.id as string;
                                         return (
                                             <Label
-                                                className="flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground"
+                                                className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-[11px] font-semibold uppercase text-muted-foreground"
                                                 key={serverId}
                                             >
                                                 <Checkbox
@@ -1822,7 +1328,7 @@ export function BrokerChatWorkspace({
                             </span>
                             <span>Enter sends. Shift + Enter adds a line.</span>
                         </div>
-                    </form>
+                    </div>
                 </CardFooter>
             </Card>
         </section>

@@ -3,13 +3,31 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { IconArrowRight, IconWallet } from "@tabler/icons-react";
-import { Pencil } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { AccessGrantEditor } from "@/components/settings/access-grant-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+    Dialog,
+    DialogDescription,
+    DialogHeader,
+    DialogPanel,
+    DialogPopup,
+    DialogTitle
+} from "@/components/ui/dialog";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow
+} from "@/components/ui/table";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { BrokerAccountGrant, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
+import { cn } from "@/lib/utils";
 
 type AccountWithGrants = {
     account: BrokerAccount;
@@ -29,6 +47,10 @@ function permissionSummary(grant: BrokerAccountGrant): string {
         return "No access";
     }
     return grant.permissions.map((permission) => permissionLabel(permission)).join(", ");
+}
+
+function grantTypeVariant(subjectType: BrokerAccountGrant["subject_type"]): "info" | "secondary" {
+    return subjectType === "user" ? "info" : "secondary";
 }
 
 function BrokerAccountsEmptyState() {
@@ -53,6 +75,87 @@ function BrokerAccountsEmptyState() {
     );
 }
 
+function GrantSection({
+    description,
+    grants,
+    isGrantEditable,
+    onEdit,
+    title
+}: {
+    description: string;
+    grants: BrokerAccountGrant[];
+    isGrantEditable: (grant: BrokerAccountGrant) => boolean;
+    onEdit: (grant: BrokerAccountGrant) => void;
+    title: string;
+}) {
+    if (!grants.length) {
+        return null;
+    }
+
+    return (
+        <section className="grid gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                    <h4 className="text-sm font-semibold">{title}</h4>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                </div>
+                <Badge size="sm" variant="secondary">
+                    {grants.length}
+                </Badge>
+            </div>
+            <Table variant="card">
+                <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                        <TableHead>Subject</TableHead>
+                        <TableHead>Access</TableHead>
+                        <TableHead className="w-12 text-right">Edit</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {grants.map((grant) => (
+                        <TableRow key={grant.id}>
+                            <TableCell className="min-w-52 py-3 align-top">
+                                <div className="flex min-w-0 flex-col gap-1">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <span className="truncate font-medium">{grant.subject_label}</span>
+                                        <Badge size="sm" variant={grantTypeVariant(grant.subject_type)}>
+                                            {grant.subject_type === "user" ? "Person" : "Role default"}
+                                        </Badge>
+                                    </div>
+                                    {grant.subject_subtitle ? (
+                                        <span className="truncate text-xs text-muted-foreground">
+                                            {grant.subject_subtitle}
+                                        </span>
+                                    ) : null}
+                                </div>
+                            </TableCell>
+                            <TableCell className="min-w-72 whitespace-normal py-3 align-top text-sm text-muted-foreground">
+                                {permissionSummary(grant)}
+                            </TableCell>
+                            <TableCell className="py-3 text-right align-top">
+                                {isGrantEditable(grant) ? (
+                                    <Button
+                                        aria-label={`Edit access grant for ${grant.subject_label}`}
+                                        onClick={() => onEdit(grant)}
+                                        size="icon-sm"
+                                        title="Edit grant"
+                                        type="button"
+                                        variant="ghost"
+                                    >
+                                        <Pencil aria-hidden="true" className="size-4" />
+                                    </Button>
+                                ) : (
+                                    <span className="inline-flex size-8" />
+                                )}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </section>
+    );
+}
+
 export function BrokerSharingPanel({
     accountGrants,
     members,
@@ -63,7 +166,7 @@ export function BrokerSharingPanel({
     roles: RoleDefinition[];
 }) {
     const [selectedAccountId, setSelectedAccountId] = useState(accountGrants[0]?.account.id ?? "");
-    const [expandedForm, setExpandedForm] = useState(false);
+    const [grantDialogOpen, setGrantDialogOpen] = useState(false);
     const [editingSubjectKey, setEditingSubjectKey] = useState<string | undefined>();
     const selected = useMemo(
         () => accountGrants.find(({ account }) => account.id === selectedAccountId) ?? accountGrants[0],
@@ -76,88 +179,96 @@ export function BrokerSharingPanel({
 
     function openAddGrant() {
         setEditingSubjectKey(undefined);
-        setExpandedForm((current) => !current || Boolean(editingSubjectKey));
+        setGrantDialogOpen(true);
     }
 
     function openEditGrant(grant: BrokerAccountGrant) {
         setEditingSubjectKey(`${grant.subject_type}:${grant.subject_id}`);
-        setExpandedForm(true);
+        setGrantDialogOpen(true);
+    }
+
+    function closeGrantDialog() {
+        setGrantDialogOpen(false);
+        setEditingSubjectKey(undefined);
+    }
+
+    const roleGrants = selected.grants.filter((grant) => grant.subject_type === "role");
+    const userGrants = selected.grants.filter((grant) => grant.subject_type === "user");
+    const membersById = new Map(members.map((member) => [member.user_id, member]));
+
+    function isGrantEditable(grant: BrokerAccountGrant): boolean {
+        if (grant.subject_type === "role") {
+            return grant.subject_id !== "admin";
+        }
+        return membersById.get(grant.subject_id)?.role !== "admin";
     }
 
     return (
-        <div className="grid overflow-hidden rounded-lg border border-border bg-card lg:grid-cols-[240px_minmax(0,1fr)]">
-            <div className="max-h-[520px] overflow-y-auto border-b border-border lg:border-r lg:border-b-0">
+        <div className="grid overflow-hidden rounded-lg border border-border bg-background lg:grid-cols-[260px_minmax(0,1fr)]">
+            <div className="max-h-[560px] overflow-y-auto border-b border-border bg-muted/35 p-1 lg:border-r lg:border-b-0">
                 {accountGrants.map(({ account, grants }) => {
                     const selectedAccount = account.id === selected.account.id;
                     return (
                         <button
-                            className={`grid w-full gap-1 border-b border-border px-4 py-3 text-left text-sm transition-colors hover:bg-accent/40 ${
-                                selectedAccount ? "bg-accent/30" : "bg-card"
-                            }`}
+                            className={cn(
+                                "grid w-full gap-1.5 rounded-md px-3 py-3 text-left text-sm transition-colors",
+                                "hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                selectedAccount ? "bg-background text-foreground" : "text-muted-foreground"
+                            )}
                             key={account.id}
                             onClick={() => {
                                 setSelectedAccountId(account.id);
-                                setExpandedForm(false);
+                                setGrantDialogOpen(false);
                                 setEditingSubjectKey(undefined);
                             }}
                             type="button"
                         >
                             <span className="flex min-w-0 items-center justify-between gap-2">
-                                <span className="truncate font-semibold">{account.label}</span>
-                                <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-sm border border-primary bg-primary text-xs font-semibold text-primary-foreground">
+                                <span className="truncate font-medium">{account.label}</span>
+                                <Badge size="sm" variant={selectedAccount ? "default" : "secondary"}>
                                     {grants.length}
-                                </span>
+                                </Badge>
                             </span>
-                            <span className="truncate text-xs text-muted-foreground">{account.broker_code}</span>
+                            <span className="truncate text-xs">{account.broker_code}</span>
                         </button>
                     );
                 })}
             </div>
 
-            <div className="grid min-w-0 gap-4 p-4">
-                <div className="flex flex-col gap-1 border-b border-border pb-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="grid min-w-0 gap-4 p-4 sm:p-5">
+                <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                        <h3 className="truncate text-lg font-semibold">{selected.account.label}</h3>
-                        <p className="text-sm text-muted-foreground">{selected.account.broker_code}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate text-base font-semibold">{selected.account.label}</h3>
+                            <Badge size="sm" variant="outline">
+                                {selected.account.broker_code}
+                            </Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            Define account-level access for people and role defaults.
+                        </p>
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                        {selected.grants.length} grant{selected.grants.length === 1 ? "" : "s"} configured
-                    </div>
+                    <Badge size="sm" variant={selected.grants.length ? "success" : "secondary"}>
+                        {selected.grants.length} grant{selected.grants.length === 1 ? "" : "s"}
+                    </Badge>
                 </div>
 
                 {selected.grants.length ? (
-                    <div className="grid gap-2">
-                        {selected.grants.map((grant) => (
-                            <div
-                                className="grid gap-3 rounded-lg border border-border bg-background p-3 md:grid-cols-[minmax(0,1fr)_auto]"
-                                key={grant.id}
-                            >
-                                <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="font-semibold">{grant.subject_label}</span>
-                                        <span className="border border-border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                                            {grant.subject_type === "user" ? "Person" : "Role default"}
-                                        </span>
-                                    </div>
-                                    {grant.subject_subtitle ? (
-                                        <div className="mt-1 text-sm text-muted-foreground">
-                                            {grant.subject_subtitle}
-                                        </div>
-                                    ) : null}
-                                    <div className="mt-1 truncate text-sm">{permissionSummary(grant)}</div>
-                                </div>
-                                <Button
-                                    aria-label="Edit grant"
-                                    onClick={() => openEditGrant(grant)}
-                                    size="icon"
-                                    title="Edit grant"
-                                    type="button"
-                                    variant="secondary"
-                                >
-                                    <Pencil className="size-4" />
-                                </Button>
-                            </div>
-                        ))}
+                    <div className="grid gap-5">
+                        <GrantSection
+                            description="Baseline access inherited by everyone with this workspace role."
+                            grants={roleGrants}
+                            isGrantEditable={isGrantEditable}
+                            onEdit={openEditGrant}
+                            title="Role defaults"
+                        />
+                        <GrantSection
+                            description="Individual overrides for specific workspace members."
+                            grants={userGrants}
+                            isGrantEditable={isGrantEditable}
+                            onEdit={openEditGrant}
+                            title="People"
+                        />
                     </div>
                 ) : (
                     <Alert>
@@ -169,22 +280,35 @@ export function BrokerSharingPanel({
 
                 <div className="border-t border-border pt-4">
                     <Button onClick={openAddGrant} type="button" variant="secondary">
-                        {editingSubjectKey ? "Edit selected grant" : expandedForm ? "Hide grant form" : "Add grant"}
+                        <Plus aria-hidden="true" className="size-4" />
+                        New grant
                     </Button>
                 </div>
 
-                {expandedForm ? (
-                    <div className="rounded-lg border border-border bg-background p-4">
-                        <AccessGrantEditor
-                            accountId={selected.account.id}
-                            grants={selected.grants}
-                            initialSubjectKey={editingSubjectKey}
-                            key={`${selected.account.id}:${editingSubjectKey ?? "add"}`}
-                            members={members}
-                            roles={roles}
-                        />
-                    </div>
-                ) : null}
+                <Dialog onOpenChange={setGrantDialogOpen} open={grantDialogOpen}>
+                    <DialogPopup className="max-w-3xl">
+                        <DialogHeader>
+                            <DialogTitle>{editingSubjectKey ? "Edit grant" : "New grant"}</DialogTitle>
+                            <DialogDescription>
+                                {editingSubjectKey
+                                    ? `Update access for ${selected.account.label}.`
+                                    : `Grant ${selected.account.label} access to a person or role.`}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogPanel className="pt-2">
+                            <AccessGrantEditor
+                                accountId={selected.account.id}
+                                grants={selected.grants}
+                                initialSubjectKey={editingSubjectKey}
+                                key={`${selected.account.id}:${editingSubjectKey ?? "add"}`}
+                                members={members}
+                                onCancel={closeGrantDialog}
+                                onSaved={closeGrantDialog}
+                                roles={roles}
+                            />
+                        </DialogPanel>
+                    </DialogPopup>
+                </Dialog>
             </div>
         </div>
     );
