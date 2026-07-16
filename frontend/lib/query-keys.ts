@@ -23,5 +23,9 @@ export const queryKeys = {
     auth: {
         all: ["auth"] as const,
         postAuthRoute: () => [...queryKeys.auth.all, "post-auth-route"] as const
+    },
+    access: {
+        all: ["access"] as const,
+        pendingRequests: () => [...queryKeys.access.all, "pending-requests"] as const
     }
 } as const;

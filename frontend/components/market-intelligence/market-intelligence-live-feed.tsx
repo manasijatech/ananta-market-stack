@@ -109,7 +109,7 @@ function mergeItem<T>(items: T[], item: T) {
 }
 
 function alphaWebSocketUrl(userId: string, products: string[]): string {
-    const configured = new URL(getPublicApiBaseUrl());
+    const configured = new URL(getPublicApiBaseUrl(), window.location.origin);
     const loopbackHosts = new Set(["127.0.0.1", "localhost"]);
     const shouldUseBrowserOrigin =
         typeof window !== "undefined" &&

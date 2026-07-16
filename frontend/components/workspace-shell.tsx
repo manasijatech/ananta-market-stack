@@ -313,7 +313,7 @@ export function WorkspaceShell({
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                         <GithubStarButton />
-                        <AlertNotificationsTray />
+                        <AlertNotificationsTray principal={principal} />
                         <ThemeToggle />
                     </div>
                 </div>
@@ -353,7 +353,7 @@ export function WorkspaceShell({
                     <div className="flex w-full items-center justify-end">
                         <div className="flex flex-wrap items-center gap-2">
                             <GithubStarButton />
-                            <AlertNotificationsTray />
+                            <AlertNotificationsTray principal={principal} />
                             <ThemeToggle />
                         </div>
                     </div>

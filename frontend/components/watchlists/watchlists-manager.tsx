@@ -383,7 +383,6 @@ export function WatchlistsManager({
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [showAlphaConfigPrompt, setShowAlphaConfigPrompt] = useState(false);
     const [error, setError] = useState("");
-    const [notice, setNotice] = useState("");
     // Symbols inserted optimistically that are still awaiting server confirmation
     // (keyed by uppercased symbol) — rendered as ghosted/pulsing rows.
     const [pendingSymbols, setPendingSymbols] = useState<Set<string>>(() => new Set());
@@ -803,7 +802,6 @@ export function WatchlistsManager({
     }, [presetHasMore, presetLoading, presetLoadingMore, presetQuery, presetResults]);
 
     function fail(caught: unknown, fallback: string) {
-        setNotice("");
         const message = caught instanceof Error ? caught.message : fallback;
         setError(message);
         toast.error(message);
@@ -816,16 +814,15 @@ export function WatchlistsManager({
     function importCreateCsv(file: File | null) {
         if (!file) return;
         setError("");
-        setNotice("");
         startTransition(async () => {
             try {
                 const symbols = await readSymbolsFromCsv(file);
                 if (!symbols.length) {
-                    setNotice("No symbols found in the CSV.");
+                    toast.info("No symbols found in the CSV.");
                     return;
                 }
                 setCreateSymbols((current) => Array.from(new Set([...parseSymbols(current), ...symbols])).join(", "));
-                setNotice(`Loaded ${symbols.length} symbols from CSV.`);
+                toast.success(`Loaded ${symbols.length} symbols from CSV.`);
             } catch (caught) {
                 fail(caught, "Could not read the CSV file.");
             } finally {
@@ -841,12 +838,11 @@ export function WatchlistsManager({
             return;
         }
         setError("");
-        setNotice("");
         startTransition(async () => {
             try {
                 const symbols = await readSymbolsFromCsv(file);
                 if (!symbols.length) {
-                    setNotice("No symbols found in the CSV.");
+                    toast.info("No symbols found in the CSV.");
                     return;
                 }
                 const result = await addSymbolsToWatchlist(selected.id, {
@@ -858,7 +854,7 @@ export function WatchlistsManager({
                 const skipped = result.skipped_symbols.length
                     ? ` Skipped ${result.skipped_symbols.length} duplicates already in this watchlist.`
                     : "";
-                setNotice(`Imported ${result.added_symbols.length} symbols from CSV.${skipped}`);
+                toast.success(`Imported ${result.added_symbols.length} symbols from CSV.${skipped}`);
             } catch (caught) {
                 fail(caught, "Could not import CSV symbols.");
             } finally {
@@ -914,7 +910,6 @@ export function WatchlistsManager({
 
     function requestCreateWatchlist() {
         setError("");
-        setNotice("");
         if (!hasAlphaApiKey) {
             setShowAlphaConfigPrompt(true);
             return;
@@ -938,7 +933,6 @@ export function WatchlistsManager({
             return;
         }
         setError("");
-        setNotice("");
         startTransition(async () => {
             try {
                 const created = await createWatchlist({ name, symbols: parseSymbols(createSymbols) });
@@ -959,7 +953,6 @@ export function WatchlistsManager({
                 setWatchlists((current) => upsertWatchlist(current, finalWatchlist));
                 setSelectedId(finalWatchlist.id);
                 resetCreateModal();
-                setNotice(`Created ${finalWatchlist.name}.`);
                 toast.success(`Created ${finalWatchlist.name}.`);
             } catch (caught) {
                 fail(caught, "Could not create watchlist.");
@@ -983,14 +976,12 @@ export function WatchlistsManager({
             return;
         }
         setError("");
-        setNotice("");
         startTransition(async () => {
             try {
                 const updated = await updateWatchlist(selected.id, { name });
                 setWatchlists((current) => upsertWatchlist(current, updated));
                 setSelectedId(updated.id);
                 setEditingName(false);
-                setNotice(`Renamed to ${updated.name}.`);
                 toast.success(`Renamed to ${updated.name}.`);
             } catch (caught) {
                 fail(caught, "Could not rename watchlist.");
@@ -1010,7 +1001,6 @@ export function WatchlistsManager({
         const alreadyPresent = selectedSymbols.includes(symbolKey);
         const optimisticId = `optimistic:${symbolKey}:${selectedExchange ?? ""}`;
         setError("");
-        setNotice("");
 
         // Optimistically drop the symbol in so it appears instantly (ghosted)
         // while the server round-trip completes — reconciled or rolled back below.
@@ -1057,14 +1047,14 @@ export function WatchlistsManager({
                 setWatchlists((current) => upsertWatchlist(current, result.watchlist));
                 setSelectedId(result.watchlist.id);
                 if (result.added_symbols.length) {
-                    setNotice(`Added ${row.symbol}.`);
                     toast.success(`Added ${row.symbol}.`);
                 } else {
                     const skipped = result.skipped_symbols.length ? " Already in this watchlist." : "";
-                    setNotice(`${row.symbol} was not added.${skipped}`);
-                    if (result.skipped_symbols.length) {
-                        toast.info(`${row.symbol} is already in this watchlist.`);
-                    }
+                    toast.info(
+                        result.skipped_symbols.length
+                            ? `${row.symbol} is already in this watchlist.`
+                            : `${row.symbol} was not added.${skipped}`
+                    );
                 }
             } catch (caught) {
                 // Roll back the optimistic insert so the UI matches the server.
@@ -1161,13 +1151,11 @@ export function WatchlistsManager({
             return;
         }
         setError("");
-        setNotice("");
         startTransition(async () => {
             try {
                 const updated = await removeSymbolFromWatchlist(selected.id, symbol, symbolExchange);
                 setWatchlists((current) => upsertWatchlist(current, updated));
                 setSelectedId(updated.id);
-                setNotice(`Removed ${symbol}.`);
                 toast.success(`Removed ${symbol}.`);
             } catch (caught) {
                 fail(caught, "Could not remove symbol.");
@@ -1179,7 +1167,6 @@ export function WatchlistsManager({
         if (!selected) return;
         const deletedId = selected.id;
         setError("");
-        setNotice("");
         startTransition(async () => {
             try {
                 await deleteWatchlist(deletedId);
@@ -1200,7 +1187,6 @@ export function WatchlistsManager({
             return;
         }
         setError("");
-        setNotice("");
         startTransition(async () => {
             try {
                 const created = await addPresetWatchlist(entry.id);
@@ -1216,9 +1202,9 @@ export function WatchlistsManager({
                                   constituent_count: created.items.length
                               }
                             : item
-                    )
+                        )
                 );
-                setNotice(`Added ${created.name}.`);
+                toast.success(`Added ${created.name}.`);
             } catch (caught) {
                 fail(caught, "Could not add preset watchlist.");
             }
@@ -1256,7 +1242,6 @@ export function WatchlistsManager({
     function refreshSelectedPreset() {
         if (!selected || selected.kind !== "preset") return;
         setError("");
-        setNotice("");
         startTransition(async () => {
             try {
                 const updated = await refreshWatchlist(selected.id);
@@ -1273,9 +1258,9 @@ export function WatchlistsManager({
                                       updated.preset_last_synced_at ?? item.last_constituents_sync_at
                               }
                             : item
-                    )
+                        )
                 );
-                setNotice(`Refreshed ${updated.name}.`);
+                toast.success(`Refreshed ${updated.name}.`);
             } catch (caught) {
                 fail(caught, "Could not refresh preset watchlist.");
             }
@@ -1287,11 +1272,6 @@ export function WatchlistsManager({
             {error ? (
                 <div className="mb-4 shrink-0 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                     {error}
-                </div>
-            ) : null}
-            {notice ? (
-                <div className="mb-4 shrink-0 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
-                    {notice}
                 </div>
             ) : null}
 
@@ -1721,6 +1701,7 @@ export function WatchlistsManager({
                                                 aria-current={active ? "page" : undefined}
                                                 className={cn(
                                                     "group relative w-full items-stretch justify-start overflow-hidden rounded-lg border p-0 text-left whitespace-normal",
+                                                    "first:mt-3",
                                                     active
                                                         ? "border-primary/55 bg-primary/5 text-foreground"
                                                         : "border-border bg-card text-foreground hover:border-primary/25 hover:bg-muted/35"
@@ -1730,7 +1711,6 @@ export function WatchlistsManager({
                                                     setSelectedId(item.id);
                                                     setEditingName(false);
                                                     setError("");
-                                                    setNotice("");
                                                 }}
                                                 size="auto"
                                                 type="button"
