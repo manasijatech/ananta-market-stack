@@ -28,6 +28,9 @@ export async function loadOnboardingSetupData(): Promise<OnboardingSetupData> {
 
 export async function loadOnboardingContext() {
     const [principal, data] = await Promise.all([requireActiveWorkspace(), loadOnboardingSetupData()]);
+    if (!principal.is_admin) {
+        redirect("/broker-connections");
+    }
     const readiness = getWorkspaceSetupReadiness(data.accounts, data.systemConfig);
 
     return { principal, data, readiness };
@@ -62,10 +65,7 @@ export async function requireOnboardingStep(step: OnboardingStepSlug) {
     if (!readiness.hasBroker && step !== "broker") {
         redirect(onboardingStepPath("broker"));
     }
-    if (readiness.hasBroker && !readiness.alphaReady && step !== "drishti") {
-        redirect(onboardingStepPath("drishti"));
-    }
-    if (readiness.hasBroker && readiness.alphaReady && !readiness.llmReady && step !== "llm-provider") {
+    if (readiness.hasBroker && !readiness.llmReady && step !== "llm-provider") {
         redirect(onboardingStepPath("llm-provider"));
     }
     if (readiness.requiredReady) {

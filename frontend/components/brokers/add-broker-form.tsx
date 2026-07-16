@@ -10,7 +10,6 @@ import { parseActionError } from "@/components/brokers/action-error";
 import { BrokerLogo, brokerNames } from "@/components/brokers/ui";
 import { brokerGuides } from "@/service/broker-guides";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
     Card,
@@ -26,6 +25,7 @@ import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
+import { brokerCallbackUrl, brokerSessionSetup } from "@/service/broker-setup";
 import type { BrokerCode, CreateBrokerAccountPayload, FieldErrors } from "@/service/types/broker";
 
 type ZerodhaMode = "official" | "automation";
@@ -181,6 +181,10 @@ function brokerFieldPlaceholder(name: string, label: string): string {
     return placeholders[name] ?? `Enter ${label.toLowerCase()}`;
 }
 
+function brokerFieldDescription(broker: BrokerCode, field: string): string | undefined {
+    return brokerGuides[broker].formMapping.find((item) => item.field === field)?.note;
+}
+
 function BrokerField({
     name,
     label,
@@ -266,6 +270,25 @@ function BrokerGuidePanel({ broker }: { broker: BrokerCode }) {
     );
 }
 
+function BrokerCallbackUrlHint({ broker, url }: { broker: BrokerCode; url: string }) {
+    const setup = brokerSessionSetup[broker];
+    if (!setup.requiresCallbackUrl) {
+        return null;
+    }
+
+    return (
+        <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-sm font-semibold">Broker callback URL</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+                If your broker asks for a redirect or callback URL, use this exact value.
+            </p>
+            <code className="mt-3 block overflow-x-auto rounded-md border border-border bg-background px-3 py-2 text-sm">
+                {url}
+            </code>
+        </div>
+    );
+}
+
 function BrokerSelector({
     broker,
     onSelect,
@@ -324,9 +347,10 @@ export function AddBrokerForm({
     const [defaultBrokerRedirectUrl, setDefaultBrokerRedirectUrl] = useState(fallbackBrokerRedirectUrl);
 
     const selectedName = useMemo(() => brokerNames[broker], [broker]);
+    const fieldDescription = (field: string) => brokerFieldDescription(broker, field);
 
     useEffect(() => {
-        setDefaultBrokerRedirectUrl(`${window.location.origin}/broker-connections`);
+        setDefaultBrokerRedirectUrl(brokerCallbackUrl(window.location.origin));
     }, []);
 
     function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -386,13 +410,14 @@ export function AddBrokerForm({
                             Add {selectedName}. Secrets are encrypted by the FastAPI backend before storage.
                         </CardFrameDescription>
                         <CardFrameAction>
-                            <Badge
+                            <Button
+                                className="h-9 px-3 font-semibold"
                                 render={<Link href={`/docs/${broker}`} rel="noreferrer" target="_blank" />}
                                 variant="outline"
                             >
                                 <BookOpen data-icon="inline-start" />
-                                Docs
-                            </Badge>
+                                Open docs
+                            </Button>
                         </CardFrameAction>
                     </CardFrameHeader>
                 )}
@@ -405,9 +430,15 @@ export function AddBrokerForm({
                             onSubmit={onSubmit}
                         >
                             {compact ? null : <BrokerGuidePanel broker={broker} />}
+                            <BrokerCallbackUrlHint broker={broker} url={defaultBrokerRedirectUrl} />
 
                             <FieldGroup>
-                                <BrokerField error={fieldErrors.label} label="Account label" name="label" />
+                                <BrokerField
+                                    description="Use a short name that helps you identify this broker account later."
+                                    error={fieldErrors.label}
+                                    label="Account label"
+                                    name="label"
+                                />
 
                                 {broker === "zerodha" ? (
                                     <>
@@ -419,8 +450,14 @@ export function AddBrokerForm({
                                             onChange={setZerodhaMode}
                                             value={zerodhaMode}
                                         />
-                                        <BrokerField error={fieldErrors.api_key} label="API key" name="api_key" />
                                         <BrokerField
+                                            description={fieldDescription("api_key")}
+                                            error={fieldErrors.api_key}
+                                            label="API key"
+                                            name="api_key"
+                                        />
+                                        <BrokerField
+                                            description={fieldDescription("api_secret")}
                                             error={fieldErrors.api_secret}
                                             label="API secret"
                                             name="api_secret"
@@ -455,8 +492,14 @@ export function AddBrokerForm({
 
                                 {broker === "upstox" ? (
                                     <>
-                                        <BrokerField error={fieldErrors.api_key} label="API key" name="api_key" />
                                         <BrokerField
+                                            description={fieldDescription("api_key")}
+                                            error={fieldErrors.api_key}
+                                            label="API key"
+                                            name="api_key"
+                                        />
+                                        <BrokerField
+                                            description={fieldDescription("api_secret")}
                                             error={fieldErrors.api_secret}
                                             label="API secret"
                                             name="api_secret"
@@ -483,8 +526,14 @@ export function AddBrokerForm({
                                             onChange={setAngelMode}
                                             value={angelMode}
                                         />
-                                        <BrokerField error={fieldErrors.api_key} label="API key" name="api_key" />
                                         <BrokerField
+                                            description={fieldDescription("api_key")}
+                                            error={fieldErrors.api_key}
+                                            label="API key"
+                                            name="api_key"
+                                        />
+                                        <BrokerField
+                                            description={fieldDescription("client_code")}
                                             error={fieldErrors.client_code}
                                             label="Client code"
                                             name="client_code"
@@ -492,6 +541,7 @@ export function AddBrokerForm({
                                         {angelMode === "automation" ? (
                                             <>
                                                 <BrokerField
+                                                    description={fieldDescription("pin")}
                                                     error={fieldErrors.pin}
                                                     label="PIN"
                                                     name="pin"
@@ -519,17 +569,29 @@ export function AddBrokerForm({
                                             onChange={setDhanMode}
                                             value={dhanMode}
                                         />
-                                        <BrokerField error={fieldErrors.app_id} label="API key" name="app_id" />
                                         <BrokerField
+                                            description={fieldDescription("app_id")}
+                                            error={fieldErrors.app_id}
+                                            label="API key"
+                                            name="app_id"
+                                        />
+                                        <BrokerField
+                                            description={fieldDescription("app_secret")}
                                             error={fieldErrors.app_secret}
                                             label="API secret"
                                             name="app_secret"
                                             type="password"
                                         />
-                                        <BrokerField error={fieldErrors.client_id} label="Client ID" name="client_id" />
+                                        <BrokerField
+                                            description={fieldDescription("client_id")}
+                                            error={fieldErrors.client_id}
+                                            label="Client ID"
+                                            name="client_id"
+                                        />
                                         {dhanMode === "automation" ? (
                                             <>
                                                 <BrokerField
+                                                    description={fieldDescription("pin")}
                                                     error={fieldErrors.pin}
                                                     label="PIN"
                                                     name="pin"
@@ -557,8 +619,14 @@ export function AddBrokerForm({
                                             onChange={setKotakMode}
                                             value={kotakMode}
                                         />
-                                        <BrokerField error={fieldErrors.ucc} label="UCC" name="ucc" />
                                         <BrokerField
+                                            description={fieldDescription("ucc")}
+                                            error={fieldErrors.ucc}
+                                            label="UCC"
+                                            name="ucc"
+                                        />
+                                        <BrokerField
+                                            description={fieldDescription("portal_access_token")}
                                             error={fieldErrors.portal_access_token}
                                             label="Portal access token"
                                             name="portal_access_token"
@@ -567,11 +635,13 @@ export function AddBrokerForm({
                                         {kotakMode === "automation" ? (
                                             <>
                                                 <BrokerField
+                                                    description={fieldDescription("mobile_number")}
                                                     error={fieldErrors.mobile_number}
                                                     label="Mobile number"
                                                     name="mobile_number"
                                                 />
                                                 <BrokerField
+                                                    description={fieldDescription("mpin")}
                                                     error={fieldErrors.mpin}
                                                     label="MPIN"
                                                     name="mpin"
@@ -603,11 +673,13 @@ export function AddBrokerForm({
                                         {growwMode === "approval" ? (
                                             <>
                                                 <BrokerField
+                                                    description={fieldDescription("api_key")}
                                                     error={fieldErrors.api_key}
                                                     label="API key"
                                                     name="api_key"
                                                 />
                                                 <BrokerField
+                                                    description={fieldDescription("api_secret")}
                                                     error={fieldErrors.api_secret}
                                                     label="API secret"
                                                     name="api_secret"
@@ -618,12 +690,14 @@ export function AddBrokerForm({
                                         {growwMode === "totp" ? (
                                             <>
                                                 <BrokerField
+                                                    description={fieldDescription("totp_token")}
                                                     error={fieldErrors.totp_token}
                                                     label="TOTP API key"
                                                     name="totp_token"
                                                     type="password"
                                                 />
                                                 <BrokerField
+                                                    description={fieldDescription("totp_secret")}
                                                     error={fieldErrors.totp_secret}
                                                     label="TOTP secret"
                                                     name="totp_secret"
@@ -633,6 +707,7 @@ export function AddBrokerForm({
                                         ) : null}
                                         {growwMode === "token" ? (
                                             <BrokerField
+                                                description={fieldDescription("access_token")}
                                                 error={fieldErrors.access_token}
                                                 label="Access token"
                                                 name="access_token"
@@ -644,6 +719,7 @@ export function AddBrokerForm({
 
                                 {broker === "indmoney" ? (
                                     <BrokerField
+                                        description={fieldDescription("access_token")}
                                         error={fieldErrors.access_token}
                                         label="Access token"
                                         name="access_token"

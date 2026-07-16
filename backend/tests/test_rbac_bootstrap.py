@@ -246,6 +246,54 @@ def test_reconcile_workspace_members_removes_orphan_members():
     db.close()
 
 
+def test_workspace_owner_cannot_be_removed_even_with_another_admin():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+
+    workspace = Workspace(id="workspace-1", name="Primary", created_by_user_id="owner-user")
+    owner_user = User(id="owner-user", display_name="Owner")
+    admin_user = User(id="admin-user", display_name="Admin")
+    db.add(workspace)
+    db.add(owner_user)
+    db.add(admin_user)
+    db.add(
+        WorkspaceMember(
+            id="member-owner",
+            workspace_id=workspace.id,
+            user_id=owner_user.id,
+            role="admin",
+            status="active",
+        )
+    )
+    db.add(
+        WorkspaceMember(
+            id="member-admin",
+            workspace_id=workspace.id,
+            user_id=admin_user.id,
+            role="admin",
+            status="active",
+        )
+    )
+    db.commit()
+
+    principal = rbac.Principal(
+        user=admin_user,
+        workspace=workspace,
+        membership=db.get(WorkspaceMember, "member-admin"),
+        permissions=frozenset({rbac.WORKSPACE_MANAGE_MEMBERS}),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        rbac.remove_member(db, principal, owner_user.id)
+
+    assert getattr(caught.value, "status_code", None) == 400
+    assert "workspace owner" in str(caught.value.detail)
+    assert db.get(WorkspaceMember, "member-owner") is not None
+    db.close()
+
+
 def test_list_members_adds_pending_auth_users_without_backend_user():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

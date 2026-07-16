@@ -45,3 +45,16 @@ export function sentenceCase(value: string): string {
     }
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
+
+export function roleDisplayLabel(roleName: string, fallback?: string): string {
+    if (roleName === "operator") {
+        return "Editor / Member";
+    }
+    if (roleName === "admin") {
+        return "Admin";
+    }
+    if (roleName === "viewer") {
+        return "Viewer";
+    }
+    return fallback || sentenceCase(roleName);
+}

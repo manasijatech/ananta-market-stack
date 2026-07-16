@@ -141,6 +141,14 @@ export async function disableWorkspaceMember(userId: string): Promise<WorkspaceM
     return result;
 }
 
+export async function enableWorkspaceMember(userId: string): Promise<WorkspaceMember> {
+    const result = await request<WorkspaceMember>(`/rbac/members/${userId}/enable`, {
+        method: "POST"
+    });
+    revalidatePath("/settings/access");
+    return result;
+}
+
 export async function removeWorkspaceMember(userId: string): Promise<void> {
     const response = await fetchFastApi(`/rbac/members/${userId}/remove`, {
         method: "POST"

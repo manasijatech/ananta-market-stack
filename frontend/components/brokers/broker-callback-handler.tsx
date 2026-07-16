@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { createSession, verifyBrokerAccount } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import type { BrokerAccount, BrokerCode, SessionLoginPayload } from "@/service/types/broker";
+import { brokerCallbackPayload, brokerCallbackUrl } from "@/service/broker-setup";
+import type { BrokerAccount, BrokerCode } from "@/service/types/broker";
 
 type CallbackState = {
     tone: "default" | "warning" | "destructive";
@@ -21,32 +22,6 @@ type PendingBrokerLogin = {
 
 const pendingLoginKey = "ananta-market-stack:pending-broker-login";
 const pendingLoginMaxAgeMs = 10 * 60 * 1000;
-
-function callbackPayload(params: URLSearchParams): {
-    broker: "zerodha" | "upstox";
-    token: string;
-    payload: SessionLoginPayload;
-} | null {
-    const requestToken = params.get("request_token");
-    if (requestToken) {
-        return {
-            broker: "zerodha",
-            token: requestToken,
-            payload: { broker: "zerodha", request_token: requestToken }
-        };
-    }
-
-    const code = params.get("code") ?? params.get("authorization_code");
-    if (code) {
-        return {
-            broker: "upstox",
-            token: code,
-            payload: { broker: "upstox", authorization_code: code }
-        };
-    }
-
-    return null;
-}
 
 function pickAccount(accounts: BrokerAccount[], broker: BrokerCode, state: string | null): BrokerAccount | null {
     const brokerAccounts = accounts.filter((account) => account.broker_code === broker);
@@ -90,7 +65,7 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
     const handledRef = useRef(false);
 
     const serializedParams = searchParams.toString();
-    const payload = useMemo(() => callbackPayload(new URLSearchParams(serializedParams)), [serializedParams]);
+    const payload = useMemo(() => brokerCallbackPayload(new URLSearchParams(serializedParams)), [serializedParams]);
 
     useEffect(() => {
         if (!payload || handledRef.current) {
@@ -107,17 +82,19 @@ export function BrokerCallbackHandler({ accounts }: { accounts: BrokerAccount[] 
             setCallbackState({
                 tone: "warning",
                 message:
-                    "Broker login returned successfully, but this browser session cannot see any broker accounts. Open Ananta using localhost:3000 before starting broker login, then use the same host for the callback."
+                    "Broker login returned successfully, but this browser session cannot see any broker accounts. Open Ananta with the same URL before starting broker login, then use that same URL for the callback."
             });
             return;
         }
 
         if (!account) {
+            const expectedCallback =
+                typeof window === "undefined" ? "/broker-connections" : brokerCallbackUrl(window.location.origin);
             setCallbackState({
                 tone: "warning",
                 message: state
                     ? `Broker login returned with state ${state}, but no matching ${payload.broker} account was found for this signed-in user.`
-                    : `Broker login returned, but there is not exactly one ${payload.broker} account to attach it to. Open the correct broker detail page and paste the token manually.`
+                    : `Broker login returned, but Ananta could not tell which ${payload.broker} account it belongs to. Open the broker account, start login from there, and make sure the broker callback is ${expectedCallback}.`
             });
             return;
         }

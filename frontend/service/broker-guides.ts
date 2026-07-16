@@ -53,25 +53,32 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
         setupSteps: [
             "Enable Dhan API access.",
             "Copy the API key, API secret, and client ID.",
+            "If Dhan asks for a redirect URL, use your Ananta broker callback URL exactly.",
             "Set up static IP allowlisting if Dhan requires it.",
             "Choose manual consent or TOTP automation mode.",
             "Add PIN and TOTP secret only if you want automated refresh."
         ],
         formMapping: [
-            { label: "API key", field: "app_id", note: "Sent to the backend as app_id." },
-            { label: "API secret", field: "app_secret", note: "Sent to the backend as app_secret." },
-            { label: "Client ID", field: "client_id", note: "Your Dhan client ID." },
-            { label: "PIN", field: "pin", note: "Optional 6-digit login PIN for automation." },
-            { label: "TOTP secret", field: "totp_secret", note: "Optional QR/authenticator secret for automation." }
+            { label: "API key", field: "app_id", note: "Copy this from your Dhan API or developer dashboard." },
+            { label: "API secret", field: "app_secret", note: "Copy this secret from the same Dhan API app." },
+            {
+                label: "Client ID",
+                field: "client_id",
+                note: "Use the Dhan client ID assigned to your trading account. Do not enter Ananta or your app name."
+            },
+            { label: "PIN", field: "pin", note: "Optional 6-digit Dhan login PIN, used only for automation." },
+            { label: "TOTP secret", field: "totp_secret", note: "Optional authenticator or QR setup secret, not the current 6-digit OTP." }
         ],
         sessionSteps: [
             "In manual consent mode, use the broker detail page to start the Dhan consent flow.",
             "Complete Dhan login and 2FA in the opened page.",
-            "Paste the returned token_id into the Dhan session form.",
+            "When Dhan redirects back to Ananta, Ananta reads tokenId and finishes setup automatically.",
+            "Use Manual fallback only if Ananta did not connect automatically and tokenId is visible in the returned URL.",
             "In automation mode, the backend can attempt refresh using stored client_id, PIN, and TOTP secret."
         ],
         notes: [
             "Manual consent avoids storing PIN and TOTP secret.",
+            "The callback URL must include /broker-connections, not only the Ananta domain.",
             "PIN plus TOTP secret can enable unattended refresh."
         ]
     },
@@ -173,7 +180,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
         setupSteps: [
             "Create an Upstox developer app.",
             "Copy the API key and API secret.",
-            "Set the redirect URI to http://localhost:3000/broker-connections for local development.",
+            "Set the redirect URI to your Ananta broker callback URL.",
             "Save the exact same redirect URI in Ananta Market Stack."
         ],
         formMapping: [
@@ -182,7 +189,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
             {
                 label: "Redirect URI",
                 field: "redirect_uri",
-                note: "Use http://localhost:3000/broker-connections locally; it must match Upstox exactly."
+                note: "Use the exact Ananta broker callback URL shown here; it must match Upstox exactly."
             }
         ],
         sessionSteps: [
@@ -192,7 +199,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
         ],
         notes: [
             "The redirect URI in Upstox and Ananta Market Stack must be identical.",
-            "Use http://localhost:3000 before and after broker login."
+            "Use the same Ananta host before and after broker login."
         ]
     },
     zerodha: {
@@ -203,7 +210,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
         setupSteps: [
             "Create or open your Kite Connect app.",
             "Copy the API key and API secret.",
-            "Set the app redirect URL to http://localhost:3000/broker-connections for local development.",
+            "Set the app redirect URL to your Ananta broker callback URL.",
             "Choose API-only mode or optional web-login automation mode.",
             "If using automation, keep Zerodha user ID, password, and TOTP secret ready.",
             "Save the credentials in Ananta Market Stack."
@@ -237,7 +244,7 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
             "Zerodha sessions usually need fresh authorization each trading day.",
             "The automation path is experimental because it depends on Zerodha web-login behavior.",
             "The TOTP secret is not the same as the current 6-digit OTP.",
-            "Use http://localhost:3000 before and after broker login."
+            "Use the same Ananta host before and after broker login."
         ]
     }
 };

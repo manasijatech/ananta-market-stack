@@ -11,7 +11,17 @@ export function NotificationsBanner() {
     const markRead = useMarkBrokerNotificationRead();
 
     const sorted = useMemo(() => {
-        return [...notifications].sort((left, right) => {
+        const unique = new Map<string, (typeof notifications)[number]>();
+        notifications.forEach((item) => {
+            const key = item.kind.includes("session")
+                ? [item.account_id ?? "", item.broker_code ?? "", item.kind].join(":")
+                : item.id;
+            if (!unique.has(key)) {
+                unique.set(key, item);
+            }
+        });
+
+        return [...unique.values()].sort((left, right) => {
             const leftWarning = left.kind.includes("session") ? 0 : 1;
             const rightWarning = right.kind.includes("session") ? 0 : 1;
             return leftWarning - rightWarning;

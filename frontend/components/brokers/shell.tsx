@@ -11,7 +11,7 @@ export async function Shell({ children }: { children: React.ReactNode }) {
     const [principal, onboardingData] = await Promise.all([requireActiveWorkspace(), loadOnboardingSetupData()]);
     const readiness = getWorkspaceSetupReadiness(onboardingData.accounts, onboardingData.systemConfig);
 
-    if (!readiness.requiredReady) {
+    if (principal.is_admin && !readiness.requiredReady) {
         redirect(onboardingStepPath(firstIncompleteRequiredStep(readiness)));
     }
 

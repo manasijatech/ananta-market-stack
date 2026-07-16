@@ -21,7 +21,7 @@ export default function BrokerDocsIndexPage() {
 
             <section className="grid gap-4 min-[760px]:grid-cols-2 min-[1100px]:grid-cols-3">
                 {guides.map((guide) => (
-                    <Card className="transition hover:border-primary/40" key={guide.broker}>
+                    <Card className="flex h-full flex-col transition hover:border-primary/40" key={guide.broker}>
                         <CardHeader className="flex flex-row items-center gap-4">
                             <BrokerLogo broker={guide.broker} />
                             <div>
@@ -29,9 +29,9 @@ export default function BrokerDocsIndexPage() {
                                 <CardDescription>{guide.required.length} required setup item(s)</CardDescription>
                             </div>
                         </CardHeader>
-                        <CardContent>
-                            <p className="mb-5 text-sm text-muted-foreground">{guide.summary}</p>
-                            <Button asChild className="w-full" variant="outline">
+                        <CardContent className="flex flex-1 flex-col">
+                            <p className="text-sm text-muted-foreground">{guide.summary}</p>
+                            <Button asChild className="mt-auto w-full" variant="outline">
                                 <Link href={`/docs/${guide.broker}`} target="_blank" rel="noreferrer">
                                     Open docs
                                 </Link>

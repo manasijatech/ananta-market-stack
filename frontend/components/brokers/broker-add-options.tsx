@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { BookOpen } from "lucide-react";
 import { IconArrowRight } from "@tabler/icons-react";
 import { AddBrokerForm } from "@/components/brokers/add-broker-form";
 import { BrokerLogo, brokerNames } from "@/components/brokers/ui";
@@ -83,8 +85,23 @@ export function BrokerAddOptions({
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-h-[90vh] w-[min(620px,calc(100vw-2rem))] max-w-none p-0">
                     <DialogHeader className="border-b border-border px-6 py-5 pr-14">
-                        <DialogTitle>Connect {brokerNames[selectedBroker]}</DialogTitle>
-                        <DialogDescription>Use the credentials from your broker developer dashboard.</DialogDescription>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0 space-y-2">
+                                <DialogTitle>Connect {brokerNames[selectedBroker]}</DialogTitle>
+                                <DialogDescription>
+                                    Use the credentials from your broker developer dashboard.
+                                </DialogDescription>
+                            </div>
+                            <Button
+                                className="h-9 shrink-0 px-3 font-semibold"
+                                render={<Link href={`/docs/${selectedBroker}`} rel="noreferrer" target="_blank" />}
+                                size="default"
+                                variant="outline"
+                            >
+                                <BookOpen />
+                                Open docs
+                            </Button>
+                        </div>
                     </DialogHeader>
                     <DialogPanel className="p-4 sm:p-6">
                         <AddBrokerForm

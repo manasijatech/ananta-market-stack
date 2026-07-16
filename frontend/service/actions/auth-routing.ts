@@ -37,6 +37,9 @@ export async function resolvePostAuthRoute(): Promise<"/broker-connections" | "/
             if (rbac.status !== "active") {
                 return "/pending-approval";
             }
+            if (!rbac.is_admin) {
+                return "/broker-connections";
+            }
             const [accounts, systemConfig] = await Promise.all([getBrokerAccounts(), getSystemConfig()]);
             const readiness = getWorkspaceSetupReadiness(accounts, systemConfig);
             return readiness.requiredReady ? "/broker-connections" : onboardingStepPath(firstIncompleteRequiredStep(readiness));

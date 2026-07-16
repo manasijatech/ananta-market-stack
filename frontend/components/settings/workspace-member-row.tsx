@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { Check, X } from "lucide-react";
 import { WorkspaceMemberActions } from "@/components/settings/workspace-member-actions";
 import { WorkspaceMemberRoleControls } from "@/components/settings/workspace-member-role-form";
 import {
@@ -8,6 +9,7 @@ import {
     memberInitials,
     memberLabel,
     memberSubtitle,
+    roleDisplayLabel,
     sentenceCase
 } from "@/components/settings/workspace-member-utils";
 import type { RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
@@ -34,9 +36,20 @@ function statusBadgeVariant(status: string): "success" | "secondary" | "warning"
     return "secondary";
 }
 
+function StatusIcon({ status }: { status: string }) {
+    if (status === "active") {
+        return <Check aria-hidden className="size-3 text-success-foreground" />;
+    }
+    if (status === "disabled" || status === "removed" || status === "rejected") {
+        return <X aria-hidden className="size-3 text-destructive" />;
+    }
+    return null;
+}
+
 export function WorkspaceMemberRow({ currentUserId, member, roles, viewerDefault }: WorkspaceMemberRowProps) {
     const isSelf = member.user_id === currentUserId;
-    const roleLabel = roles.find((role) => role.name === member.role)?.label ?? member.role;
+    const roleDefinition = roles.find((role) => role.name === member.role);
+    const roleLabel = roleDisplayLabel(member.role, roleDefinition?.label);
     const avatarSeed = member.user_id || member.email || memberLabel(member);
     const subtitle = memberSubtitle(member);
 
@@ -44,7 +57,7 @@ export function WorkspaceMemberRow({ currentUserId, member, roles, viewerDefault
         <div
             className={cn(
                 "grid items-center gap-3 border-t border-border bg-background px-4 py-3 first:border-t-0 hover:bg-muted/35",
-                "md:min-h-16 md:grid-cols-[minmax(0,1fr)_180px_40px]",
+                "md:min-h-16 md:grid-cols-[minmax(0,1fr)_180px_80px]",
                 "focus-within:ring-2 focus-within:ring-ring/40 focus-within:ring-offset-2 focus-within:ring-offset-background"
             )}
         >
@@ -66,20 +79,47 @@ export function WorkspaceMemberRow({ currentUserId, member, roles, viewerDefault
                             </Badge>
                         ) : null}
                         <Badge size="sm" variant={statusBadgeVariant(member.status)}>
+                            <StatusIcon status={member.status} />
                             {sentenceCase(member.status)}
                         </Badge>
-                        <Badge size="sm" variant={roleBadgeVariant(member.role)}>
-                            {sentenceCase(roleLabel)}
-                        </Badge>
+                        {member.status !== "pending" ? (
+                            <Badge size="sm" variant={roleBadgeVariant(member.role)}>
+                                {roleLabel}
+                            </Badge>
+                        ) : null}
+                        {member.is_owner ? (
+                            <Badge size="sm" variant="outline">
+                                Owner
+                            </Badge>
+                        ) : null}
+                        {member.status === "rejected" ? (
+                            <Badge size="sm" variant="error">
+                                <X aria-hidden className="size-3 text-destructive" />
+                                Rejected
+                            </Badge>
+                        ) : null}
                     </div>
                     <p className="mt-px truncate text-xs text-muted-foreground">{subtitle}</p>
                 </div>
             </div>
 
-            <WorkspaceMemberRoleControls isSelf={isSelf} member={member} roles={roles} viewerDefault={viewerDefault} />
+            {member.status === "pending" ? (
+                <span aria-hidden className="hidden md:block" />
+            ) : (
+                <WorkspaceMemberRoleControls
+                    isSelf={isSelf || Boolean(member.is_owner)}
+                    member={member}
+                    roles={roles}
+                />
+            )}
 
-            <div className="flex justify-end md:w-10">
-                <WorkspaceMemberActions currentUserId={currentUserId} member={member} />
+            <div className="flex justify-end md:w-20">
+                <WorkspaceMemberActions
+                    currentUserId={currentUserId}
+                    member={member}
+                    roles={roles}
+                    viewerDefault={viewerDefault}
+                />
             </div>
         </div>
     );

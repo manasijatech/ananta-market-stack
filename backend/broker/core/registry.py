@@ -117,7 +117,9 @@ def get_client_for_account(
             raise ValueError("missing dhan credentials")
         access_token = decrypt_value(d.access_token_cipher)
         if not access_token:
-            raise ValueError("Dhan access token is missing. Complete the Dhan session flow first.")
+            raise ValueError(
+                "Dhan login is not complete. Open the broker account and click Login with Dhan to activate this session."
+            )
         _ensure_not_expired(
             account,
             "Dhan access token is expired. Refresh it manually or enable official automation.",

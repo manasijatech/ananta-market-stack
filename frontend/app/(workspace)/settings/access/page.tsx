@@ -43,7 +43,8 @@ export default async function AccessSettingsPage() {
         getBrokerAccounts()
     ]);
     const accountGrants = await loadAccountGrants(accounts);
-    const viewerDefault = roles.find((role) => role.name === "viewer")?.name ?? roles[0]?.name ?? "viewer";
+    const assignableRoles = roles.filter((role) => ["admin", "operator", "viewer"].includes(role.name));
+    const viewerDefault = assignableRoles.find((role) => role.name === "viewer")?.name ?? assignableRoles[0]?.name ?? "viewer";
     const pendingMembers = members.filter((member) => member.status === "pending");
     const activeMembers = members.filter((member) => member.status === "active");
 
@@ -70,7 +71,7 @@ export default async function AccessSettingsPage() {
                             </div>
                             <CardTitle className={typography.sectionTitle}>Approve workspace access</CardTitle>
                             <CardDescription className={typography.sectionLead}>
-                                New account requests appear here. Choose a role, then approve.
+                                New account requests appear here. Approve a request, then choose a role in the confirmation dialog.
                             </CardDescription>
                             <CardAction className="hidden items-center gap-2 text-[13px] text-muted-foreground sm:flex">
                                 <Badge size="sm" variant="success">
@@ -83,7 +84,7 @@ export default async function AccessSettingsPage() {
                         </CardHeader>
                         <CardPanel className="grid gap-4">
                             <div className="grid overflow-hidden rounded-lg border border-border bg-background">
-                                <div className="hidden grid-cols-[minmax(0,1fr)_180px_40px] border-b border-border bg-muted/35 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
+                                <div className="hidden grid-cols-[minmax(0,1fr)_180px_80px] border-b border-border bg-muted/35 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
                                     <span>Member</span>
                                     <span>Workspace role</span>
                                     <span className="text-right">Actions</span>
@@ -94,7 +95,7 @@ export default async function AccessSettingsPage() {
                                             currentUserId={me.user_id}
                                             key={member.user_id}
                                             member={member}
-                                            roles={roles}
+                                            roles={assignableRoles}
                                             viewerDefault={viewerDefault}
                                         />
                                     ))
@@ -105,7 +106,7 @@ export default async function AccessSettingsPage() {
                                 )}
                             </div>
 
-                            <RolePermissionsPanel roles={roles} />
+                            <RolePermissionsPanel roles={assignableRoles} />
                         </CardPanel>
                     </Card>
 
