@@ -33,12 +33,7 @@ function statusBadgeVariant(status: string): "success" | "secondary" | "warning"
     return "secondary";
 }
 
-export function WorkspaceMemberRow({
-    currentUserId,
-    member,
-    roles,
-    viewerDefault
-}: WorkspaceMemberRowProps) {
+export function WorkspaceMemberRow({ currentUserId, member, roles, viewerDefault }: WorkspaceMemberRowProps) {
     const isSelf = member.user_id === currentUserId;
     const roleLabel = roles.find((role) => role.name === member.role)?.label ?? member.role;
     const avatarSeed = member.user_id || member.email || memberLabel(member);
@@ -46,8 +41,8 @@ export function WorkspaceMemberRow({
     return (
         <div
             className={cn(
-                "grid items-center gap-3 border-t border-border bg-card px-1 py-3",
-                "grid-cols-[minmax(0,1fr)_140px_120px_32px]",
+                "grid items-center gap-3 border-t border-border bg-card px-3 py-3 first:border-t-0",
+                "md:grid-cols-[minmax(0,1fr)_minmax(160px,auto)_32px]",
                 "focus-within:ring-2 focus-within:ring-ring/40 focus-within:ring-offset-2 focus-within:ring-offset-card"
             )}
         >
@@ -81,14 +76,9 @@ export function WorkspaceMemberRow({
                 </div>
             </div>
 
-            <WorkspaceMemberRoleControls
-                isSelf={isSelf}
-                member={member}
-                roles={roles}
-                viewerDefault={viewerDefault}
-            />
+            <WorkspaceMemberRoleControls isSelf={isSelf} member={member} roles={roles} viewerDefault={viewerDefault} />
 
-            <div className="flex w-8 justify-end">
+            <div className="flex justify-end md:w-8">
                 <WorkspaceMemberActions currentUserId={currentUserId} member={member} />
             </div>
         </div>

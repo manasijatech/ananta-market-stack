@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
     Select,
-    SelectContent,
     SelectGroup,
+    SelectGroupLabel,
     SelectItem,
-    SelectLabel,
-    SelectTrigger
+    SelectPopup,
+    SelectTrigger,
+    SelectValue
 } from "@/components/ui/select";
 import { upsertBrokerAccountGrant } from "@/service/actions/rbac";
 import type { BrokerAccountGrant, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
@@ -52,13 +53,19 @@ function permissionLabel(permission: BrokerPermission): string {
     return "Delete account";
 }
 
+function permissionDescription(permission: BrokerPermission): string {
+    if (permission === "broker.view") return "See account readiness and summary details.";
+    if (permission === "broker.use_data") return "Open portfolio, positions, quotes, and market data tools.";
+    if (permission === "broker.manage_sessions") return "Refresh login sessions and submit broker tokens.";
+    if (permission === "broker.manage_credentials") return "Change stored broker credentials.";
+    return "Remove this broker account from the workspace.";
+}
+
 function permissionSummary(permissions: string[]): string {
     if (!permissions.length) {
         return "No access saved yet";
     }
-    return permissions
-        .map((permission) => permissionLabel(permission as BrokerPermission))
-        .join(", ");
+    return permissions.map((permission) => permissionLabel(permission as BrokerPermission)).join(", ");
 }
 
 function subjectSelectLabel(option?: SubjectOption): string {
@@ -196,18 +203,18 @@ export function AccessGrantEditor({
 
     return (
         <div className="grid gap-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="grid gap-2">
                     <label className="text-sm font-semibold" htmlFor={`subject-${accountId}`}>
                         Grant access to
                     </label>
                     <Select onValueChange={(value) => setSelectedKey(value ?? "")} value={selectedSubject?.key ?? ""}>
                         <SelectTrigger id={`subject-${accountId}`}>
-                            <span className="min-w-0 truncate">
-                                {subjectSelectLabel(selectedSubject) || "Select person or role"}
-                            </span>
+                            <SelectValue placeholder="Select person or role">
+                                {subjectSelectLabel(selectedSubject)}
+                            </SelectValue>
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectPopup>
                             {(["People", "Role defaults"] as const).map((group) => {
                                 const options = subjectOptions.filter((option) => option.group === group);
                                 if (!options.length) {
@@ -215,7 +222,7 @@ export function AccessGrantEditor({
                                 }
                                 return (
                                     <SelectGroup key={group}>
-                                        <SelectLabel>{group}</SelectLabel>
+                                        <SelectGroupLabel>{group}</SelectGroupLabel>
                                         {options.map((option) => (
                                             <SelectItem key={option.key} value={option.key}>
                                                 <span className="flex min-w-0 flex-col">
@@ -231,7 +238,7 @@ export function AccessGrantEditor({
                                     </SelectGroup>
                                 );
                             })}
-                        </SelectContent>
+                        </SelectPopup>
                     </Select>
                     {selectedSubject?.subtitle ? (
                         <div className="text-sm text-muted-foreground">{selectedSubject.subtitle}</div>
@@ -260,22 +267,32 @@ export function AccessGrantEditor({
                 </Alert>
             ) : (
                 <div className="text-sm text-muted-foreground">
-                    Start with `View account` and `Use portfolio and market data`, then add session or credential access only when needed.
+                    Start with view and market-data access. Add session or credential access only when needed.
                 </div>
             )}
 
             <div className="grid gap-3">
                 {brokerPermissions.map((permission) => {
                     const checked = effectivePermissions.includes(permission);
+                    const checkboxId = `${accountId}-${permission}`;
                     return (
-                        <label className="flex items-center gap-3" key={permission}>
+                        <div className="flex items-start gap-3" key={permission}>
                             <Checkbox
+                                id={checkboxId}
                                 checked={checked}
+                                className="mt-0.5"
                                 disabled={isPending || selectedSubject?.isAdmin}
                                 onCheckedChange={(value) => togglePermission(permission, value === true)}
                             />
-                            <span className="text-sm font-semibold">{permissionLabel(permission)}</span>
-                        </label>
+                            <div className="grid gap-0.5">
+                                <label className="text-sm font-semibold" htmlFor={checkboxId}>
+                                    {permissionLabel(permission)}
+                                </label>
+                                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                                    {permissionDescription(permission)}
+                                </p>
+                            </div>
+                        </div>
                     );
                 })}
             </div>

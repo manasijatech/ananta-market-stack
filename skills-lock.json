@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "agent-elements": {
+      "source": "21st-dev/agent-elements",
+      "sourceType": "github",
+      "skillPath": "skills/agent-elements/SKILL.md",
+      "computedHash": "94ecb2860884bca7e3ca0ff4da23c1721342995d29a009d9c83956a76a24338e"
+    },
     "animation-vocabulary": {
       "source": "emilkowalski/skills",
       "sourceType": "github",

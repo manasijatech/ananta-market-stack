@@ -256,7 +256,7 @@ export function MarketIntelligenceLiveFeed({
                     }
                     if (!opened && failedAttempts >= 3) {
                         setSocketState("offline");
-                        setSocketError("Could not connect to the Alpha websocket.");
+                        setSocketError("Could not connect to the Drishti websocket.");
                     } else if (opened) {
                         setSocketState("connecting");
                         setSocketError("");
@@ -268,7 +268,7 @@ export function MarketIntelligenceLiveFeed({
                     notifyAlphaCreditWarning(caught);
                     setSocketState("offline");
                     setSocketError(
-                        caught instanceof Error ? caught.message : "Could not connect to the Alpha websocket."
+                        caught instanceof Error ? caught.message : "Could not connect to the Drishti websocket."
                     );
                 }
             }

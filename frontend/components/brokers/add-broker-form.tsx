@@ -372,7 +372,13 @@ export function AddBrokerForm({
                 <BrokerSelector broker={broker} onSelect={setBroker} supportedBrokers={supportedBrokers} />
             ) : null}
 
-            <CardFrame className={cn("min-w-0", compact && "border-0 bg-transparent before:hidden")}>
+            <CardFrame
+                className={cn(
+                    "min-w-0",
+                    compact &&
+                        "overflow-visible border-0 bg-transparent before:hidden *:data-[slot=card]:!m-0 *:data-[slot=card]:!overflow-visible *:data-[slot=card]:![clip-path:none]"
+                )}
+            >
                 {compact ? null : (
                     <CardFrameHeader>
                         <CardFrameTitle className="text-lg font-semibold">Broker credentials</CardFrameTitle>
@@ -390,7 +396,7 @@ export function AddBrokerForm({
                         </CardFrameAction>
                     </CardFrameHeader>
                 )}
-                <Card className={cn(compact && "border-0 bg-transparent shadow-none")}>
+                <Card className={cn(compact && "!m-0 !overflow-visible border-0 bg-transparent ![clip-path:none] shadow-none")}>
                     <CardPanel className={cn(compact && "p-0")}>
                         <Form
                             autoComplete="off"

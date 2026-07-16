@@ -8,12 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { canManageWorkspaceAccess } from "@/lib/rbac";
 import { typography } from "@/lib/typography";
 import { getBrokerAccounts } from "@/service/actions/broker";
-import {
-    getBrokerAccountGrants,
-    getRbacMe,
-    getWorkspaceMembers,
-    getWorkspaceRoles
-} from "@/service/actions/rbac";
+import { getBrokerAccountGrants, getRbacMe, getWorkspaceMembers, getWorkspaceRoles } from "@/service/actions/rbac";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { BrokerAccountGrant, WorkspaceMember } from "@/service/types/rbac";
 
@@ -48,49 +43,48 @@ export default async function AccessSettingsPage() {
     ]);
     const accountGrants = await loadAccountGrants(accounts);
     const viewerDefault = roles.find((role) => role.name === "viewer")?.name ?? roles[0]?.name ?? "viewer";
+    const pendingMembers = members.filter((member) => member.status === "pending");
+    const activeMembers = members.filter((member) => member.status === "active");
 
     return (
         <>
-            <div className="w-full min-w-0">
+            <div className="w-full min-w-0 max-w-6xl">
                 <PageHeader
-                    description="Approve people, assign clear roles, and share broker accounts without exposing raw ids or reconnecting credentials."
-                    title="Access and broker sharing"
+                    description="Approve new users, set their role, then share broker accounts only where they need access."
+                    title="Access"
                 />
 
-                <div>
+                <div className="grid gap-6">
                     <AccessSetupNotice />
 
-                    <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
-                        <section className="grid gap-4 rounded-lg bg-card p-5">
-                            <div className="grid gap-2">
-                                <p className={typography.sectionEyebrow}>Broker accounts</p>
-                                <h2 className={typography.sectionTitle}>Share specific accounts</h2>
-                                <p className={typography.sectionLead}>
-                                    Pick a person or a role from the list below, then choose exactly what they can do on
-                                    that broker account.
-                                </p>
-                            </div>
-
-                            <BrokerSharingPanel accountGrants={accountGrants} members={members} roles={roles} />
-                        </section>
-
-                        <section className="grid gap-4 rounded-lg bg-card p-5">
+                    <section className="grid gap-4 rounded-lg border border-border bg-card p-4 sm:p-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="grid gap-2">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <p className={typography.sectionEyebrow}>Members</p>
-                                    <Badge size="sm" variant="secondary">
-                                        {members.length} member{members.length === 1 ? "" : "s"}
-                                    </Badge>
+                                    <p className={typography.sectionEyebrow}>People</p>
+                                    {pendingMembers.length ? (
+                                        <Badge size="sm" variant="warning">
+                                            {pendingMembers.length} pending
+                                        </Badge>
+                                    ) : null}
                                 </div>
-                                <h2 className={typography.sectionTitle}>Who can use this workspace</h2>
+                                <h2 className={typography.sectionTitle}>Approve workspace access</h2>
                                 <p className={typography.sectionLead}>
-                                    Use roles for general access first, then add broker-account grants only where you
-                                    need tighter control.
+                                    New account requests appear here. Choose a role, then approve.
                                 </p>
                             </div>
+                            <div className="flex flex-wrap gap-2 text-[13px] text-muted-foreground">
+                                <span>{activeMembers.length} active</span>
+                                <span aria-hidden="true">/</span>
+                                <span>
+                                    {members.length} total member{members.length === 1 ? "" : "s"}
+                                </span>
+                            </div>
+                        </div>
 
-                            <div className="grid rounded-lg bg-card">
-                                {members.map((member: WorkspaceMember) => (
+                        <div className="grid overflow-hidden rounded-lg border border-border">
+                            {members.length ? (
+                                members.map((member: WorkspaceMember) => (
                                     <WorkspaceMemberRow
                                         currentUserId={me.user_id}
                                         key={member.user_id}
@@ -98,12 +92,33 @@ export default async function AccessSettingsPage() {
                                         roles={roles}
                                         viewerDefault={viewerDefault}
                                     />
-                                ))}
-                            </div>
+                                ))
+                            ) : (
+                                <div className="px-4 py-8 text-sm text-muted-foreground">
+                                    No members are waiting for approval.
+                                </div>
+                            )}
+                        </div>
 
-                            <RolePermissionsPanel roles={roles} />
-                        </section>
-                    </div>
+                        <RolePermissionsPanel roles={roles} />
+                    </section>
+
+                    <section className="grid gap-4 rounded-lg border border-border bg-card p-4 sm:p-5">
+                        <div className="grid gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <p className={typography.sectionEyebrow}>Broker accounts</p>
+                                <Badge size="sm" variant="secondary">
+                                    {accounts.length} connected
+                                </Badge>
+                            </div>
+                            <h2 className={typography.sectionTitle}>Share broker accounts</h2>
+                            <p className={typography.sectionLead}>
+                                Add broker-account access after the person has workspace access.
+                            </p>
+                        </div>
+
+                        <BrokerSharingPanel accountGrants={accountGrants} members={members} roles={roles} />
+                    </section>
                 </div>
             </div>
         </>

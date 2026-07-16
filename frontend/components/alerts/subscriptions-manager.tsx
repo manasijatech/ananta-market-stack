@@ -293,7 +293,7 @@ export function SubscriptionsManager({
                 setSavedAlphaWsConfig(next);
                 setFeedConfigOpen(false);
             } catch (caught) {
-                setError(caught instanceof Error ? caught.message : "Could not save Alpha websocket config.");
+                setError(caught instanceof Error ? caught.message : "Could not save Drishti websocket config.");
             }
         });
     }
@@ -306,7 +306,7 @@ export function SubscriptionsManager({
                 setAlphaWsConfig(next);
                 setSavedAlphaWsConfig(next);
             } catch (caught) {
-                setError(caught instanceof Error ? caught.message : "Could not refresh Alpha account plan.");
+                setError(caught instanceof Error ? caught.message : "Could not refresh Drishti account plan.");
             }
         });
     }

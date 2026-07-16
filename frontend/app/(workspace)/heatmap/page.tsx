@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { Activity, ArrowRight, Grid2X2, Minus, RadioTower, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
+import { Activity, ArrowRight, Grid2X2, ListPlus, Minus, RadioTower, RefreshCw, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
 import {
     HEATMAP_FILTER_COOKIE_KEY,
     isHeatmapScope,
@@ -8,14 +8,21 @@ import {
 } from "@/components/heatmap/heatmap-filter-state";
 import { HeatmapFilters } from "@/components/heatmap/heatmap-filters";
 import { HeatmapMeasuredGrid } from "@/components/heatmap/heatmap-measured-grid";
-import { brokerNames } from "@/components/brokers/ui";
+import { brokerNames, PageHeader } from "@/components/brokers/ui";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardDescription, CardHeader, CardPanel, CardTitle } from "@/components/ui/card";
+import {
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
+} from "@/components/ui/card";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { formatUserFacingError } from "@/lib/api-errors";
-import { typography } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 import { getBrokerAccounts } from "@/service/actions/broker";
 import { getLiveHeatmap } from "@/service/actions/heatmap";
@@ -132,6 +139,130 @@ function noQuotableSymbolsTitle(scope: HeatmapScope, scopeLabel: string) {
     return "Live heatmap is not available for the current broker.";
 }
 
+function WatchlistHeatmapEmpty({
+    firstWatchlistId,
+    state
+}: {
+    firstWatchlistId?: string;
+    state: "missing" | "none" | "empty";
+}) {
+    const copy = {
+        missing: {
+            title: "That watchlist is no longer available",
+            description:
+                "The selected watchlist could not be found. Choose an existing watchlist or create a new one before loading a watchlist heatmap."
+        },
+        none: {
+            title: "Create a watchlist to unlock the heatmap",
+            description:
+                "The watchlist heatmap needs a symbol universe before it can quote, rank, and color movers. Add a few symbols or import a preset index list first."
+        },
+        empty: {
+            title: "Add symbols to this watchlist",
+            description:
+                "This watchlist exists, but it has no symbols yet. Add companies to turn it into a live heatmap scope."
+        }
+    }[state];
+    const fallbackHref = firstWatchlistId ? `/heatmap?scope=watchlist&watchlist_id=${encodeURIComponent(firstWatchlistId)}` : "";
+
+    return (
+        <Empty className="min-h-[18rem] w-full items-stretch rounded-lg border border-dashed border-border bg-card/40 p-6 text-left [text-wrap:initial]">
+            <div className="grid w-full min-w-0 items-center gap-6 min-[860px]:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
+                <div className="min-w-0">
+                    <EmptyHeader className="max-w-2xl items-start text-left">
+                        <div className="mb-3 flex size-9 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
+                            <ListPlus aria-hidden="true" />
+                        </div>
+                        <EmptyTitle className="text-lg">{copy.title}</EmptyTitle>
+                        <EmptyDescription className="max-w-xl leading-6">{copy.description}</EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyContent className="mt-5 max-w-none items-start gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button asChild>
+                                <Link href="/watchlists">
+                                    <ListPlus aria-hidden="true" />
+                                    Open Watchlists
+                                    <ArrowRight className="size-4" aria-hidden="true" />
+                                </Link>
+                            </Button>
+                            {state === "missing" && fallbackHref ? (
+                                <Button asChild variant="outline">
+                                    <Link href={fallbackHref}>Use first available watchlist</Link>
+                                </Button>
+                            ) : null}
+                        </div>
+                    </EmptyContent>
+                </div>
+                <div className="grid min-w-0 gap-2 text-sm">
+                    <div className="rounded-lg border border-border bg-background/45 p-3">
+                        <p className="font-medium text-foreground">1. Pick a universe</p>
+                        <p className="mt-1 leading-5 text-muted-foreground">Use a manual watchlist or import a preset index list.</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/45 p-3">
+                        <p className="font-medium text-foreground">2. Load broker prices</p>
+                        <p className="mt-1 leading-5 text-muted-foreground">The heatmap colors each symbol from live broker quote data.</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/45 p-3">
+                        <p className="font-medium text-foreground">3. Scan the movers</p>
+                        <p className="mt-1 leading-5 text-muted-foreground">Tiles are sorted by the strongest intraday moves first.</p>
+                    </div>
+                </div>
+            </div>
+        </Empty>
+    );
+}
+
+function HeatmapUnavailableState({
+    message,
+    retryHref,
+    selectedBrokerName
+}: {
+    message: string;
+    retryHref: string;
+    selectedBrokerName: string;
+}) {
+    return (
+        <Empty className="min-h-[17rem] w-full items-stretch rounded-lg border border-dashed border-border bg-card/40 p-6 text-left [text-wrap:initial]">
+            <div className="grid w-full min-w-0 items-center gap-6 min-[860px]:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
+                <div className="min-w-0">
+                    <EmptyHeader className="max-w-2xl items-start text-left">
+                        <div className="mb-3 flex size-9 items-center justify-center rounded-md border border-warning/35 bg-warning/10 text-warning-foreground">
+                            <RadioTower aria-hidden="true" />
+                        </div>
+                        <EmptyTitle className="text-lg">Heatmap data is not available yet</EmptyTitle>
+                        <EmptyDescription className="max-w-xl leading-6">
+                            {message || "Services are still starting or temporarily unavailable. Refresh in a moment."}
+                        </EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyContent className="mt-5 max-w-none items-start gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button asChild>
+                                <Link href={retryHref}>
+                                    <RefreshCw aria-hidden="true" />
+                                    Retry heatmap
+                                </Link>
+                            </Button>
+                            <Button asChild variant="outline">
+                                <Link href="/settings">Review broker settings</Link>
+                            </Button>
+                        </div>
+                    </EmptyContent>
+                </div>
+                <div className="grid min-w-0 gap-2 text-sm">
+                    <div className="rounded-lg border border-border bg-background/45 p-3">
+                        <p className="font-medium text-foreground">Broker source</p>
+                        <p className="mt-1 leading-5 text-muted-foreground">{selectedBrokerName}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/45 p-3">
+                        <p className="font-medium text-foreground">What to try</p>
+                        <p className="mt-1 leading-5 text-muted-foreground">Refresh once services are ready, or switch to another connected broker.</p>
+                    </div>
+                </div>
+            </div>
+        </Empty>
+    );
+}
+
 function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: number; item: HeatmapSymbol }) {
     const tone = heatTone(item.day_change_perc);
     const percent = formatPercent(item.day_change_perc);
@@ -140,7 +271,7 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
         ["Change", formatNumber(item.day_change)],
         ["Volume", formatCompact(item.volume)],
         ["Mcap", formatCompact(item.market_cap)],
-        ["Alpha", formatNumber(item.alpha_event_summary.total_count)],
+        ["Drishti", formatNumber(item.alpha_event_summary.total_count)],
         ["Exchange", item.exchange || "-"]
     ];
 
@@ -299,18 +430,32 @@ export default async function HeatmapPage({
 
     const rawWatchlistId = readFirst(params.watchlist_id);
     const rawAccountId = readFirst(params.account_id);
+    const requestedWatchlist = rawWatchlistId ? watchlists.find((watchlist) => watchlist.id === rawWatchlistId) ?? null : null;
+    const requestedWatchlistMissing = scope === "watchlist" && Boolean(rawWatchlistId) && !requestedWatchlist;
     const storedWatchlistId = watchlists.some((watchlist) => watchlist.id === storedFilters.watchlistId)
         ? storedFilters.watchlistId
         : "";
     const storedAccountId = accounts.some((account) => account.id === storedFilters.accountId) ? storedFilters.accountId : "";
-    const effectiveWatchlistId = rawWatchlistId || storedWatchlistId || watchlists[0]?.id || "";
+    const effectiveWatchlistId = requestedWatchlist?.id || storedWatchlistId || watchlists[0]?.id || "";
     const effectiveAccountId = rawAccountId || storedAccountId || accounts[0]?.id || "";
+    const selectedWatchlist = watchlists.find((watchlist) => watchlist.id === effectiveWatchlistId) ?? null;
+    const selectedWatchlistSymbolCount = selectedWatchlist ? symbolCountLabel(selectedWatchlist) : 0;
+    const watchlistState =
+        scope !== "watchlist"
+            ? "ready"
+            : requestedWatchlistMissing
+              ? "missing"
+              : !selectedWatchlist
+                ? "none"
+                : selectedWatchlistSymbolCount <= 0
+                  ? "empty"
+                  : "ready";
 
     let heatmap: HeatmapResponse | null = null;
     let heatmapError = "";
     const canLoadHeatmap =
         scope === "tracked" ||
-        (scope === "watchlist" && Boolean(effectiveWatchlistId)) ||
+        (scope === "watchlist" && watchlistState === "ready") ||
         (scope === "portfolio_holdings" && Boolean(effectiveAccountId));
 
     if (!loadError && canLoadHeatmap) {
@@ -340,17 +485,41 @@ export default async function HeatmapPage({
         heatmap?.broker_code || accounts.find((account) => account.id === (heatmap?.account_id || effectiveAccountId))?.broker_code || null;
     const selectedBrokerName = brokerDisplayName(selectedBrokerCode);
     const hasConnectedBroker = accounts.some((account) => account.is_active);
+    const retryParams = new URLSearchParams({
+        days: String(days),
+        limit: String(limit),
+        scope
+    });
+    if (scope === "watchlist" && effectiveWatchlistId) retryParams.set("watchlist_id", effectiveWatchlistId);
+    if (scope === "portfolio_holdings" && effectiveAccountId) retryParams.set("account_id", effectiveAccountId);
+    retryParams.set("refresh", String(Date.now()));
+    const retryHref = `/heatmap?${retryParams.toString()}`;
 
     return (
         <>
-            <div className="flex h-[calc(100dvh-8.25rem)] min-h-0 min-w-0 flex-1 flex-col overflow-hidden min-[980px]:h-auto">
-                <header className={`shrink-0 border-b border-border ${isDenseHeatmap ? "mb-2 pb-2" : "mb-3 pb-3"}`}>
-                    <h1 className={cn(typography.pageTitle, "truncate")}>Heatmap</h1>
-                </header>
+            <div className="flex min-h-[calc(100dvh-8.25rem)] min-w-0 flex-1 flex-col overflow-hidden">
+                <PageHeader
+                    description="Scan live movers across tracked symbols, watchlists, or broker holdings."
+                    title="Heatmap"
+                />
 
-                <section className="mb-2 grid min-w-0 shrink-0 gap-2 min-[1120px]:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
-                    <Card className="min-w-0 border-border/80 bg-card/95 shadow-xs">
-                        <CardPanel className="flex min-w-0 flex-col gap-3 p-3">
+                <CardFrame className="mb-4 shrink-0">
+                    <CardFrameHeader>
+                        <CardFrameTitle>Heatmap setup</CardFrameTitle>
+                        <CardFrameDescription>
+                            Choose the universe and broker source for live quote coverage.
+                        </CardFrameDescription>
+                        {heatmap ? (
+                            <CardFrameAction>
+                                <Badge variant="outline">
+                                    <RadioTower className="size-3" aria-hidden="true" />
+                                    {heatmap.broker_code ? `${heatmap.broker_code} · ${days}d` : `${days}d`}
+                                </Badge>
+                            </CardFrameAction>
+                        ) : null}
+                    </CardFrameHeader>
+                    <Card>
+                        <CardPanel className="grid min-w-0 gap-3 p-3">
                             <HeatmapFilters
                                 accounts={accounts}
                                 currentAccountId={effectiveAccountId}
@@ -358,33 +527,26 @@ export default async function HeatmapPage({
                                 currentWatchlistId={effectiveWatchlistId}
                                 watchlists={watchlists}
                             />
-                            <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t border-border/70 pt-2 text-xs font-medium text-muted-foreground">
-                                <span className="min-w-0">Default broker</span>
-                                <Badge className="max-w-44 truncate" variant="outline">
-                                    {selectedBrokerName}
-                                </Badge>
-                                <Button asChild className="h-6 px-2 text-xs" size="xs" variant="ghost">
-                                    <Link href="/settings">Change in Settings</Link>
-                                </Button>
-                            </div>
-                        </CardPanel>
-                    </Card>
-                    {heatmap ? (
-                        <Card className="min-w-0 border-border/80 bg-card/95 shadow-xs">
-                            <CardHeader className="grid-cols-[minmax(0,1fr)_auto] gap-2 p-3 pb-2">
-                                <CardTitle className="truncate font-mono text-xs uppercase tracking-[0.12em]">{heatmap.scope_label}</CardTitle>
-                                <CardDescription className="text-xs">
-                                    {heatmap.returned_count}/{heatmap.tracked_symbol_count} live
-                                </CardDescription>
-                                <CardAction className="self-center">
-                                    <Badge variant="outline">
-                                        <RadioTower className="size-3" aria-hidden="true" />
-                                        {heatmap.broker_code ? `${heatmap.broker_code} · ${days}d` : `${days}d`}
+                            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-2.5">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                    <span className="min-w-0">Default broker</span>
+                                    <Badge className="max-w-44 truncate" variant="outline">
+                                        {selectedBrokerName}
                                     </Badge>
-                                </CardAction>
-                            </CardHeader>
-                            <CardPanel className="p-0">
-                                <div className="grid grid-cols-3 overflow-hidden border-t border-border/70 text-xs">
+                                    <Button asChild className="h-6 px-2 text-xs" size="xs" variant="ghost">
+                                        <Link href="/settings">Change in Settings</Link>
+                                    </Button>
+                                </div>
+                                {heatmap ? (
+                                    <div className="text-xs text-muted-foreground">
+                                        <span className="font-semibold text-foreground">{heatmap.scope_label}</span>
+                                        {" · "}
+                                        {heatmap.returned_count}/{heatmap.tracked_symbol_count} live
+                                    </div>
+                                ) : null}
+                            </div>
+                            {heatmap ? (
+                                <div className="grid overflow-hidden rounded-lg border border-border/70 text-xs min-[700px]:grid-cols-3">
                                     <BreadthCell
                                         count={advancingCount}
                                         icon={TrendingUp}
@@ -409,10 +571,10 @@ export default async function HeatmapPage({
                                         <p className="mt-1 font-mono text-[10px] text-muted-foreground">max {formatPercent(strongestMove)}</p>
                                     </div>
                                 </div>
-                            </CardPanel>
-                        </Card>
-                    ) : null}
-                </section>
+                            ) : null}
+                        </CardPanel>
+                    </Card>
+                </CardFrame>
 
                 {loadError ? (
                     <Alert className="mb-2 shrink-0 px-3 py-2 text-xs" variant="warning">
@@ -420,7 +582,11 @@ export default async function HeatmapPage({
                     </Alert>
                 ) : null}
 
-                {!loadError && !canLoadHeatmap ? (
+                {!loadError && scope === "watchlist" && watchlistState !== "ready" ? (
+                    <WatchlistHeatmapEmpty firstWatchlistId={watchlists[0]?.id} state={watchlistState} />
+                ) : null}
+
+                {!loadError && scope !== "watchlist" && !canLoadHeatmap ? (
                     <Empty className="min-h-0 rounded-lg border border-dashed border-border bg-card/40">
                         <EmptyHeader>
                             <EmptyMedia variant="icon">
@@ -443,7 +609,11 @@ export default async function HeatmapPage({
                     </Empty>
                 ) : null}
 
-                {heatmapError ? (
+                {heatmapError && !heatmap ? (
+                    <HeatmapUnavailableState message={heatmapError} retryHref={retryHref} selectedBrokerName={selectedBrokerName} />
+                ) : null}
+
+                {heatmapError && heatmap ? (
                     <Alert className="mb-2 shrink-0 px-3 py-2 text-xs" variant="warning">
                         <AlertDescription>{heatmapError}</AlertDescription>
                     </Alert>

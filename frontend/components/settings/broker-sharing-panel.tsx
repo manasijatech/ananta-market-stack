@@ -7,14 +7,7 @@ import { Pencil } from "lucide-react";
 import { AccessGrantEditor } from "@/components/settings/access-grant-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-    Empty,
-    EmptyContent,
-    EmptyDescription,
-    EmptyHeader,
-    EmptyMedia,
-    EmptyTitle
-} from "@/components/ui/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { BrokerAccountGrant, RoleDefinition, WorkspaceMember } from "@/service/types/rbac";
 
@@ -40,7 +33,7 @@ function permissionSummary(grant: BrokerAccountGrant): string {
 
 function BrokerAccountsEmptyState() {
     return (
-        <Empty className="items-start rounded-lg bg-card px-5 py-8 text-left md:py-10">
+        <Empty className="items-start rounded-lg border border-border bg-card px-5 py-8 text-left md:py-10">
             <EmptyHeader className="items-start text-left">
                 <EmptyMedia className="mb-3" variant="icon">
                     <IconWallet aria-hidden className="size-6 text-muted-foreground" />
@@ -92,13 +85,13 @@ export function BrokerSharingPanel({
     }
 
     return (
-        <div className="grid rounded-lg bg-card lg:grid-cols-[200px_minmax(0,1fr)]">
-            <div className="max-h-[620px] overflow-y-auto border-b border-border lg:border-r lg:border-b-0">
+        <div className="grid overflow-hidden rounded-lg border border-border bg-card lg:grid-cols-[240px_minmax(0,1fr)]">
+            <div className="max-h-[520px] overflow-y-auto border-b border-border lg:border-r lg:border-b-0">
                 {accountGrants.map(({ account, grants }) => {
                     const selectedAccount = account.id === selected.account.id;
                     return (
                         <button
-                            className={`grid w-full gap-1 border-b border-border px-3 py-3 text-left text-sm transition-colors hover:bg-accent/40 ${
+                            className={`grid w-full gap-1 border-b border-border px-4 py-3 text-left text-sm transition-colors hover:bg-accent/40 ${
                                 selectedAccount ? "bg-accent/30" : "bg-card"
                             }`}
                             key={account.id}
@@ -136,7 +129,7 @@ export function BrokerSharingPanel({
                     <div className="grid gap-2">
                         {selected.grants.map((grant) => (
                             <div
-                                className="app-card-surface grid gap-2 bg-card p-3 md:grid-cols-[minmax(0,1fr)_auto]"
+                                className="grid gap-3 rounded-lg border border-border bg-background p-3 md:grid-cols-[minmax(0,1fr)_auto]"
                                 key={grant.id}
                             >
                                 <div className="min-w-0">
@@ -147,7 +140,9 @@ export function BrokerSharingPanel({
                                         </span>
                                     </div>
                                     {grant.subject_subtitle ? (
-                                        <div className="mt-1 text-sm text-muted-foreground">{grant.subject_subtitle}</div>
+                                        <div className="mt-1 text-sm text-muted-foreground">
+                                            {grant.subject_subtitle}
+                                        </div>
                                     ) : null}
                                     <div className="mt-1 truncate text-sm">{permissionSummary(grant)}</div>
                                 </div>
@@ -166,18 +161,20 @@ export function BrokerSharingPanel({
                     </div>
                 ) : (
                     <Alert>
-                        <AlertDescription>No extra grants yet. Only admins can currently use this account.</AlertDescription>
+                        <AlertDescription>
+                            No extra grants yet. Only admins can currently use this account.
+                        </AlertDescription>
                     </Alert>
                 )}
 
                 <div className="border-t border-border pt-4">
                     <Button onClick={openAddGrant} type="button" variant="secondary">
-                        {expandedForm && !editingSubjectKey ? "Add grant" : editingSubjectKey ? "Edit grant" : "Add grant"}
+                        {editingSubjectKey ? "Edit selected grant" : expandedForm ? "Hide grant form" : "Add grant"}
                     </Button>
                 </div>
 
                 {expandedForm ? (
-                    <div className="app-card-surface bg-card p-4">
+                    <div className="rounded-lg border border-border bg-background p-4">
                         <AccessGrantEditor
                             accountId={selected.account.id}
                             grants={selected.grants}
