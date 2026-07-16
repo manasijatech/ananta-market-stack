@@ -594,14 +594,13 @@ export default async function HeatmapPage({
                             </EmptyMedia>
                             <EmptyTitle>{sourceEmptyMessage(scope)}</EmptyTitle>
                             <EmptyDescription>
-                                {scope === "watchlist" ? "Watchlists become available after you add symbols." : null}
                                 {scope === "portfolio_holdings" ? "Broker holdings appear after the broker session is active." : null}
                             </EmptyDescription>
                         </EmptyHeader>
                         <EmptyContent>
                             <Button asChild variant="outline">
-                                <Link href={scope === "watchlist" ? "/watchlists" : "/broker-connections"}>
-                                    {scope === "watchlist" ? "Open Watchlists" : "Open Broker Connections"}
+                                <Link href="/broker-connections">
+                                    Open Broker Connections
                                     <ArrowRight className="size-4" aria-hidden="true" />
                                 </Link>
                             </Button>
