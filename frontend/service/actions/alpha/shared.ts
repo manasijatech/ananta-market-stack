@@ -29,6 +29,18 @@ export interface AlphaFeedParams {
 
 const ALPHA_BATCH_LIMIT = 20;
 const ALPHA_DEFAULT_BASE_URL = "https://developers.manasija.in";
+const ALPHA_REQUEST_TIMEOUT_MS = 5_000;
+
+function alphaRequestSignal(signal?: AbortSignal | null): AbortSignal {
+    const timeoutSignal = AbortSignal.timeout(ALPHA_REQUEST_TIMEOUT_MS);
+    return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
+
+const alphaFetch: typeof fetch = (input, init = {}) =>
+    fetch(input, {
+        ...init,
+        signal: alphaRequestSignal(init.signal)
+    });
 
 export function alphaBaseUrl() {
     return (process.env.MANASIJA_API_BASE_URL || ALPHA_DEFAULT_BASE_URL).replace(/\/+$/, "");
@@ -212,7 +224,11 @@ export async function getAlphaSdkClient() {
     const apiKey = await getAlphaApiKey();
     return new DrishtiClient({
         apiKey,
-        baseUrl: alphaBaseUrl()
+        baseUrl: alphaBaseUrl(),
+        fetchImpl: alphaFetch,
+        retry: {
+            maxRetries: 0
+        }
     });
 }
 
@@ -230,7 +246,17 @@ function parseSdkError(error: unknown): never {
             })
         );
     }
-    throw error;
+    const message =
+        error instanceof DOMException && error.name === "TimeoutError"
+            ? "The Drishti API did not respond in time."
+            : "The Drishti API is unavailable. Other platform features remain available.";
+    throw new Error(
+        JSON.stringify({
+            status: 502,
+            message,
+            fieldErrors: {}
+        })
+    );
 }
 
 export function queryParamsToObject(query: URLSearchParams): QueryParams {
@@ -248,6 +274,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
         response = await fetch(`${alphaBaseUrl()}${path}`, {
             ...init,
             cache: "no-store",
+            signal: alphaRequestSignal(init.signal),
             headers: {
                 "X-API-Key": apiKey,
                 ...(init.body ? { "content-type": "application/json" } : {}),
