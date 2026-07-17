@@ -19,6 +19,7 @@ The container itself is disposable. Persistent state lives in the `/data` mount,
 ```bash
 docker run -d \
   --name ananta-market-stack \
+  --restart unless-stopped \
   -p 3000:3000 \
   -v ananta-market-stack-data:/data \
   ghcr.io/manasijatech/ananta-market-stack:latest
@@ -94,6 +95,13 @@ REDIS_URL=${{ Redis.REDIS_URL }}
 
 When `REDIS_URL` is set, Ananta Market Stack uses that Redis instance instead of starting the bundled Redis process.
 
+On a Linux Docker host, Redis may warn that memory overcommit is disabled. Enable it once on the host so background AOF/RDB persistence remains reliable:
+
+```bash
+sudo sysctl -w vm.overcommit_memory=1
+echo 'vm.overcommit_memory=1' | sudo tee /etc/sysctl.d/99-ananta-market-stack-redis.conf
+```
+
 ## Updating
 
 Docker does not update a running container in place. Update by replacing the container while keeping the same `/data` volume.
@@ -110,6 +118,7 @@ docker stop ananta-market-stack
 docker rm ananta-market-stack
 docker run -d \
   --name ananta-market-stack \
+  --restart unless-stopped \
   -p 3000:3000 \
   -v ananta-market-stack-data:/data \
   ghcr.io/manasijatech/ananta-market-stack:latest
@@ -123,6 +132,7 @@ docker stop ananta-market-stack
 docker rm ananta-market-stack
 docker run -d `
   --name ananta-market-stack `
+  --restart unless-stopped `
   -p 3000:3000 `
   -v ananta-market-stack-data:/data `
   ghcr.io/manasijatech/ananta-market-stack:latest

@@ -91,7 +91,7 @@ wait_for_backend() {
   while [ "$i" -lt 60 ]; do
     if python - <<PY >/dev/null 2>&1
 import urllib.request
-urllib.request.urlopen("http://$BACKEND_HOST:$BACKEND_PORT/health", timeout=2).read()
+urllib.request.urlopen("http://$BACKEND_HOST:$BACKEND_PORT/ready", timeout=2).read()
 PY
     then
       return 0
@@ -108,7 +108,7 @@ wait_for_frontend() {
   while [ "$i" -lt 60 ]; do
     if python - <<PY >/dev/null 2>&1
 import urllib.request
-urllib.request.urlopen("http://127.0.0.1:$FRONTEND_PORT", timeout=2).read()
+urllib.request.urlopen("http://127.0.0.1:$FRONTEND_PORT/api/health", timeout=2).read()
 PY
     then
       return 0
@@ -118,6 +118,24 @@ PY
   done
   log "Frontend did not become healthy in time."
   return 1
+}
+
+runtime_is_ready() {
+  python - <<PY
+import sys
+import urllib.request
+
+for url in (
+    "http://$BACKEND_HOST:$BACKEND_PORT/ready",
+    "http://127.0.0.1:$FRONTEND_PORT/api/health",
+    "http://127.0.0.1:$PUBLIC_PORT/api/health",
+):
+    try:
+        urllib.request.urlopen(url, timeout=3).read(1)
+    except Exception as exc:
+        print(f"Runtime readiness probe failed for {url}: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+PY
 }
 
 write_nginx_config() {
@@ -173,12 +191,40 @@ http {
 EOF
 }
 
-stop_children() {
-  for pid in ${NGINX_PID:-} ${FRONTEND_PID:-} ${BACKEND_PID:-} ${REDIS_PID:-}; do
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
-    fi
+signal_child() {
+  pid="${1:-}"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+  fi
+}
+
+wait_for_child_exit() {
+  pid="${1:-}"
+  max_seconds="${2:-5}"
+  elapsed=0
+  while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$elapsed" -lt "$max_seconds" ]; do
+    sleep 1
+    elapsed=$((elapsed + 1))
   done
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+  if [ -n "$pid" ]; then
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+stop_children() {
+  # Stop accepting browser traffic first, then let FastAPI close broker
+  # websockets while Redis is still available. Redis is always stopped last.
+  signal_child "${NGINX_PID:-}"
+  signal_child "${FRONTEND_PID:-}"
+  signal_child "${BACKEND_PID:-}"
+  wait_for_child_exit "${BACKEND_PID:-}" 7
+  wait_for_child_exit "${FRONTEND_PID:-}" 3
+  wait_for_child_exit "${NGINX_PID:-}" 3
+  signal_child "${REDIS_PID:-}"
+  wait_for_child_exit "${REDIS_PID:-}" 5
 }
 
 trap 'stop_children; wait || true; exit 0' INT TERM
@@ -204,7 +250,16 @@ if [ -z "${REDIS_URL:-}" ]; then
   export REDIS_PORT="${REDIS_PORT:-6379}"
   export REDIS_DB="${REDIS_DB:-0}"
   log "Starting bundled Redis on $REDIS_HOST:$REDIS_PORT"
-  redis-server --appendonly yes --dir "$REDIS_DATA_DIR" --bind "$REDIS_HOST" --port "$REDIS_PORT" --requirepass "$REDIS_PASSWORD" &
+  redis-server \
+    --appendonly yes \
+    --appendfsync everysec \
+    --auto-aof-rewrite-percentage 100 \
+    --auto-aof-rewrite-min-size 128mb \
+    --save "" \
+    --dir "$REDIS_DATA_DIR" \
+    --bind "$REDIS_HOST" \
+    --port "$REDIS_PORT" \
+    --requirepass "$REDIS_PASSWORD" &
   REDIS_PID="$!"
 else
   log "Using external Redis from REDIS_URL."
@@ -226,6 +281,8 @@ write_nginx_config
 nginx -g "daemon off;" &
 NGINX_PID="$!"
 
+health_check_ticks=0
+health_check_failures=0
 while :; do
   if ! kill -0 "$NGINX_PID" 2>/dev/null; then
     wait "$NGINX_PID" || exit_code="$?"
@@ -242,6 +299,21 @@ while :; do
   if [ -n "${REDIS_PID:-}" ] && ! kill -0 "$REDIS_PID" 2>/dev/null; then
     wait "$REDIS_PID" || exit_code="$?"
     break
+  fi
+  health_check_ticks=$((health_check_ticks + 1))
+  if [ "$health_check_ticks" -ge 5 ]; then
+    health_check_ticks=0
+    if runtime_is_ready; then
+      health_check_failures=0
+    else
+      health_check_failures=$((health_check_failures + 1))
+      log "Runtime readiness check failed ($health_check_failures/3)."
+      if [ "$health_check_failures" -ge 3 ]; then
+        log "Runtime remained unhealthy; exiting so the container restart policy can recover it."
+        exit_code=1
+        break
+      fi
+    fi
   fi
   sleep 1
 done

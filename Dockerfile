@@ -1,3 +1,5 @@
+ARG BUILD_SHA=local
+
 FROM node:24-slim AS frontend-builder
 
 WORKDIR /app/frontend
@@ -6,9 +8,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 ARG NEXT_PUBLIC_API_BASE_URL=/api/v1
 ARG MARKET_STACK_API_INTERNAL_URL=http://127.0.0.1:8000/api/v1
+ARG BUILD_SHA
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
     NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
-    MARKET_STACK_API_INTERNAL_URL=$MARKET_STACK_API_INTERNAL_URL
+    MARKET_STACK_API_INTERNAL_URL=$MARKET_STACK_API_INTERNAL_URL \
+    NEXT_DEPLOYMENT_ID=$BUILD_SHA
 
 COPY frontend/package*.json ./
 RUN npm ci
@@ -43,7 +47,7 @@ RUN python -m venv /opt/venv \
 
 FROM python:3.12-slim AS runtime
 
-ARG BUILD_SHA=local
+ARG BUILD_SHA
 ARG BUILD_VERSION=
 ARG BUILD_DATE=
 
@@ -88,5 +92,8 @@ RUN sed -i 's/\r$//' /usr/local/bin/ananta-market-stack \
 
 VOLUME ["/data"]
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=8s --start-period=45s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).read(); urllib.request.urlopen('http://127.0.0.1:3001/api/health', timeout=3).read(); urllib.request.urlopen('http://127.0.0.1:3000/api/health', timeout=3).read()"
 
 ENTRYPOINT ["ananta-market-stack"]

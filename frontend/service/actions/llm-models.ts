@@ -54,7 +54,8 @@ export const getOpenRouterModels = unstable_cache(
     async (): Promise<OpenRouterModel[]> => {
         try {
             const res = await fetch("https://openrouter.ai/api/v1/models", {
-                headers: { Accept: "application/json" }
+                headers: { Accept: "application/json" },
+                signal: AbortSignal.timeout(3_000)
             });
             if (!res.ok) {
                 return [];

@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { fetchFastApi, getAuthenticatedBackendHeaders } from "@/lib/fastapi";
-import { getPublicApiBaseUrl, getPublicAppUrl } from "@/lib/runtime-config";
+import { fetchFastApi } from "@/lib/fastapi";
 import type {
     AlertChannel,
     AlertChannelSelection,
@@ -31,7 +30,6 @@ import type {
 import type { BrokerCode } from "@/service/types/broker";
 
 type JsonObject = Record<string, unknown>;
-const publicApiBaseUrl = getPublicApiBaseUrl();
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -437,24 +435,6 @@ export async function getLiveStreamsStatus(): Promise<LiveStreamsStatus> {
     return request<LiveStreamsStatus>("/live-streams/status");
 }
 
-export async function getLivePricesWebSocketConfig(
-    refs: Array<{ account_id?: string | null; broker_code?: string | null; symbol: string }> = []
-): Promise<{ url: string }> {
-    const headers = await getAuthenticatedBackendHeaders();
-    const userId = headers.get("X-User-Id") || "local-dev-user";
-    const url = new URL(publicApiBaseUrl, getPublicAppUrl());
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}/live-streams/prices/ws`;
-    url.search = "";
-    url.searchParams.set("user_id", userId);
-    for (const ref of refs) {
-        if (ref.account_id && ref.broker_code && ref.symbol) {
-            url.searchParams.append("ref", `${ref.account_id}|${ref.broker_code}|${ref.symbol}`);
-        }
-    }
-    return { url: url.toString() };
-}
-
 export async function reconcileLiveSubscriptions(): Promise<AlertReconcileReport> {
     const result = await request<AlertReconcileReport>("/live-streams/subscriptions/reconcile", { method: "POST" });
     revalidatePath("/settings");
@@ -530,6 +510,10 @@ export async function touchLiveDemandSubscriptions(payload: {
         source_id?: string | null;
         source_label?: string | null;
     }>;
+    scopes?: Array<{
+        source_type: string;
+        source_id: string;
+    }>;
 }): Promise<LiveSubscription[]> {
     return request<LiveSubscription[]>("/live-streams/subscriptions/demand", {
         method: "POST",
@@ -539,7 +523,8 @@ export async function touchLiveDemandSubscriptions(payload: {
                 source_kind: "ui",
                 owner_kind: "ui",
                 owner_id: item.source_id ?? "live_view"
-            }))
+            })),
+            scopes: payload.scopes ?? []
         })
     });
 }

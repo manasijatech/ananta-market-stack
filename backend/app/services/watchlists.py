@@ -22,10 +22,10 @@ from app.schemas.watchlist import (
     WatchlistSymbolsReplaceIn,
     WatchlistUpdateIn,
 )
-from app.services.alerts_engine.reconcile import reconcile_user_subscriptions
 from app.services import alpha_config
 from app.services import broker_data_preferences
 from app.services import watchlist_presets as preset_svc
+from app.services.live_price_scope import publish_scope_change
 from db.models import (
     BrokerAccount,
     LiveSymbolSubscription,
@@ -203,13 +203,20 @@ def _resolve_subscription_account(
 ) -> tuple[str | None, str | None]:
     normalized_account_id = (account_id or "").strip() or None
     normalized_broker_code = (broker_code or "").strip().lower() or None
+    accessible_accounts = broker_data_preferences.get_accessible_data_accounts(
+        db,
+        user_id,
+        normalized_broker_code,
+    )
     account: BrokerAccount | None = None
     if normalized_account_id:
-        account = db.get(BrokerAccount, normalized_account_id)
-        if not account or account.user_id != user_id or not account.is_active:
-            account = None
+        account = next((row for row in accessible_accounts if row.id == normalized_account_id), None)
     if account is None:
-        account = _default_broker_account(db, user_id, normalized_broker_code)
+        account = accessible_accounts[0] if accessible_accounts else _default_broker_account(
+            db,
+            user_id,
+            normalized_broker_code,
+        )
     if account is None:
         return normalized_account_id, normalized_broker_code
     return account.id, account.broker_code
@@ -218,25 +225,41 @@ def _resolve_subscription_account(
 def _ensure_watchlist_subscriptions(
     db: Session,
     user_id: str,
+    watchlist: UserWatchlist,
     items: list[tuple[str, str, InstrumentRef, str | None, str | None]],
-) -> None:
+) -> int:
     now = _now()
-    for symbol, exchange, ref, account_id, broker_code in _dedupe_subscription_items(items):
-        resolved_account_id, resolved_broker_code = _resolve_subscription_account(
-            db,
-            user_id,
-            account_id,
-            broker_code,
+    normalized_items = _dedupe_subscription_items(items)
+    if not normalized_items:
+        return 0
+    existing_rows = db.scalars(
+        select(LiveSymbolSubscription).where(
+            LiveSymbolSubscription.user_id == user_id,
+            LiveSymbolSubscription.workflow_id.is_(None),
+            LiveSymbolSubscription.owner_kind == "watchlist",
+            LiveSymbolSubscription.owner_id == watchlist.id,
         )
-        subscription_exchange = exchange or None
-        row = db.scalar(
-            select(LiveSymbolSubscription).where(
-                LiveSymbolSubscription.user_id == user_id,
-                LiveSymbolSubscription.account_id == resolved_account_id,
-                LiveSymbolSubscription.workflow_id.is_(None),
-                LiveSymbolSubscription.symbol == symbol,
-                LiveSymbolSubscription.exchange == subscription_exchange,
+    ).all()
+    existing_by_key = {
+        (row.account_id, row.broker_code, row.symbol, row.exchange): row
+        for row in existing_rows
+    }
+    account_resolution_cache: dict[tuple[str | None, str | None], tuple[str | None, str | None]] = {}
+    changed = 0
+    source_type = "preset_watchlist" if watchlist.kind == "preset" else "watchlist"
+    for symbol, exchange, ref, account_id, broker_code in normalized_items:
+        resolution_key = (account_id, broker_code)
+        if resolution_key not in account_resolution_cache:
+            account_resolution_cache[resolution_key] = _resolve_subscription_account(
+                db,
+                user_id,
+                account_id,
+                broker_code,
             )
+        resolved_account_id, resolved_broker_code = account_resolution_cache[resolution_key]
+        subscription_exchange = exchange or None
+        row = existing_by_key.get(
+            (resolved_account_id, resolved_broker_code, symbol, subscription_exchange)
         )
         if row is None:
             row = LiveSymbolSubscription(
@@ -250,11 +273,89 @@ def _ensure_watchlist_subscriptions(
                 source_kind="watchlist",
                 created_at=now,
             )
+            existing_by_key[(resolved_account_id, resolved_broker_code, symbol, subscription_exchange)] = row
+        elif row.status == "active":
+            continue
         row.instrument_ref_json = _json_dumps(ref.model_dump(exclude_none=True))
         row.broker_code = resolved_broker_code
+        row.source_kind = "watchlist"
+        row.source_type = source_type
+        row.source_id = watchlist.id
+        row.source_label = watchlist.name
+        row.owner_kind = "watchlist"
+        row.owner_id = watchlist.id
         row.status = "active"
+        row.health_status = "pending"
+        row.health_reason = "Waiting for the live price worker to fetch this subscription."
+        row.reconciled_at = now
         row.updated_at = now
         db.add(row)
+        changed += 1
+    return changed
+
+
+def _deactivate_watchlist_subscriptions(
+    db: Session,
+    user_id: str,
+    watchlist_id: str,
+    *,
+    symbols: set[tuple[str, str | None]] | None = None,
+) -> int:
+    rows = db.scalars(
+        select(LiveSymbolSubscription).where(
+            LiveSymbolSubscription.user_id == user_id,
+            LiveSymbolSubscription.workflow_id.is_(None),
+            LiveSymbolSubscription.owner_kind == "watchlist",
+            LiveSymbolSubscription.owner_id == watchlist_id,
+            LiveSymbolSubscription.status == "active",
+        )
+    ).all()
+    now = _now()
+    changed = 0
+    for row in rows:
+        if symbols is not None and (row.symbol, row.exchange) not in symbols:
+            continue
+        row.status = "inactive"
+        row.health_status = "orphaned"
+        row.health_reason = "No active watchlist currently owns this subscription."
+        row.reconciled_at = now
+        row.updated_at = now
+        db.add(row)
+        changed += 1
+    return changed
+
+
+def _subscription_items_for_watchlist(
+    db: Session,
+    watchlist: UserWatchlist,
+) -> list[tuple[str, str, InstrumentRef, str | None, str | None]]:
+    if watchlist.kind == "preset" and watchlist.system_preset_id:
+        rows = db.scalars(
+            select(SystemWatchlistPresetSymbol).where(
+                SystemWatchlistPresetSymbol.preset_id == watchlist.system_preset_id
+            )
+        ).all()
+    else:
+        rows = watchlist.symbols
+    return [
+        (
+            row.symbol,
+            row.exchange or "",
+            _instrument_ref(
+                _json_loads(getattr(row, "instrument_ref_json", None), {}),
+                row.symbol,
+                row.exchange or "",
+            ),
+            None,
+            None,
+        )
+        for row in rows
+    ]
+
+
+def _publish_watchlist_scope_change(user_id: str, changed: int, reason: str) -> None:
+    if changed:
+        publish_scope_change(user_id, reason=reason)
 
 
 def list_watchlists(db: Session, user_id: str) -> list[WatchlistOut]:
@@ -300,8 +401,9 @@ def create_watchlist(db: Session, user_id: str, payload: WatchlistCreateIn) -> W
         )
         subscription_items.append((symbol, exchange, ref, None, None))
 
+    changed = _ensure_watchlist_subscriptions(db, user_id, watchlist, subscription_items)
     db.commit()
-    reconcile_user_subscriptions(db, user_id)
+    _publish_watchlist_scope_change(user_id, changed, "watchlist_created")
     created = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(created or watchlist)
 
@@ -334,9 +436,10 @@ def delete_watchlist(db: Session, user_id: str, watchlist_id: str) -> bool:
     watchlist = _get_owned_watchlist(db, user_id, watchlist_id)
     if watchlist is None:
         return False
+    changed = _deactivate_watchlist_subscriptions(db, user_id, watchlist.id)
     db.delete(watchlist)
     db.commit()
-    reconcile_user_subscriptions(db, user_id)
+    _publish_watchlist_scope_change(user_id, changed, "watchlist_deleted")
     return True
 
 
@@ -397,8 +500,9 @@ def add_symbols_to_watchlist(
         next_sort_order += 1
 
     watchlist.updated_at = now
+    changed = _ensure_watchlist_subscriptions(db, user_id, watchlist, subscription_items)
     db.commit()
-    reconcile_user_subscriptions(db, user_id)
+    _publish_watchlist_scope_change(user_id, changed, "watchlist_symbols_added")
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     out = _watchlist_to_out(updated or watchlist)
     return WatchlistSymbolsBulkOut(
@@ -420,6 +524,7 @@ def replace_watchlist_symbols(
     _ensure_manual_watchlist(watchlist)
 
     now = _now()
+    changed = _deactivate_watchlist_subscriptions(db, user_id, watchlist.id)
     for item in list(watchlist.symbols):
         db.delete(item)
     db.flush()
@@ -454,8 +559,9 @@ def replace_watchlist_symbols(
         subscription_items.append((symbol, exchange, ref, account_id, broker_code))
 
     watchlist.updated_at = now
+    changed += _ensure_watchlist_subscriptions(db, user_id, watchlist, subscription_items)
     db.commit()
-    reconcile_user_subscriptions(db, user_id)
+    _publish_watchlist_scope_change(user_id, changed, "watchlist_symbols_replaced")
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(updated or watchlist)
 
@@ -487,10 +593,16 @@ def remove_symbol_from_watchlist(
     if row is None:
         return None
 
+    changed = _deactivate_watchlist_subscriptions(
+        db,
+        user_id,
+        watchlist.id,
+        symbols={(normalized_symbol, normalized_exchange or None)},
+    )
     db.delete(row)
     watchlist.updated_at = _now()
     db.commit()
-    reconcile_user_subscriptions(db, user_id)
+    _publish_watchlist_scope_change(user_id, changed, "watchlist_symbol_removed")
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(updated or watchlist)
 
@@ -512,7 +624,14 @@ def list_preset_catalog(
 def add_preset_watchlist(db: Session, user_id: str, preset_id: str) -> WatchlistOut:
     _ensure_alpha_api_configured(db, user_id)
     watchlist = preset_svc.add_preset_to_user_watchlists(db, user_id, preset_id)
-    reconcile_user_subscriptions(db, user_id)
+    changed = _ensure_watchlist_subscriptions(
+        db,
+        user_id,
+        watchlist,
+        _subscription_items_for_watchlist(db, watchlist),
+    )
+    db.commit()
+    _publish_watchlist_scope_change(user_id, changed, "preset_watchlist_added")
     updated = _get_owned_watchlist(db, user_id, watchlist.id)
     return _watchlist_to_out(updated or watchlist)
 
@@ -524,6 +643,14 @@ def refresh_watchlist(db: Session, user_id: str, watchlist_id: str) -> Watchlist
     if watchlist.kind != "preset":
         raise HTTPException(status_code=400, detail="Only preset watchlists can be refreshed")
     refreshed = preset_svc.refresh_user_preset_watchlist(db, user_id, watchlist_id)
-    reconcile_user_subscriptions(db, user_id)
+    changed = _deactivate_watchlist_subscriptions(db, user_id, refreshed.id)
+    changed += _ensure_watchlist_subscriptions(
+        db,
+        user_id,
+        refreshed,
+        _subscription_items_for_watchlist(db, refreshed),
+    )
+    db.commit()
+    _publish_watchlist_scope_change(user_id, changed, "preset_watchlist_refreshed")
     updated = _get_owned_watchlist(db, user_id, refreshed.id)
     return _watchlist_to_out(updated or refreshed)

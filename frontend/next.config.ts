@@ -1,8 +1,12 @@
 import type { NextConfig } from "next";
 
+const rawDeploymentId = process.env.NEXT_DEPLOYMENT_ID || "";
+const deploymentId = rawDeploymentId.replace(/[^a-zA-Z0-9_-]/g, "");
+
 const nextConfig: NextConfig = {
     output: "standalone",
     reactStrictMode: true,
+    ...(deploymentId ? { deploymentId } : {}),
     experimental: {
         // Re-enable client-side Router Cache reuse on navigation. Next 15+ defaults
         // `dynamic` to 0, so revisiting a route refetches/re-renders and re-trips

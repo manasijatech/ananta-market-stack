@@ -1,4 +1,5 @@
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 
 from drishti_sdk import DrishtiApiError
 from sqlalchemy import create_engine
@@ -74,3 +75,70 @@ def test_missing_symbol_metadata_falls_back_when_alpha_lookup_is_unavailable(mon
     assert rows[0].company_name is None
     assert cached is not None
     assert "metadata_status" in cached.raw_payload_json
+
+
+def test_large_cached_metadata_read_never_calls_paid_api(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    symbols = [f"SYM{i}" for i in range(350)]
+    db.add_all(
+        [
+            AlphaSymbolMetadataCache(
+                symbol=symbol,
+                company_name=f"Company {index}",
+                fetched_at=datetime(2020, 1, 1),
+                created_at=datetime(2020, 1, 1),
+                updated_at=datetime(2020, 1, 1),
+            )
+            for index, symbol in enumerate(symbols)
+        ]
+    )
+    db.commit()
+    monkeypatch.setattr(
+        alpha_symbols.alpha_config,
+        "get_alpha_api_key",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("paid API must not be called")),
+    )
+
+    try:
+        rows = alpha_symbols.get_symbol_metadata(db, "u1", symbols)
+    finally:
+        db.close()
+
+    assert len(rows) == 350
+    assert rows[349].company_name == "Company 349"
+
+
+def test_unavailable_metadata_is_retried_only_after_backoff(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    now = datetime.utcnow()
+    cached = AlphaSymbolMetadataCache(
+        symbol="RELIANCE",
+        raw_payload_json=json.dumps({"metadata_status": "unavailable"}),
+        fetched_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(cached)
+    db.commit()
+    calls = []
+    monkeypatch.setattr(alpha_symbols.alpha_config, "get_alpha_api_key", lambda *_args: "test-key")
+    monkeypatch.setattr(
+        alpha_symbols,
+        "_fetch_alpha_symbol_metadata",
+        lambda _api_key, requested: calls.append(requested)
+        or [alpha_symbols._payload_to_schema({"symbol": "RELIANCE", "company_name": "Reliance"}, "RELIANCE")],
+    )
+
+    first = alpha_symbols.get_symbol_metadata(db, "u1", ["RELIANCE"])
+    cached.fetched_at = now - timedelta(hours=7)
+    db.commit()
+    second = alpha_symbols.get_symbol_metadata(db, "u1", ["RELIANCE"])
+    db.close()
+
+    assert first[0].company_name is None
+    assert calls == [["RELIANCE"]]
+    assert second[0].company_name == "Reliance"

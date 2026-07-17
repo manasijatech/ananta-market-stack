@@ -19,7 +19,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
-import { getLivePricesWebSocketConfig, touchLiveDemandSubscriptions } from "@/service/actions/alerts";
+import { touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
 import {
     addPresetWatchlist,
@@ -31,8 +31,7 @@ import {
     searchWatchlistPresets,
     updateWatchlist
 } from "@/service/actions/watchlist";
-import type { InstrumentRef } from "@/service/types/alerts";
-import type { LivePriceTick } from "@/service/types/alerts";
+import type { InstrumentRef, LivePriceTick, LiveSubscription } from "@/service/types/alerts";
 import type { InstrumentSearchRow } from "@/service/types/broker";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist, WatchlistPresetCatalogEntry, WatchlistSymbol } from "@/service/types/watchlist";
@@ -387,6 +386,7 @@ export function WatchlistsManager({
     // (keyed by uppercased symbol) — rendered as ghosted/pulsing rows.
     const [pendingSymbols, setPendingSymbols] = useState<Set<string>>(() => new Set());
     const [livePrices, setLivePrices] = useState<Record<string, LivePriceTick>>({});
+    const [resolvedLiveDemand, setResolvedLiveDemand] = useState<LiveSubscription[]>([]);
     const [liveState, setLiveState] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
     const [isPending, startTransition] = useTransition();
     const searchWrapRef = useRef<HTMLDivElement | null>(null);
@@ -412,7 +412,7 @@ export function WatchlistsManager({
                 exchange: item.exchange ?? null,
                 instrument_ref: item.instrument_ref,
                 source_type: "watchlist_view",
-                source_id: selected.id,
+                source_id: "watchlist_active_view",
                 source_label: selected.name
             })) ?? [],
         [selected]
@@ -436,16 +436,21 @@ export function WatchlistsManager({
     );
     const livePriceRefs = useMemo(
         () =>
-            [...selectedLiveDemand, ...suggestionLiveDemand]
-                .flatMap((row) => {
-                    const accountId = "account_id" in row ? row.account_id : null;
-                    const brokerCode = "broker_code" in row ? row.broker_code : null;
-                    return typeof accountId === "string" && typeof brokerCode === "string" && row.symbol
-                        ? [{ account_id: accountId, broker_code: brokerCode, symbol: row.symbol }]
-                        : [];
-                })
-                .slice(0, 40),
-        [selectedLiveDemand, suggestionLiveDemand]
+            Array.from(
+                new Map(
+                    resolvedLiveDemand
+                        .filter((row) => row.account_id && row.broker_code && row.symbol)
+                        .map((row) => [
+                            [row.account_id, row.broker_code, row.symbol].join(":"),
+                            {
+                                account_id: row.account_id,
+                                broker_code: row.broker_code,
+                                symbol: row.symbol
+                            }
+                        ])
+                ).values()
+            ),
+        [resolvedLiveDemand]
     );
     const livePriceRefKey = useMemo(
         () => livePriceRefs.map((row) => [row.account_id ?? "", row.broker_code ?? "", row.symbol].join(":")).join(","),
@@ -543,11 +548,29 @@ export function WatchlistsManager({
             setLivePrices({});
             livePendingRef.current.clear();
             try {
-                const { url } = await getLivePricesWebSocketConfig(livePriceRefs);
+                const userId = initialWatchlists[0]?.user_id;
+                if (!userId) {
+                    setLiveState("disconnected");
+                    return;
+                }
+                const url = new URL("/api/v1/live-streams/prices/ws", window.location.origin);
+                url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+                url.searchParams.set("user_id", userId);
+                url.searchParams.set("scope", "client");
                 if (cancelled) return;
-                const socket = new WebSocket(url);
+                const socket = new WebSocket(url.toString());
                 liveSocketRef.current = socket;
-                socket.onopen = () => setLiveState("connected");
+                socket.onopen = () => {
+                    socket.send(
+                        JSON.stringify({
+                            type: "subscribe",
+                            refs: livePriceRefs
+                                .filter((ref) => ref.account_id && ref.broker_code && ref.symbol)
+                                .map((ref) => `${ref.account_id}|${ref.broker_code}|${ref.symbol}`)
+                        })
+                    );
+                    setLiveState("connected");
+                };
                 socket.onmessage = (event) => {
                     try {
                         const payload = JSON.parse(String(event.data)) as { type?: string; rows?: LivePriceTick[] };
@@ -558,7 +581,10 @@ export function WatchlistsManager({
                         setLiveState("error");
                     }
                 };
-                socket.onerror = () => setLiveState("error");
+                socket.onerror = () => {
+                    setLiveState("connecting");
+                    socket.close();
+                };
                 socket.onclose = () => {
                     if (liveSocketRef.current === socket) liveSocketRef.current = null;
                     if (cancelled) return;
@@ -584,12 +610,18 @@ export function WatchlistsManager({
 
     useEffect(() => {
         const demand = [...selectedLiveDemand, ...suggestionLiveDemand];
-        if (!demand.length) return;
         let cancelled = false;
 
         async function touchDemand() {
             try {
-                await touchLiveDemandSubscriptions({ subscriptions: demand });
+                const rows = await touchLiveDemandSubscriptions({
+                    subscriptions: demand,
+                    scopes: [
+                        { source_type: "watchlist_view", source_id: "watchlist_active_view" },
+                        { source_type: "symbol_search", source_id: "watchlist_symbol_search" }
+                    ]
+                });
+                if (!cancelled) setResolvedLiveDemand(rows);
             } catch {
                 if (!cancelled) setLiveState("error");
             }

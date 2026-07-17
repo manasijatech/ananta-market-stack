@@ -60,6 +60,7 @@ from app.services.alert_llm_context import (
     resolve_llm_context,
 )
 from app.services import broker_data_preferences, desktop_audio, llm_usage as llm_usage_svc
+from app.services.live_price_adapters import get_live_price_adapter
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
 from db.models import (
@@ -2644,11 +2645,20 @@ def _resolve_live_subscription_account(
 ) -> tuple[str | None, str | None]:
     normalized_account_id = (account_id or "").strip() or None
     normalized_broker_code = (broker_code or "").strip().lower() or None
+    accessible_accounts = broker_data_preferences.get_accessible_data_accounts(
+        db,
+        user_id,
+        normalized_broker_code,
+    )
     if normalized_account_id:
-        account = db.get(BrokerAccount, normalized_account_id)
-        if account and account.user_id == user_id and account.is_active:
+        account = next((row for row in accessible_accounts if row.id == normalized_account_id), None)
+        if account:
             return account.id, account.broker_code
-    account = broker_data_preferences.get_stream_default_broker_account(db, user_id, normalized_broker_code)
+    account = accessible_accounts[0] if accessible_accounts else broker_data_preferences.get_stream_default_broker_account(
+        db,
+        user_id,
+        normalized_broker_code,
+    )
     if account:
         return account.id, account.broker_code
     return normalized_account_id, normalized_broker_code
@@ -2658,18 +2668,38 @@ def touch_ui_live_subscriptions(
     db: Session,
     user_id: str,
     payloads: list[LiveSubscriptionCreateIn],
-) -> list[LiveSubscriptionOut]:
+    *,
+    scopes: list[tuple[str, str]] | None = None,
+) -> tuple[list[LiveSubscriptionOut], bool]:
     now = _now()
     normalized_payloads: list[tuple[LiveSubscriptionCreateIn, str | None, str | None, str, str | None, str, str]] = []
-    desired_by_scope: dict[tuple[str | None, str | None, str, str], set[tuple[str, str | None]]] = {}
+    desired_by_scope: dict[
+        tuple[str, str],
+        set[tuple[str | None, str | None, str, str | None]],
+    ] = {
+        (source_type.strip(), source_id.strip()): set()
+        for source_type, source_id in (scopes or [])
+        if source_type.strip() and source_id.strip()
+    }
     seen: set[tuple[str | None, str | None, str, str | None, str, str]] = set()
+    account_resolution_cache: dict[tuple[str | None, str | None], tuple[str | None, str | None]] = {}
     rows: list[LiveSymbolSubscription] = []
+    scope_changed = False
     for item in payloads:
         symbol = _normalize_symbol(item.symbol)
         if not symbol:
             continue
         exchange = (item.exchange or item.instrument_ref.exchange or "").strip().upper() or None
-        account_id, broker_code = _resolve_live_subscription_account(db, user_id, item.account_id, item.broker_code)
+        resolution_key = (item.account_id, item.broker_code)
+        account_id, broker_code = account_resolution_cache.get(resolution_key, (None, None))
+        if resolution_key not in account_resolution_cache:
+            account_id, broker_code = _resolve_live_subscription_account(
+                db,
+                user_id,
+                item.account_id,
+                item.broker_code,
+            )
+            account_resolution_cache[resolution_key] = (account_id, broker_code)
         source_type = item.source_type or "active_ui"
         source_id = item.source_id or "live_view"
         key = (account_id, broker_code, symbol, exchange, source_type, source_id)
@@ -2677,24 +2707,44 @@ def touch_ui_live_subscriptions(
             continue
         seen.add(key)
         normalized_payloads.append((item, account_id, broker_code, symbol, exchange, source_type, source_id))
-        desired_by_scope.setdefault((account_id, broker_code, source_type, source_id), set()).add((symbol, exchange))
+        desired_by_scope.setdefault((source_type, source_id), set()).add(
+            (account_id, broker_code, symbol, exchange)
+        )
 
-    for (account_id, broker_code, source_type, source_id), desired_symbols in desired_by_scope.items():
-        existing_rows = db.scalars(
-            select(LiveSymbolSubscription).where(
-                LiveSymbolSubscription.user_id == user_id,
-                LiveSymbolSubscription.account_id == account_id,
-                LiveSymbolSubscription.broker_code == broker_code,
-                LiveSymbolSubscription.workflow_id.is_(None),
-                LiveSymbolSubscription.source_kind == "ui",
-                LiveSymbolSubscription.source_type == source_type,
-                LiveSymbolSubscription.source_id == source_id,
-            )
-        ).all()
-        for row in existing_rows:
-            if (row.symbol, row.exchange) in desired_symbols:
-                continue
-            db.delete(row)
+    declared_source_types = {source_type for source_type, _source_id in desired_by_scope}
+    existing_rows = (
+        list(
+            db.scalars(
+                select(LiveSymbolSubscription).where(
+                    LiveSymbolSubscription.user_id == user_id,
+                    LiveSymbolSubscription.workflow_id.is_(None),
+                    LiveSymbolSubscription.source_kind == "ui",
+                    LiveSymbolSubscription.source_type.in_(declared_source_types),
+                )
+            ).all()
+        )
+        if declared_source_types
+        else []
+    )
+    existing_by_key = {
+        (
+            row.account_id,
+            row.broker_code,
+            row.symbol,
+            row.exchange,
+            row.source_type,
+            row.source_id,
+        ): row
+        for row in existing_rows
+    }
+    for row in existing_rows:
+        source_type = row.source_type or ""
+        desired_symbols = desired_by_scope.get((source_type, row.source_id or ""), set())
+        row_key = (row.account_id, row.broker_code, row.symbol, row.exchange)
+        if row_key in desired_symbols:
+            continue
+        db.delete(row)
+        scope_changed = True
 
     for item, account_id, broker_code, symbol, exchange, source_type, source_id in normalized_payloads:
         ref = item.instrument_ref
@@ -2702,21 +2752,9 @@ def touch_ui_live_subscriptions(
             ref.symbol = symbol
         if ref.exchange is None and exchange:
             ref.exchange = exchange
-        row = db.scalars(
-            select(LiveSymbolSubscription)
-            .where(
-                LiveSymbolSubscription.user_id == user_id,
-                LiveSymbolSubscription.account_id == account_id,
-                LiveSymbolSubscription.broker_code == broker_code,
-                LiveSymbolSubscription.workflow_id.is_(None),
-                LiveSymbolSubscription.symbol == symbol,
-                LiveSymbolSubscription.exchange == exchange,
-                LiveSymbolSubscription.source_kind == "ui",
-                LiveSymbolSubscription.source_type == source_type,
-                LiveSymbolSubscription.source_id == source_id,
-            )
-            .limit(1)
-        ).first()
+        row = existing_by_key.get(
+            (account_id, broker_code, symbol, exchange, source_type, source_id)
+        )
         if row is None:
             row = LiveSymbolSubscription(
                 id=str(uuid.uuid4()),
@@ -2736,6 +2774,9 @@ def touch_ui_live_subscriptions(
                 health_reason="Waiting for the live price worker to fetch this active UI demand.",
                 created_at=now,
             )
+            scope_changed = True
+        elif row.status != "active":
+            scope_changed = True
         row.instrument_ref_json = _json_dumps(ref.model_dump(exclude_none=True))
         row.broker_code = broker_code
         row.source_label = item.source_label
@@ -2749,8 +2790,12 @@ def touch_ui_live_subscriptions(
         row.reconciled_at = now
         db.add(row)
         rows.append(row)
+    db.flush()
+    output_rows = [_subscription_to_out(row) for row in rows]
     db.commit()
-    return [_subscription_to_out(row) for row in rows]
+    if not declared_source_types and not rows:
+        return [], False
+    return output_rows, scope_changed
 
 
 def remove_subscription(db: Session, user_id: str, subscription_id: str) -> bool:
@@ -2803,8 +2848,10 @@ def _chunk_sessions(
     sessions: list[LiveWorkerSessionOut] = []
     for (account_id, broker_code), subscriptions in grouped.items():
         ordered = sorted(subscriptions, key=_live_subscription_priority)
-        for index, start in enumerate(range(0, len(ordered), 1000), start=1):
-            chunk = ordered[start : start + 1000]
+        adapter = get_live_price_adapter(broker_code)
+        capacity = adapter.capacity if adapter else 1000
+        for index, start in enumerate(range(0, len(ordered), capacity), start=1):
+            chunk = ordered[start : start + capacity]
             activity = activity_index.get((account_id, broker_code, index))
             sessions.append(
                 LiveWorkerSessionOut(
@@ -2816,7 +2863,7 @@ def _chunk_sessions(
                     connection_id=f"{broker_code}:{account_id}:{index}",
                     connection_index=index,
                     symbol_count=len(chunk),
-                    capacity=1000,
+                    capacity=activity.capacity if activity else capacity,
                     symbols=[item.symbol for item in chunk],
                     last_seen_at=activity.last_seen_at if activity else None,
                 )
@@ -2850,14 +2897,7 @@ def _broker_statuses(
     if not relevant_keys:
         return []
 
-    accounts = list(
-        db.scalars(
-            select(BrokerAccount).where(
-                BrokerAccount.user_id == user_id,
-                BrokerAccount.is_active.is_(True),
-            )
-        ).all()
-    )
+    accounts = broker_data_preferences.get_accessible_data_accounts(db, user_id)
     account_index = {(row.id, row.broker_code): row for row in accounts}
 
     statuses: list[LiveBrokerAccountStatusOut] = []

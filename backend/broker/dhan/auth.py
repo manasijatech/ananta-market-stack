@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from common.datetime_compat import UTC
 from broker.core.http import get_httpx_client
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def generate_access_token_with_totp(
@@ -67,7 +69,10 @@ def parse_expiry(value: str | None) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
+        # Dhan documents expiryTime in IST and currently returns it without an
+        # explicit UTC offset. Treating that value as UTC makes a token appear
+        # valid for 5h30m after Dhan has expired it.
+        return parsed.replace(tzinfo=IST).astimezone(UTC)
     return parsed.astimezone(UTC)
 
 

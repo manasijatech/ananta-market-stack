@@ -27,7 +27,13 @@ services:
       - -c
       - |
         REDIS_PASSWORD="$$(awk -F= '$$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/ananta-market-stack.env)"
-        exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        exec redis-server \
+          --appendonly yes \
+          --appendfsync everysec \
+          --auto-aof-rewrite-percentage 100 \
+          --auto-aof-rewrite-min-size 128mb \
+          --save "" \
+          --requirepass "$$REDIS_PASSWORD"
     healthcheck:
       test:
         - CMD-SHELL
@@ -70,7 +76,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5).read()"
       interval: 15s
       timeout: 10s
       retries: 10
@@ -84,6 +90,7 @@ services:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-${MARKET_STACK_PUBLIC_APP_URL:-http://localhost:${FRONTEND_PORT:-3000}}}
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-${MARKET_STACK_PUBLIC_API_BASE_URL:-http://localhost:${BACKEND_PORT:-8000}/api/v1}}
         MARKET_STACK_API_INTERNAL_URL: ${MARKET_STACK_API_INTERNAL_URL:-http://backend:8000/api/v1}
+        BUILD_SHA: ${BUILD_SHA:-local}
     depends_on:
       bootstrap:
         condition: service_completed_successfully
@@ -109,7 +116,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - node -e "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        - node -e "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
       interval: 15s
       timeout: 10s
       retries: 10

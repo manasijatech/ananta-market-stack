@@ -18,3 +18,8 @@ class AlphaSymbolMetadata(BaseModel):
 
 class AlphaSymbolMetadataResponse(BaseModel):
     data: list[AlphaSymbolMetadata] = Field(default_factory=list)
+
+
+class AlphaSymbolMetadataBulkRequest(BaseModel):
+    symbols: list[str] = Field(min_length=1, max_length=1_000)
+    force_refresh: bool = False

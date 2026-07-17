@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import edge_tts
 import httpx
 from fastapi import WebSocket
 from sqlalchemy import delete, select
@@ -20,6 +19,11 @@ from app.config import get_settings
 from app.services import llm_config
 from common.datetime_compat import UTC
 from db.models import AlertAudioAsset, DesktopAudioDevice, DesktopAudioPairing, UserAlertChannelDelivery, UserAlertNotification
+
+try:
+    import edge_tts
+except ImportError:  # Optional delivery provider must not prevent market-data workers from starting.
+    edge_tts = None  # type: ignore[assignment]
 
 DEFAULT_TEMPLATE = "{title}. {message}"
 DEFAULT_TTS_PROVIDER = "edge_tts"
@@ -355,6 +359,8 @@ def _cached_audio_asset(
 
 
 async def _edge_generate_audio_bytes(text: str, voice: str, rate: str, pitch: str, volume: str) -> bytes:
+    if edge_tts is None:
+        raise RuntimeError("edge-tts is unavailable; install the pinned backend requirements")
     communicate = edge_tts.Communicate(
         text,
         voice=voice,
@@ -368,7 +374,10 @@ async def _edge_generate_audio_bytes(text: str, voice: str, rate: str, pitch: st
     async for message in communicate.stream():
         if message["type"] == "audio":
             chunks.append(message["data"])
-    return b"".join(chunks)
+    audio = b"".join(chunks)
+    if not audio:
+        raise RuntimeError("edge-tts returned no audio data")
+    return audio
 
 
 def _generate_edge_audio(config: dict[str, Any], text: str) -> tuple[bytes, str, str, str, str]:
@@ -382,6 +391,8 @@ def list_edge_voices(*, force_refresh: bool = False) -> list[dict[str, Any]]:
     if not force_refresh and isinstance(cached_until, datetime) and cached_until > _now():
         return list(_edge_voice_cache.get("voices") or [])
 
+    if edge_tts is None:
+        raise RuntimeError("edge-tts is unavailable; install the pinned backend requirements")
     raw_voices = asyncio.run(edge_tts.list_voices())
     voices = [
         {

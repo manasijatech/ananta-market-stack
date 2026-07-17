@@ -1,19 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { Clipboard, X } from "lucide-react";
 import {
-    deleteInstrumentStorage,
-    getDataCapabilities,
-    getHoldings,
-    getOrders,
-    getPortfolioFunds,
-    getPositions,
-    getProfile,
-    getStreamStatus,
-    getTrades,
-    searchBrokerInstruments,
-    syncInstrumentCsv
+    runBrokerDataTestAction,
+    type BrokerDataTestAction
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { brokerNames, formatDate, StatusBadge } from "@/components/brokers/ui";
@@ -51,6 +42,22 @@ function pretty(value: unknown): string {
 function isoLocal(date: Date): string {
     const offsetMs = date.getTimezoneOffset() * 60_000;
     return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function numberOrUndefined(value: string): number | undefined {
+    if (!value.trim()) {
+        return undefined;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function integerOrUndefined(value: string): number | undefined {
+    if (!value.trim()) {
+        return undefined;
+    }
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 const SAMPLE_SYMBOL = "RELIANCE";
@@ -158,14 +165,12 @@ export function BrokerDataTest({
     account,
     sessionActive,
     initialCapabilities,
-    initialStreamStatus,
-    apiBaseUrl
+    initialStreamStatus
 }: {
     account: BrokerAccountDetail;
     sessionActive: boolean;
     initialCapabilities: DataCapabilities;
     initialStreamStatus: StreamStatus;
-    apiBaseUrl: string;
 }) {
     const [capabilities, setCapabilities] = useState(initialCapabilities);
     const [streamStatus, setStreamStatus] = useState(initialStreamStatus);
@@ -177,7 +182,7 @@ export function BrokerDataTest({
     const [responseBody, setResponseBody] = useState("");
     const [responseToastOpen, setResponseToastOpen] = useState(false);
     const [error, setError] = useState("");
-    const marketMode: MarketMode = "quote";
+    const [marketMode, setMarketMode] = useState<MarketMode>("quote");
     const [marketSymbol, setMarketSymbol] = useState(SAMPLE_SYMBOL);
     const [marketExchange, setMarketExchange] = useState(SAMPLE_EXCHANGE);
     const [marketInterval, setMarketInterval] = useState("day");
@@ -234,8 +239,8 @@ export function BrokerDataTest({
         startTransition(async () => {
             try {
                 const [nextCapabilities, nextStream] = await Promise.all([
-                    getDataCapabilities(account.id),
-                    getStreamStatus(account.id)
+                    callBrokerAction<DataCapabilities>("capabilities"),
+                    callBrokerAction<StreamStatus>("stream_status")
                 ]);
                 setCapabilities(nextCapabilities);
                 setStreamStatus(nextStream);
@@ -243,6 +248,14 @@ export function BrokerDataTest({
                 setError(parseActionError(caught).message);
             }
         });
+    }
+
+    async function callBrokerAction<T>(action: BrokerDataTestAction, payload?: unknown): Promise<T> {
+        const result = await runBrokerDataTestAction(account.id, action, payload);
+        if (!result.ok) {
+            throw new Error(result.error);
+        }
+        return result.data as T;
     }
 
     function run(action: () => Promise<unknown>, title: string) {
@@ -261,8 +274,9 @@ export function BrokerDataTest({
         setError("");
         startTransition(async () => {
             try {
-                const result =
-                    storage === "csv" ? await syncInstrumentCsv(account.id) : await deleteInstrumentStorage(account.id);
+                const result = await callBrokerAction<InstrumentSyncResult>(
+                    storage === "csv" ? "sync_instruments" : "delete_instruments"
+                );
                 setSyncResult(result);
                 setPayload(storage === "csv" ? "Instrument sync to CSV" : "Instrument storage delete", result);
                 if (storage === "delete") {
@@ -279,7 +293,7 @@ export function BrokerDataTest({
         setError("");
         startTransition(async () => {
             try {
-                const result = await searchBrokerInstruments(account.id, {
+                const result = await callBrokerAction<InstrumentSearchRow[]>("search_instruments", {
                     q: searchQuery,
                     exchange: searchExchange || undefined,
                     limit: 30
@@ -295,7 +309,9 @@ export function BrokerDataTest({
         if (wsRef.current || !streamStatus.websocket_enabled) {
             return;
         }
-        const url = new URL(apiBaseUrl, window.location.origin);
+        // Browser traffic must enter through the public frontend/nginx origin.
+        // FastAPI may only be reachable inside Docker.
+        const url = new URL("/api/v1", window.location.origin);
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         url.pathname = `${url.pathname.replace(/\/+$/, "")}/broker-accounts/${account.id}/data/stream/ws`;
         url.search = "";
@@ -320,7 +336,7 @@ export function BrokerDataTest({
             );
             startTransition(async () => {
                 try {
-                    setStreamStatus(await getStreamStatus(account.id));
+                    setStreamStatus(await callBrokerAction<StreamStatus>("stream_status"));
                 } catch {
                     return;
                 }
@@ -344,6 +360,13 @@ export function BrokerDataTest({
                 instruments: [{ symbol: wsSymbol.trim(), exchange: wsExchange.trim() || "NSE" }]
             })
         );
+    }
+
+    function marketInstrument() {
+        return {
+            symbol: marketSymbol.trim(),
+            exchange: marketExchange.trim() || "NSE"
+        };
     }
 
     function marketFieldIsActive(field: string) {
@@ -554,7 +577,7 @@ export function BrokerDataTest({
                     <Group>
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getProfile(account.id), "Profile")}
+                            onClick={() => run(() => callBrokerAction("profile"), "Profile")}
                             type="button"
                             variant="outline"
                         >
@@ -563,7 +586,7 @@ export function BrokerDataTest({
                         <GroupSeparator />
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getPortfolioFunds(account.id), "Funds")}
+                            onClick={() => run(() => callBrokerAction("funds"), "Funds")}
                             type="button"
                             variant="outline"
                         >
@@ -572,7 +595,7 @@ export function BrokerDataTest({
                         <GroupSeparator />
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getPositions(account.id), "Positions")}
+                            onClick={() => run(() => callBrokerAction("positions"), "Positions")}
                             type="button"
                             variant="outline"
                         >
@@ -582,7 +605,7 @@ export function BrokerDataTest({
                     <Group>
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getHoldings(account.id), "Holdings")}
+                            onClick={() => run(() => callBrokerAction("holdings"), "Holdings")}
                             type="button"
                             variant="outline"
                         >
@@ -591,7 +614,7 @@ export function BrokerDataTest({
                         <GroupSeparator />
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getOrders(account.id), "Orders")}
+                            onClick={() => run(() => callBrokerAction("orders"), "Orders")}
                             type="button"
                             variant="outline"
                         >
@@ -600,7 +623,7 @@ export function BrokerDataTest({
                         <GroupSeparator />
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getTrades(account.id), "Trades")}
+                            onClick={() => run(() => callBrokerAction("trades"), "Trades")}
                             type="button"
                             variant="outline"
                         >
@@ -614,7 +637,50 @@ export function BrokerDataTest({
                 title="Market data"
                 description="Run quote, OHLC, historical, option-chain, and greeks requests through the broker data layer."
             >
-                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                <div className="flex flex-wrap gap-2">
+                    <Group>
+                        {(
+                            Object.entries(MARKET_MODE_COPY) as Array<
+                                [MarketMode, { title: string; description: string }]
+                            >
+                        )
+                            .slice(0, 3)
+                            .map(([mode, meta], index) => (
+                                <Fragment key={mode}>
+                                    {index ? <GroupSeparator /> : null}
+                                    <Button
+                                        onClick={() => setMarketMode(mode)}
+                                        type="button"
+                                        variant={marketMode === mode ? "default" : "outline"}
+                                    >
+                                        {meta.title}
+                                    </Button>
+                                </Fragment>
+                            ))}
+                    </Group>
+                    <Group>
+                        {(
+                            Object.entries(MARKET_MODE_COPY) as Array<
+                                [MarketMode, { title: string; description: string }]
+                            >
+                        )
+                            .slice(3)
+                            .map(([mode, meta], index) => (
+                                <Fragment key={mode}>
+                                    {index ? <GroupSeparator /> : null}
+                                    <Button
+                                        disabled={!capabilities.capabilities[mode]?.supported}
+                                        onClick={() => setMarketMode(mode)}
+                                        type="button"
+                                        variant={marketMode === mode ? "default" : "outline"}
+                                    >
+                                        {meta.title}
+                                    </Button>
+                                </Fragment>
+                            ))}
+                    </Group>
+                </div>
+                <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
                     <div className="text-sm font-semibold">{MARKET_MODE_COPY[marketMode].title}</div>
                     <div className="mt-1 text-sm text-muted-foreground">{MARKET_MODE_COPY[marketMode].description}</div>
                     <div className="mt-2 text-xs text-muted-foreground">
@@ -790,6 +856,62 @@ export function BrokerDataTest({
                         </div>
                     </div>
                 ) : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                    <Button
+                        disabled={isPending || !sessionActive || !marketSymbol.trim()}
+                        onClick={() => {
+                            if (marketMode === "quote") {
+                                run(
+                                    () => callBrokerAction("quotes", { instruments: [marketInstrument()] }),
+                                    "Data quotes"
+                                );
+                            } else if (marketMode === "ohlc") {
+                                run(() => callBrokerAction("ohlc", { instruments: [marketInstrument()] }), "Data OHLC");
+                            } else if (marketMode === "historical") {
+                                run(
+                                    () =>
+                                        callBrokerAction("historical", {
+                                            instrument: marketInstrument(),
+                                            interval: marketInterval,
+                                            from_date: new Date(marketFromDate).toISOString(),
+                                            to_date: new Date(marketToDate).toISOString()
+                                        }),
+                                    "Historical data"
+                                );
+                            } else if (marketMode === "option_chain") {
+                                run(
+                                    () =>
+                                        callBrokerAction("option_chain", {
+                                            symbol: marketSymbol.trim(),
+                                            exchange: marketExchange.trim() || "NSE",
+                                            expiry: marketExpiry.trim() || undefined
+                                        }),
+                                    "Option chain"
+                                );
+                            } else {
+                                run(
+                                    () =>
+                                        callBrokerAction("greeks", {
+                                            symbol: marketSymbol.trim(),
+                                            exchange: marketExchange.trim() || "NSE",
+                                            expiry: marketExpiry.trim() || undefined,
+                                            strike: marketStrike.trim() || undefined,
+                                            option_type: marketOptionType.trim() || undefined,
+                                            price: numberOrUndefined(marketPrice),
+                                            underlying_price: numberOrUndefined(marketUnderlyingPrice),
+                                            volatility: numberOrUndefined(marketVolatility),
+                                            interest_rate: numberOrUndefined(marketInterestRate),
+                                            days_to_expiry: integerOrUndefined(marketDaysToExpiry)
+                                        }),
+                                    "Greeks"
+                                );
+                            }
+                        }}
+                        type="button"
+                    >
+                        {isPending ? "Working..." : `Run ${MARKET_MODE_COPY[marketMode].title}`}
+                    </Button>
+                </div>
             </Section>
 
             <Section title="WebSocket test" description="On-demand quote streaming over the unified websocket route.">

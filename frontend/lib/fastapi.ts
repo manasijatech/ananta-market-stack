@@ -1,6 +1,7 @@
 import "server-only";
 
 import { headers } from "next/headers";
+import { cache } from "react";
 import { auth } from "@/lib/auth";
 import { getInternalApiBaseUrl, getPublicApiBaseUrl } from "@/lib/runtime-config";
 
@@ -37,7 +38,7 @@ async function fetchBackend(path: string, init: RequestInit): Promise<Response> 
  *
  * Forwards user identity and session headers when a session exists.
  */
-export async function getAuthenticatedBackendHeaders(): Promise<Headers> {
+const getRequestAuthenticatedBackendHeaders = cache(async (): Promise<Headers> => {
     const session = await auth.api.getSession({
         headers: await headers()
     });
@@ -58,6 +59,10 @@ export async function getAuthenticatedBackendHeaders(): Promise<Headers> {
     }
 
     return requestHeaders;
+});
+
+export async function getAuthenticatedBackendHeaders(): Promise<Headers> {
+    return new Headers(await getRequestAuthenticatedBackendHeaders());
 }
 
 /**
@@ -67,6 +72,15 @@ export async function getAuthenticatedBackendHeaders(): Promise<Headers> {
  */
 export async function fetchFastApi(path: string, init: RequestInit = {}): Promise<Response> {
     const authHeaders = await getAuthenticatedBackendHeaders();
+    return fetchFastApiWithHeaders(path, authHeaders, init);
+}
+
+export async function fetchFastApiWithHeaders(
+    path: string,
+    authenticatedHeaders: Headers,
+    init: RequestInit = {}
+): Promise<Response> {
+    const authHeaders = new Headers(authenticatedHeaders);
     const headersFromInit = new Headers(init.headers);
 
     headersFromInit.forEach((value, key) => {

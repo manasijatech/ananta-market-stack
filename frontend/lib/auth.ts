@@ -30,7 +30,8 @@ mkdirSync(dirname(databasePath), { recursive: true });
 
 const database: SqliteDatabase = new DatabaseSync(databasePath);
 
-database.exec("PRAGMA busy_timeout = 5000;");
+database.exec("PRAGMA busy_timeout = 30000;");
+database.exec("PRAGMA synchronous = NORMAL;");
 
 database.exec(`
   CREATE TABLE IF NOT EXISTS "user" (

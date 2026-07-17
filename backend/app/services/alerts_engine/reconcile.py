@@ -53,11 +53,21 @@ def _now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
 
 
-def _delete_quote_cache(redis_client: redis.Redis | None, row: LiveSymbolSubscription) -> None:
-    if redis_client is None or not row.account_id or not row.broker_code or not row.symbol:
+def _delete_quote_caches(
+    redis_client: redis.Redis | None,
+    rows: list[LiveSymbolSubscription],
+) -> None:
+    if redis_client is None:
+        return
+    keys = {
+        f"live:quote:{row.user_id}:{row.account_id}:{row.broker_code}:{row.symbol}"
+        for row in rows
+        if row.account_id and row.broker_code and row.symbol
+    }
+    if not keys:
         return
     try:
-        redis_client.delete(f"live:quote:{row.user_id}:{row.account_id}:{row.broker_code}:{row.symbol}")
+        redis_client.delete(*keys)
     except redis.RedisError:
         return
 
@@ -85,11 +95,12 @@ def _resolve_account(
     account_id: str | None,
     broker_code: str | None,
 ) -> tuple[str | None, str | None]:
+    accessible_accounts = broker_data_preferences.get_accessible_data_accounts(db, user_id, broker_code)
     if account_id:
-        account = db.get(BrokerAccount, account_id)
-        if account and account.user_id == user_id and account.is_active:
+        account = next((row for row in accessible_accounts if row.id == account_id), None)
+        if account:
             return account.id, account.broker_code
-    account = _default_broker_account(db, user_id, broker_code)
+    account = accessible_accounts[0] if accessible_accounts else _default_broker_account(db, user_id, broker_code)
     if account:
         return account.id, account.broker_code
     return account_id, broker_code
@@ -209,25 +220,48 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
     desired = build_desired_subscriptions(db, user_id)
     now = _now()
     created = restored = updated = deactivated = orphaned = errors = 0
-    desired_keys = set()
+    desired_keys: set[tuple[str | None, str | None, str | None, str, str | None, str | None, str | None]] = set()
     redis_client = _redis_client()
+    managed_rows = list(
+        db.scalars(
+            select(LiveSymbolSubscription).where(
+                LiveSymbolSubscription.user_id == user_id,
+                LiveSymbolSubscription.source_kind.in_(["watchlist", "workflow", "background_workflow"]),
+            )
+        ).all()
+    )
+    existing_by_key: dict[
+        tuple[str | None, str | None, str | None, str, str | None, str | None, str | None],
+        LiveSymbolSubscription,
+    ] = {}
+    for row in managed_rows:
+        key = (
+            row.account_id,
+            row.broker_code,
+            row.workflow_id,
+            row.symbol,
+            row.exchange,
+            row.owner_kind,
+            row.owner_id,
+        )
+        existing_by_key.setdefault(key, row)
 
     for item in desired:
-        desired_keys.add((item.account_id, item.broker_code, item.workflow_id, item.symbol, item.exchange, item.owner_kind, item.owner_id))
+        key = (
+            item.account_id,
+            item.broker_code,
+            item.workflow_id,
+            item.symbol,
+            item.exchange,
+            item.owner_kind,
+            item.owner_id,
+        )
+        desired_keys.add(key)
         try:
-            row = db.scalar(
-                select(LiveSymbolSubscription).where(
-                    LiveSymbolSubscription.user_id == user_id,
-                    LiveSymbolSubscription.account_id == item.account_id,
-                    LiveSymbolSubscription.broker_code == item.broker_code,
-                    LiveSymbolSubscription.workflow_id == item.workflow_id,
-                    LiveSymbolSubscription.symbol == item.symbol,
-                    LiveSymbolSubscription.exchange == item.exchange,
-                    LiveSymbolSubscription.owner_kind == item.owner_kind,
-                    LiveSymbolSubscription.owner_id == item.owner_id,
-                )
-            )
-            if row is None:
+            row = existing_by_key.get(key)
+            is_new = row is None
+            instrument_ref_json = _json_dumps(item.instrument_ref.model_dump(exclude_none=True))
+            if is_new:
                 row = LiveSymbolSubscription(
                     id=str(uuid.uuid4()),
                     user_id=user_id,
@@ -239,12 +273,30 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
                     source_kind=item.source_kind,
                     created_at=now,
                 )
+                managed_rows.append(row)
+                existing_by_key[key] = row
                 created += 1
             elif row.status != "active":
                 restored += 1
             else:
                 updated += 1
-            row.instrument_ref_json = _json_dumps(item.instrument_ref.model_dump(exclude_none=True))
+
+            was_inactive = not is_new and row.status != "active"
+            metadata_changed = any(
+                (
+                    row.instrument_ref_json != instrument_ref_json,
+                    row.source_kind != item.source_kind,
+                    row.source_type != item.source_type,
+                    row.source_id != item.source_id,
+                    row.source_label != item.source_label,
+                    row.owner_kind != item.owner_kind,
+                    row.owner_id != item.owner_id,
+                )
+            )
+            if not is_new and not was_inactive and not metadata_changed:
+                continue
+
+            row.instrument_ref_json = instrument_ref_json
             row.source_kind = item.source_kind
             row.source_type = item.source_type
             row.source_id = item.source_id
@@ -253,24 +305,20 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
             row.owner_id = item.owner_id
             row.status = "active"
             row.reconciled_at = now
-            row.health_status = "healthy"
-            row.health_reason = ""
+            if is_new or was_inactive or row.last_received_at is None:
+                row.health_status = "pending"
+                row.health_reason = "Waiting for the live price worker to fetch this subscription."
             row.updated_at = now
             db.add(row)
         except Exception:
             errors += 1
 
-    managed_rows = db.scalars(
-        select(LiveSymbolSubscription).where(
-            LiveSymbolSubscription.user_id == user_id,
-            LiveSymbolSubscription.source_kind.in_(["watchlist", "workflow", "background_workflow"]),
-        )
-    ).all()
+    deactivated_rows: list[LiveSymbolSubscription] = []
     for row in managed_rows:
         key = (row.account_id, row.broker_code, row.workflow_id, row.symbol, row.exchange, row.owner_kind, row.owner_id)
-        if key in desired_keys:
+        if key in desired_keys or row.status != "active":
             continue
-        _delete_quote_cache(redis_client, row)
+        deactivated_rows.append(row)
         row.status = "inactive"
         row.reconciled_at = now
         row.health_status = "orphaned"
@@ -280,6 +328,7 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
         deactivated += 1
         orphaned += 1
 
+    _delete_quote_caches(redis_client, deactivated_rows)
     db.commit()
     if created or restored or deactivated or orphaned:
         publish_scope_change(user_id, reason="reconciled")
@@ -314,8 +363,8 @@ def cleanup_expired_ui_subscriptions(
         return 0
     affected_user_ids = {row.user_id for row in rows if row.user_id}
     redis_client = _redis_client()
+    _delete_quote_caches(redis_client, rows)
     for row in rows:
-        _delete_quote_cache(redis_client, row)
         db.delete(row)
     if commit:
         db.commit()

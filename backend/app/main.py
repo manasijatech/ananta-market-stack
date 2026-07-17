@@ -5,7 +5,9 @@ import threading
 from threading import Thread
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.api.v1 import api_router
 from app.config import get_settings
@@ -16,22 +18,15 @@ from app.services.alert_workflow_chat.worker_service import run_alert_workflow_c
 from app.services.broker_chat_worker_service import run_broker_chat_worker
 from app.services.broker_sessions import maintenance_loop
 from app.services.llm_telemetry import configure_llm_telemetry
-from app.services.system_maintenance import run_startup_maintenance
 from app.services.watchlist_preset_worker import run_watchlist_preset_worker
-from db.session import init_db
+from broker.core.redis_cache import ping_redis
+from db.session import engine, init_db
 
 debug_log_path = configure_logging()
 logger = logging.getLogger(__name__)
 if debug_log_path:
     logger.info("Ananta Market Stack backend debug logs are being written to %s", debug_log_path)
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
-
-
-def _run_startup_maintenance_background() -> None:
-    try:
-        run_startup_maintenance()
-    except Exception:
-        logger.exception("startup system maintenance failed")
 
 
 async def _wait_for_stop(stop_event: asyncio.Event, timeout: float) -> bool:
@@ -94,7 +89,7 @@ class BackgroundAsyncLoopThread:
         self.thread.start()
         self.ready.wait(timeout=2)
 
-    def stop(self, timeout: float = 0.5) -> None:
+    def stop(self, timeout: float = 5.0) -> None:
         logger.info("%s stopping", self.name)
         if self.loop and self.stop_event:
             try:
@@ -112,11 +107,6 @@ class BackgroundAsyncLoopThread:
 async def lifespan(_app: FastAPI):
     configure_llm_telemetry()
     init_db()
-    Thread(
-        target=_run_startup_maintenance_background,
-        name="startup-system-maintenance",
-        daemon=True,
-    ).start()
     maintenance_service = _start_background_service("maintenance-loop", maintenance_loop)
     alert_worker_service = None
     if settings.enable_in_process_alert_workers:
@@ -212,3 +202,22 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/health")
 def root_health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def readiness() -> dict:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            journal_mode = conn.exec_driver_sql("PRAGMA journal_mode").scalar() if engine.dialect.name == "sqlite" else None
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database is unavailable: {exc}") from exc
+    redis_ok, redis_error = ping_redis()
+    if not redis_ok:
+        raise HTTPException(status_code=503, detail=f"Redis is unavailable: {redis_error}")
+    return {
+        "status": "ready",
+        "database": "ok",
+        "sqlite_journal_mode": journal_mode,
+        "redis": "ok",
+    }
