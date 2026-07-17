@@ -32,3 +32,16 @@ def get_live_price_adapter(broker_code: str) -> LivePriceAdapter | None:
     adapter = factory()
     _ADAPTER_CACHE[normalized] = adapter
     return adapter
+
+
+async def close_live_price_adapters() -> None:
+    for broker_code, adapter in list(_ADAPTER_CACHE.items()):
+        if adapter is None:
+            continue
+        close_all = getattr(adapter, "close_all_sessions", None)
+        if not callable(close_all):
+            continue
+        try:
+            await close_all()
+        except Exception:
+            logger.exception("broker %s live price adapter cleanup failed", broker_code)

@@ -108,7 +108,7 @@ wait_for_frontend() {
   while [ "$i" -lt 60 ]; do
     if python - <<PY >/dev/null 2>&1
 import urllib.request
-urllib.request.urlopen("http://127.0.0.1:$FRONTEND_PORT", timeout=2).read()
+urllib.request.urlopen("http://127.0.0.1:$FRONTEND_PORT/api/health", timeout=2).read()
 PY
     then
       return 0
@@ -121,15 +121,20 @@ PY
 }
 
 runtime_is_ready() {
-  python - <<PY >/dev/null 2>&1
+  python - <<PY
+import sys
 import urllib.request
 
 for url in (
     "http://$BACKEND_HOST:$BACKEND_PORT/ready",
-    "http://127.0.0.1:$FRONTEND_PORT",
-    "http://127.0.0.1:$PUBLIC_PORT/",
+    "http://127.0.0.1:$FRONTEND_PORT/api/health",
+    "http://127.0.0.1:$PUBLIC_PORT/api/health",
 ):
-    urllib.request.urlopen(url, timeout=3).read(1)
+    try:
+        urllib.request.urlopen(url, timeout=3).read(1)
+    except Exception as exc:
+        print(f"Runtime readiness probe failed for {url}: {exc}", file=sys.stderr)
+        raise SystemExit(1)
 PY
 }
 
@@ -186,12 +191,40 @@ http {
 EOF
 }
 
-stop_children() {
-  for pid in ${NGINX_PID:-} ${FRONTEND_PID:-} ${BACKEND_PID:-} ${REDIS_PID:-}; do
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
-    fi
+signal_child() {
+  pid="${1:-}"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+  fi
+}
+
+wait_for_child_exit() {
+  pid="${1:-}"
+  max_seconds="${2:-5}"
+  elapsed=0
+  while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && [ "$elapsed" -lt "$max_seconds" ]; do
+    sleep 1
+    elapsed=$((elapsed + 1))
   done
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+  if [ -n "$pid" ]; then
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+stop_children() {
+  # Stop accepting browser traffic first, then let FastAPI close broker
+  # websockets while Redis is still available. Redis is always stopped last.
+  signal_child "${NGINX_PID:-}"
+  signal_child "${FRONTEND_PID:-}"
+  signal_child "${BACKEND_PID:-}"
+  wait_for_child_exit "${BACKEND_PID:-}" 7
+  wait_for_child_exit "${FRONTEND_PID:-}" 3
+  wait_for_child_exit "${NGINX_PID:-}" 3
+  signal_child "${REDIS_PID:-}"
+  wait_for_child_exit "${REDIS_PID:-}" 5
 }
 
 trap 'stop_children; wait || true; exit 0' INT TERM

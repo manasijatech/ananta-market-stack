@@ -581,7 +581,10 @@ export function WatchlistsManager({
                         setLiveState("error");
                     }
                 };
-                socket.onerror = () => setLiveState("error");
+                socket.onerror = () => {
+                    setLiveState("connecting");
+                    socket.close();
+                };
                 socket.onclose = () => {
                     if (liveSocketRef.current === socket) liveSocketRef.current = null;
                     if (cancelled) return;

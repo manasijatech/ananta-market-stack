@@ -261,8 +261,9 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                     }
                 };
                 socket.onerror = () => {
-                    setSocketState("error");
-                    setMessage("Live price socket error.");
+                    setSocketState("connecting");
+                    setMessage("Live price connection interrupted; reconnecting");
+                    socket.close();
                 };
                 socket.onclose = () => {
                     if (socketRef.current === socket) {

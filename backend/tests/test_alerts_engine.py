@@ -4,6 +4,8 @@ from datetime import datetime
 from common.datetime_compat import UTC
 from app.services import alerts as alert_svc
 from app.schemas.alert import AlertWorkflowActivePeriod, LiveSubscriptionCreateIn
+from app.schemas.watchlist import WatchlistSymbolsBulkIn
+from app.services import watchlists as watchlist_svc
 from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services.alerts_engine.ast import ensure_workflow_ast
 from app.services.alerts_engine.conditions import ConditionRuntimeContext, evaluate_logic, rolling_reference_key
@@ -488,6 +490,42 @@ def test_reconcile_creates_and_deactivates_watchlist_subscription():
         unchanged_report = reconcile_user_subscriptions(db, "u1")
         assert unchanged_report["deactivated"] == 0
         assert unchanged_report["orphaned"] == 0
+    finally:
+        db.close()
+
+
+def test_watchlist_symbol_changes_update_only_owned_live_subscription():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    try:
+        db.add(User(id="u1", display_name="User"))
+        db.add(BrokerAccount(id="b1", user_id="u1", broker_code="zerodha", label="Zerodha", is_active=True))
+        db.add(UserWatchlist(id="w1", user_id="u1", name="Core"))
+        db.commit()
+
+        result = watchlist_svc.add_symbols_to_watchlist(
+            db,
+            "u1",
+            "w1",
+            WatchlistSymbolsBulkIn(symbols=["RELIANCE"], exchange="NSE"),
+        )
+        row = db.query(LiveSymbolSubscription).one()
+
+        assert result is not None
+        assert result.added_symbols == ["RELIANCE"]
+        assert row.owner_id == "w1"
+        assert row.source_type == "watchlist"
+        assert row.status == "active"
+        assert row.health_status == "pending"
+
+        removed = watchlist_svc.remove_symbol_from_watchlist(db, "u1", "w1", "RELIANCE", "NSE")
+        db.refresh(row)
+
+        assert removed is not None
+        assert row.status == "inactive"
+        assert row.health_status == "orphaned"
     finally:
         db.close()
 

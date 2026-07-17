@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 async def run_watchlist_preset_worker(stop_event: asyncio.Event) -> None:
     interval_seconds = max(300, get_settings().watchlist_preset_worker_interval_seconds)
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=60)
+        return
+    except asyncio.TimeoutError:
+        pass
     while not stop_event.is_set():
         db = SessionLocal()
         try:

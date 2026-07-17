@@ -931,6 +931,11 @@ def run_user_maintenance(db: Session, user_id: str) -> int:
 
 async def maintenance_loop(stop_event: asyncio.Event) -> None:
     initial_cycle = True
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=30)
+        return
+    except asyncio.TimeoutError:
+        pass
     while not stop_event.is_set():
         try:
             from app.services import system_maintenance
@@ -966,17 +971,7 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
         try:
             from app.services import broker_data_preferences
 
-            broker_data_preferences.run_holdings_refresh_cycle(force=initial_cycle)
-        except Exception:
-            pass
-        try:
-            from app.services.alerts_engine.reconcile import reconcile_all_users
-
-            db = SessionLocal()
-            try:
-                reconcile_all_users(db)
-            finally:
-                db.close()
+            broker_data_preferences.run_holdings_refresh_cycle(force=False)
         except Exception:
             pass
         initial_cycle = False

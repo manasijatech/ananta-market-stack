@@ -193,7 +193,10 @@ class DhanLivePriceAdapter:
             return LiveFeedFetchResult(status="failed", payload={}, reason=str(exc))
         except (ConnectionClosed, OSError, asyncio.TimeoutError) as exc:
             await self.drop_session(acc.id)
-            logger.warning("Dhan live feed failed for %s: %s", acc.id, exc)
+            if isinstance(exc, ConnectionClosed):
+                logger.info("Dhan live feed disconnected for %s; reconnecting: %s", acc.id, exc)
+            else:
+                logger.warning("Dhan live feed failed for %s: %s", acc.id, exc)
             return LiveFeedFetchResult(status="failed", payload={}, reason=str(exc))
         except Exception as exc:
             await self.drop_session(acc.id)
@@ -314,9 +317,17 @@ class DhanLivePriceAdapter:
         except Exception:
             pass
         try:
-            await websocket.close()
+            await asyncio.wait_for(websocket.close(), timeout=2)
+        except asyncio.TimeoutError:
+            transport = getattr(websocket, "transport", None)
+            if transport is not None:
+                transport.abort()
         except Exception:
             pass
+
+    async def close_all_sessions(self) -> None:
+        for account_id in list(self._sessions):
+            await self.drop_session(account_id)
 
     def _disable_feed(self, account_id: str) -> None:
         self._feed_disabled_not_before[account_id] = utc_now() + timedelta(

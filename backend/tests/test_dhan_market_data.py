@@ -156,3 +156,26 @@ def test_dhan_subscription_messages_are_batched_at_100_instruments() -> None:
     payloads = [json.loads(message) for message in websocket.messages]
     assert [payload["InstrumentCount"] for payload in payloads] == [100, 100, 50]
     assert all(payload["RequestCode"] == 17 for payload in payloads)
+
+
+def test_dhan_adapter_closes_all_sessions_with_documented_disconnect_message() -> None:
+    class _WebSocket:
+        def __init__(self) -> None:
+            self.messages: list[str] = []
+            self.closed = False
+
+        async def send(self, message: str) -> None:
+            self.messages.append(message)
+
+        async def close(self) -> None:
+            self.closed = True
+
+    adapter = DhanLivePriceAdapter()
+    websocket = _WebSocket()
+    adapter._sessions["account-1"] = {"websocket": websocket}
+
+    asyncio.run(adapter.close_all_sessions())
+
+    assert adapter._sessions == {}
+    assert json.loads(websocket.messages[0]) == {"RequestCode": 12}
+    assert websocket.closed is True

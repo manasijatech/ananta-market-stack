@@ -89,7 +89,7 @@ class BackgroundAsyncLoopThread:
         self.thread.start()
         self.ready.wait(timeout=2)
 
-    def stop(self, timeout: float = 0.5) -> None:
+    def stop(self, timeout: float = 5.0) -> None:
         logger.info("%s stopping", self.name)
         if self.loop and self.stop_event:
             try:

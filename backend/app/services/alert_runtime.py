@@ -36,7 +36,7 @@ from app.services.alerts_engine.rolling_state import (
     record_tick_samples,
 )
 from app.services import broker_data
-from app.services.live_price_adapters import get_live_price_adapter
+from app.services.live_price_adapters import close_live_price_adapters, get_live_price_adapter
 from broker.core.live_prices import LivePriceAdapter, is_access_forbidden_reason
 from app.services.broker_sessions import (
     _create_notification_once_per_day,
@@ -63,6 +63,7 @@ STREAM_BLOCK_MS = 1000
 STREAM_MAX_BATCH = 200
 WORKFLOW_TICK_TTL_SECONDS = 24 * 60 * 60
 RECONCILE_INTERVAL_SECONDS = 5 * 60
+RECONCILE_STARTUP_DELAY_SECONDS = 60
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
 TRANSIENT_RETRY_SECONDS = 60
@@ -2034,6 +2035,8 @@ async def run_alert_delivery_worker(stop_event: asyncio.Event, poll_interval_sec
 
 
 async def run_subscription_reconciler_worker(stop_event: asyncio.Event, interval_seconds: float = RECONCILE_INTERVAL_SECONDS) -> None:
+    if await _wait_for_stop(stop_event, RECONCILE_STARTUP_DELAY_SECONDS):
+        return
     while not stop_event.is_set():
         db = SessionLocal()
         try:
@@ -2052,9 +2055,10 @@ def _workflow_channels(db, user_id: str, workflow) -> list[str]:
 
 
 class BackgroundAsyncService:
-    def __init__(self, name: str, target) -> None:
+    def __init__(self, name: str, target, *, cleanup=None) -> None:
         self.name = name
         self._target = target
+        self._cleanup = cleanup
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_event: asyncio.Event | None = None
@@ -2090,6 +2094,11 @@ class BackgroundAsyncService:
                             continue
                         break
             finally:
+                if self._cleanup is not None:
+                    try:
+                        loop.run_until_complete(self._cleanup())
+                    except Exception:
+                        logger.exception("%s cleanup failed", self.name)
                 pending = asyncio.all_tasks(loop)
                 for task in pending:
                     task.cancel()
@@ -2103,7 +2112,7 @@ class BackgroundAsyncService:
         self._thread.start()
         self._ready.wait(timeout=2)
 
-    def stop(self, timeout: float = 0.5) -> None:
+    def stop(self, timeout: float = 5.0) -> None:
         logger.info("%s stopping", self.name)
         if self._loop and self._stop_event:
             try:
@@ -2133,7 +2142,11 @@ class CompositeBackgroundService:
 def create_alert_worker_service() -> CompositeBackgroundService:
     return CompositeBackgroundService(
         [
-            BackgroundAsyncService("alert-live-worker", run_live_market_data_worker),
+            BackgroundAsyncService(
+                "alert-live-worker",
+                run_live_market_data_worker,
+                cleanup=close_live_price_adapters,
+            ),
             BackgroundAsyncService("alert-evaluator-worker", run_alert_evaluator_worker),
             BackgroundAsyncService("alpha-feed-alert-worker", run_alpha_feed_alert_worker),
             BackgroundAsyncService("alert-delivery-worker", run_alert_delivery_worker),
