@@ -78,12 +78,21 @@ function firstArray(payload: JsonObject, keys: string[]): JsonObject[] {
 export function normalizeOrders(payload: JsonObject): Order[] {
     return firstArray(payload, ["orders", "order_list", "data"]).map((row, index) => ({
         id: stringFrom(row, ["order_id", "orderid", "orderId", "id"], `order-${index}`),
-        symbol: stringFrom(row, ["tradingsymbol", "trading_symbol", "symbol", "securityId"], "Unknown"),
+        symbol: stringFrom(
+            row,
+            ["tradingsymbol", "trading_symbol", "tradingSymbol", "symbol", "securityId"],
+            "Unknown"
+        ),
         action: stringFrom(row, ["transaction_type", "transactionType", "action", "side"], "-"),
-        quantity: numberFrom(row, ["quantity", "qty", "filled_quantity"]) ?? 0,
-        price: numberFrom(row, ["price", "average_price", "avgPrice"]),
+        quantity: numberFrom(row, ["quantity", "qty", "filled_quantity", "filledQty"]) ?? 0,
+        price: numberFrom(row, ["price", "average_price", "avgPrice", "tradedPrice"]),
         status: stringFrom(row, ["status", "order_status", "orderStatus"], "unknown"),
-        time: stringFrom(row, ["order_timestamp", "exchange_timestamp", "created_at", "time"], "") || null,
+        time:
+            stringFrom(
+                row,
+                ["order_timestamp", "exchange_timestamp", "createTime", "updateTime", "created_at", "time"],
+                ""
+            ) || null,
         raw: row
     }));
 }
@@ -91,11 +100,17 @@ export function normalizeOrders(payload: JsonObject): Order[] {
 export function normalizeTrades(payload: JsonObject): Trade[] {
     return firstArray(payload, ["trades", "trade_list", "data"]).map((row, index) => ({
         id: stringFrom(row, ["trade_id", "tradeid", "order_id", "id"], `trade-${index}`),
-        symbol: stringFrom(row, ["tradingsymbol", "trading_symbol", "symbol", "securityId"], "Unknown"),
+        symbol: stringFrom(
+            row,
+            ["tradingsymbol", "trading_symbol", "tradingSymbol", "symbol", "securityId"],
+            "Unknown"
+        ),
         action: stringFrom(row, ["transaction_type", "transactionType", "action", "side"], "-"),
         quantity: numberFrom(row, ["quantity", "qty", "filled_quantity"]) ?? 0,
-        avg_price: numberFrom(row, ["average_price", "avg_price", "avgPrice", "price"]),
-        time: stringFrom(row, ["trade_timestamp", "exchange_timestamp", "created_at", "time"], "") || null,
+        avg_price: numberFrom(row, ["average_price", "avg_price", "avgPrice", "tradedPrice", "price"]),
+        time:
+            stringFrom(row, ["trade_timestamp", "exchange_timestamp", "exchangeTime", "created_at", "time"], "") ||
+            null,
         raw: row
     }));
 }
@@ -103,21 +118,39 @@ export function normalizeTrades(payload: JsonObject): Trade[] {
 export function normalizePositions(payload: JsonObject): Position[] {
     const rows = firstArray(payload, ["positions", "net", "data"]);
     return rows.map((row, index) => ({
-        id: stringFrom(row, ["tradingsymbol", "trading_symbol", "symbol", "securityId"], `position-${index}`),
-        symbol: stringFrom(row, ["tradingsymbol", "trading_symbol", "symbol", "securityId"], "Unknown"),
+        id: stringFrom(
+            row,
+            ["tradingsymbol", "trading_symbol", "tradingSymbol", "symbol", "securityId"],
+            `position-${index}`
+        ),
+        symbol: stringFrom(
+            row,
+            ["tradingsymbol", "trading_symbol", "tradingSymbol", "symbol", "securityId"],
+            "Unknown"
+        ),
         product: stringFrom(row, ["product", "producttype", "productType"], "") || null,
         quantity: numberFrom(row, ["quantity", "netqty", "net_qty", "netQuantity"]) ?? 0,
-        pnl: numberFrom(row, ["pnl", "profit_and_loss", "profitAndLoss", "day_pnl"]),
+        pnl:
+            numberFrom(row, ["pnl", "profit_and_loss", "profitAndLoss", "day_pnl"]) ??
+            ((numberFrom(row, ["realizedProfit"]) ?? 0) + (numberFrom(row, ["unrealizedProfit"]) ?? 0)),
         raw: row
     }));
 }
 
 export function normalizeHoldings(payload: JsonObject): Holding[] {
     return firstArray(payload, ["holdings", "holding", "data"]).map((row, index) => ({
-        id: stringFrom(row, ["tradingsymbol", "trading_symbol", "symbol", "isin"], `holding-${index}`),
-        symbol: stringFrom(row, ["tradingsymbol", "trading_symbol", "symbol", "isin"], "Unknown"),
-        quantity: numberFrom(row, ["quantity", "qty", "holdingQty"]) ?? 0,
-        average_price: numberFrom(row, ["average_price", "avg_price", "averagePrice"]),
+        id: stringFrom(
+            row,
+            ["tradingsymbol", "trading_symbol", "tradingSymbol", "symbol", "isin"],
+            `holding-${index}`
+        ),
+        symbol: stringFrom(
+            row,
+            ["tradingsymbol", "trading_symbol", "tradingSymbol", "symbol", "isin"],
+            "Unknown"
+        ),
+        quantity: numberFrom(row, ["quantity", "qty", "holdingQty", "totalQty", "availableQty"]) ?? 0,
+        average_price: numberFrom(row, ["average_price", "avg_price", "averagePrice", "avgCostPrice"]),
         last_price: numberFrom(row, ["last_price", "ltp", "lastPrice"]),
         pnl: numberFrom(row, ["pnl", "profit_and_loss", "profitAndLoss"]),
         pnl_percent: numberFrom(row, ["pnl_percent", "pnlPercentage", "day_change_percentage"]),
@@ -140,12 +173,27 @@ export function normalizeFunds(payload: JsonObject): FundsResponse {
     const collateralAvailable = numberFrom(source, ["collateral_available"]);
     const computedAvailable =
         clearCash !== null || collateralAvailable !== null ? (clearCash ?? 0) + (collateralAvailable ?? 0) : null;
-    const used = numberFrom(source, ["used", "utilised", "used_margin", "margin_used", "net_margin_used"]);
+    const used = numberFrom(source, [
+        "used",
+        "utilised",
+        "used_margin",
+        "margin_used",
+        "net_margin_used",
+        "utilizedAmount"
+    ]);
     return {
         available:
-            numberFrom(source, ["available", "available_margin", "availablecash", "net", "cash"]) ?? computedAvailable,
+            numberFrom(source, [
+                "available",
+                "available_margin",
+                "availablecash",
+                "availabelBalance",
+                "withdrawableBalance",
+                "net",
+                "cash"
+            ]) ?? computedAvailable,
         used,
-        opening_balance: numberFrom(source, ["opening_balance", "openingBalance", "opening"]),
+        opening_balance: numberFrom(source, ["opening_balance", "openingBalance", "opening", "sodLimit"]),
         total:
             numberFrom(source, ["total", "total_margin", "net", "equity"]) ??
             (computedAvailable !== null ? computedAvailable + (used ?? 0) : null),
@@ -161,7 +209,11 @@ export function normalizeProfile(payload: JsonObject): Profile {
         name: stringFrom(source, ["user_name", "userName", "name", "clientName"], "") || null,
         email: stringFrom(source, ["email", "email_id", "emailId"], "") || null,
         broker_user_id:
-            stringFrom(source, ["user_id", "userId", "client_id", "clientId", "vendor_user_id", "ucc"], "") || null,
+            stringFrom(
+                source,
+                ["user_id", "userId", "client_id", "clientId", "dhanClientId", "vendor_user_id", "ucc"],
+                ""
+            ) || null,
         raw: payload
     };
 }

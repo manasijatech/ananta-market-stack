@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from broker.dhan import auth
+from common.datetime_compat import UTC
 
 
 class _Response:
@@ -47,3 +48,11 @@ def test_consume_consent_uses_redirect_token_id_and_preserves_expiry(monkeypatch
         },
         {"tokenId": "redirect-token-id"},
     )
+
+
+def test_parse_expiry_treats_naive_dhan_time_as_ist() -> None:
+    parsed = auth.parse_expiry("2026-07-18 09:37:00")
+
+    assert parsed is not None
+    assert parsed.tzinfo is UTC
+    assert parsed.isoformat() == "2026-07-18T04:07:00+00:00"

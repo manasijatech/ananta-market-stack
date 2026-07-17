@@ -37,6 +37,18 @@ class DhanHTTP:
         else:
             return {"status": "failed", "message": f"bad method {method}"}
         try:
-            return json.loads(r.text) if r.text else {}
+            body = json.loads(r.text) if r.text else {}
         except json.JSONDecodeError:
-            return {"status": "failed", "message": r.text[:500]}
+            body = {"status": "failed", "message": r.text[:500]}
+        if not isinstance(body, dict):
+            return {
+                "status": "failed",
+                "message": f"Dhan returned an unexpected response ({r.status_code})",
+                "http_status": r.status_code,
+                "data": body,
+            }
+        if r.is_error:
+            body.setdefault("status", "failed")
+            body.setdefault("message", body.get("errorMessage") or f"Dhan HTTP {r.status_code}")
+            body["http_status"] = r.status_code
+        return body

@@ -427,7 +427,8 @@ def refresh_dhan_session(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
     now = _now_utc()
     access_token = decrypt_value(row.access_token_cipher)
 
-    if acc.automation_enabled and row.pin_cipher and row.totp_secret_cipher:
+    can_generate_with_totp = bool(row.pin_cipher and row.totp_secret_cipher)
+    if can_generate_with_totp:
         payload, err = dhan_auth.generate_access_token_with_totp(
             client_id=decrypt_value(row.client_id_cipher),
             pin=decrypt_value(row.pin_cipher),
@@ -438,22 +439,19 @@ def refresh_dhan_session(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
         row.access_token_cipher = encrypt_value(payload["access_token"])
         row.access_token_generated_at = now
         row.access_token_expires_at = dhan_auth.parse_expiry(payload.get("expiry_time")) or dhan_auth.default_expiry_from_now()
+        acc.automation_enabled = True
+        acc.automation_mode = "dhan_totp"
         _set_session_state(acc, status="active", expires_at=row.access_token_expires_at, error=None)
         mark_session_healthy(db, acc, verified_at=now)
-    elif access_token:
-        payload, err = dhan_auth.renew_access_token(
-            access_token=access_token,
-            client_id=decrypt_value(row.client_id_cipher),
-        )
-        if err or not payload:
-            return False, err or "failed"
-        row.access_token_cipher = encrypt_value(payload["access_token"])
-        row.access_token_generated_at = now
-        row.access_token_expires_at = dhan_auth.parse_expiry(payload.get("expiry_time")) or dhan_auth.default_expiry_from_now()
+    elif access_token and _is_active(row.access_token_expires_at):
+        # Dhan's RenewToken endpoint is only valid for tokens generated directly
+        # from Dhan Web. Consent-flow tokenIds do not carry their origin in our
+        # credential model, so preserve a still-valid consent token instead of
+        # calling an incompatible renewal endpoint and marking it invalid.
         _set_session_state(acc, status="active", expires_at=row.access_token_expires_at, error=None)
-        mark_session_healthy(db, acc, verified_at=now)
+        mark_session_healthy(db, acc, verified_at=acc.last_verified_at or now)
     else:
-        return False, "no stored Dhan access token or automation credentials"
+        return False, "Dhan access token expired; use Login with Dhan or store PIN + TOTP for automatic generation"
 
     db.add(row)
     db.add(acc)
@@ -785,8 +783,37 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
         db.commit()
         return
 
+    if code == "dhan":
+        status = get_broker_session_status(acc)
+        ok, msg = refresh_dhan_session(db, acc)
+        if ok:
+            return
+        if status.session_active:
+            # A transient TOTP generation failure must not invalidate the token
+            # that is still accepted by Dhan. The five-minute retry pass below
+            # will try again while it approaches expiry.
+            acc.last_error = None
+            acc.session_status = "active"
+            db.add(acc)
+            db.commit()
+            return
+        user_message = _session_action_message(acc, msg)
+        _set_session_state(acc, status="action_required", expires_at=acc.session_expires_at, error=user_message)
+        _create_notification_once_per_day(
+            db,
+            user_id=acc.user_id,
+            account_id=acc.id,
+            broker_code=code,
+            kind="session_refresh_failed",
+            title=f"{acc.label}: Dhan session refresh failed",
+            message=user_message,
+            level="warning",
+        )
+        db.add(acc)
+        db.commit()
+        return
+
     refreshers = {
-        "dhan": refresh_dhan_session,
         "angel": refresh_angel_session,
         "groww": lambda inner_db, inner_acc: refresh_groww_session(inner_db, inner_acc, None),
         "kotak": refresh_kotak_session,
@@ -810,6 +837,31 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
         )
         db.add(acc)
         db.commit()
+
+
+def run_expiring_dhan_maintenance_once() -> None:
+    """Retry official Dhan TOTP generation near expiry without waiting a day."""
+    db = SessionLocal()
+    try:
+        accounts = list(
+            db.scalars(
+                select(BrokerAccount).where(
+                    BrokerAccount.is_active.is_(True),
+                    BrokerAccount.broker_code == "dhan",
+                )
+            ).all()
+        )
+        retry_before = _now_utc() + timedelta(hours=4)
+        for acc in accounts:
+            status = get_broker_session_status(acc)
+            can_generate_with_totp = not status.fields_required
+            if not acc.automation_enabled and not can_generate_with_totp:
+                continue
+            expires_at = _as_utc(status.token_expires_at)
+            if not status.session_active or expires_at is None or expires_at <= retry_before:
+                process_account_maintenance(db, acc)
+    finally:
+        db.close()
 
 
 def run_daily_maintenance_once() -> None:
@@ -894,6 +946,10 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
             pass
         try:
             run_daily_maintenance_once()
+        except Exception:
+            pass
+        try:
+            run_expiring_dhan_maintenance_once()
         except Exception:
             pass
         try:

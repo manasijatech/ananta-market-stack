@@ -33,6 +33,16 @@ _CSV_CACHE_TTL = timedelta(minutes=1)
 _CSV_SEARCH_CACHE: dict[str, dict[str, Any]] = {}
 _INSTRUMENT_FETCH_ATTEMPTS = 3
 logger = logging.getLogger(__name__)
+_DHAN_EXCHANGE_SEGMENTS = {
+    "IDX_I",
+    "NSE_EQ",
+    "NSE_FNO",
+    "NSE_CURRENCY",
+    "BSE_EQ",
+    "BSE_FNO",
+    "BSE_CURRENCY",
+    "MCX_COMM",
+}
 
 try:
     csv.field_size_limit(sys.maxsize)
@@ -101,6 +111,14 @@ def _hydrate_exact_match(
     if exchange:
         stmt = stmt.where(BrokerInstrument.exchange == exchange)
     row = db.scalars(stmt.limit(1)).first()
+    if (
+        row
+        and broker_code == "dhan"
+        and row.dhan_exchange_segment not in _DHAN_EXCHANGE_SEGMENTS
+    ):
+        # Ignore caches produced by the older compact-master mapping, which
+        # stored NSE/BSE instead of Dhan's required NSE_EQ/BSE_EQ/etc.
+        row = None
     if not row:
         csv_match = _csv_exact_match(broker_code, symbol=symbol, exchange=exchange)
         if csv_match:
@@ -526,8 +544,8 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
             guidance="Option chain is currently wired for Groww and Dhan. INDstocks documents the endpoints but the live API still returns route-missing responses.",
         ),
         "greeks": DataCapabilityItem(
-            supported=acc.broker_code == "groww",
-            guidance="Greeks are currently derived from Groww option chain responses. INDstocks still advertises these endpoints as coming soon and the live API returns 404.",
+            supported=acc.broker_code in {"groww", "dhan"},
+            guidance="Greeks are exposed from Groww and Dhan option-chain responses. INDstocks still advertises these endpoints as coming soon and the live API returns 404.",
         ),
         "stream": DataCapabilityItem(supported=True, guidance="WebSocket v1 is an on-demand test manager that uses a uniform read-only flow."),
     }
@@ -539,7 +557,21 @@ def cached_instrument_count(db: Session, broker_code: str) -> int:
 
 
 def instrument_csv_available(broker_code: str) -> bool:
-    return _csv_path_for_broker(broker_code).exists()
+    path = _csv_path_for_broker(broker_code)
+    if not path.exists():
+        return False
+    if broker_code != "dhan":
+        return True
+    try:
+        with path.open("r", newline="", encoding="utf-8") as handle:
+            first = next(csv.DictReader(handle), None)
+    except (OSError, csv.Error):
+        return False
+    return bool(
+        first
+        and first.get("exchange")
+        and first.get("dhan_exchange_segment") in _DHAN_EXCHANGE_SEGMENTS
+    )
 
 
 def instrument_cache_available(db: Session, broker_code: str) -> bool:

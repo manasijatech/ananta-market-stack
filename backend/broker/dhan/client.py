@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from broker.core.data_features import unsupported_operation
 from broker.core.instruments import DefaultInstrumentResolver, InstrumentResolver
 from broker.dhan import auth as dauth
 from broker.dhan import funds as dfunds
@@ -32,15 +31,22 @@ class DhanClient:
         self._http = DhanHTTP(access_token, client_id)
 
     def verify_connection(self) -> tuple[bool, str]:
-        r = dfunds.fund_limits(self._http)
-        if r.get("errorType") == "Invalid_Authentication":
-            return False, str(r.get("errorMessage", "auth"))
-        if r.get("status") == "error":
-            return False, str(r.get("errors", "err"))
+        r = dfunds.profile(self._http)
+        if r.get("errorType") or r.get("status") in {"error", "failed"}:
+            return False, str(
+                r.get("errorMessage")
+                or r.get("message")
+                or r.get("errors")
+                or r.get("errorType")
+                or "Dhan verification failed"
+            )
+        data_plan = str(r.get("dataPlan") or "").strip().lower()
+        if data_plan and data_plan != "active":
+            return False, "Dhan connection is valid, but the Data API plan is not active."
         return True, ""
 
     def user_profile(self) -> dict[str, Any]:
-        return dfunds.fund_limits(self._http)
+        return dfunds.profile(self._http)
 
     def order_book(self) -> dict[str, Any]:
         return dorders.order_book(self._http)
@@ -100,8 +106,7 @@ class DhanClient:
         return dmd.fetch_option_chain(self._http, request)
 
     def greeks(self, request: dict[str, Any]) -> dict[str, Any]:
-        _ = request
-        return unsupported_operation(self.broker_code, "greeks")
+        return dmd.fetch_greeks(self._http, request)
 
     def stream_capabilities(self) -> dict[str, Any]:
         return dmd.stream_capabilities()
