@@ -21,7 +21,7 @@ Ananta Market Stack supports two Dhan setup styles:
 2. Generate or copy the API key and API secret.
 3. Copy your Dhan client ID. This is assigned by Dhan; do not enter Ananta or your app name.
 4. Register the exact frontend URL shown by Ananta (ending in `/broker-connections`) as the Dhan app redirect URL.
-5. Set up static IP allowlisting if Dhan requires it.
+5. Confirm that the Dhan profile page shows the **Data API plan** as active.
 6. Decide whether you want consent login or TOTP automation.
 7. Keep PIN and TOTP secret ready only if you want automated refresh.
 
@@ -64,6 +64,16 @@ Automated refresh:
 1. Store PIN and TOTP secret while adding the broker.
 2. Ananta Market Stack can use those saved values to attempt official token generation.
 
+## Market Data And Live Feed
+
+- The Dhan profile API verifies the access token and reports `dataPlan` and `dataValidity`.
+- Snapshot quotes use Dhan's REST Market Quote API. Dhan permits up to 1000 instruments per request at one request per second.
+- Persistent subscriptions use Dhan's native v2 WebSocket quote feed. The feed uses `ExchangeSegment` plus `SecurityId`, accepts at most 100 instruments in each subscribe message, and sends little-endian binary responses.
+- After adding subscriptions, open **Settings → Streams** and click **Reconcile**. Dhan should appear under broker readiness and live rows should begin receiving prices while the market is active.
+- The WebSocket test in developer tools is an on-demand uniform REST inspection stream. Its subscription count is separate from the persistent subscriptions shown in **Settings → Streams**.
+
+If Dhan rejects the native feed, Ananta shows the documented Data API code. In particular, `805` means too many requests or connections, `806` means Data APIs are not subscribed, `807` means the token expired, and `808`–`810` identify invalid authentication, token, or client ID. A valid paid account should not return `806`; if it does, compare `dataPlan` and `dataValidity` in the profile response with the subscription shown in Dhan.
+
 ## Advantages
 
 - API key, API secret, and client ID are straightforward to save.
@@ -74,7 +84,7 @@ Automated refresh:
 
 - Consent login requires a fresh one-time `tokenId` when the access token expires.
 - Automation requires storing PIN and TOTP secret.
-- Static IP allowlisting may be required before live API calls work.
+- Dhan access tokens expire and must be renewed or generated again.
 
 **Recommendation:** Use consent login if you do not want to store PIN and TOTP secret. Use PIN plus TOTP secret if you need unattended refresh.
 
@@ -85,4 +95,5 @@ Automated refresh:
 - Paste `tokenId` manually only when automatic callback completion fails.
 - Dhan names the redirect query parameter `tokenId`; Ananta maps it to the backend's `token_id` field automatically.
 - The Dhan redirect URL must be the public frontend URL, not the private Docker backend URL.
+- Dhan documents static IP allowlisting for order-placement APIs; it is not required merely to fetch market data.
 - Keep API secret, PIN, and TOTP secret private.

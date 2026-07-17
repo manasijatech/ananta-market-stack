@@ -45,6 +45,28 @@ type FastApiValidationItem = {
     type?: string;
 };
 
+export type BrokerDataTestAction =
+    | "capabilities"
+    | "stream_status"
+    | "sync_instruments"
+    | "delete_instruments"
+    | "search_instruments"
+    | "profile"
+    | "funds"
+    | "positions"
+    | "holdings"
+    | "orders"
+    | "trades"
+    | "quotes"
+    | "ohlc"
+    | "historical"
+    | "option_chain"
+    | "greeks";
+
+export type BrokerDataTestResult =
+    | { ok: true; data: unknown }
+    | { ok: false; error: string };
+
 function isJsonObject(value: unknown): value is JsonObject {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -131,6 +153,89 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         }
     });
     return readResponse<T>(response);
+}
+
+function brokerDataTestError(error: unknown): string {
+    const raw = error instanceof Error ? error.message : String(error || "");
+    try {
+        const parsed = JSON.parse(raw) as { message?: unknown };
+        if (typeof parsed.message === "string" && parsed.message.trim()) {
+            return parsed.message;
+        }
+    } catch {
+        // Keep the already-sanitized message below.
+    }
+    if (/fetch failed|ECONNREFUSED|network|Failed to fetch/i.test(raw)) {
+        return "Could not reach the broker service. Wait a moment and try again.";
+    }
+    return raw || "The broker data request failed.";
+}
+
+export async function runBrokerDataTestAction(
+    id: string,
+    action: BrokerDataTestAction,
+    payload: unknown = {}
+): Promise<BrokerDataTestResult> {
+    const body = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
+    try {
+        let data: unknown;
+        switch (action) {
+            case "capabilities":
+                data = await getDataCapabilities(id);
+                break;
+            case "stream_status":
+                data = await getStreamStatus(id);
+                break;
+            case "sync_instruments":
+                data = await syncInstrumentCsv(id);
+                break;
+            case "delete_instruments":
+                data = await deleteInstrumentStorage(id);
+                break;
+            case "search_instruments":
+                data = await searchBrokerInstruments(
+                    id,
+                    body as { q?: string; exchange?: string; segment?: string; limit?: number }
+                );
+                break;
+            case "profile":
+                data = await getProfile(id);
+                break;
+            case "funds":
+                data = await getPortfolioFunds(id);
+                break;
+            case "positions":
+                data = await getPositions(id);
+                break;
+            case "holdings":
+                data = await getHoldings(id);
+                break;
+            case "orders":
+                data = await getOrders(id);
+                break;
+            case "trades":
+                data = await getTrades(id);
+                break;
+            case "quotes":
+                data = await getDataQuotes(id, body as unknown as QuoteRequest);
+                break;
+            case "ohlc":
+                data = await getDataOhlc(id, body as unknown as OhlcRequest);
+                break;
+            case "historical":
+                data = await getHistoricalData(id, body as unknown as HistoricalRequest);
+                break;
+            case "option_chain":
+                data = await getOptionChainData(id, body as unknown as OptionChainRequest);
+                break;
+            case "greeks":
+                data = await getGreeksData(id, body as unknown as GreeksRequest);
+                break;
+        }
+        return { ok: true, data };
+    } catch (error) {
+        return { ok: false, error: brokerDataTestError(error) };
+    }
 }
 
 export async function getBrokerAccounts(): Promise<BrokerAccount[]> {

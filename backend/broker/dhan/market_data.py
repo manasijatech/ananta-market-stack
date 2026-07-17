@@ -62,7 +62,10 @@ def _security_id(value: Any) -> int:
 
 def _raise_dhan_error(payload: dict[str, Any]) -> None:
     if payload.get("status") in {"failed", "error"} or payload.get("errorType"):
+        error_code = payload.get("errorCode") or payload.get("code")
         message = payload.get("errorMessage") or payload.get("message") or payload.get("errorType")
+        if error_code:
+            message = f"{error_code}: {message or 'Dhan Data API request failed'}"
         raise RuntimeError(f"Dhan API error: {message}")
 
 
@@ -252,5 +255,8 @@ def fetch_greeks(http: DhanHTTP, request: dict[str, Any]) -> dict[str, Any]:
 def stream_capabilities() -> dict[str, Any]:
     return {
         "websocket_enabled": True,
-        "guidance": "Dhan supports a native v2 market-feed websocket. This uniform test stream currently polls Dhan quotes through the shared read-only stream manager.",
+        "guidance": (
+            "Persistent subscriptions use Dhan's native v2 binary quote feed. "
+            "This on-demand developer inspection socket uses the uniform REST quote path."
+        ),
     }

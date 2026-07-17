@@ -3,22 +3,8 @@
 import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { Clipboard, X } from "lucide-react";
 import {
-    deleteInstrumentStorage,
-    getDataCapabilities,
-    getDataOhlc,
-    getDataQuotes,
-    getGreeksData,
-    getHistoricalData,
-    getHoldings,
-    getOptionChainData,
-    getOrders,
-    getPortfolioFunds,
-    getPositions,
-    getProfile,
-    getStreamStatus,
-    getTrades,
-    searchBrokerInstruments,
-    syncInstrumentCsv
+    runBrokerDataTestAction,
+    type BrokerDataTestAction
 } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
 import { brokerNames, formatDate, StatusBadge } from "@/components/brokers/ui";
@@ -179,14 +165,12 @@ export function BrokerDataTest({
     account,
     sessionActive,
     initialCapabilities,
-    initialStreamStatus,
-    apiBaseUrl
+    initialStreamStatus
 }: {
     account: BrokerAccountDetail;
     sessionActive: boolean;
     initialCapabilities: DataCapabilities;
     initialStreamStatus: StreamStatus;
-    apiBaseUrl: string;
 }) {
     const [capabilities, setCapabilities] = useState(initialCapabilities);
     const [streamStatus, setStreamStatus] = useState(initialStreamStatus);
@@ -255,8 +239,8 @@ export function BrokerDataTest({
         startTransition(async () => {
             try {
                 const [nextCapabilities, nextStream] = await Promise.all([
-                    getDataCapabilities(account.id),
-                    getStreamStatus(account.id)
+                    callBrokerAction<DataCapabilities>("capabilities"),
+                    callBrokerAction<StreamStatus>("stream_status")
                 ]);
                 setCapabilities(nextCapabilities);
                 setStreamStatus(nextStream);
@@ -264,6 +248,14 @@ export function BrokerDataTest({
                 setError(parseActionError(caught).message);
             }
         });
+    }
+
+    async function callBrokerAction<T>(action: BrokerDataTestAction, payload?: unknown): Promise<T> {
+        const result = await runBrokerDataTestAction(account.id, action, payload);
+        if (!result.ok) {
+            throw new Error(result.error);
+        }
+        return result.data as T;
     }
 
     function run(action: () => Promise<unknown>, title: string) {
@@ -282,8 +274,9 @@ export function BrokerDataTest({
         setError("");
         startTransition(async () => {
             try {
-                const result =
-                    storage === "csv" ? await syncInstrumentCsv(account.id) : await deleteInstrumentStorage(account.id);
+                const result = await callBrokerAction<InstrumentSyncResult>(
+                    storage === "csv" ? "sync_instruments" : "delete_instruments"
+                );
                 setSyncResult(result);
                 setPayload(storage === "csv" ? "Instrument sync to CSV" : "Instrument storage delete", result);
                 if (storage === "delete") {
@@ -300,7 +293,7 @@ export function BrokerDataTest({
         setError("");
         startTransition(async () => {
             try {
-                const result = await searchBrokerInstruments(account.id, {
+                const result = await callBrokerAction<InstrumentSearchRow[]>("search_instruments", {
                     q: searchQuery,
                     exchange: searchExchange || undefined,
                     limit: 30
@@ -316,7 +309,9 @@ export function BrokerDataTest({
         if (wsRef.current || !streamStatus.websocket_enabled) {
             return;
         }
-        const url = new URL(apiBaseUrl, window.location.origin);
+        // Browser traffic must enter through the public frontend/nginx origin.
+        // FastAPI may only be reachable inside Docker.
+        const url = new URL("/api/v1", window.location.origin);
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         url.pathname = `${url.pathname.replace(/\/+$/, "")}/broker-accounts/${account.id}/data/stream/ws`;
         url.search = "";
@@ -341,7 +336,7 @@ export function BrokerDataTest({
             );
             startTransition(async () => {
                 try {
-                    setStreamStatus(await getStreamStatus(account.id));
+                    setStreamStatus(await callBrokerAction<StreamStatus>("stream_status"));
                 } catch {
                     return;
                 }
@@ -582,7 +577,7 @@ export function BrokerDataTest({
                     <Group>
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getProfile(account.id), "Profile")}
+                            onClick={() => run(() => callBrokerAction("profile"), "Profile")}
                             type="button"
                             variant="outline"
                         >
@@ -591,7 +586,7 @@ export function BrokerDataTest({
                         <GroupSeparator />
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getPortfolioFunds(account.id), "Funds")}
+                            onClick={() => run(() => callBrokerAction("funds"), "Funds")}
                             type="button"
                             variant="outline"
                         >
@@ -600,7 +595,7 @@ export function BrokerDataTest({
                         <GroupSeparator />
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getPositions(account.id), "Positions")}
+                            onClick={() => run(() => callBrokerAction("positions"), "Positions")}
                             type="button"
                             variant="outline"
                         >
@@ -610,7 +605,7 @@ export function BrokerDataTest({
                     <Group>
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getHoldings(account.id), "Holdings")}
+                            onClick={() => run(() => callBrokerAction("holdings"), "Holdings")}
                             type="button"
                             variant="outline"
                         >
@@ -619,7 +614,7 @@ export function BrokerDataTest({
                         <GroupSeparator />
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getOrders(account.id), "Orders")}
+                            onClick={() => run(() => callBrokerAction("orders"), "Orders")}
                             type="button"
                             variant="outline"
                         >
@@ -628,7 +623,7 @@ export function BrokerDataTest({
                         <GroupSeparator />
                         <Button
                             disabled={isPending || !sessionActive}
-                            onClick={() => run(() => getTrades(account.id), "Trades")}
+                            onClick={() => run(() => callBrokerAction("trades"), "Trades")}
                             type="button"
                             variant="outline"
                         >
@@ -867,15 +862,15 @@ export function BrokerDataTest({
                         onClick={() => {
                             if (marketMode === "quote") {
                                 run(
-                                    () => getDataQuotes(account.id, { instruments: [marketInstrument()] }),
+                                    () => callBrokerAction("quotes", { instruments: [marketInstrument()] }),
                                     "Data quotes"
                                 );
                             } else if (marketMode === "ohlc") {
-                                run(() => getDataOhlc(account.id, { instruments: [marketInstrument()] }), "Data OHLC");
+                                run(() => callBrokerAction("ohlc", { instruments: [marketInstrument()] }), "Data OHLC");
                             } else if (marketMode === "historical") {
                                 run(
                                     () =>
-                                        getHistoricalData(account.id, {
+                                        callBrokerAction("historical", {
                                             instrument: marketInstrument(),
                                             interval: marketInterval,
                                             from_date: new Date(marketFromDate).toISOString(),
@@ -886,7 +881,7 @@ export function BrokerDataTest({
                             } else if (marketMode === "option_chain") {
                                 run(
                                     () =>
-                                        getOptionChainData(account.id, {
+                                        callBrokerAction("option_chain", {
                                             symbol: marketSymbol.trim(),
                                             exchange: marketExchange.trim() || "NSE",
                                             expiry: marketExpiry.trim() || undefined
@@ -896,7 +891,7 @@ export function BrokerDataTest({
                             } else {
                                 run(
                                     () =>
-                                        getGreeksData(account.id, {
+                                        callBrokerAction("greeks", {
                                             symbol: marketSymbol.trim(),
                                             exchange: marketExchange.trim() || "NSE",
                                             expiry: marketExpiry.trim() || undefined,

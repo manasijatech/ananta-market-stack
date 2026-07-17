@@ -19,7 +19,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
-import { getLivePricesWebSocketConfig, touchLiveDemandSubscriptions } from "@/service/actions/alerts";
+import { touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
 import {
     addPresetWatchlist,
@@ -543,9 +543,21 @@ export function WatchlistsManager({
             setLivePrices({});
             livePendingRef.current.clear();
             try {
-                const { url } = await getLivePricesWebSocketConfig(livePriceRefs);
+                const userId = initialWatchlists[0]?.user_id;
+                if (!userId) {
+                    setLiveState("disconnected");
+                    return;
+                }
+                const url = new URL("/api/v1/live-streams/prices/ws", window.location.origin);
+                url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+                url.searchParams.set("user_id", userId);
+                for (const ref of livePriceRefs) {
+                    if (ref.account_id && ref.broker_code && ref.symbol) {
+                        url.searchParams.append("ref", `${ref.account_id}|${ref.broker_code}|${ref.symbol}`);
+                    }
+                }
                 if (cancelled) return;
-                const socket = new WebSocket(url);
+                const socket = new WebSocket(url.toString());
                 liveSocketRef.current = socket;
                 socket.onopen = () => setLiveState("connected");
                 socket.onmessage = (event) => {

@@ -263,7 +263,7 @@ The repository is split into two apps:
 - `frontend/` - Next.js app with Better Auth, broker account screens, integration guides, session workflows, quotes, portfolio views, alerts workspace, and alert channel settings.
 - `backend/` - FastAPI service with broker account persistence, encrypted credential storage, broker session helpers, unified portfolio/order endpoints, alert workflow APIs, SQLite, Alembic, and Redis-backed workers.
 
-The frontend talks to the backend through `NEXT_PUBLIC_API_BASE_URL`. In Docker, server-side frontend calls use `http://backend:8000/api/v1` automatically while browser-facing websocket/testing URLs use `NEXT_PUBLIC_API_BASE_URL` by default.
+The frontend talks to the backend through the internal server URL for Server Actions. Browser-facing websocket/testing traffic uses the public frontend origin under `/api/v1`; Docker and production reverse proxies must forward that path, including WebSocket upgrades, to FastAPI.
 
 Server actions add `X-User-Id`, `X-User-Email`, and `X-Market-Stack-Session` headers from the Better Auth session. In backend-only development, missing `X-User-Id` falls back to `local-dev-user`.
 

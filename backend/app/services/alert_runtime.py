@@ -328,10 +328,12 @@ def _normalize_tick_payload(
         "received_at": _utc_now().isoformat(),
         "raw": quote_payload,
         "adapter": "polling",
-        "symbols": symbols,
+        # The connection session stores the batch list once. Repeating the
+        # entire list inside every tick caused quadratic Redis/AOF traffic.
+        "symbols": [row.symbol],
         "connection_id": f"{broker_code}:{account_id}:{connection_index}",
         "connection_index": connection_index,
-        "symbol_count": len(chunk_rows),
+        "symbol_count": 1,
         "capacity": 1000,
     }
 
@@ -461,25 +463,6 @@ def _publish_tick(redis_client: redis.Redis | None, tick: dict[str, Any]) -> Non
             maxlen=2000,
             approximate=True,
         )
-        redis_client.setex(
-            f"alert-live:session:{tick['user_id']}:{tick['account_id']}:{tick['broker_code']}:{tick.get('connection_index', 1)}",
-            120,
-            json.dumps(
-                {
-                    "user_id": tick["user_id"],
-                    "account_id": tick["account_id"],
-                    "broker_code": tick["broker_code"],
-                    "adapter": tick.get("adapter", "polling"),
-                    "connected": True,
-                    "symbols": tick.get("symbols", []),
-                    "connection_id": tick.get("connection_id"),
-                    "connection_index": tick.get("connection_index", 1),
-                    "symbol_count": tick.get("symbol_count", len(tick.get("symbols", []))),
-                    "capacity": tick.get("capacity", 1000),
-                    "last_seen_at": _utc_now().isoformat(),
-                }
-            ),
-        )
     except redis.RedisError as exc:
         logger.warning("tick publish failed: %s", exc)
 
@@ -573,7 +556,7 @@ async def _apply_live_feed_results(
         status = "action_required" if fetch_result.status == "fallback" else "error"
         health_reason = fetch_result.reason or "Broker live feed is unavailable."
         _mark_subscription_health([row for group in feed_groups for row in group], status=status, reason=health_reason)
-        if status == "action_required":
+        if status == "action_required" and _is_action_required_broker_error(health_reason):
             _record_action_required_failure(db, acc, [row for group in feed_groups for row in group], health_reason)
         return fetch_result.status
     if fetch_result.status == "unsupported":
@@ -597,7 +580,10 @@ async def _apply_live_feed_results(
         value = adapter.payload_value(payload, feed_instrument)
         if not value:
             for subscription_row in duplicate_rows:
-                if subscription_row.health_status not in {"action_required", "rate_limited", "error"}:
+                if (
+                    subscription_row.last_received_at is None
+                    and subscription_row.health_status not in {"action_required", "rate_limited", "error"}
+                ):
                     subscription_row.health_status = "pending"
                     subscription_row.health_reason = "Subscribed to broker live feed; waiting for the first live tick."
                     db.add(subscription_row)
@@ -729,6 +715,16 @@ def _apply_quote_results(
             quote_payload=publish_payload,
             row=row,
         ))
+    if any_valid_price:
+        _publish_live_session(
+            redis_client,
+            user_id=user_id,
+            account_id=account_id,
+            broker_code=broker_code,
+            adapter="polling",
+            symbols=symbols,
+            connection_index=connection_index,
+        )
     if rate_limited_count:
         logger.warning(
             "quote batch rate limited user=%s account=%s broker=%s connection=%s valid=%s rate_limited=%s unavailable=%s symbols=%s sample=%s",
@@ -792,7 +788,10 @@ def _is_action_required_broker_error(message: str) -> bool:
         "token is expired",
         "token is missing",
         "access token is expired",
+        "access token is invalid",
         "access token is missing",
+        "authentication failed",
+        "client id is invalid",
         "session token is expired",
         "session token is missing",
         "session bundle is missing",
@@ -896,6 +895,8 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                 acc = db.get(BrokerAccount, account_id)
                 if not acc:
                     continue
+                live_adapter = get_live_price_adapter(acc.broker_code)
+                chunk_size = live_adapter.capacity if live_adapter else 1000
                 unique_subscriptions: dict[tuple[str, str | None], list[LiveSymbolSubscription]] = {}
                 for subscription in subscriptions:
                     unique_key = (
@@ -912,12 +913,13 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                     key=lambda items: _subscription_priority(items[0]),
                 )
                 account_failed = False
-                for chunk_index, start in enumerate(range(0, len(ordered_subscription_groups), 1000), start=1):
-                    used_feed_fallback = False
-                    chunk_groups = ordered_subscription_groups[start : start + 1000]
+                for chunk_index, start in enumerate(
+                    range(0, len(ordered_subscription_groups), chunk_size),
+                    start=1,
+                ):
+                    chunk_groups = ordered_subscription_groups[start : start + chunk_size]
                     chunk_rows = [items[0] for items in chunk_groups]
                     instruments = [_instrument_for_group(items) for items in chunk_groups]
-                    live_adapter = get_live_price_adapter(acc.broker_code)
                     if live_adapter:
                         feed_result = await _apply_live_feed_results(
                             db,
@@ -937,7 +939,6 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                             _record_market_data_success(db, acc)
                             continue
                         if feed_result == "fallback":
-                            used_feed_fallback = True
                             if not live_adapter.rest_fallback_allowed(account_id):
                                 continue
                             live_adapter.schedule_rest_fallback(account_id)
@@ -979,8 +980,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                                     message = str(retry_exc)
                                 else:
                                     _clear_account_retry(account_id)
-                                    if not used_feed_fallback:
-                                        _record_market_data_success(db, acc)
+                                    _record_market_data_success(db, acc)
                                     ok = _apply_quote_results(
                                         db,
                                         redis_client,
@@ -1005,8 +1005,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                         account_failed = True
                         break
                     _clear_account_retry(account_id)
-                    if not used_feed_fallback:
-                        _record_market_data_success(db, acc)
+                    _record_market_data_success(db, acc)
                     ok = _apply_quote_results(
                         db,
                         redis_client,

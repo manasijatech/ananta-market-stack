@@ -465,6 +465,13 @@ async def broker_data_stream(account_id: str, websocket: WebSocket) -> None:
                             "rows": [row.model_dump(mode="json") for row in rows],
                         }
                     )
+                except Exception as exc:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "message": str(exc)[:1000],
+                        }
+                    )
                 finally:
                     poll_db.close()
             except WebSocketDisconnect:

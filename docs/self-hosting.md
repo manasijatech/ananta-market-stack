@@ -67,7 +67,7 @@ NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.example/api/v1
 APP_PUBLIC_BASE_URL=https://your-backend-domain.example
 ```
 
-Most HTTP API calls are made by the Next.js server. Docker Compose automatically uses `http://backend:8000/api/v1` for server-side calls, while browser websocket/testing URLs use `NEXT_PUBLIC_API_BASE_URL`. If you use those browser features, expose the backend through a reverse proxy or subdomain and point `NEXT_PUBLIC_API_BASE_URL` at that public backend URL.
+Most HTTP API calls are made by the Next.js server. Docker Compose automatically uses `http://backend:8000/api/v1` for server-side calls. Browser websocket and testing traffic must enter through the public frontend origin at `/api/v1`; configure the public reverse proxy to forward `/api/v1` (including WebSocket upgrades) to FastAPI. The backend does not need to be exposed as a separate public service.
 
 For Railway or the published single-image deployment, use the same public app domain for frontend, auth, and broker callbacks, and keep browser API traffic on `/api/v1`. See [Railway](docker-image.md#railway) and [Broker Callback URLs](environment.md#broker-callback-urls).
 
@@ -212,6 +212,17 @@ docker compose ps
 docker compose logs -f backend
 docker compose logs -f frontend
 ```
+
+If Redis logs `Memory overcommit must be enabled`, enable it on the Docker host:
+
+```bash
+sudo sysctl -w vm.overcommit_memory=1
+echo 'vm.overcommit_memory=1' | sudo tee /etc/sysctl.d/99-ananta-market-stack-redis.conf
+```
+
+This is host kernel configuration; changing it inside the application container is not sufficient. It prevents Redis background persistence from failing under memory pressure.
+
+After replacing the application image, an already-open browser tab may briefly hold Server Action IDs from the previous Next.js build. Current images include deployment skew protection and should hard-reload automatically. For older images, perform one hard refresh after the container update.
 
 If port `8000` is already used locally, set these in root `.env`:
 

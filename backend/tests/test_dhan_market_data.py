@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import struct
 
 from broker.dhan.client import DhanClient
 from broker.dhan import market_data
+from broker.dhan.live_price_adapter import DhanFeedDisconnect, parse_feed_packet
 
 
 class _HTTP:
@@ -93,3 +95,45 @@ def test_verify_reports_inactive_dhan_data_plan() -> None:
 
     assert ok is False
     assert "Data API plan is not active" in message
+
+
+def test_dhan_quote_feed_packet_uses_documented_little_endian_layout() -> None:
+    packet = struct.pack(
+        "<BHBIfHIfIIIffff",
+        4,
+        50,
+        1,
+        2885,
+        1510.25,
+        7,
+        1_752_728_400,
+        1505.5,
+        123456,
+        900,
+        850,
+        1500.0,
+        1495.0,
+        1520.0,
+        1490.0,
+    )
+
+    parsed = parse_feed_packet(packet)
+
+    assert parsed is not None
+    assert parsed["exchange_segment"] == "NSE_EQ"
+    assert parsed["security_id"] == "2885"
+    assert parsed["ltp"] == 1510.25
+    assert parsed["open"] == 1500.0
+    assert parsed["volume"] == 123456
+
+
+def test_dhan_feed_disconnect_exposes_data_api_entitlement_code() -> None:
+    packet = struct.pack("<BHBIH", 50, 10, 0, 0, 806)
+
+    try:
+        parse_feed_packet(packet)
+    except DhanFeedDisconnect as exc:
+        assert exc.code == 806
+        assert "not subscribed" in str(exc)
+    else:
+        raise AssertionError("expected DhanFeedDisconnect")

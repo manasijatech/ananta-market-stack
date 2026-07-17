@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode, type UIEvent } from "react";
 import { CheckCircle2, ChevronDown, Radio, Server } from "lucide-react";
-import { getLivePricesWebSocketConfig, getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
+import { getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
 import type { LivePriceTick, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
 import {
@@ -218,9 +218,22 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
             setMessage("");
             pendingRef.current.clear();
             try {
-                const { url } = await getLivePricesWebSocketConfig(visibleRows);
+                const userId = status.desired_subscriptions[0]?.user_id;
+                if (!userId) {
+                    setSocketState("disconnected");
+                    setMessage("Subscriptions are not linked to the current user");
+                    return;
+                }
+                const url = new URL("/api/v1/live-streams/prices/ws", window.location.origin);
+                url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+                url.searchParams.set("user_id", userId);
+                for (const ref of visibleRows) {
+                    if (ref.account_id && ref.broker_code && ref.symbol) {
+                        url.searchParams.append("ref", `${ref.account_id}|${ref.broker_code}|${ref.symbol}`);
+                    }
+                }
                 if (cancelled) return;
-                const socket = new WebSocket(url);
+                const socket = new WebSocket(url.toString());
                 socketRef.current = socket;
                 socket.onopen = () => {
                     setSocketState("connected");

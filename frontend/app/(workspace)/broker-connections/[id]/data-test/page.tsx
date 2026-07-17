@@ -7,7 +7,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { formatUserFacingError, isMissingOrInaccessibleError, isPermissionDeniedError } from "@/lib/api-errors";
 import { canUseBrokerData } from "@/lib/rbac";
-import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { getBrokerAccount, getDataCapabilities, getSessionStatus, getStreamStatus } from "@/service/actions/broker";
 
 type BrokerDataTestPageProps = {
@@ -37,8 +36,6 @@ export default async function BrokerDataTestPage({ params }: BrokerDataTestPageP
             getDataCapabilities(account.id),
             getStreamStatus(account.id)
         ]);
-        const apiBaseUrl = getPublicApiBaseUrl();
-
         return (
             <>
                 <PageHeader
@@ -55,7 +52,6 @@ export default async function BrokerDataTestPage({ params }: BrokerDataTestPageP
                 />
                 <BrokerDataTest
                     account={account}
-                    apiBaseUrl={apiBaseUrl}
                     initialCapabilities={capabilities}
                     initialStreamStatus={streamStatus}
                     sessionActive={sessionStatus.session_active}

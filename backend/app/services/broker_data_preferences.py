@@ -23,7 +23,7 @@ from app.services import broker_sessions as broker_session_svc
 from app.services import rbac
 from app.services.rbac import Principal
 from broker.core.instrument_store import latest_sync_run
-from db.models import BrokerAccount, BrokerHoldingsSnapshot, UserBrokerDataPreference
+from db.models import BrokerAccount, BrokerHoldingsSnapshot, User, UserBrokerDataPreference
 from db.session import SessionLocal
 
 _HOLDINGS_REFRESH_INTERVAL = timedelta(minutes=5)
@@ -94,6 +94,26 @@ def _candidate_order(
     remaining.sort(key=lambda row: (0 if row.last_verified_at else 1, row.created_at, row.id))
     ordered.extend(remaining)
     return ordered
+
+
+def _accessible_data_accounts(
+    db: Session,
+    user_id: str,
+    broker_code: str | None = None,
+) -> list[BrokerAccount]:
+    user = db.get(User, user_id)
+    if user is None:
+        return []
+    principal = rbac.ensure_principal(db, user)
+    accounts = [
+        row
+        for row in rbac.accessible_broker_accounts(db, principal)
+        if row.is_active
+        and rbac.BROKER_USE_DATA in rbac.account_permissions(db, principal, row)
+        and (not broker_code or row.broker_code == broker_code)
+    ]
+    accounts.sort(key=lambda row: (row.created_at, row.id))
+    return accounts
 
 
 def _default_account_summaries(
@@ -376,14 +396,7 @@ def get_effective_default_broker_account(
     user_id: str,
     broker_code: str | None = None,
 ) -> BrokerAccount | None:
-    stmt = (
-        select(BrokerAccount)
-        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-    )
-    if broker_code:
-        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
-    accounts = list(db.scalars(stmt).all())
+    accounts = _accessible_data_accounts(db, user_id, broker_code)
     if not accounts:
         return None
 
@@ -406,14 +419,7 @@ def get_stream_default_broker_account(
     if account is not None:
         return account
 
-    stmt = (
-        select(BrokerAccount)
-        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-    )
-    if broker_code:
-        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
-    accounts = list(db.scalars(stmt).all())
+    accounts = _accessible_data_accounts(db, user_id, broker_code)
     if not accounts:
         return None
 
