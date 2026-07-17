@@ -91,7 +91,7 @@ wait_for_backend() {
   while [ "$i" -lt 60 ]; do
     if python - <<PY >/dev/null 2>&1
 import urllib.request
-urllib.request.urlopen("http://$BACKEND_HOST:$BACKEND_PORT/health", timeout=2).read()
+urllib.request.urlopen("http://$BACKEND_HOST:$BACKEND_PORT/ready", timeout=2).read()
 PY
     then
       return 0
@@ -118,6 +118,19 @@ PY
   done
   log "Frontend did not become healthy in time."
   return 1
+}
+
+runtime_is_ready() {
+  python - <<PY >/dev/null 2>&1
+import urllib.request
+
+for url in (
+    "http://$BACKEND_HOST:$BACKEND_PORT/ready",
+    "http://127.0.0.1:$FRONTEND_PORT",
+    "http://127.0.0.1:$PUBLIC_PORT/",
+):
+    urllib.request.urlopen(url, timeout=3).read(1)
+PY
 }
 
 write_nginx_config() {
@@ -235,6 +248,8 @@ write_nginx_config
 nginx -g "daemon off;" &
 NGINX_PID="$!"
 
+health_check_ticks=0
+health_check_failures=0
 while :; do
   if ! kill -0 "$NGINX_PID" 2>/dev/null; then
     wait "$NGINX_PID" || exit_code="$?"
@@ -251,6 +266,21 @@ while :; do
   if [ -n "${REDIS_PID:-}" ] && ! kill -0 "$REDIS_PID" 2>/dev/null; then
     wait "$REDIS_PID" || exit_code="$?"
     break
+  fi
+  health_check_ticks=$((health_check_ticks + 1))
+  if [ "$health_check_ticks" -ge 5 ]; then
+    health_check_ticks=0
+    if runtime_is_ready; then
+      health_check_failures=0
+    else
+      health_check_failures=$((health_check_failures + 1))
+      log "Runtime readiness check failed ($health_check_failures/3)."
+      if [ "$health_check_failures" -ge 3 ]; then
+        log "Runtime remained unhealthy; exiting so the container restart policy can recover it."
+        exit_code=1
+        break
+      fi
+    fi
   fi
   sleep 1
 done

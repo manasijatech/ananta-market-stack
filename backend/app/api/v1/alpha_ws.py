@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
-from app.schemas.alpha import AlphaSymbolMetadataResponse
+from app.schemas.alpha import AlphaSymbolMetadataBulkRequest, AlphaSymbolMetadataResponse
 from app.schemas.alert import AlphaWebSocketEventOut
 from app.services import alpha_symbols
 from app.services.alpha_websocket import ALPHA_WS_PRODUCTS
@@ -51,6 +51,26 @@ def get_alpha_symbol_metadata(
             user.id,
             requested_symbols,
             force_refresh=force_refresh,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch Alpha symbol metadata: {exc}") from exc
+    return AlphaSymbolMetadataResponse(data=rows)
+
+
+@router.post("/symbols/metadata/bulk", response_model=AlphaSymbolMetadataResponse)
+def get_alpha_symbol_metadata_bulk(
+    body: AlphaSymbolMetadataBulkRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlphaSymbolMetadataResponse:
+    try:
+        rows = alpha_symbols.get_symbol_metadata(
+            db,
+            user.id,
+            body.symbols,
+            force_refresh=body.force_refresh,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

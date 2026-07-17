@@ -66,6 +66,7 @@ RECONCILE_INTERVAL_SECONDS = 5 * 60
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
 TRANSIENT_RETRY_SECONDS = 60
+LIVE_FEED_TRANSIENT_RETRY_SECONDS = 5
 REST_POLL_INTERVAL_SECONDS = 2.0
 SUBSCRIPTION_DB_PERSIST_INTERVAL_SECONDS = 10.0
 _ACCOUNT_RETRY_NOT_BEFORE: dict[str, datetime] = {}
@@ -997,7 +998,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                             chunk_rows = [items[0] for items in chunk_groups]
                             instruments = instruments[:live_adapter.fallback_symbol_limit]
                         if feed_result == "failed":
-                            _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
+                            _schedule_account_retry(account_id, LIVE_FEED_TRANSIENT_RETRY_SECONDS)
                             account_failed = True
                             break
                     if feed_result is None:

@@ -80,7 +80,7 @@ def run_startup_maintenance() -> None:
     run_system_maintenance(
         trigger="startup",
         full_redis_rebuild=_settings().system_redis_rebuild_on_startup,
-        force_vacuum=True,
+        force_vacuum=False,
     )
 
 
@@ -489,22 +489,18 @@ def _delete_stale_redis_keys(client: redis.Redis) -> dict[str, Any]:
 
 def _maybe_vacuum_sqlite(*, force: bool, deleted_rows: int) -> dict[str, Any]:
     global _last_sqlite_vacuum_monotonic
-    settings = _settings()
+    _ = deleted_rows
     db_path = _sqlite_path()
     if db_path is None:
         return {"performed": False, "reason": "non-sqlite database"}
 
-    now_monotonic = time.monotonic()
-    min_interval = max(settings.system_sqlite_vacuum_min_interval_seconds, 60)
-    interval_elapsed = (
-        _last_sqlite_vacuum_monotonic is None
-        or now_monotonic - _last_sqlite_vacuum_monotonic >= min_interval
-    )
-    if not force and deleted_rows <= 0:
-        return {"performed": False, "reason": "no sqlite churn"}
-    if not force and not interval_elapsed:
-        return {"performed": False, "reason": "vacuum interval not reached"}
+    if not force:
+        return {
+            "performed": False,
+            "reason": "online vacuum disabled; run an explicit maintenance vacuum during downtime",
+        }
 
+    now_monotonic = time.monotonic()
     before_size = db_path.stat().st_size if db_path.exists() else 0
     wal_path = db_path.with_suffix(db_path.suffix + "-wal")
     wal_before_size = wal_path.stat().st_size if wal_path.exists() else 0

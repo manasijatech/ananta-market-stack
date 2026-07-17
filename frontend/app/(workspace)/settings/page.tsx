@@ -1,9 +1,6 @@
-import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warning-modal";
 import { hasRbacPermission } from "@/lib/rbac";
 import { SettingsSections } from "@/components/settings/settings-sections";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
-import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getAlertChannels, getDesktopAudioDevices, getLiveStreamsStatus, getLiveSubscriptions } from "@/service/actions/alerts";
 import { getBrokerAccounts, getSystemConfig } from "@/service/actions/broker";
 import { getOpenRouterModels } from "@/service/actions/llm-models";
@@ -53,16 +50,8 @@ export default async function SettingsPage() {
         getWatchlists(),
         getOpenRouterModels()
     ]);
-    let creditWarningMessage: string | null = null;
-    const metadataRows = await getAlphaSymbolMetadata(subscriptions.map((item) => item.symbol)).catch((caught) => {
-        creditWarningMessage = getAlphaCreditWarningMessage(caught);
-        return [];
-    });
-    const symbolMetadata = Object.fromEntries(metadataRows.map((item) => [item.symbol.toUpperCase(), item]));
-
     return (
         <>
-            <AlphaCreditWarningTrigger message={creditWarningMessage} />
             <div className="h-full w-full min-w-0">
                 <SettingsSections
                     accounts={accounts}
@@ -78,7 +67,7 @@ export default async function SettingsPage() {
                     }}
                     streamStatus={streamStatus}
                     subscriptions={subscriptions}
-                    symbolMetadata={symbolMetadata}
+                    symbolMetadata={{}}
                     watchlists={watchlists}
                 />
             </div>

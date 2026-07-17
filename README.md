@@ -37,6 +37,7 @@ Run the published Ananta Market Stack image with one persistent data volume:
 ```bash
 docker run -d \
   --name ananta-market-stack \
+  --restart unless-stopped \
   -p 3000:3000 \
   -v ananta-market-stack-data:/data \
   ghcr.io/manasijatech/ananta-market-stack:latest

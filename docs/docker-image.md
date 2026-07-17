@@ -19,6 +19,7 @@ The container itself is disposable. Persistent state lives in the `/data` mount,
 ```bash
 docker run -d \
   --name ananta-market-stack \
+  --restart unless-stopped \
   -p 3000:3000 \
   -v ananta-market-stack-data:/data \
   ghcr.io/manasijatech/ananta-market-stack:latest
@@ -117,6 +118,7 @@ docker stop ananta-market-stack
 docker rm ananta-market-stack
 docker run -d \
   --name ananta-market-stack \
+  --restart unless-stopped \
   -p 3000:3000 \
   -v ananta-market-stack-data:/data \
   ghcr.io/manasijatech/ananta-market-stack:latest
@@ -130,6 +132,7 @@ docker stop ananta-market-stack
 docker rm ananta-market-stack
 docker run -d `
   --name ananta-market-stack `
+  --restart unless-stopped `
   -p 3000:3000 `
   -v ananta-market-stack-data:/data `
   ghcr.io/manasijatech/ananta-market-stack:latest

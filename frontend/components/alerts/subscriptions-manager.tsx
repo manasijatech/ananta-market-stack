@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Inbox, ListChecks, Loader2, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import { addLiveSubscription, deleteLiveSubscriptions } from "@/service/actions/alerts";
+import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import {
     refreshAlphaWebSocketAccount,
     searchBrokerInstruments,
@@ -105,6 +106,7 @@ export function SubscriptionsManager({
     watchlists: Watchlist[];
 }) {
     const [items, setItems] = useState(initialSubscriptions);
+    const [resolvedSymbolMetadata, setResolvedSymbolMetadata] = useState(symbolMetadata);
     const [alphaWsConfig, setAlphaWsConfig] = useState(alphaWebSocketConfig);
     const [savedAlphaWsConfig, setSavedAlphaWsConfig] = useState(alphaWebSocketConfig);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -128,6 +130,32 @@ export function SubscriptionsManager({
         : enabledAddons.filter((item) => item.tier === "full_market").map((item) => item.product);
     const activeLiveSymbols = alphaWsConfig.effective_symbol_count ?? alphaWsConfig.effective_symbols.length;
     const liveSymbolLimit = alphaWsConfig.live_symbol_limit;
+
+    useEffect(() => {
+        const missingSymbols = Array.from(
+            new Set(
+                items
+                    .map((item) => item.symbol.trim().toUpperCase())
+                    .filter((symbol) => symbol && !resolvedSymbolMetadata[symbol])
+            )
+        );
+        if (!missingSymbols.length) {
+            return;
+        }
+        let cancelled = false;
+        getAlphaSymbolMetadata(missingSymbols)
+            .then((metadataRows) => {
+                if (cancelled) return;
+                setResolvedSymbolMetadata((current) => ({
+                    ...current,
+                    ...Object.fromEntries(metadataRows.map((item) => [item.symbol.toUpperCase(), item]))
+                }));
+            })
+            .catch(() => undefined);
+        return () => {
+            cancelled = true;
+        };
+    }, [items, resolvedSymbolMetadata]);
 
     useEffect(() => {
         function handlePointerDown(event: MouseEvent) {
@@ -860,7 +888,7 @@ export function SubscriptionsManager({
             <div className="@container">
                 <div className="grid gap-2 @2xl:grid-cols-2">
                     {items.map((item) => {
-                        const metadata = symbolMetadata[item.symbol.toUpperCase()];
+                        const metadata = resolvedSymbolMetadata[item.symbol.toUpperCase()];
                         const companyName = metadata?.company_name?.trim();
                         return (
                             <Card

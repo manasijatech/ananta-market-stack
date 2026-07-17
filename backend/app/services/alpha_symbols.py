@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -16,6 +16,7 @@ from app.services import alpha_config
 from db.models import AlphaSymbolMetadataCache
 
 _ALPHA_SYMBOL_BATCH_SIZE = 20
+_UNAVAILABLE_RETRY_INTERVAL = timedelta(hours=6)
 logger = logging.getLogger(__name__)
 
 
@@ -124,6 +125,16 @@ def _cached_rows(
     return {row.symbol: row for row in db.scalars(stmt).all()}
 
 
+def _unavailable_retry_due(row: AlphaSymbolMetadataCache, now: datetime) -> bool:
+    try:
+        payload = json.loads(row.raw_payload_json or "{}")
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict) or payload.get("metadata_status") != "unavailable":
+        return False
+    return not row.fetched_at or row.fetched_at <= now - _UNAVAILABLE_RETRY_INTERVAL
+
+
 def _fetch_alpha_symbol_metadata(api_key: str, symbols: list[str]) -> list[AlphaSymbolMetadata]:
     if not symbols:
         return []
@@ -154,15 +165,27 @@ def get_symbol_metadata(
     if not requested:
         return []
 
-    cached = {} if force_refresh else _cached_rows(db, requested)
-    missing = [symbol for symbol in requested if symbol not in cached]
+    cached = _cached_rows(db, requested)
+    now = _now_utc_naive()
+    missing = [
+        symbol
+        for symbol in requested
+        if force_refresh or symbol not in cached or _unavailable_retry_due(cached[symbol], now)
+    ]
     if missing:
-        api_key = alpha_config.get_alpha_api_key(db, user_id)
+        try:
+            api_key = alpha_config.get_alpha_api_key(db, user_id)
+        except Exception as exc:
+            logger.info("Alpha symbol metadata backfill skipped because no usable API key is available: %s", exc)
+            by_symbol = {symbol: _row_to_schema(row) for symbol, row in cached.items()}
+            return [by_symbol.get(symbol) or _fallback_schema(symbol) for symbol in requested]
         for index in range(0, len(missing), _ALPHA_SYMBOL_BATCH_SIZE):
             batch = missing[index:index + _ALPHA_SYMBOL_BATCH_SIZE]
+            fetch_failed = False
             try:
                 fetched = _fetch_alpha_symbol_metadata(api_key, batch)
             except (DrishtiApiError, httpx.HTTPError) as exc:
+                fetch_failed = True
                 logger.warning("Alpha symbol metadata fetch failed for %s: %s", ",".join(batch), exc)
                 fetched = []
                 for symbol in batch:
@@ -175,9 +198,22 @@ def get_symbol_metadata(
                             "metadata_error": str(exc),
                         },
                     )
+            fetched_symbols = {item.symbol for item in fetched}
             for item in fetched:
                 if item.symbol in batch:
                     _upsert_metadata(db, item, item.model_dump())
+            if not fetch_failed:
+                for symbol in batch:
+                    if symbol not in fetched_symbols:
+                        _upsert_metadata(
+                            db,
+                            _fallback_schema(symbol),
+                            {
+                                "symbol": symbol,
+                                "metadata_status": "unavailable",
+                                "metadata_error": "Alpha metadata response did not include this symbol.",
+                            },
+                        )
         db.commit()
         cached = _cached_rows(db, requested)
 

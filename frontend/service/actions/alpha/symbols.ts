@@ -3,8 +3,6 @@
 import { fetchFastApi } from "@/lib/fastapi";
 import type { AlphaSymbolMetadata, AlphaSymbolMetadataResponse } from "@/service/types/alpha/symbols";
 
-const SYMBOL_METADATA_BATCH_SIZE = 20;
-
 function normalizeSymbols(symbols: string[]): string[] {
     const seen = new Set<string>();
     const normalized: string[] = [];
@@ -72,11 +70,12 @@ function normalizeMetadataRows(symbols: string[], rows: unknown): AlphaSymbolMet
     return symbols.map((symbol) => bySymbol.get(symbol) ?? fallbackMetadataRow(symbol));
 }
 
-async function getAlphaSymbolMetadataBatch(symbols: string[]): Promise<AlphaSymbolMetadata[]> {
-    const query = new URLSearchParams();
-    query.set("symbols", symbols.join(","));
-    if (!query.has("symbols")) return [];
-    const response = await fetchFastApi(`/alpha/symbols/metadata?${query.toString()}`);
+async function getAlphaSymbolMetadataBulk(symbols: string[]): Promise<AlphaSymbolMetadata[]> {
+    const response = await fetchFastApi("/alpha/symbols/metadata/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ symbols, force_refresh: false })
+    });
     if (!response.ok) {
         return fallbackMetadata(symbols);
     }
@@ -90,14 +89,12 @@ async function getAlphaSymbolMetadataBatch(symbols: string[]): Promise<AlphaSymb
 
 export async function getAlphaSymbolMetadata(symbols: string[]): Promise<AlphaSymbolMetadata[]> {
     const normalized = normalizeSymbols(symbols);
-    const metadata: AlphaSymbolMetadata[] = [];
-    for (let index = 0; index < normalized.length; index += SYMBOL_METADATA_BATCH_SIZE) {
-        const batch = normalized.slice(index, index + SYMBOL_METADATA_BATCH_SIZE);
-        try {
-            metadata.push(...(await getAlphaSymbolMetadataBatch(batch)));
-        } catch {
-            metadata.push(...fallbackMetadata(batch));
-        }
+    if (!normalized.length) {
+        return [];
     }
-    return metadata;
+    try {
+        return await getAlphaSymbolMetadataBulk(normalized);
+    } catch {
+        return fallbackMetadata(normalized);
+    }
 }

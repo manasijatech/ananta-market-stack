@@ -28,17 +28,26 @@ def _ensure_sqlite_dir(url: str) -> None:
 
 _settings = get_settings()
 _ensure_sqlite_dir(_settings.database_url)
+_SQLITE_BUSY_TIMEOUT_MS = 30_000
 
 engine = create_engine(
     _settings.database_url,
-    connect_args={"check_same_thread": False} if "sqlite" in _settings.database_url else {},
+    connect_args={
+        "check_same_thread": False,
+        "timeout": _SQLITE_BUSY_TIMEOUT_MS / 1000,
+    }
+    if "sqlite" in _settings.database_url
+    else {},
 )
 
 if _settings.database_url.startswith("sqlite"):
     @event.listens_for(engine, "connect")
-    def _set_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:  # type: ignore[no-untyped-def]
+    def _configure_sqlite_connection(dbapi_connection, connection_record) -> None:  # type: ignore[no-untyped-def]
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA wal_autocheckpoint=1000")
         cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -57,6 +66,7 @@ def init_db() -> None:
     from db import models  # noqa: F401
 
     with _INIT_LOCK:
+        _enable_sqlite_wal()
         _check_database_health()
         if _requires_sqlite_legacy_bootstrap():
             logger.info("Applying legacy SQLite bootstrap for ananta-market-stack database")
@@ -67,6 +77,15 @@ def init_db() -> None:
             return
         _upgrade_database_to_head()
         _repair_installation_access_after_migration()
+
+
+def _enable_sqlite_wal() -> None:
+    if not _settings.database_url.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        journal_mode = conn.exec_driver_sql("PRAGMA journal_mode=WAL").scalar()
+    if str(journal_mode).lower() != "wal":
+        raise RuntimeError(f"Could not enable SQLite WAL mode; active mode is {journal_mode!r}")
 
 
 def _repair_installation_access_after_migration() -> None:
