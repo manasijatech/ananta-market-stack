@@ -66,7 +66,10 @@ RECONCILE_INTERVAL_SECONDS = 5 * 60
 BACKGROUND_RESTART_DELAY_SECONDS = 5.0
 ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
 TRANSIENT_RETRY_SECONDS = 60
+REST_POLL_INTERVAL_SECONDS = 2.0
+SUBSCRIPTION_DB_PERSIST_INTERVAL_SECONDS = 10.0
 _ACCOUNT_RETRY_NOT_BEFORE: dict[str, datetime] = {}
+_REST_POLL_NOT_BEFORE: dict[str, datetime] = {}
 
 
 def _redis() -> redis.Redis | None:
@@ -89,6 +92,12 @@ async def _wait_for_stop(stop_event: asyncio.Event, timeout: float) -> bool:
 
 def _utc_now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def _should_persist_subscription_tick(row: LiveSymbolSubscription, received_at: datetime) -> bool:
+    if row.last_received_at is None or row.health_status != "ok":
+        return True
+    return (received_at - row.last_received_at).total_seconds() >= SUBSCRIPTION_DB_PERSIST_INTERVAL_SECONDS
 
 
 def _stream_name(user_id: str, account_id: str, broker_code: str) -> str:
@@ -327,7 +336,7 @@ def _normalize_tick_payload(
         **computed,
         "received_at": _utc_now().isoformat(),
         "raw": quote_payload,
-        "adapter": "polling",
+        "adapter": raw.get("source") if isinstance(raw, dict) and raw.get("source") else "polling",
         # The connection session stores the batch list once. Repeating the
         # entire list inside every tick caused quadratic Redis/AOF traffic.
         "symbols": [row.symbol],
@@ -604,10 +613,26 @@ async def _apply_live_feed_results(
                     "source": adapter.adapter_name,
                     "tsInMillis": value.get("tsInMillis"),
                     "exchange_token": feed_instrument["exchange_token"],
+                    "average_price": value.get("average_price"),
+                    "volume": value.get("volume"),
+                    "open_interest": value.get("open_interest"),
+                    "previous_open_interest": value.get("previous_open_interest"),
+                    "last_trade_quantity": value.get("last_trade_quantity"),
+                    "last_trade_time": value.get("last_trade_time"),
+                    "total_buy_quantity": value.get("total_buy_quantity"),
+                    "total_sell_quantity": value.get("total_sell_quantity"),
+                    "ohlc": {
+                        "open": value.get("open"),
+                        "high": value.get("high"),
+                        "low": value.get("low"),
+                        "close": value.get("previous_close") or value.get("close"),
+                    },
                 },
             },
         }
         for subscription_row in duplicate_rows:
+            if not _should_persist_subscription_tick(subscription_row, now):
+                continue
             subscription_row.last_quote_json = json.dumps(quote_payload, default=str)
             subscription_row.last_received_at = now
             subscription_row.health_status = "ok"
@@ -700,6 +725,8 @@ def _apply_quote_results(
             row_payload = _merge_existing_quote_context(payload, subscription_row.last_quote_json)
             if index == 0:
                 publish_payload = row_payload
+            if not _should_persist_subscription_tick(subscription_row, received_at):
+                continue
             subscription_row.last_quote_json = json.dumps(row_payload, default=str)
             subscription_row.last_received_at = received_at
             subscription_row.health_status = "ok"
@@ -780,6 +807,15 @@ def _schedule_account_retry(account_id: str, delay_seconds: int) -> None:
 
 def _clear_account_retry(account_id: str) -> None:
     _ACCOUNT_RETRY_NOT_BEFORE.pop(account_id, None)
+
+
+def _rest_poll_allowed(account_id: str) -> bool:
+    retry_at = _REST_POLL_NOT_BEFORE.get(account_id)
+    return not retry_at or retry_at <= _utc_now()
+
+
+def _schedule_rest_poll(account_id: str) -> None:
+    _REST_POLL_NOT_BEFORE[account_id] = _utc_now() + timedelta(seconds=REST_POLL_INTERVAL_SECONDS)
 
 
 def _is_action_required_broker_error(message: str) -> bool:
@@ -875,7 +911,7 @@ def _record_market_data_success(db, acc: BrokerAccount) -> None:
     db.add(acc)
 
 
-async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 2.0) -> None:
+async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 0.5) -> None:
     redis_client = _redis()
     while not stop_event.is_set():
         db = SessionLocal()
@@ -920,6 +956,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                     chunk_groups = ordered_subscription_groups[start : start + chunk_size]
                     chunk_rows = [items[0] for items in chunk_groups]
                     instruments = [_instrument_for_group(items) for items in chunk_groups]
+                    feed_result: str | None = None
                     if live_adapter:
                         feed_result = await _apply_live_feed_results(
                             db,
@@ -963,6 +1000,10 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                             _schedule_account_retry(account_id, TRANSIENT_RETRY_SECONDS)
                             account_failed = True
                             break
+                    if feed_result is None:
+                        if not _rest_poll_allowed(account_id):
+                            continue
+                        _schedule_rest_poll(account_id)
                     try:
                         quotes = await asyncio.to_thread(broker_data.fetch_quotes, db, acc, instruments)
                     except Exception as exc:

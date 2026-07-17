@@ -27,7 +27,13 @@ services:
       - -c
       - |
         REDIS_PASSWORD="$$(awk -F= '$$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/ananta-market-stack.env)"
-        exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        exec redis-server \
+          --appendonly yes \
+          --appendfsync everysec \
+          --auto-aof-rewrite-percentage 100 \
+          --auto-aof-rewrite-min-size 128mb \
+          --save "" \
+          --requirepass "$$REDIS_PASSWORD"
     healthcheck:
       test:
         - CMD-SHELL

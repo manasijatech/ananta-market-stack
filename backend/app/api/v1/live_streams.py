@@ -17,6 +17,7 @@ from app.schemas.alert import (
     LiveStreamsStatusOut,
     LiveSubscriptionBulkIn,
     LiveSubscriptionCreateIn,
+    LiveSubscriptionDemandIn,
     LiveSubscriptionOut,
     LiveSubscriptionReplaceIn,
 )
@@ -222,7 +223,27 @@ async def live_prices_websocket(websocket: WebSocket) -> None:
         for raw_ref in websocket.query_params.getlist("ref")
         if (parsed := _parse_price_ref(raw_ref))
     }
+    client_scoped = (websocket.query_params.get("scope") or "").strip().lower() == "client"
     await websocket.accept()
+    if client_scoped:
+        try:
+            message = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
+            raw_refs = message.get("refs") if isinstance(message, dict) and message.get("type") == "subscribe" else None
+            if not isinstance(raw_refs, list):
+                raise ValueError("missing subscription refs")
+            requested_refs = {
+                parsed
+                for raw_ref in raw_refs
+                if isinstance(raw_ref, str) and (parsed := _parse_price_ref(raw_ref))
+            }
+            if not requested_refs:
+                raise ValueError("empty subscription refs")
+        except WebSocketDisconnect:
+            return
+        except (asyncio.TimeoutError, ValueError):
+            await websocket.send_json({"type": "error", "message": "A valid live-price subscription scope is required."})
+            await websocket.close(code=1008)
+            return
 
     client = _redis_client()
     if client is None:
@@ -352,17 +373,17 @@ def add_subscriptions_bulk(
 
 @router.post("/subscriptions/demand", response_model=list[LiveSubscriptionOut])
 def touch_demand_subscriptions(
-    body: LiveSubscriptionBulkIn,
+    body: LiveSubscriptionDemandIn,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[LiveSubscriptionOut]:
-    rows = alert_svc.touch_ui_live_subscriptions(db, user.id, body.subscriptions)
-    has_new_scope = any(
-        row.created_at == row.updated_at
-        or row.health_status == "pending"
-        for row in rows
+    rows, scope_changed = alert_svc.touch_ui_live_subscriptions(
+        db,
+        user.id,
+        body.subscriptions,
+        scopes=[(scope.source_type, scope.source_id) for scope in body.scopes],
     )
-    if has_new_scope:
+    if scope_changed:
         publish_scope_change(user.id, reason="ui_demand")
     return rows
 

@@ -510,6 +510,10 @@ export async function touchLiveDemandSubscriptions(payload: {
         source_id?: string | null;
         source_label?: string | null;
     }>;
+    scopes?: Array<{
+        source_type: string;
+        source_id: string;
+    }>;
 }): Promise<LiveSubscription[]> {
     return request<LiveSubscription[]>("/live-streams/subscriptions/demand", {
         method: "POST",
@@ -519,7 +523,8 @@ export async function touchLiveDemandSubscriptions(payload: {
                 source_kind: "ui",
                 owner_kind: "ui",
                 owner_id: item.source_id ?? "live_view"
-            }))
+            })),
+            scopes: payload.scopes ?? []
         })
     });
 }

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import struct
 
 from broker.dhan.client import DhanClient
 from broker.dhan import market_data
-from broker.dhan.live_price_adapter import DhanFeedDisconnect, parse_feed_packet
+from broker.dhan.live_price_adapter import DhanFeedDisconnect, DhanLivePriceAdapter, parse_feed_packet
 
 
 class _HTTP:
@@ -137,3 +138,21 @@ def test_dhan_feed_disconnect_exposes_data_api_entitlement_code() -> None:
         assert "not subscribed" in str(exc)
     else:
         raise AssertionError("expected DhanFeedDisconnect")
+
+
+def test_dhan_subscription_messages_are_batched_at_100_instruments() -> None:
+    class _WebSocket:
+        def __init__(self) -> None:
+            self.messages: list[str] = []
+
+        async def send(self, message: str) -> None:
+            self.messages.append(message)
+
+    websocket = _WebSocket()
+    keys = [f"NSE_EQ|{security_id}" for security_id in range(250)]
+
+    asyncio.run(DhanLivePriceAdapter._send_batches(websocket, 17, keys))
+
+    payloads = [json.loads(message) for message in websocket.messages]
+    assert [payload["InstrumentCount"] for payload in payloads] == [100, 100, 50]
+    assert all(payload["RequestCode"] == 17 for payload in payloads)

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from common.datetime_compat import UTC
 from app.services import alerts as alert_svc
-from app.schemas.alert import AlertWorkflowActivePeriod
+from app.schemas.alert import AlertWorkflowActivePeriod, LiveSubscriptionCreateIn
 from app.services.alerts_engine.active_period import evaluate_active_period
 from app.services.alerts_engine.ast import ensure_workflow_ast
 from app.services.alerts_engine.conditions import ConditionRuntimeContext, evaluate_logic, rolling_reference_key
@@ -46,6 +46,7 @@ class _MemoryRedis:
     def __init__(self):
         self.values = {}
         self.zsets = {}
+        self.delete_calls = 0
 
     def get(self, key):
         return self.values.get(key)
@@ -57,10 +58,12 @@ class _MemoryRedis:
     def expire(self, key, ttl):
         return True
 
-    def delete(self, key):
-        self.values.pop(key, None)
-        self.zsets.pop(key, None)
-        return 1
+    def delete(self, *keys):
+        self.delete_calls += 1
+        for key in keys:
+            self.values.pop(key, None)
+            self.zsets.pop(key, None)
+        return len(keys)
 
     def zadd(self, key, mapping):
         rows = self.zsets.setdefault(key, {})
@@ -481,6 +484,10 @@ def test_reconcile_creates_and_deactivates_watchlist_subscription():
         assert removed_report["deactivated"] == 1
         assert row.status == "inactive"
         assert row.health_status == "orphaned"
+
+        unchanged_report = reconcile_user_subscriptions(db, "u1")
+        assert unchanged_report["deactivated"] == 0
+        assert unchanged_report["orphaned"] == 0
     finally:
         db.close()
 
@@ -550,6 +557,74 @@ def test_live_stream_status_excludes_inactive_subscriptions_from_desired_trackin
         assert [item.symbol for item in status.inactive_subscriptions] == ["INFY"]
         assert status.active_sessions[0].symbols == ["RELIANCE"]
         assert status.broker_statuses[0].desired_symbol_count == 1
+    finally:
+        db.close()
+
+
+def test_ui_demand_replaces_stale_account_scope_and_clears_empty_scope():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    try:
+        db.add(User(id="u1", display_name="User"))
+        db.add(
+            BrokerAccount(
+                id="b-new",
+                user_id="u1",
+                broker_code="dhan",
+                label="Dhan",
+                is_active=True,
+                session_status="active",
+            )
+        )
+        db.add(
+            LiveSymbolSubscription(
+                id="stale-ui",
+                user_id="u1",
+                account_id="b-old",
+                broker_code="dhan",
+                symbol="OLD",
+                exchange="NSE",
+                source_kind="ui",
+                source_type="watchlist_view",
+                source_id="legacy-watchlist-id",
+                owner_kind="ui",
+                owner_id="legacy-watchlist-id",
+                status="active",
+            )
+        )
+        db.commit()
+
+        rows, changed = alert_svc.touch_ui_live_subscriptions(
+            db,
+            "u1",
+            [
+                LiveSubscriptionCreateIn(
+                    symbol="TCS",
+                    exchange="NSE",
+                    source_kind="ui",
+                    source_type="watchlist_view",
+                    source_id="watchlist_active_view",
+                )
+            ],
+            scopes=[("watchlist_view", "watchlist_active_view")],
+        )
+
+        assert changed is True
+        assert [(row.symbol, row.account_id) for row in rows] == [("TCS", "b-new")]
+        active = db.query(LiveSymbolSubscription).filter_by(status="active").all()
+        assert [(row.symbol, row.account_id) for row in active] == [("TCS", "b-new")]
+
+        rows, changed = alert_svc.touch_ui_live_subscriptions(
+            db,
+            "u1",
+            [],
+            scopes=[("watchlist_view", "watchlist_active_view")],
+        )
+        assert rows == []
+        assert changed is True
+        assert db.query(LiveSymbolSubscription).filter_by(source_kind="ui").count() == 0
     finally:
         db.close()
 

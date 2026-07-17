@@ -204,7 +204,16 @@ if [ -z "${REDIS_URL:-}" ]; then
   export REDIS_PORT="${REDIS_PORT:-6379}"
   export REDIS_DB="${REDIS_DB:-0}"
   log "Starting bundled Redis on $REDIS_HOST:$REDIS_PORT"
-  redis-server --appendonly yes --dir "$REDIS_DATA_DIR" --bind "$REDIS_HOST" --port "$REDIS_PORT" --requirepass "$REDIS_PASSWORD" &
+  redis-server \
+    --appendonly yes \
+    --appendfsync everysec \
+    --auto-aof-rewrite-percentage 100 \
+    --auto-aof-rewrite-min-size 128mb \
+    --save "" \
+    --dir "$REDIS_DATA_DIR" \
+    --bind "$REDIS_HOST" \
+    --port "$REDIS_PORT" \
+    --requirepass "$REDIS_PASSWORD" &
   REDIS_PID="$!"
 else
   log "Using external Redis from REDIS_URL."

@@ -388,6 +388,16 @@ class LiveSubscriptionBulkIn(BaseModel):
     subscriptions: list[LiveSubscriptionCreateIn] = Field(default_factory=list)
 
 
+class LiveSubscriptionDemandScopeIn(BaseModel):
+    source_type: str
+    source_id: str
+
+
+class LiveSubscriptionDemandIn(BaseModel):
+    subscriptions: list[LiveSubscriptionCreateIn] = Field(default_factory=list)
+    scopes: list[LiveSubscriptionDemandScopeIn] = Field(default_factory=list)
+
+
 class LiveSubscriptionOut(BaseModel):
     id: str
     user_id: str

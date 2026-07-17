@@ -203,13 +203,20 @@ def _resolve_subscription_account(
 ) -> tuple[str | None, str | None]:
     normalized_account_id = (account_id or "").strip() or None
     normalized_broker_code = (broker_code or "").strip().lower() or None
+    accessible_accounts = broker_data_preferences.get_accessible_data_accounts(
+        db,
+        user_id,
+        normalized_broker_code,
+    )
     account: BrokerAccount | None = None
     if normalized_account_id:
-        account = db.get(BrokerAccount, normalized_account_id)
-        if not account or account.user_id != user_id or not account.is_active:
-            account = None
+        account = next((row for row in accessible_accounts if row.id == normalized_account_id), None)
     if account is None:
-        account = _default_broker_account(db, user_id, normalized_broker_code)
+        account = accessible_accounts[0] if accessible_accounts else _default_broker_account(
+            db,
+            user_id,
+            normalized_broker_code,
+        )
     if account is None:
         return normalized_account_id, normalized_broker_code
     return account.id, account.broker_code

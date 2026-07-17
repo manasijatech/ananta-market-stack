@@ -96,7 +96,7 @@ def _candidate_order(
     return ordered
 
 
-def _accessible_data_accounts(
+def get_accessible_data_accounts(
     db: Session,
     user_id: str,
     broker_code: str | None = None,
@@ -396,7 +396,7 @@ def get_effective_default_broker_account(
     user_id: str,
     broker_code: str | None = None,
 ) -> BrokerAccount | None:
-    accounts = _accessible_data_accounts(db, user_id, broker_code)
+    accounts = get_accessible_data_accounts(db, user_id, broker_code)
     if not accounts:
         return None
 
@@ -419,7 +419,7 @@ def get_stream_default_broker_account(
     if account is not None:
         return account
 
-    accounts = _accessible_data_accounts(db, user_id, broker_code)
+    accounts = get_accessible_data_accounts(db, user_id, broker_code)
     if not accounts:
         return None
 

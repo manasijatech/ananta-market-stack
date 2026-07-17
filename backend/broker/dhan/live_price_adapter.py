@@ -28,8 +28,10 @@ _SUBSCRIBE_QUOTE = 17
 _UNSUBSCRIBE_QUOTE = 18
 _DISCONNECT = 12
 _BATCH_SIZE = 100
-_INITIAL_TICK_WAIT_SECONDS = 2.5
+_INITIAL_TICK_WAIT_SECONDS = 1.0
 _DRAIN_WAIT_SECONDS = 0.05
+_MAX_DRAIN_SECONDS = 0.20
+_MAX_PACKETS_PER_FETCH = 5000
 
 _SEGMENT_NAMES = {
     0: "IDX_I",
@@ -269,14 +271,23 @@ class DhanLivePriceAdapter:
         desired = {self._key(item) for item in instruments}
         latest: dict[str, dict[str, Any]] = session["latest"]
         fresh_keys: set[str] = set()
-        missing_prices = any(not latest.get(key, {}).get("ltp") for key in desired)
-        timeout = _INITIAL_TICK_WAIT_SECONDS if missing_prices else _DRAIN_WAIT_SECONDS
+        timeout = _INITIAL_TICK_WAIT_SECONDS if not latest else _DRAIN_WAIT_SECONDS
+        drain_deadline: float | None = None
+        packet_count = 0
+        loop = asyncio.get_running_loop()
         while True:
+            if drain_deadline is not None:
+                remaining = drain_deadline - loop.time()
+                if remaining <= 0 or packet_count >= _MAX_PACKETS_PER_FETCH:
+                    return fresh_keys
+                timeout = min(_DRAIN_WAIT_SECONDS, remaining)
             try:
                 message = await asyncio.wait_for(session["websocket"].recv(), timeout=timeout)
             except asyncio.TimeoutError:
                 return fresh_keys
-            timeout = _DRAIN_WAIT_SECONDS
+            if drain_deadline is None:
+                drain_deadline = loop.time() + _MAX_DRAIN_SECONDS
+            packet_count += 1
             if not isinstance(message, bytes):
                 continue
             packet = parse_feed_packet(message)
