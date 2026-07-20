@@ -110,6 +110,13 @@ export function OnboardingMotionProvider({
 
             killTimeline();
 
+            if (targetSegment && targetIndex === currentIndex) {
+                if (content) {
+                    gsap.set(content, { autoAlpha: 1, x: 0 });
+                }
+                return;
+            }
+
             if (!content || reducedMotion || !targetSegment) {
                 router.push(path);
                 return;

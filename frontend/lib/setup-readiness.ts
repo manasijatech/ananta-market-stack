@@ -38,7 +38,7 @@ export function getWorkspaceSetupReadiness(
         alphaReady,
         llmReady,
         mcpReady,
-        requiredReady: hasBroker && llmReady,
+        requiredReady: hasBroker && alphaReady && llmReady,
         llmProviders,
         mcpServers
     };
@@ -48,7 +48,27 @@ export function firstIncompleteRequiredStep(readiness: WorkspaceSetupReadiness):
     if (!readiness.hasBroker) {
         return "broker";
     }
+    if (!readiness.alphaReady) {
+        return "drishti";
+    }
     return "llm-provider";
+}
+
+export function isOnboardingStepReachable(
+    step: OnboardingStepSlug,
+    readiness: WorkspaceSetupReadiness
+): boolean {
+    switch (step) {
+        case "welcome":
+        case "broker":
+            return true;
+        case "drishti":
+            return readiness.hasBroker;
+        case "llm-provider":
+            return readiness.hasBroker && readiness.alphaReady;
+        case "mcp":
+            return readiness.requiredReady;
+    }
 }
 
 export function onboardingStepPath(step: OnboardingStepSlug): `/onboarding/${OnboardingStepSlug}` {

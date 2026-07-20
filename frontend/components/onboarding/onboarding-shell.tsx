@@ -9,6 +9,13 @@ import {
 	useOnboardingMotion,
 } from "@/components/onboarding/onboarding-motion";
 import {
+	Progress,
+	ProgressIndicator,
+	ProgressLabel,
+	ProgressTrack,
+} from "@/components/ui/progress";
+import {
+	isOnboardingStepReachable,
 	onboardingStepPath,
 	type OnboardingStepSlug,
 	type WorkspaceSetupReadiness,
@@ -29,6 +36,7 @@ const steps: StepMeta[] = [
 	{ slug: "mcp", label: "MCP", optional: true },
 ];
 const stepSlugs = steps.map((step) => step.slug);
+const requiredStepCount = steps.filter((step) => !step.optional).length;
 
 function isStepComplete(
 	slug: OnboardingStepSlug,
@@ -45,23 +53,6 @@ function isStepComplete(
 			return readiness.llmReady;
 		case "mcp":
 			return readiness.mcpReady;
-	}
-}
-
-function isStepReachable(
-	slug: OnboardingStepSlug,
-	readiness: WorkspaceSetupReadiness,
-) {
-	switch (slug) {
-		case "welcome":
-		case "broker":
-			return true;
-		case "drishti":
-			return readiness.hasBroker;
-		case "llm-provider":
-			return readiness.hasBroker && readiness.alphaReady;
-		case "mcp":
-			return readiness.requiredReady;
 	}
 }
 
@@ -106,110 +97,98 @@ function OnboardingShellContent({
 	readiness: WorkspaceSetupReadiness;
 }) {
 	const { contentRef, navigateTo, registerStep } = useOnboardingMotion();
+	const completedRequiredCount = steps.filter(
+		(step) => !step.optional && isStepComplete(step.slug, readiness),
+	).length;
+	const progressValue = Math.round(
+		(completedRequiredCount / requiredStepCount) * 100,
+	);
 
 	return (
 		<main className="app-page-background grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-			<header className="app-page-background">
-				<div className="mx-auto flex min-h-12 w-full max-w-5xl items-center px-5  min-[760px]:min-h-14">
+			<header className="bg-transparent">
+				<div className="mx-auto flex min-h-16 w-full max-w-5xl items-center px-4">
 					<BrandLogo imageClassName="text-[1.35rem]" />
 				</div>
-				<div className="mx-auto w-full max-w-5xl px-4 min-[760px]:px-5 xl:px-6 2xl:px-8">
+				<div className="mx-auto w-full max-w-5xl px-4 pb-4">
+					<Progress
+						aria-valuetext={`${completedRequiredCount} of ${requiredStepCount} required steps complete`}
+						className="mb-3 gap-1.5"
+						value={progressValue}
+					>
+						<div className="flex items-center justify-between gap-3">
+							<ProgressLabel className="text-xs text-muted-foreground">
+								Setup progress
+							</ProgressLabel>
+							<span className="text-xs tabular-nums text-muted-foreground">
+								{completedRequiredCount} of {requiredStepCount} required steps
+								complete
+							</span>
+						</div>
+						<ProgressTrack className="h-1 bg-border/70">
+							<ProgressIndicator className="bg-[var(--success)]" />
+						</ProgressTrack>
+					</Progress>
 					<div
-						className="flex min-w-0 items-center gap-2 overflow-hidden py-1"
+						className="grid gap-3 min-[720px]:grid-cols-5"
 						data-onboarding-ledger
 					>
 						{steps.map((step, index) => {
 							const complete = isStepComplete(step.slug, readiness);
 							const current = index === currentIndex;
-							const reachable = isStepReachable(step.slug, readiness);
-							const lineComplete = index < currentIndex;
+							const reachable = isOnboardingStepReachable(
+								step.slug,
+								readiness,
+							);
 							const content = (
 								<span
 									className={cn(
-										"inline-flex h-9 max-w-full min-w-0 items-center gap-2 rounded-full px-2.5 text-sm font-medium transition-colors",
+										"flex min-h-11 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
 										current
-											? "border border-primary bg-primary/10 text-foreground"
+											? "border-primary bg-primary/10 text-foreground"
 											: complete
-												? "text-foreground"
-												: "text-muted-foreground",
+												? "border-[var(--success)] bg-[var(--success-subtle)] text-foreground"
+												: "border-border bg-background text-muted-foreground",
 										!reachable && "opacity-50",
 									)}
 								>
-									<span
-										className={cn(
-											"grid size-5 shrink-0 place-items-center rounded-full border text-[11px] leading-none",
-											current
-												? "border-primary bg-primary text-primary-foreground"
-												: complete
-													? "border-[var(--success)] bg-[var(--success-subtle)] text-[var(--success)]"
-													: "border-border bg-background text-muted-foreground",
-										)}
-									>
-										{complete ? (
-											<IconCircleCheck className="size-3.5" stroke={2} />
-										) : current ? (
-											"●"
-										) : (
-											index + 1
-										)}
-									</span>
-									<span
-										className={cn(
-											"truncate",
-											!current && "hidden min-[760px]:inline",
-										)}
-									>
-										{step.label}
+									<span className="truncate">
+										{index + 1}. {step.label}
 									</span>
 									{step.optional ? (
-										<span
-											className={cn(
-												"hidden text-xs text-muted-foreground",
-												current && "min-[900px]:inline",
-											)}
-										>
+										<span className="text-xs text-muted-foreground">
 											Optional
 										</span>
+									) : null}
+									{complete ? (
+										<IconCircleCheck
+											className="size-4 text-[var(--success)]"
+											stroke={1.8}
+										/>
 									) : null}
 								</span>
 							);
 
-							return (
-								<div
-									className="flex min-w-0 flex-1 items-center gap-2 last:flex-none"
+							return reachable ? (
+								<Link
+									href={onboardingStepPath(step.slug)}
 									key={step.slug}
+									onClick={(event) => {
+										event.preventDefault();
+										navigateTo(onboardingStepPath(step.slug));
+									}}
+									ref={(node) => registerStep(step.slug, node)}
 								>
-									{reachable ? (
-										<Link
-											className="min-w-0 shrink-0"
-											href={onboardingStepPath(step.slug)}
-											onClick={(event) => {
-												event.preventDefault();
-												navigateTo(onboardingStepPath(step.slug));
-											}}
-											ref={(node) => registerStep(step.slug, node)}
-										>
-											{content}
-										</Link>
-									) : (
-										<span
-											aria-disabled="true"
-											className="min-w-0 shrink-0"
-											ref={(node) => registerStep(step.slug, node)}
-										>
-											{content}
-										</span>
-									)}
-									{index < steps.length - 1 ? (
-										<span
-											aria-hidden="true"
-											className={cn(
-												"h-px min-w-4 flex-1 bg-border",
-												lineComplete && "bg-[var(--success)]",
-											)}
-										/>
-									) : null}
-								</div>
+									{content}
+								</Link>
+							) : (
+								<span
+									aria-disabled="true"
+									key={step.slug}
+									ref={(node) => registerStep(step.slug, node)}
+								>
+									{content}
+								</span>
 							);
 						})}
 					</div>
