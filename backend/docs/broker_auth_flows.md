@@ -114,6 +114,20 @@ This is still official, and is preferable to any credential-scraping approach.
   - store `client_id`, `pin`, and `totp_secret`
   - use `POST /api/v1/broker-accounts/{account_id}/sessions/dhan/refresh`
 
+## Arrow Trade
+
+### Official redirect flow
+
+1. Create an Arrow Developer application and register the exact Ananta `/broker-connections` callback URL and backend static outbound IP.
+2. Create the account with `app_id` and `app_secret`.
+3. Call `GET /api/v1/broker-accounts/{account_id}/sessions/arrow` or `POST .../sessions/arrow/start` and open `login_url`.
+4. Arrow redirects with `request-token` and `checksum`; the dashboard selects the pending Arrow account and calls `POST .../sessions/arrow`.
+5. The backend validates the callback checksum, generates SHA256 of `appID:appSecret:request-token`, and exchanges it for a 24-hour access token.
+
+Optional automated login stores `login_user_id`, `login_password`, and `totp_secret` encrypted. `POST .../sessions/arrow/refresh` uses the SDK-compatible web-login flow only when all three are present; no undocumented refresh token is assumed.
+
+Arrow REST product groups are limited to 10 requests per second. Standard streaming is the default. HFT is opt-in, requires Arrow entitlement and zstd, and is capped at 512 symbols per subscription request and 1,024 per connection.
+
 ## Angel
 
 ### Current repo flow
@@ -208,6 +222,7 @@ Order placement, modification, cancellation, smart-order, and close-all routes r
 - Zerodha official docs: `kite.trade/docs/connect/v3/user/`
 - Upstox official docs: `upstox.com/developer/api-documentation/`
 - Dhan official docs: `docs.dhanhq.co/api/v2/guides/authentication`
+- Arrow official docs: `docs.arrow.trade/`
 - Groww official docs: `groww.in/trade-api/docs/python-sdk`
 - Kotak SDK reference: `github.com/Kotak-Neo/Kotak-neo-api-v2`
 

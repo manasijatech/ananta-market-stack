@@ -136,6 +136,8 @@ export interface InstrumentRef {
     symbol?: string | null;
     exchange?: string | null;
     zerodha_instrument_token?: number | null;
+    arrow_token?: string | null;
+    price_precision?: number | null;
     upstox_instrument_key?: string | null;
     angel_exchange?: string | null;
     angel_token?: number | null;

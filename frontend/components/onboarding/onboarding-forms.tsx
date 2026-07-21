@@ -54,6 +54,7 @@ import type {
 type GrowwMode = "approval" | "totp" | "token";
 
 const fallbackBrokers: BrokerCode[] = [
+	"arrow",
 	"zerodha",
 	"upstox",
 	"angel",
@@ -137,6 +138,10 @@ function brokerFieldPlaceholder(
 		angel: {
 			api_key: "Paste Angel One API key",
 			client_code: "Enter Angel One client code",
+		},
+		arrow: {
+			app_id: "Paste Arrow app ID",
+			app_secret: "Paste Arrow app secret",
 		},
 		dhan: {
 			app_id: "Enter Dhan app ID",
@@ -280,6 +285,15 @@ function makeBrokerPayload(
 	const label = fieldValue(formData, "label") || defaultBrokerLabel(broker);
 
 	switch (broker) {
+		case "arrow":
+			return {
+				broker,
+				label,
+				app_id: fieldValue(formData, "app_id"),
+				app_secret: fieldValue(formData, "app_secret"),
+				market_stream_mode: "standard",
+				hft_latency_ms: 1000,
+			};
 		case "zerodha":
 			return {
 				broker,
@@ -621,6 +635,37 @@ export function BrokerStep({ data }: { data: OnboardingSetupData }) {
 							type="password"
 						/>
 					</div>
+				) : null}
+				{broker === "arrow" ? (
+					<>
+						<div className={twoColumnFieldClassName}>
+							<SetupField
+								description="Arrow Developer appID. Register Ananta's callback URL and static IP first."
+								error={fieldErrors.app_id}
+								label="App ID"
+								name="app_id"
+								placeholder={brokerFieldPlaceholder(broker, "app_id", defaultRedirectUri)}
+								resetKey={broker}
+							/>
+							<SetupField
+								description="Arrow Developer appSecret; encrypted by the backend."
+								error={fieldErrors.app_secret}
+								label="App secret"
+								name="app_secret"
+								placeholder={brokerFieldPlaceholder(broker, "app_secret", defaultRedirectUri)}
+								resetKey={broker}
+								type="password"
+							/>
+						</div>
+						<SetupField
+							defaultValue={defaultRedirectUri}
+							description="Register this exact callback URL in the Arrow developer application."
+							label="Callback URL"
+							name="arrow_callback_url"
+							readOnly
+							resetKey={`${broker}:${defaultRedirectUri}`}
+						/>
+					</>
 				) : null}
 				{broker === "upstox" ? (
 					<>

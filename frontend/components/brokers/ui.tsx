@@ -27,6 +27,7 @@ import { typography } from "@/lib/typography";
 
 export const brokerNames: Record<BrokerCode, string> = {
 	angel: "Angel One",
+	arrow: "Arrow Trade",
 	dhan: "Dhan",
 	groww: "Groww",
 	indmoney: "INDmoney",
@@ -37,6 +38,7 @@ export const brokerNames: Record<BrokerCode, string> = {
 
 export const brokerLogos: Record<BrokerCode, string> = {
 	angel: "/broker-logos/angel.jpg",
+	arrow: "/broker-logos/arrow.svg",
 	dhan: "/broker-logos/dhan.jpg",
 	groww: "/broker-logos/groww.jpg",
 	indmoney: "/broker-logos/indmoney.jpg",
@@ -58,13 +60,18 @@ export function BrokerLogo({
 		<span
 			className={cn(
 				"flex h-12 w-12 shrink-0 items-center justify-center",
+				broker === "arrow" && "rounded-md bg-black p-1",
 				className,
 			)}
 			aria-hidden="true"
 		>
 			<img
 				alt=""
-				className={cn("block size-10 rounded-md object-cover", imageClassName)}
+				className={cn(
+					"block size-10 rounded-md object-cover",
+					broker === "arrow" && "object-contain",
+					imageClassName,
+				)}
 				draggable={false}
 				src={brokerLogos[broker]}
 			/>

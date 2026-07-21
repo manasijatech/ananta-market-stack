@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 from typing import Any
+from urllib.parse import urlencode
+
+import websockets
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
@@ -31,6 +36,17 @@ from app.services.instrument_sync_jobs import instrument_sync_status
 from app.services.broker_streams import stream_registry
 from broker.core.instrument_store import SQLiteInstrumentResolver
 from broker.core.registry import get_client_for_account
+from broker.crypto import decrypt_value
+from broker.arrow.streaming import (
+    HFT_URL as ARROW_HFT_URL,
+    STANDARD_URL as ARROW_STANDARD_URL,
+    hft_symbol,
+    hft_subscription_batches,
+    parse_hft_packet,
+    parse_standard_packet,
+    scale_tick,
+    split_hft_frames,
+)
 from db.models import BrokerAccount, User
 from db.session import SessionLocal, get_db
 
@@ -128,7 +144,7 @@ class OrderBody(BaseModel):
 
 
 class MarginLeg(BaseModel):
-    symbol: str
+    symbol: str = ""
     exchange: str
     action: str
     product: str
@@ -136,18 +152,24 @@ class MarginLeg(BaseModel):
     pricetype: str = "MARKET"
     price: float = 0
     trigger_price: float = 0
+    arrow_token: str | None = None
+    instrument_token: str | None = None
 
 
 class MarginRequest(BaseModel):
     positions: list[MarginLeg]
+    include_positions: bool = True
 
 
 class GreeksRequest(BaseModel):
-    symbol: str
+    symbol: str = ""
     exchange: str = "NSE"
     expiry: str | None = None
     strike: str | None = None
     option_type: str | None = None
+    instrument_token: str | None = None
+    instrument_tokens: list[str] = Field(default_factory=list)
+    tokens: list[str] = Field(default_factory=list)
 
 
 def _merge_order_payload(body: OrderBody) -> dict[str, Any]:
@@ -225,7 +247,58 @@ def post_margin(
     principal: rbac.Principal = Depends(get_current_principal),
 ) -> dict[str, Any]:
     client = _client_or_409(db, _account(db, principal, account_id, rbac.BROKER_USE_DATA))
-    return client.calculate_margin([item.model_dump() for item in body.positions])
+    positions = [item.model_dump() for item in body.positions]
+    if positions:
+        positions[0]["include_positions"] = body.include_positions
+    return client.calculate_margin(positions)
+
+
+def _optional_client_method(client: Any, method_name: str):
+    method = getattr(client, method_name, None)
+    if not callable(method):
+        raise HTTPException(status_code=501, detail=f"{method_name} is not supported by this broker")
+    return method
+
+
+@router.get("/{account_id}/portfolio/orders/{order_id}")
+def get_order_details(
+    account_id: str,
+    order_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> dict[str, Any]:
+    client = _client_or_409(db, _account(db, principal, account_id, rbac.BROKER_USE_DATA))
+    return _optional_client_method(client, "order_details")(order_id)
+
+
+@router.get("/{account_id}/data/holidays")
+def data_holidays(
+    account_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> dict[str, Any]:
+    client = _client_or_409(db, _account(db, principal, account_id, rbac.BROKER_USE_DATA))
+    return _optional_client_method(client, "holidays")()
+
+
+@router.get("/{account_id}/data/indices")
+def data_indices(
+    account_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> dict[str, Any]:
+    client = _client_or_409(db, _account(db, principal, account_id, rbac.BROKER_USE_DATA))
+    return _optional_client_method(client, "indices")()
+
+
+@router.get("/{account_id}/data/option-chain-symbols")
+def data_option_chain_symbols(
+    account_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> dict[str, Any]:
+    client = _client_or_409(db, _account(db, principal, account_id, rbac.BROKER_USE_DATA))
+    return _optional_client_method(client, "option_chain_symbols")()
 
 
 @router.get("/{account_id}/data/capabilities", response_model=DataCapabilitiesOut)
@@ -415,6 +488,7 @@ async def data_stream_status(
 async def broker_data_stream(account_id: str, websocket: WebSocket) -> None:
     user_id = (websocket.query_params.get("user_id") or "").strip() or "local-dev-user"
     db = SessionLocal()
+    arrow_config: dict[str, Any] | None = None
     try:
         user = db.get(User, user_id)
         if user is None:
@@ -423,6 +497,14 @@ async def broker_data_stream(account_id: str, websocket: WebSocket) -> None:
             return
         principal = rbac.ensure_principal(db, user)
         acc = _account(db, principal, account_id, rbac.BROKER_USE_DATA)
+        if acc.broker_code == "arrow" and acc.arrow:
+            arrow_config = {
+                "app_id": decrypt_value(acc.arrow.app_id_cipher),
+                "token": decrypt_value(acc.arrow.access_token_cipher),
+                "hft": acc.arrow.market_stream_mode == "hft",
+                "latency": acc.arrow.hft_latency_ms,
+                "standard_capacity": get_settings().arrow_standard_stream_symbol_limit,
+            }
     except HTTPException:
         await websocket.close(code=4404)
         db.close()
@@ -433,6 +515,14 @@ async def broker_data_stream(account_id: str, websocket: WebSocket) -> None:
     await stream_registry.attach(account_id)
     subscriptions: list[dict[str, Any]] = []
     try:
+        if arrow_config:
+            await _arrow_native_data_stream_bridge(
+                websocket,
+                user_id=user_id,
+                account_id=account_id,
+                config=arrow_config,
+            )
+            return
         while True:
             try:
                 message = await asyncio.wait_for(websocket.receive_json(), timeout=2.0)
@@ -478,6 +568,265 @@ async def broker_data_stream(account_id: str, websocket: WebSocket) -> None:
                 break
     finally:
         await stream_registry.detach(account_id)
+
+
+async def _arrow_native_data_stream_bridge(
+    websocket: WebSocket,
+    *,
+    user_id: str,
+    account_id: str,
+    config: dict[str, Any],
+) -> None:
+    desired: dict[str, dict[str, Any]] = {}
+    disconnected = False
+    max_reconnect_attempts = 300
+    for attempt in range(1, max_reconnect_attempts + 1):
+        backoff = 0 if attempt <= 3 else 2 if attempt == 4 else 4 if attempt == 5 else 5
+        if disconnected:
+            return
+        if backoff:
+            await websocket.send_json({"type": "reconnecting", "attempt": attempt, "delay_seconds": backoff})
+            await asyncio.sleep(backoff)
+        params = {"appID": config["app_id"], "token": config["token"]}
+        if config["hft"]:
+            params["zstd"] = "1"
+        url = f"{ARROW_HFT_URL if config['hft'] else ARROW_STANDARD_URL}?{urlencode(params)}"
+        try:
+            async with websockets.connect(
+                url,
+                open_timeout=10,
+                close_timeout=3,
+                ping_interval=20,
+                ping_timeout=20,
+                max_size=4 * 1024 * 1024,
+            ) as upstream:
+                decompressor = None
+                if config["hft"]:
+                    import zstandard as zstd
+
+                    decompressor = zstd.ZstdDecompressor()
+                if desired:
+                    await _arrow_send_native_subscription(upstream, desired, config, code="sub")
+                await websocket.send_json(
+                    {"type": "connected", "broker": "arrow", "mode": "hft" if config["hft"] else "standard"}
+                )
+                while True:
+                    client_task = asyncio.create_task(websocket.receive_json())
+                    upstream_task = asyncio.create_task(upstream.recv())
+                    done, pending = await asyncio.wait(
+                        {client_task, upstream_task}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for task in pending:
+                        task.cancel()
+                    if client_task in done:
+                        try:
+                            message = client_task.result()
+                        except WebSocketDisconnect:
+                            disconnected = True
+                            return
+                        message_type = str(message.get("type") or "")
+                        if message_type == "ping":
+                            await websocket.send_json({"type": "pong"})
+                            continue
+                        raw_instruments = [item for item in message.get("instruments", []) if isinstance(item, dict)]
+                        poll_db = SessionLocal()
+                        try:
+                            user = poll_db.get(User, user_id)
+                            if not user:
+                                disconnected = True
+                                return
+                            principal = rbac.ensure_principal(poll_db, user)
+                            acc = _account(poll_db, principal, account_id, rbac.BROKER_USE_DATA)
+                            hydrated = broker_data.hydrate_instruments(poll_db, acc, raw_instruments)
+                        finally:
+                            poll_db.close()
+                        previous = dict(desired)
+                        if message_type == "unsubscribe":
+                            next_desired: dict[str, dict[str, Any]] = {}
+                        elif message_type == "subscribe":
+                            next_desired = {
+                                str(item.get("arrow_token")): item
+                                for item in hydrated
+                                if item.get("arrow_token")
+                            }
+                            capacity = 1024 if config["hft"] else int(config["standard_capacity"])
+                            if len(next_desired) > capacity:
+                                await websocket.send_json(
+                                    {
+                                        "type": "error",
+                                        "message": f"Arrow stream supports at most {capacity} symbols on this connection",
+                                    }
+                                )
+                                continue
+                        else:
+                            continue
+                        desired = next_desired
+                        if previous:
+                            await _arrow_send_native_subscription(upstream, previous, config, code="unsub")
+                        if desired:
+                            await _arrow_send_native_subscription(upstream, desired, config, code="sub")
+                        await stream_registry.set_subscriptions(account_id, list(desired.values()))
+                        await websocket.send_json({"type": "subscribed", "count": len(desired)})
+                        continue
+                    raw_message = upstream_task.result()
+                    if not isinstance(raw_message, bytes):
+                        continue
+                    packets: list[dict[str, Any]] = []
+                    if config["hft"]:
+                        assert decompressor is not None
+                        decoded = decompressor.decompress(raw_message)
+                        packets = [
+                            parsed
+                            for frame in split_hft_frames(decoded)
+                            if (parsed := parse_hft_packet(frame)) and parsed.get("kind") != "ack"
+                        ]
+                    else:
+                        parsed = parse_standard_packet(raw_message)
+                        packets = [parsed] if parsed else []
+                    rows = []
+                    for packet in packets:
+                        token = str(packet.get("token") or "")
+                        instrument = desired.get(token)
+                        if not instrument:
+                            continue
+                        precision = int(instrument.get("price_precision") or 2)
+                        tick = scale_tick(packet, precision)
+                        rows.append(
+                            {
+                                "symbol": instrument.get("symbol") or instrument.get("trading_symbol"),
+                                "ltp": float(tick.get("ltp") or 0),
+                                "broker_code": "arrow",
+                                "account_id": account_id,
+                                "detail": {"exchange": instrument.get("exchange"), "raw": tick},
+                            }
+                        )
+                    if rows:
+                        await websocket.send_json({"type": "quotes", "rows": rows})
+        except WebSocketDisconnect:
+            return
+        except Exception as exc:
+            if attempt == max_reconnect_attempts:
+                await websocket.send_json({"type": "error", "message": str(exc)[:1000]})
+                await websocket.close(code=1011)
+                return
+
+
+async def _arrow_send_native_subscription(
+    upstream: Any,
+    instruments: dict[str, dict[str, Any]],
+    config: dict[str, Any],
+    *,
+    code: str,
+) -> None:
+    if config["hft"]:
+        symbols = [
+            hft_symbol(
+                str(item.get("exchange") or "NSE"),
+                str(item.get("trading_symbol") or item.get("symbol")),
+            )
+            for item in instruments.values()
+        ]
+        for message in hft_subscription_batches(
+            symbols,
+            mode="ltpc",
+            latency_ms=int(config["latency"]),
+            code=code,
+        ):
+            request_times = config.setdefault("hft_subscription_request_times", [])
+            now = time.monotonic()
+            request_times[:] = [sent_at for sent_at in request_times if now - sent_at < 1.0]
+            if len(request_times) >= 100:
+                await asyncio.sleep(max(0.001, 1.0 - (now - request_times[0])))
+                now = time.monotonic()
+                request_times[:] = [sent_at for sent_at in request_times if now - sent_at < 1.0]
+            request_times.append(now)
+            await upstream.send(message)
+    else:
+        tokens = [int(token) for token in instruments]
+        await upstream.send(json.dumps({"code": code, "mode": "quote", "quote": tokens}))
+
+
+@router.websocket("/{account_id}/portfolio/order-updates/ws")
+async def order_updates_stream(account_id: str, websocket: WebSocket) -> None:
+    user_id = (websocket.query_params.get("user_id") or "").strip() or "local-dev-user"
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            await websocket.close(code=4404)
+            return
+        principal = rbac.ensure_principal(db, user)
+        acc = _account(db, principal, account_id, rbac.BROKER_USE_DATA)
+        if acc.broker_code != "arrow" or not acc.arrow:
+            await websocket.close(code=4400, reason="Order-update streaming is not supported by this broker")
+            return
+        app_id = decrypt_value(acc.arrow.app_id_cipher)
+        token = decrypt_value(acc.arrow.access_token_cipher)
+    except HTTPException:
+        await websocket.close(code=4404)
+        return
+    finally:
+        db.close()
+
+    await websocket.accept()
+    upstream_url = f"wss://order-updates.arrow.trade?{urlencode({'appID': app_id, 'token': token})}"
+    max_reconnect_attempts = 300
+    for attempt in range(1, max_reconnect_attempts + 1):
+        delay = 0 if attempt <= 3 else 2 if attempt == 4 else 4 if attempt == 5 else 5
+        if delay:
+            try:
+                await websocket.send_json({"type": "reconnecting", "attempt": attempt, "delay_seconds": delay})
+            except WebSocketDisconnect:
+                return
+            await asyncio.sleep(delay)
+        try:
+            async with websockets.connect(
+                upstream_url,
+                open_timeout=10,
+                close_timeout=3,
+                ping_interval=20,
+                ping_timeout=20,
+                max_size=2 * 1024 * 1024,
+            ) as upstream:
+                await websocket.send_json({"type": "connected", "broker": "arrow", "account_id": account_id})
+                last_message_at = time.monotonic()
+                while True:
+                    try:
+                        message = await asyncio.wait_for(upstream.recv(), timeout=3.0)
+                    except asyncio.TimeoutError:
+                        # Arrow requires the literal application-level PONG on
+                        # idle order streams in addition to WebSocket pings.
+                        await upstream.send("PONG")
+                        await websocket.send_json({"type": "ping"})
+                        if time.monotonic() - last_message_at >= 5.0:
+                            raise TimeoutError("Arrow order-update stream read timeout")
+                        continue
+                    last_message_at = time.monotonic()
+                    if isinstance(message, bytes):
+                        message = message.decode(errors="replace")
+                    try:
+                        raw = json.loads(message)
+                    except (json.JSONDecodeError, TypeError):
+                        raw = {"message": str(message)}
+                    await websocket.send_json(
+                        {
+                            "type": "order_update",
+                            "order_id": raw.get("id") or raw.get("orderID") or raw.get("orderId"),
+                            "status": raw.get("orderStatus") or raw.get("status"),
+                            "symbol": raw.get("symbol"),
+                            "raw": raw,
+                        }
+                    )
+        except WebSocketDisconnect:
+            return
+        except Exception as exc:
+            if attempt == max_reconnect_attempts:
+                try:
+                    await websocket.send_json({"type": "error", "message": str(exc)[:1000]})
+                    await websocket.close(code=1011)
+                except Exception:
+                    pass
+                return
 
 
 @router.post("/{account_id}/orders", include_in_schema=False)

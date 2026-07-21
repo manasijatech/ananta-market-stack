@@ -41,6 +41,27 @@ def get_client_for_account(
         res = DefaultInstrumentResolver()
 
     code = account.broker_code
+    if code == BrokerCode.ARROW.value:
+        from broker.arrow.client import ArrowClient
+
+        row = account.arrow
+        if not row:
+            raise ValueError("missing arrow credentials")
+        access_token = decrypt_value(row.access_token_cipher)
+        if not access_token:
+            raise ValueError("Arrow access token is missing. Complete Login with Arrow first.")
+        _ensure_not_expired(
+            account,
+            "Arrow access token is expired. Complete the Arrow redirect login or use configured TOTP automation.",
+        )
+        return ArrowClient(
+            app_id=decrypt_value(row.app_id_cipher),
+            app_secret=decrypt_value(row.app_secret_cipher),
+            access_token=access_token,
+            resolver=res,
+            market_stream_mode=row.market_stream_mode,
+            hft_latency_ms=row.hft_latency_ms,
+        )
     if code == BrokerCode.ZERODHA.value:
         from broker.zerodha.client import ZerodhaClient
 

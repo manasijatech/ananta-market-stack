@@ -630,6 +630,41 @@ export function BrokerDataTest({
                             Trades
                         </Button>
                     </Group>
+                    {account.broker_code === "arrow" ? (
+                        <Group>
+                            <Button
+                                disabled={isPending || !sessionActive}
+                                onClick={() => run(() => callBrokerAction("holidays"), "Arrow holidays")}
+                                type="button"
+                                variant="outline"
+                            >
+                                Holidays
+                            </Button>
+                            <GroupSeparator />
+                            <Button
+                                disabled={isPending || !sessionActive}
+                                onClick={() => run(() => callBrokerAction("indices"), "Arrow indices")}
+                                type="button"
+                                variant="outline"
+                            >
+                                Indices
+                            </Button>
+                            <GroupSeparator />
+                            <Button
+                                disabled={isPending || !sessionActive}
+                                onClick={() =>
+                                    run(
+                                        () => callBrokerAction("option_chain_symbols"),
+                                        "Arrow option-chain symbols"
+                                    )
+                                }
+                                type="button"
+                                variant="outline"
+                            >
+                                Option symbols
+                            </Button>
+                        </Group>
+                    ) : null}
                 </div>
             </Section>
 

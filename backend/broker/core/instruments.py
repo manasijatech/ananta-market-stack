@@ -23,6 +23,9 @@ class InstrumentResolver(Protocol):
     def instrument_token(self, symbol: str, exchange: str) -> int | None:
         """Numeric token (Zerodha, Upstox) if known."""
 
+    def arrow_token(self, symbol: str, exchange: str) -> str | None:
+        """Arrow instrument token if known."""
+
     def angel_token(self, symbol: str, exchange: str) -> str | None:
         """Angel One symbol token string if known."""
 
@@ -46,6 +49,9 @@ class DefaultInstrumentResolver:
         return broker_symbol
 
     def instrument_token(self, symbol: str, exchange: str) -> int | None:
+        return None
+
+    def arrow_token(self, symbol: str, exchange: str) -> str | None:
         return None
 
     def angel_token(self, symbol: str, exchange: str) -> str | None:

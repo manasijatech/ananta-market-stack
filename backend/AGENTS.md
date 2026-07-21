@@ -149,6 +149,10 @@ Root `GET /health` duplicates a minimal liveness check (for load balancers).
 | POST | `/broker-accounts/maintenance/run` | Run token/session maintenance now for current user |
 | POST | `/broker-accounts/{id}/verify` | Light connectivity check |
 | POST | `/broker-accounts/{id}/quotes` | Fetch quotes; optional Redis cache |
+| GET | `/broker-accounts/{id}/sessions/arrow` | Arrow session status + login URL + 24-hour expiry |
+| POST | `/broker-accounts/{id}/sessions/arrow/start` | Return the Arrow redirect login URL |
+| POST | `/broker-accounts/{id}/sessions/arrow` | Exchange Arrow `request-token` → access token |
+| POST | `/broker-accounts/{id}/sessions/arrow/refresh` | Opt-in Arrow user/password/TOTP automation |
 | GET | `/broker-accounts/{id}/sessions/zerodha` | Session status + login URL + expiry guidance |
 | POST | `/broker-accounts/{id}/sessions/zerodha` | Exchange `request_token` → access token |
 | POST | `/broker-accounts/{id}/sessions/zerodha/refresh` | Experimental Zerodha web-login automation using stored user id + password + TOTP secret |
@@ -242,7 +246,7 @@ Order mutation routes still exist in code for future phases, but they are intent
 
 ## Supported brokers
 
-`angel`, `dhan`, `groww`, `indmoney`, `kotak`, `upstox`, `zerodha`.
+`angel`, `arrow`, `dhan`, `groww`, `indmoney`, `kotak`, `upstox`, `zerodha`.
 
 Each has a dedicated table `broker_<name>_credentials` with a 1:1 FK to `broker_accounts.id` (`ON DELETE CASCADE`).
 
@@ -251,6 +255,7 @@ Each has a dedicated table `broker_<name>_credentials` with a 1:1 FK to `broker_
 | Broker | Quotes / instruments | Orders / margin / streaming |
 |--------|----------------------|-----------------------------|
 | Zerodha | `zerodha_instrument_token` | Create with `api_key` + `api_secret`; `access_token` is optional. Official flow is login redirect → `request_token` → `/sessions/zerodha`. An additional **experimental** automation path is available when the user opts to store Zerodha `user_id`, password, and TOTP secret; this mimics the web login and is intentionally documented as non-official because it relies on web endpoints rather than Kite Connect APIs. |
+| Arrow Trade | `arrow_token` + exchange/trading symbol + `price_precision` | Official redirect returns `request-token`; access tokens last 24 hours. Optional encrypted user/password/TOTP automation follows the published SDK. REST product groups are limited to 10 req/s. Standard market streaming is default; HFT is opt-in, zstd-compressed, and capped at 1,024 symbols per connection. Uniform MARKET orders enable MPP. |
 | Upstox | `upstox_instrument_key` | OAuth 2.0 remains the default flow. Create with app credentials; use the session status endpoint to get the login URL and exchange the returned `authorization_code`. Upstox also has an official **semi-automated token request** flow where the user approves in the Upstox app/WhatsApp and the token is delivered to a notifier webhook. |
 | Angel | `angel_exchange` + `angel_token` | SmartAPI session can be created manually with `client_code` + `pin` + `totp`, or refreshed automatically when a TOTP secret is stored. Watch SmartAPI policy changes because auth requirements have been evolving. |
 | Dhan | `dhan_exchange_segment` + `dhan_security_id` | Supports three official modes: manual web token, official consent/tokenId flow, and official TOTP-based token generation. Stored Dhan pin + TOTP secret enable automated refresh. |

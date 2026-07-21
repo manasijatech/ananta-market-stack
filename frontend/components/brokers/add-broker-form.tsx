@@ -29,6 +29,8 @@ import { brokerCallbackUrl, brokerSessionSetup } from "@/service/broker-setup";
 import type { BrokerCode, CreateBrokerAccountPayload, FieldErrors } from "@/service/types/broker";
 
 type ZerodhaMode = "official" | "automation";
+type ArrowMode = "official" | "automation";
+type ArrowStreamMode = "standard" | "hft";
 type AngelMode = "manual" | "automation";
 type DhanMode = "consent" | "automation";
 type GrowwMode = "approval" | "totp" | "token";
@@ -52,6 +54,8 @@ function nullableField(formData: FormData, key: string): string | null {
 function makePayload(
     broker: BrokerCode,
     formData: FormData,
+    arrowMode: ArrowMode,
+    arrowStreamMode: ArrowStreamMode,
     zerodhaMode: ZerodhaMode,
     angelMode: AngelMode,
     dhanMode: DhanMode,
@@ -61,6 +65,18 @@ function makePayload(
 ): CreateBrokerAccountPayload {
     const label = stringField(formData, "label");
     switch (broker) {
+        case "arrow":
+            return {
+                broker,
+                label,
+                app_id: stringField(formData, "app_id"),
+                app_secret: stringField(formData, "app_secret"),
+                login_user_id: arrowMode === "automation" ? nullableField(formData, "login_user_id") : null,
+                login_password: arrowMode === "automation" ? nullableField(formData, "login_password") : null,
+                totp_secret: arrowMode === "automation" ? nullableField(formData, "totp_secret") : null,
+                market_stream_mode: arrowStreamMode,
+                hft_latency_ms: Number(stringField(formData, "hft_latency_ms") || "1000")
+            };
         case "zerodha":
             return {
                 broker,
@@ -336,6 +352,8 @@ export function AddBrokerForm({
 }) {
     const router = useRouter();
     const [broker, setBroker] = useState<BrokerCode>(initialBroker ?? supportedBrokers[0] ?? "zerodha");
+    const [arrowMode, setArrowMode] = useState<ArrowMode>("official");
+    const [arrowStreamMode, setArrowStreamMode] = useState<ArrowStreamMode>("standard");
     const [zerodhaMode, setZerodhaMode] = useState<ZerodhaMode>("official");
     const [angelMode, setAngelMode] = useState<AngelMode>("manual");
     const [dhanMode, setDhanMode] = useState<DhanMode>("consent");
@@ -359,6 +377,8 @@ export function AddBrokerForm({
         const payload = makePayload(
             broker,
             formData,
+            arrowMode,
+            arrowStreamMode,
             zerodhaMode,
             angelMode,
             dhanMode,
@@ -439,6 +459,67 @@ export function AddBrokerForm({
                                     label="Account label"
                                     name="label"
                                 />
+
+                                {broker === "arrow" ? (
+                                    <>
+                                        <BrokerModeSwitch
+                                            modes={[
+                                                { value: "official", label: "Official redirect" },
+                                                { value: "automation", label: "TOTP automation" }
+                                            ]}
+                                            onChange={setArrowMode}
+                                            value={arrowMode}
+                                        />
+                                        <BrokerField
+                                            description="Arrow Developer application ID. Register the callback URL and static IP in Arrow first."
+                                            error={fieldErrors.app_id}
+                                            label="App ID"
+                                            name="app_id"
+                                        />
+                                        <BrokerField
+                                            description="Stored encrypted and used only for request-token exchange."
+                                            error={fieldErrors.app_secret}
+                                            label="App secret"
+                                            name="app_secret"
+                                            type="password"
+                                        />
+                                        <BrokerModeSwitch
+                                            modes={[
+                                                { value: "standard", label: "Standard stream" },
+                                                { value: "hft", label: "HFT stream" }
+                                            ]}
+                                            onChange={setArrowStreamMode}
+                                            value={arrowStreamMode}
+                                        />
+                                        {arrowStreamMode === "hft" ? (
+                                            <BrokerField
+                                                defaultValue="1000"
+                                                description="HFT tick interval in milliseconds (50–60000). HFT entitlement is required."
+                                                error={fieldErrors.hft_latency_ms}
+                                                label="HFT latency (ms)"
+                                                name="hft_latency_ms"
+                                                type="number"
+                                            />
+                                        ) : null}
+                                        {arrowMode === "automation" ? (
+                                            <>
+                                                <BrokerField label="Arrow user ID" name="login_user_id" />
+                                                <BrokerField
+                                                    description="Stored encrypted for the opt-in SDK-compatible login flow."
+                                                    label="Login password"
+                                                    name="login_password"
+                                                    type="password"
+                                                />
+                                                <BrokerField
+                                                    description="Base32 authenticator secret, not the current OTP."
+                                                    label="TOTP secret"
+                                                    name="totp_secret"
+                                                    type="password"
+                                                />
+                                            </>
+                                        ) : null}
+                                    </>
+                                ) : null}
 
                                 {broker === "zerodha" ? (
                                     <>

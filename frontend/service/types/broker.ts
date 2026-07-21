@@ -2,7 +2,7 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
 
-export type BrokerCode = "angel" | "dhan" | "groww" | "indmoney" | "kotak" | "upstox" | "zerodha";
+export type BrokerCode = "angel" | "arrow" | "dhan" | "groww" | "indmoney" | "kotak" | "upstox" | "zerodha";
 
 export type SessionStatusValue = "pending" | "active" | "automation_ready" | "action_required" | string;
 
@@ -41,6 +41,18 @@ export interface ZerodhaCreatePayload extends CreatePayloadBase {
     login_user_id?: string | null;
     login_password?: string | null;
     totp_secret?: string | null;
+}
+
+export interface ArrowCreatePayload extends CreatePayloadBase {
+    broker: "arrow";
+    app_id: string;
+    app_secret: string;
+    access_token?: string | null;
+    login_user_id?: string | null;
+    login_password?: string | null;
+    totp_secret?: string | null;
+    market_stream_mode: "standard" | "hft";
+    hft_latency_ms: number;
 }
 
 export interface UpstoxCreatePayload extends CreatePayloadBase {
@@ -98,6 +110,7 @@ export interface KotakCreatePayload extends CreatePayloadBase {
 
 export type CreateBrokerAccountPayload =
     | ZerodhaCreatePayload
+    | ArrowCreatePayload
     | UpstoxCreatePayload
     | AngelCreatePayload
     | DhanCreatePayload
@@ -139,6 +152,12 @@ export interface ZerodhaSessionPayload {
     request_token: string;
 }
 
+export interface ArrowSessionPayload {
+    broker: "arrow";
+    request_token: string;
+    checksum?: string | null;
+}
+
 export interface UpstoxSessionPayload {
     broker: "upstox";
     authorization_code: string;
@@ -176,6 +195,7 @@ export interface IndmoneySessionPayload {
 
 export type SessionLoginPayload =
     | ZerodhaSessionPayload
+    | ArrowSessionPayload
     | UpstoxSessionPayload
     | AngelSessionPayload
     | DhanSessionPayload
@@ -187,6 +207,8 @@ export interface InstrumentRef {
     symbol?: string | null;
     exchange?: string | null;
     zerodha_instrument_token?: number | null;
+    arrow_token?: string | null;
+    price_precision?: number | null;
     upstox_instrument_key?: string | null;
     angel_exchange?: string | null;
     angel_token?: number | null;
@@ -246,6 +268,7 @@ export interface InstrumentSearchRow {
     option_type?: string | null;
     lot_size?: string | null;
     tick_size?: string | null;
+    price_precision?: string | null;
     identifiers: Record<string, string | null | undefined>;
 }
 
@@ -307,13 +330,16 @@ export interface MarketChartSnapshot {
 }
 
 export interface OptionChainRequest {
-    symbol: string;
+    symbol?: string;
     exchange?: string;
     expiry?: string | null;
+    instrument_token?: string | null;
+    arrow_token?: string | null;
+    count?: number;
 }
 
 export interface GreeksRequest {
-    symbol: string;
+    symbol?: string;
     exchange?: string;
     expiry?: string | null;
     strike?: string | null;
@@ -323,6 +349,8 @@ export interface GreeksRequest {
     volatility?: number;
     interest_rate?: number;
     days_to_expiry?: number;
+    instrument_tokens?: string[];
+    tokens?: string[];
 }
 
 export interface StreamStatus {

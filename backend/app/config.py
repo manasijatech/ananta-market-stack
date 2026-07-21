@@ -53,6 +53,12 @@ class Settings(BaseSettings):
         default=30 * 60,
         validation_alias="REDIS_LIVE_PRICE_TTL_SECONDS",
     )
+    arrow_enable_greeks: bool = Field(default=False, validation_alias="ARROW_ENABLE_GREEKS")
+    arrow_standard_stream_symbol_limit: int = Field(
+        default=1000,
+        ge=1,
+        validation_alias="ARROW_STANDARD_STREAM_SYMBOL_LIMIT",
+    )
     broker_chat_queue_name: str = Field(default="broker-chat", validation_alias="BROKER_CHAT_QUEUE_NAME")
     broker_chat_job_timeout_seconds: int = Field(
         default=600,

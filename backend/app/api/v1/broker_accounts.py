@@ -10,6 +10,7 @@ from app.schemas.broker import (
     BrokerAccountOut,
     QuoteRequest,
     QuoteRow,
+    SessionArrowIn,
     SessionAngelIn,
     SessionDhanIn,
     SessionGrowwIn,
@@ -91,6 +92,16 @@ def create_broker_account(
                     "api_key": "upstox_api_key",
                     "api_secret": "upstox_api_secret",
                     "redirect_uri": "https://your-app.example.com/broker-connections",
+                },
+            },
+            "arrow_redirect": {
+                "summary": "Arrow Trade (official redirect flow)",
+                "value": {
+                    "broker": "arrow",
+                    "label": "arrow-main",
+                    "app_id": "arrow_app_id",
+                    "app_secret": "arrow_app_secret",
+                    "market_stream_mode": "standard",
                 },
             },
         },
@@ -254,6 +265,64 @@ def session_zerodha(
     if acc.broker_code != "zerodha":
         raise HTTPException(status_code=400, detail="account is not zerodha")
     ok, err = ba_svc.apply_zerodha_session(db, acc, body.request_token)
+    return build_verify_out(db, acc, ok, err or "")
+
+
+@router.get("/{account_id}/sessions/arrow", response_model=BrokerSessionStatusOut)
+def arrow_session_status(
+    account_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> BrokerSessionStatusOut:
+    acc = _get_account(db, principal, account_id, rbac.BROKER_VIEW)
+    if acc.broker_code != "arrow":
+        raise HTTPException(status_code=400, detail="account is not arrow")
+    return bs_svc.get_broker_session_status(acc)
+
+
+@router.post("/{account_id}/sessions/arrow/start", response_model=SessionStartOut)
+def arrow_session_start(
+    account_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> SessionStartOut:
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
+    if acc.broker_code != "arrow":
+        raise HTTPException(status_code=400, detail="account is not arrow")
+    status = bs_svc.get_broker_session_status(acc)
+    return SessionStartOut(
+        account_id=acc.id,
+        broker="arrow",
+        login_url=status.login_url or "",
+        state=acc.id,
+        guidance=status.guidance,
+    )
+
+
+@router.post("/{account_id}/sessions/arrow", response_model=VerifyOut)
+def session_arrow(
+    account_id: str,
+    body: SessionArrowIn,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> VerifyOut:
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
+    if acc.broker_code != "arrow":
+        raise HTTPException(status_code=400, detail="account is not arrow")
+    ok, err = ba_svc.apply_arrow_session(db, acc, body.request_token, body.checksum)
+    return build_verify_out(db, acc, ok, err or "")
+
+
+@router.post("/{account_id}/sessions/arrow/refresh", response_model=VerifyOut)
+def arrow_session_refresh(
+    account_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> VerifyOut:
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
+    if acc.broker_code != "arrow":
+        raise HTTPException(status_code=400, detail="account is not arrow")
+    ok, err = bs_svc.refresh_arrow_session(db, acc)
     return build_verify_out(db, acc, ok, err or "")
 
 

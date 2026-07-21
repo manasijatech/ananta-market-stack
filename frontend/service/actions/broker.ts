@@ -61,7 +61,10 @@ export type BrokerDataTestAction =
     | "ohlc"
     | "historical"
     | "option_chain"
-    | "greeks";
+    | "greeks"
+    | "holidays"
+    | "indices"
+    | "option_chain_symbols";
 
 export type BrokerDataTestResult =
     | { ok: true; data: unknown }
@@ -230,6 +233,15 @@ export async function runBrokerDataTestAction(
                 break;
             case "greeks":
                 data = await getGreeksData(id, body as unknown as GreeksRequest);
+                break;
+            case "holidays":
+                data = await request<JsonObject>(`/broker-accounts/${id}/data/holidays`);
+                break;
+            case "indices":
+                data = await request<JsonObject>(`/broker-accounts/${id}/data/indices`);
+                break;
+            case "option_chain_symbols":
+                data = await request<JsonObject>(`/broker-accounts/${id}/data/option-chain-symbols`);
                 break;
         }
         return { ok: true, data };
@@ -789,6 +801,7 @@ export async function createSession(
 export async function refreshSession(id: string, broker: BrokerCode): Promise<SessionMutationResponse> {
     const pathByBroker: Partial<Record<BrokerCode, string>> = {
         angel: `/broker-accounts/${id}/sessions/angel/refresh`,
+        arrow: `/broker-accounts/${id}/sessions/arrow/refresh`,
         dhan: `/broker-accounts/${id}/sessions/dhan/refresh`,
         kotak: `/broker-accounts/${id}/sessions/kotak/refresh`,
         zerodha: `/broker-accounts/${id}/sessions/zerodha/refresh`
@@ -811,6 +824,12 @@ export async function refreshSession(id: string, broker: BrokerCode): Promise<Se
 
 export async function startDhanSession(id: string): Promise<SessionStartResponse> {
     return request<SessionStartResponse>(`/broker-accounts/${id}/sessions/dhan/start`, {
+        method: "POST"
+    });
+}
+
+export async function startArrowSession(id: string): Promise<SessionStartResponse> {
+    return request<SessionStartResponse>(`/broker-accounts/${id}/sessions/arrow/start`, {
         method: "POST"
     });
 }

@@ -5,7 +5,7 @@ from app.services.broker_chat_queue import broker_chat_stream_key
 
 
 def test_broker_chat_routes_are_registered():
-    paths = {getattr(route, "path", "") for route in app.routes}
+    paths = set(app.openapi()["paths"])
 
     assert "/api/v1/broker-chat/config" in paths
     assert "/api/v1/broker-chat/runs" in paths

@@ -47,7 +47,7 @@ def test_alert_workflow_chat_routes_are_registered_with_testclient_context():
     test_app.include_router(alert_workflow_chat.router, prefix="/alert-workflow-chat")
 
     with TestClient(test_app) as client:
-        paths = {getattr(route, "path", "") for route in client.app.routes}
+        paths = set(client.get("/openapi.json").json()["paths"])
 
     assert "/alert-workflow-chat/config" in paths
     assert "/alert-workflow-chat/sessions" in paths
@@ -56,7 +56,7 @@ def test_alert_workflow_chat_routes_are_registered_with_testclient_context():
 
 
 def test_alert_workflow_chat_routes_are_mounted_under_api_v1():
-    paths = {getattr(route, "path", "") for route in app.routes}
+    paths = set(app.openapi()["paths"])
 
     assert "/api/v1/alert-workflow-chat/config" in paths
     assert "/api/v1/alert-workflow-chat/runs" in paths

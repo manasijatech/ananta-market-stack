@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from common.datetime_compat import UTC
+from app.config import get_settings
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -81,8 +82,10 @@ def _instrument_row_to_schema(
         option_type=row.option_type,
         lot_size=row.lot_size,
         tick_size=row.tick_size,
+        price_precision=row.price_precision,
         identifiers={
             "zerodha_instrument_token": row.zerodha_instrument_token,
+            "arrow_token": row.arrow_token,
             "upstox_instrument_key": row.upstox_instrument_key,
             "angel_token": row.angel_token,
             "dhan_security_id": row.dhan_security_id,
@@ -131,6 +134,8 @@ def _hydrate_exact_match(
     merged.setdefault("trading_symbol", row.trading_symbol)
     merged.setdefault("instrument_type", row.instrument_type)
     merged.setdefault("zerodha_instrument_token", row.zerodha_instrument_token)
+    merged.setdefault("arrow_token", row.arrow_token)
+    merged.setdefault("price_precision", row.price_precision)
     merged.setdefault("upstox_instrument_key", row.upstox_instrument_key)
     merged.setdefault("angel_token", row.angel_token)
     merged.setdefault("angel_exchange", row.exchange)
@@ -348,6 +353,8 @@ def _csv_exact_payload(row: dict[str, Any]) -> dict[str, Any]:
         "trading_symbol": row.get("trading_symbol"),
         "instrument_type": row.get("instrument_type"),
         "zerodha_instrument_token": row.get("zerodha_instrument_token"),
+        "arrow_token": row.get("arrow_token"),
+        "price_precision": row.get("price_precision"),
         "upstox_instrument_key": row.get("upstox_instrument_key"),
         "angel_token": row.get("angel_token"),
         "angel_exchange": row.get("exchange"),
@@ -400,8 +407,10 @@ def _csv_row_to_schema(
         option_type=row.get("option_type"),
         lot_size=row.get("lot_size"),
         tick_size=row.get("tick_size"),
+        price_precision=row.get("price_precision"),
         identifiers={
             "zerodha_instrument_token": row.get("zerodha_instrument_token"),
+            "arrow_token": row.get("arrow_token"),
             "upstox_instrument_key": row.get("upstox_instrument_key"),
             "angel_token": row.get("angel_token"),
             "dhan_security_id": row.get("dhan_security_id"),
@@ -536,19 +545,30 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
         "quotes": DataCapabilityItem(supported=True, guidance="Real-time quote fetch is wired for all supported brokers."),
         "ohlc": DataCapabilityItem(supported=True, guidance="OHLC uses broker OHLC endpoints where available and quote-derived snapshots otherwise."),
         "historical": DataCapabilityItem(
-            supported=acc.broker_code in {"groww", "zerodha", "upstox", "dhan", "angel", "indmoney"},
+            supported=acc.broker_code in {"arrow", "groww", "zerodha", "upstox", "dhan", "angel", "indmoney"},
             guidance="Historical data support varies by broker and endpoint maturity.",
         ),
         "option_chain": DataCapabilityItem(
-            supported=acc.broker_code in {"groww", "dhan"},
-            guidance="Option chain is currently wired for Groww and Dhan. INDstocks documents the endpoints but the live API still returns route-missing responses.",
+            supported=acc.broker_code in {"arrow", "groww", "dhan"},
+            guidance="Option chain is wired for Arrow, Groww, and Dhan.",
         ),
         "greeks": DataCapabilityItem(
-            supported=acc.broker_code in {"groww", "dhan"},
-            guidance="Greeks are exposed from Groww and Dhan option-chain responses. INDstocks still advertises these endpoints as coming soon and the live API returns 404.",
+            supported=acc.broker_code in {"groww", "dhan"} or (
+                acc.broker_code == "arrow" and get_settings().arrow_enable_greeks
+            ),
+            guidance="Arrow Greeks are implemented but remain experimental and disabled unless ARROW_ENABLE_GREEKS is set.",
         ),
         "stream": DataCapabilityItem(supported=True, guidance="WebSocket v1 is an on-demand test manager that uses a uniform read-only flow."),
     }
+    if acc.broker_code == "arrow":
+        capabilities.update(
+            {
+                "holidays": DataCapabilityItem(supported=True, guidance="Arrow trading calendar and special sessions."),
+                "indices": DataCapabilityItem(supported=True, guidance="Arrow index names and instrument tokens."),
+                "option_chain_symbols": DataCapabilityItem(supported=True, guidance="Arrow option underlyings and expiries."),
+                "order_updates": DataCapabilityItem(supported=True, guidance="Arrow native order-update WebSocket."),
+            }
+        )
     return capabilities
 
 
