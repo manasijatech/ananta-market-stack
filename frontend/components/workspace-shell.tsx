@@ -264,7 +264,7 @@ export function WorkspaceShell({
                 fullHeight && "min-[980px]:h-dvh min-[980px]:overflow-hidden"
             )}
         >
-            <header className="app-page-background fixed inset-x-0 top-0 z-[70] border-b border-border min-[980px]:hidden">
+            <header className="fixed inset-x-0 top-0 z-[70] border-b border-border bg-background min-[980px]:hidden">
                 <div className="flex min-h-16 items-center justify-between gap-3 px-4">
                     <div className="flex min-w-0 items-center gap-3">
                         <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -349,7 +349,7 @@ export function WorkspaceShell({
             </aside>
 
             <div className="min-[980px]:pl-60">
-                <header className="app-page-background fixed right-0 top-0 z-[70] hidden border-b border-border px-5 py-4 min-[760px]:px-8 min-[980px]:left-60 min-[980px]:flex min-[980px]:h-16 min-[980px]:items-center min-[980px]:px-8 min-[980px]:py-0">
+                <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-60 min-[980px]:flex min-[980px]:h-16 min-[980px]:items-center min-[980px]:px-8 min-[980px]:py-0">
                     <div className="flex w-full items-center justify-end">
                         <div className="flex flex-wrap items-center gap-2">
                             <GithubStarButton />

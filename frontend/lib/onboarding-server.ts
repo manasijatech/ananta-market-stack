@@ -5,6 +5,7 @@ import { requireActiveWorkspace } from "@/lib/auth-guards";
 import {
     firstIncompleteRequiredStep,
     getWorkspaceSetupReadiness,
+    isOnboardingStepReachable,
     onboardingStepPath,
     type OnboardingSetupData,
     type OnboardingStepSlug
@@ -48,28 +49,9 @@ export async function requireOnboardingStep(step: OnboardingStepSlug) {
     const context = await loadOnboardingContext();
     const { readiness } = context;
 
-    if (step === "welcome") {
-        if (readiness.requiredReady) {
-            redirect(onboardingStepPath("mcp"));
-        }
-        return context;
-    }
-
-    if (step === "mcp") {
-        if (!readiness.requiredReady) {
-            redirect(onboardingStepPath(firstIncompleteRequiredStep(readiness)));
-        }
-        return context;
-    }
-
-    if (!readiness.hasBroker && step !== "broker") {
-        redirect(onboardingStepPath("broker"));
-    }
-    if (readiness.hasBroker && !readiness.llmReady && step !== "llm-provider") {
-        redirect(onboardingStepPath("llm-provider"));
-    }
-    if (readiness.requiredReady) {
-        redirect(onboardingStepPath("mcp"));
+    if (!isOnboardingStepReachable(step, readiness)) {
+        const currentStep = readiness.requiredReady ? "mcp" : firstIncompleteRequiredStep(readiness);
+        redirect(onboardingStepPath(currentStep));
     }
 
     return context;

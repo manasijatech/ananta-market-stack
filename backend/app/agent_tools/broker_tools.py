@@ -37,7 +37,7 @@ from app.schemas.watchlist import (
     WatchlistSymbolsReplaceIn,
     WatchlistUpdateIn,
 )
-from app.services import broker_accounts, broker_data, broker_data_preferences, broker_sessions
+from app.services import broker_accounts, broker_data, broker_data_preferences, broker_sessions, rbac
 from app.services import watchlists as watchlist_svc
 from broker.core.instrument_store import SQLiteInstrumentResolver
 from broker.core.redis_cache import cache_quotes
@@ -106,6 +106,10 @@ def _ensure_user(db: Session, user_id: str) -> User:
     return user
 
 
+def _principal(db: Session, user_id: str) -> rbac.Principal:
+    return rbac.ensure_principal(db, _ensure_user(db, user_id))
+
+
 def _serialize(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
@@ -161,9 +165,15 @@ def _session_status(acc: BrokerAccount) -> dict[str, Any]:
     return broker_sessions.get_broker_session_status(acc).model_dump(mode="json")
 
 
-def _owned_account(db: Session, user_id: str, account_id: str) -> BrokerAccount:
+def _accessible_account(
+    db: Session,
+    principal: rbac.Principal,
+    account_id: str,
+    *,
+    permission: str,
+) -> BrokerAccount:
     acc = db.get(BrokerAccount, account_id)
-    if not acc or acc.user_id != user_id:
+    if not acc or permission not in rbac.account_permissions(db, principal, acc):
         raise BrokerToolActionRequired(
             "Broker account not found for this user.",
             detail={"account_id": account_id},
@@ -176,20 +186,23 @@ def _owned_account(db: Session, user_id: str, account_id: str) -> BrokerAccount:
     return acc
 
 
-def _first_active_account(
+def _first_accessible_account(
     db: Session,
-    user_id: str,
+    principal: rbac.Principal,
     *,
     broker_code: str | None = None,
+    permission: str,
 ) -> BrokerAccount | None:
-    stmt = (
-        select(BrokerAccount)
-        .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-        .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
+    return next(
+        (
+            acc
+            for acc in rbac.accessible_broker_accounts(db, principal)
+            if acc.is_active
+            and permission in rbac.account_permissions(db, principal, acc)
+            and (not broker_code or acc.broker_code == broker_code)
+        ),
+        None,
     )
-    if broker_code:
-        stmt = stmt.where(BrokerAccount.broker_code == broker_code)
-    return db.scalars(stmt.limit(1)).first()
 
 
 def _context_account_id(
@@ -203,13 +216,14 @@ def _context_account_id(
 def _configured_account_id(
     db: Session,
     user_id: str,
+    principal: rbac.Principal,
     *,
     purpose: Literal["default", "search"],
 ) -> str | None:
     if purpose == "search":
-        config = broker_data_preferences.get_broker_data_search_config(db, user_id)
+        config = broker_data_preferences.get_broker_data_search_config(db, user_id, principal)
         return config.effective_search_account_id or config.preferred_search_account_id
-    config = broker_data_preferences.get_broker_data_default_config(db, user_id)
+    config = broker_data_preferences.get_broker_data_default_config(db, user_id, principal)
     return config.effective_default_account_id or config.preferred_default_account_id
 
 
@@ -222,19 +236,29 @@ def _resolve_account(
     purpose: Literal["default", "search"] = "default",
     require_session: bool = True,
     auto_refresh_session: bool = True,
+    permission: str = rbac.BROKER_USE_DATA,
 ) -> BrokerAccount:
     user_id = _user_id(ctx)
-    _ensure_user(db, user_id)
+    principal = _principal(db, user_id)
 
     selected_id = account_id or _context_account_id(ctx, purpose=purpose)
     if not selected_id:
-        selected_id = _configured_account_id(db, user_id, purpose=purpose)
+        selected_id = _configured_account_id(db, user_id, principal, purpose=purpose)
 
-    acc = _owned_account(db, user_id, selected_id) if selected_id else None
+    acc = (
+        _accessible_account(db, principal, selected_id, permission=permission)
+        if selected_id
+        else None
+    )
     if acc and broker_code and acc.broker_code != broker_code:
         acc = None
     if acc is None:
-        acc = _first_active_account(db, user_id, broker_code=broker_code)
+        acc = _first_accessible_account(
+            db,
+            principal,
+            broker_code=broker_code,
+            permission=permission,
+        )
 
     if acc is None:
         raise BrokerToolActionRequired(
@@ -246,7 +270,15 @@ def _resolve_account(
         return acc
 
     status = _session_status(acc)
-    if not status.get("session_active") and auto_refresh_session and acc.automation_enabled:
+    can_manage_session = (
+        rbac.BROKER_MANAGE_SESSIONS in rbac.account_permissions(db, principal, acc)
+    )
+    if (
+        not status.get("session_active")
+        and auto_refresh_session
+        and acc.automation_enabled
+        and can_manage_session
+    ):
         broker_sessions.process_account_maintenance(db, acc)
         db.refresh(acc)
         status = _session_status(acc)
@@ -681,19 +713,29 @@ def broker_list_accounts(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str
         user_id = _user_id(ctx)
         db = _db()
         try:
-            _ensure_user(db, user_id)
-            accounts = list(
-                db.scalars(
-                    select(BrokerAccount)
-                    .where(BrokerAccount.user_id == user_id)
-                    .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-                ).all()
-            )
+            principal = _principal(db, user_id)
+            accounts = rbac.accessible_broker_accounts(db, principal)
             return _ok(
                 user_id=user_id,
-                accounts=[_account_summary(acc) for acc in accounts],
-                default_config=broker_data_preferences.get_broker_data_default_config(db, user_id),
-                search_config=broker_data_preferences.get_broker_data_search_config(db, user_id),
+                workspace_id=principal.workspace.id,
+                accounts=[
+                    {
+                        **_account_summary(acc),
+                        "is_shared": acc.user_id != user_id,
+                        "access_permissions": sorted(rbac.account_permissions(db, principal, acc)),
+                    }
+                    for acc in accounts
+                ],
+                default_config=broker_data_preferences.get_broker_data_default_config(
+                    db,
+                    user_id,
+                    principal,
+                ),
+                search_config=broker_data_preferences.get_broker_data_search_config(
+                    db,
+                    user_id,
+                    principal,
+                ),
             )
         finally:
             db.close()
@@ -1197,8 +1239,14 @@ def broker_get_session_status(
                 account_id=account_id,
                 broker_code=broker_code,
                 require_session=False,
+                permission=rbac.BROKER_VIEW,
             )
-            if auto_refresh_session and acc.automation_enabled:
+            principal = _principal(db, _user_id(ctx))
+            can_manage_session = (
+                rbac.BROKER_MANAGE_SESSIONS
+                in rbac.account_permissions(db, principal, acc)
+            )
+            if auto_refresh_session and acc.automation_enabled and can_manage_session:
                 broker_sessions.process_account_maintenance(db, acc)
                 db.refresh(acc)
             return _ok(account=_account_summary(acc), session=_session_status(acc))
@@ -1232,6 +1280,7 @@ def broker_verify_connection(
                 account_id=account_id,
                 broker_code=broker_code,
                 require_session=False,
+                permission=rbac.BROKER_MANAGE_SESSIONS,
             )
             ok, message = broker_accounts.verify_account(db, acc)
             db.refresh(acc)
@@ -1256,18 +1305,19 @@ def broker_run_session_maintenance(ctx: RunContextWrapper[BrokerAgentContext]) -
         db = _db()
         try:
             user_id = _user_id(ctx)
-            _ensure_user(db, user_id)
-            count = broker_sessions.run_user_maintenance(db, user_id)
-            accounts = list(
-                db.scalars(
-                    select(BrokerAccount)
-                    .where(BrokerAccount.user_id == user_id, BrokerAccount.is_active.is_(True))
-                    .order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc())
-                ).all()
-            )
+            principal = _principal(db, user_id)
+            accounts = [
+                acc
+                for acc in rbac.accessible_broker_accounts(db, principal)
+                if acc.is_active
+                and rbac.BROKER_MANAGE_SESSIONS
+                in rbac.account_permissions(db, principal, acc)
+            ]
+            for acc in accounts:
+                broker_sessions.process_account_maintenance(db, acc)
             return _ok(
                 user_id=user_id,
-                processed_count=count,
+                processed_count=len(accounts),
                 accounts=[
                     {
                         "account": _account_summary(acc),
@@ -1312,6 +1362,7 @@ def broker_get_data_capabilities(
                 account_id=account_id,
                 broker_code=broker_code,
                 require_session=False,
+                permission=rbac.BROKER_VIEW,
             )
             return _ok(
                 account=_account_summary(acc),
@@ -1356,7 +1407,7 @@ def broker_search_instruments(
         db = _db()
         try:
             user_id = _user_id(ctx)
-            _ensure_user(db, user_id)
+            principal = _principal(db, user_id)
             safe_limit = max(1, min(int(limit), 200))
             if account_id or broker_code:
                 acc = _resolve_account(
@@ -1366,6 +1417,7 @@ def broker_search_instruments(
                     broker_code=broker_code,
                     purpose="search",
                     require_session=False,
+                    permission=rbac.BROKER_USE_DATA,
                 )
                 rows = broker_data.search_instruments(
                     db,
@@ -1383,6 +1435,7 @@ def broker_search_instruments(
                 exchange=exchange,
                 segment=segment,
                 limit=safe_limit,
+                principal=principal,
             )
             return _ok(user_id=user_id, rows=rows)
         finally:
@@ -1417,6 +1470,7 @@ def broker_sync_instruments(
                 broker_code=broker_code,
                 require_session=True,
                 auto_refresh_session=auto_refresh_session,
+                permission=rbac.BROKER_MANAGE_SESSIONS,
             )
             if storage_target == "db":
                 result = broker_data.sync_instruments_to_db(db, acc)
@@ -1448,7 +1502,6 @@ def broker_get_cached_quotes(
     def call() -> dict[str, Any]:
         db = _db()
         try:
-            user_id = _user_id(ctx)
             acc = _resolve_account(
                 db,
                 ctx,
@@ -1457,7 +1510,7 @@ def broker_get_cached_quotes(
                 require_session=False,
             )
             rows = _read_cached_quotes(
-                user_id=user_id,
+                user_id=acc.user_id,
                 account_id=acc.id,
                 broker_code=acc.broker_code,
                 symbols=symbols,

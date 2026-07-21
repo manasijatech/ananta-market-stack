@@ -77,6 +77,32 @@ class ZerodhaCreate(BaseModel):
         return self
 
 
+class ArrowCreate(BaseModel):
+    """Information required to add an Arrow Trade account."""
+
+    broker: Literal["arrow"] = "arrow"
+    label: str = Field(..., max_length=128)
+    app_id: str = Field(..., description="Arrow Developer application ID.")
+    app_secret: str = Field(..., description="Arrow Developer application secret.")
+    access_token: str | None = Field(None, description="Optional current 24-hour access token.")
+    login_user_id: str | None = Field(None, description="Optional Arrow user ID for automated login.")
+    login_password: str | None = Field(None, description="Optional encrypted Arrow password for automated login.")
+    totp_secret: str | None = Field(None, description="Optional encrypted TOTP secret for automated login.")
+    market_stream_mode: Literal["standard", "hft"] = "standard"
+    hft_latency_ms: int = Field(1000, ge=50, le=60_000)
+
+    @model_validator(mode="after")
+    def _validate_login_bundle(self) -> "ArrowCreate":
+        values = [self.login_user_id, self.login_password, self.totp_secret]
+        supplied = [bool((value or "").strip()) for value in values]
+        if any(supplied) and not all(supplied):
+            raise ValueError(
+                "For Arrow automated login, provide login_user_id, login_password, and "
+                "totp_secret together, or leave all three empty."
+            )
+        return self
+
+
 class UpstoxCreate(BaseModel):
     """Information required to add an Upstox account."""
 
@@ -173,6 +199,7 @@ class KotakCreate(BaseModel):
 BrokerAccountCreate = Annotated[
     Union[
         ZerodhaCreate,
+        ArrowCreate,
         UpstoxCreate,
         AngelCreate,
         DhanCreate,
@@ -190,6 +217,8 @@ class InstrumentRef(BaseModel):
     symbol: str | None = None
     exchange: str | None = None
     zerodha_instrument_token: int | None = None
+    arrow_token: str | None = None
+    price_precision: int | None = Field(None, ge=0, le=8)
     upstox_instrument_key: str | None = None
     angel_exchange: str | None = None
     angel_token: int | None = None
@@ -238,6 +267,14 @@ class SessionZerodhaIn(BaseModel):
             "Short-lived token returned by Zerodha to your redirect URL after the user "
             "successfully logs in and authorizes the app."
         ),
+    )
+
+
+class SessionArrowIn(BaseModel):
+    request_token: str
+    checksum: str | None = Field(
+        None,
+        description="Optional callback checksum (SHA256 of request-token:appID).",
     )
 
 
@@ -361,6 +398,7 @@ class InstrumentSearchRow(BaseModel):
     option_type: str | None = None
     lot_size: str | None = None
     tick_size: str | None = None
+    price_precision: str | None = None
     identifiers: dict[str, str | None] = Field(default_factory=dict)
 
 
@@ -413,13 +451,16 @@ class MarketChartSnapshotOut(BaseModel):
 
 
 class OptionChainRequest(BaseModel):
-    symbol: str
+    symbol: str = ""
     exchange: str = "NSE"
     expiry: str | None = None
+    instrument_token: str | None = None
+    arrow_token: str | None = None
+    count: int = Field(default=10, ge=1, le=100)
 
 
 class GreeksRequest(BaseModel):
-    symbol: str
+    symbol: str = ""
     exchange: str = "NSE"
     expiry: str | None = None
     strike: str | None = None
@@ -429,6 +470,8 @@ class GreeksRequest(BaseModel):
     volatility: float | None = None
     interest_rate: float | None = None
     days_to_expiry: int | None = None
+    instrument_tokens: list[str] = Field(default_factory=list)
+    tokens: list[str] = Field(default_factory=list)
 
 
 class StreamStatusOut(BaseModel):

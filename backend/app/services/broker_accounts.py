@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.broker import (
     AngelCreate,
+    ArrowCreate,
     BrokerAccountCreate,
     DhanCreate,
     GrowwCreate,
@@ -22,6 +23,7 @@ from app.schemas.broker import (
 )
 from broker.core.instrument_store import SQLiteInstrumentResolver
 from broker.angel import auth as angel_auth
+from broker.arrow import auth as arrow_auth
 from broker.core.redis_cache import cache_quotes
 from broker.core.registry import get_client_for_account
 from broker.crypto import decrypt_value, encrypt_value
@@ -32,6 +34,7 @@ from broker.upstox import auth as upstox_auth
 from broker.zerodha import auth as zerodha_auth
 from db.models import (
     AngelCredentials,
+    ArrowCredentials,
     AlertWorkflow,
     BrokerAccount,
     BrokerNotification,
@@ -85,7 +88,30 @@ def create_broker_account(
     db.add(acc)
     db.flush()
 
-    if isinstance(payload, ZerodhaCreate):
+    if isinstance(payload, ArrowCreate):
+        token = (payload.access_token or "").strip()
+        generated_at = datetime.now(tz=UTC) if token else None
+        expires_at = arrow_auth.token_expiry(generated_at) if generated_at else None
+        db.add(
+            ArrowCredentials(
+                account_id=bid,
+                app_id_cipher=encrypt_value(payload.app_id),
+                app_secret_cipher=encrypt_value(payload.app_secret),
+                access_token_cipher=encrypt_value(token),
+                login_user_id_cipher=encrypt_value(payload.login_user_id) if payload.login_user_id else None,
+                login_password_cipher=encrypt_value(payload.login_password) if payload.login_password else None,
+                totp_secret_cipher=encrypt_value(payload.totp_secret) if payload.totp_secret else None,
+                access_token_generated_at=generated_at,
+                access_token_expires_at=expires_at,
+                market_stream_mode=payload.market_stream_mode,
+                hft_latency_ms=payload.hft_latency_ms,
+            )
+        )
+        acc.automation_enabled = bool(payload.login_user_id and payload.login_password and payload.totp_secret)
+        acc.automation_mode = "arrow_totp_web_login" if acc.automation_enabled else None
+        acc.session_expires_at = expires_at
+        acc.last_error = None if token else "Arrow session not established yet. Use Login with Arrow to activate it."
+    elif isinstance(payload, ZerodhaCreate):
         token = (payload.access_token or "").strip()
         db.add(
             ZerodhaCredentials(
@@ -373,6 +399,43 @@ def apply_zerodha_session(db: Session, acc: BrokerAccount, request_token: str) -
     acc.session_status = "active"
     acc.session_expires_at = zerodha_auth.session_expiry_utc(row.access_token_generated_at)
     _mark_session_healthy(db, acc, verified_at=row.access_token_generated_at)
+    db.add(row)
+    db.add(acc)
+    db.commit()
+    return True, ""
+
+
+def apply_arrow_session(
+    db: Session,
+    acc: BrokerAccount,
+    request_token: str,
+    callback_checksum: str | None = None,
+) -> tuple[bool, str]:
+    row = acc.arrow
+    if not row:
+        return False, "not arrow"
+    app_id = decrypt_value(row.app_id_cipher)
+    if not arrow_auth.callback_checksum_valid(app_id, request_token, callback_checksum):
+        return False, "Arrow callback checksum validation failed"
+    session_data, err = arrow_auth.exchange_request_token(
+        app_id=app_id,
+        app_secret=decrypt_value(row.app_secret_cipher),
+        request_token=request_token,
+    )
+    if err or not session_data:
+        return False, err or "Arrow token exchange failed"
+    now = datetime.now(tz=UTC)
+    expires_at = arrow_auth.token_expiry(now)
+    row.access_token_cipher = encrypt_value(session_data["access_token"])
+    row.session_user_id_cipher = (
+        encrypt_value(session_data["user_id"]) if session_data.get("user_id") else None
+    )
+    row.access_token_generated_at = now
+    row.access_token_expires_at = expires_at
+    acc.session_status = "active"
+    acc.session_expires_at = expires_at
+    acc.last_error = None
+    _mark_session_healthy(db, acc, verified_at=now)
     db.add(row)
     db.add(acc)
     db.commit()

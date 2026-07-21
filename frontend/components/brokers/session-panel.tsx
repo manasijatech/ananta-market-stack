@@ -31,7 +31,7 @@ import type {
 } from "@/service/types/broker";
 
 function canRefresh(broker: BrokerCode): boolean {
-    return broker === "zerodha" || broker === "angel" || broker === "dhan" || broker === "kotak";
+    return broker === "arrow" || broker === "zerodha" || broker === "angel" || broker === "dhan" || broker === "kotak";
 }
 
 function isZerodhaStatus(status: SessionStatus): status is ZerodhaSessionStatus {
@@ -39,7 +39,7 @@ function isZerodhaStatus(status: SessionStatus): status is ZerodhaSessionStatus 
 }
 
 function isRedirectLoginBroker(broker: BrokerCode): boolean {
-    return broker === "zerodha" || broker === "upstox" || broker === "dhan";
+    return broker === "arrow" || broker === "zerodha" || broker === "upstox" || broker === "dhan";
 }
 
 function brokerSessionInputName(key: string): string {
@@ -64,6 +64,8 @@ function isExpiredTokenStatus(sessionStatus: SessionStatus, expiresAt?: string |
 function payloadFromForm(broker: BrokerCode, formData: FormData): SessionLoginPayload {
     const value = (key: string) => String(formData.get(brokerSessionInputName(key)) ?? formData.get(key) ?? "").trim();
     switch (broker) {
+        case "arrow":
+            return { broker, request_token: value("request_token"), checksum: value("checksum") || null };
         case "zerodha":
             return { broker, request_token: value("request_token") };
         case "upstox":
@@ -130,6 +132,7 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         broker === "indmoney" ||
         (!sessionStatus.session_active &&
             (broker === "zerodha" ||
+                broker === "arrow" ||
                 broker === "upstox" ||
                 broker === "angel" ||
                 broker === "dhan" ||
@@ -276,6 +279,21 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                         placeholder="Paste request_token from redirect URL"
                         required
                     />
+                ) : null}
+                {broker === "arrow" ? (
+                    <>
+                        <Input
+                            autoComplete="off"
+                            name={brokerSessionInputName("request_token")}
+                            placeholder="Paste request-token from Arrow callback URL"
+                            required
+                        />
+                        <Input
+                            autoComplete="off"
+                            name={brokerSessionInputName("checksum")}
+                            placeholder="Callback checksum (optional)"
+                        />
+                    </>
                 ) : null}
                 {broker === "upstox" ? (
                     <Input

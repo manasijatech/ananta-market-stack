@@ -18,6 +18,7 @@ from app.schemas.broker import (
     SessionZerodhaRefreshOut,
 )
 from broker.angel import auth as angel_auth
+from broker.arrow import auth as arrow_auth
 from broker.crypto import decrypt_value, encrypt_value
 from broker.dhan import auth as dhan_auth
 from broker.groww import auth as groww_auth
@@ -100,6 +101,7 @@ def _session_action_message(acc: BrokerAccount, detail: str | None = None) -> st
     broker_label = acc.broker_code.capitalize()
     messages = {
         "zerodha": "Zerodha login is not complete. Open the broker account and click Login with Zerodha to activate this session.",
+        "arrow": "Arrow login is not complete. Open the broker account and click Login with Arrow to activate this 24-hour session.",
         "upstox": "Upstox login is not complete. Open the broker account and click Login with Upstox to activate this session.",
         "dhan": "Dhan login is not complete. Open the broker account and click Login with Dhan to activate this session.",
         "angel": "Angel One session is not active. Open the broker account and enter client code, PIN, and TOTP to activate it.",
@@ -220,6 +222,30 @@ def mark_notification_read(db: Session, user_id: str, notification_id: str) -> B
 
 def get_broker_session_status(acc: BrokerAccount) -> BrokerSessionStatusOut:
     code = acc.broker_code
+    if code == "arrow":
+        row = acc.arrow
+        if not row:
+            raise ValueError("missing arrow credentials")
+        access_token = decrypt_value(row.access_token_cipher)
+        can_auto = bool(row.login_user_id_cipher and row.login_password_cipher and row.totp_secret_cipher)
+        return BrokerSessionStatusOut(
+            broker=code,
+            account_id=acc.id,
+            session_active=bool(access_token) and _is_active(row.access_token_expires_at),
+            automation_supported=True,
+            automation_enabled=can_auto,
+            automation_mode=acc.automation_mode,
+            login_url=arrow_auth.login_url(decrypt_value(row.app_id_cipher)),
+            has_access_token=bool(access_token),
+            token_generated_at=row.access_token_generated_at,
+            token_expires_at=row.access_token_expires_at,
+            fields_required=[] if can_auto else ["request_token"],
+            guidance=(
+                "Arrow access tokens last 24 hours. Use the official redirect and submit its "
+                "request-token, or use opt-in encrypted user/password/TOTP automation. Static IP "
+                "and callback URL registration are required in the Arrow developer portal."
+            ),
+        )
     if code == "zerodha":
         row = acc.zerodha
         if not row:
@@ -453,6 +479,42 @@ def refresh_dhan_session(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
     else:
         return False, "Dhan access token expired; use Login with Dhan or store PIN + TOTP for automatic generation"
 
+    db.add(row)
+    db.add(acc)
+    db.commit()
+    return True, ""
+
+
+def refresh_arrow_session(db: Session, acc: BrokerAccount) -> tuple[bool, str]:
+    row = acc.arrow
+    if not row:
+        return False, "missing Arrow credentials"
+    current_token = decrypt_value(row.access_token_cipher)
+    if current_token and _is_active(row.access_token_expires_at):
+        _set_session_state(acc, status="active", expires_at=row.access_token_expires_at, error=None)
+        mark_session_healthy(db, acc, verified_at=acc.last_verified_at or _now_utc())
+        db.add(acc)
+        db.commit()
+        return True, ""
+    if not (row.login_user_id_cipher and row.login_password_cipher and row.totp_secret_cipher):
+        return False, "Arrow access token expired; complete Login with Arrow"
+    payload, err = arrow_auth.auto_login(
+        app_id=decrypt_value(row.app_id_cipher),
+        app_secret=decrypt_value(row.app_secret_cipher),
+        user_id=decrypt_value(row.login_user_id_cipher),
+        password=decrypt_value(row.login_password_cipher),
+        totp=_totp(decrypt_value(row.totp_secret_cipher)),
+    )
+    if err or not payload:
+        return False, err or "Arrow automated login failed"
+    now = _now_utc()
+    expires_at = arrow_auth.token_expiry(now)
+    row.access_token_cipher = encrypt_value(payload["access_token"])
+    row.session_user_id_cipher = encrypt_value(payload["user_id"]) if payload.get("user_id") else None
+    row.access_token_generated_at = now
+    row.access_token_expires_at = expires_at
+    _set_session_state(acc, status="active", expires_at=expires_at, error=None)
+    mark_session_healthy(db, acc, verified_at=now)
     db.add(row)
     db.add(acc)
     db.commit()
@@ -710,6 +772,31 @@ def update_indmoney_access_token(db: Session, acc: BrokerAccount, access_token: 
 
 def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
     code = acc.broker_code
+    if code == "arrow":
+        status = get_broker_session_status(acc)
+        if status.session_active:
+            mark_session_healthy(db, acc, verified_at=acc.last_verified_at)
+            db.add(acc)
+            db.commit()
+            return
+        ok, msg = refresh_arrow_session(db, acc)
+        if ok:
+            return
+        user_message = _session_action_message(acc, msg)
+        _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=user_message)
+        _create_notification_once_per_day(
+            db,
+            user_id=acc.user_id,
+            account_id=acc.id,
+            broker_code=code,
+            kind="session_refresh_failed" if acc.automation_enabled else "session_action_required",
+            title=f"{acc.label}: Arrow login required",
+            message=user_message,
+            level="warning",
+        )
+        db.add(acc)
+        db.commit()
+        return
     if code == "zerodha":
         status = get_broker_session_status(acc)
         if not status.session_active and acc.automation_enabled:
@@ -864,6 +951,28 @@ def run_expiring_dhan_maintenance_once() -> None:
         db.close()
 
 
+def run_expiring_arrow_maintenance_once() -> None:
+    """Refresh or notify for Arrow's rolling 24-hour tokens between daily passes."""
+    db = SessionLocal()
+    try:
+        accounts = list(
+            db.scalars(
+                select(BrokerAccount).where(
+                    BrokerAccount.is_active.is_(True),
+                    BrokerAccount.broker_code == "arrow",
+                )
+            ).all()
+        )
+        retry_before = _now_utc() + timedelta(hours=1)
+        for acc in accounts:
+            status = get_broker_session_status(acc)
+            expires_at = _as_utc(status.token_expires_at)
+            if not status.session_active or expires_at is None or expires_at <= retry_before:
+                process_account_maintenance(db, acc)
+    finally:
+        db.close()
+
+
 def run_daily_maintenance_once() -> None:
     global _last_maintenance_date
     now_ist = datetime.now(tz=IST)
@@ -892,12 +1001,20 @@ def run_daily_instrument_sync_once() -> None:
 
     db = SessionLocal()
     try:
+        from broker.core.instrument_store import latest_sync_run
+
         accounts = list(db.scalars(select(BrokerAccount).where(BrokerAccount.is_active.is_(True))).all())
         processed_brokers: set[str] = set()
         for acc in accounts:
             if acc.broker_code in processed_brokers:
                 continue
             processed_brokers.add(acc.broker_code)
+            if acc.broker_code == "arrow":
+                last_run = latest_sync_run(db, "arrow")
+                if last_run and last_run.status in {"completed", "preserved"} and last_run.started_at:
+                    started_at = last_run.started_at.replace(tzinfo=UTC).astimezone(IST)
+                    if started_at.date() == now_ist.date():
+                        continue
             result = broker_data.sync_instruments_to_csv(db, acc)
             if result.sync_status not in {"completed", "preserved"}:
                 _create_notification_once_per_day(
@@ -955,6 +1072,10 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
             pass
         try:
             run_expiring_dhan_maintenance_once()
+        except Exception:
+            pass
+        try:
+            run_expiring_arrow_maintenance_once()
         except Exception:
             pass
         try:

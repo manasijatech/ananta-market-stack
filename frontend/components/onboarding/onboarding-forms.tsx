@@ -54,6 +54,7 @@ import type {
 type GrowwMode = "approval" | "totp" | "token";
 
 const fallbackBrokers: BrokerCode[] = [
+	"arrow",
 	"zerodha",
 	"upstox",
 	"angel",
@@ -67,6 +68,24 @@ const providerLabels: Record<LlmProvider, string> = {
 	openrouter: "OpenRouter",
 	gemini: "Gemini",
 	anthropic: "Anthropic",
+};
+const providerLogos: Record<LlmProvider, { src: string; alt: string }> = {
+	openai: {
+		src: "/brand/providers/openai.svg",
+		alt: "OpenAI logo",
+	},
+	openrouter: {
+		src: "/brand/providers/openrouter.svg",
+		alt: "OpenRouter logo",
+	},
+	gemini: {
+		src: "/brand/providers/gemini.svg",
+		alt: "Google Gemini logo",
+	},
+	anthropic: {
+		src: "/brand/providers/anthropic.svg",
+		alt: "Anthropic logo",
+	},
 };
 const stepCardClassName =
 	"onboarding-step-card grid w-full gap-4 rounded-lg border-border/70 bg-card/80 px-3 py-3 sm:px-4 sm:py-4 min-[760px]:gap-5 min-[760px]:px-5 min-[760px]:py-5 2xl:px-6 2xl:py-5";
@@ -119,6 +138,10 @@ function brokerFieldPlaceholder(
 		angel: {
 			api_key: "Paste Angel One API key",
 			client_code: "Enter Angel One client code",
+		},
+		arrow: {
+			app_id: "Paste Arrow app ID",
+			app_secret: "Paste Arrow app secret",
 		},
 		dhan: {
 			app_id: "Enter Dhan app ID",
@@ -262,6 +285,15 @@ function makeBrokerPayload(
 	const label = fieldValue(formData, "label") || defaultBrokerLabel(broker);
 
 	switch (broker) {
+		case "arrow":
+			return {
+				broker,
+				label,
+				app_id: fieldValue(formData, "app_id"),
+				app_secret: fieldValue(formData, "app_secret"),
+				market_stream_mode: "standard",
+				hft_latency_ms: 1000,
+			};
 		case "zerodha":
 			return {
 				broker,
@@ -603,6 +635,37 @@ export function BrokerStep({ data }: { data: OnboardingSetupData }) {
 							type="password"
 						/>
 					</div>
+				) : null}
+				{broker === "arrow" ? (
+					<>
+						<div className={twoColumnFieldClassName}>
+							<SetupField
+								description="Arrow Developer appID. Register Ananta's callback URL and static IP first."
+								error={fieldErrors.app_id}
+								label="App ID"
+								name="app_id"
+								placeholder={brokerFieldPlaceholder(broker, "app_id", defaultRedirectUri)}
+								resetKey={broker}
+							/>
+							<SetupField
+								description="Arrow Developer appSecret; encrypted by the backend."
+								error={fieldErrors.app_secret}
+								label="App secret"
+								name="app_secret"
+								placeholder={brokerFieldPlaceholder(broker, "app_secret", defaultRedirectUri)}
+								resetKey={broker}
+								type="password"
+							/>
+						</div>
+						<SetupField
+							defaultValue={defaultRedirectUri}
+							description="Register this exact callback URL in the Arrow developer application."
+							label="Callback URL"
+							name="arrow_callback_url"
+							readOnly
+							resetKey={`${broker}:${defaultRedirectUri}`}
+						/>
+					</>
 				) : null}
 				{broker === "upstox" ? (
 					<>
@@ -977,59 +1040,90 @@ export function LlmProviderStep({ config }: { config: SystemConfig }) {
 		<Card className={stepCardClassName}>
 			<StepIntro {...stepCopy.llm} />
 			<form className={stepFormClassName} onSubmit={submitLlm}>
+				<Field className="gap-2" data-onboarding-motion-item>
+					<FieldLabel>Provider</FieldLabel>
+					<div
+						aria-label="LLM provider"
+						className="grid w-full grid-cols-2 gap-2 min-[760px]:grid-cols-4"
+						role="group"
+					>
+						{config.llm_providers.map((provider) => {
+							const selected = provider.provider === llmProvider;
+							const logo = providerLogos[provider.provider];
+
+							return (
+								<button
+									aria-pressed={selected}
+									className={cn(
+										"flex min-h-11 w-full items-center gap-2.5 rounded-lg border bg-background px-3 py-2 text-left text-sm transition-colors hover:border-primary/60 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background min-[760px]:min-h-12",
+										selected
+											? "border-primary bg-primary/10 text-foreground"
+											: "border-border text-muted-foreground",
+									)}
+									key={provider.provider}
+									onClick={() => setLlmProvider(provider.provider)}
+									type="button"
+								>
+									<span
+										aria-hidden="true"
+										className="flex size-7 shrink-0 items-center justify-center"
+									>
+										<img
+											alt={logo.alt}
+											className="block size-6 object-contain"
+											draggable={false}
+											src={logo.src}
+										/>
+									</span>
+									<span className="min-w-0 truncate font-medium">
+										{provider.label || providerLabels[provider.provider]}
+									</span>
+								</button>
+							);
+						})}
+					</div>
+					<LlmProviderSetupGuideDialog
+						label={selectedProvider?.label || providerLabels[llmProvider]}
+						provider={llmProvider}
+						triggerClassName="text-xs text-primary"
+						triggerLabel={`View ${selectedProvider?.label || providerLabels[llmProvider]} setup guide`}
+						triggerVariant="link"
+					/>
+				</Field>
 				<SetupSectionIntro
 					description={stepCopy.llm.sectionDescription}
 					title={stepCopy.llm.sectionTitle}
 				/>
-				<div className={twoColumnFieldClassName}>
-					<Field data-onboarding-motion-item>
-						<div className="flex items-center gap-1.5">
-							<FieldLabel>Provider</FieldLabel>
-							<LlmProviderSetupGuideDialog
-								label={selectedProvider?.label || providerLabels[llmProvider]}
-								provider={llmProvider}
-								triggerClassName="size-5 border-transparent bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground [&_svg]:size-3.5"
-							/>
-						</div>
-						<SimpleSelect
-							onValueChange={(value) => setLlmProvider(value as LlmProvider)}
-							options={config.llm_providers.map((provider) => ({
-								value: provider.provider,
-								label: provider.label || providerLabels[provider.provider],
-							}))}
-							value={llmProvider}
-						/>
-					</Field>
-					<Field
-						className="gap-1.5"
-						data-onboarding-motion-item
-						invalid={Boolean(fieldErrors.api_key || fieldErrors.llm_api_key)}
-					>
-						<FieldLabel htmlFor="onboarding-llm_api_key">
-							{providerLabels[llmProvider]} API key
-						</FieldLabel>
-						<Input
-							autoComplete="off"
-							className="h-9"
-							data-1p-ignore="true"
-							data-form-type="other"
-							data-lpignore="true"
-							id="onboarding-llm_api_key"
-							inputClassName="onboarding-input"
-							name="llm_api_key"
-							placeholder={providerKeyPlaceholders[llmProvider]}
-							type="password"
-							aria-invalid={
-								fieldErrors.api_key || fieldErrors.llm_api_key ? true : undefined
-							}
-						/>
-						{fieldErrors.api_key || fieldErrors.llm_api_key ? (
-							<FieldError>
-								{fieldErrors.api_key || fieldErrors.llm_api_key}
-							</FieldError>
-						) : null}
-					</Field>
-				</div>
+				<Field
+					className="gap-1.5"
+					data-onboarding-motion-item
+					invalid={Boolean(fieldErrors.api_key || fieldErrors.llm_api_key)}
+				>
+					<FieldLabel htmlFor="onboarding-llm_api_key">
+						{providerLabels[llmProvider]} API key
+					</FieldLabel>
+					<Input
+						autoComplete="off"
+						className="h-9"
+						data-1p-ignore="true"
+						data-form-type="other"
+						data-lpignore="true"
+						id="onboarding-llm_api_key"
+						inputClassName="onboarding-input"
+						key={llmProvider}
+						name="llm_api_key"
+						placeholder={providerKeyPlaceholders[llmProvider]}
+						type="password"
+						aria-invalid={
+							fieldErrors.api_key || fieldErrors.llm_api_key ? true : undefined
+						}
+					/>
+					{fieldErrors.api_key || fieldErrors.llm_api_key ? (
+						<FieldError>
+							{fieldErrors.api_key || fieldErrors.llm_api_key}
+						</FieldError>
+					) : null}
+				</Field>
 				{formError ? <OnboardingFormError message={formError} /> : null}
 				<StepActions>
 					<Button

@@ -1,6 +1,6 @@
 import type { BrokerCode, SessionLoginPayload } from "@/service/types/broker";
 
-export type RedirectBrokerCode = "dhan" | "upstox" | "zerodha";
+export type RedirectBrokerCode = "arrow" | "dhan" | "upstox" | "zerodha";
 
 export type BrokerSessionSetup = {
     activationLabel: string;
@@ -20,6 +20,16 @@ export const brokerSessionSetup: Record<BrokerCode, BrokerSessionSetup> = {
         manualFallbackDescription: "Use this when the saved automation credentials are not available or fail.",
         manualFallbackLabel: "Manual session details",
         manualSubmitLabel: "Activate Angel One"
+    },
+    arrow: {
+        activationLabel: "Login with Arrow",
+        activationDescription: "Complete Arrow login and Ananta will exchange the returned 24-hour request-token.",
+        automaticCompletion: true,
+        callbackParams: ["request-token"],
+        manualFallbackDescription: "Use this only if the Arrow callback did not complete automatically.",
+        manualFallbackLabel: "Manual request-token fallback",
+        manualSubmitLabel: "Activate Arrow session",
+        requiresCallbackUrl: true
     },
     dhan: {
         activationLabel: "Login with Dhan",
@@ -93,6 +103,19 @@ export function brokerCallbackPayload(
             broker: "zerodha",
             token: requestToken,
             payload: { broker: "zerodha", request_token: requestToken }
+        };
+    }
+
+    const arrowRequestToken = params.get("request-token");
+    if (arrowRequestToken) {
+        return {
+            broker: "arrow",
+            token: arrowRequestToken,
+            payload: {
+                broker: "arrow",
+                request_token: arrowRequestToken,
+                checksum: params.get("checksum")
+            }
         };
     }
 

@@ -45,6 +45,38 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
             "Store PIN and TOTP secret only if you need automation."
         ]
     },
+    arrow: {
+        broker: "arrow",
+        title: "Arrow Trade Developer API Setup",
+        summary: "Connect Arrow through its official redirect flow, with optional encrypted TOTP automation and standard or HFT market streaming.",
+        required: ["Account label", "Arrow app ID", "Arrow app secret", "Registered callback URL", "Registered static IP"],
+        setupSteps: [
+            "Open Trading APIs from your Arrow Trade profile and create an application.",
+            "Register the exact Ananta /broker-connections callback URL shown in the form.",
+            "Register the backend's static outbound IP as required by Arrow and SEBI rules.",
+            "Copy the app ID and app secret, then choose standard streaming or entitled HFT streaming.",
+            "Save the account and use Login with Arrow to generate a 24-hour access token."
+        ],
+        formMapping: [
+            { label: "App ID", field: "app_id", note: "Arrow Developer appID." },
+            { label: "App secret", field: "app_secret", note: "Arrow Developer appSecret, encrypted at rest." },
+            { label: "Login user ID", field: "login_user_id", note: "Automation only; omit for redirect-only setup." },
+            { label: "Login password", field: "login_password", note: "Automation only and encrypted at rest." },
+            { label: "TOTP secret", field: "totp_secret", note: "Automation-only Base32 secret, not a current OTP." }
+        ],
+        sessionSteps: [
+            "Click Login with Arrow from the account page.",
+            "Complete Arrow user ID, password, and TOTP authentication.",
+            "Arrow redirects to Ananta with request-token and checksum; Ananta validates and exchanges it automatically.",
+            "Repeat after 24 hours unless opt-in automation is configured."
+        ],
+        notes: [
+            "Arrow access tokens expire after 24 hours and no general refresh token is assumed.",
+            "All REST product groups are limited to 10 requests per second.",
+            "MARKET orders use Arrow Market Price Protection and may remain open as limit orders.",
+            "HFT requires entitlement, zstd compression, and is limited to 1,024 symbols per connection."
+        ]
+    },
     dhan: {
         broker: "dhan",
         title: "Dhan API Setup",

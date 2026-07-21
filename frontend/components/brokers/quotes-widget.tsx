@@ -11,6 +11,7 @@ import type { BrokerAccount, InstrumentRef, JsonObject, JsonValue, QuoteResponse
 
 const quoteIdentifierLabels: Record<string, string> = {
     angel: "Angel token",
+    arrow: "Arrow instrument token",
     dhan: "Dhan security ID",
     groww: "Groww trading symbol",
     indmoney: "INDmoney scrip code",
@@ -75,6 +76,7 @@ export function QuotesWidget({ account }: { account: BrokerAccount }) {
             return;
         }
         if (broker === "zerodha" && token) instrument.zerodha_instrument_token = Number(token);
+        if (broker === "arrow" && token) instrument.arrow_token = token;
         if (broker === "upstox" && token) instrument.upstox_instrument_key = token;
         if (broker === "angel" && token) instrument.angel_token = Number(token);
         if (broker === "angel" && exchange) instrument.angel_exchange = exchange;

@@ -122,7 +122,12 @@ def _default_account_summaries(
     principal: Principal | None = None,
 ) -> tuple[list[BrokerDataDefaultAccountOut], str | None, str | None]:
     if principal is not None:
-        accounts = [row for row in rbac.accessible_broker_accounts(db, principal) if row.is_active]
+        accounts = [
+            row
+            for row in rbac.accessible_broker_accounts(db, principal)
+            if row.is_active
+            and rbac.BROKER_USE_DATA in rbac.account_permissions(db, principal, row)
+        ]
     else:
         accounts = list(
             db.scalars(
@@ -174,7 +179,12 @@ def _search_account_summaries(
     principal: Principal | None = None,
 ) -> tuple[list[BrokerDataSearchAccountOut], str | None, str | None]:
     if principal is not None:
-        accounts = [row for row in rbac.accessible_broker_accounts(db, principal) if row.is_active]
+        accounts = [
+            row
+            for row in rbac.accessible_broker_accounts(db, principal)
+            if row.is_active
+            and rbac.BROKER_USE_DATA in rbac.account_permissions(db, principal, row)
+        ]
     else:
         accounts = list(
             db.scalars(
@@ -486,7 +496,12 @@ def search_instruments_for_user(
     principal: Principal | None = None,
 ) -> list[InstrumentSearchRow]:
     if principal is not None:
-        accounts = [row for row in rbac.accessible_broker_accounts(db, principal) if row.is_active]
+        accounts = [
+            row
+            for row in rbac.accessible_broker_accounts(db, principal)
+            if row.is_active
+            and rbac.BROKER_USE_DATA in rbac.account_permissions(db, principal, row)
+        ]
     else:
         accounts = list(
             db.scalars(

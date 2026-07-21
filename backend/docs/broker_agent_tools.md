@@ -27,7 +27,7 @@ The context fields are:
 
 ## Safety and Credential Handling
 
-The tools never accept API keys, tokens, PINs, passwords, or TOTP secrets as parameters. They resolve the current user's persisted `broker_accounts` rows, then call the existing helpers that decrypt credentials only at the broker-client boundary.
+The tools never accept API keys, tokens, PINs, passwords, or TOTP secrets as parameters. They resolve broker accounts through the same workspace and account-level RBAC rules as the HTTP API, then call the existing helpers that decrypt credentials only at the broker-client boundary. Shared accounts are returned only when the chat user has the permission required by that tool.
 
 If a broker session is inactive and stored automation is enabled, data tools can run the existing session maintenance helper before fetching. If the session still cannot be refreshed, the tool returns `ok=false`, `code=action_required`, and broker-specific guidance from the session service.
 
@@ -35,10 +35,10 @@ Order placement, modification, cancellation, smart orders, and close-all-positio
 
 ## Tool Inventory
 
-- `broker_list_accounts`: connected account metadata, default/search preferences, and session fields without secrets.
+- `broker_list_accounts`: workspace-accessible account metadata, access permissions, shared-account state, default/search preferences, and session fields without secrets.
 - `broker_get_session_status`: session status, login URL where applicable, automation status, and user guidance.
 - `broker_verify_connection`: verify selected account connectivity through the existing account service.
-- `broker_run_session_maintenance`: run the existing session maintenance flow for all active accounts owned by the current user.
+- `broker_run_session_maintenance`: run the existing session maintenance flow for active accessible accounts where the user has session-management permission.
 - `broker_get_data_capabilities`: broker support matrix for instruments, quotes, OHLC, historical data, option chain, greeks, and stream inspection.
 - `broker_search_instruments`: cached instrument search using preferred search account fallback rules.
 - `broker_sync_instruments`: refresh broker instruments to CSV or SQLite cache.

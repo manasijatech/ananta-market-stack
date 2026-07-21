@@ -168,7 +168,9 @@ def replace_instruments(db: Session, broker_code: str, rows: list[dict[str, Any]
             option_type=_clean(payload.get("option_type")),
             lot_size=_clean(payload.get("lot_size")),
             tick_size=_clean(payload.get("tick_size")),
+            price_precision=_clean(payload.get("price_precision")),
             zerodha_instrument_token=_clean(payload.get("zerodha_instrument_token")),
+            arrow_token=_clean(payload.get("arrow_token")),
             upstox_instrument_key=_clean(payload.get("upstox_instrument_key")),
             angel_token=_clean(payload.get("angel_token")),
             dhan_security_id=_clean(payload.get("dhan_security_id")),
@@ -265,6 +267,10 @@ class SQLiteInstrumentResolver:
             return int(row.zerodha_instrument_token)
         except ValueError:
             return None
+
+    def arrow_token(self, symbol: str, exchange: str) -> str | None:
+        row = self._lookup(symbol, exchange)
+        return row.arrow_token if row else None
 
     def angel_token(self, symbol: str, exchange: str) -> str | None:
         row = self._lookup(symbol, exchange)

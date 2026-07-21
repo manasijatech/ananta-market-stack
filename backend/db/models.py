@@ -298,6 +298,14 @@ class BrokerAccount(Base):
         single_parent=True,
         passive_deletes=True,
     )
+    arrow: Mapped[ArrowCredentials | None] = relationship(
+        "ArrowCredentials",
+        back_populates="account",
+        uselist=False,
+        cascade="all, delete-orphan",
+        single_parent=True,
+        passive_deletes=True,
+    )
     dhan: Mapped[DhanCredentials | None] = relationship(
         "DhanCredentials",
         back_populates="account",
@@ -921,6 +929,27 @@ class ZerodhaCredentials(Base):
     account: Mapped[BrokerAccount] = relationship("BrokerAccount", back_populates="zerodha")
 
 
+class ArrowCredentials(Base):
+    __tablename__ = "broker_arrow_credentials"
+
+    account_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    app_id_cipher: Mapped[str] = mapped_column(Text)
+    app_secret_cipher: Mapped[str] = mapped_column(Text)
+    access_token_cipher: Mapped[str] = mapped_column(Text)
+    session_user_id_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
+    login_user_id_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
+    login_password_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
+    totp_secret_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_token_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    market_stream_mode: Mapped[str] = mapped_column(String(16), default="standard")
+    hft_latency_ms: Mapped[int] = mapped_column(Integer, default=1000)
+
+    account: Mapped[BrokerAccount] = relationship("BrokerAccount", back_populates="arrow")
+
+
 class UpstoxCredentials(Base):
     __tablename__ = "broker_upstox_credentials"
 
@@ -1222,7 +1251,9 @@ class BrokerInstrument(Base):
     option_type: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     lot_size: Mapped[str | None] = mapped_column(String(32), nullable=True)
     tick_size: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    price_precision: Mapped[str | None] = mapped_column(String(16), nullable=True)
     zerodha_instrument_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    arrow_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     upstox_instrument_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     angel_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     dhan_security_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

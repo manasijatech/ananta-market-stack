@@ -492,6 +492,8 @@ function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
         zerodha_instrument_token: row.identifiers.zerodha_instrument_token
             ? Number(row.identifiers.zerodha_instrument_token)
             : null,
+        arrow_token: row.identifiers.arrow_token ?? null,
+        price_precision: row.price_precision ? Number(row.price_precision) : null,
         upstox_instrument_key: row.identifiers.upstox_instrument_key ?? null,
         angel_exchange: row.identifiers.angel_exchange ?? null,
         angel_token: row.identifiers.angel_token ? Number(row.identifiers.angel_token) : null,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _inflight: set[str] = set()
+_IST = timezone(timedelta(hours=5, minutes=30))
+_ARROW_INSTRUMENT_AVAILABLE_AFTER = time(hour=8)
 
 
 def instrument_cache_ready(db: Session, acc: BrokerAccount) -> bool:
@@ -47,6 +50,10 @@ def schedule_instrument_sync_if_needed(db: Session, acc: BrokerAccount) -> bool:
     if not acc.is_active:
         return False
     if not acc.last_verified_at and not _account_session_active(acc):
+        return False
+    # Arrow publishes the daily `/all` master after 08:00 IST. Avoid caching
+    # yesterday's file during an early startup or pre-market verification.
+    if acc.broker_code == "arrow" and datetime.now(tz=_IST).time() < _ARROW_INSTRUMENT_AVAILABLE_AFTER:
         return False
 
     reconcile_stale_sync_run(
