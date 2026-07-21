@@ -1,16 +1,16 @@
 import type {
     AttachmentLookupItem,
+    AnnouncementCategoriesResponse,
     BatchAttachmentLookupResponse,
     ConcallArtifactUrlsResponse,
     ConcallTranscriptBatchResponse,
     PaginatedResponse,
     PresignedUrlResponse,
-    StringListResponse,
     SymbolQuarterKey
 } from "drishti-sdk";
 
 export type AlphaPaginatedResponse<T> = PaginatedResponse<T>;
-export type AlphaStringListResponse = StringListResponse;
+export type AlphaAnnouncementCategoriesResponse = AnnouncementCategoriesResponse;
 export type AlphaAttachmentLookupItem = AttachmentLookupItem;
 export type AlphaAttachmentLookupResponse = BatchAttachmentLookupResponse;
 export type AlphaPresignedUrlResponse = PresignedUrlResponse;
