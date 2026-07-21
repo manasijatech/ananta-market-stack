@@ -3,7 +3,7 @@
 import type {
     AlphaAttachmentLookupResponse,
     AlphaPaginatedResponse,
-    AlphaStringListResponse
+    AlphaAnnouncementCategoriesResponse
 } from "@/service/types/alpha/common";
 import type { AlphaAnnouncementDetail } from "@/service/types/alpha/announcements";
 import {
@@ -19,8 +19,11 @@ function normalizeStringList(value: unknown): string[] {
 }
 
 export async function getAlphaAnnouncementCategories(): Promise<string[]> {
-    const result = await withAlphaSdk<AlphaStringListResponse>((client) => client.getAnnouncementsCategories());
-    return normalizeStringList(Array.isArray(result) ? result : result.data);
+    const result = await withAlphaSdk<AlphaAnnouncementCategoriesResponse>((client) => client.getAnnouncementsCategories());
+    return [
+        ...normalizeStringList(result.data?.important),
+        ...normalizeStringList(result.data?.not_important)
+    ];
 }
 
 export async function getAlphaAnnouncements(
