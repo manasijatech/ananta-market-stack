@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.services import rbac
 from broker.core.redis_cache import _redis_client
 from broker.crypto import decrypt_value
 from db.models import (
@@ -118,6 +119,12 @@ def _account_data(row: UserAlphaApiCredential | None) -> dict[str, Any]:
     if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
         return payload["data"]
     return payload if isinstance(payload, dict) else {}
+
+
+def _credential_for_user(db: Session, user_id: str) -> UserAlphaApiCredential | None:
+    """Resolve the shared workspace Drishti API credential for any member."""
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    return db.get(UserAlphaApiCredential, owner_user_id)
 
 
 def enabled_addons_from_account(account: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -273,7 +280,7 @@ async def fetch_alpha_account(api_key: str) -> dict[str, Any]:
 async def refresh_account_for_user(user_id: str) -> dict[str, Any]:
     db = SessionLocal()
     try:
-        row = db.get(UserAlphaApiCredential, user_id)
+        row = _credential_for_user(db, user_id)
         if row is None or not row.api_key_cipher:
             raise ValueError("Drishti API key is not configured.")
         account = await fetch_alpha_account(decrypt_value(row.api_key_cipher))
@@ -284,7 +291,7 @@ async def refresh_account_for_user(user_id: str) -> dict[str, Any]:
         db.commit()
         return account
     except Exception as exc:
-        row = db.get(UserAlphaApiCredential, user_id)
+        row = _credential_for_user(db, user_id)
         if row is not None:
             row.account_checked_at = _utc_now()
             row.account_error = str(exc)
@@ -377,7 +384,7 @@ class EffectiveAlphaSubscription:
 
 
 def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlphaSubscription | None:
-    credential = db.get(UserAlphaApiCredential, user_id)
+    credential = _credential_for_user(db, user_id)
     if credential is None or not credential.is_enabled or not credential.api_key_cipher:
         return None
     config = db.get(UserAlphaWebSocketConfig, user_id) or _default_config(user_id)
@@ -463,7 +470,7 @@ def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlpha
 
 
 def alpha_ws_config_out(db: Session, user_id: str) -> dict[str, Any]:
-    credential = db.get(UserAlphaApiCredential, user_id)
+    credential = _credential_for_user(db, user_id)
     config = db.get(UserAlphaWebSocketConfig, user_id) or _default_config(user_id)
     account = _account_data(credential)
     entitlement = live_entitlement_from_account(account)
@@ -524,7 +531,7 @@ def update_alpha_ws_config(db: Session, user_id: str, payload: Any) -> dict[str,
     config = db.get(UserAlphaWebSocketConfig, user_id)
     if config is None:
         config = _default_config(user_id)
-    credential = db.get(UserAlphaApiCredential, user_id)
+    credential = _credential_for_user(db, user_id)
     account = _account_data(credential)
     entitlement = live_entitlement_from_account(account)
     addons = enabled_addons_from_account(account)
@@ -709,14 +716,13 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
         try:
             db = SessionLocal()
             try:
-                rows = db.scalars(
+                credential_rows = db.scalars(
                     select(UserAlphaApiCredential).where(
                         UserAlphaApiCredential.is_enabled.is_(True),
                         UserAlphaApiCredential.api_key_cipher != "",
                     )
                 ).all()
-                subscriptions: dict[str, EffectiveAlphaSubscription] = {}
-                for row in rows:
+                for row in credential_rows:
                     if (
                         row.account_checked_at is None
                         or row.account_checked_at < _utc_now() - timedelta(seconds=ACCOUNT_REFRESH_SECONDS)
@@ -725,9 +731,18 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
                             await refresh_account_for_user(row.user_id)
                         except Exception as exc:
                             logger.warning("Alpha account refresh failed for %s: %s", row.user_id, exc)
-                    subscription = effective_subscription_for_user(db, row.user_id)
+
+                # Credentials are workspace-shared; per-user websocket configs still need their own loops.
+                candidate_user_ids = {row.user_id for row in credential_rows}
+                candidate_user_ids.update(
+                    db.scalars(select(UserAlphaWebSocketConfig.user_id)).all()
+                )
+
+                subscriptions: dict[str, EffectiveAlphaSubscription] = {}
+                for user_id in candidate_user_ids:
+                    subscription = effective_subscription_for_user(db, user_id)
                     if subscription and subscription.enabled and subscription.products:
-                        subscriptions[row.user_id] = subscription
+                        subscriptions[user_id] = subscription
                 for user_id, (config_hash, task) in list(tasks.items()):
                     current = subscriptions.get(user_id)
                     if task.done():
@@ -749,7 +764,7 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
                             subscription.config_hash,
                             asyncio.create_task(_run_user_subscription(subscription, stop_event)),
                         )
-                inactive_user_ids = {row.user_id for row in rows if row.user_id not in subscriptions}
+                inactive_user_ids = candidate_user_ids - set(subscriptions)
                 for user_id in inactive_user_ids:
                     _mark_config(user_id, last_status="inactive")
             finally:

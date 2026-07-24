@@ -1,4 +1,11 @@
-from app.services.alpha_websocket import _entitled_products, live_entitlement_from_account
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from app.services.alpha_websocket import (
+    _credential_for_user,
+    _entitled_products,
+    live_entitlement_from_account,
+)
 
 
 def _account(tier: str, *, plan_id: str = "pro", live_entitlement: dict | None = None):
@@ -13,6 +20,25 @@ def _account(tier: str, *, plan_id: str = "pro", live_entitlement: dict | None =
         ],
         **({"live_entitlement": live_entitlement} if live_entitlement is not None else {}),
     }
+
+
+def test_credential_for_user_uses_workspace_config_owner(monkeypatch):
+    owner_id = "owner-user"
+    member_id = "member-user"
+    credential = SimpleNamespace(user_id=owner_id, api_key_cipher="cipher", is_enabled=True)
+    db = MagicMock()
+    db.get.return_value = credential
+
+    monkeypatch.setattr(
+        "app.services.alpha_websocket.rbac.workspace_config_owner_user_id",
+        lambda _db, user_id: owner_id if user_id == member_id else user_id,
+    )
+
+    resolved = _credential_for_user(db, member_id)
+
+    assert resolved is credential
+    db.get.assert_called_once()
+    assert db.get.call_args.args[1] == owner_id
 
 
 def test_sandbox_or_zero_symbol_entitlement_has_no_live_products():
