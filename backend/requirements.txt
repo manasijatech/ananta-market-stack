@@ -36,7 +36,7 @@ markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 mcp==1.28.1
 mdurl==0.1.2
-openai==2.50.0
+openai==2.51.0
 openai-agents==0.19.1
 opentelemetry-api==1.44.0
 opentelemetry-sdk==1.44.0
@@ -45,7 +45,7 @@ pycparser==3.0
 pydantic==2.13.4
 pydantic-extra-types==2.11.1
 pydantic-settings==2.14.2
-pydantic_core==2.46.4
+pydantic_core==2.47.0
 Pygments==2.20.0
 PyJWT==2.13.0
 pymongo==4.17.0
@@ -54,7 +54,7 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 python-multipart==0.0.32
 PyYAML==6.0.3
-redis==8.0.1
+redis==8.1.0
 referencing==0.37.0
 requests==2.34.2
 rich==15.0.0
