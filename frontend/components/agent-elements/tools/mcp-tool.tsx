@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import { Streamdown } from "streamdown";
-import { createCodePlugin } from "@streamdown/code";
 import { getToolStatus, areToolPropsEqual } from "../utils/format-tool";
+import { streamdownCodePlugin as code } from "../utils/streamdown-code-plugin";
 import type { McpToolInfo } from "./tool-registry";
 import { ToolRowBase } from "./tool-row-base";
 
@@ -165,10 +165,6 @@ function formatOutputForDisplay(output: any): string {
   const text = JSON.stringify(unwrapped, null, 2);
   return text.length > 3000 ? text.slice(0, 3000) + "\n..." : text;
 }
-
-const code = createCodePlugin({
-  themes: ["github-light", "github-dark"],
-});
 
 export const McpTool = memo(function McpTool({
   part,

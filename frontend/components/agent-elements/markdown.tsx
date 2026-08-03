@@ -1,8 +1,8 @@
 "use client";
 
 import { Streamdown, type Components } from "streamdown";
-import { createCodePlugin } from "@streamdown/code";
 import { cn } from "./utils/cn";
+import { streamdownCodePlugin as code } from "./utils/streamdown-code-plugin";
 
 function fixNumberedListBreaks(text: string): string {
   return text.replace(/^(\d+)\.\s*\n+\s*\n*/gm, "$1. ");
@@ -42,10 +42,6 @@ export type MarkdownProps = {
   className?: string;
   textContrast?: "normal" | "high";
 };
-
-const code = createCodePlugin({
-  themes: ["github-light", "github-dark"],
-});
 
 export function Markdown({ content, className }: MarkdownProps) {
   const safeContent = normalizeCodeFenceLanguages(
