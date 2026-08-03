@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 from app.services.alpha_websocket import (
     _credential_for_user,
     _entitled_products,
+    _subscription_config_hash,
     live_entitlement_from_account,
 )
 
@@ -39,6 +40,35 @@ def test_credential_for_user_uses_workspace_config_owner(monkeypatch):
     assert resolved is credential
     db.get.assert_called_once()
     assert db.get.call_args.args[1] == owner_id
+
+
+def test_subscription_hash_is_stable_across_account_refreshes():
+    values = {
+        "api_key": "stable-key",
+        "enabled": True,
+        "products": ["news", "alerts"],
+        "symbols": ["RELIANCE", "TCS"],
+        "full_feed_products": [],
+    }
+
+    before_refresh = _subscription_config_hash(**values)
+    after_refresh = _subscription_config_hash(**values)
+
+    assert after_refresh == before_refresh
+
+
+def test_subscription_hash_changes_when_api_key_rotates():
+    values = {
+        "enabled": True,
+        "products": ["news"],
+        "symbols": ["RELIANCE"],
+        "full_feed_products": [],
+    }
+
+    old_key_hash = _subscription_config_hash(api_key="old-key", **values)
+    new_key_hash = _subscription_config_hash(api_key="new-key", **values)
+
+    assert new_key_hash != old_key_hash
 
 
 def test_sandbox_or_zero_symbol_entitlement_has_no_live_products():

@@ -383,6 +383,24 @@ class EffectiveAlphaSubscription:
     config_hash: str
 
 
+def _subscription_config_hash(
+    *,
+    api_key: str,
+    enabled: bool,
+    products: list[str],
+    symbols: list[str],
+    full_feed_products: list[str],
+) -> str:
+    payload = {
+        "api_key_fingerprint": hashlib.sha256(api_key.encode()).hexdigest(),
+        "enabled": enabled,
+        "products": products,
+        "symbols": symbols,
+        "full_feed_products": full_feed_products,
+    }
+    return hashlib.sha256(_json_dumps(payload).encode()).hexdigest()
+
+
 def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlphaSubscription | None:
     credential = _credential_for_user(db, user_id)
     if credential is None or not credential.is_enabled or not credential.api_key_cipher:
@@ -450,22 +468,22 @@ def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlpha
     elif not symbols:
         products = []
 
-    hash_payload = {
-        "enabled": bool(config.is_enabled),
-        "products": products,
-        "symbols": symbols,
-        "full_feed_products": full_feed_products,
-        "account_updated": credential.account_checked_at.isoformat() if credential.account_checked_at else None,
-    }
+    api_key = decrypt_value(credential.api_key_cipher)
     return EffectiveAlphaSubscription(
         user_id=user_id,
-        api_key=decrypt_value(credential.api_key_cipher),
+        api_key=api_key,
         enabled=bool(config.is_enabled),
         products=products,
         symbols=symbols,
         full_feed_products=full_feed_products,
         account=account,
-        config_hash=hashlib.sha256(_json_dumps(hash_payload).encode()).hexdigest(),
+        config_hash=_subscription_config_hash(
+            api_key=api_key,
+            enabled=bool(config.is_enabled),
+            products=products,
+            symbols=symbols,
+            full_feed_products=full_feed_products,
+        ),
     )
 
 
