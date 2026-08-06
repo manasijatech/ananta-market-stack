@@ -794,10 +794,12 @@ export function WatchlistsManager({
                     if (cancelled) return;
                     setPresetResults(result);
                     setPresetHasMore(result.length === PRESET_PAGE_SIZE);
-                } catch {
+                    setError("");
+                } catch (caught) {
                     if (cancelled) return;
                     setPresetResults([]);
                     setPresetHasMore(false);
+                    fail(caught, "Failed to load preset catalog.");
                 } finally {
                     if (!cancelled) setPresetLoading(false);
                 }
@@ -824,8 +826,11 @@ export function WatchlistsManager({
                     return [...current, ...result.filter((item) => !existing.has(item.id))];
                 });
                 setPresetHasMore(result.length === PRESET_PAGE_SIZE);
-            } catch {
-                if (!cancelled) setPresetHasMore(false);
+            } catch (caught) {
+                if (!cancelled) {
+                    setPresetHasMore(false);
+                    fail(caught, "Failed to load more presets.");
+                }
             } finally {
                 if (!cancelled) setPresetLoadingMore(false);
             }
@@ -1258,8 +1263,9 @@ export function WatchlistsManager({
                     return [...current, ...result.filter((item) => !existing.has(item.id))];
                 });
                 setPresetHasMore(result.length === PRESET_PAGE_SIZE);
-            } catch {
+            } catch (caught) {
                 setPresetHasMore(false);
+                fail(caught, "Failed to load more presets.");
             } finally {
                 setPresetLoadingMore(false);
             }
@@ -1934,12 +1940,18 @@ export function WatchlistsManager({
                                                 <Empty className="py-8">
                                                     <EmptyHeader>
                                                         <EmptyTitle className="text-base">
-                                                            {presetLoading ? "Loading presets" : "No presets found"}
+                                                            {presetLoading
+                                                                ? "Loading presets"
+                                                                : error
+                                                                  ? "Unable to load presets"
+                                                                  : "No presets found"}
                                                         </EmptyTitle>
                                                         <EmptyDescription>
                                                             {presetLoading
                                                                 ? "Fetching index catalog..."
-                                                                : "Try a different search term."}
+                                                                : error
+                                                                  ? error
+                                                                  : "Try a different search term."}
                                                         </EmptyDescription>
                                                     </EmptyHeader>
                                                 </Empty>

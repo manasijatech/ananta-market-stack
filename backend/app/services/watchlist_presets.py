@@ -21,7 +21,7 @@ from db.models import SystemWatchlistPreset, SystemWatchlistPresetSymbol, UserWa
 
 logger = logging.getLogger(__name__)
 
-INDEX_MAPPING_URL = "https://iislliveblob.niftyindices.com/assets/json/IndexMapping.json"
+INDEX_MAPPING_URL = "https://liveindexsa.niftyindices.com/assets/json/IndexMapping.json"
 EQUITY_INDEX_PAGE_URL = "https://www.niftyindices.com/indices/equity"
 INDEX_CONSTITUENT_URL_TEMPLATE = "https://www.niftyindices.com/IndexConstituent/{code}.csv"
 DEFAULT_SYNC_INTERVAL = timedelta(days=1)
@@ -198,18 +198,26 @@ def sync_preset_catalog(db: Session, *, force: bool = False) -> int:
     if latest and not force and latest >= _utc_now() - DEFAULT_SYNC_INTERVAL:
         return 0
 
-    payload = _fetch_json(INDEX_MAPPING_URL)
-    allowed_codes = _allowed_equity_index_codes(_fetch_text(EQUITY_INDEX_PAGE_URL))
+    try:
+        payload = _fetch_json(INDEX_MAPPING_URL)
+        allowed_codes = _allowed_equity_index_codes(_fetch_text(EQUITY_INDEX_PAGE_URL))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to fetch Nifty preset catalog sources")
+        raise HTTPException(status_code=502, detail=f"Failed to sync preset catalog: {exc}") from exc
     entries = _mapping_entries(payload, allowed_codes=allowed_codes)
     now = _utc_now()
-    existing = {
-        row.slug: row
-        for row in db.scalars(select(SystemWatchlistPreset)).all()
-    }
+    existing_rows = db.scalars(select(SystemWatchlistPreset)).all()
+    existing_by_slug = {row.slug: row for row in existing_rows}
+    existing_by_trading_name = {row.trading_index_name: row for row in existing_rows}
     allowed_slugs = {entry.slug for entry in entries}
+    allowed_trading_names = {entry.trading_index_name for entry in entries}
     updated = 0
     for entry in entries:
-        row = existing.get(entry.slug)
+        row = existing_by_slug.get(entry.slug)
+        if row is None:
+            row = existing_by_trading_name.get(entry.trading_index_name)
         if row is None:
             row = SystemWatchlistPreset(
                 id=str(uuid.uuid4()),
@@ -226,23 +234,43 @@ def sync_preset_catalog(db: Session, *, force: bool = False) -> int:
                 updated_at=now,
             )
             db.add(row)
+            existing_by_slug[entry.slug] = row
+            existing_by_trading_name[entry.trading_index_name] = row
             updated += 1
             continue
+
+        previous_slug = row.slug
+        slug_owner = existing_by_slug.get(entry.slug)
+        if slug_owner is not None and slug_owner.id != row.id:
+            # Keep the existing slug if the preferred one is already owned elsewhere.
+            next_slug = row.slug
+        else:
+            next_slug = entry.slug
+
+        row.slug = next_slug
         row.name = entry.name
         row.trading_index_name = entry.trading_index_name
         row.constituent_csv_url = entry.constituent_csv_url
-        row.search_text = _search_text(entry.trading_index_name, entry.name, entry.slug)
+        row.search_text = _search_text(entry.trading_index_name, entry.name, next_slug)
         row.is_popular = entry.is_popular
         row.auto_sync_enabled = bool(row.auto_sync_enabled or entry.is_popular)
         if row.sync_status == BLACKLISTED_SYNC_STATUS and row.constituent_count == 0:
             row.sync_status = "pending"
             row.sync_error = None
+        elif row.sync_status == BLACKLISTED_SYNC_STATUS:
+            # Index returned to an allowed equity group; allow it back into the catalog.
+            row.sync_status = "pending" if row.constituent_count == 0 else "ready"
+            row.sync_error = None
         row.last_catalog_sync_at = now
         row.updated_at = now
         db.add(row)
+        if previous_slug != next_slug:
+            existing_by_slug.pop(previous_slug, None)
+        existing_by_slug[next_slug] = row
+        existing_by_trading_name[entry.trading_index_name] = row
         updated += 1
-    for slug, row in existing.items():
-        if slug in allowed_slugs:
+    for row in existing_rows:
+        if row.slug in allowed_slugs or row.trading_index_name in allowed_trading_names:
             continue
         if row.sync_status == BLACKLISTED_SYNC_STATUS:
             continue
@@ -262,7 +290,16 @@ def ensure_preset_catalog(db: Session) -> None:
         latest = db.scalar(select(func.max(SystemWatchlistPreset.last_catalog_sync_at)))
         if latest and latest >= _utc_now() - DEFAULT_SYNC_INTERVAL:
             return
-    sync_preset_catalog(db, force=not bool(has_rows))
+    try:
+        sync_preset_catalog(db, force=not bool(has_rows))
+    except Exception:
+        # Prefer serving a stale catalog over failing the Presets UI when upstream
+        # Nifty endpoints are unreachable or temporarily broken.
+        if has_rows:
+            logger.exception("Preset catalog sync failed; serving existing catalog rows")
+            db.rollback()
+            return
+        raise
 
 
 def _symbol_column_name(fieldnames: list[str]) -> str | None:
