@@ -32,6 +32,8 @@ export type MarketIntelligenceFeeds = {
 };
 
 export const ALPHA_SYMBOL_LIMIT = 20;
+/** Max symbols to refresh/cache for MI history (backend batches Drishti calls). */
+export const ALPHA_HISTORY_SYMBOL_LIMIT = 100;
 
 export function emptyMarketIntelligenceFeeds(): MarketIntelligenceFeeds {
     return {

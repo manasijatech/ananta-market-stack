@@ -9,9 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
-from app.schemas.alpha import AlphaSymbolMetadataBulkRequest, AlphaSymbolMetadataResponse
+from app.schemas.alpha import (
+    AlphaFeedPageOut,
+    AlphaSymbolMetadataBulkRequest,
+    AlphaSymbolMetadataResponse,
+)
 from app.schemas.alert import AlphaWebSocketEventOut
-from app.services import alpha_symbols
+from app.services import alpha_feed_cache, alpha_symbols
 from app.services.alpha_websocket import ALPHA_WS_PRODUCTS
 from broker.core.redis_cache import _redis_client
 from db.models import AlphaWebSocketEvent, User
@@ -20,7 +24,7 @@ from db.session import get_db
 router = APIRouter()
 
 
-def _parse_symbols_query(symbols: list[str] | None) -> list[str]:
+def _parse_symbols_query(symbols: list[str] | None, *, max_symbols: int = 20) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
     for raw_value in symbols or []:
@@ -32,9 +36,46 @@ def _parse_symbols_query(symbols: list[str] | None) -> list[str]:
             normalized.append(symbol)
     if not normalized:
         raise HTTPException(status_code=400, detail="'symbols' is required")
-    if len(normalized) > 20:
-        raise HTTPException(status_code=400, detail="'symbols' accepts at most 20 unique symbols per request")
+    if len(normalized) > max_symbols:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'symbols' accepts at most {max_symbols} unique symbols per request",
+        )
     return normalized
+
+
+@router.get("/feeds/{product}", response_model=AlphaFeedPageOut)
+def get_alpha_feed_page(
+    product: str,
+    symbols: list[str] | None = Query(default=None),
+    from_: str | None = Query(default=None, alias="from"),
+    to: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    force_refresh: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AlphaFeedPageOut:
+    if product not in alpha_feed_cache.ALPHA_FEED_PRODUCTS:
+        raise HTTPException(status_code=404, detail=f"Unknown feed product: {product}")
+    requested_symbols = _parse_symbols_query(symbols, max_symbols=500)
+    try:
+        payload = alpha_feed_cache.list_cached_feed_items(
+            db,
+            user.id,
+            product,
+            requested_symbols,
+            from_date=from_,
+            to_date=to,
+            page=page,
+            limit=limit,
+            force_refresh=force_refresh,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not load Alpha feed: {exc}") from exc
+    return AlphaFeedPageOut(**payload)
 
 
 @router.get("/symbols/metadata", response_model=AlphaSymbolMetadataResponse)

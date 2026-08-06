@@ -857,9 +857,9 @@ class UserAlphaWebSocketConfig(Base):
     )
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     products_json: Mapped[str] = mapped_column(Text, default="[]")
-    scope_mode: Mapped[str] = mapped_column(String(32), default="alert_subscriptions")
+    scope_mode: Mapped[str] = mapped_column(String(32), default="alerts_and_watchlists")
     watchlist_ids_json: Mapped[str] = mapped_column(Text, default="[]")
-    include_all_watchlists: Mapped[bool] = mapped_column(Boolean, default=False)
+    include_all_watchlists: Mapped[bool] = mapped_column(Boolean, default=True)
     full_market: Mapped[bool] = mapped_column(Boolean, default=False)
     last_status: Mapped[str] = mapped_column(String(32), default="unknown")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -886,6 +886,59 @@ class AlphaWebSocketEvent(Base):
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
     received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    price_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_as_of: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    price_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    price_broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class AlphaFeedItem(Base):
+    __tablename__ = "alpha_feed_items"
+    __table_args__ = (
+        UniqueConstraint("user_id", "product", "item_key", name="uq_alpha_feed_items_user_product_item"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    product: Mapped[str] = mapped_column(String(32), index=True)
+    symbol: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    item_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    source: Mapped[str] = mapped_column(String(16), default="rest")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    price_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_as_of: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    price_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    price_broker_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class AlphaFeedSymbolSync(Base):
+    __tablename__ = "alpha_feed_symbol_sync"
+    __table_args__ = (
+        UniqueConstraint("user_id", "product", "symbol", name="uq_alpha_feed_symbol_sync"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    product: Mapped[str] = mapped_column(String(32), index=True)
+    symbol: Mapped[str] = mapped_column(String(128), index=True)
+    last_synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class AlphaSymbolMetadataCache(Base):

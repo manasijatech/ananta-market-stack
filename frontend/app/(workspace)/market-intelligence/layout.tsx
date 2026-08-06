@@ -1,17 +1,14 @@
 import { parseActionError } from "@/components/brokers/action-error";
 import { MarketIntelligenceChrome } from "@/components/market-intelligence/market-intelligence-chrome";
 import {
+    ALPHA_HISTORY_SYMBOL_LIMIT,
     ALPHA_SYMBOL_LIMIT,
     emptyMarketIntelligenceFeeds,
     symbolsFromCoverageGroups,
     watchlistCoverageGroups,
     type MarketIntelligenceFeeds
 } from "@/components/market-intelligence/market-intelligence-data";
-import { getAlphaAlerts } from "@/service/actions/alpha/alerts";
-import { getAlphaAnnouncements } from "@/service/actions/alpha/announcements";
-import { getAlphaConcalls } from "@/service/actions/alpha/concalls";
-import { getAlphaEarnings } from "@/service/actions/alpha/earnings";
-import { getAlphaNews } from "@/service/actions/alpha/news";
+import { getCachedAlphaFeed } from "@/service/actions/alpha/feeds";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getWatchlists } from "@/service/actions/watchlist";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
@@ -36,7 +33,7 @@ type InitialFeedsResult = {
 async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> {
     if (!symbols.length) return { creditWarningMessage: null, feeds: emptyMarketIntelligenceFeeds() };
     const params = {
-        symbols,
+        symbols: symbols.slice(0, ALPHA_HISTORY_SYMBOL_LIMIT),
         from: isoDateDaysAgo(30),
         to: todayIsoDate(),
         page: 1,
@@ -44,11 +41,11 @@ async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> 
         detailed: true
     };
     const [news, announcements, earnings, concalls, alerts] = await Promise.allSettled([
-        getAlphaNews(params),
-        getAlphaAnnouncements(params),
-        getAlphaEarnings(params),
-        getAlphaConcalls(params),
-        getAlphaAlerts(params)
+        getCachedAlphaFeed("news", params),
+        getCachedAlphaFeed("announcements", params),
+        getCachedAlphaFeed("earnings", params),
+        getCachedAlphaFeed("concalls", params),
+        getCachedAlphaFeed("alerts", params)
     ]);
 
     return {
@@ -75,14 +72,14 @@ export default async function MarketIntelligenceLayout({ children }: { children:
 
     const groups = watchlistCoverageGroups(watchlists);
     const allSymbols = symbolsFromCoverageGroups(groups);
-    const symbols = allSymbols.slice(0, ALPHA_SYMBOL_LIMIT);
+    const symbols = allSymbols.slice(0, ALPHA_HISTORY_SYMBOL_LIMIT);
     let symbolMetadata: Record<string, AlphaSymbolMetadata> = {};
     let initialFeeds = emptyMarketIntelligenceFeeds();
     let creditWarningMessage: string | null = null;
 
     if (!error && symbols.length) {
         const [metadataResult, feedsResult] = await Promise.allSettled([
-            getAlphaSymbolMetadata(symbols),
+            getAlphaSymbolMetadata(symbols.slice(0, ALPHA_SYMBOL_LIMIT)),
             loadInitialFeeds(symbols)
         ]);
 

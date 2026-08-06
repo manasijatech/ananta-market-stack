@@ -1,0 +1,439 @@
+from __future__ import annotations
+
+import json
+import logging
+import uuid
+from datetime import datetime, timedelta
+from typing import Any
+
+from common.datetime_compat import UTC
+from drishti_sdk import DrishtiApiError, DrishtiClient
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from broker.crypto import decrypt_value
+from db.models import AlphaFeedItem, AlphaFeedSymbolSync, UserAlphaApiCredential
+
+logger = logging.getLogger(__name__)
+
+ALPHA_FEED_PRODUCTS = ("news", "announcements", "earnings", "concalls", "alerts")
+_FEED_BATCH_SIZE = 20
+_FEED_SYNC_TTL = timedelta(minutes=30)
+_FEED_PAGE_FETCH_LIMIT = 50
+
+
+def _utc_now() -> datetime:
+    return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, default=str)
+
+
+def _json_loads(value: str | None, default: Any = None) -> Any:
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return default
+
+
+def _normalize_symbols(symbols: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for symbol in symbols:
+        item = str(symbol or "").strip().upper()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _item_key(product: str, payload: dict[str, Any]) -> str:
+    for key in ("id", "_id", "event_id", "announcement_id", "news_id", "alert_id", "concall_id"):
+        value = payload.get(key)
+        if value not in (None, ""):
+            return f"{product}:{value}"
+    parts = [
+        product,
+        str(payload.get("symbol") or payload.get("nse") or ""),
+        str(payload.get("date") or payload.get("timestamp") or payload.get("published_at") or ""),
+        str(payload.get("headline") or payload.get("title") or payload.get("type") or "")[:120],
+    ]
+    return ":".join(part for part in parts if part)
+
+
+def _published_at(payload: dict[str, Any], fallback: datetime | None = None) -> datetime | None:
+    for key in ("published_at", "timestamp", "date", "datetime", "created_at", "announcement_date"):
+        raw = payload.get(key)
+        if raw in (None, ""):
+            continue
+        if isinstance(raw, datetime):
+            return raw.replace(tzinfo=None) if raw.tzinfo else raw
+        text = str(raw).strip()
+        if not text:
+            continue
+        try:
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(text)
+            return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+        except ValueError:
+            for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d"):
+                try:
+                    return datetime.strptime(text[:10], fmt)
+                except ValueError:
+                    continue
+    return fallback
+
+
+def _payload_symbol(payload: dict[str, Any], fallback: str | None = None) -> str | None:
+    for key in ("symbol", "nse"):
+        raw = payload.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip().upper().split(",")[0].split(":")[0]
+        if isinstance(raw, list) and raw:
+            first = str(raw[0] or "").strip().upper()
+            if first:
+                return first.split(",")[0].split(":")[0]
+    return (fallback or "").strip().upper() or None
+
+
+def _credential_api_key(db: Session, user_id: str) -> str:
+    from app.services import rbac
+
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = db.get(UserAlphaApiCredential, owner_user_id)
+    if row is None or not row.is_enabled or not row.api_key_cipher:
+        raise ValueError("Drishti API key is required")
+    return decrypt_value(row.api_key_cipher)
+
+
+def _drishti_client(api_key: str) -> DrishtiClient:
+    settings = get_settings()
+    return DrishtiClient(
+        api_key=api_key,
+        base_url=settings.alpha_api_base_url.rstrip("/"),
+        timeout=20.0,
+    )
+
+
+def _fetch_product_page(
+    client: DrishtiClient,
+    product: str,
+    *,
+    symbols: list[str],
+    from_date: str | None,
+    to_date: str | None,
+    page: int,
+    limit: int,
+) -> list[dict[str, Any]]:
+    common = {
+        "symbols": symbols,
+        "from_": from_date,
+        "to": to_date,
+        "page": page,
+        "limit": limit,
+    }
+    if product == "news":
+        response = client.get_news(**common)
+    elif product == "announcements":
+        response = client.get_announcements(**common, detailed=True)
+    elif product == "earnings":
+        response = client.get_earnings(**common, detailed=True)
+    elif product == "concalls":
+        response = client.get_concalls(**common, detailed=True)
+    elif product == "alerts":
+        response = client.get_alerts(**common)
+    else:
+        raise ValueError(f"Unsupported product: {product}")
+    if isinstance(response, dict):
+        data = response.get("data")
+    else:
+        data = getattr(response, "data", None)
+    if not isinstance(data, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in data:
+        if hasattr(item, "model_dump"):
+            rows.append(item.model_dump(mode="json"))
+        elif isinstance(item, dict):
+            rows.append(item)
+    return rows
+
+
+def upsert_feed_item_from_event(
+    db: Session,
+    *,
+    user_id: str,
+    product: str,
+    payload: dict[str, Any],
+    symbol: str | None,
+    event_key: str,
+    received_at: datetime | None = None,
+    price_snapshot: dict[str, Any] | None = None,
+    commit: bool = True,
+) -> AlphaFeedItem:
+    now = _utc_now()
+    item_key = event_key or _item_key(product, payload)
+    existing = db.scalar(
+        select(AlphaFeedItem).where(
+            AlphaFeedItem.user_id == user_id,
+            AlphaFeedItem.product == product,
+            AlphaFeedItem.item_key == item_key,
+        )
+    )
+    row = existing or AlphaFeedItem(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        product=product,
+        item_key=item_key,
+        created_at=now,
+    )
+    row.symbol = _payload_symbol(payload, symbol)
+    row.source = "ws"
+    row.published_at = _published_at(payload, received_at or now)
+    row.payload_json = _json_dumps(payload)
+    row.fetched_at = now
+    row.updated_at = now
+    if price_snapshot:
+        row.price_ltp = price_snapshot.get("price_ltp")
+        row.price_change_pct = price_snapshot.get("price_change_pct")
+        row.price_as_of = price_snapshot.get("price_as_of")
+        row.price_source = price_snapshot.get("price_source")
+        row.price_broker_code = price_snapshot.get("price_broker_code")
+    db.add(row)
+    if commit:
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+def _mark_symbols_synced(
+    db: Session,
+    *,
+    user_id: str,
+    product: str,
+    symbols: list[str],
+    error: str | None = None,
+) -> None:
+    now = _utc_now()
+    for symbol in symbols:
+        row = db.scalar(
+            select(AlphaFeedSymbolSync).where(
+                AlphaFeedSymbolSync.user_id == user_id,
+                AlphaFeedSymbolSync.product == product,
+                AlphaFeedSymbolSync.symbol == symbol,
+            )
+        )
+        if row is None:
+            row = AlphaFeedSymbolSync(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                product=product,
+                symbol=symbol,
+                created_at=now,
+            )
+        row.last_synced_at = now
+        row.last_error = error
+        row.updated_at = now
+        db.add(row)
+
+
+def _symbols_needing_sync(
+    db: Session,
+    *,
+    user_id: str,
+    product: str,
+    symbols: list[str],
+    force_refresh: bool,
+) -> list[str]:
+    if force_refresh:
+        return list(symbols)
+    cutoff = _utc_now() - _FEED_SYNC_TTL
+    rows = db.scalars(
+        select(AlphaFeedSymbolSync).where(
+            AlphaFeedSymbolSync.user_id == user_id,
+            AlphaFeedSymbolSync.product == product,
+            AlphaFeedSymbolSync.symbol.in_(symbols),
+        )
+    ).all()
+    fresh = {
+        row.symbol
+        for row in rows
+        if row.last_synced_at and row.last_synced_at >= cutoff and not row.last_error
+    }
+    return [symbol for symbol in symbols if symbol not in fresh]
+
+
+def refresh_feed_cache_for_symbols(
+    db: Session,
+    user_id: str,
+    product: str,
+    symbols: list[str],
+    *,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    if product not in ALPHA_FEED_PRODUCTS:
+        raise ValueError(f"Unsupported product: {product}")
+    normalized = _normalize_symbols(symbols)
+    if not normalized:
+        return {"refreshed_symbols": 0, "upserted": 0}
+    pending = _symbols_needing_sync(
+        db,
+        user_id=user_id,
+        product=product,
+        symbols=normalized,
+        force_refresh=force_refresh,
+    )
+    if not pending:
+        return {"refreshed_symbols": 0, "upserted": 0}
+
+    api_key = _credential_api_key(db, user_id)
+    client = _drishti_client(api_key)
+    upserted = 0
+    now = _utc_now()
+    for start in range(0, len(pending), _FEED_BATCH_SIZE):
+        batch = pending[start : start + _FEED_BATCH_SIZE]
+        try:
+            rows = _fetch_product_page(
+                client,
+                product,
+                symbols=batch,
+                from_date=from_date,
+                to_date=to_date,
+                page=1,
+                limit=_FEED_PAGE_FETCH_LIMIT,
+            )
+            for payload in rows:
+                item_key = _item_key(product, payload)
+                existing = db.scalar(
+                    select(AlphaFeedItem).where(
+                        AlphaFeedItem.user_id == user_id,
+                        AlphaFeedItem.product == product,
+                        AlphaFeedItem.item_key == item_key,
+                    )
+                )
+                row = existing or AlphaFeedItem(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    product=product,
+                    item_key=item_key,
+                    created_at=now,
+                )
+                row.symbol = _payload_symbol(payload)
+                row.source = "rest"
+                row.published_at = _published_at(payload, now)
+                row.payload_json = _json_dumps(payload)
+                row.fetched_at = now
+                row.updated_at = now
+                db.add(row)
+                upserted += 1
+            _mark_symbols_synced(db, user_id=user_id, product=product, symbols=batch)
+        except DrishtiApiError as exc:
+            logger.warning("Drishti feed refresh failed for %s/%s: %s", user_id, product, exc)
+            _mark_symbols_synced(
+                db,
+                user_id=user_id,
+                product=product,
+                symbols=batch,
+                error=str(exc)[:500],
+            )
+        except Exception as exc:
+            logger.exception("Unexpected feed refresh failure for %s/%s", user_id, product)
+            _mark_symbols_synced(
+                db,
+                user_id=user_id,
+                product=product,
+                symbols=batch,
+                error=str(exc)[:500],
+            )
+    db.commit()
+    return {"refreshed_symbols": len(pending), "upserted": upserted}
+
+
+def list_cached_feed_items(
+    db: Session,
+    user_id: str,
+    product: str,
+    symbols: list[str],
+    *,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    page: int = 1,
+    limit: int = 20,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    if product not in ALPHA_FEED_PRODUCTS:
+        raise ValueError(f"Unsupported product: {product}")
+    normalized = _normalize_symbols(symbols)
+    if not normalized:
+        return {"data": [], "page": page, "limit": limit, "has_next": False, "total": 0}
+
+    refresh_feed_cache_for_symbols(
+        db,
+        user_id,
+        product,
+        normalized,
+        from_date=from_date,
+        to_date=to_date,
+        force_refresh=force_refresh,
+    )
+
+    page = max(int(page or 1), 1)
+    limit = max(1, min(int(limit or 20), 100))
+    offset = (page - 1) * limit
+
+    filters = [
+        AlphaFeedItem.user_id == user_id,
+        AlphaFeedItem.product == product,
+        AlphaFeedItem.symbol.in_(normalized),
+    ]
+    if from_date:
+        try:
+            start = datetime.strptime(from_date[:10], "%Y-%m-%d")
+            filters.append(or_(AlphaFeedItem.published_at.is_(None), AlphaFeedItem.published_at >= start))
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            end = datetime.strptime(to_date[:10], "%Y-%m-%d") + timedelta(days=1)
+            filters.append(or_(AlphaFeedItem.published_at.is_(None), AlphaFeedItem.published_at < end))
+        except ValueError:
+            pass
+
+    total = db.scalar(select(func.count()).select_from(AlphaFeedItem).where(and_(*filters))) or 0
+    rows = db.scalars(
+        select(AlphaFeedItem)
+        .where(and_(*filters))
+        .order_by(desc(AlphaFeedItem.published_at), desc(AlphaFeedItem.fetched_at))
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    data: list[dict[str, Any]] = []
+    for row in rows:
+        payload = _json_loads(row.payload_json, {})
+        if not isinstance(payload, dict):
+            payload = {}
+        if row.price_ltp is not None:
+            payload.setdefault("price_at_event", {
+                "ltp": row.price_ltp,
+                "change_pct": row.price_change_pct,
+                "as_of": row.price_as_of.isoformat() if row.price_as_of else None,
+                "source": row.price_source,
+                "broker_code": row.price_broker_code,
+            })
+        data.append(payload)
+    return {
+        "data": data,
+        "page": page,
+        "limit": limit,
+        "has_next": offset + len(rows) < total,
+        "total": int(total),
+        "from_cache": True,
+    }

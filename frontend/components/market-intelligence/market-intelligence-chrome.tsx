@@ -65,11 +65,7 @@ import {
 } from "@/components/ui/empty";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { getAlphaAlerts } from "@/service/actions/alpha/alerts";
-import { getAlphaAnnouncements } from "@/service/actions/alpha/announcements";
-import { getAlphaConcalls } from "@/service/actions/alpha/concalls";
-import { getAlphaEarnings } from "@/service/actions/alpha/earnings";
-import { getAlphaNews } from "@/service/actions/alpha/news";
+import { getCachedAlphaFeed } from "@/service/actions/alpha/feeds";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import {
@@ -88,6 +84,7 @@ import {
 	notifyAlphaCreditWarning,
 } from "@/lib/alpha-credit-warning";
 import {
+	ALPHA_HISTORY_SYMBOL_LIMIT,
 	ALPHA_SYMBOL_LIMIT,
 	emptyMarketIntelligenceFeeds,
 	marketIntelligenceSections,
@@ -277,23 +274,37 @@ function defaultAccountLabel(account: BrokerDataDefaultAccount | null): string {
 	return `${account.label} / ${broker}`;
 }
 
-async function loadFeeds(symbols: string[]): Promise<MarketIntelligenceFeeds> {
-	if (!symbols.length) return emptyMarketIntelligenceFeeds();
+async function loadFeeds(
+	symbols: string[],
+	options: { page?: number; limit?: number } = {},
+): Promise<MarketIntelligenceFeeds & { hasMoreBySection?: Record<AlphaSection, boolean> }> {
+	if (!symbols.length) {
+		return {
+			...emptyMarketIntelligenceFeeds(),
+			hasMoreBySection: {
+				news: false,
+				announcements: false,
+				earnings: false,
+				concalls: false,
+				alerts: false,
+			},
+		};
+	}
 	const params = {
-		symbols: symbols.slice(0, ALPHA_SYMBOL_LIMIT),
+		symbols: symbols.slice(0, ALPHA_HISTORY_SYMBOL_LIMIT),
 		from: isoDateDaysAgo(30),
 		to: todayIsoDate(),
-		page: 1,
-		limit: 20,
+		page: options.page ?? 1,
+		limit: options.limit ?? 20,
 		detailed: true,
 	};
 	const [news, announcements, earnings, concalls, alerts] =
 		await Promise.allSettled([
-			getAlphaNews(params),
-			getAlphaAnnouncements(params),
-			getAlphaEarnings(params),
-			getAlphaConcalls(params),
-			getAlphaAlerts(params),
+			getCachedAlphaFeed("news", params),
+			getCachedAlphaFeed("announcements", params),
+			getCachedAlphaFeed("earnings", params),
+			getCachedAlphaFeed("concalls", params),
+			getCachedAlphaFeed("alerts", params),
 		]);
 
 	const creditWarningMessage = getAlphaCreditWarningMessage(
@@ -316,6 +327,18 @@ async function loadFeeds(symbols: string[]): Promise<MarketIntelligenceFeeds> {
 		concalls:
 			concalls.status === "fulfilled" ? (concalls.value.data ?? []) : [],
 		alerts: alerts.status === "fulfilled" ? (alerts.value.data ?? []) : [],
+		hasMoreBySection: {
+			news: news.status === "fulfilled" ? Boolean(news.value.has_next) : false,
+			announcements:
+				announcements.status === "fulfilled"
+					? Boolean(announcements.value.has_next)
+					: false,
+			earnings:
+				earnings.status === "fulfilled" ? Boolean(earnings.value.has_next) : false,
+			concalls:
+				concalls.status === "fulfilled" ? Boolean(concalls.value.has_next) : false,
+			alerts: alerts.status === "fulfilled" ? Boolean(alerts.value.has_next) : false,
+		},
 	};
 }
 
@@ -408,6 +431,21 @@ export function MarketIntelligenceChrome({
 	const [selectedWatchlistId, setSelectedWatchlistId] =
 		useState(ALL_WATCHLISTS_ID);
 	const [feeds, setFeeds] = useState(initialFeeds);
+	const [hasMoreBySection, setHasMoreBySection] = useState<Record<AlphaSection, boolean>>({
+		news: false,
+		announcements: false,
+		earnings: false,
+		concalls: false,
+		alerts: false,
+	});
+	const [feedPageBySection, setFeedPageBySection] = useState<Record<AlphaSection, number>>({
+		news: 1,
+		announcements: 1,
+		earnings: 1,
+		concalls: 1,
+		alerts: 1,
+	});
+	const [isLoadingMore, setIsLoadingMore] = useState(false);
 	const [activeMetadata, setActiveMetadata] = useState(symbolMetadata);
 	const [defaultBrokerAccount, setDefaultBrokerAccount] =
 		useState<BrokerDataDefaultAccount | null>(null);
@@ -547,6 +585,13 @@ export function MarketIntelligenceChrome({
 			setActiveMetadata(symbolMetadata);
 			setFilterError("");
 			setIsLoadingFilter(false);
+			setFeedPageBySection({
+				news: 1,
+				announcements: 1,
+				earnings: 1,
+				concalls: 1,
+				alerts: 1,
+			});
 			return;
 		}
 
@@ -566,7 +611,16 @@ export function MarketIntelligenceChrome({
 				setActiveMetadata({});
 			}
 			if (nextFeeds.status === "fulfilled") {
-				setFeeds(nextFeeds.value);
+				const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
+				setFeeds(feedPayload);
+				if (nextHasMore) setHasMoreBySection(nextHasMore);
+				setFeedPageBySection({
+					news: 1,
+					announcements: 1,
+					earnings: 1,
+					concalls: 1,
+					alerts: 1,
+				});
 			} else {
 				notifyAlphaCreditWarning(nextFeeds.reason);
 				setFeeds(emptyMarketIntelligenceFeeds());
@@ -662,7 +716,16 @@ export function MarketIntelligenceChrome({
 				setActiveMetadata({});
 			}
 			if (nextFeeds.status === "fulfilled") {
-				setFeeds(nextFeeds.value);
+				const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
+				setFeeds(feedPayload);
+				if (nextHasMore) setHasMoreBySection(nextHasMore);
+				setFeedPageBySection({
+					news: 1,
+					announcements: 1,
+					earnings: 1,
+					concalls: 1,
+					alerts: 1,
+				});
 			} else {
 				notifyAlphaCreditWarning(nextFeeds.reason);
 				setFeeds(emptyMarketIntelligenceFeeds());
@@ -1074,8 +1137,8 @@ export function MarketIntelligenceChrome({
 							{isLoadingFilter ? " · Loading…" : ""}
 							{!symbolModeActive &&
 							watchlistGroups.length &&
-							activeSymbols.length > ALPHA_SYMBOL_LIMIT
-								? ` · first ${ALPHA_SYMBOL_LIMIT} for history`
+							activeSymbols.length > ALPHA_HISTORY_SYMBOL_LIMIT
+								? ` · first ${ALPHA_HISTORY_SYMBOL_LIMIT} for history`
 								: ""}
 						</CardFrameDescription>
 						<CardFrameAction>
@@ -1089,7 +1152,7 @@ export function MarketIntelligenceChrome({
 							{watchlistGroups.length ? (
 								<div className="flex min-w-0 flex-col gap-2 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
 									<WatchlistScopeTooltip
-										historyLimit={ALPHA_SYMBOL_LIMIT}
+										historyLimit={ALPHA_HISTORY_SYMBOL_LIMIT}
 										symbolCount={allSymbolsCount}
 									>
 										<SimpleSelect
@@ -1127,8 +1190,47 @@ export function MarketIntelligenceChrome({
 								activeSection={activeSection.id}
 								enableLiveUpdates={!symbolModeActive}
 								feedSearch={feedSearch}
+								hasMoreBySection={hasMoreBySection}
 								initialFeeds={feeds}
+								isLoadingMore={isLoadingMore}
 								onFeedSearchSymbol={handleFeedSymbolClick}
+								onLoadMore={(section) => {
+									if (isLoadingMore || !hasMoreBySection[section]) return;
+									const nextPage = (feedPageBySection[section] || 1) + 1;
+									setIsLoadingMore(true);
+									void (async () => {
+										try {
+											const page = await getCachedAlphaFeed(section, {
+												symbols: visibleSymbols.slice(0, ALPHA_HISTORY_SYMBOL_LIMIT),
+												from: isoDateDaysAgo(30),
+												to: todayIsoDate(),
+												page: nextPage,
+												limit: 20,
+												detailed: true,
+											});
+											setFeeds((current) => ({
+												...current,
+												[section]: [
+													...current[section],
+													...((page.data as typeof current[typeof section]) ?? []),
+												],
+											}));
+											setHasMoreBySection((current) => ({
+												...current,
+												[section]: Boolean(page.has_next),
+											}));
+											setFeedPageBySection((current) => ({
+												...current,
+												[section]: nextPage,
+											}));
+										} catch (caught) {
+											notifyAlphaCreditWarning(caught);
+											setFilterError(parseActionError(caught).message);
+										} finally {
+											setIsLoadingMore(false);
+										}
+									})();
+								}}
 								onSocketStateChange={setSocketState}
 								symbolMetadata={activeMetadata}
 								symbols={visibleSymbols}
