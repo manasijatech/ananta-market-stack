@@ -70,6 +70,9 @@ TRANSIENT_RETRY_SECONDS = 60
 LIVE_FEED_TRANSIENT_RETRY_SECONDS = 5
 REST_POLL_INTERVAL_SECONDS = 2.0
 SUBSCRIPTION_DB_PERSIST_INTERVAL_SECONDS = 10.0
+# Workflow + actively viewed UI sources stay pinned inside broker capacity.
+PINNED_SUBSCRIPTION_PRIORITY_MAX = 1
+LIVE_ROTATION_CURSOR_TTL_SECONDS = 60 * 60
 _ACCOUNT_RETRY_NOT_BEFORE: dict[str, datetime] = {}
 _REST_POLL_NOT_BEFORE: dict[str, datetime] = {}
 
@@ -404,26 +407,111 @@ def _quote_debug_sample(rows: list[dict[str, Any]], *, limit: int = 12) -> list[
 def _subscription_priority(row: LiveSymbolSubscription) -> tuple[int, float, str, str]:
     if row.source_kind == "workflow":
         source_priority = 0
-    elif row.source_kind == "watchlist":
-        source_priority = 1
     elif row.source_kind == "ui":
         source_priority = {
-            "watchlist_view": 2,
-            "market_intelligence_view": 2,
-            "company_view": 2,
-            "watchlist_focus": 2,
-            "active_ui": 3,
-            "heatmap": 4,
-            "symbol_search": 5,
-        }.get(row.source_type or "", 3)
+            "watchlist_view": 1,
+            "market_intelligence_view": 1,
+            "company_view": 1,
+            "watchlist_focus": 1,
+            "active_ui": 1,
+            "heatmap": 2,
+            "symbol_search": 3,
+        }.get(row.source_type or "", 1)
+    elif row.source_kind == "watchlist":
+        source_priority = 4
     elif row.source_kind == "background_workflow":
-        source_priority = 6
+        source_priority = 5
     elif row.source_kind == "manual":
-        source_priority = 7
+        source_priority = 6
     else:
-        source_priority = 8
+        source_priority = 7
     updated_at = row.updated_at.timestamp() if row.updated_at else 0.0
     return (source_priority, -updated_at, row.exchange or "", row.symbol)
+
+
+def _group_symbol_key(group: list[LiveSymbolSubscription]) -> tuple[str, str | None]:
+    row = group[0]
+    return (row.symbol, row.exchange)
+
+
+def _rotation_cursor_key(user_id: str, account_id: str) -> str:
+    return f"live:rotation:{user_id}:{account_id}"
+
+
+def _read_rotation_cursor(redis_client: redis.Redis | None, user_id: str, account_id: str) -> int:
+    if redis_client is None:
+        return 0
+    try:
+        raw = redis_client.get(_rotation_cursor_key(user_id, account_id))
+    except redis.RedisError:
+        return 0
+    if raw is None:
+        return 0
+    try:
+        return max(int(raw), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _write_rotation_cursor(
+    redis_client: redis.Redis | None,
+    user_id: str,
+    account_id: str,
+    cursor: int,
+) -> None:
+    if redis_client is None:
+        return
+    try:
+        redis_client.setex(
+            _rotation_cursor_key(user_id, account_id),
+            LIVE_ROTATION_CURSOR_TTL_SECONDS,
+            str(max(int(cursor), 0)),
+        )
+    except redis.RedisError:
+        return
+
+
+def select_live_capacity_groups(
+    ordered_groups: list[list[LiveSymbolSubscription]],
+    *,
+    capacity: int,
+    redis_client: redis.Redis | None,
+    user_id: str,
+    account_id: str,
+) -> tuple[list[list[LiveSymbolSubscription]], list[list[LiveSymbolSubscription]]]:
+    """Pin high-priority symbols and rotate overflow through remaining capacity."""
+    if capacity <= 0:
+        return [], list(ordered_groups)
+    if len(ordered_groups) <= capacity:
+        return list(ordered_groups), []
+
+    pinned: list[list[LiveSymbolSubscription]] = []
+    rotating: list[list[LiveSymbolSubscription]] = []
+    for group in ordered_groups:
+        if _subscription_priority(group[0])[0] <= PINNED_SUBSCRIPTION_PRIORITY_MAX:
+            pinned.append(group)
+        else:
+            rotating.append(group)
+
+    if len(pinned) >= capacity:
+        return pinned[:capacity], pinned[capacity:] + rotating
+
+    remaining_slots = capacity - len(pinned)
+    if not rotating:
+        return pinned, []
+
+    cursor = _read_rotation_cursor(redis_client, user_id, account_id) % len(rotating)
+    selected_rotating: list[list[LiveSymbolSubscription]] = []
+    selected_keys: set[tuple[str, str | None]] = set()
+    for offset in range(min(remaining_slots, len(rotating))):
+        group = rotating[(cursor + offset) % len(rotating)]
+        selected_rotating.append(group)
+        selected_keys.add(_group_symbol_key(group))
+
+    waiting = [group for group in rotating if _group_symbol_key(group) not in selected_keys]
+    next_cursor = (cursor + remaining_slots) % len(rotating)
+    _write_rotation_cursor(redis_client, user_id, account_id, next_cursor)
+    return pinned + selected_rotating, waiting
 
 
 def _subscription_ref(row: LiveSymbolSubscription) -> dict[str, Any]:
@@ -632,10 +720,14 @@ async def _apply_live_feed_results(
                 },
             },
         }
-        for subscription_row in duplicate_rows:
+        publish_payload = quote_payload
+        for index, subscription_row in enumerate(duplicate_rows):
+            row_payload = _merge_existing_quote_context(quote_payload, subscription_row.last_quote_json)
+            if index == 0:
+                publish_payload = row_payload
             if not _should_persist_subscription_tick(subscription_row, now):
                 continue
-            subscription_row.last_quote_json = json.dumps(quote_payload, default=str)
+            subscription_row.last_quote_json = json.dumps(row_payload, default=str)
             subscription_row.last_received_at = now
             subscription_row.health_status = "ok"
             subscription_row.health_reason = ""
@@ -649,7 +741,7 @@ async def _apply_live_feed_results(
                 symbols=symbols,
                 connection_index=connection_index,
                 chunk_rows=feed_rows,
-                quote_payload=quote_payload,
+                quote_payload=publish_payload,
                 row=row,
             ),
         )
@@ -950,12 +1042,29 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                     unique_subscriptions.values(),
                     key=lambda items: _subscription_priority(items[0]),
                 )
+                live_groups, waiting_groups = select_live_capacity_groups(
+                    ordered_subscription_groups,
+                    capacity=chunk_size,
+                    redis_client=redis_client,
+                    user_id=user_id,
+                    account_id=account_id,
+                )
+                if waiting_groups:
+                    _mark_subscription_health(
+                        [subscription_row for group in waiting_groups for subscription_row in group],
+                        status="capacity_wait",
+                        reason=(
+                            live_adapter.capacity_wait_reason()
+                            if live_adapter
+                            else "Waiting behind higher-priority live subscriptions."
+                        ),
+                    )
                 account_failed = False
                 for chunk_index, start in enumerate(
-                    range(0, len(ordered_subscription_groups), chunk_size),
+                    range(0, len(live_groups), chunk_size),
                     start=1,
                 ):
-                    chunk_groups = ordered_subscription_groups[start : start + chunk_size]
+                    chunk_groups = live_groups[start : start + chunk_size]
                     chunk_rows = [items[0] for items in chunk_groups]
                     instruments = [_instrument_for_group(items) for items in chunk_groups]
                     feed_result: str | None = None

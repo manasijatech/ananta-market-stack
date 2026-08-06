@@ -170,6 +170,65 @@ function livePriceKey(row: { account_id?: string | null; broker_code?: string | 
     return [row.account_id || "", row.broker_code || "", row.symbol.trim().toUpperCase()].join(":");
 }
 
+function tickHasLivePrice(tick: LivePriceTick | undefined): boolean {
+    return toNumber(tick?.ltp ?? tick?.last_price) !== null;
+}
+
+function tickFromSubscription(subscription: LiveSubscription): LivePriceTick | null {
+    const quote = (subscription.last_quote || {}) as Partial<LivePriceTick> & {
+        detail?: { exchange?: string | null; raw?: Record<string, unknown> };
+    };
+    const raw = quote.detail?.raw || {};
+    const ohlc =
+        raw && typeof raw === "object" && raw.ohlc && typeof raw.ohlc === "object"
+            ? (raw.ohlc as Record<string, unknown>)
+            : {};
+    const ltp = quote.ltp ?? quote.last_price ?? (raw as { last_price?: unknown }).last_price;
+    if (toNumber(ltp) === null && !Object.keys(quote).length) return null;
+    const change =
+        quote.change_pct ??
+        quote.day_change_perc ??
+        (raw as { day_change_perc?: unknown }).day_change_perc ??
+        (raw as { day_change_percentage?: unknown }).day_change_percentage;
+    return {
+        ...quote,
+        symbol: subscription.symbol,
+        exchange: subscription.exchange ?? quote.exchange ?? quote.detail?.exchange ?? null,
+        account_id: subscription.account_id ?? undefined,
+        broker_code: subscription.broker_code ?? undefined,
+        ltp: ltp ?? null,
+        last_price: quote.last_price ?? ltp ?? null,
+        open: quote.open ?? ohlc.open ?? null,
+        high: quote.high ?? ohlc.high ?? null,
+        low: quote.low ?? ohlc.low ?? null,
+        close: quote.close ?? ohlc.close ?? null,
+        day_change_perc: change ?? null,
+        change_pct: change ?? null,
+        volume: quote.volume ?? (raw as { volume?: unknown }).volume ?? null,
+        received_at: subscription.last_received_at || quote.received_at || null,
+        status: subscription.health_status || quote.status || "stale"
+    };
+}
+
+function mergeLivePriceTick(current: LivePriceTick | undefined, incoming: LivePriceTick): LivePriceTick {
+    if (!current || !tickHasLivePrice(current)) return incoming;
+    if (!tickHasLivePrice(incoming)) return current;
+    const incomingChange = toNumber(incoming.change_pct ?? incoming.day_change_perc);
+    const currentChange = toNumber(current.change_pct ?? current.day_change_perc);
+    if (incomingChange !== null) return incoming;
+    if (currentChange === null) return incoming;
+    return {
+        ...incoming,
+        change_pct: current.change_pct ?? current.day_change_perc,
+        day_change_perc: current.day_change_perc ?? current.change_pct,
+        open: incoming.open ?? current.open,
+        high: incoming.high ?? current.high,
+        low: incoming.low ?? current.low,
+        close: incoming.close ?? current.close,
+        volume: incoming.volume ?? current.volume
+    };
+}
+
 function livePriceLabel(price: LivePriceTick | undefined): string {
     if (price?.unavailable_reason && toNumber(price.ltp ?? price.last_price) === null) return "—";
     return formatLivePrice(price?.ltp ?? price?.last_price);
@@ -513,6 +572,27 @@ export function WatchlistsManager({
     }, [alphaSymbolKey, alphaSymbols]);
 
     useEffect(() => {
+        if (!resolvedLiveDemand.length) return;
+        setLivePrices((current) => {
+            const next = { ...current };
+            for (const subscription of resolvedLiveDemand) {
+                const tick = tickFromSubscription(subscription);
+                if (!tick || !tickHasLivePrice(tick)) continue;
+                const key = livePriceKey({
+                    account_id: subscription.account_id,
+                    broker_code: subscription.broker_code,
+                    symbol: subscription.symbol
+                });
+                const symbolKey = livePriceKey({ symbol: subscription.symbol });
+                // Seed/fill from last_quote without clobbering fresher live ticks.
+                next[key] = mergeLivePriceTick(tick, next[key] ?? tick);
+                next[symbolKey] = mergeLivePriceTick(tick, next[symbolKey] ?? tick);
+            }
+            return next;
+        });
+    }, [resolvedLiveDemand]);
+
+    useEffect(() => {
         let cancelled = false;
         let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -523,7 +603,9 @@ export function WatchlistsManager({
             livePendingRef.current.clear();
             setLivePrices((current) => {
                 const next = { ...current };
-                for (const [key, value] of updates) next[key] = value;
+                for (const [key, value] of updates) {
+                    next[key] = mergeLivePriceTick(next[key], value);
+                }
                 return next;
             });
         }
@@ -542,13 +624,9 @@ export function WatchlistsManager({
         async function connect() {
             if (!livePriceRefs.length) {
                 setLiveState("disconnected");
-                setLivePrices({});
-                livePendingRef.current.clear();
                 return;
             }
             setLiveState("connecting");
-            setLivePrices({});
-            livePendingRef.current.clear();
             try {
                 const userId = initialWatchlists[0]?.user_id;
                 if (!userId) {

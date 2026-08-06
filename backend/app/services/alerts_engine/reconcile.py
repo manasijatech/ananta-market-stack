@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from common.datetime_compat import UTC
-import redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -26,7 +25,6 @@ from db.models import (
     UserWatchlist,
     UserWatchlistSymbol,
 )
-from broker.core.redis_cache import _redis_client
 
 def _ui_demand_subscription_ttl_seconds() -> int:
     return max(int(get_settings().live_ui_demand_ttl_seconds), 60)
@@ -51,25 +49,6 @@ class DesiredSubscription:
 
 def _now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
-
-
-def _delete_quote_caches(
-    redis_client: redis.Redis | None,
-    rows: list[LiveSymbolSubscription],
-) -> None:
-    if redis_client is None:
-        return
-    keys = {
-        f"live:quote:{row.user_id}:{row.account_id}:{row.broker_code}:{row.symbol}"
-        for row in rows
-        if row.account_id and row.broker_code and row.symbol
-    }
-    if not keys:
-        return
-    try:
-        redis_client.delete(*keys)
-    except redis.RedisError:
-        return
 
 
 def _json_dumps(value: Any) -> str:
@@ -221,7 +200,6 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
     now = _now()
     created = restored = updated = deactivated = orphaned = errors = 0
     desired_keys: set[tuple[str | None, str | None, str | None, str, str | None, str | None, str | None]] = set()
-    redis_client = _redis_client()
     managed_rows = list(
         db.scalars(
             select(LiveSymbolSubscription).where(
@@ -328,7 +306,7 @@ def reconcile_user_subscriptions(db: Session, user_id: str) -> dict[str, Any]:
         deactivated += 1
         orphaned += 1
 
-    _delete_quote_caches(redis_client, deactivated_rows)
+    # Keep Redis last-known quotes so UI can paint stale prices until live resumes.
     db.commit()
     if created or restored or deactivated or orphaned:
         publish_scope_change(user_id, reason="reconciled")
@@ -362,8 +340,7 @@ def cleanup_expired_ui_subscriptions(
     if not rows:
         return 0
     affected_user_ids = {row.user_id for row in rows if row.user_id}
-    redis_client = _redis_client()
-    _delete_quote_caches(redis_client, rows)
+    # Preserve Redis/DB last-known quotes across UI demand expiry.
     for row in rows:
         db.delete(row)
     if commit:
