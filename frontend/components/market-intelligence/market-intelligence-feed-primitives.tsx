@@ -383,8 +383,9 @@ export function WatchlistScopeTooltip({
             <Tooltip>
                 <TooltipTrigger render={<span className="inline-flex min-w-0" />}>{children}</TooltipTrigger>
                 <TooltipPopup className="max-w-xs">
-                    All watchlists cover {symbolCount} symbol{symbolCount === 1 ? "" : "s"}. Historical API loads use
-                    the first {historyLimit} symbols in the active scope.
+                    All watchlists cover {symbolCount} symbol{symbolCount === 1 ? "" : "s"}. Feeds show every cached
+                    item for the active scope. Drishti refreshes up to {historyLimit} missing/stale symbols per pass
+                    (oldest first), so large lists fill in over visits without wasting credits.
                 </TooltipPopup>
             </Tooltip>
         </TooltipProvider>

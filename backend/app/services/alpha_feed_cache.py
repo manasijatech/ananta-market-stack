@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 ALPHA_FEED_PRODUCTS = ("news", "announcements", "earnings", "concalls", "alerts")
 _FEED_BATCH_SIZE = 20
+# Drishti REST is fine up to ~100 symbols per refresh pass; larger watchlists rotate.
+_DRISHTI_SYNC_SYMBOL_BUDGET = 100
 _FEED_SYNC_TTL = timedelta(minutes=30)
 _FEED_PAGE_FETCH_LIMIT = 50
 
@@ -250,9 +252,13 @@ def _symbols_needing_sync(
     product: str,
     symbols: list[str],
     force_refresh: bool,
+    sync_budget: int = _DRISHTI_SYNC_SYMBOL_BUDGET,
 ) -> list[str]:
+    if not symbols:
+        return []
     if force_refresh:
-        return list(symbols)
+        return list(symbols)[: max(int(sync_budget), 1)]
+
     cutoff = _utc_now() - _FEED_SYNC_TTL
     rows = db.scalars(
         select(AlphaFeedSymbolSync).where(
@@ -261,12 +267,39 @@ def _symbols_needing_sync(
             AlphaFeedSymbolSync.symbol.in_(symbols),
         )
     ).all()
-    fresh = {
-        row.symbol
-        for row in rows
-        if row.last_synced_at and row.last_synced_at >= cutoff and not row.last_error
-    }
-    return [symbol for symbol in symbols if symbol not in fresh]
+    sync_by_symbol = {row.symbol: row for row in rows}
+
+    never_synced: list[str] = []
+    stale: list[tuple[datetime, str]] = []
+    for symbol in symbols:
+        row = sync_by_symbol.get(symbol)
+        if row is None or row.last_synced_at is None:
+            never_synced.append(symbol)
+            continue
+        if row.last_error or row.last_synced_at < cutoff:
+            stale.append((row.last_synced_at, symbol))
+
+    stale.sort(key=lambda item: item[0])  # oldest first → rotates through large watchlists
+    ordered = [*never_synced, *[symbol for _ts, symbol in stale]]
+    return ordered[: max(int(sync_budget), 1)]
+
+
+def _symbol_has_cached_items(
+    db: Session,
+    *,
+    user_id: str,
+    product: str,
+    symbol: str,
+) -> bool:
+    return bool(
+        db.scalar(
+            select(AlphaFeedItem.id).where(
+                AlphaFeedItem.user_id == user_id,
+                AlphaFeedItem.product == product,
+                AlphaFeedItem.symbol == symbol,
+            ).limit(1)
+        )
+    )
 
 
 def refresh_feed_cache_for_symbols(
@@ -278,21 +311,31 @@ def refresh_feed_cache_for_symbols(
     from_date: str | None = None,
     to_date: str | None = None,
     force_refresh: bool = False,
+    sync_budget: int = _DRISHTI_SYNC_SYMBOL_BUDGET,
 ) -> dict[str, Any]:
     if product not in ALPHA_FEED_PRODUCTS:
         raise ValueError(f"Unsupported product: {product}")
     normalized = _normalize_symbols(symbols)
     if not normalized:
-        return {"refreshed_symbols": 0, "upserted": 0}
+        return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
+
+    # Single-symbol focus: if nothing is cached yet (REST or prior WS), always hit Drishti.
+    effective_force = force_refresh
+    if len(normalized) == 1 and not force_refresh:
+        symbol = normalized[0]
+        if not _symbol_has_cached_items(db, user_id=user_id, product=product, symbol=symbol):
+            effective_force = True
+
     pending = _symbols_needing_sync(
         db,
         user_id=user_id,
         product=product,
         symbols=normalized,
-        force_refresh=force_refresh,
+        force_refresh=effective_force,
+        sync_budget=sync_budget if len(normalized) > 1 else max(sync_budget, 1),
     )
     if not pending:
-        return {"refreshed_symbols": 0, "upserted": 0}
+        return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
 
     api_key = _credential_api_key(db, user_id)
     client = _drishti_client(api_key)
@@ -354,7 +397,23 @@ def refresh_feed_cache_for_symbols(
                 error=str(exc)[:500],
             )
     db.commit()
-    return {"refreshed_symbols": len(pending), "upserted": upserted}
+    remaining = max(len(normalized) - len(pending), 0) if len(normalized) > len(pending) else 0
+    # Approximate remaining unsynced after this pass for large lists.
+    if len(normalized) > _DRISHTI_SYNC_SYMBOL_BUDGET and not effective_force:
+        still_pending = _symbols_needing_sync(
+            db,
+            user_id=user_id,
+            product=product,
+            symbols=normalized,
+            force_refresh=False,
+            sync_budget=10_000,
+        )
+        remaining = len(still_pending)
+    return {
+        "refreshed_symbols": len(pending),
+        "upserted": upserted,
+        "pending_remaining": remaining,
+    }
 
 
 def list_cached_feed_items(
@@ -373,9 +432,18 @@ def list_cached_feed_items(
         raise ValueError(f"Unsupported product: {product}")
     normalized = _normalize_symbols(symbols)
     if not normalized:
-        return {"data": [], "page": page, "limit": limit, "has_next": False, "total": 0}
+        return {
+            "data": [],
+            "page": page,
+            "limit": limit,
+            "has_next": False,
+            "total": 0,
+            "from_cache": True,
+            "synced_symbols": 0,
+            "pending_symbols": 0,
+        }
 
-    refresh_feed_cache_for_symbols(
+    refresh_stats = refresh_feed_cache_for_symbols(
         db,
         user_id,
         product,
@@ -383,6 +451,7 @@ def list_cached_feed_items(
         from_date=from_date,
         to_date=to_date,
         force_refresh=force_refresh,
+        sync_budget=_DRISHTI_SYNC_SYMBOL_BUDGET,
     )
 
     page = max(int(page or 1), 1)
@@ -436,4 +505,6 @@ def list_cached_feed_items(
         "has_next": offset + len(rows) < total,
         "total": int(total),
         "from_cache": True,
+        "synced_symbols": int(refresh_stats.get("refreshed_symbols") or 0),
+        "pending_symbols": int(refresh_stats.get("pending_remaining") or 0),
     }

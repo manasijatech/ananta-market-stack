@@ -1,7 +1,6 @@
 import { parseActionError } from "@/components/brokers/action-error";
 import { MarketIntelligenceChrome } from "@/components/market-intelligence/market-intelligence-chrome";
 import {
-    ALPHA_HISTORY_SYMBOL_LIMIT,
     ALPHA_SYMBOL_LIMIT,
     emptyMarketIntelligenceFeeds,
     symbolsFromCoverageGroups,
@@ -33,7 +32,8 @@ type InitialFeedsResult = {
 async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> {
     if (!symbols.length) return { creditWarningMessage: null, feeds: emptyMarketIntelligenceFeeds() };
     const params = {
-        symbols: symbols.slice(0, ALPHA_HISTORY_SYMBOL_LIMIT),
+        // Full watchlist universe; backend caps Drishti sync budget and serves all cached rows.
+        symbols,
         from: isoDateDaysAgo(30),
         to: todayIsoDate(),
         page: 1,
@@ -72,7 +72,7 @@ export default async function MarketIntelligenceLayout({ children }: { children:
 
     const groups = watchlistCoverageGroups(watchlists);
     const allSymbols = symbolsFromCoverageGroups(groups);
-    const symbols = allSymbols.slice(0, ALPHA_HISTORY_SYMBOL_LIMIT);
+    const symbols = allSymbols;
     let symbolMetadata: Record<string, AlphaSymbolMetadata> = {};
     let initialFeeds = emptyMarketIntelligenceFeeds();
     let creditWarningMessage: string | null = null;

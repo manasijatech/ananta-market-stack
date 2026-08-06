@@ -84,7 +84,7 @@ import {
 	notifyAlphaCreditWarning,
 } from "@/lib/alpha-credit-warning";
 import {
-	ALPHA_HISTORY_SYMBOL_LIMIT,
+	ALPHA_DRISHTI_SYNC_BUDGET,
 	ALPHA_SYMBOL_LIMIT,
 	emptyMarketIntelligenceFeeds,
 	marketIntelligenceSections,
@@ -276,7 +276,7 @@ function defaultAccountLabel(account: BrokerDataDefaultAccount | null): string {
 
 async function loadFeeds(
 	symbols: string[],
-	options: { page?: number; limit?: number } = {},
+	options: { page?: number; limit?: number; forceRefresh?: boolean } = {},
 ): Promise<MarketIntelligenceFeeds & { hasMoreBySection?: Record<AlphaSection, boolean> }> {
 	if (!symbols.length) {
 		return {
@@ -291,12 +291,14 @@ async function loadFeeds(
 		};
 	}
 	const params = {
-		symbols: symbols.slice(0, ALPHA_HISTORY_SYMBOL_LIMIT),
+		// Pass the full watchlist; backend reads all from cache and syncs ≤100 stale/missing via Drishti.
+		symbols,
 		from: isoDateDaysAgo(30),
 		to: todayIsoDate(),
 		page: options.page ?? 1,
 		limit: options.limit ?? 20,
 		detailed: true,
+		force_refresh: options.forceRefresh,
 	};
 	const [news, announcements, earnings, concalls, alerts] =
 		await Promise.allSettled([
@@ -706,6 +708,7 @@ export function MarketIntelligenceChrome({
 		void (async () => {
 			const [nextMetadata, nextFeeds] = await Promise.allSettled([
 				getAlphaSymbolMetadata([committedIntelligenceSymbol]),
+				// Backend auto-fetches from Drishti when this symbol has no cache/WS rows yet.
 				loadFeeds([committedIntelligenceSymbol]),
 			]);
 			if (cancelled) return;
@@ -1137,8 +1140,8 @@ export function MarketIntelligenceChrome({
 							{isLoadingFilter ? " · Loading…" : ""}
 							{!symbolModeActive &&
 							watchlistGroups.length &&
-							activeSymbols.length > ALPHA_HISTORY_SYMBOL_LIMIT
-								? ` · first ${ALPHA_HISTORY_SYMBOL_LIMIT} for history`
+							activeSymbols.length > ALPHA_DRISHTI_SYNC_BUDGET
+								? ` · syncing ≤${ALPHA_DRISHTI_SYNC_BUDGET}/pass · showing all cached`
 								: ""}
 						</CardFrameDescription>
 						<CardFrameAction>
@@ -1152,7 +1155,7 @@ export function MarketIntelligenceChrome({
 							{watchlistGroups.length ? (
 								<div className="flex min-w-0 flex-col gap-2 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
 									<WatchlistScopeTooltip
-										historyLimit={ALPHA_HISTORY_SYMBOL_LIMIT}
+										historyLimit={ALPHA_DRISHTI_SYNC_BUDGET}
 										symbolCount={allSymbolsCount}
 									>
 										<SimpleSelect
@@ -1201,7 +1204,7 @@ export function MarketIntelligenceChrome({
 									void (async () => {
 										try {
 											const page = await getCachedAlphaFeed(section, {
-												symbols: visibleSymbols.slice(0, ALPHA_HISTORY_SYMBOL_LIMIT),
+												symbols: visibleSymbols,
 												from: isoDateDaysAgo(30),
 												to: todayIsoDate(),
 												page: nextPage,

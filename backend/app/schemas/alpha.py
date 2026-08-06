@@ -32,3 +32,5 @@ class AlphaFeedPageOut(BaseModel):
     has_next: bool = False
     total: int = 0
     from_cache: bool = True
+    synced_symbols: int = 0
+    pending_symbols: int = 0

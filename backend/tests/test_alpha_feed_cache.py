@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from app.services import alpha_feed_cache
 from app.services.alpha_event_prices import _snapshot_from_quote_payload
 from app.services.alpha_feed_cache import _item_key, _published_at
 from app.services.alpha_websocket import _default_config, ensure_watchlist_aware_scope
@@ -57,3 +58,53 @@ def test_price_snapshot_from_quote_payload():
     assert snapshot["price_change_pct"] == 1.25
     assert snapshot["price_source"] == "live_redis"
     assert isinstance(snapshot["price_as_of"], datetime)
+
+
+def test_symbols_needing_sync_prioritizes_never_synced_and_respects_budget():
+    from types import SimpleNamespace
+
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class _FakeDb:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def scalars(self, _stmt):
+            return _FakeResult(self._rows)
+
+    now = datetime(2026, 8, 6, 12, 0, 0)
+    rows = [
+        SimpleNamespace(symbol="A", last_synced_at=now, last_error=None),
+        SimpleNamespace(symbol="B", last_synced_at=datetime(2026, 7, 1), last_error=None),
+    ]
+    pending = alpha_feed_cache._symbols_needing_sync(
+        _FakeDb(rows),
+        user_id="u1",
+        product="news",
+        symbols=["C", "A", "B", "D"],
+        force_refresh=False,
+        sync_budget=2,
+    )
+    # Never-synced C/D first, then oldest stale B — budget 2 → C, D
+    assert pending == ["C", "D"]
+
+
+def test_symbols_needing_sync_force_refresh_caps_budget():
+    class _FakeDb:
+        def scalars(self, _stmt):
+            raise AssertionError("should not query when force_refresh")
+
+    pending = alpha_feed_cache._symbols_needing_sync(
+        _FakeDb(),
+        user_id="u1",
+        product="news",
+        symbols=[f"S{i}" for i in range(150)],
+        force_refresh=True,
+        sync_budget=100,
+    )
+    assert len(pending) == 100

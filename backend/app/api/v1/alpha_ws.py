@@ -58,7 +58,7 @@ def get_alpha_feed_page(
 ) -> AlphaFeedPageOut:
     if product not in alpha_feed_cache.ALPHA_FEED_PRODUCTS:
         raise HTTPException(status_code=404, detail=f"Unknown feed product: {product}")
-    requested_symbols = _parse_symbols_query(symbols, max_symbols=500)
+    requested_symbols = _parse_symbols_query(symbols, max_symbols=2000)
     try:
         payload = alpha_feed_cache.list_cached_feed_items(
             db,
