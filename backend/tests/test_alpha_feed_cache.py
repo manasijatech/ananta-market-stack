@@ -51,6 +51,17 @@ def test_payload_symbol_rejects_na_and_uses_fallback():
     assert _payload_symbol({"symbol": "INFY"}, None) == "INFY"
 
 
+def test_should_include_market_wide_feed_threshold():
+    assert alpha_feed_cache._should_include_market_wide_feed(["CIPLA"]) is False
+    assert alpha_feed_cache._should_include_market_wide_feed([f"S{i}" for i in range(20)]) is False
+    assert alpha_feed_cache._should_include_market_wide_feed([f"S{i}" for i in range(50)]) is True
+
+
+def test_symbol_match_clauses_supports_colon_separated_symbols():
+    clause = alpha_feed_cache._symbol_match_clauses(["CIPLA"])
+    assert clause is not False
+
+
 def test_list_cached_feed_items_reads_db_before_refresh(monkeypatch):
     from types import SimpleNamespace
 

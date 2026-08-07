@@ -476,6 +476,7 @@ export function MarketIntelligenceChrome({
 	const [showSuggestions, setShowSuggestions] = useState(false);
 	const [symbolError, setSymbolError] = useState("");
 	const [isLoadingSymbolFeed, setIsLoadingSymbolFeed] = useState(false);
+	const [symbolSearchToken, setSymbolSearchToken] = useState(0);
 	const [suggestionMenuRect, setSuggestionMenuRect] = useState<{
 		left: number;
 		top: number;
@@ -586,19 +587,12 @@ export function MarketIntelligenceChrome({
 			setIsLoadingFilter(false);
 			return;
 		}
-		if (selectedWatchlistId === ALL_WATCHLISTS_ID) {
-			setFeeds(initialFeeds);
-			setHasMoreBySection(initialHasMoreBySection);
-			setActiveMetadata(symbolMetadata);
+		if (!activeSymbols.length) {
+			setFeeds(emptyMarketIntelligenceFeeds());
+			setHasMoreBySection(emptyMarketIntelligenceHasMore());
+			setActiveMetadata({});
 			setFilterError("");
 			setIsLoadingFilter(false);
-			setFeedPageBySection({
-				news: 1,
-				announcements: 1,
-				earnings: 1,
-				concalls: 1,
-				alerts: 1,
-			});
 			return;
 		}
 
@@ -639,43 +633,7 @@ export function MarketIntelligenceChrome({
 		return () => {
 			cancelled = true;
 		};
-	}, [
-		activeSymbols,
-		initialFeeds,
-		initialHasMoreBySection,
-		selectedWatchlistId,
-		symbolMetadata,
-		symbolModeActive,
-	]);
-
-	// SSR can time out on very large watchlists; retry client-side from the local DB cache.
-	useEffect(() => {
-		if (symbolModeActive || selectedWatchlistId !== ALL_WATCHLISTS_ID) return;
-		if (!streamSymbols.length) return;
-		const initiallyEmpty = marketIntelligenceProducts.every(
-			(product) => initialFeeds[product].length === 0,
-		);
-		if (!initiallyEmpty) return;
-
-		let cancelled = false;
-		setIsLoadingFilter(true);
-		void loadFeeds(streamSymbols)
-			.then((result) => {
-				if (cancelled) return;
-				const { hasMoreBySection: nextHasMore, ...feedPayload } = result;
-				setFeeds(feedPayload);
-				setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
-			})
-			.catch((caught) => {
-				if (!cancelled) notifyAlphaCreditWarning(caught);
-			})
-			.finally(() => {
-				if (!cancelled) setIsLoadingFilter(false);
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [initialFeeds, selectedWatchlistId, streamSymbols, symbolModeActive]);
+	}, [activeSymbols, symbolModeActive]);
 
 	useEffect(() => {
 		const query = searchText.trim();
@@ -739,6 +697,8 @@ export function MarketIntelligenceChrome({
 		let cancelled = false;
 		setSymbolError("");
 		setFilterError("");
+		setFeeds(emptyMarketIntelligenceFeeds());
+		setHasMoreBySection(emptyMarketIntelligenceHasMore());
 		setIsLoadingSymbolFeed(true);
 		void (async () => {
 			const [nextMetadata, nextFeeds] = await Promise.allSettled([
@@ -775,7 +735,7 @@ export function MarketIntelligenceChrome({
 		return () => {
 			cancelled = true;
 		};
-	}, [committedIntelligenceSymbol]);
+	}, [committedIntelligenceSymbol, symbolSearchToken]);
 
 	useEffect(() => {
 		if (!committedSymbol || !committedInstrument) {
@@ -871,6 +831,9 @@ export function MarketIntelligenceChrome({
 		setSearchText(normalized);
 		setShowSuggestions(false);
 		setSymbolError("");
+		setFeeds(emptyMarketIntelligenceFeeds());
+		setHasMoreBySection(emptyMarketIntelligenceHasMore());
+		setSymbolSearchToken((current) => current + 1);
 	}
 
 	function submitSymbolSearch(event: FormEvent<HTMLFormElement>) {
@@ -902,10 +865,6 @@ export function MarketIntelligenceChrome({
 		setShowSuggestions(false);
 		setSymbolError("");
 		setChartState({ error: "", isLoading: false, snapshot: null });
-		if (selectedWatchlistId === ALL_WATCHLISTS_ID) {
-			setFeeds(initialFeeds);
-			setActiveMetadata(symbolMetadata);
-		}
 	}
 
 	function handleFeedSymbolClick(symbol: string) {
@@ -1172,7 +1131,7 @@ export function MarketIntelligenceChrome({
 								: watchlistGroups.length
 									? ` · ${activeSymbols.length} symbols`
 									: ""}
-							{isLoadingFilter ? " · Loading…" : ""}
+							{isLoadingFilter || isLoadingSymbolFeed ? " · Loading…" : ""}
 						</CardFrameDescription>
 						<CardFrameAction>
 							{!symbolModeActive && watchlistGroups.length ? (
@@ -1219,7 +1178,7 @@ export function MarketIntelligenceChrome({
 							) : null}
 							<MarketIntelligenceLiveFeed
 								activeSection={activeSection.id}
-								enableLiveUpdates={!symbolModeActive}
+								enableLiveUpdates
 								feedSearch={feedSearch}
 								hasMoreBySection={hasMoreBySection}
 								initialFeeds={feeds}

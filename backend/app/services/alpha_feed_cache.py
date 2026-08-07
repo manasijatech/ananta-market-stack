@@ -29,6 +29,8 @@ _FEED_MAX_REFRESH_BATCHES = 4
 _FEED_MAX_DRISHTI_PAGES_PER_BATCH = 1
 # Incremental REST backfill window when symbols were synced before.
 _FEED_REFRESH_LOOKBACK_DAYS = 7
+# Market-wide websocket rows (N/A) only belong in very large watchlist scopes.
+_FEED_INCLUDE_MARKET_WIDE_MIN_SYMBOLS = 50
 _INVALID_FEED_SYMBOLS = frozenset({"N/A", "NA", "NONE", ""})
 
 
@@ -399,6 +401,25 @@ def _refresh_from_date_for_batch(
     return cutoff.strftime("%Y-%m-%d")
 
 
+def _symbol_match_clauses(normalized: list[str]) -> Any:
+    if not normalized:
+        return False
+    # SQLite caps OR expression depth (~1000); large watchlists use exact IN only.
+    if len(normalized) > _FEED_INCLUDE_MARKET_WIDE_MIN_SYMBOLS:
+        return AlphaFeedItem.symbol.in_(normalized)
+    clauses: list[Any] = []
+    for symbol in normalized:
+        clauses.append(AlphaFeedItem.symbol == symbol)
+        clauses.append(AlphaFeedItem.symbol.like(f"{symbol}:%"))
+        clauses.append(AlphaFeedItem.symbol.like(f"%:{symbol}:%"))
+        clauses.append(AlphaFeedItem.symbol.like(f"%:{symbol}"))
+    return or_(*clauses)
+
+
+def _should_include_market_wide_feed(normalized: list[str]) -> bool:
+    return len(normalized) >= _FEED_INCLUDE_MARKET_WIDE_MIN_SYMBOLS
+
+
 def _symbol_has_cached_items(
     db: Session,
     *,
@@ -411,7 +432,7 @@ def _symbol_has_cached_items(
             select(AlphaFeedItem.id).where(
                 AlphaFeedItem.user_id == user_id,
                 AlphaFeedItem.product == product,
-                AlphaFeedItem.symbol == symbol,
+                _symbol_match_clauses([symbol]),
             ).limit(1)
         )
     )
@@ -588,15 +609,18 @@ def _feed_query_filters(
     from_date: str | None,
     to_date: str | None,
 ) -> list[Any]:
-    market_wide_symbols = list(_INVALID_FEED_SYMBOLS)
+    symbol_clause = _symbol_match_clauses(normalized)
+    if _should_include_market_wide_feed(normalized):
+        market_wide_symbols = list(_INVALID_FEED_SYMBOLS)
+        symbol_clause = or_(
+            symbol_clause,
+            AlphaFeedItem.symbol.is_(None),
+            AlphaFeedItem.symbol.in_(market_wide_symbols),
+        )
     filters: list[Any] = [
         AlphaFeedItem.user_id == user_id,
         AlphaFeedItem.product == product,
-        or_(
-            AlphaFeedItem.symbol.in_(normalized),
-            AlphaFeedItem.symbol.is_(None),
-            AlphaFeedItem.symbol.in_(market_wide_symbols),
-        ),
+        symbol_clause,
     ]
     if from_date:
         try:
