@@ -22,10 +22,13 @@ ALPHA_FEED_PRODUCTS = ("news", "announcements", "earnings", "concalls", "alerts"
 # Drishti accepts ≤20 symbols per request; we batch the full watchlist, not a hard subset.
 _FEED_BATCH_SIZE = 20
 _FEED_SYNC_TTL = timedelta(minutes=30)
-_FEED_PAGE_FETCH_LIMIT = 50
+_FEED_PAGE_FETCH_LIMIT = 20
 # Cap Drishti refresh work per HTTP request so large watchlists return cached DB rows immediately.
 _FEED_MAX_REFRESH_BATCHES = 4
-_FEED_MAX_DRISHTI_PAGES_PER_BATCH = 10
+# One REST page per symbol batch — avoids replaying deep history (credit-heavy).
+_FEED_MAX_DRISHTI_PAGES_PER_BATCH = 1
+# Incremental REST backfill window when symbols were synced before.
+_FEED_REFRESH_LOOKBACK_DAYS = 7
 _INVALID_FEED_SYMBOLS = frozenset({"N/A", "NA", "NONE", ""})
 
 
@@ -353,6 +356,49 @@ def _symbols_needing_sync(
     return [*never_synced, *[symbol for _ts, symbol in stale]]
 
 
+def _refresh_from_date_for_batch(
+    db: Session,
+    *,
+    user_id: str,
+    product: str,
+    batch: list[str],
+    force_refresh: bool,
+) -> str | None:
+    """Narrow Drishti REST `from` to the sync gap instead of the UI's 30-day window."""
+    if force_refresh:
+        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
+        return cutoff.strftime("%Y-%m-%d")
+
+    rows = db.scalars(
+        select(AlphaFeedSymbolSync).where(
+            AlphaFeedSymbolSync.user_id == user_id,
+            AlphaFeedSymbolSync.product == product,
+            AlphaFeedSymbolSync.symbol.in_(batch),
+        )
+    ).all()
+    sync_by_symbol = {row.symbol: row for row in rows}
+    never_synced = [symbol for symbol in batch if sync_by_symbol.get(symbol) is None]
+    if never_synced:
+        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
+        return cutoff.strftime("%Y-%m-%d")
+
+    synced_times = [
+        row.last_synced_at
+        for row in sync_by_symbol.values()
+        if row.last_synced_at is not None
+    ]
+    if not synced_times:
+        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
+        return cutoff.strftime("%Y-%m-%d")
+
+    oldest_sync = min(synced_times)
+    cutoff = oldest_sync - timedelta(hours=1)
+    max_lookback = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
+    if cutoff < max_lookback:
+        cutoff = max_lookback
+    return cutoff.strftime("%Y-%m-%d")
+
+
 def _symbol_has_cached_items(
     db: Session,
     *,
@@ -466,6 +512,13 @@ def refresh_feed_cache_for_symbols(
             break
         batch = pending[start : start + _FEED_BATCH_SIZE]
         batches_processed += 1
+        batch_from_date = _refresh_from_date_for_batch(
+            db,
+            user_id=user_id,
+            product=product,
+            batch=batch,
+            force_refresh=force_refresh,
+        )
         try:
             page = 1
             batch_upserted = 0
@@ -474,7 +527,7 @@ def refresh_feed_cache_for_symbols(
                     client,
                     product,
                     symbols=batch,
-                    from_date=from_date,
+                    from_date=batch_from_date,
                     to_date=to_date,
                     page=page,
                     limit=_FEED_PAGE_FETCH_LIMIT,
