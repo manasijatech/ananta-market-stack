@@ -5,7 +5,13 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api.v1 import alert_workflow_chat
 from app.main import app
-from app.schemas.alert import AlertCondition, AlertGraphDsl, AlertWorkflowCreate, AlertWorkflowDsl
+from app.schemas.alert import (
+    AlertCondition,
+    AlertFeedTriggerConfig,
+    AlertGraphDsl,
+    AlertWorkflowCreate,
+    AlertWorkflowDsl,
+)
 from app.schemas.alert_workflow_chat import AlertWorkflowChatSessionCreateIn
 from app.services.alert_workflow_chat import sessions as chat_sessions
 from app.services.alert_workflow_chat import snapshots as chat_snapshots
@@ -33,7 +39,7 @@ def _workflow_create(name: str = "AI draft") -> AlertWorkflowCreate:
         symbol="RELIANCE",
         exchange="NSE",
         workflow_dsl=AlertWorkflowDsl(
-            workflow_type="market_data",
+            workflow_type="alert",
             combine="all",
             conditions=[AlertCondition(field="ltp", operator="gte", value=100)],
         ),
@@ -145,3 +151,77 @@ def test_applying_valid_snapshot_updates_workflow_without_deploying():
     assert workflow.status == "draft"
     assert workflow.deployment_status in {"draft", "validated"}
     assert db.query(LiveSymbolSubscription).count() == 0
+
+
+def test_chat_session_allows_feed_only_workflow():
+    db = _db_session()
+    draft = AlertWorkflowCreate(
+        name="Feed draft",
+        description="Feed-only",
+        workflow_dsl=AlertWorkflowDsl(
+            workflow_type="alert",
+            broker_trigger={"enabled": False},
+            feed_trigger=AlertFeedTriggerConfig(enabled=True, products=["news"], source_scope="full_market"),
+            conditions=[AlertCondition(field="event", operator="always")],
+        ),
+        graph_dsl=AlertGraphDsl(),
+        editor_mode="rule",
+    )
+    session = chat_sessions.create_session(
+        db,
+        "user-1",
+        AlertWorkflowChatSessionCreateIn(title="Feed chat", draft_workflow=draft),
+    )
+    workflow = db.get(AlertWorkflow, session.workflow_id)
+    assert workflow is not None
+    dsl = chat_sessions.session_to_schema(db, session).workflow.workflow_dsl
+    assert dsl.workflow_type == "alert"
+    assert dsl.feed_trigger.enabled is True
+    assert dsl.broker_trigger.enabled is False
+
+
+def test_snapshot_rejects_both_triggers_disabled():
+    db = _db_session()
+    session = chat_sessions.create_session(
+        db,
+        "user-1",
+        AlertWorkflowChatSessionCreateIn(title="Draft chat", draft_workflow=_workflow_create()),
+    )
+    workflow_out = chat_sessions.session_to_schema(db, session).workflow
+    assert workflow_out is not None
+    payload = chat_snapshots.workflow_out_payload(workflow_out)
+    payload["workflow_dsl"]["broker_trigger"] = {"enabled": False}
+    payload["workflow_dsl"]["feed_trigger"] = {"enabled": False, "products": []}
+
+    snapshot = chat_snapshots.create_snapshot(
+        db,
+        session=session,
+        user_id="user-1",
+        workflow_id=session.workflow_id,
+        workflow_payload=payload,
+        label="Both off",
+    )
+    assert snapshot.valid is False
+    errors = chat_snapshots.snapshot_to_schema(snapshot).validation.get("errors") or []
+    assert any("trigger source" in str(err).lower() for err in errors)
+
+
+def test_validate_payload_accepts_hybrid_triggers():
+    payload = {
+        "name": "Hybrid",
+        "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
+            "feed_trigger": {
+                "enabled": True,
+                "products": ["announcements"],
+                "source_scope": "full_market",
+            },
+            "conditions": [{"field": "ltp", "operator": "gte", "value": 10}],
+            "notification": {"level": "info", "title_template": "{symbol}", "message_template": "{symbol}"},
+            "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
+        },
+    }
+    valid, validation, *_ = chat_snapshots.validate_workflow_payload(payload)
+    assert valid is True
+    assert validation["valid"] is True

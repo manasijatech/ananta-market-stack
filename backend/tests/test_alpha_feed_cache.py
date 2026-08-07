@@ -43,6 +43,92 @@ def test_feed_item_key_and_published_at():
     assert published.month == 8
 
 
+def test_payload_symbol_rejects_na_and_uses_fallback():
+    from app.services.alpha_feed_cache import _payload_symbol
+
+    assert _payload_symbol({"symbol": "N/A"}, "CIPLA") == "CIPLA"
+    assert _payload_symbol({"symbol": "n/a"}, None) is None
+    assert _payload_symbol({"symbol": "INFY"}, None) == "INFY"
+
+
+def test_should_include_market_wide_feed_threshold():
+    assert alpha_feed_cache._should_include_market_wide_feed(["CIPLA"]) is False
+    assert alpha_feed_cache._should_include_market_wide_feed([f"S{i}" for i in range(20)]) is False
+    assert alpha_feed_cache._should_include_market_wide_feed([f"S{i}" for i in range(50)]) is True
+
+
+def test_symbol_match_clauses_supports_colon_separated_symbols():
+    clause = alpha_feed_cache._symbol_match_clauses(["CIPLA"])
+    assert clause is not False
+
+
+def test_list_cached_feed_items_reads_db_before_refresh(monkeypatch):
+    from types import SimpleNamespace
+
+    calls: list[str] = []
+
+    def _fake_query(*_args, **_kwargs):
+        calls.append("query")
+        return {
+            "data": [{"id": "news-1", "symbol": "CIPLA"}],
+            "page": 1,
+            "limit": 20,
+            "has_next": True,
+            "total": 2,
+            "from_cache": True,
+        }
+
+    def _fake_refresh(*_args, **_kwargs):
+        calls.append("refresh")
+        return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 3}
+
+    monkeypatch.setattr(alpha_feed_cache, "_query_cached_feed_page", _fake_query)
+    monkeypatch.setattr(alpha_feed_cache, "refresh_feed_cache_for_symbols", _fake_refresh)
+
+    result = alpha_feed_cache.list_cached_feed_items(
+        SimpleNamespace(),
+        "u1",
+        "news",
+        ["CIPLA"],
+        page=1,
+        limit=20,
+    )
+    assert calls == ["query", "refresh"]
+    assert result["has_next"] is True
+    assert result["pending_symbols"] == 3
+
+
+def test_list_cached_feed_items_refresh_failure_still_returns_cache(monkeypatch):
+    from types import SimpleNamespace
+
+    def _fake_query(*_args, **_kwargs):
+        return {
+            "data": [{"id": "news-1", "symbol": "CIPLA"}],
+            "page": 1,
+            "limit": 20,
+            "has_next": False,
+            "total": 1,
+            "from_cache": True,
+        }
+
+    def _fake_refresh(*_args, **_kwargs):
+        raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(alpha_feed_cache, "_query_cached_feed_page", _fake_query)
+    monkeypatch.setattr(alpha_feed_cache, "refresh_feed_cache_for_symbols", _fake_refresh)
+
+    result = alpha_feed_cache.list_cached_feed_items(
+        SimpleNamespace(),
+        "u1",
+        "news",
+        ["CIPLA"],
+        page=1,
+        limit=20,
+    )
+    assert result["data"][0]["symbol"] == "CIPLA"
+    assert result["total"] == 1
+
+
 def test_price_snapshot_from_quote_payload():
     snapshot = _snapshot_from_quote_payload(
         {
@@ -109,3 +195,38 @@ def test_symbols_needing_sync_force_refresh_includes_full_watchlist():
         force_refresh=True,
     )
     assert pending == symbols
+
+
+def test_list_cached_feed_items_page_two_skips_refresh(monkeypatch):
+    from types import SimpleNamespace
+
+    refresh_called = {"value": False}
+
+    def _fake_query(*_args, **_kwargs):
+        return {
+            "data": [{"id": "news-2", "symbol": "CIPLA"}],
+            "page": 2,
+            "limit": 20,
+            "has_next": False,
+            "total": 2,
+            "from_cache": True,
+        }
+
+    def _fake_refresh(*_args, **_kwargs):
+        refresh_called["value"] = True
+        return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
+
+    monkeypatch.setattr(alpha_feed_cache, "_query_cached_feed_page", _fake_query)
+    monkeypatch.setattr(alpha_feed_cache, "refresh_feed_cache_for_symbols", _fake_refresh)
+    monkeypatch.setattr(alpha_feed_cache, "_symbols_needing_sync", lambda *_a, **_k: ["CIPLA", "RELIANCE"])
+
+    result = alpha_feed_cache.list_cached_feed_items(
+        SimpleNamespace(),
+        "u1",
+        "news",
+        ["CIPLA", "RELIANCE"],
+        page=2,
+        limit=20,
+    )
+    assert refresh_called["value"] is False
+    assert result["pending_symbols"] == 2

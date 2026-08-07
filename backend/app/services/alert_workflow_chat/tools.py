@@ -249,6 +249,33 @@ def workflow_get_authoring_docs(
                 "Do not use optional LLM context placeholders in notification templates. @price.full and @trigger.reason are only for the optional analysis prompt.",
                 "Do not use dotted brace placeholders such as {price.full} or {trigger.reason}; use available notification placeholders such as {trigger_reason}, {trigger_evidence}, and {feed_trigger_reason}.",
             ],
+            "trigger_sources": {
+                "workflow_type": "alert",
+                "broker_market_data": "Live broker quote ticks evaluated with conditions/DSL/targeting.",
+                "alpha_feed": "Ananta/Drishti websocket products with optional condition_prompt classifier.",
+                "semantics": "Enable either or both. When both are on, either source can fire (OR) with a shared cooldown.",
+            },
+            "feed_trigger": {
+                "products": ["news", "announcements", "earnings", "concalls", "alerts"],
+                "source_scopes": [
+                    "current_alpha_subscription",
+                    "watchlists",
+                    "preset_lists",
+                    "full_market",
+                ],
+                "notes": [
+                    "feed_trigger.enabled must be true for feed-only or hybrid workflows.",
+                    "products must be non-empty when feed is enabled.",
+                    "condition_prompt is optional; empty means deterministic product/category/scope matching only.",
+                ],
+            },
+            "price_to_news_pattern": [
+                "Enable broker_market_data trigger.",
+                "Target a watchlist or preset (for example Smallcap 250).",
+                "Use rolling_pct_change_gte with the requested percent and rising_edge.",
+                "Enable llm_analysis with @news/@announcements/@earnings/@concalls placeholders.",
+                "Use {llm_analysis} or append analysis in notification delivery.",
+            ],
             "presets": alert_svc.alert_presets(),
         }
         if include_registry:
@@ -597,6 +624,174 @@ def workflow_set_runtime_settings(
 
 
 @function_tool(strict_mode=False)
+def workflow_set_trigger_sources(
+    ctx: RunContextWrapper[WorkflowChatContext],
+    broker_market_data: bool | None = None,
+    alpha_feed: bool | None = None,
+    label: str | None = None,
+) -> dict[str, Any]:
+    """Enable or disable broker market-data and/or Ananta feed trigger sources on the unified alert workflow."""
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+
+        def patch(payload: dict[str, Any]) -> None:
+            dsl = dict(payload.get("workflow_dsl") or {})
+            broker = dict(dsl.get("broker_trigger") or {})
+            feed = dict(dsl.get("feed_trigger") or {})
+            if broker_market_data is not None:
+                broker["enabled"] = bool(broker_market_data)
+            if alpha_feed is not None:
+                feed["enabled"] = bool(alpha_feed)
+            if not broker.get("enabled") and not feed.get("enabled"):
+                raise ValueError("At least one trigger source must remain enabled")
+            dsl["workflow_type"] = "alert"
+            dsl["version"] = 3
+            dsl["broker_trigger"] = broker
+            dsl["feed_trigger"] = feed
+            payload["workflow_dsl"] = dsl
+
+        return _create_snapshot_from_patch(
+            context=context,
+            label=label or "Updated trigger sources",
+            changed_fields=["workflow_dsl.broker_trigger", "workflow_dsl.feed_trigger", "workflow_dsl.workflow_type"],
+            patcher=patch,
+        )
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workflow_set_feed_trigger(
+    ctx: RunContextWrapper[WorkflowChatContext],
+    enabled: bool | None = None,
+    products: list[str] | None = None,
+    announcement_categories: list[str] | None = None,
+    include_related_categories: bool | None = None,
+    condition_prompt: str | None = None,
+    source_scope: str | None = None,
+    watchlist_ids: list[str] | None = None,
+    preset_ids: list[str] | None = None,
+    include_all_watchlists: bool | None = None,
+    provider: str | None = None,
+    model_id: str | None = None,
+    temperature: float | None = None,
+    max_completion_tokens: int | None = None,
+    timeout_seconds: int | None = None,
+    label: str | None = None,
+) -> dict[str, Any]:
+    """Create a snapshot after configuring the Ananta websocket feed trigger."""
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+
+        def patch(payload: dict[str, Any]) -> None:
+            dsl = dict(payload.get("workflow_dsl") or {})
+            feed = dict(dsl.get("feed_trigger") or {})
+            broker = dict(dsl.get("broker_trigger") or {})
+            if enabled is not None:
+                feed["enabled"] = bool(enabled)
+            if products is not None:
+                feed["products"] = products
+            if announcement_categories is not None:
+                feed["announcement_categories"] = announcement_categories
+            if include_related_categories is not None:
+                feed["include_related_categories"] = bool(include_related_categories)
+            if condition_prompt is not None:
+                feed["condition_prompt"] = condition_prompt
+            if source_scope is not None:
+                feed["source_scope"] = source_scope
+            if watchlist_ids is not None:
+                feed["watchlist_ids"] = watchlist_ids
+            if preset_ids is not None:
+                feed["preset_ids"] = preset_ids
+            if include_all_watchlists is not None:
+                feed["include_all_watchlists"] = bool(include_all_watchlists)
+            if provider is not None:
+                feed["provider"] = provider or None
+            if model_id is not None:
+                feed["model_id"] = model_id or None
+            if temperature is not None:
+                feed["temperature"] = temperature
+            if max_completion_tokens is not None:
+                feed["max_completion_tokens"] = max_completion_tokens
+            if timeout_seconds is not None:
+                feed["timeout_seconds"] = timeout_seconds
+            if feed.get("enabled") and not broker.get("enabled", True):
+                broker["enabled"] = False
+            if feed.get("enabled") and broker.get("enabled") is None:
+                broker["enabled"] = True
+            dsl["workflow_type"] = "alert"
+            dsl["version"] = 3
+            dsl["broker_trigger"] = broker
+            dsl["feed_trigger"] = feed
+            payload["workflow_dsl"] = dsl
+
+        return _create_snapshot_from_patch(
+            context=context,
+            label=label or "Updated Ananta feed trigger",
+            changed_fields=["workflow_dsl.feed_trigger", "workflow_dsl.broker_trigger"],
+            patcher=patch,
+        )
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workflow_set_llm_analysis(
+    ctx: RunContextWrapper[WorkflowChatContext],
+    enabled: bool | None = None,
+    provider: str | None = None,
+    model_id: str | None = None,
+    prompt_template: str | None = None,
+    temperature: float | None = None,
+    max_completion_tokens: int | None = None,
+    timeout_seconds: int | None = None,
+    use_default_drishti_prompt: bool = False,
+    label: str | None = None,
+) -> dict[str, Any]:
+    """Create a snapshot after configuring optional post-trigger LLM analysis (including Drishti news placeholders)."""
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+
+        def patch(payload: dict[str, Any]) -> None:
+            from app.services.alert_llm_context import default_prompt_template
+
+            dsl = dict(payload.get("workflow_dsl") or {})
+            analysis = dict(dsl.get("llm_analysis") or {})
+            if enabled is not None:
+                analysis["enabled"] = bool(enabled)
+            if provider is not None:
+                analysis["provider"] = provider or None
+            if model_id is not None:
+                analysis["model_id"] = model_id or None
+            if use_default_drishti_prompt:
+                analysis["prompt_template"] = default_prompt_template()
+            elif prompt_template is not None:
+                analysis["prompt_template"] = prompt_template
+            if temperature is not None:
+                analysis["temperature"] = temperature
+            if max_completion_tokens is not None:
+                analysis["max_completion_tokens"] = max_completion_tokens
+            if timeout_seconds is not None:
+                analysis["timeout_seconds"] = timeout_seconds
+            if analysis.get("enabled") and not analysis.get("prompt_template"):
+                analysis["prompt_template"] = default_prompt_template()
+            dsl["llm_analysis"] = analysis
+            payload["workflow_dsl"] = dsl
+
+        return _create_snapshot_from_patch(
+            context=context,
+            label=label or "Updated LLM analysis",
+            changed_fields=["workflow_dsl.llm_analysis"],
+            patcher=patch,
+        )
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
 def workflow_validate_current(
     ctx: RunContextWrapper[WorkflowChatContext],
     workflow_payload: dict[str, Any] | None = None,
@@ -793,6 +988,9 @@ WORKFLOW_CHAT_TOOLS = [
     workflow_set_rule_conditions,
     workflow_set_notification_delivery,
     workflow_set_runtime_settings,
+    workflow_set_trigger_sources,
+    workflow_set_feed_trigger,
+    workflow_set_llm_analysis,
     workflow_validate_current,
     workflow_compile_preview,
     workflow_explain_current,

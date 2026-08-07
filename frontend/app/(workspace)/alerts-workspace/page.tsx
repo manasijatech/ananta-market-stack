@@ -66,13 +66,34 @@ function targetSummary(workflow: AlertWorkflow) {
         .join(" · ");
 }
 
+function resolveWorkflowTriggers(workflow: AlertWorkflow) {
+    const dsl = workflow.workflow_dsl;
+    const type = dsl.workflow_type;
+    const brokerEnabled = dsl.broker_trigger?.enabled ?? type !== "alpha_feed";
+    const feedEnabled = dsl.feed_trigger?.enabled ?? type === "alpha_feed";
+    return { brokerEnabled, feedEnabled };
+}
+
+function triggerSourceLabel(workflow: AlertWorkflow) {
+    const { brokerEnabled, feedEnabled } = resolveWorkflowTriggers(workflow);
+    const labels = [brokerEnabled ? "Broker" : null, feedEnabled ? "Feed" : null].filter(Boolean);
+    return labels.length ? labels.join(" + ") : "No triggers";
+}
+
 function triggerSummary(workflow: AlertWorkflow) {
-    if (workflow.workflow_dsl.workflow_type === "alpha_feed") {
-        const products = workflow.workflow_dsl.feed_trigger.products;
+    const dsl = workflow.workflow_dsl;
+    const { brokerEnabled, feedEnabled } = resolveWorkflowTriggers(workflow);
+    if (feedEnabled && !brokerEnabled) {
+        const products = dsl.feed_trigger.products;
         return products.length ? products.join(", ") : "Feed trigger";
     }
-    const conditions = workflow.workflow_dsl.conditions.length;
-    return `${conditions} ${conditions === 1 ? "condition" : "conditions"} · ${workflow.workflow_dsl.combine}`;
+    if (brokerEnabled && feedEnabled) {
+        const conditions = dsl.conditions.length;
+        const products = dsl.feed_trigger.products;
+        return `${conditions} broker · ${products.length ? products.join(", ") : "feed"}`;
+    }
+    const conditions = dsl.conditions.length;
+    return `${conditions} ${conditions === 1 ? "condition" : "conditions"} · ${dsl.combine}`;
 }
 
 function channelSummary(workflow: AlertWorkflow) {
@@ -387,9 +408,7 @@ function WorkflowCoverage({ workflows, runs }: { workflows: AlertWorkflow[]; run
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <div className="type-section-title truncate text-base">{workflow.name}</div>
-                                    <div className="type-meta mt-1">
-                                        {workflow.workflow_dsl.workflow_type.replace("_", " ")}
-                                    </div>
+                                    <div className="type-meta mt-1">{triggerSourceLabel(workflow)}</div>
                                 </div>
                                 <Badge
                                     size="sm"
@@ -467,18 +486,17 @@ function buildSetupSteps({
 }
 
 async function AlertsOverviewContent() {
-    const [activeWorkflows, inactiveWorkflows, unread, streamStatus, notifications, runs, channels] = await Promise.all(
-        [
-            getAlertWorkflows("active"),
-            getAlertWorkflows("inactive"),
-            getAlertUnreadCount(),
-            getLiveStreamsStatus(),
-            getAlertNotifications({ limit: 24 }),
-            getAlertHistory(36),
-            getAlertChannels()
-        ]
-    );
+    const [workflows, unread, streamStatus, notifications, runs, channels] = await Promise.all([
+        getAlertWorkflows(),
+        getAlertUnreadCount(),
+        getLiveStreamsStatus(),
+        getAlertNotifications({ limit: 24 }),
+        getAlertHistory(36),
+        getAlertChannels()
+    ]);
 
+    const activeWorkflows = workflows.filter((workflow) => workflow.status === "active");
+    const inactiveWorkflows = workflows.filter((workflow) => workflow.status === "inactive");
     const matchedRuns = runs.filter((run) => run.matched).length;
     const enabledChannels = enabledChannelCount(channels);
     const hasBroker = streamStatus.broker_statuses.length > 0;

@@ -12,6 +12,7 @@ from app.services.alerts_engine.conditions import (
     rolling_window_seconds,
 )
 from app.services.alerts_engine.dsl import validate_dsl_text
+from app.services.alerts_engine.dsl_normalize import broker_trigger_enabled, feed_trigger_enabled
 from app.services.alerts_engine.explain import explain_ast
 
 
@@ -98,17 +99,65 @@ def _validate_logic(node, errors: list[str]) -> None:
             errors.append("occurrence_window_seconds must be a number")
 
 
+def _feed_trigger_config(dsl: Any) -> Any:
+    if hasattr(dsl, "feed_trigger"):
+        return dsl.feed_trigger
+    if isinstance(dsl, dict):
+        return dsl.get("feed_trigger") or {}
+    return {}
+
+
+def _validate_trigger_sources(dsl: Any, errors: list[str]) -> None:
+    broker_on = broker_trigger_enabled(dsl)
+    feed_on = feed_trigger_enabled(dsl)
+    if not broker_on and not feed_on:
+        errors.append("At least one trigger source (broker market data or Ananta feed) must be enabled")
+    if not feed_on:
+        return
+    trigger = _feed_trigger_config(dsl)
+    products = getattr(trigger, "products", None) if not isinstance(trigger, dict) else trigger.get("products")
+    if not products:
+        errors.append("Ananta feed trigger requires at least one product")
+    source_scope = (
+        getattr(trigger, "source_scope", None) if not isinstance(trigger, dict) else trigger.get("source_scope")
+    ) or "current_alpha_subscription"
+    if source_scope == "watchlists":
+        watchlist_ids = (
+            getattr(trigger, "watchlist_ids", None) if not isinstance(trigger, dict) else trigger.get("watchlist_ids")
+        ) or []
+        include_all = (
+            getattr(trigger, "include_all_watchlists", False)
+            if not isinstance(trigger, dict)
+            else bool(trigger.get("include_all_watchlists"))
+        )
+        if not include_all and not watchlist_ids:
+            errors.append("Feed source scope 'watchlists' requires watchlist ids or include_all_watchlists")
+    if source_scope == "preset_lists":
+        preset_ids = (
+            getattr(trigger, "preset_ids", None) if not isinstance(trigger, dict) else trigger.get("preset_ids")
+        ) or []
+        if not preset_ids:
+            errors.append("Feed source scope 'preset_lists' requires preset_ids")
+
+
 def compile_workflow_dsl(dsl: Any) -> dict[str, Any]:
     workflow_ast = ensure_workflow_ast(dsl)
     dsl_text = getattr(dsl, "dsl_text", None) if hasattr(dsl, "dsl_text") else (dsl or {}).get("dsl_text")
     errors: list[str] = []
-    if dsl_text:
-        dsl_result = validate_dsl_text(str(dsl_text), workflow_ast)
-        errors.extend(dsl_result["errors"])
-        if dsl_result["valid"] and dsl_result["workflow_ast"]:
-            workflow_ast = AlertWorkflowAst(**dsl_result["workflow_ast"])
-    _validate_logic(workflow_ast.logic, errors)
+    _validate_trigger_sources(dsl, errors)
+    broker_on = broker_trigger_enabled(dsl)
+    if broker_on:
+        if dsl_text:
+            dsl_result = validate_dsl_text(str(dsl_text), workflow_ast)
+            errors.extend(dsl_result["errors"])
+            if dsl_result["valid"] and dsl_result["workflow_ast"]:
+                workflow_ast = AlertWorkflowAst(**dsl_result["workflow_ast"])
+        _validate_logic(workflow_ast.logic, errors)
     explanation = explain_ast(workflow_ast)
+    explanation["trigger_sources"] = {
+        "broker_market_data": broker_on,
+        "alpha_feed": feed_trigger_enabled(dsl),
+    }
     return {
         "valid": not errors,
         "errors": errors,

@@ -36,6 +36,8 @@ git pull
 docker compose up -d --build
 ```
 
+On startup the backend runs Alembic migrations automatically. Alert workflow DSL rows are upgraded in place from the older exclusive `market_data` / `alpha_feed` types into the unified `alert` shape (broker and/or Ananta feed trigger flags). Existing workflows keep firing after upgrade; system templates are upserted by slug without rewriting your saved workflow copies.
+
 This rebuilds images and recreates containers if needed. Recreating containers is normal; persistent data is kept in Docker named volumes. It preserves:
 
 - `ananta-market-stack_backend_data` - SQLite app database, backend data, and generated desktop alert audio under `/data/alert-audio`.

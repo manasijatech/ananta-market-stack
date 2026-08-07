@@ -444,8 +444,24 @@ const dayOptions = [
 
 const targetListExample = "RELIANCE,NSE\nTCS,NSE\nINFY,NSE";
 
-function activePeriodDefaults(workflowType: "market_data" | "alpha_feed") {
-    return workflowType === "alpha_feed" ? defaultAlphaFeedActivePeriod : defaultMarketDataActivePeriod;
+function activePeriodDefaults(feedOnly: boolean) {
+    return feedOnly ? defaultAlphaFeedActivePeriod : defaultMarketDataActivePeriod;
+}
+
+function resolveTriggerFlags(dsl: AlertWorkflowDsl | undefined | null): {
+    brokerEnabled: boolean;
+    feedEnabled: boolean;
+} {
+    const type = dsl?.workflow_type ?? "alert";
+    const brokerExplicit = dsl?.broker_trigger?.enabled;
+    const feedExplicit = dsl?.feed_trigger?.enabled;
+    if (type === "alpha_feed") {
+        return { brokerEnabled: brokerExplicit ?? false, feedEnabled: feedExplicit ?? true };
+    }
+    if (type === "market_data") {
+        return { brokerEnabled: brokerExplicit ?? true, feedEnabled: feedExplicit ?? false };
+    }
+    return { brokerEnabled: brokerExplicit ?? true, feedEnabled: feedExplicit ?? false };
 }
 
 const fallbackLlmPrompt = `Analyze why this alert triggered for {symbol}.
@@ -1338,13 +1354,17 @@ export function WorkflowEditor({
     const presets = asArray(rawPresets);
     const watchlists = asArray(rawWatchlists);
     const [isPending, startTransition] = useTransition();
+    const [isSaving, setIsSaving] = useState(false);
+    const [isTestingAlert, setIsTestingAlert] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [matchPreview, setMatchPreview] = useState("");
     const [chatWorkflow, setChatWorkflow] = useState<AlertWorkflow | null>(null);
     const [editorMode, setEditorMode] = useState<EditorMode>(normalizeEditorMode(initialWorkflow?.editor_mode));
-    const initialWorkflowType = initialWorkflow?.workflow_dsl.workflow_type ?? "market_data";
-    const [workflowType, setWorkflowType] = useState<"market_data" | "alpha_feed">(initialWorkflowType);
+    const initialTriggers = resolveTriggerFlags(initialWorkflow?.workflow_dsl);
+    const [brokerTriggerEnabled, setBrokerTriggerEnabled] = useState(initialTriggers.brokerEnabled);
+    const [feedTriggerEnabled, setFeedTriggerEnabled] = useState(initialTriggers.feedEnabled);
     const [name, setName] = useState(initialWorkflow?.name ?? "");
     const [description, setDescription] = useState(initialWorkflow?.description ?? "");
     const [accountId, setAccountId] = useState(initialWorkflow?.account_id ?? accounts[0]?.id ?? "");
@@ -1387,7 +1407,9 @@ export function WorkflowEditor({
     const [cooldownSeconds, setCooldownSeconds] = useState(
         String(initialWorkflow?.workflow_dsl.cooldown_seconds ?? 300)
     );
-    const initialActivePeriodDefaults = activePeriodDefaults(initialWorkflowType);
+    const initialActivePeriodDefaults = activePeriodDefaults(
+        !initialTriggers.brokerEnabled && initialTriggers.feedEnabled
+    );
     const initialActivePeriod = {
         ...initialActivePeriodDefaults,
         ...(initialWorkflow?.workflow_dsl.active_period ?? {})
@@ -1577,7 +1599,7 @@ export function WorkflowEditor({
     const suggestedDsl = useMemo(() => conditionsToDsl(combine, conditions), [combine, conditions]);
     const suggestedCopy = useMemo(() => suggestedTemplates(conditions, combine), [combine, conditions]);
     const livePreviewAllowed = useMemo(() => {
-        if (workflowType !== "market_data" || !activePeriodEnabled) return true;
+        if (!brokerTriggerEnabled || !activePeriodEnabled) return true;
         const current = timezoneParts(activeTimezone);
         if (!current) return true;
         if (!activeDays.includes(current.day)) return false;
@@ -1585,7 +1607,7 @@ export function WorkflowEditor({
         const end = timeToMinutes(activeSessionEnd);
         if (start === null || end === null) return true;
         return isWithinSession(current.minutes, start, end);
-    }, [activeDays, activePeriodEnabled, activeSessionEnd, activeSessionStart, activeTimezone, workflowType]);
+    }, [activeDays, activePeriodEnabled, activeSessionEnd, activeSessionStart, activeTimezone, brokerTriggerEnabled]);
     const dslSuggestions = useMemo<DslSuggestion[]>(() => {
         const registrySuggestions: DslSuggestion[] = [
             ...(conditionRegistry?.fields ?? []).map((item) => ({
@@ -1827,10 +1849,18 @@ export function WorkflowEditor({
         };
     }, [committedSymbolSearch, exchange, startTransition, symbolSearch]);
 
+    const targetSymbolKey = useMemo(
+        () =>
+            Array.from(
+                new Set(targetEntries.map((entry) => entry.symbol.trim().toUpperCase()).filter(Boolean))
+            )
+                .sort()
+                .join("|"),
+        [targetEntries]
+    );
+
     useEffect(() => {
-        const symbols = Array.from(
-            new Set(targetEntries.map((entry) => entry.symbol.trim().toUpperCase()).filter(Boolean))
-        );
+        const symbols = targetSymbolKey ? targetSymbolKey.split("|") : [];
         if (!symbols.length) {
             setTargetMetadata({});
             return;
@@ -1854,7 +1884,7 @@ export function WorkflowEditor({
         return () => {
             cancelled = true;
         };
-    }, [startTransition, targetEntries]);
+    }, [startTransition, targetSymbolKey]);
 
     useEffect(() => {
         const symbols = universeSymbolKey ? universeSymbolKey.split("|") : [];
@@ -2212,8 +2242,8 @@ export function WorkflowEditor({
         );
     }
 
-    function applyActivePeriodDefaults(nextType: "market_data" | "alpha_feed") {
-        const defaults = activePeriodDefaults(nextType);
+    function applyActivePeriodDefaults(feedOnly: boolean) {
+        const defaults = activePeriodDefaults(feedOnly);
         setActivePeriodEnabled(defaults.enabled);
         setActiveTimezone(defaults.timezone);
         setActiveDays(defaults.days);
@@ -2336,11 +2366,16 @@ export function WorkflowEditor({
     function workflowPayload() {
         const targeting = workflowTargetingPayload();
         const primaryTarget = targeting.entries[0];
-        let effectiveConditions =
-            workflowType === "alpha_feed" ? [{ operator: "always", field: "event" }] : conditions;
+        const brokerOn = brokerTriggerEnabled;
+        const feedOn = feedTriggerEnabled;
+        let effectiveConditions = brokerOn
+            ? conditions
+            : feedOn
+              ? [{ operator: "always", field: "event" }]
+              : conditions;
         let effectiveCombine = combine;
         let effectiveWorkflowAst = workflowAstPayload(targeting, effectiveConditions) as Record<string, unknown>;
-        if (workflowType !== "alpha_feed" && dslText.trim()) {
+        if (brokerOn && dslText.trim()) {
             const parsedAst = compileLocalDslToAst(
                 dslText,
                 effectiveWorkflowAst as unknown as Record<string, unknown>
@@ -2357,8 +2392,8 @@ export function WorkflowEditor({
             }
         }
         const workflowDsl: AlertWorkflowDsl = {
-            version: 2,
-            workflow_type: workflowType,
+            version: 3,
+            workflow_type: "alert",
             combine: effectiveCombine,
             cooldown_seconds: Number(cooldownSeconds || 0),
             conditions: effectiveConditions,
@@ -2370,8 +2405,11 @@ export function WorkflowEditor({
             },
             channels: channelSelection(),
             llm_analysis: llmAnalysisPayload(),
+            broker_trigger: {
+                enabled: brokerOn
+            },
             feed_trigger: {
-                enabled: workflowType === "alpha_feed",
+                enabled: feedOn,
                 products: feedProducts as AlertWorkflowDsl["feed_trigger"]["products"],
                 announcement_categories:
                     announcementsEnabled && feedCategoryFilterEnabled ? feedAnnouncementCategories : [],
@@ -2391,7 +2429,7 @@ export function WorkflowEditor({
             active_period: {
                 enabled: activePeriodEnabled,
                 timezone: activeTimezone.trim() || "Asia/Kolkata",
-                days: activeDays.length ? activeDays : activePeriodDefaults(workflowType).days,
+                days: activeDays.length ? activeDays : activePeriodDefaults(!brokerOn && feedOn).days,
                 sessions: [
                     {
                         label: activeSessionLabel.trim() || "Regular market",
@@ -2404,7 +2442,7 @@ export function WorkflowEditor({
                 segments: csvList(activeSegments),
                 instrument_types: csvList(activeInstrumentTypes)
             },
-            dsl_text: dslText.trim() || null,
+            dsl_text: brokerOn ? dslText.trim() || null : null,
             workflow_ast: effectiveWorkflowAst,
             validation_status: "unknown",
             compiled_summary: {}
@@ -2703,8 +2741,8 @@ export function WorkflowEditor({
         const nextSymbol = primaryTarget?.symbol ?? workflow.symbol ?? "";
         const nextExchange = primaryTarget?.exchange ?? workflow.exchange ?? "NSE";
         const nextInstrument = primaryTarget?.instrument_ref ?? workflow.instrument_ref ?? {};
-        const nextWorkflowType = dsl.workflow_type ?? "market_data";
-        const nextActivePeriodDefaults = activePeriodDefaults(nextWorkflowType);
+        const nextTriggers = resolveTriggerFlags(dsl);
+        const nextActivePeriodDefaults = activePeriodDefaults(!nextTriggers.brokerEnabled && nextTriggers.feedEnabled);
         const nextActivePeriod = {
             ...nextActivePeriodDefaults,
             ...(dsl.active_period ?? {})
@@ -2728,7 +2766,8 @@ export function WorkflowEditor({
         setDescription(workflow.description ?? "");
         setAccountId(workflow.account_id ?? accounts[0]?.id ?? "");
         setBrokerCode(workflow.broker_code ?? "");
-        setWorkflowType(nextWorkflowType);
+        setBrokerTriggerEnabled(nextTriggers.brokerEnabled);
+        setFeedTriggerEnabled(nextTriggers.feedEnabled);
         setSymbol(nextSymbol);
         setExchange(nextExchange);
         setInstrumentRef(nextInstrument);
@@ -2818,7 +2857,7 @@ export function WorkflowEditor({
         syncVisualBuilderFromAst(localAst, { silent: true });
     }, [dslText]);
 
-    function save() {
+    async function save() {
         setError("");
         setNotice("");
         const saveBlockReason = getSaveBlockReason();
@@ -2826,35 +2865,39 @@ export function WorkflowEditor({
             setError(saveBlockReason);
             return;
         }
-        startTransition(async () => {
-            try {
-                const payload = workflowPayload();
-                const workflow = persistedWorkflowId
-                    ? await updateAlertWorkflow(persistedWorkflowId, payload)
-                    : await createAlertWorkflow(payload);
-                setChatWorkflow(workflow);
-                setNotice(persistedWorkflowId ? "Workflow saved." : "Workflow created.");
-                if (persistedWorkflowId) {
-                    if (!initialWorkflow?.id) {
-                        router.push(`/alerts-workspace/workflows/${workflow.id}`);
-                    }
-                    router.refresh();
-                } else {
+        setIsSaving(true);
+        try {
+            const payload = workflowPayload();
+            const workflow = persistedWorkflowId
+                ? await updateAlertWorkflow(persistedWorkflowId, payload)
+                : await createAlertWorkflow(payload);
+            setChatWorkflow(workflow);
+            setNotice(persistedWorkflowId ? "Workflow saved." : "Workflow created.");
+            if (persistedWorkflowId) {
+                if (!initialWorkflow?.id) {
                     router.push(`/alerts-workspace/workflows/${workflow.id}`);
-                    router.refresh();
                 }
-            } catch (caught) {
-                notifyAlphaCreditWarning(caught);
-                setError(caught instanceof Error ? caught.message : "Could not save workflow.");
+                router.refresh();
+            } else {
+                router.push(`/alerts-workspace/workflows/${workflow.id}`);
+                router.refresh();
             }
-        });
+        } catch (caught) {
+            notifyAlphaCreditWarning(caught);
+            setError(caught instanceof Error ? caught.message : "Could not save workflow.");
+        } finally {
+            setIsSaving(false);
+        }
     }
 
     function getSaveBlockReason() {
         if (!name.trim()) {
             return "Enter a workflow name before creating this workflow.";
         }
-        if (workflowType === "alpha_feed") {
+        if (!brokerTriggerEnabled && !feedTriggerEnabled) {
+            return "Enable at least one trigger source: broker market data and/or Ananta websocket feed.";
+        }
+        if (feedTriggerEnabled) {
             if (!feedProducts.length) {
                 return "Select at least one feed product before creating this workflow.";
             }
@@ -2872,25 +2915,6 @@ export function WorkflowEditor({
             if (announcementsEnabled && feedCategoryFilterEnabled && !feedAnnouncementCategories.length) {
                 return "Select at least one announcement category, or switch back to all categories.";
             }
-            const minValue = numeric(marketCapMin);
-            const maxValue = numeric(marketCapMax);
-            if (marketCapMode === "custom") {
-                if (minValue === null && maxValue === null) {
-                    return "Enter at least one market cap boundary, or switch the filter back to all market caps.";
-                }
-                if (minValue !== null && maxValue !== null && minValue > maxValue) {
-                    return "Market cap `from` cannot be greater than `to`.";
-                }
-            }
-            return null;
-        }
-        if (targetMode === "single_symbol") {
-            return symbol.trim() ? null : "Select a symbol target before creating this workflow.";
-        }
-        if (targetMode === "symbol_list") {
-            return targetEntries.length > 0
-                ? null
-                : "Add at least one symbol to the target list before creating this workflow.";
         }
         const minValue = numeric(marketCapMin);
         const maxValue = numeric(marketCapMax);
@@ -2901,6 +2925,17 @@ export function WorkflowEditor({
             if (minValue !== null && maxValue !== null && minValue > maxValue) {
                 return "Market cap `from` cannot be greater than `to`.";
             }
+        }
+        if (!brokerTriggerEnabled) {
+            return null;
+        }
+        if (targetMode === "single_symbol") {
+            return symbol.trim() ? null : "Select a symbol target before creating this workflow.";
+        }
+        if (targetMode === "symbol_list") {
+            return targetEntries.length > 0
+                ? null
+                : "Add at least one symbol to the target list before creating this workflow.";
         }
         return selectedWatchlistId ? null : "Select a watchlist before creating this workflow.";
     }
@@ -3010,15 +3045,18 @@ export function WorkflowEditor({
         if (!persistedWorkflowId) return;
         setError("");
         setMatchPreview("");
-        startTransition(async () => {
+        setIsTestingAlert(true);
+        void (async () => {
             try {
                 const result = await sendWorkflowTestNotification(persistedWorkflowId, buildPreviewTick());
                 setMatchPreview(`${result.message} Notification id: ${result.notification_id}`);
             } catch (caught) {
                 notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not send test alert.");
+            } finally {
+                setIsTestingAlert(false);
             }
-        });
+        })();
     }
 
     function requestLlmCreditConfirmation(action: "preview" | "test") {
@@ -3112,7 +3150,8 @@ export function WorkflowEditor({
             return;
         }
         setError("");
-        startTransition(async () => {
+        setIsDeleting(true);
+        void (async () => {
             try {
                 await deleteAlertWorkflow(persistedWorkflowId);
                 router.push("/alerts-workspace/workflows");
@@ -3120,8 +3159,9 @@ export function WorkflowEditor({
             } catch (caught) {
                 notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not delete workflow.");
+                setIsDeleting(false);
             }
-        });
+        })();
     }
 
     function removeTarget(index: number) {
@@ -3279,14 +3319,13 @@ export function WorkflowEditor({
     let visibleStepIndex = 1;
     const nextStep = () => `Step ${visibleStepIndex++}`;
     const workflowBasicsStep = nextStep();
-    const marketWindowStep = workflowType === "market_data" ? nextStep() : "";
-    const feedWindowStep = workflowType === "alpha_feed" ? nextStep() : "";
-    const feedTriggerStep = workflowType === "alpha_feed" ? nextStep() : "";
-    const targetStep = workflowType === "market_data" ? nextStep() : "";
+    const marketWindowStep = nextStep();
+    const feedTriggerStep = feedTriggerEnabled ? nextStep() : "";
+    const targetStep = brokerTriggerEnabled ? nextStep() : "";
     const marketCapStep = nextStep();
     const buildTriggerStep = nextStep();
     const optionalAnalysisStep = nextStep();
-    const advancedDeploymentStep = nextStep();
+    const advancedDeploymentStep = brokerTriggerEnabled ? nextStep() : "";
     const deliveryLifecycleStep = nextStep();
     const cachedPreview = previewCacheRef.current[previewTargetKey];
     const displayedPreview: PreviewState = hasCurrentPreview
@@ -3300,7 +3339,13 @@ export function WorkflowEditor({
         activeInstrument.symbol &&
         (targetMode !== "single_symbol" || selectedSearchLabel || hasCurrentPreview || cachedPreview)
     );
-    const hasPreviewTarget = workflowType === "market_data" && hasSelectedPreviewTarget;
+    const hasPreviewTarget = brokerTriggerEnabled && hasSelectedPreviewTarget;
+    const triggerSourceSummary = [
+        brokerTriggerEnabled ? "Broker" : null,
+        feedTriggerEnabled ? "Feed" : null
+    ]
+        .filter(Boolean)
+        .join(" + ") || "None";
 
     function toggleFeedProduct(product: string, checked: boolean) {
         setFeedProducts((current) =>
@@ -3484,35 +3529,51 @@ export function WorkflowEditor({
                         <StepHeader
                             step={workflowBasicsStep}
                             title="Workflow basics"
-                            description={
-                                workflowType === "alpha_feed"
-                                    ? "Set the workflow identity first so the trigger mode and naming are clear before you configure the feed source."
-                                    : "Set the workflow identity first so the trigger mode and naming are clear before you configure the market window or targets."
-                            }
+                            description="Enable broker ticks and/or Ananta feed as trigger sources, then name the workflow. Either source can fire; both share cooldown, notifications, and optional LLM analysis."
                         />
-                        <div className="grid max-w-3xl items-start gap-3 min-[760px]:grid-cols-[220px_minmax(0,360px)]">
-                            <Label className="grid content-start self-start gap-2 text-sm">
-                                <FieldLabel>Workflow type</FieldLabel>
-                                <SimpleSelect
-                                    className="h-9 max-w-full border border-input bg-background px-3 text-sm"
-                                    onValueChange={(nextType) => {
-                                        const typedType = nextType as "market_data" | "alpha_feed";
-                                        setWorkflowType(typedType);
-                                        applyActivePeriodDefaults(typedType);
-                                    }}
-                                    options={[
-                                        { value: "market_data", label: "Broker market data trigger" },
-                                        { value: "alpha_feed", label: "Ananta websocket feed trigger" }
-                                    ]}
-                                    value={workflowType}
-                                />
+                        <div className="grid max-w-3xl gap-3">
+                            <div className="grid gap-2">
+                                <FieldLabel>Trigger sources</FieldLabel>
+                                <div className="flex flex-wrap gap-4">
+                                    <Label className="flex items-center gap-2 text-sm">
+                                        <Checkbox
+                                            checked={brokerTriggerEnabled}
+                                            onCheckedChange={(checked) => {
+                                                const next = Boolean(checked);
+                                                setBrokerTriggerEnabled(next);
+                                                if (!next && !feedTriggerEnabled) {
+                                                    setFeedTriggerEnabled(true);
+                                                    applyActivePeriodDefaults(true);
+                                                } else if (next && !feedTriggerEnabled) {
+                                                    applyActivePeriodDefaults(false);
+                                                }
+                                            }}
+                                        />
+                                        Broker market data
+                                    </Label>
+                                    <Label className="flex items-center gap-2 text-sm">
+                                        <Checkbox
+                                            checked={feedTriggerEnabled}
+                                            onCheckedChange={(checked) => {
+                                                const next = Boolean(checked);
+                                                setFeedTriggerEnabled(next);
+                                                if (!next && !brokerTriggerEnabled) {
+                                                    setBrokerTriggerEnabled(true);
+                                                    applyActivePeriodDefaults(false);
+                                                } else if (next && !brokerTriggerEnabled) {
+                                                    applyActivePeriodDefaults(true);
+                                                }
+                                            }}
+                                        />
+                                        Ananta websocket feed
+                                    </Label>
+                                </div>
                                 <HelpText>
-                                    {workflowType === "alpha_feed"
-                                        ? "This workflow analyzes stored Ananta websocket items from your configured feed symbols, watchlists, presets, or full-market tier."
-                                        : "This workflow evaluates broker quote ticks first, then optionally runs LLM analysis after a trigger."}
+                                    Active sources: {triggerSourceSummary}. Broker evaluates live quote ticks; feed
+                                    evaluates Drishti/Ananta websocket items. Enable both for OR semantics.
                                 </HelpText>
-                            </Label>
-                            <Label className="grid content-start self-start gap-2 text-sm">
+                            </div>
+                            <Label className="grid content-start self-start max-w-md gap-2 text-sm">
                                 <FieldLabel>Workflow name</FieldLabel>
                                 <Input
                                     onChange={(event) => setName(event.target.value)}
@@ -3535,12 +3596,11 @@ export function WorkflowEditor({
                         </Label>
                     </div>
 
-                    {workflowType === "market_data" ? (
-                        <div className="max-w-5xl rounded-lg border border-border p-3">
+                    <div className="max-w-5xl rounded-lg border border-border p-3">
                             <StepHeader
                                 step={marketWindowStep}
-                                title="Market window"
-                                description="Broker market-data workflows ignore ticks outside this window, preventing stale post-close quotes from creating alerts."
+                                title="Active period"
+                                description="Shared schedule for enabled triggers. Broker ticks outside this window are ignored; feed events are also skipped outside the window when enforcement is on."
                                 action={
                                     <Label className="flex items-center gap-2 text-sm">
                                         <Checkbox
@@ -3682,91 +3742,8 @@ export function WorkflowEditor({
                                 ) : null}
                             </div>
                         </div>
-                    ) : null}
 
-                    {workflowType === "alpha_feed" ? (
-                        <div className="max-w-5xl rounded-lg border border-border p-3">
-                            <StepHeader
-                                step={feedWindowStep}
-                                title="Feed window"
-                                description="Websocket feed workflows only evaluate items inside this window, so category filters, trigger LLM usage, and notifications are skipped outside your chosen times."
-                                action={
-                                    <Label className="flex items-center gap-2 text-sm">
-                                        <Checkbox
-                                            checked={activePeriodEnabled}
-                                            onCheckedChange={(checked) => setActivePeriodEnabled(Boolean(checked))}
-                                        />
-                                        Enforce active period
-                                    </Label>
-                                }
-                            />
-                            <div className="grid max-w-2xl items-start gap-3 min-[760px]:grid-cols-[minmax(0,280px)_100px_100px]">
-                                <Label className="grid content-start self-start gap-2 text-sm">
-                                    <FieldLabel>Timezone</FieldLabel>
-                                    <Input
-                                        onChange={(event) => setActiveTimezone(event.target.value)}
-                                        placeholder="Asia/Kolkata"
-                                        value={activeTimezone}
-                                    />
-                                    <HelpText>
-                                        Feed workflows default to always-on timing in `Asia/Kolkata`, but you can narrow
-                                        the window if needed.
-                                    </HelpText>
-                                </Label>
-                                <Label className="grid content-start self-start gap-2 text-sm">
-                                    <FieldLabel>Start</FieldLabel>
-                                    <Input
-                                        onChange={(event) => setActiveSessionStart(event.target.value)}
-                                        placeholder="00:00"
-                                        value={activeSessionStart}
-                                    />
-                                    <HelpText>Window start time.</HelpText>
-                                </Label>
-                                <Label className="grid content-start self-start gap-2 text-sm">
-                                    <FieldLabel>End</FieldLabel>
-                                    <Input
-                                        onChange={(event) => setActiveSessionEnd(event.target.value)}
-                                        placeholder="23:59"
-                                        value={activeSessionEnd}
-                                    />
-                                    <HelpText>Window end time.</HelpText>
-                                </Label>
-                            </div>
-                            <div className="mt-3 grid max-w-3xl items-start gap-3 min-[760px]:grid-cols-[minmax(0,280px)_1fr]">
-                                <Label className="grid content-start self-start gap-2 text-sm">
-                                    <FieldLabel>Session label</FieldLabel>
-                                    <Input
-                                        onChange={(event) => setActiveSessionLabel(event.target.value)}
-                                        placeholder="Always active"
-                                        value={activeSessionLabel}
-                                    />
-                                    <HelpText>Saved with runtime evaluation metadata.</HelpText>
-                                </Label>
-                                <div className="grid content-start self-start gap-2">
-                                    <FieldLabel>Days</FieldLabel>
-                                    <div className="flex flex-wrap gap-3">
-                                        {dayOptions.map(([day, label]) => (
-                                            <Label className="flex items-center gap-1.5 text-sm" key={day}>
-                                                <Checkbox
-                                                    checked={activeDays.includes(day)}
-                                                    onCheckedChange={(checked) =>
-                                                        toggleActiveDay(day, Boolean(checked))
-                                                    }
-                                                />
-                                                {label}
-                                            </Label>
-                                        ))}
-                                    </div>
-                                    <HelpText>
-                                        Feed workflows default to all seven days, but you can restrict them to any
-                                        custom schedule.
-                                    </HelpText>
-                                </div>
-                            </div>
-                        </div>
-                    ) : null}
-
-                    {workflowType === "alpha_feed" ? (
+                    {feedTriggerEnabled ? (
                         <div className="max-w-5xl rounded-lg border border-border p-3">
                             <StepHeader
                                 step={feedTriggerStep}
@@ -4084,7 +4061,9 @@ export function WorkflowEditor({
                                 />
                             </div>
                         </div>
-                    ) : (
+                    ) : null}
+
+                    {brokerTriggerEnabled ? (
                         <div
                             className={cn(
                                 "grid gap-4",
@@ -4697,7 +4676,7 @@ export function WorkflowEditor({
                                 </div>
                             ) : null}
                         </div>
-                    )}
+                    ) : null}
                 </div>
             </div>
 
@@ -4707,9 +4686,11 @@ export function WorkflowEditor({
                     step={marketCapStep}
                     title="Market cap filter"
                     description={
-                        workflowType === "alpha_feed"
+                        feedTriggerEnabled && !brokerTriggerEnabled
                             ? "Custom ranges reject feed items before category checks or trigger-LLM classification. Leave it on all market caps to skip the check entirely."
-                            : "Custom ranges are checked only after the rule conditions match. Leave it on all market caps to avoid any extra market cap lookup."
+                            : feedTriggerEnabled && brokerTriggerEnabled
+                              ? "Applies to both broker matches and feed items. Leave it on all market caps to skip the check."
+                              : "Custom ranges are checked only after the rule conditions match. Leave it on all market caps to avoid any extra market cap lookup."
                     }
                 />
                 <div className="grid gap-3">
@@ -4833,9 +4814,13 @@ export function WorkflowEditor({
                 <div className="grid gap-3 rounded-lg border border-border p-3">
                     <div className="max-w-[760px]">
                         <div className="type-step-eyebrow">{buildTriggerStep}</div>
-                        <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">Build trigger</h2>
+                        <h2 className="mt-1 text-xl font-heading font-semibold leading-6 tracking-tight text-foreground">
+                            {brokerTriggerEnabled ? "Build trigger" : "Alert content"}
+                        </h2>
                         <HelpText className="mt-1.5">
-                            Start with the rule logic first, then refine the outgoing alert content underneath it.
+                            {brokerTriggerEnabled
+                                ? "Start with the rule logic first, then refine the outgoing alert content underneath it."
+                                : "Configure the notification title and message for Ananta feed matches. Broker rule conditions are hidden while the broker trigger is off."}
                         </HelpText>
                     </div>
                     <RuleEditor
@@ -5161,6 +5146,7 @@ export function WorkflowEditor({
                 </>
             </div>
 
+            {brokerTriggerEnabled ? (
             <div className="grid max-w-5xl gap-3 rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="max-w-[760px]">
@@ -5356,6 +5342,7 @@ export function WorkflowEditor({
                     ) : null}
                 </>
             </div>
+            ) : null}
 
             <div className="grid max-w-5xl gap-3 rounded-lg border border-border p-3">
                 <div>
@@ -5450,17 +5437,33 @@ export function WorkflowEditor({
                 </div>
 
                 <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-                    <Button disabled={isPending} onClick={save} type="button">
-                        {isPending ? "Saving..." : persistedWorkflowId ? "Save workflow" : "Create workflow"}
+                    <Button disabled={isSaving || isDeleting} onClick={() => void save()} type="button">
+                        {isSaving
+                            ? persistedWorkflowId
+                                ? "Saving..."
+                                : "Creating..."
+                            : persistedWorkflowId
+                              ? "Save workflow"
+                              : "Create workflow"}
                     </Button>
                     {persistedWorkflowId ? (
-                        <Button disabled={isPending} onClick={sendTestAlert} type="button" variant="secondary">
-                            Send test alert
+                        <Button
+                            disabled={isSaving || isTestingAlert || isDeleting}
+                            onClick={sendTestAlert}
+                            type="button"
+                            variant="secondary"
+                        >
+                            {isTestingAlert ? "Sending..." : "Send test alert"}
                         </Button>
                     ) : null}
                     {persistedWorkflowId ? (
-                        <Button disabled={isPending} onClick={removeWorkflow} type="button" variant="destructive">
-                            Delete workflow
+                        <Button
+                            disabled={isSaving || isTestingAlert || isDeleting}
+                            onClick={removeWorkflow}
+                            type="button"
+                            variant="destructive"
+                        >
+                            {isDeleting ? "Deleting..." : "Delete workflow"}
                         </Button>
                     ) : null}
                 </div>
@@ -5475,7 +5478,7 @@ export function WorkflowEditor({
             </div>
             <WorkflowAiChatPanel
                 currentWorkflowId={persistedWorkflowId || null}
-                disabled={workflowType !== "market_data"}
+                disabled={false}
                 getEditorPayload={() => workflowPayload() as Record<string, unknown>}
                 llmProviders={llmProviders}
                 onWorkflowApplied={applyWorkflowToEditor}

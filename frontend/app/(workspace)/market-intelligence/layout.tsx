@@ -1,11 +1,13 @@
 import { parseActionError } from "@/components/brokers/action-error";
 import { MarketIntelligenceChrome } from "@/components/market-intelligence/market-intelligence-chrome";
 import {
-    ALPHA_SYMBOL_LIMIT,
+    ALPHA_METADATA_BATCH_SIZE,
     emptyMarketIntelligenceFeeds,
+    emptyMarketIntelligenceHasMore,
     symbolsFromCoverageGroups,
     watchlistCoverageGroups,
-    type MarketIntelligenceFeeds
+    type MarketIntelligenceFeeds,
+    type MarketIntelligenceHasMore,
 } from "@/components/market-intelligence/market-intelligence-data";
 import { getCachedAlphaFeed } from "@/service/actions/alpha/feeds";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
@@ -31,10 +33,33 @@ function todayIsoDate(): string {
 type InitialFeedsResult = {
     creditWarningMessage: string | null;
     feeds: MarketIntelligenceFeeds;
+    hasMoreBySection: MarketIntelligenceHasMore;
 };
 
+function hasMoreFromResponse(
+    result: PromiseSettledResult<{ has_next?: boolean }>
+): boolean {
+    return result.status === "fulfilled" ? Boolean(result.value.has_next) : false;
+}
+
+async function loadAllSymbolMetadata(symbols: string[]): Promise<AlphaSymbolMetadata[]> {
+    if (!symbols.length) return [];
+    const chunks: string[][] = [];
+    for (let index = 0; index < symbols.length; index += ALPHA_METADATA_BATCH_SIZE) {
+        chunks.push(symbols.slice(index, index + ALPHA_METADATA_BATCH_SIZE));
+    }
+    const batches = await Promise.allSettled(chunks.map((chunk) => getAlphaSymbolMetadata(chunk)));
+    return batches.flatMap((batch) => (batch.status === "fulfilled" ? batch.value : []));
+}
+
 async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> {
-    if (!symbols.length) return { creditWarningMessage: null, feeds: emptyMarketIntelligenceFeeds() };
+    if (!symbols.length) {
+        return {
+            creditWarningMessage: null,
+            feeds: emptyMarketIntelligenceFeeds(),
+            hasMoreBySection: emptyMarketIntelligenceHasMore()
+        };
+    }
     const params = {
         // Full watchlist universe; backend refreshes every stale/missing symbol (batched).
         symbols,
@@ -60,6 +85,13 @@ async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> 
             earnings: earnings.status === "fulfilled" ? (earnings.value.data ?? []) : [],
             concalls: concalls.status === "fulfilled" ? (concalls.value.data ?? []) : [],
             alerts: alerts.status === "fulfilled" ? (alerts.value.data ?? []) : []
+        },
+        hasMoreBySection: {
+            news: hasMoreFromResponse(news),
+            announcements: hasMoreFromResponse(announcements),
+            earnings: hasMoreFromResponse(earnings),
+            concalls: hasMoreFromResponse(concalls),
+            alerts: hasMoreFromResponse(alerts)
         }
     };
 }
@@ -79,11 +111,12 @@ export default async function MarketIntelligenceLayout({ children }: { children:
     const symbols = allSymbols;
     let symbolMetadata: Record<string, AlphaSymbolMetadata> = {};
     let initialFeeds = emptyMarketIntelligenceFeeds();
+    let initialHasMoreBySection = emptyMarketIntelligenceHasMore();
     let creditWarningMessage: string | null = null;
 
     if (!error && symbols.length) {
         const [metadataResult, feedsResult] = await Promise.allSettled([
-            getAlphaSymbolMetadata(symbols.slice(0, ALPHA_SYMBOL_LIMIT)),
+            loadAllSymbolMetadata(symbols),
             loadInitialFeeds(symbols)
         ]);
 
@@ -102,6 +135,7 @@ export default async function MarketIntelligenceLayout({ children }: { children:
 
         if (feedsResult.status === "fulfilled") {
             initialFeeds = feedsResult.value.feeds;
+            initialHasMoreBySection = feedsResult.value.hasMoreBySection;
         }
     }
 
@@ -112,6 +146,7 @@ export default async function MarketIntelligenceLayout({ children }: { children:
                 error={error}
                 creditWarningMessage={creditWarningMessage}
                 initialFeeds={initialFeeds}
+                initialHasMoreBySection={initialHasMoreBySection}
                 symbolMetadata={symbolMetadata}
                 symbols={symbols}
                 streamSymbols={allSymbols}

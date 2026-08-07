@@ -76,7 +76,9 @@ def _json_dumps(value: Any) -> str:
 
 def _normalize_symbol(value: str | None) -> str | None:
     symbol = (value or "").strip().upper()
-    return symbol or None
+    if not symbol or symbol in {"N/A", "NA", "NONE"}:
+        return None
+    return symbol
 
 
 def _collect_symbols(value: Any, symbols: set[str]) -> None:
@@ -390,6 +392,7 @@ class EffectiveAlphaSubscription:
     products: list[str]
     symbols: list[str]
     full_feed_products: list[str]
+    entitlement_full_feed_products: list[str]
     account: dict[str, Any]
     config_hash: str
 
@@ -401,6 +404,7 @@ def _subscription_config_hash(
     products: list[str],
     symbols: list[str],
     full_feed_products: list[str],
+    entitlement_full_feed_products: list[str],
 ) -> str:
     payload = {
         "api_key_fingerprint": hashlib.sha256(api_key.encode()).hexdigest(),
@@ -408,6 +412,7 @@ def _subscription_config_hash(
         "products": products,
         "symbols": symbols,
         "full_feed_products": full_feed_products,
+        "entitlement_full_feed_products": entitlement_full_feed_products,
     }
     return hashlib.sha256(_json_dumps(payload).encode()).hexdigest()
 
@@ -482,6 +487,10 @@ def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlpha
             or addons.get(product, {}).get("tier") == "full_market"
         )
     ]
+    # Scale-tier full-market entitlement: subscribe with empty symbols (full WS feed, 0 credits).
+    entitlement_full_feed_products = [
+        product for product in products if product in entitlement_full_market_products
+    ]
     if config.scope_mode == "full_market":
         products = full_feed_products
         symbols = []
@@ -496,6 +505,7 @@ def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlpha
         products=products,
         symbols=symbols,
         full_feed_products=full_feed_products,
+        entitlement_full_feed_products=entitlement_full_feed_products,
         account=account,
         config_hash=_subscription_config_hash(
             api_key=api_key,
@@ -503,6 +513,7 @@ def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlpha
             products=products,
             symbols=symbols,
             full_feed_products=full_feed_products,
+            entitlement_full_feed_products=entitlement_full_feed_products,
         ),
     )
 
@@ -704,7 +715,11 @@ async def _send_subscriptions(
     subscription: EffectiveAlphaSubscription,
 ) -> None:
     for product in subscription.products:
-        symbols = [] if product in subscription.full_feed_products else subscription.symbols
+        use_full_feed = (
+            product in subscription.full_feed_products
+            or product in subscription.entitlement_full_feed_products
+        )
+        symbols = [] if use_full_feed else subscription.symbols
         await websocket.send(_json_dumps({"op": "subscribe", "product": product, "symbols": symbols}))
 
 

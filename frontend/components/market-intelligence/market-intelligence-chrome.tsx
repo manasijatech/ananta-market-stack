@@ -88,13 +88,16 @@ import {
 	notifyAlphaCreditWarning,
 } from "@/lib/alpha-credit-warning";
 import {
-	ALPHA_SYMBOL_LIMIT,
 	emptyMarketIntelligenceFeeds,
+	emptyMarketIntelligenceHasMore,
+	marketIntelligenceProducts,
 	marketIntelligenceSections,
 	type AlphaSection,
 	type MarketIntelligenceFeeds,
+	type MarketIntelligenceHasMore,
 	type WatchlistCoverageGroup,
 } from "@/components/market-intelligence/market-intelligence-data";
+import { itemKey } from "@/components/market-intelligence/market-intelligence-utils";
 
 const sectionChrome = {
 	news: {
@@ -415,6 +418,7 @@ export function MarketIntelligenceChrome({
 	creditWarningMessage,
 	error,
 	initialFeeds,
+	initialHasMoreBySection,
 	symbolMetadata,
 	symbols,
 	streamSymbols,
@@ -425,6 +429,7 @@ export function MarketIntelligenceChrome({
 	creditWarningMessage?: string | null;
 	error?: string;
 	initialFeeds: MarketIntelligenceFeeds;
+	initialHasMoreBySection: MarketIntelligenceHasMore;
 	symbolMetadata: Record<string, AlphaSymbolMetadata>;
 	symbols: string[];
 	streamSymbols: string[];
@@ -436,13 +441,9 @@ export function MarketIntelligenceChrome({
 	const [selectedWatchlistId, setSelectedWatchlistId] =
 		useState(ALL_WATCHLISTS_ID);
 	const [feeds, setFeeds] = useState(initialFeeds);
-	const [hasMoreBySection, setHasMoreBySection] = useState<Record<AlphaSection, boolean>>({
-		news: false,
-		announcements: false,
-		earnings: false,
-		concalls: false,
-		alerts: false,
-	});
+	const [hasMoreBySection, setHasMoreBySection] = useState<MarketIntelligenceHasMore>(
+		initialHasMoreBySection,
+	);
 	const [feedPageBySection, setFeedPageBySection] = useState<Record<AlphaSection, number>>({
 		news: 1,
 		announcements: 1,
@@ -475,6 +476,7 @@ export function MarketIntelligenceChrome({
 	const [showSuggestions, setShowSuggestions] = useState(false);
 	const [symbolError, setSymbolError] = useState("");
 	const [isLoadingSymbolFeed, setIsLoadingSymbolFeed] = useState(false);
+	const [symbolSearchToken, setSymbolSearchToken] = useState(0);
 	const [suggestionMenuRect, setSuggestionMenuRect] = useState<{
 		left: number;
 		top: number;
@@ -585,18 +587,12 @@ export function MarketIntelligenceChrome({
 			setIsLoadingFilter(false);
 			return;
 		}
-		if (selectedWatchlistId === ALL_WATCHLISTS_ID) {
-			setFeeds(initialFeeds);
-			setActiveMetadata(symbolMetadata);
+		if (!activeSymbols.length) {
+			setFeeds(emptyMarketIntelligenceFeeds());
+			setHasMoreBySection(emptyMarketIntelligenceHasMore());
+			setActiveMetadata({});
 			setFilterError("");
 			setIsLoadingFilter(false);
-			setFeedPageBySection({
-				news: 1,
-				announcements: 1,
-				earnings: 1,
-				concalls: 1,
-				alerts: 1,
-			});
 			return;
 		}
 
@@ -618,7 +614,7 @@ export function MarketIntelligenceChrome({
 			if (nextFeeds.status === "fulfilled") {
 				const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
 				setFeeds(feedPayload);
-				if (nextHasMore) setHasMoreBySection(nextHasMore);
+				setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
 				setFeedPageBySection({
 					news: 1,
 					announcements: 1,
@@ -637,13 +633,7 @@ export function MarketIntelligenceChrome({
 		return () => {
 			cancelled = true;
 		};
-	}, [
-		activeSymbols,
-		initialFeeds,
-		selectedWatchlistId,
-		symbolMetadata,
-		symbolModeActive,
-	]);
+	}, [activeSymbols, symbolModeActive]);
 
 	useEffect(() => {
 		const query = searchText.trim();
@@ -707,6 +697,8 @@ export function MarketIntelligenceChrome({
 		let cancelled = false;
 		setSymbolError("");
 		setFilterError("");
+		setFeeds(emptyMarketIntelligenceFeeds());
+		setHasMoreBySection(emptyMarketIntelligenceHasMore());
 		setIsLoadingSymbolFeed(true);
 		void (async () => {
 			const [nextMetadata, nextFeeds] = await Promise.allSettled([
@@ -724,7 +716,7 @@ export function MarketIntelligenceChrome({
 			if (nextFeeds.status === "fulfilled") {
 				const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
 				setFeeds(feedPayload);
-				if (nextHasMore) setHasMoreBySection(nextHasMore);
+				setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
 				setFeedPageBySection({
 					news: 1,
 					announcements: 1,
@@ -743,7 +735,7 @@ export function MarketIntelligenceChrome({
 		return () => {
 			cancelled = true;
 		};
-	}, [committedIntelligenceSymbol]);
+	}, [committedIntelligenceSymbol, symbolSearchToken]);
 
 	useEffect(() => {
 		if (!committedSymbol || !committedInstrument) {
@@ -839,6 +831,9 @@ export function MarketIntelligenceChrome({
 		setSearchText(normalized);
 		setShowSuggestions(false);
 		setSymbolError("");
+		setFeeds(emptyMarketIntelligenceFeeds());
+		setHasMoreBySection(emptyMarketIntelligenceHasMore());
+		setSymbolSearchToken((current) => current + 1);
 	}
 
 	function submitSymbolSearch(event: FormEvent<HTMLFormElement>) {
@@ -870,10 +865,6 @@ export function MarketIntelligenceChrome({
 		setShowSuggestions(false);
 		setSymbolError("");
 		setChartState({ error: "", isLoading: false, snapshot: null });
-		if (selectedWatchlistId === ALL_WATCHLISTS_ID) {
-			setFeeds(initialFeeds);
-			setActiveMetadata(symbolMetadata);
-		}
 	}
 
 	function handleFeedSymbolClick(symbol: string) {
@@ -1140,7 +1131,7 @@ export function MarketIntelligenceChrome({
 								: watchlistGroups.length
 									? ` · ${activeSymbols.length} symbols`
 									: ""}
-							{isLoadingFilter ? " · Loading…" : ""}
+							{isLoadingFilter || isLoadingSymbolFeed ? " · Loading…" : ""}
 						</CardFrameDescription>
 						<CardFrameAction>
 							{!symbolModeActive && watchlistGroups.length ? (
@@ -1187,7 +1178,7 @@ export function MarketIntelligenceChrome({
 							) : null}
 							<MarketIntelligenceLiveFeed
 								activeSection={activeSection.id}
-								enableLiveUpdates={!symbolModeActive}
+								enableLiveUpdates
 								feedSearch={feedSearch}
 								hasMoreBySection={hasMoreBySection}
 								initialFeeds={feeds}
@@ -1207,13 +1198,19 @@ export function MarketIntelligenceChrome({
 												limit: 20,
 												detailed: true,
 											});
-											setFeeds((current) => ({
-												...current,
-												[section]: [
-													...current[section],
-													...((page.data as typeof current[typeof section]) ?? []),
-												],
-											}));
+											const incoming = (page.data as typeof feeds[typeof section]) ?? [];
+											setFeeds((current) => {
+												const seen = new Set(
+													current[section].map((item) => itemKey(item)),
+												);
+												const appended = incoming.filter(
+													(item) => !seen.has(itemKey(item)),
+												);
+												return {
+													...current,
+													[section]: [...current[section], ...appended],
+												};
+											});
 											setHasMoreBySection((current) => ({
 												...current,
 												[section]: Boolean(page.has_next),

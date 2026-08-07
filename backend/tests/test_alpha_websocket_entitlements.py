@@ -49,6 +49,7 @@ def test_subscription_hash_is_stable_across_account_refreshes():
         "products": ["news", "alerts"],
         "symbols": ["RELIANCE", "TCS"],
         "full_feed_products": [],
+        "entitlement_full_feed_products": [],
     }
 
     before_refresh = _subscription_config_hash(**values)
@@ -63,6 +64,7 @@ def test_subscription_hash_changes_when_api_key_rotates():
         "products": ["news"],
         "symbols": ["RELIANCE"],
         "full_feed_products": [],
+        "entitlement_full_feed_products": ["news"],
     }
 
     old_key_hash = _subscription_config_hash(api_key="old-key", **values)
