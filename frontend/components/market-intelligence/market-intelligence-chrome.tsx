@@ -88,7 +88,6 @@ import {
 	notifyAlphaCreditWarning,
 } from "@/lib/alpha-credit-warning";
 import {
-	ALPHA_SYMBOL_LIMIT,
 	emptyMarketIntelligenceFeeds,
 	marketIntelligenceSections,
 	type AlphaSection,

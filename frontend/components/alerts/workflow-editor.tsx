@@ -1404,7 +1404,9 @@ export function WorkflowEditor({
     const [cooldownSeconds, setCooldownSeconds] = useState(
         String(initialWorkflow?.workflow_dsl.cooldown_seconds ?? 300)
     );
-    const initialActivePeriodDefaults = activePeriodDefaults(initialWorkflowType);
+    const initialActivePeriodDefaults = activePeriodDefaults(
+        !initialTriggers.brokerEnabled && initialTriggers.feedEnabled
+    );
     const initialActivePeriod = {
         ...initialActivePeriodDefaults,
         ...(initialWorkflow?.workflow_dsl.active_period ?? {})
