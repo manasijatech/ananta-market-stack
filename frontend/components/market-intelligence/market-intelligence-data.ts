@@ -31,8 +31,10 @@ export type MarketIntelligenceFeeds = {
     alerts: AlphaAlert[];
 };
 
-/** Metadata fetch batch size (not a Drishti feed sync cap). */
-export const ALPHA_SYMBOL_LIMIT = 20;
+/** Bulk metadata API accepts up to 1000 symbols per request. */
+export const ALPHA_METADATA_BATCH_SIZE = 1000;
+
+export type MarketIntelligenceHasMore = Record<AlphaSection, boolean>;
 
 export function emptyMarketIntelligenceFeeds(): MarketIntelligenceFeeds {
     return {
@@ -41,6 +43,16 @@ export function emptyMarketIntelligenceFeeds(): MarketIntelligenceFeeds {
         earnings: [],
         concalls: [],
         alerts: []
+    };
+}
+
+export function emptyMarketIntelligenceHasMore(): MarketIntelligenceHasMore {
+    return {
+        news: false,
+        announcements: false,
+        earnings: false,
+        concalls: false,
+        alerts: false
     };
 }
 

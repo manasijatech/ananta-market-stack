@@ -22,6 +22,9 @@ ALPHA_FEED_PRODUCTS = ("news", "announcements", "earnings", "concalls", "alerts"
 _FEED_BATCH_SIZE = 20
 _FEED_SYNC_TTL = timedelta(minutes=30)
 _FEED_PAGE_FETCH_LIMIT = 50
+# Cap Drishti refresh work per HTTP request so large watchlists return cached DB rows immediately.
+_FEED_MAX_REFRESH_BATCHES = 4
+_FEED_MAX_DRISHTI_PAGES_PER_BATCH = 10
 
 
 def _utc_now() -> datetime:
@@ -219,7 +222,6 @@ def _mark_symbols_synced(
     user_id: str,
     product: str,
     symbols: list[str],
-    error: str | None = None,
 ) -> None:
     now = _utc_now()
     for symbol in symbols:
@@ -239,7 +241,38 @@ def _mark_symbols_synced(
                 created_at=now,
             )
         row.last_synced_at = now
-        row.last_error = error
+        row.last_error = None
+        row.updated_at = now
+        db.add(row)
+
+
+def _mark_symbols_sync_failed(
+    db: Session,
+    *,
+    user_id: str,
+    product: str,
+    symbols: list[str],
+    error: str,
+) -> None:
+    """Record a failed Drishti refresh without advancing last_synced_at."""
+    now = _utc_now()
+    for symbol in symbols:
+        row = db.scalar(
+            select(AlphaFeedSymbolSync).where(
+                AlphaFeedSymbolSync.user_id == user_id,
+                AlphaFeedSymbolSync.product == product,
+                AlphaFeedSymbolSync.symbol == symbol,
+            )
+        )
+        if row is None:
+            row = AlphaFeedSymbolSync(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                product=product,
+                symbol=symbol,
+                created_at=now,
+            )
+        row.last_error = error[:500]
         row.updated_at = now
         db.add(row)
 
@@ -255,6 +288,7 @@ def _symbols_needing_sync(
     """Return every symbol that should be refreshed — full watchlist, no subset cap."""
     if not symbols:
         return []
+
     if force_refresh:
         return list(symbols)
 
@@ -300,6 +334,44 @@ def _symbol_has_cached_items(
     )
 
 
+def _upsert_rest_rows(
+    db: Session,
+    *,
+    user_id: str,
+    product: str,
+    batch: list[str],
+    rows: list[dict[str, Any]],
+    now: datetime,
+) -> int:
+    upserted = 0
+    batch_fallback = batch[0] if len(batch) == 1 else None
+    for payload in rows:
+        item_key = _item_key(product, payload)
+        existing = db.scalar(
+            select(AlphaFeedItem).where(
+                AlphaFeedItem.user_id == user_id,
+                AlphaFeedItem.product == product,
+                AlphaFeedItem.item_key == item_key,
+            )
+        )
+        row = existing or AlphaFeedItem(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            product=product,
+            item_key=item_key,
+            created_at=now,
+        )
+        row.symbol = _payload_symbol(payload, batch_fallback)
+        row.source = "rest"
+        row.published_at = _published_at(payload, now)
+        row.payload_json = _json_dumps(payload)
+        row.fetched_at = now
+        row.updated_at = now
+        db.add(row)
+        upserted += 1
+    return upserted
+
+
 def refresh_feed_cache_for_symbols(
     db: Session,
     user_id: str,
@@ -309,6 +381,7 @@ def refresh_feed_cache_for_symbols(
     from_date: str | None = None,
     to_date: str | None = None,
     force_refresh: bool = False,
+    max_batches: int | None = _FEED_MAX_REFRESH_BATCHES,
 ) -> dict[str, Any]:
     if product not in ALPHA_FEED_PRODUCTS:
         raise ValueError(f"Unsupported product: {product}")
@@ -337,111 +410,81 @@ def refresh_feed_cache_for_symbols(
     client = _drishti_client(api_key)
     upserted = 0
     now = _utc_now()
+    batches_processed = 0
+    symbols_refreshed = 0
+    batch_limit = max_batches if max_batches is not None else len(pending)
+
     for start in range(0, len(pending), _FEED_BATCH_SIZE):
+        if batches_processed >= batch_limit:
+            break
         batch = pending[start : start + _FEED_BATCH_SIZE]
+        batches_processed += 1
         try:
-            rows = _fetch_product_page(
-                client,
-                product,
-                symbols=batch,
-                from_date=from_date,
-                to_date=to_date,
-                page=1,
-                limit=_FEED_PAGE_FETCH_LIMIT,
-            )
-            for payload in rows:
-                item_key = _item_key(product, payload)
-                existing = db.scalar(
-                    select(AlphaFeedItem).where(
-                        AlphaFeedItem.user_id == user_id,
-                        AlphaFeedItem.product == product,
-                        AlphaFeedItem.item_key == item_key,
-                    )
+            page = 1
+            batch_upserted = 0
+            while page <= _FEED_MAX_DRISHTI_PAGES_PER_BATCH:
+                rows = _fetch_product_page(
+                    client,
+                    product,
+                    symbols=batch,
+                    from_date=from_date,
+                    to_date=to_date,
+                    page=page,
+                    limit=_FEED_PAGE_FETCH_LIMIT,
                 )
-                row = existing or AlphaFeedItem(
-                    id=str(uuid.uuid4()),
+                if not rows:
+                    break
+                batch_upserted += _upsert_rest_rows(
+                    db,
                     user_id=user_id,
                     product=product,
-                    item_key=item_key,
-                    created_at=now,
+                    batch=batch,
+                    rows=rows,
+                    now=now,
                 )
-                row.symbol = _payload_symbol(payload)
-                row.source = "rest"
-                row.published_at = _published_at(payload, now)
-                row.payload_json = _json_dumps(payload)
-                row.fetched_at = now
-                row.updated_at = now
-                db.add(row)
-                upserted += 1
+                if len(rows) < _FEED_PAGE_FETCH_LIMIT:
+                    break
+                page += 1
+            upserted += batch_upserted
             _mark_symbols_synced(db, user_id=user_id, product=product, symbols=batch)
+            symbols_refreshed += len(batch)
         except DrishtiApiError as exc:
             logger.warning("Drishti feed refresh failed for %s/%s: %s", user_id, product, exc)
-            _mark_symbols_synced(
+            _mark_symbols_sync_failed(
                 db,
                 user_id=user_id,
                 product=product,
                 symbols=batch,
-                error=str(exc)[:500],
+                error=str(exc),
             )
-        except Exception as exc:
+        except Exception:
             logger.exception("Unexpected feed refresh failure for %s/%s", user_id, product)
-            _mark_symbols_synced(
+            _mark_symbols_sync_failed(
                 db,
                 user_id=user_id,
                 product=product,
                 symbols=batch,
-                error=str(exc)[:500],
+                error="unexpected refresh failure",
             )
+
     db.commit()
+    pending_remaining = max(0, len(pending) - symbols_refreshed)
     return {
-        "refreshed_symbols": len(pending),
+        "refreshed_symbols": symbols_refreshed,
         "upserted": upserted,
-        "pending_remaining": 0,
+        "pending_remaining": pending_remaining,
     }
 
 
-def list_cached_feed_items(
-    db: Session,
+def _feed_query_filters(
     user_id: str,
     product: str,
-    symbols: list[str],
+    normalized: list[str],
     *,
-    from_date: str | None = None,
-    to_date: str | None = None,
-    page: int = 1,
-    limit: int = 20,
-    force_refresh: bool = False,
-) -> dict[str, Any]:
-    if product not in ALPHA_FEED_PRODUCTS:
-        raise ValueError(f"Unsupported product: {product}")
-    normalized = _normalize_symbols(symbols)
-    if not normalized:
-        return {
-            "data": [],
-            "page": page,
-            "limit": limit,
-            "has_next": False,
-            "total": 0,
-            "from_cache": True,
-            "synced_symbols": 0,
-            "pending_symbols": 0,
-        }
-
-    refresh_stats = refresh_feed_cache_for_symbols(
-        db,
-        user_id,
-        product,
-        normalized,
-        from_date=from_date,
-        to_date=to_date,
-        force_refresh=force_refresh,
-    )
-
-    page = max(int(page or 1), 1)
-    limit = max(1, min(int(limit or 20), 100))
-    offset = (page - 1) * limit
-
-    filters = [
+    from_date: str | None,
+    to_date: str | None,
+) -> list[Any]:
+    filters: list[Any] = [
         AlphaFeedItem.user_id == user_id,
         AlphaFeedItem.product == product,
         AlphaFeedItem.symbol.in_(normalized),
@@ -458,6 +501,24 @@ def list_cached_feed_items(
             filters.append(or_(AlphaFeedItem.published_at.is_(None), AlphaFeedItem.published_at < end))
         except ValueError:
             pass
+    return filters
+
+
+def _query_cached_feed_page(
+    db: Session,
+    user_id: str,
+    product: str,
+    normalized: list[str],
+    *,
+    from_date: str | None,
+    to_date: str | None,
+    page: int,
+    limit: int,
+) -> dict[str, Any]:
+    page = max(int(page or 1), 1)
+    limit = max(1, min(int(limit or 20), 100))
+    offset = (page - 1) * limit
+    filters = _feed_query_filters(user_id, product, normalized, from_date=from_date, to_date=to_date)
 
     total = db.scalar(select(func.count()).select_from(AlphaFeedItem).where(and_(*filters))) or 0
     rows = db.scalars(
@@ -488,6 +549,85 @@ def list_cached_feed_items(
         "has_next": offset + len(rows) < total,
         "total": int(total),
         "from_cache": True,
+    }
+
+
+def list_cached_feed_items(
+    db: Session,
+    user_id: str,
+    product: str,
+    symbols: list[str],
+    *,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    page: int = 1,
+    limit: int = 20,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    if product not in ALPHA_FEED_PRODUCTS:
+        raise ValueError(f"Unsupported product: {product}")
+    normalized = _normalize_symbols(symbols)
+    if not normalized:
+        return {
+            "data": [],
+            "page": page,
+            "limit": limit,
+            "has_next": False,
+            "total": 0,
+            "from_cache": True,
+            "synced_symbols": 0,
+            "pending_symbols": 0,
+        }
+
+    page = max(int(page or 1), 1)
+    limit = max(1, min(int(limit or 20), 100))
+
+    # Serve cached rows immediately; load-more pages must not block on Drishti refresh.
+    result = _query_cached_feed_page(
+        db,
+        user_id,
+        product,
+        normalized,
+        from_date=from_date,
+        to_date=to_date,
+        page=page,
+        limit=limit,
+    )
+
+    refresh_stats = {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
+    if page == 1:
+        refresh_stats = refresh_feed_cache_for_symbols(
+            db,
+            user_id,
+            product,
+            normalized,
+            from_date=from_date,
+            to_date=to_date,
+            force_refresh=force_refresh,
+        )
+        if refresh_stats.get("upserted"):
+            result = _query_cached_feed_page(
+                db,
+                user_id,
+                product,
+                normalized,
+                from_date=from_date,
+                to_date=to_date,
+                page=page,
+                limit=limit,
+            )
+    else:
+        pending = _symbols_needing_sync(
+            db,
+            user_id=user_id,
+            product=product,
+            symbols=normalized,
+            force_refresh=False,
+        )
+        refresh_stats["pending_remaining"] = len(pending)
+
+    return {
+        **result,
         "synced_symbols": int(refresh_stats.get("refreshed_symbols") or 0),
         "pending_symbols": int(refresh_stats.get("pending_remaining") or 0),
     }

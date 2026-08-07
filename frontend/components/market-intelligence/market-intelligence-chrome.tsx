@@ -89,11 +89,15 @@ import {
 } from "@/lib/alpha-credit-warning";
 import {
 	emptyMarketIntelligenceFeeds,
+	emptyMarketIntelligenceHasMore,
+	marketIntelligenceProducts,
 	marketIntelligenceSections,
 	type AlphaSection,
 	type MarketIntelligenceFeeds,
+	type MarketIntelligenceHasMore,
 	type WatchlistCoverageGroup,
 } from "@/components/market-intelligence/market-intelligence-data";
+import { itemKey } from "@/components/market-intelligence/market-intelligence-utils";
 
 const sectionChrome = {
 	news: {
@@ -414,6 +418,7 @@ export function MarketIntelligenceChrome({
 	creditWarningMessage,
 	error,
 	initialFeeds,
+	initialHasMoreBySection,
 	symbolMetadata,
 	symbols,
 	streamSymbols,
@@ -424,6 +429,7 @@ export function MarketIntelligenceChrome({
 	creditWarningMessage?: string | null;
 	error?: string;
 	initialFeeds: MarketIntelligenceFeeds;
+	initialHasMoreBySection: MarketIntelligenceHasMore;
 	symbolMetadata: Record<string, AlphaSymbolMetadata>;
 	symbols: string[];
 	streamSymbols: string[];
@@ -435,13 +441,9 @@ export function MarketIntelligenceChrome({
 	const [selectedWatchlistId, setSelectedWatchlistId] =
 		useState(ALL_WATCHLISTS_ID);
 	const [feeds, setFeeds] = useState(initialFeeds);
-	const [hasMoreBySection, setHasMoreBySection] = useState<Record<AlphaSection, boolean>>({
-		news: false,
-		announcements: false,
-		earnings: false,
-		concalls: false,
-		alerts: false,
-	});
+	const [hasMoreBySection, setHasMoreBySection] = useState<MarketIntelligenceHasMore>(
+		initialHasMoreBySection,
+	);
 	const [feedPageBySection, setFeedPageBySection] = useState<Record<AlphaSection, number>>({
 		news: 1,
 		announcements: 1,
@@ -586,6 +588,7 @@ export function MarketIntelligenceChrome({
 		}
 		if (selectedWatchlistId === ALL_WATCHLISTS_ID) {
 			setFeeds(initialFeeds);
+			setHasMoreBySection(initialHasMoreBySection);
 			setActiveMetadata(symbolMetadata);
 			setFilterError("");
 			setIsLoadingFilter(false);
@@ -617,7 +620,7 @@ export function MarketIntelligenceChrome({
 			if (nextFeeds.status === "fulfilled") {
 				const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
 				setFeeds(feedPayload);
-				if (nextHasMore) setHasMoreBySection(nextHasMore);
+				setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
 				setFeedPageBySection({
 					news: 1,
 					announcements: 1,
@@ -639,10 +642,40 @@ export function MarketIntelligenceChrome({
 	}, [
 		activeSymbols,
 		initialFeeds,
+		initialHasMoreBySection,
 		selectedWatchlistId,
 		symbolMetadata,
 		symbolModeActive,
 	]);
+
+	// SSR can time out on very large watchlists; retry client-side from the local DB cache.
+	useEffect(() => {
+		if (symbolModeActive || selectedWatchlistId !== ALL_WATCHLISTS_ID) return;
+		if (!streamSymbols.length) return;
+		const initiallyEmpty = marketIntelligenceProducts.every(
+			(product) => initialFeeds[product].length === 0,
+		);
+		if (!initiallyEmpty) return;
+
+		let cancelled = false;
+		setIsLoadingFilter(true);
+		void loadFeeds(streamSymbols)
+			.then((result) => {
+				if (cancelled) return;
+				const { hasMoreBySection: nextHasMore, ...feedPayload } = result;
+				setFeeds(feedPayload);
+				setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
+			})
+			.catch((caught) => {
+				if (!cancelled) notifyAlphaCreditWarning(caught);
+			})
+			.finally(() => {
+				if (!cancelled) setIsLoadingFilter(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [initialFeeds, selectedWatchlistId, streamSymbols, symbolModeActive]);
 
 	useEffect(() => {
 		const query = searchText.trim();
@@ -723,7 +756,7 @@ export function MarketIntelligenceChrome({
 			if (nextFeeds.status === "fulfilled") {
 				const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
 				setFeeds(feedPayload);
-				if (nextHasMore) setHasMoreBySection(nextHasMore);
+				setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
 				setFeedPageBySection({
 					news: 1,
 					announcements: 1,
@@ -1206,13 +1239,19 @@ export function MarketIntelligenceChrome({
 												limit: 20,
 												detailed: true,
 											});
-											setFeeds((current) => ({
-												...current,
-												[section]: [
-													...current[section],
-													...((page.data as typeof current[typeof section]) ?? []),
-												],
-											}));
+											const incoming = (page.data as typeof feeds[typeof section]) ?? [];
+											setFeeds((current) => {
+												const seen = new Set(
+													current[section].map((item) => itemKey(item)),
+												);
+												const appended = incoming.filter(
+													(item) => !seen.has(itemKey(item)),
+												);
+												return {
+													...current,
+													[section]: [...current[section], ...appended],
+												};
+											});
 											setHasMoreBySection((current) => ({
 												...current,
 												[section]: Boolean(page.has_next),
