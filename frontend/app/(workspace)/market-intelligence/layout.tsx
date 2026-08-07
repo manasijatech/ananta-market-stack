@@ -11,6 +11,10 @@ import { getCachedAlphaFeed } from "@/service/actions/alpha/feeds";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getWatchlists } from "@/service/actions/watchlist";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
+import type { AlphaAlert } from "@/service/types/alpha/alerts";
+import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/types/alpha/announcements";
+import type { AlphaConcall } from "@/service/types/alpha/concalls";
+import type { AlphaNewsItem } from "@/service/types/alpha/news";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist } from "@/service/types/watchlist";
 
@@ -41,11 +45,11 @@ async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> 
         detailed: true
     };
     const [news, announcements, earnings, concalls, alerts] = await Promise.allSettled([
-        getCachedAlphaFeed("news", params),
-        getCachedAlphaFeed("announcements", params),
-        getCachedAlphaFeed("earnings", params),
-        getCachedAlphaFeed("concalls", params),
-        getCachedAlphaFeed("alerts", params)
+        getCachedAlphaFeed<AlphaNewsItem>("news", params),
+        getCachedAlphaFeed<AlphaAnnouncementDetail>("announcements", params),
+        getCachedAlphaFeed<AlphaEarningsDetail>("earnings", params),
+        getCachedAlphaFeed<AlphaConcall>("concalls", params),
+        getCachedAlphaFeed<AlphaAlert>("alerts", params)
     ]);
 
     return {

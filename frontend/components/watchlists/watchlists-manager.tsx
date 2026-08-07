@@ -183,28 +183,33 @@ function tickFromSubscription(subscription: LiveSubscription): LivePriceTick | n
         raw && typeof raw === "object" && raw.ohlc && typeof raw.ohlc === "object"
             ? (raw.ohlc as Record<string, unknown>)
             : {};
-    const ltp = quote.ltp ?? quote.last_price ?? (raw as { last_price?: unknown }).last_price;
-    if (toNumber(ltp) === null && !Object.keys(quote).length) return null;
-    const change =
+    const ltpRaw = quote.ltp ?? quote.last_price ?? (raw as { last_price?: unknown }).last_price;
+    const ltp = toNumber(ltpRaw) !== null ? (ltpRaw as string | number) : null;
+    if (ltp === null && !Object.keys(quote).length) return null;
+    const changeRaw =
         quote.change_pct ??
         quote.day_change_perc ??
         (raw as { day_change_perc?: unknown }).day_change_perc ??
         (raw as { day_change_percentage?: unknown }).day_change_percentage;
+    const change = toNumber(changeRaw) !== null ? (changeRaw as string | number) : null;
     return {
         ...quote,
         symbol: subscription.symbol,
         exchange: subscription.exchange ?? quote.exchange ?? quote.detail?.exchange ?? null,
         account_id: subscription.account_id ?? undefined,
         broker_code: subscription.broker_code ?? undefined,
-        ltp: ltp ?? null,
-        last_price: quote.last_price ?? ltp ?? null,
-        open: quote.open ?? ohlc.open ?? null,
-        high: quote.high ?? ohlc.high ?? null,
-        low: quote.low ?? ohlc.low ?? null,
-        close: quote.close ?? ohlc.close ?? null,
-        day_change_perc: change ?? null,
-        change_pct: change ?? null,
-        volume: quote.volume ?? (raw as { volume?: unknown }).volume ?? null,
+        ltp,
+        last_price: toNumber(quote.last_price) !== null ? (quote.last_price as string | number) : ltp,
+        open: toNumber(quote.open ?? ohlc.open) !== null ? ((quote.open ?? ohlc.open) as string | number) : null,
+        high: toNumber(quote.high ?? ohlc.high) !== null ? ((quote.high ?? ohlc.high) as string | number) : null,
+        low: toNumber(quote.low ?? ohlc.low) !== null ? ((quote.low ?? ohlc.low) as string | number) : null,
+        close: toNumber(quote.close ?? ohlc.close) !== null ? ((quote.close ?? ohlc.close) as string | number) : null,
+        day_change_perc: change,
+        change_pct: change,
+        volume:
+            toNumber(quote.volume ?? (raw as { volume?: unknown }).volume) !== null
+                ? ((quote.volume ?? (raw as { volume?: unknown }).volume) as string | number)
+                : null,
         received_at: subscription.last_received_at || quote.received_at || null,
         status: subscription.health_status || quote.status || "stale"
     };
