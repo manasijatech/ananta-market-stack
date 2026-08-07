@@ -1354,6 +1354,9 @@ export function WorkflowEditor({
     const presets = asArray(rawPresets);
     const watchlists = asArray(rawWatchlists);
     const [isPending, startTransition] = useTransition();
+    const [isSaving, setIsSaving] = useState(false);
+    const [isTestingAlert, setIsTestingAlert] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [matchPreview, setMatchPreview] = useState("");
@@ -2846,7 +2849,7 @@ export function WorkflowEditor({
         syncVisualBuilderFromAst(localAst, { silent: true });
     }, [dslText]);
 
-    function save() {
+    async function save() {
         setError("");
         setNotice("");
         const saveBlockReason = getSaveBlockReason();
@@ -2854,28 +2857,29 @@ export function WorkflowEditor({
             setError(saveBlockReason);
             return;
         }
-        startTransition(async () => {
-            try {
-                const payload = workflowPayload();
-                const workflow = persistedWorkflowId
-                    ? await updateAlertWorkflow(persistedWorkflowId, payload)
-                    : await createAlertWorkflow(payload);
-                setChatWorkflow(workflow);
-                setNotice(persistedWorkflowId ? "Workflow saved." : "Workflow created.");
-                if (persistedWorkflowId) {
-                    if (!initialWorkflow?.id) {
-                        router.push(`/alerts-workspace/workflows/${workflow.id}`);
-                    }
-                    router.refresh();
-                } else {
+        setIsSaving(true);
+        try {
+            const payload = workflowPayload();
+            const workflow = persistedWorkflowId
+                ? await updateAlertWorkflow(persistedWorkflowId, payload)
+                : await createAlertWorkflow(payload);
+            setChatWorkflow(workflow);
+            setNotice(persistedWorkflowId ? "Workflow saved." : "Workflow created.");
+            if (persistedWorkflowId) {
+                if (!initialWorkflow?.id) {
                     router.push(`/alerts-workspace/workflows/${workflow.id}`);
-                    router.refresh();
                 }
-            } catch (caught) {
-                notifyAlphaCreditWarning(caught);
-                setError(caught instanceof Error ? caught.message : "Could not save workflow.");
+                router.refresh();
+            } else {
+                router.push(`/alerts-workspace/workflows/${workflow.id}`);
+                router.refresh();
             }
-        });
+        } catch (caught) {
+            notifyAlphaCreditWarning(caught);
+            setError(caught instanceof Error ? caught.message : "Could not save workflow.");
+        } finally {
+            setIsSaving(false);
+        }
     }
 
     function getSaveBlockReason() {
@@ -3033,15 +3037,18 @@ export function WorkflowEditor({
         if (!persistedWorkflowId) return;
         setError("");
         setMatchPreview("");
-        startTransition(async () => {
+        setIsTestingAlert(true);
+        void (async () => {
             try {
                 const result = await sendWorkflowTestNotification(persistedWorkflowId, buildPreviewTick());
                 setMatchPreview(`${result.message} Notification id: ${result.notification_id}`);
             } catch (caught) {
                 notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not send test alert.");
+            } finally {
+                setIsTestingAlert(false);
             }
-        });
+        })();
     }
 
     function requestLlmCreditConfirmation(action: "preview" | "test") {
@@ -3135,7 +3142,8 @@ export function WorkflowEditor({
             return;
         }
         setError("");
-        startTransition(async () => {
+        setIsDeleting(true);
+        void (async () => {
             try {
                 await deleteAlertWorkflow(persistedWorkflowId);
                 router.push("/alerts-workspace/workflows");
@@ -3143,8 +3151,9 @@ export function WorkflowEditor({
             } catch (caught) {
                 notifyAlphaCreditWarning(caught);
                 setError(caught instanceof Error ? caught.message : "Could not delete workflow.");
+                setIsDeleting(false);
             }
-        });
+        })();
     }
 
     function removeTarget(index: number) {
@@ -5420,17 +5429,33 @@ export function WorkflowEditor({
                 </div>
 
                 <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-                    <Button disabled={isPending} onClick={save} type="button">
-                        {isPending ? "Saving..." : persistedWorkflowId ? "Save workflow" : "Create workflow"}
+                    <Button disabled={isSaving || isDeleting} onClick={() => void save()} type="button">
+                        {isSaving
+                            ? persistedWorkflowId
+                                ? "Saving..."
+                                : "Creating..."
+                            : persistedWorkflowId
+                              ? "Save workflow"
+                              : "Create workflow"}
                     </Button>
                     {persistedWorkflowId ? (
-                        <Button disabled={isPending} onClick={sendTestAlert} type="button" variant="secondary">
-                            Send test alert
+                        <Button
+                            disabled={isSaving || isTestingAlert || isDeleting}
+                            onClick={sendTestAlert}
+                            type="button"
+                            variant="secondary"
+                        >
+                            {isTestingAlert ? "Sending..." : "Send test alert"}
                         </Button>
                     ) : null}
                     {persistedWorkflowId ? (
-                        <Button disabled={isPending} onClick={removeWorkflow} type="button" variant="destructive">
-                            Delete workflow
+                        <Button
+                            disabled={isSaving || isTestingAlert || isDeleting}
+                            onClick={removeWorkflow}
+                            type="button"
+                            variant="destructive"
+                        >
+                            {isDeleting ? "Deleting..." : "Delete workflow"}
                         </Button>
                     ) : null}
                 </div>

@@ -304,9 +304,13 @@ function TimelineSnapshot({ item }: { item: Extract<TimelineItem, { kind: "snaps
 
 function SnapshotDock({
     applySnapshot,
+    busyAction,
+    feedback,
     snapshots
 }: {
     applySnapshot: (snapshotId: string, deploy?: boolean) => Promise<void>;
+    busyAction: { snapshotId: string; deploy: boolean } | null;
+    feedback: string;
     snapshots: AlertWorkflowChatSnapshot[];
 }) {
     const ordered = snapshots.slice().sort((left, right) => {
@@ -318,6 +322,10 @@ function SnapshotDock({
     const latest = ordered[0];
     if (!latest) return null;
     const history = ordered.slice(1);
+    const busyLatest = busyAction?.snapshotId === latest.id;
+    const applyBusy = Boolean(busyLatest && !busyAction?.deploy);
+    const deployBusy = Boolean(busyLatest && busyAction?.deploy);
+    const anyBusy = Boolean(busyAction);
     return (
         <div className="mt-3 border-t border-border pt-3">
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -328,7 +336,10 @@ function SnapshotDock({
                             Show {history.length} older snapshot{history.length === 1 ? "" : "s"}
                         </summary>
                         <div className="mt-2 grid max-h-72 gap-1 overflow-auto rounded-lg border border-border bg-secondary/10 p-2">
-                            {history.map((snapshot) => (
+                            {history.map((snapshot) => {
+                                const historyBusy =
+                                    busyAction?.snapshotId === snapshot.id && !busyAction.deploy;
+                                return (
                                 <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background px-2 py-1.5" key={snapshot.id}>
                                     <div className="min-w-0">
                                         <div className="truncate text-xs font-medium">{snapshot.label}</div>
@@ -339,16 +350,17 @@ function SnapshotDock({
                                     </div>
                                     <Button
                                         className="h-7 px-2 text-[10px]"
-                                        disabled={!snapshot.valid}
+                                        disabled={!snapshot.valid || anyBusy}
                                         onClick={() => void applySnapshot(snapshot.id)}
                                         size="sm"
                                         type="button"
                                         variant="ghost"
                                     >
-                                        Apply
+                                        {historyBusy ? "Applying..." : "Apply"}
                                     </Button>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </details>
                 ) : null}
@@ -369,23 +381,28 @@ function SnapshotDock({
                 <div className="line-clamp-2 text-xs leading-5 text-muted-foreground">
                     {snapshotSummary(latest)}
                 </div>
+                {feedback ? (
+                    <div className="rounded-lg border-l-2 border-primary bg-secondary/30 px-2.5 py-1.5 text-xs text-foreground">
+                        {feedback}
+                    </div>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                     <Button
-                        disabled={!latest.valid}
+                        disabled={!latest.valid || anyBusy}
                         onClick={() => void applySnapshot(latest.id)}
                         size="sm"
                         type="button"
                         variant="secondary"
                     >
-                        Apply
+                        {applyBusy ? "Applying..." : "Apply"}
                     </Button>
                     <Button
-                        disabled={!latest.valid}
+                        disabled={!latest.valid || anyBusy}
                         onClick={() => void applySnapshot(latest.id, true)}
                         size="sm"
                         type="button"
                     >
-                        Deploy
+                        {deployBusy ? "Deploying..." : "Deploy"}
                     </Button>
                 </div>
             </div>
@@ -427,6 +444,10 @@ export function WorkflowAiChatPanel({
     const [snapshots, setSnapshots] = useState<AlertWorkflowChatSnapshot[]>([]);
     const [activeRunId, setActiveRunId] = useState<string | null>(null);
     const [error, setError] = useState("");
+    const [snapshotFeedback, setSnapshotFeedback] = useState("");
+    const [busySnapshotAction, setBusySnapshotAction] = useState<{ snapshotId: string; deploy: boolean } | null>(
+        null
+    );
     const [isSending, setIsSending] = useState(false);
     const streamControllersRef = useRef<Record<string, AbortController>>({});
     const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -703,6 +724,8 @@ export function WorkflowAiChatPanel({
 
     async function applySnapshot(snapshotId: string, deploy = false) {
         setError("");
+        setSnapshotFeedback(deploy ? "Deploying snapshot..." : "Applying snapshot to the editor...");
+        setBusySnapshotAction({ snapshotId, deploy });
         try {
             const result = deploy
                 ? await deployAlertWorkflowChatSnapshot(snapshotId)
@@ -710,8 +733,16 @@ export function WorkflowAiChatPanel({
             onWorkflowApplied(result.workflow);
             await refreshSnapshots(result.snapshot.session_id);
             await refreshSessions();
+            setSnapshotFeedback(
+                deploy
+                    ? `Deployed snapshot v${result.snapshot.version}. Workflow is live.`
+                    : `Applied snapshot v${result.snapshot.version} to the editor.`
+            );
         } catch (caught) {
+            setSnapshotFeedback("");
             setError(caught instanceof Error ? caught.message : "Could not apply snapshot.");
+        } finally {
+            setBusySnapshotAction(null);
         }
     }
 
@@ -821,7 +852,12 @@ export function WorkflowAiChatPanel({
                                             </div>
                                         )}
                                         {runSnapshots.length ? (
-                                            <SnapshotDock applySnapshot={applySnapshot} snapshots={runSnapshots} />
+                                            <SnapshotDock
+                                                applySnapshot={applySnapshot}
+                                                busyAction={busySnapshotAction}
+                                                feedback={snapshotFeedback}
+                                                snapshots={runSnapshots}
+                                            />
                                         ) : null}
                                     </div>
                                 </div>
@@ -844,7 +880,12 @@ export function WorkflowAiChatPanel({
                 </div>
 
                 {!orderedRuns.length && snapshots.length ? (
-                    <SnapshotDock applySnapshot={applySnapshot} snapshots={snapshots} />
+                    <SnapshotDock
+                        applySnapshot={applySnapshot}
+                        busyAction={busySnapshotAction}
+                        feedback={snapshotFeedback}
+                        snapshots={snapshots}
+                    />
                 ) : null}
             </div>
 
