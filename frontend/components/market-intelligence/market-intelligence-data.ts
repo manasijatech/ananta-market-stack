@@ -31,6 +31,7 @@ export type MarketIntelligenceFeeds = {
     alerts: AlphaAlert[];
 };
 
+/** Metadata fetch batch size (not a Drishti feed sync cap). */
 export const ALPHA_SYMBOL_LIMIT = 20;
 
 export function emptyMarketIntelligenceFeeds(): MarketIntelligenceFeeds {

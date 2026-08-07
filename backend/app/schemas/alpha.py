@@ -23,3 +23,14 @@ class AlphaSymbolMetadataResponse(BaseModel):
 class AlphaSymbolMetadataBulkRequest(BaseModel):
     symbols: list[str] = Field(min_length=1, max_length=1_000)
     force_refresh: bool = False
+
+
+class AlphaFeedPageOut(BaseModel):
+    data: list[dict] = Field(default_factory=list)
+    page: int = 1
+    limit: int = 20
+    has_next: bool = False
+    total: int = 0
+    from_cache: bool = True
+    synced_symbols: int = 0
+    pending_symbols: int = 0

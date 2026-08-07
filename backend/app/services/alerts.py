@@ -2478,24 +2478,24 @@ def _subscription_sort_key(row: LiveSubscriptionOut) -> tuple[datetime, str]:
 def _live_subscription_priority(row: LiveSubscriptionOut) -> tuple[int, float, str, str]:
     if row.source_kind == "workflow":
         source_priority = 0
-    elif row.source_kind == "watchlist":
-        source_priority = 1
     elif row.source_kind == "ui":
         source_priority = {
-            "watchlist_view": 2,
-            "market_intelligence_view": 2,
-            "company_view": 2,
-            "watchlist_focus": 2,
-            "active_ui": 3,
-            "heatmap": 4,
-            "symbol_search": 5,
-        }.get(row.source_type or "", 3)
+            "watchlist_view": 1,
+            "market_intelligence_view": 1,
+            "company_view": 1,
+            "watchlist_focus": 1,
+            "active_ui": 1,
+            "heatmap": 2,
+            "symbol_search": 3,
+        }.get(row.source_type or "", 1)
+    elif row.source_kind == "watchlist":
+        source_priority = 4
     elif row.source_kind == "background_workflow":
-        source_priority = 6
+        source_priority = 5
     elif row.source_kind == "manual":
-        source_priority = 7
+        source_priority = 6
     else:
-        source_priority = 8
+        source_priority = 7
     updated_at = row.updated_at.timestamp() if row.updated_at else 0.0
     return (source_priority, -updated_at, row.exchange or "", row.symbol)
 

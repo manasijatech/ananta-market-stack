@@ -170,6 +170,70 @@ function livePriceKey(row: { account_id?: string | null; broker_code?: string | 
     return [row.account_id || "", row.broker_code || "", row.symbol.trim().toUpperCase()].join(":");
 }
 
+function tickHasLivePrice(tick: LivePriceTick | undefined): boolean {
+    return toNumber(tick?.ltp ?? tick?.last_price) !== null;
+}
+
+function tickFromSubscription(subscription: LiveSubscription): LivePriceTick | null {
+    const quote = (subscription.last_quote || {}) as Partial<LivePriceTick> & {
+        detail?: { exchange?: string | null; raw?: Record<string, unknown> };
+    };
+    const raw = quote.detail?.raw || {};
+    const ohlc =
+        raw && typeof raw === "object" && raw.ohlc && typeof raw.ohlc === "object"
+            ? (raw.ohlc as Record<string, unknown>)
+            : {};
+    const ltpRaw = quote.ltp ?? quote.last_price ?? (raw as { last_price?: unknown }).last_price;
+    const ltp = toNumber(ltpRaw) !== null ? (ltpRaw as string | number) : null;
+    if (ltp === null && !Object.keys(quote).length) return null;
+    const changeRaw =
+        quote.change_pct ??
+        quote.day_change_perc ??
+        (raw as { day_change_perc?: unknown }).day_change_perc ??
+        (raw as { day_change_percentage?: unknown }).day_change_percentage;
+    const change = toNumber(changeRaw) !== null ? (changeRaw as string | number) : null;
+    return {
+        ...quote,
+        symbol: subscription.symbol,
+        exchange: subscription.exchange ?? quote.exchange ?? quote.detail?.exchange ?? null,
+        account_id: subscription.account_id ?? undefined,
+        broker_code: subscription.broker_code ?? undefined,
+        ltp,
+        last_price: toNumber(quote.last_price) !== null ? (quote.last_price as string | number) : ltp,
+        open: toNumber(quote.open ?? ohlc.open) !== null ? ((quote.open ?? ohlc.open) as string | number) : null,
+        high: toNumber(quote.high ?? ohlc.high) !== null ? ((quote.high ?? ohlc.high) as string | number) : null,
+        low: toNumber(quote.low ?? ohlc.low) !== null ? ((quote.low ?? ohlc.low) as string | number) : null,
+        close: toNumber(quote.close ?? ohlc.close) !== null ? ((quote.close ?? ohlc.close) as string | number) : null,
+        day_change_perc: change,
+        change_pct: change,
+        volume:
+            toNumber(quote.volume ?? (raw as { volume?: unknown }).volume) !== null
+                ? ((quote.volume ?? (raw as { volume?: unknown }).volume) as string | number)
+                : null,
+        received_at: subscription.last_received_at || quote.received_at || null,
+        status: subscription.health_status || quote.status || "stale"
+    };
+}
+
+function mergeLivePriceTick(current: LivePriceTick | undefined, incoming: LivePriceTick): LivePriceTick {
+    if (!current || !tickHasLivePrice(current)) return incoming;
+    if (!tickHasLivePrice(incoming)) return current;
+    const incomingChange = toNumber(incoming.change_pct ?? incoming.day_change_perc);
+    const currentChange = toNumber(current.change_pct ?? current.day_change_perc);
+    if (incomingChange !== null) return incoming;
+    if (currentChange === null) return incoming;
+    return {
+        ...incoming,
+        change_pct: current.change_pct ?? current.day_change_perc,
+        day_change_perc: current.day_change_perc ?? current.change_pct,
+        open: incoming.open ?? current.open,
+        high: incoming.high ?? current.high,
+        low: incoming.low ?? current.low,
+        close: incoming.close ?? current.close,
+        volume: incoming.volume ?? current.volume
+    };
+}
+
 function livePriceLabel(price: LivePriceTick | undefined): string {
     if (price?.unavailable_reason && toNumber(price.ltp ?? price.last_price) === null) return "—";
     return formatLivePrice(price?.ltp ?? price?.last_price);
@@ -513,6 +577,27 @@ export function WatchlistsManager({
     }, [alphaSymbolKey, alphaSymbols]);
 
     useEffect(() => {
+        if (!resolvedLiveDemand.length) return;
+        setLivePrices((current) => {
+            const next = { ...current };
+            for (const subscription of resolvedLiveDemand) {
+                const tick = tickFromSubscription(subscription);
+                if (!tick || !tickHasLivePrice(tick)) continue;
+                const key = livePriceKey({
+                    account_id: subscription.account_id,
+                    broker_code: subscription.broker_code,
+                    symbol: subscription.symbol
+                });
+                const symbolKey = livePriceKey({ symbol: subscription.symbol });
+                // Seed/fill from last_quote without clobbering fresher live ticks.
+                next[key] = mergeLivePriceTick(tick, next[key] ?? tick);
+                next[symbolKey] = mergeLivePriceTick(tick, next[symbolKey] ?? tick);
+            }
+            return next;
+        });
+    }, [resolvedLiveDemand]);
+
+    useEffect(() => {
         let cancelled = false;
         let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -523,7 +608,9 @@ export function WatchlistsManager({
             livePendingRef.current.clear();
             setLivePrices((current) => {
                 const next = { ...current };
-                for (const [key, value] of updates) next[key] = value;
+                for (const [key, value] of updates) {
+                    next[key] = mergeLivePriceTick(next[key], value);
+                }
                 return next;
             });
         }
@@ -542,13 +629,9 @@ export function WatchlistsManager({
         async function connect() {
             if (!livePriceRefs.length) {
                 setLiveState("disconnected");
-                setLivePrices({});
-                livePendingRef.current.clear();
                 return;
             }
             setLiveState("connecting");
-            setLivePrices({});
-            livePendingRef.current.clear();
             try {
                 const userId = initialWatchlists[0]?.user_id;
                 if (!userId) {
@@ -794,10 +877,12 @@ export function WatchlistsManager({
                     if (cancelled) return;
                     setPresetResults(result);
                     setPresetHasMore(result.length === PRESET_PAGE_SIZE);
-                } catch {
+                    setError("");
+                } catch (caught) {
                     if (cancelled) return;
                     setPresetResults([]);
                     setPresetHasMore(false);
+                    fail(caught, "Failed to load preset catalog.");
                 } finally {
                     if (!cancelled) setPresetLoading(false);
                 }
@@ -824,8 +909,11 @@ export function WatchlistsManager({
                     return [...current, ...result.filter((item) => !existing.has(item.id))];
                 });
                 setPresetHasMore(result.length === PRESET_PAGE_SIZE);
-            } catch {
-                if (!cancelled) setPresetHasMore(false);
+            } catch (caught) {
+                if (!cancelled) {
+                    setPresetHasMore(false);
+                    fail(caught, "Failed to load more presets.");
+                }
             } finally {
                 if (!cancelled) setPresetLoadingMore(false);
             }
@@ -1258,8 +1346,9 @@ export function WatchlistsManager({
                     return [...current, ...result.filter((item) => !existing.has(item.id))];
                 });
                 setPresetHasMore(result.length === PRESET_PAGE_SIZE);
-            } catch {
+            } catch (caught) {
                 setPresetHasMore(false);
+                fail(caught, "Failed to load more presets.");
             } finally {
                 setPresetLoadingMore(false);
             }
@@ -1934,12 +2023,18 @@ export function WatchlistsManager({
                                                 <Empty className="py-8">
                                                     <EmptyHeader>
                                                         <EmptyTitle className="text-base">
-                                                            {presetLoading ? "Loading presets" : "No presets found"}
+                                                            {presetLoading
+                                                                ? "Loading presets"
+                                                                : error
+                                                                  ? "Unable to load presets"
+                                                                  : "No presets found"}
                                                         </EmptyTitle>
                                                         <EmptyDescription>
                                                             {presetLoading
                                                                 ? "Fetching index catalog..."
-                                                                : "Try a different search term."}
+                                                                : error
+                                                                  ? error
+                                                                  : "Try a different search term."}
                                                         </EmptyDescription>
                                                     </EmptyHeader>
                                                 </Empty>

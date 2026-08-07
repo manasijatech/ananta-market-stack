@@ -64,6 +64,13 @@ def _payload_has_live_price(payload: dict[str, Any]) -> bool:
     raw = payload.get("raw")
     if isinstance(raw, dict):
         candidates.append(raw.get("last_price"))
+        candidates.append(raw.get("ltp"))
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        detail_raw = detail.get("raw")
+        if isinstance(detail_raw, dict):
+            candidates.append(detail_raw.get("last_price"))
+            candidates.append(detail_raw.get("ltp"))
     for value in candidates:
         try:
             if float(value) > 0:
@@ -71,6 +78,183 @@ def _payload_has_live_price(payload: dict[str, Any]) -> bool:
         except (TypeError, ValueError):
             continue
     return False
+
+
+def _quote_raw_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    detail = payload.get("detail") if isinstance(payload.get("detail"), dict) else {}
+    raw = detail.get("raw") if isinstance(detail.get("raw"), dict) else {}
+    if raw:
+        return raw
+    nested = payload.get("raw")
+    return nested if isinstance(nested, dict) else {}
+
+
+def _stale_tick_from_quote_payload(
+    *,
+    user_id: str,
+    account_id: str,
+    broker_code: str,
+    symbol: str,
+    payload: dict[str, Any],
+    received_at: Any = None,
+) -> dict[str, Any] | None:
+    if not _payload_has_live_price(payload):
+        return None
+    raw = _quote_raw_from_payload(payload)
+    ohlc = raw.get("ohlc") if isinstance(raw.get("ohlc"), dict) else {}
+    ltp = payload.get("ltp")
+    if ltp in (None, "", 0, "0"):
+        ltp = payload.get("last_price")
+    if ltp in (None, "", 0, "0"):
+        ltp = raw.get("last_price") or raw.get("ltp")
+    try:
+        ltp_value = float(ltp)
+    except (TypeError, ValueError):
+        return None
+    if ltp_value <= 0:
+        return None
+
+    open_price = payload.get("open") if payload.get("open") not in (None, "") else ohlc.get("open")
+    high_price = payload.get("high") if payload.get("high") not in (None, "") else ohlc.get("high")
+    low_price = payload.get("low") if payload.get("low") not in (None, "") else ohlc.get("low")
+    close_price = payload.get("close") if payload.get("close") not in (None, "") else ohlc.get("close")
+    change_pct = payload.get("change_pct")
+    if change_pct in (None, ""):
+        change_pct = payload.get("day_change_perc")
+    if change_pct in (None, ""):
+        change_pct = raw.get("day_change_perc") or raw.get("day_change_percentage")
+    if change_pct in (None, "") and close_price not in (None, "", 0, "0"):
+        try:
+            reference = float(close_price)
+            if reference:
+                change_pct = round(((ltp_value - reference) / reference) * 100, 2)
+        except (TypeError, ValueError):
+            pass
+
+    return {
+        "user_id": user_id,
+        "account_id": account_id,
+        "broker_code": broker_code,
+        "symbol": symbol,
+        "exchange": (
+            payload.get("exchange")
+            or (payload.get("detail").get("exchange") if isinstance(payload.get("detail"), dict) else None)
+        ),
+        "ltp": ltp_value,
+        "last_price": raw.get("last_price") if raw.get("last_price") not in (None, "") else ltp_value,
+        "open": open_price,
+        "high": high_price,
+        "low": low_price,
+        "close": close_price,
+        "volume": payload.get("volume") if payload.get("volume") not in (None, "") else raw.get("volume"),
+        "day_change": payload.get("day_change") if payload.get("day_change") not in (None, "") else raw.get("day_change"),
+        "day_change_perc": change_pct,
+        "change_pct": change_pct,
+        "best_bid_price": payload.get("best_bid_price"),
+        "best_ask_price": payload.get("best_ask_price"),
+        "received_at": received_at or payload.get("received_at"),
+        "stale": True,
+        "status": "stale",
+    }
+
+
+def _read_db_quote_fallbacks(
+    quote_refs: list[tuple[str, str, str, str]],
+) -> list[dict[str, Any]]:
+    if not quote_refs:
+        return []
+    by_user: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+    for user_id, account_id, broker_code, symbol in quote_refs:
+        by_user[user_id].append((account_id, broker_code, symbol))
+
+    rows: list[dict[str, Any]] = []
+    db = SessionLocal()
+    try:
+        for user_id, refs in by_user.items():
+            account_ids = {account_id for account_id, _, _ in refs}
+            broker_codes = {broker_code for _, broker_code, _ in refs}
+            symbols = {symbol for _, _, symbol in refs}
+            subscriptions = db.execute(
+                select(
+                    LiveSymbolSubscription.account_id,
+                    LiveSymbolSubscription.broker_code,
+                    LiveSymbolSubscription.symbol,
+                    LiveSymbolSubscription.last_quote_json,
+                    LiveSymbolSubscription.last_received_at,
+                ).where(
+                    LiveSymbolSubscription.user_id == user_id,
+                    LiveSymbolSubscription.account_id.in_(account_ids),
+                    LiveSymbolSubscription.broker_code.in_(broker_codes),
+                    LiveSymbolSubscription.symbol.in_(symbols),
+                    LiveSymbolSubscription.last_quote_json.is_not(None),
+                )
+            ).all()
+            wanted = {(account_id, broker_code, symbol) for account_id, broker_code, symbol in refs}
+            seen: set[tuple[str, str, str]] = set()
+            for account_id, broker_code, symbol, last_quote_json, last_received_at in subscriptions:
+                key = (str(account_id), str(broker_code), _normal_symbol(symbol))
+                if key not in wanted or key in seen:
+                    continue
+                payload = _loads_json(last_quote_json, {})
+                if not isinstance(payload, dict):
+                    continue
+                tick = _stale_tick_from_quote_payload(
+                    user_id=user_id,
+                    account_id=key[0],
+                    broker_code=key[1],
+                    symbol=key[2],
+                    payload=payload,
+                    received_at=last_received_at.isoformat() if last_received_at else None,
+                )
+                if tick is None:
+                    continue
+                seen.add(key)
+                rows.append(tick)
+    finally:
+        db.close()
+    return rows
+
+
+def _read_quote_snapshots(
+    client: redis.Redis,
+    quote_refs: list[tuple[str, str, str, str]],
+) -> list[dict[str, Any]]:
+    if not quote_refs:
+        return []
+    pipe = client.pipeline()
+    for user_id, account_id, broker_code, symbol in quote_refs:
+        pipe.get(_quote_key(user_id, account_id, broker_code, symbol))
+    rows: list[dict[str, Any]] = []
+    try:
+        raw_rows = pipe.execute()
+    except redis.RedisError:
+        raw_rows = [None] * len(quote_refs)
+    missing_refs: list[tuple[str, str, str, str]] = []
+    for index, raw in enumerate(raw_rows):
+        payload = _loads_json(raw, {})
+        ref = quote_refs[index] if index < len(quote_refs) else None
+        if isinstance(payload, dict) and payload and _payload_has_live_price(payload):
+            rows.append(payload)
+        elif ref:
+            missing_refs.append(ref)
+    still_missing: list[tuple[str, str, str, str]] = []
+    if missing_refs:
+        pipe = client.pipeline()
+        for _, _, broker_code, symbol in missing_refs:
+            pipe.get(_market_quote_key(broker_code, symbol))
+        try:
+            market_rows = pipe.execute()
+        except redis.RedisError:
+            market_rows = [None] * len(missing_refs)
+        for index, raw in enumerate(market_rows):
+            payload = _loads_json(raw, {})
+            if isinstance(payload, dict) and payload and _payload_has_live_price(payload):
+                rows.append(payload)
+            elif index < len(missing_refs):
+                still_missing.append(missing_refs[index])
+    if still_missing:
+        rows.extend(_read_db_quote_fallbacks(still_missing))
+    return rows
 
 
 def _stream_name(user_id: str, account_id: str, broker_code: str) -> str:
@@ -130,44 +314,6 @@ def _price_scope(
         quote_refs.append(ref)
         symbols_by_stream[_stream_name(user_id, str(account_id), str(broker_code))].add(normalized_symbol)
     return dict(symbols_by_stream), quote_refs
-
-
-def _read_quote_snapshots(
-    client: redis.Redis,
-    quote_refs: list[tuple[str, str, str, str]],
-) -> list[dict[str, Any]]:
-    if not quote_refs:
-        return []
-    pipe = client.pipeline()
-    for user_id, account_id, broker_code, symbol in quote_refs:
-        pipe.get(_quote_key(user_id, account_id, broker_code, symbol))
-    rows: list[dict[str, Any]] = []
-    try:
-        raw_rows = pipe.execute()
-    except redis.RedisError:
-        return []
-    missing_refs: list[tuple[str, str, str, str]] = []
-    for index, raw in enumerate(raw_rows):
-        payload = _loads_json(raw, {})
-        ref = quote_refs[index] if index < len(quote_refs) else None
-        if isinstance(payload, dict) and payload and _payload_has_live_price(payload):
-            rows.append(payload)
-        elif ref:
-            user_id, account_id, broker_code, symbol = ref
-            missing_refs.append((user_id, account_id, broker_code, symbol))
-    if missing_refs:
-        pipe = client.pipeline()
-        for _, _, broker_code, symbol in missing_refs:
-            pipe.get(_market_quote_key(broker_code, symbol))
-        try:
-            market_rows = pipe.execute()
-        except redis.RedisError:
-            market_rows = []
-        for raw in market_rows:
-            payload = _loads_json(raw, {})
-            if isinstance(payload, dict) and payload and _payload_has_live_price(payload):
-                rows.append(payload)
-    return rows
 
 
 def _xread_prices(client: redis.Redis, streams: dict[str, str]) -> list[tuple[str, list[tuple[str, dict]]]]:

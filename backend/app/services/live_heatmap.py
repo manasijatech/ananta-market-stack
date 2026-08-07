@@ -137,7 +137,7 @@ def _normalize_live_payload(payload: dict[str, Any], fallback_exchange: str | No
 
 
 def _subscription_priority(row: LiveSymbolSubscription) -> tuple[int, int, int]:
-    source_rank = {"workflow": 0, "watchlist": 1, "ui": 2}.get(row.source_kind or "", 3)
+    source_rank = {"workflow": 0, "ui": 1, "watchlist": 2}.get(row.source_kind or "", 3)
     has_quote = 0 if row.last_received_at else 1
     quote_size = -(len(row.last_quote_json or "{}"))
     return (source_rank, has_quote, quote_size)

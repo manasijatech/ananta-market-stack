@@ -65,6 +65,27 @@ function hasRenderableTick(tick: LivePriceTick | undefined): boolean {
     return Boolean(tick && (hasLivePrice(tick) || tick.unavailable_reason));
 }
 
+function mergePriceTick(current: LivePriceTick | undefined, incoming: LivePriceTick): LivePriceTick {
+    if (!current || !hasLivePrice(current)) return incoming;
+    if (!hasLivePrice(incoming)) return current;
+    const incomingChange = toNumber(incoming.change_pct ?? incoming.day_change_perc);
+    const currentChange = toNumber(current.change_pct ?? current.day_change_perc);
+    if (incomingChange !== null) return incoming;
+    if (currentChange === null) return incoming;
+    return {
+        ...incoming,
+        change_pct: current.change_pct ?? current.day_change_perc,
+        day_change_perc: current.day_change_perc ?? current.change_pct,
+        open: incoming.open ?? current.open,
+        high: incoming.high ?? current.high,
+        low: incoming.low ?? current.low,
+        close: incoming.close ?? current.close,
+        volume: incoming.volume ?? current.volume,
+        best_bid_price: incoming.best_bid_price ?? current.best_bid_price,
+        best_ask_price: incoming.best_ask_price ?? current.best_ask_price
+    };
+}
+
 function subscriptionKey(subscription: LiveSubscription): string {
     return [subscription.account_id || "", subscription.broker_code || "", subscription.symbol].join(":");
 }
@@ -158,9 +179,8 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
         setPrices((current) => {
             const next: Record<string, LivePriceTick> = { ...statusTicks };
             for (const [key, value] of Object.entries(current)) {
-                if (desiredKeys.has(key)) {
-                    next[key] = value;
-                }
+                if (!desiredKeys.has(key)) continue;
+                next[key] = mergePriceTick(statusTicks[key], value);
             }
             return next;
         });
@@ -190,7 +210,7 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
             setPrices((current) => {
                 const next = { ...current };
                 for (const [key, value] of updates) {
-                    next[key] = value;
+                    next[key] = mergePriceTick(next[key], value);
                 }
                 return next;
             });
@@ -210,7 +230,6 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
             if (!visibleRows.length) {
                 setSocketState("disconnected");
                 setMessage("");
-                setPrices({});
                 pendingRef.current.clear();
                 return;
             }

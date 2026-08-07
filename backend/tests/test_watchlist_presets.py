@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.schemas.watchlist import WatchlistCreateIn
@@ -67,6 +67,95 @@ def test_list_preset_catalog_hides_blacklisted_rows():
         )
         db.commit()
 
+        rows = preset_svc.list_preset_catalog(db, "u1", limit=20, offset=0)
+
+        assert [row["id"] for row in rows] == ["visible"]
+    finally:
+        db.close()
+
+
+def test_sync_preset_catalog_updates_existing_row_when_slug_changes(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    try:
+        now = datetime.utcnow()
+        db.add(
+            SystemWatchlistPreset(
+                id="healthcare",
+                slug="nifty-healthcare-index",
+                name="Nifty Healthcare INDEX",
+                trading_index_name="NIFTY HEALTHCARE",
+                constituent_count=20,
+                search_text="nifty healthcare index",
+                sync_status="ready",
+                last_catalog_sync_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+
+        monkeypatch.setattr(
+            preset_svc,
+            "_fetch_json",
+            lambda _url: [
+                {
+                    "Trading_Index_Name": "NIFTY HEALTHCARE",
+                    "Index_long_name": "Nifty Healthcare",
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            preset_svc,
+            "_fetch_text",
+            lambda _url: '<a href="/indices/equity/sectoral-indices/nifty-healthcare">Nifty Healthcare</a>',
+        )
+
+        updated = preset_svc.sync_preset_catalog(db, force=True)
+        row = db.get(SystemWatchlistPreset, "healthcare")
+
+        assert updated == 1
+        assert row is not None
+        assert row.slug == "nifty-healthcare"
+        assert row.name == "Nifty Healthcare"
+        assert row.trading_index_name == "NIFTY HEALTHCARE"
+        assert row.sync_status == "ready"
+        assert db.scalar(select(func.count()).select_from(SystemWatchlistPreset)) == 1
+    finally:
+        db.close()
+
+
+def test_ensure_preset_catalog_serves_stale_rows_when_sync_fails(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    try:
+        now = datetime.utcnow()
+        db.add(
+            SystemWatchlistPreset(
+                id="visible",
+                slug="nifty-50",
+                name="NIFTY 50",
+                trading_index_name="Nifty 50",
+                constituent_count=50,
+                search_text="nifty 50",
+                sync_status="ready",
+                last_catalog_sync_at=datetime(2020, 1, 1),
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+
+        def boom(*_args, **_kwargs):
+            raise HTTPException(status_code=502, detail="upstream down")
+
+        monkeypatch.setattr(preset_svc, "sync_preset_catalog", boom)
+
+        preset_svc.ensure_preset_catalog(db)
         rows = preset_svc.list_preset_catalog(db, "u1", limit=20, offset=0)
 
         assert [row["id"] for row in rows] == ["visible"]

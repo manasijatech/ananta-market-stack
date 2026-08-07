@@ -307,12 +307,23 @@ def _default_config(user_id: str) -> UserAlphaWebSocketConfig:
         user_id=user_id,
         is_enabled=True,
         products_json="[]",
-        scope_mode="alert_subscriptions",
+        # Cover alert symbols and all watchlists so Market Intelligence stays live.
+        scope_mode="alerts_and_watchlists",
         watchlist_ids_json="[]",
-        include_all_watchlists=False,
+        include_all_watchlists=True,
         full_market=False,
         last_status="unknown",
     )
+
+
+def ensure_watchlist_aware_scope(db: Session, config: UserAlphaWebSocketConfig) -> UserAlphaWebSocketConfig:
+    """Expand legacy alert-only configs so watchlist MI coverage keeps receiving events."""
+    if config.scope_mode != "alert_subscriptions":
+        return config
+    config.scope_mode = "alerts_and_watchlists"
+    config.include_all_watchlists = True
+    db.add(config)
+    return config
 
 
 def _entitled_products(account: dict[str, Any]) -> list[str]:
@@ -405,7 +416,16 @@ def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlpha
     credential = _credential_for_user(db, user_id)
     if credential is None or not credential.is_enabled or not credential.api_key_cipher:
         return None
-    config = db.get(UserAlphaWebSocketConfig, user_id) or _default_config(user_id)
+    config = db.get(UserAlphaWebSocketConfig, user_id)
+    if config is None:
+        config = _default_config(user_id)
+        db.add(config)
+        db.commit()
+    else:
+        previous_scope = config.scope_mode
+        ensure_watchlist_aware_scope(db, config)
+        if previous_scope != config.scope_mode:
+            db.commit()
     account = _account_data(credential)
     entitled_products = _entitled_products(account)
     configured_products = [
@@ -619,16 +639,45 @@ def _store_event(user_id: str, product: str, payload: dict[str, Any]) -> AlphaWe
     try:
         symbols: set[str] = set()
         _collect_symbols(payload, symbols)
+        symbol = next(iter(sorted(symbols)), None)
+        price_snapshot = None
+        try:
+            from app.services.alpha_event_prices import resolve_symbol_price_snapshot
+
+            price_snapshot = resolve_symbol_price_snapshot(db, user_id, symbol, allow_rest_fallback=True)
+        except Exception as exc:
+            logger.debug("Alpha event price snapshot failed for %s/%s: %s", user_id, symbol, exc)
         row = AlphaWebSocketEvent(
             id=str(uuid.uuid4()),
             user_id=user_id,
             product=product,
-            symbol=next(iter(sorted(symbols)), None),
+            symbol=symbol,
             event_key=_event_key(product, payload),
             payload_json=_json_dumps(payload),
             received_at=_utc_now(),
+            price_ltp=(price_snapshot or {}).get("price_ltp"),
+            price_change_pct=(price_snapshot or {}).get("price_change_pct"),
+            price_as_of=(price_snapshot or {}).get("price_as_of"),
+            price_source=(price_snapshot or {}).get("price_source"),
+            price_broker_code=(price_snapshot or {}).get("price_broker_code"),
         )
         db.add(row)
+        try:
+            from app.services.alpha_feed_cache import upsert_feed_item_from_event
+
+            upsert_feed_item_from_event(
+                db,
+                user_id=user_id,
+                product=product,
+                payload=payload,
+                symbol=symbol,
+                event_key=row.event_key,
+                received_at=row.received_at,
+                price_snapshot=price_snapshot,
+                commit=False,
+            )
+        except Exception as exc:
+            logger.debug("Alpha feed cache upsert failed for %s/%s: %s", user_id, product, exc)
         db.commit()
         db.refresh(row)
         return row

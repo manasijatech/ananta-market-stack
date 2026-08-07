@@ -507,7 +507,12 @@ export function ConcallsTab({
     onTickerClick,
     symbolMetadata
 }: SharedTabProps & { items: AlphaConcall[] }) {
-    const [activeAudio, setActiveAudio] = useState<{ src: string; symbol: string; quarter: string } | null>(null);
+    const [activeAudio, setActiveAudio] = useState<{
+        itemKey: string;
+        src: string;
+        symbol: string;
+        quarter: string;
+    } | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [playing, setPlaying] = useState(false);
 
@@ -519,77 +524,57 @@ export function ConcallsTab({
     if (!items.length) return <EmptyFeed section="concalls" />;
 
     return (
-        <div className="relative flex min-w-0 flex-col gap-2 pb-24">
+        <div className="relative flex min-w-0 flex-col gap-2">
             {filtered.length ? null : <EmptyFeed section="concalls" />}
 
-            {filtered.map((item) => (
-                <ConcallCard
-                    key={itemKey(item)}
-                    item={item}
-                    onPlayAudio={(src) =>
-                        setActiveAudio({ src, symbol: item.symbol, quarter: item.quarter ?? "" })
-                    }
-                    onTickerClick={onTickerClick}
-                    symbolMetadata={symbolMetadata}
-                />
-            ))}
-
-            {activeAudio ? (
-                <Card className="sticky bottom-0 z-20 mt-4 shadow-lg">
-                    <CardPanel className="flex items-center gap-3 p-3">
-                        <TickerAvatar
-                            metadata={symbolMetadata[activeAudio.symbol.trim().toUpperCase()]}
-                            symbol={activeAudio.symbol}
-                        />
-                        <div className="min-w-0 flex-1">
-                            <p className="truncate font-mono text-sm font-medium text-foreground">
-                                {activeAudio.symbol}
-                                {activeAudio.quarter ? ` — ${activeAudio.quarter}` : ""}
-                            </p>
-                            <ConcallAudioControls
-                                audioRef={audioRef}
-                                onPlayingChange={setPlaying}
-                                src={activeAudio.src}
-                            />
-                        </div>
-                        <div className="hidden w-24 min-[540px]:block">
-                            <LiveWaveform
-                                active={playing}
-                                barGap={1}
-                                barRadius={4}
-                                barWidth={2}
-                                className="h-8 w-full text-primary"
-                                height={32}
-                                mediaElementRef={audioRef}
-                                mode="static"
-                            />
-                        </div>
-                        <Button
-                            aria-label="Close audio player"
-                            className="size-8 shrink-0"
-                            onClick={() => setActiveAudio(null)}
-                            size="icon"
-                            type="button"
-                            variant="ghost"
-                        >
-                            <X aria-hidden="true" />
-                        </Button>
-                    </CardPanel>
-                </Card>
-            ) : null}
+            {filtered.map((item) => {
+                const key = itemKey(item);
+                const isActiveAudio = activeAudio?.itemKey === key;
+                return (
+                    <ConcallCard
+                        key={key}
+                        audioRef={audioRef}
+                        item={item}
+                        onCloseAudio={() => setActiveAudio(null)}
+                        onPlayAudio={(src) =>
+                            setActiveAudio({
+                                itemKey: key,
+                                src,
+                                symbol: item.symbol,
+                                quarter: item.quarter ?? ""
+                            })
+                        }
+                        onPlayingChange={setPlaying}
+                        onTickerClick={onTickerClick}
+                        playing={playing}
+                        showAudioPlayer={isActiveAudio}
+                        symbolMetadata={symbolMetadata}
+                    />
+                );
+            })}
         </div>
     );
 }
 
 function ConcallCard({
+    audioRef,
     item,
+    onCloseAudio,
     onPlayAudio,
+    onPlayingChange,
     onTickerClick,
+    playing,
+    showAudioPlayer,
     symbolMetadata
 }: {
+    audioRef: RefObject<HTMLAudioElement | null>;
     item: AlphaConcall;
+    onCloseAudio: () => void;
     onPlayAudio: (src: string) => void;
+    onPlayingChange: (playing: boolean) => void;
     onTickerClick?: (symbol: string) => void;
+    playing: boolean;
+    showAudioPlayer: boolean;
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
 }) {
     const [expanded, setExpanded] = useState(false);
@@ -647,7 +632,7 @@ function ConcallCard({
                                 onClick={() => onPlayAudio(item.audio_url!)}
                                 size="sm"
                                 type="button"
-                                variant="outline"
+                                variant={showAudioPlayer ? "default" : "outline"}
                             >
                                 <Play aria-hidden="true" />
                                 Audio
@@ -655,6 +640,44 @@ function ConcallCard({
                         ) : null}
                     </div>
                 </div>
+
+                {showAudioPlayer && item.audio_url ? (
+                    <div className="mt-3 flex items-center gap-3 rounded-lg border border-border/70 bg-muted/40 p-3">
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate font-mono text-sm font-medium text-foreground">
+                                {symbol}
+                                {item.quarter ? ` — ${item.quarter}` : ""}
+                            </p>
+                            <ConcallAudioControls
+                                audioRef={audioRef}
+                                onPlayingChange={onPlayingChange}
+                                src={item.audio_url}
+                            />
+                        </div>
+                        <div className="hidden w-24 min-[540px]:block">
+                            <LiveWaveform
+                                active={playing}
+                                barGap={1}
+                                barRadius={4}
+                                barWidth={2}
+                                className="h-8 w-full text-primary"
+                                height={32}
+                                mediaElementRef={audioRef}
+                                mode="static"
+                            />
+                        </div>
+                        <Button
+                            aria-label="Close audio player"
+                            className="size-8 shrink-0"
+                            onClick={onCloseAudio}
+                            size="icon"
+                            type="button"
+                            variant="ghost"
+                        >
+                            <X aria-hidden="true" />
+                        </Button>
+                    </div>
+                ) : null}
 
                 {!expanded ? (
                     <div className="mt-3 flex flex-col gap-3 pl-9">

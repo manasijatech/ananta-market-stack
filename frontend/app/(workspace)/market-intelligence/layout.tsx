@@ -7,14 +7,14 @@ import {
     watchlistCoverageGroups,
     type MarketIntelligenceFeeds
 } from "@/components/market-intelligence/market-intelligence-data";
-import { getAlphaAlerts } from "@/service/actions/alpha/alerts";
-import { getAlphaAnnouncements } from "@/service/actions/alpha/announcements";
-import { getAlphaConcalls } from "@/service/actions/alpha/concalls";
-import { getAlphaEarnings } from "@/service/actions/alpha/earnings";
-import { getAlphaNews } from "@/service/actions/alpha/news";
+import { getCachedAlphaFeed } from "@/service/actions/alpha/feeds";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { getWatchlists } from "@/service/actions/watchlist";
 import { getAlphaCreditWarningMessage } from "@/lib/alpha-credit-warning";
+import type { AlphaAlert } from "@/service/types/alpha/alerts";
+import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/types/alpha/announcements";
+import type { AlphaConcall } from "@/service/types/alpha/concalls";
+import type { AlphaNewsItem } from "@/service/types/alpha/news";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import type { Watchlist } from "@/service/types/watchlist";
 
@@ -36,6 +36,7 @@ type InitialFeedsResult = {
 async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> {
     if (!symbols.length) return { creditWarningMessage: null, feeds: emptyMarketIntelligenceFeeds() };
     const params = {
+        // Full watchlist universe; backend refreshes every stale/missing symbol (batched).
         symbols,
         from: isoDateDaysAgo(30),
         to: todayIsoDate(),
@@ -44,11 +45,11 @@ async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> 
         detailed: true
     };
     const [news, announcements, earnings, concalls, alerts] = await Promise.allSettled([
-        getAlphaNews(params),
-        getAlphaAnnouncements(params),
-        getAlphaEarnings(params),
-        getAlphaConcalls(params),
-        getAlphaAlerts(params)
+        getCachedAlphaFeed<AlphaNewsItem>("news", params),
+        getCachedAlphaFeed<AlphaAnnouncementDetail>("announcements", params),
+        getCachedAlphaFeed<AlphaEarningsDetail>("earnings", params),
+        getCachedAlphaFeed<AlphaConcall>("concalls", params),
+        getCachedAlphaFeed<AlphaAlert>("alerts", params)
     ]);
 
     return {
@@ -75,14 +76,14 @@ export default async function MarketIntelligenceLayout({ children }: { children:
 
     const groups = watchlistCoverageGroups(watchlists);
     const allSymbols = symbolsFromCoverageGroups(groups);
-    const symbols = allSymbols.slice(0, ALPHA_SYMBOL_LIMIT);
+    const symbols = allSymbols;
     let symbolMetadata: Record<string, AlphaSymbolMetadata> = {};
     let initialFeeds = emptyMarketIntelligenceFeeds();
     let creditWarningMessage: string | null = null;
 
     if (!error && symbols.length) {
         const [metadataResult, feedsResult] = await Promise.allSettled([
-            getAlphaSymbolMetadata(symbols),
+            getAlphaSymbolMetadata(symbols.slice(0, ALPHA_SYMBOL_LIMIT)),
             loadInitialFeeds(symbols)
         ]);
 

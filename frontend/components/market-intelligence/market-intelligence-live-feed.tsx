@@ -27,7 +27,7 @@ import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
 import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 
-const MAX_FEED_ITEMS = 50;
+const MAX_FEED_ITEMS = 200;
 
 export type MarketIntelligenceSocketState = "connecting" | "live" | "offline";
 
@@ -38,6 +38,14 @@ const emptyLiveUpdateCounts = {
     concalls: 0,
     alerts: 0
 } satisfies Record<AlphaSection, number>;
+
+const emptyHasMore = {
+    news: false,
+    announcements: false,
+    earnings: false,
+    concalls: false,
+    alerts: false
+} satisfies Record<AlphaSection, boolean>;
 
 type IncomingEnvelope = {
     channel?: string;
@@ -128,8 +136,11 @@ export function MarketIntelligenceLiveFeed({
     activeSection,
     enableLiveUpdates = true,
     feedSearch,
+    hasMoreBySection = emptyHasMore,
     initialFeeds,
+    isLoadingMore = false,
     onFeedSearchSymbol,
+    onLoadMore,
     onSocketStateChange,
     symbolMetadata,
     symbols
@@ -137,8 +148,11 @@ export function MarketIntelligenceLiveFeed({
     activeSection: AlphaSection;
     enableLiveUpdates?: boolean;
     feedSearch: string;
+    hasMoreBySection?: Record<AlphaSection, boolean>;
     initialFeeds: MarketIntelligenceFeeds;
+    isLoadingMore?: boolean;
     onFeedSearchSymbol?: (symbol: string) => void;
+    onLoadMore?: (section: AlphaSection) => void;
     onSocketStateChange?: (state: MarketIntelligenceSocketState) => void;
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
     symbols: string[];
@@ -307,6 +321,18 @@ export function MarketIntelligenceLiveFeed({
             {activeSection === "earnings" ? <EarningsTab items={feeds.earnings} {...sharedTabProps} /> : null}
             {activeSection === "concalls" ? <ConcallsTab items={feeds.concalls} {...sharedTabProps} /> : null}
             {activeSection === "alerts" ? <AlertsTab items={feeds.alerts} {...sharedTabProps} /> : null}
+            {hasMoreBySection[activeSection] ? (
+                <div className="mt-4 flex justify-center">
+                    <Button
+                        disabled={isLoadingMore}
+                        onClick={() => onLoadMore?.(activeSection)}
+                        type="button"
+                        variant="outline"
+                    >
+                        {isLoadingMore ? "Loading more…" : "Load more"}
+                    </Button>
+                </div>
+            ) : null}
         </div>
     );
 }
