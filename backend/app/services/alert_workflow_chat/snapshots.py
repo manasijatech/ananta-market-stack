@@ -72,9 +72,19 @@ def snapshot_to_schema(row: AlertWorkflowChatSnapshot) -> AlertWorkflowChatSnaps
 
 def validate_workflow_payload(payload: dict[str, Any]) -> tuple[bool, dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     try:
-        dsl = AlertWorkflowDsl(**(payload.get("workflow_dsl") or {}))
-        if dsl.workflow_type != "market_data":
-            return False, {"valid": False, "errors": ["Workflow chat only supports market_data workflows."]}, {}, {}, {}
+        from app.services.alerts_engine.dsl_normalize import normalize_workflow_dsl_payload
+
+        dsl = AlertWorkflowDsl(**normalize_workflow_dsl_payload(payload.get("workflow_dsl") or {}))
+        if dsl.workflow_type not in {"alert", "market_data", "alpha_feed"}:
+            return False, {"valid": False, "errors": ["Unsupported workflow_type for Workflow AI Chat."]}, {}, {}, {}
+        if not dsl.broker_trigger.enabled and not dsl.feed_trigger.enabled:
+            return (
+                False,
+                {"valid": False, "errors": ["At least one trigger source (broker or Ananta feed) must be enabled."]},
+                {},
+                {},
+                {},
+            )
         compile_result = compile_workflow_dsl(dsl)
         workflow_ast = compile_result.get("workflow_ast")
         validation = {

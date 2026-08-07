@@ -255,8 +255,10 @@ def _instrument_scope_for_tick(db, workflow, tick: dict[str, Any]) -> dict[str, 
 
 
 def _workflow_active_for_tick(db, workflow, tick: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-    if workflow.workflow_dsl.workflow_type != "market_data":
-        return True, {"active": True, "reason": "not a broker market-data workflow"}
+    from app.services.alerts_engine.dsl_normalize import broker_trigger_enabled
+
+    if not broker_trigger_enabled(workflow.workflow_dsl):
+        return False, {"active": False, "reason": "broker market-data trigger disabled"}
     result = evaluate_active_period(
         workflow.workflow_dsl.active_period,
         _instrument_scope_for_tick(db, workflow, tick),
@@ -266,8 +268,10 @@ def _workflow_active_for_tick(db, workflow, tick: dict[str, Any]) -> tuple[bool,
 
 
 def _workflow_active_for_feed(workflow) -> tuple[bool, dict[str, Any]]:
-    if workflow.workflow_dsl.workflow_type != "alpha_feed":
-        return True, {"active": True, "reason": "not an alpha feed workflow"}
+    from app.services.alerts_engine.dsl_normalize import feed_trigger_enabled
+
+    if not feed_trigger_enabled(workflow.workflow_dsl):
+        return False, {"active": False, "reason": "Ananta feed trigger disabled"}
     result = evaluate_active_period(
         workflow.workflow_dsl.active_period,
         {},
@@ -1796,8 +1800,6 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
     market_cap_cache: dict[str, tuple[float | None, str, str | None]] = {}
     for row in rows:
         workflow = alert_svc._workflow_to_out(row)  # type: ignore[attr-defined]
-        if workflow.workflow_dsl.workflow_type != "alpha_feed":
-            continue
         trigger = workflow.workflow_dsl.feed_trigger
         if not trigger.enabled or event.product not in trigger.products:
             continue

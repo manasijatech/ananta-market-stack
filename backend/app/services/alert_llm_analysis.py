@@ -125,10 +125,15 @@ def run_workflow_llm_analysis(
                 },
             ),
         )
-        result["status"] = "success"
         result["output"] = _response_text(response)
         result["usage"] = _usage_payload(response)
+        if context["context_errors"]:
+            result["status"] = "success_with_context_errors"
+            result["soft_fail"] = True
+        else:
+            result["status"] = "success"
     except Exception as exc:
         result["status"] = "error"
         result["error"] = str(exc)
+        result["soft_fail"] = True
     return result

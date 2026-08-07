@@ -73,7 +73,7 @@ def _default_draft_payload(title: str | None = None) -> AlertWorkflowCreate:
         symbol=None,
         exchange="NSE",
         workflow_dsl=AlertWorkflowDsl(
-            workflow_type="market_data",
+            workflow_type="alert",
             combine="all",
             conditions=[AlertCondition(field="ltp", operator="always")],
         ),
@@ -159,11 +159,13 @@ def create_session(
     title = (payload.title or "Workflow AI chat").strip()[:256] or "Workflow AI chat"
     if workflow_id:
         workflow = _owned_workflow(db, user_id, workflow_id)
-        if alert_svc._workflow_dsl(json_loads(workflow.workflow_dsl_json, {})).workflow_type != "market_data":
-            raise ValueError("Workflow AI Chat only supports broker market-data workflows.")
+        # Unified alert workflows (legacy market_data/alpha_feed normalize to alert).
+        _ = alert_svc._workflow_dsl(json_loads(workflow.workflow_dsl_json, {}))
     else:
         draft_payload = payload.draft_workflow or _default_draft_payload(title)
-        draft_payload.workflow_dsl.workflow_type = "market_data"
+        draft_payload.workflow_dsl.workflow_type = "alert"
+        if not draft_payload.workflow_dsl.broker_trigger.enabled and not draft_payload.workflow_dsl.feed_trigger.enabled:
+            draft_payload.workflow_dsl.broker_trigger.enabled = True
         workflow = alert_svc.create_draft_workflow(db, user_id, draft_payload)
         workflow_id = workflow.id
     now = utc_now()

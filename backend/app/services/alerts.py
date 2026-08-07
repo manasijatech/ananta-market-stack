@@ -47,6 +47,11 @@ from app.services.alerts_engine.conditions import (
     condition_registry_payload,
     evaluate_logic,
 )
+from app.services.alerts_engine.dsl_normalize import (
+    broker_trigger_enabled,
+    feed_trigger_enabled,
+    normalize_workflow_dsl_payload,
+)
 from app.services.alerts_engine.explain import explain_ast
 from app.services.alerts_engine.reconcile import cleanup_expired_ui_subscriptions, reconcile_user_subscriptions
 from app.services.alerts_engine.samples import sample_alerts_for_ast
@@ -59,7 +64,7 @@ from app.services.alert_llm_context import (
     prompt_placeholders_from_config,
     resolve_llm_context,
 )
-from app.services import broker_data_preferences, desktop_audio, llm_usage as llm_usage_svc
+from app.services import alpha_config, broker_data_preferences, desktop_audio, llm_usage as llm_usage_svc
 from app.services.live_price_adapters import get_live_price_adapter
 from broker.core.redis_cache import _redis_client, ping_redis
 from broker.crypto import decrypt_value, encrypt_value
@@ -219,17 +224,12 @@ def _instrument_ref(ref: dict[str, Any] | None) -> InstrumentRef:
 
 
 def _normalize_active_period_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
-    raw = dict(payload or {})
-    if str(raw.get("workflow_type") or "market_data") != "alpha_feed":
-        return raw
-    current_active_period = raw.get("active_period")
-    if current_active_period is None or current_active_period == _LEGACY_MARKET_ACTIVE_PERIOD:
-        raw["active_period"] = dict(_DEFAULT_ALPHA_FEED_ACTIVE_PERIOD)
-    return raw
+    """Legacy helper retained for callers; unified normalization lives in dsl_normalize."""
+    return normalize_workflow_dsl_payload(payload)
 
 
 def _workflow_dsl(payload: dict[str, Any] | None) -> AlertWorkflowDsl:
-    normalized_payload = _normalize_active_period_payload(payload)
+    normalized_payload = normalize_workflow_dsl_payload(payload)
     dsl = AlertWorkflowDsl(**normalized_payload)
     if dsl.workflow_ast is None:
         dsl.workflow_ast = ast_to_dict(ensure_workflow_ast(dsl))
@@ -365,7 +365,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert on announcements that match the selected symbols and announcement categories without using a trigger LLM.",
         "category": "alpha-feed",
         "workflow_dsl": {
-            "workflow_type": "alpha_feed",
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": False},
             "combine": "all",
             "cooldown_seconds": 900,
             "conditions": [{"field": "event", "operator": "always"}],
@@ -391,7 +392,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert on earnings feed items for the selected symbol scope without trigger LLM usage.",
         "category": "alpha-feed",
         "workflow_dsl": {
-            "workflow_type": "alpha_feed",
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": False},
             "combine": "all",
             "cooldown_seconds": 1800,
             "conditions": [{"field": "event", "operator": "always"}],
@@ -417,7 +419,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert on financial-result announcement categories such as results, unaudited results, integrated filings, and result media releases.",
         "category": "alpha-feed",
         "workflow_dsl": {
-            "workflow_type": "alpha_feed",
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": False},
             "combine": "all",
             "cooldown_seconds": 1800,
             "conditions": [{"field": "event", "operator": "always"}],
@@ -449,7 +452,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert on board-meeting outcomes and corporate-action categories such as dividends, bonus issues, buybacks, splits, rights issues, and security issuances.",
         "category": "alpha-feed",
         "workflow_dsl": {
-            "workflow_type": "alpha_feed",
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": False},
             "combine": "all",
             "cooldown_seconds": 1800,
             "conditions": [{"field": "event", "operator": "always"}],
@@ -491,7 +495,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert on acquisition, order-win, capex, partnership, subsidiary, and regulatory-approval announcement categories.",
         "category": "alpha-feed",
         "workflow_dsl": {
-            "workflow_type": "alpha_feed",
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": False},
             "combine": "all",
             "cooldown_seconds": 1800,
             "conditions": [{"field": "event", "operator": "always"}],
@@ -529,7 +534,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Watch Alpha news and announcements for order-win or contract-award events using an LLM trigger.",
         "category": "alpha-feed",
         "workflow_dsl": {
-            "workflow_type": "alpha_feed",
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": False},
             "combine": "all",
             "cooldown_seconds": 900,
             "conditions": [{"field": "event", "operator": "always"}],
@@ -553,7 +559,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Watch earnings and concall feed items for material positive or negative surprises.",
         "category": "alpha-feed",
         "workflow_dsl": {
-            "workflow_type": "alpha_feed",
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": False},
             "combine": "all",
             "cooldown_seconds": 1800,
             "conditions": [{"field": "event", "operator": "always"}],
@@ -577,6 +584,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert once when price crosses a configured level, with edge-triggering to avoid repeated ticks.",
         "category": "price",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 300,
             "conditions": [
@@ -594,9 +603,11 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
     {
         "slug": "percent-move-window",
         "name": "Percentage Move In Window",
-        "description": "Alert when a symbol moves by a configured percentage against a warmed rolling reference window.",
+        "description": "Alert when a symbol moves by a configured percentage against a warmed rolling reference window. For price moves with a Drishti news reason, use the Price Move With News Reason template instead.",
         "category": "momentum",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 300,
             "conditions": [
@@ -624,6 +635,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when price breaks above day high or below day low.",
         "category": "breakout",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "any",
             "cooldown_seconds": 300,
             "conditions": [
@@ -655,6 +668,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when current volume is meaningfully above a warmed rolling volume baseline.",
         "category": "volume",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 300,
             "conditions": [
@@ -687,6 +702,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when open interest rises over a configured threshold.",
         "category": "options",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 300,
             "conditions": [
@@ -714,6 +731,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when a symbol gaps up and price remains above the open, useful for morning momentum scans.",
         "category": "gap",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 600,
             "conditions": [
@@ -741,6 +760,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when price breaks the day high while volume is elevated versus average/reference volume.",
         "category": "breakout",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 600,
             "conditions": [
@@ -773,6 +794,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when a gap-up symbol loses the open and starts reversing lower.",
         "category": "reversal",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 600,
             "conditions": [
@@ -801,6 +824,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when price rises with open-interest expansion, useful for derivative activity scans.",
         "category": "options",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 600,
             "conditions": [
@@ -823,6 +848,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when a symbol moves quickly against its previous rolling reference.",
         "category": "momentum",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 180,
             "conditions": [
@@ -852,6 +879,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when price breaks the day high while the top-of-book spread is tight enough for liquid execution.",
         "category": "orderbook",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 300,
             "conditions": [
@@ -874,6 +903,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when top-of-book and total market depth both show strong buy-side imbalance.",
         "category": "orderbook",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 180,
             "conditions": [
@@ -902,6 +933,8 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
         "description": "Alert when price and volume both surge against warmed rolling baselines.",
         "category": "momentum",
         "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
             "combine": "all",
             "cooldown_seconds": 240,
             "conditions": [
@@ -928,6 +961,58 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
                 "message_template": "{symbol} surged on rolling price and volume confirmation. LTP {ltp}, change {change_pct}%, volume {volume}, day change {day_change_perc}%.",
             },
             "channels": {"inherit_defaults": True, "enabled": ["in_app", "discord"]},
+        },
+    },
+    {
+        "slug": "price-move-with-news-reason",
+        "name": "Price Move With News Reason",
+        "description": "Alert when price moves more than 5% on a rolling intraday window, then ask the LLM to explain the move using Drishti news, announcements, earnings, and concalls.",
+        "category": "momentum",
+        "workflow_dsl": {
+            "workflow_type": "alert",
+            "broker_trigger": {"enabled": True},
+            "combine": "all",
+            "cooldown_seconds": 900,
+            "conditions": [
+                {
+                    "field": "ltp",
+                    "operator": "rolling_pct_change_gte",
+                    "value": 5,
+                    "window_seconds": 21600,
+                    "trigger_mode": "rising_edge",
+                    "config": {"baseline": "oldest", "min_samples": 5, "min_coverage_ratio": 0.5},
+                }
+            ],
+            "dsl_text": "rolling_pct_change_gte(ltp, value=5, window_seconds=21600, baseline=oldest, min_samples=5, min_coverage_ratio=0.5, trigger_mode=rising_edge)",
+            "notification": {
+                "level": "warning",
+                "title_template": "{symbol} moved {change_pct}% — news check",
+                "message_template": "{symbol} moved {change_pct}% intraday (LTP {ltp}). Trigger: {trigger_reason}.\n\nLLM Analysis: {llm_analysis}",
+            },
+            "channels": {"inherit_defaults": True, "enabled": ["in_app"]},
+            "llm_analysis": {
+                "enabled": True,
+                "provider": None,
+                "model_id": None,
+                "prompt_template": (
+                    "Analyze why this alert triggered for {symbol}.\n\n"
+                    "Trigger: @trigger.reason\n"
+                    "Trigger evidence: @trigger.evidence\n"
+                    "Workflow: @trigger.summary\n"
+                    "Price data: @price.full\n"
+                    "Recent news: @news(days=2, max_pages=1, max_items=5)\n"
+                    "Recent announcements: @announcements(days=2, max_pages=1, max_items=5, detailed=true)\n"
+                    "Recent earnings: @earnings(days=2, max_pages=1, max_items=3, detailed=true)\n"
+                    "Recent concalls: @concalls(days=2, max_pages=1, max_items=2)\n\n"
+                    "Give a concise market-relevant explanation for the price move, include likely drivers, "
+                    "and mention when context is insufficient."
+                ),
+                "context_placeholders": [],
+                "temperature": 0.2,
+                "max_completion_tokens": 500,
+                "timeout_seconds": 25,
+            },
+            "feed_trigger": {"enabled": False},
         },
     },
 ]
@@ -1351,7 +1436,9 @@ def create_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> 
 def create_draft_workflow(db: Session, user_id: str, payload: AlertWorkflowCreate) -> AlertWorkflowOut:
     """Create a workflow editor draft without reconciling live subscriptions."""
 
-    payload.workflow_dsl.workflow_type = "market_data"
+    payload.workflow_dsl = _workflow_dsl(payload.workflow_dsl.model_dump())
+    if not payload.workflow_dsl.broker_trigger.enabled and not payload.workflow_dsl.feed_trigger.enabled:
+        payload.workflow_dsl.broker_trigger.enabled = True
     payload.workflow_dsl.targeting = _normalize_targeting(payload.workflow_dsl.targeting)
     if not payload.workflow_dsl.targeting.entries:
         payload.workflow_dsl.targeting = _default_targeting(payload.symbol, payload.exchange, payload.instrument_ref)
@@ -1727,13 +1814,29 @@ def validate_workflow(db: Session, user_id: str, workflow_id: str) -> dict[str, 
         return None
     dsl = _workflow_dsl(_json_loads(row.workflow_dsl_json, {}))
     result = _apply_notification_validation_to_compile(dsl, compile_workflow_dsl(dsl))
+    readiness = assess_workflow_trigger_readiness(
+        db,
+        user_id,
+        dsl,
+        account_id=row.account_id,
+        broker_code=row.broker_code,
+    )
+    result["readiness"] = readiness
+    result["compiled_summary"] = {**(result.get("compiled_summary") or {}), "readiness": readiness}
     _apply_compiled_ast_to_legacy_dsl(dsl, result["workflow_ast"])
     row.workflow_dsl_json = _json_dumps({**dsl.model_dump(), "workflow_ast": result["workflow_ast"], "validation_status": "valid" if result["valid"] else "invalid", "compiled_summary": result["compiled_summary"]})
     row.compiled_summary_json = _json_dumps(result["compiled_summary"])
     row.last_validated_at = _now()
     row.last_compiled_at = _now() if result["valid"] else row.last_compiled_at
-    row.deployment_status = "validated" if result["valid"] else "error"
-    row.last_runtime_error = "; ".join(result["errors"]) if result["errors"] else None
+    if not result["valid"]:
+        row.deployment_status = "error"
+        row.last_runtime_error = "; ".join(result["errors"]) if result["errors"] else None
+    elif not readiness["all_sources_ready"]:
+        row.deployment_status = "action_required"
+        row.last_runtime_error = "; ".join(readiness["warnings"] or readiness["errors"]) or None
+    else:
+        row.deployment_status = "validated"
+        row.last_runtime_error = None
     db.add(row)
     db.commit()
     return result
@@ -1884,6 +1987,91 @@ def sample_workflow_alerts(db: Session, user_id: str, workflow_id: str) -> dict[
     return sample_alerts_for_ast(ensure_workflow_ast(_workflow_dsl(_json_loads(row.workflow_dsl_json, {}))))
 
 
+def assess_workflow_trigger_readiness(
+    db: Session,
+    user_id: str,
+    dsl: AlertWorkflowDsl,
+    *,
+    account_id: str | None = None,
+    broker_code: str | None = None,
+) -> dict[str, Any]:
+    """Assess broker / Drishti readiness for enabled trigger sources and LLM placeholders."""
+    broker_on = broker_trigger_enabled(dsl)
+    feed_on = feed_trigger_enabled(dsl)
+    warnings: list[str] = []
+    broker_ready = True
+    feed_ready = True
+    broker_detail = ""
+    feed_detail = ""
+
+    if broker_on:
+        accessible = broker_data_preferences.get_accessible_data_accounts(db, user_id, broker_code)
+        account = next((row for row in accessible if account_id and row.id == account_id), None)
+        if account is None:
+            account = accessible[0] if accessible else broker_data_preferences.get_stream_default_broker_account(
+                db, user_id, broker_code
+            )
+        if account is None:
+            broker_ready = False
+            broker_detail = "No verified active broker account is available for broker market-data triggers."
+            warnings.append(broker_detail)
+        else:
+            status = str(getattr(account, "session_status", "") or "").strip().lower()
+            if status and status not in {"active", "automation_ready"}:
+                broker_ready = False
+                broker_detail = f"Broker session is not stream-ready (status={status or 'unknown'})."
+                warnings.append(broker_detail)
+
+    if feed_on:
+        alpha = alpha_config.get_alpha_api_config(db, user_id)
+        if not alpha.has_api_key or not alpha.is_enabled:
+            feed_ready = False
+            feed_detail = "Drishti API key is missing or disabled; Ananta feed triggers cannot run."
+            warnings.append(feed_detail)
+        elif alpha.account_error:
+            feed_ready = False
+            feed_detail = f"Drishti account check failed: {alpha.account_error}"
+            warnings.append(feed_detail)
+
+    llm_drishti_warning = None
+    if dsl.llm_analysis.enabled:
+        from app.services.alert_llm_context import DATA_PLACEHOLDERS, parse_placeholder_calls
+
+        template = dsl.llm_analysis.prompt_template or default_prompt_template()
+        uses_drishti = any(call.name in DATA_PLACEHOLDERS for call in parse_placeholder_calls(template))
+        if uses_drishti:
+            alpha = alpha_config.get_alpha_api_config(db, user_id)
+            if not alpha.has_api_key or not alpha.is_enabled or alpha.account_error:
+                llm_drishti_warning = (
+                    "LLM analysis uses Drishti placeholders (@news/@announcements/etc.) but Drishti is "
+                    "unavailable; analysis will soft-fail and notifications will still deliver."
+                )
+                warnings.append(llm_drishti_warning)
+
+    any_source_ready = (broker_on and broker_ready) or (feed_on and feed_ready)
+    all_sources_ready = (not broker_on or broker_ready) and (not feed_on or feed_ready)
+    errors: list[str] = []
+    if broker_on or feed_on:
+        if not any_source_ready:
+            errors.append("None of the enabled trigger sources are ready. Fix broker and/or Drishti connectivity.")
+    else:
+        errors.append("At least one trigger source must be enabled.")
+
+    return {
+        "broker_enabled": broker_on,
+        "feed_enabled": feed_on,
+        "broker_ready": broker_ready,
+        "feed_ready": feed_ready,
+        "broker_detail": broker_detail,
+        "feed_detail": feed_detail,
+        "any_source_ready": any_source_ready,
+        "all_sources_ready": all_sources_ready,
+        "warnings": warnings,
+        "errors": errors,
+        "llm_drishti_warning": llm_drishti_warning,
+    }
+
+
 def deploy_workflow(db: Session, user_id: str, workflow_id: str) -> AlertWorkflowOut | None:
     row = db.get(AlertWorkflow, workflow_id)
     if not row or row.user_id != user_id:
@@ -1895,13 +2083,34 @@ def deploy_workflow(db: Session, user_id: str, workflow_id: str) -> AlertWorkflo
         row.last_runtime_error = "; ".join(result["errors"])
     else:
         _apply_compiled_ast_to_legacy_dsl(dsl, result["workflow_ast"])
+        readiness = assess_workflow_trigger_readiness(
+            db,
+            user_id,
+            dsl,
+            account_id=row.account_id,
+            broker_code=row.broker_code,
+        )
         row.deploy_version = int(row.deploy_version or 0) + 1
-        row.deployment_status = "active"
         row.status = "active"
-        row.workflow_dsl_json = _json_dumps({**dsl.model_dump(), "workflow_ast": result["workflow_ast"], "validation_status": "valid", "compiled_summary": result["compiled_summary"]})
-        row.compiled_summary_json = _json_dumps(result["compiled_summary"])
-        row.last_runtime_error = None
+        row.workflow_dsl_json = _json_dumps(
+            {
+                **dsl.model_dump(),
+                "workflow_ast": result["workflow_ast"],
+                "validation_status": "valid",
+                "compiled_summary": {**result["compiled_summary"], "readiness": readiness},
+            }
+        )
+        row.compiled_summary_json = _json_dumps({**result["compiled_summary"], "readiness": readiness})
         row.last_compiled_at = _now()
+        if not readiness["any_source_ready"]:
+            row.deployment_status = "action_required"
+            row.last_runtime_error = "; ".join(readiness["errors"] or readiness["warnings"]) or None
+        elif not readiness["all_sources_ready"]:
+            row.deployment_status = "action_required"
+            row.last_runtime_error = "; ".join(readiness["warnings"]) or None
+        else:
+            row.deployment_status = "active"
+            row.last_runtime_error = None
     row.last_validated_at = _now()
     db.add(row)
     db.commit()

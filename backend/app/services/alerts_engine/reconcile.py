@@ -15,6 +15,7 @@ from app.schemas.broker import InstrumentRef
 from app.services import broker_data_preferences
 from app.schemas.alert import AlertWorkflowDsl
 from app.services.alerts_engine.ast import ensure_workflow_ast
+from app.services.alerts_engine.dsl_normalize import broker_trigger_enabled, normalize_workflow_dsl_payload
 from app.services.alerts_engine.universes import ResolvedSymbol, resolve_universe
 from app.services.live_price_scope import publish_scope_change
 from db.models import (
@@ -131,8 +132,11 @@ def _workflow_desired(db: Session, user_id: str) -> list[DesiredSubscription]:
     ).all()
     for workflow in workflows:
         try:
-            dsl = AlertWorkflowDsl(**_json_loads(workflow.workflow_dsl_json))
-            if workflow.status != "active" and dsl.workflow_type != "market_data":
+            dsl = AlertWorkflowDsl(**normalize_workflow_dsl_payload(_json_loads(workflow.workflow_dsl_json)))
+            if not broker_trigger_enabled(dsl):
+                continue
+            # Inactive broker workflows still warm background subscriptions (legacy market_data behavior).
+            if workflow.status != "active" and workflow.status != "inactive":
                 continue
             workflow_ast = ensure_workflow_ast(dsl)
             symbols = resolve_universe(db, user_id, workflow_ast.target_universe)

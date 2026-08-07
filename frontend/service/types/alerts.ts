@@ -39,6 +39,10 @@ export interface AlertLlmAnalysisConfig {
     timeout_seconds: number;
 }
 
+export interface AlertBrokerTriggerConfig {
+    enabled: boolean;
+}
+
 export interface AlertFeedTriggerConfig {
     enabled: boolean;
     products: Array<"news" | "announcements" | "earnings" | "concalls" | "alerts">;
@@ -55,6 +59,9 @@ export interface AlertFeedTriggerConfig {
     max_completion_tokens: number;
     timeout_seconds: number;
 }
+
+/** Canonical type is "alert". Legacy market_data / alpha_feed are accepted on read. */
+export type AlertWorkflowType = "alert" | "market_data" | "alpha_feed";
 
 export interface AlertMarketCapFilterConfig {
     mode: "all" | "custom";
@@ -98,7 +105,7 @@ export interface AlertWorkflowTargeting {
 
 export interface AlertWorkflowDsl {
     version?: number;
-    workflow_type: "market_data" | "alpha_feed";
+    workflow_type: AlertWorkflowType;
     combine: "all" | "any";
     cooldown_seconds: number;
     conditions: AlertCondition[];
@@ -106,6 +113,7 @@ export interface AlertWorkflowDsl {
     notification: AlertNotificationConfig;
     channels: AlertChannelSelection;
     llm_analysis: AlertLlmAnalysisConfig;
+    broker_trigger?: AlertBrokerTriggerConfig;
     feed_trigger: AlertFeedTriggerConfig;
     market_cap_filter: AlertMarketCapFilterConfig;
     active_period: AlertWorkflowActivePeriod;

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.broker import InstrumentRef
 from app.schemas.system_config import LlmProvider
@@ -49,6 +49,10 @@ class AlertLlmAnalysisConfig(BaseModel):
     timeout_seconds: int = Field(default=25, ge=1, le=120)
 
 
+class AlertBrokerTriggerConfig(BaseModel):
+    enabled: bool = True
+
+
 class AlertFeedTriggerConfig(BaseModel):
     enabled: bool = False
     products: list[Literal["news", "announcements", "earnings", "concalls", "alerts"]] = Field(default_factory=list)
@@ -69,6 +73,10 @@ class AlertFeedTriggerConfig(BaseModel):
     temperature: float = Field(default=0.1, ge=0, le=2)
     max_completion_tokens: int = Field(default=400, ge=1, le=4000)
     timeout_seconds: int = Field(default=25, ge=1, le=120)
+
+
+# Canonical type is "alert". Legacy "market_data" / "alpha_feed" are accepted on read and normalized.
+AlertWorkflowType = Literal["alert", "market_data", "alpha_feed"]
 
 
 class AlertMarketCapFilterConfig(BaseModel):
@@ -112,8 +120,8 @@ class AlertWorkflowTargeting(BaseModel):
 
 
 class AlertWorkflowDsl(BaseModel):
-    version: int = 2
-    workflow_type: Literal["market_data", "alpha_feed"] = "market_data"
+    version: int = 3
+    workflow_type: AlertWorkflowType = "alert"
     combine: Literal["all", "any"] = "all"
     cooldown_seconds: int = 300
     conditions: list[AlertCondition] = Field(default_factory=list)
@@ -121,6 +129,7 @@ class AlertWorkflowDsl(BaseModel):
     notification: AlertNotificationConfig = Field(default_factory=AlertNotificationConfig)
     channels: AlertChannelSelection = Field(default_factory=AlertChannelSelection)
     llm_analysis: AlertLlmAnalysisConfig = Field(default_factory=AlertLlmAnalysisConfig)
+    broker_trigger: AlertBrokerTriggerConfig = Field(default_factory=AlertBrokerTriggerConfig)
     feed_trigger: AlertFeedTriggerConfig = Field(default_factory=AlertFeedTriggerConfig)
     market_cap_filter: AlertMarketCapFilterConfig = Field(default_factory=AlertMarketCapFilterConfig)
     active_period: AlertWorkflowActivePeriod = Field(default_factory=AlertWorkflowActivePeriod)
@@ -128,6 +137,21 @@ class AlertWorkflowDsl(BaseModel):
     dsl_text: str | None = None
     validation_status: Literal["unknown", "valid", "invalid"] = "unknown"
     compiled_summary: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_workflow_type(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        from app.services.alerts_engine.dsl_normalize import normalize_workflow_dsl_payload
+
+        return normalize_workflow_dsl_payload(data)
+
+    def broker_trigger_enabled(self) -> bool:
+        return bool(self.broker_trigger.enabled)
+
+    def feed_trigger_enabled(self) -> bool:
+        return bool(self.feed_trigger.enabled)
 
 
 class AlertGraphNode(BaseModel):
