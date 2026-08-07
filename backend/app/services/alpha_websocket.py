@@ -76,7 +76,9 @@ def _json_dumps(value: Any) -> str:
 
 def _normalize_symbol(value: str | None) -> str | None:
     symbol = (value or "").strip().upper()
-    return symbol or None
+    if not symbol or symbol in {"N/A", "NA", "NONE"}:
+        return None
+    return symbol
 
 
 def _collect_symbols(value: Any, symbols: set[str]) -> None:

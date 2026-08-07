@@ -9,6 +9,7 @@ from typing import Any
 from common.datetime_compat import UTC
 from drishti_sdk import DrishtiApiError, DrishtiClient
 from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -25,6 +26,7 @@ _FEED_PAGE_FETCH_LIMIT = 50
 # Cap Drishti refresh work per HTTP request so large watchlists return cached DB rows immediately.
 _FEED_MAX_REFRESH_BATCHES = 4
 _FEED_MAX_DRISHTI_PAGES_PER_BATCH = 10
+_INVALID_FEED_SYMBOLS = frozenset({"N/A", "NA", "NONE", ""})
 
 
 def _utc_now() -> datetime:
@@ -94,16 +96,25 @@ def _published_at(payload: dict[str, Any], fallback: datetime | None = None) -> 
     return fallback
 
 
+def _normalize_feed_symbol(value: str | None) -> str | None:
+    symbol = (value or "").strip().upper()
+    if not symbol or symbol in _INVALID_FEED_SYMBOLS:
+        return None
+    return symbol.split(",")[0].split(":")[0]
+
+
 def _payload_symbol(payload: dict[str, Any], fallback: str | None = None) -> str | None:
     for key in ("symbol", "nse"):
         raw = payload.get(key)
-        if isinstance(raw, str) and raw.strip():
-            return raw.strip().upper().split(",")[0].split(":")[0]
+        if isinstance(raw, str):
+            symbol = _normalize_feed_symbol(raw)
+            if symbol:
+                return symbol
         if isinstance(raw, list) and raw:
-            first = str(raw[0] or "").strip().upper()
-            if first:
-                return first.split(",")[0].split(":")[0]
-    return (fallback or "").strip().upper() or None
+            symbol = _normalize_feed_symbol(str(raw[0] or ""))
+            if symbol:
+                return symbol
+    return _normalize_feed_symbol(fallback)
 
 
 def _credential_api_key(db: Session, user_id: str) -> str:
@@ -209,7 +220,33 @@ def upsert_feed_item_from_event(
         row.price_as_of = price_snapshot.get("price_as_of")
         row.price_source = price_snapshot.get("price_source")
         row.price_broker_code = price_snapshot.get("price_broker_code")
-    db.add(row)
+    try:
+        with db.begin_nested():
+            db.add(row)
+            db.flush()
+    except IntegrityError:
+        existing = db.scalar(
+            select(AlphaFeedItem).where(
+                AlphaFeedItem.user_id == user_id,
+                AlphaFeedItem.product == product,
+                AlphaFeedItem.item_key == item_key,
+            )
+        )
+        if existing is not None:
+            row = existing
+            row.symbol = _payload_symbol(payload, symbol)
+            row.source = "ws"
+            row.published_at = _published_at(payload, received_at or now)
+            row.payload_json = _json_dumps(payload)
+            row.fetched_at = now
+            row.updated_at = now
+            if price_snapshot:
+                row.price_ltp = price_snapshot.get("price_ltp")
+                row.price_change_pct = price_snapshot.get("price_change_pct")
+                row.price_as_of = price_snapshot.get("price_as_of")
+                row.price_source = price_snapshot.get("price_source")
+                row.price_broker_code = price_snapshot.get("price_broker_code")
+            db.add(row)
     if commit:
         db.commit()
         db.refresh(row)
@@ -367,8 +404,18 @@ def _upsert_rest_rows(
         row.payload_json = _json_dumps(payload)
         row.fetched_at = now
         row.updated_at = now
-        db.add(row)
-        upserted += 1
+        try:
+            with db.begin_nested():
+                db.add(row)
+                db.flush()
+            upserted += 1
+        except IntegrityError:
+            logger.debug(
+                "Alpha feed row already exists for %s/%s/%s",
+                user_id,
+                product,
+                item_key,
+            )
     return upserted
 
 
@@ -467,7 +514,11 @@ def refresh_feed_cache_for_symbols(
                 error="unexpected refresh failure",
             )
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning("Alpha feed refresh commit failed for %s/%s: %s", user_id, product, exc)
     pending_remaining = max(0, len(pending) - symbols_refreshed)
     return {
         "refreshed_symbols": symbols_refreshed,
@@ -484,10 +535,15 @@ def _feed_query_filters(
     from_date: str | None,
     to_date: str | None,
 ) -> list[Any]:
+    market_wide_symbols = list(_INVALID_FEED_SYMBOLS)
     filters: list[Any] = [
         AlphaFeedItem.user_id == user_id,
         AlphaFeedItem.product == product,
-        AlphaFeedItem.symbol.in_(normalized),
+        or_(
+            AlphaFeedItem.symbol.in_(normalized),
+            AlphaFeedItem.symbol.is_(None),
+            AlphaFeedItem.symbol.in_(market_wide_symbols),
+        ),
     ]
     if from_date:
         try:
@@ -596,25 +652,33 @@ def list_cached_feed_items(
 
     refresh_stats = {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
     if page == 1:
-        refresh_stats = refresh_feed_cache_for_symbols(
-            db,
-            user_id,
-            product,
-            normalized,
-            from_date=from_date,
-            to_date=to_date,
-            force_refresh=force_refresh,
-        )
-        if refresh_stats.get("upserted"):
-            result = _query_cached_feed_page(
+        try:
+            refresh_stats = refresh_feed_cache_for_symbols(
                 db,
                 user_id,
                 product,
                 normalized,
                 from_date=from_date,
                 to_date=to_date,
-                page=page,
-                limit=limit,
+                force_refresh=force_refresh,
+            )
+            if refresh_stats.get("upserted"):
+                result = _query_cached_feed_page(
+                    db,
+                    user_id,
+                    product,
+                    normalized,
+                    from_date=from_date,
+                    to_date=to_date,
+                    page=page,
+                    limit=limit,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Alpha feed refresh failed for %s/%s; serving cached rows: %s",
+                user_id,
+                product,
+                exc,
             )
     else:
         pending = _symbols_needing_sync(

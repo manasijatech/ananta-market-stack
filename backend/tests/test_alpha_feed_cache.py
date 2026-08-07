@@ -43,6 +43,45 @@ def test_feed_item_key_and_published_at():
     assert published.month == 8
 
 
+def test_payload_symbol_rejects_na_and_uses_fallback():
+    from app.services.alpha_feed_cache import _payload_symbol
+
+    assert _payload_symbol({"symbol": "N/A"}, "CIPLA") == "CIPLA"
+    assert _payload_symbol({"symbol": "n/a"}, None) is None
+    assert _payload_symbol({"symbol": "INFY"}, None) == "INFY"
+
+
+def test_list_cached_feed_items_refresh_failure_still_returns_cache(monkeypatch):
+    from types import SimpleNamespace
+
+    def _fake_query(*_args, **_kwargs):
+        return {
+            "data": [{"id": "news-1", "symbol": "CIPLA"}],
+            "page": 1,
+            "limit": 20,
+            "has_next": False,
+            "total": 1,
+            "from_cache": True,
+        }
+
+    def _fake_refresh(*_args, **_kwargs):
+        raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(alpha_feed_cache, "_query_cached_feed_page", _fake_query)
+    monkeypatch.setattr(alpha_feed_cache, "refresh_feed_cache_for_symbols", _fake_refresh)
+
+    result = alpha_feed_cache.list_cached_feed_items(
+        SimpleNamespace(),
+        "u1",
+        "news",
+        ["CIPLA"],
+        page=1,
+        limit=20,
+    )
+    assert result["data"][0]["symbol"] == "CIPLA"
+    assert result["total"] == 1
+
+
 def test_price_snapshot_from_quote_payload():
     snapshot = _snapshot_from_quote_payload(
         {
