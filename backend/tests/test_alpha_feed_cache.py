@@ -60,8 +60,10 @@ def test_price_snapshot_from_quote_payload():
     assert isinstance(snapshot["price_as_of"], datetime)
 
 
-def test_symbols_needing_sync_prioritizes_never_synced_and_respects_budget():
+def test_symbols_needing_sync_prioritizes_never_synced_then_oldest_stale():
     from types import SimpleNamespace
+
+    from app.services.alpha_feed_cache import _utc_now
 
     class _FakeResult:
         def __init__(self, rows):
@@ -77,9 +79,9 @@ def test_symbols_needing_sync_prioritizes_never_synced_and_respects_budget():
         def scalars(self, _stmt):
             return _FakeResult(self._rows)
 
-    now = datetime(2026, 8, 6, 12, 0, 0)
+    fresh = _utc_now()
     rows = [
-        SimpleNamespace(symbol="A", last_synced_at=now, last_error=None),
+        SimpleNamespace(symbol="A", last_synced_at=fresh, last_error=None),
         SimpleNamespace(symbol="B", last_synced_at=datetime(2026, 7, 1), last_error=None),
     ]
     pending = alpha_feed_cache._symbols_needing_sync(
@@ -88,23 +90,22 @@ def test_symbols_needing_sync_prioritizes_never_synced_and_respects_budget():
         product="news",
         symbols=["C", "A", "B", "D"],
         force_refresh=False,
-        sync_budget=2,
     )
-    # Never-synced C/D first, then oldest stale B — budget 2 → C, D
-    assert pending == ["C", "D"]
+    # Never-synced first, then oldest stale — fresh A is skipped; no subset cap.
+    assert pending == ["C", "D", "B"]
 
 
-def test_symbols_needing_sync_force_refresh_caps_budget():
+def test_symbols_needing_sync_force_refresh_includes_full_watchlist():
     class _FakeDb:
         def scalars(self, _stmt):
             raise AssertionError("should not query when force_refresh")
 
+    symbols = [f"S{i}" for i in range(250)]
     pending = alpha_feed_cache._symbols_needing_sync(
         _FakeDb(),
         user_id="u1",
         product="news",
-        symbols=[f"S{i}" for i in range(150)],
+        symbols=symbols,
         force_refresh=True,
-        sync_budget=100,
     )
-    assert len(pending) == 100
+    assert pending == symbols

@@ -17,7 +17,7 @@ function buildFeedQuery(params: AlphaFeedParams & { force_refresh?: boolean } = 
         .map((value) => value.trim().toUpperCase())
         .filter(Boolean);
     if (symbols.length) {
-        // Backend accepts comma lists; large watchlists are OK — sync budget is applied server-side.
+        // Backend accepts full watchlist comma lists; stale/missing symbols refresh in batches.
         query.set("symbols", Array.from(new Set(symbols)).join(","));
     }
     if (params.from) query.set("from", params.from);

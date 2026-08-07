@@ -31,11 +31,8 @@ export type MarketIntelligenceFeeds = {
     alerts: AlphaAlert[];
 };
 
+/** Metadata fetch batch size (not a Drishti feed sync cap). */
 export const ALPHA_SYMBOL_LIMIT = 20;
-/** Max symbols refreshed from Drishti per MI pass; larger lists rotate over visits. */
-export const ALPHA_DRISHTI_SYNC_BUDGET = 100;
-/** @deprecated use ALPHA_DRISHTI_SYNC_BUDGET — kept for existing imports */
-export const ALPHA_HISTORY_SYMBOL_LIMIT = ALPHA_DRISHTI_SYNC_BUDGET;
 
 export function emptyMarketIntelligenceFeeds(): MarketIntelligenceFeeds {
     return {

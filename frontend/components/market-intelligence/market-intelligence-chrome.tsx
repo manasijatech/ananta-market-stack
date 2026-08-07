@@ -84,7 +84,6 @@ import {
 	notifyAlphaCreditWarning,
 } from "@/lib/alpha-credit-warning";
 import {
-	ALPHA_DRISHTI_SYNC_BUDGET,
 	ALPHA_SYMBOL_LIMIT,
 	emptyMarketIntelligenceFeeds,
 	marketIntelligenceSections,
@@ -291,7 +290,7 @@ async function loadFeeds(
 		};
 	}
 	const params = {
-		// Pass the full watchlist; backend reads all from cache and syncs ≤100 stale/missing via Drishti.
+		// Full watchlist; backend refreshes every stale/missing symbol (batched for Drishti).
 		symbols,
 		from: isoDateDaysAgo(30),
 		to: todayIsoDate(),
@@ -1138,11 +1137,6 @@ export function MarketIntelligenceChrome({
 									? ` · ${activeSymbols.length} symbols`
 									: ""}
 							{isLoadingFilter ? " · Loading…" : ""}
-							{!symbolModeActive &&
-							watchlistGroups.length &&
-							activeSymbols.length > ALPHA_DRISHTI_SYNC_BUDGET
-								? ` · syncing ≤${ALPHA_DRISHTI_SYNC_BUDGET}/pass · showing all cached`
-								: ""}
 						</CardFrameDescription>
 						<CardFrameAction>
 							{!symbolModeActive && watchlistGroups.length ? (
@@ -1154,10 +1148,8 @@ export function MarketIntelligenceChrome({
 						<CardPanel className="grid gap-4 p-4">
 							{watchlistGroups.length ? (
 								<div className="flex min-w-0 flex-col gap-2 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
-									<WatchlistScopeTooltip
-										historyLimit={ALPHA_DRISHTI_SYNC_BUDGET}
-										symbolCount={allSymbolsCount}
-									>
+									<WatchlistScopeTooltip symbolCount={allSymbolsCount}>
+
 										<SimpleSelect
 											aria-label="Filter market intelligence by watchlist"
 											disabled={isLoadingFilter || symbolModeActive}

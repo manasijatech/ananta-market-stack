@@ -371,11 +371,10 @@ export function FeedSearchInput({
 
 export function WatchlistScopeTooltip({
     children,
-    historyLimit,
     symbolCount
 }: {
     children: ReactNode;
-    historyLimit: number;
+    historyLimit?: number;
     symbolCount: number;
 }) {
     return (
@@ -383,9 +382,9 @@ export function WatchlistScopeTooltip({
             <Tooltip>
                 <TooltipTrigger render={<span className="inline-flex min-w-0" />}>{children}</TooltipTrigger>
                 <TooltipPopup className="max-w-xs">
-                    All watchlists cover {symbolCount} symbol{symbolCount === 1 ? "" : "s"}. Feeds show every cached
-                    item for the active scope. Drishti refreshes up to {historyLimit} missing/stale symbols per pass
-                    (oldest first), so large lists fill in over visits without wasting credits.
+                    All watchlists cover {symbolCount} symbol{symbolCount === 1 ? "" : "s"}. Feeds show cached
+                    items for the full active scope, and Drishti refreshes every missing/stale symbol (batched)
+                    so large lists stay up to date.
                 </TooltipPopup>
             </Tooltip>
         </TooltipProvider>

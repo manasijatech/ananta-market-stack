@@ -32,7 +32,7 @@ type InitialFeedsResult = {
 async function loadInitialFeeds(symbols: string[]): Promise<InitialFeedsResult> {
     if (!symbols.length) return { creditWarningMessage: null, feeds: emptyMarketIntelligenceFeeds() };
     const params = {
-        // Full watchlist universe; backend caps Drishti sync budget and serves all cached rows.
+        // Full watchlist universe; backend refreshes every stale/missing symbol (batched).
         symbols,
         from: isoDateDaysAgo(30),
         to: todayIsoDate(),
