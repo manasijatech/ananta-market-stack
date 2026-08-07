@@ -486,18 +486,17 @@ function buildSetupSteps({
 }
 
 async function AlertsOverviewContent() {
-    const [activeWorkflows, inactiveWorkflows, unread, streamStatus, notifications, runs, channels] = await Promise.all(
-        [
-            getAlertWorkflows("active"),
-            getAlertWorkflows("inactive"),
-            getAlertUnreadCount(),
-            getLiveStreamsStatus(),
-            getAlertNotifications({ limit: 24 }),
-            getAlertHistory(36),
-            getAlertChannels()
-        ]
-    );
+    const [workflows, unread, streamStatus, notifications, runs, channels] = await Promise.all([
+        getAlertWorkflows(),
+        getAlertUnreadCount(),
+        getLiveStreamsStatus(),
+        getAlertNotifications({ limit: 24 }),
+        getAlertHistory(36),
+        getAlertChannels()
+    ]);
 
+    const activeWorkflows = workflows.filter((workflow) => workflow.status === "active");
+    const inactiveWorkflows = workflows.filter((workflow) => workflow.status === "inactive");
     const matchedRuns = runs.filter((run) => run.matched).length;
     const enabledChannels = enabledChannelCount(channels);
     const hasBroker = streamStatus.broker_statuses.length > 0;

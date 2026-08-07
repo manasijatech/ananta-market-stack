@@ -1849,10 +1849,18 @@ export function WorkflowEditor({
         };
     }, [committedSymbolSearch, exchange, startTransition, symbolSearch]);
 
+    const targetSymbolKey = useMemo(
+        () =>
+            Array.from(
+                new Set(targetEntries.map((entry) => entry.symbol.trim().toUpperCase()).filter(Boolean))
+            )
+                .sort()
+                .join("|"),
+        [targetEntries]
+    );
+
     useEffect(() => {
-        const symbols = Array.from(
-            new Set(targetEntries.map((entry) => entry.symbol.trim().toUpperCase()).filter(Boolean))
-        );
+        const symbols = targetSymbolKey ? targetSymbolKey.split("|") : [];
         if (!symbols.length) {
             setTargetMetadata({});
             return;
@@ -1876,7 +1884,7 @@ export function WorkflowEditor({
         return () => {
             cancelled = true;
         };
-    }, [startTransition, targetEntries]);
+    }, [startTransition, targetSymbolKey]);
 
     useEffect(() => {
         const symbols = universeSymbolKey ? universeSymbolKey.split("|") : [];

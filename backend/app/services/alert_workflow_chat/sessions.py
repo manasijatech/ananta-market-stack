@@ -135,7 +135,12 @@ def _workflow_for_session_schema(db: Session, session: AlertWorkflowChatSession)
     return alert_svc.get_workflow(db, session.user_id, session.workflow_id)
 
 
-def session_to_schema(db: Session, session: AlertWorkflowChatSession) -> AlertWorkflowChatSessionOut:
+def session_to_schema(
+    db: Session,
+    session: AlertWorkflowChatSession,
+    *,
+    include_workflow: bool = True,
+) -> AlertWorkflowChatSessionOut:
     return AlertWorkflowChatSessionOut(
         id=session.id,
         user_id=session.user_id,
@@ -145,7 +150,7 @@ def session_to_schema(db: Session, session: AlertWorkflowChatSession) -> AlertWo
         active_snapshot_id=session.active_snapshot_id,
         created_at=session.created_at,
         updated_at=session.updated_at,
-        workflow=_workflow_for_session_schema(db, session),
+        workflow=_workflow_for_session_schema(db, session) if include_workflow else None,
     )
 
 
@@ -200,7 +205,8 @@ def list_sessions(db: Session, user_id: str, *, limit: int = 50) -> list[AlertWo
             .limit(max(1, min(limit, 200)))
         ).all()
     )
-    return [session_to_schema(db, row) for row in rows]
+    # History dropdown only needs session metadata; skip full workflow DSL hydration.
+    return [session_to_schema(db, row, include_workflow=False) for row in rows]
 
 
 def _resolve_provider_model(

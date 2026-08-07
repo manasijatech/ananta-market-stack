@@ -22,6 +22,7 @@ import {
     getAlertWorkflowChatEvents,
     getAlertWorkflowChatRun,
     getAlertWorkflowChatRuns,
+    getAlertWorkflowChatSession,
     getAlertWorkflowChatSessions,
     getAlertWorkflowChatSnapshots,
     submitAlertWorkflowChatRun
@@ -507,7 +508,7 @@ export function WorkflowAiChatPanel({
     }, []);
 
     async function refreshSessions() {
-        const next = await getAlertWorkflowChatSessions({ limit: 100 }).catch(() => null);
+        const next = await getAlertWorkflowChatSessions({ limit: 40 }).catch(() => null);
         if (!next) return;
         setSessions(next);
     }
@@ -530,20 +531,21 @@ export function WorkflowAiChatPanel({
             return;
         }
         setError("");
-        const selected = sessions.find((item) => item.id === sessionId) ?? null;
+        const detailed = await getAlertWorkflowChatSession(sessionId).catch(() => null);
+        const selected = detailed ?? sessions.find((item) => item.id === sessionId) ?? null;
         if (selected) {
             setSession(selected);
             if (selected.workflow) onWorkflowApplied(selected.workflow);
         }
         const [nextRuns, nextSnapshots] = await Promise.all([
-            getAlertWorkflowChatRuns({ sessionId, limit: 50 }).catch(() => []),
+            getAlertWorkflowChatRuns({ sessionId, limit: 30 }).catch(() => []),
             getAlertWorkflowChatSnapshots(sessionId).catch(() => [])
         ]);
         setRuns(nextRuns);
         setSnapshots(nextSnapshots);
         setEventsByRun({});
         setActiveRunId(nextRuns[0]?.id ?? null);
-        await Promise.all(nextRuns.slice(0, 20).map((run) => hydrateRunEvents(run.id)));
+        await Promise.all(nextRuns.slice(0, 8).map((run) => hydrateRunEvents(run.id)));
         for (const run of nextRuns) {
             if (!terminalStatus(run.status)) void streamRun(run.id);
         }

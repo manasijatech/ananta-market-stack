@@ -6,7 +6,6 @@ converted to `alert` with explicit broker_trigger / feed_trigger flags.
 
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import Any
 
 
@@ -50,9 +49,45 @@ def _bool(value: Any, default: bool) -> bool:
     return bool(value)
 
 
+def _has_broker_conditions(conditions: Any) -> bool:
+    if not isinstance(conditions, list):
+        return False
+    for condition in conditions:
+        if not isinstance(condition, dict):
+            continue
+        operator = str(condition.get("operator") or "")
+        field = str(condition.get("field") or "")
+        if operator and operator != "always" and field != "event":
+            return True
+    return False
+
+
+def _is_already_normalized(payload: dict[str, Any]) -> bool:
+    if payload.get("workflow_type") != "alert":
+        return False
+    if payload.get("version") != DSL_VERSION:
+        return False
+    broker = payload.get("broker_trigger")
+    feed = payload.get("feed_trigger")
+    if not isinstance(broker, dict) or not isinstance(feed, dict):
+        return False
+    if not isinstance(broker.get("enabled"), bool) or not isinstance(feed.get("enabled"), bool):
+        return False
+    return True
+
+
 def normalize_workflow_dsl_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
-    """Return a copy of payload normalized to workflow_type=alert + v3 trigger flags."""
-    raw = deepcopy(payload) if isinstance(payload, dict) else {}
+    """Return a payload normalized to workflow_type=alert + v3 trigger flags.
+
+    Already-canonical v3 payloads are returned as-is (no copy) for hot-path reads.
+    """
+    if not isinstance(payload, dict):
+        payload = {}
+    if _is_already_normalized(payload):
+        return payload
+
+    # Shallow copy is enough: we only replace top-level keys we mutate.
+    raw = dict(payload)
     legacy_type = str(raw.get("workflow_type") or "alert").strip() or "alert"
 
     broker_trigger = _as_dict(raw.get("broker_trigger"))
@@ -63,42 +98,22 @@ def normalize_workflow_dsl_payload(payload: dict[str, Any] | None) -> dict[str, 
         feed_enabled = _bool(feed_trigger.get("enabled"), False)
     elif legacy_type == "alpha_feed":
         broker_enabled = _bool(broker_trigger.get("enabled"), False)
-        # Legacy alpha_feed rows always used the feed path; default feed on when unset.
         feed_enabled = _bool(feed_trigger.get("enabled"), True)
         current_active_period = raw.get("active_period")
         if current_active_period is None or current_active_period == _LEGACY_MARKET_ACTIVE_PERIOD:
             raw["active_period"] = dict(_DEFAULT_ALPHA_FEED_ACTIVE_PERIOD)
     else:
-        # Canonical alert (or unknown → treat as alert).
         broker_enabled = _bool(broker_trigger.get("enabled"), True)
         feed_enabled = _bool(feed_trigger.get("enabled"), False)
-        # If an older alert row only had feed_trigger.enabled and never set broker_trigger,
-        # keep broker default True unless feed is the sole intentional source with empty
-        # broker-looking conditions — callers that migrate alpha_feed already set flags.
-        if "enabled" not in broker_trigger and feed_enabled and not broker_trigger:
-            # Explicit feed-only: when broker_trigger key missing entirely and feed on,
-            # prefer keeping broker default True only if there are real broker conditions.
-            conditions = raw.get("conditions")
-            has_broker_conditions = False
-            if isinstance(conditions, list):
-                for condition in conditions:
-                    if not isinstance(condition, dict):
-                        continue
-                    operator = str(condition.get("operator") or "")
-                    field = str(condition.get("field") or "")
-                    if operator and operator != "always" and field != "event":
-                        has_broker_conditions = True
-                        break
-            if not has_broker_conditions and feed_enabled:
-                broker_enabled = False
+        if "enabled" not in broker_trigger and feed_enabled and not _has_broker_conditions(raw.get("conditions")):
+            broker_enabled = False
 
     broker_trigger["enabled"] = broker_enabled
     feed_trigger["enabled"] = feed_enabled
     raw["broker_trigger"] = broker_trigger
     raw["feed_trigger"] = feed_trigger
     raw["workflow_type"] = "alert"
-    if raw.get("version") != DSL_VERSION:
-        raw["version"] = DSL_VERSION
+    raw["version"] = DSL_VERSION
     if "validation_status" not in raw:
         raw["validation_status"] = "unknown"
     if not isinstance(raw.get("compiled_summary"), dict):
@@ -114,8 +129,14 @@ def broker_trigger_enabled(dsl: Any) -> bool:
         if trigger is not None and hasattr(trigger, "enabled"):
             return bool(trigger.enabled)
     if isinstance(dsl, dict):
-        normalized = normalize_workflow_dsl_payload(dsl)
-        return bool(normalized.get("broker_trigger", {}).get("enabled"))
+        broker = dsl.get("broker_trigger")
+        if isinstance(broker, dict) and isinstance(broker.get("enabled"), bool):
+            return bool(broker["enabled"])
+        workflow_type = str(dsl.get("workflow_type") or "")
+        if workflow_type == "alpha_feed":
+            return False
+        if workflow_type in {"market_data", "alert", ""}:
+            return True
     workflow_type = str(getattr(dsl, "workflow_type", "") or "")
     return workflow_type in {"market_data", "alert", ""}
 
@@ -129,5 +150,6 @@ def feed_trigger_enabled(dsl: Any) -> bool:
         if enabled is not None:
             return bool(enabled)
     if isinstance(dsl, dict):
-        return bool(normalize_workflow_dsl_payload(dsl).get("feed_trigger", {}).get("enabled"))
+        workflow_type = str(dsl.get("workflow_type") or "")
+        return workflow_type == "alpha_feed"
     return str(getattr(dsl, "workflow_type", "") or "") == "alpha_feed"

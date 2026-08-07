@@ -228,9 +228,12 @@ def _normalize_active_period_payload(payload: dict[str, Any] | None) -> dict[str
     return normalize_workflow_dsl_payload(payload)
 
 
-def _workflow_dsl(payload: dict[str, Any] | None) -> AlertWorkflowDsl:
-    normalized_payload = normalize_workflow_dsl_payload(payload)
-    dsl = AlertWorkflowDsl(**normalized_payload)
+def _workflow_dsl(payload: dict[str, Any] | None, *, hydrate: bool = True) -> AlertWorkflowDsl:
+    # AlertWorkflowDsl model_validator normalizes legacy types once; avoid a second pass.
+    dsl = AlertWorkflowDsl(**(payload or {}))
+    if not hydrate:
+        # List/read serialization: return stored DSL without recompiling on every request.
+        return dsl
     if dsl.workflow_ast is None:
         dsl.workflow_ast = ast_to_dict(ensure_workflow_ast(dsl))
     if not dsl.compiled_summary:
@@ -1017,6 +1020,7 @@ SYSTEM_TEMPLATES: list[dict[str, Any]] = [
     },
 ]
 _templates_seeded = False
+_repaired_drift_users: set[str] = set()
 
 
 def _default_graph_from_dsl(dsl: AlertWorkflowDsl) -> AlertGraphDsl:
@@ -1111,8 +1115,42 @@ def ensure_system_templates(db: Session) -> None:
         return
     existing = {row.slug: row for row in db.scalars(select(AlertWorkflowTemplate)).all()}
     changed = False
+
+    def authoring_fingerprint(dsl_payload: dict[str, Any]) -> str:
+        normalized = normalize_workflow_dsl_payload(dsl_payload)
+        slim = {
+            key: normalized.get(key)
+            for key in (
+                "workflow_type",
+                "version",
+                "combine",
+                "cooldown_seconds",
+                "conditions",
+                "targeting",
+                "notification",
+                "channels",
+                "llm_analysis",
+                "broker_trigger",
+                "feed_trigger",
+                "market_cap_filter",
+                "active_period",
+                "dsl_text",
+            )
+        }
+        return _json_dumps(slim)
+
     for payload in SYSTEM_TEMPLATES:
         row = existing.get(payload["slug"])
+        desired_fingerprint = authoring_fingerprint(payload["workflow_dsl"])
+        if (
+            row is not None
+            and row.name == payload["name"]
+            and row.description == payload["description"]
+            and row.category == payload["category"]
+            and row.is_active
+            and authoring_fingerprint(_json_loads(row.workflow_dsl_json, {})) == desired_fingerprint
+        ):
+            continue
         workflow_dsl = _workflow_dsl(payload["workflow_dsl"])
         compiled = _apply_notification_validation_to_compile(workflow_dsl, compile_workflow_dsl(workflow_dsl))
         _apply_compiled_ast_to_legacy_dsl(workflow_dsl, compiled.get("workflow_ast"))
@@ -1137,22 +1175,14 @@ def ensure_system_templates(db: Session) -> None:
             )
             changed = True
             continue
-        if (
-            row.name != payload["name"]
-            or row.description != payload["description"]
-            or row.category != payload["category"]
-            or row.workflow_dsl_json != workflow_dsl_json
-            or row.graph_dsl_json != graph_dsl_json
-            or not row.is_active
-        ):
-            row.name = payload["name"]
-            row.description = payload["description"]
-            row.category = payload["category"]
-            row.workflow_dsl_json = workflow_dsl_json
-            row.graph_dsl_json = graph_dsl_json
-            row.is_active = True
-            db.add(row)
-            changed = True
+        row.name = payload["name"]
+        row.description = payload["description"]
+        row.category = payload["category"]
+        row.workflow_dsl_json = workflow_dsl_json
+        row.graph_dsl_json = graph_dsl_json
+        row.is_active = True
+        db.add(row)
+        changed = True
     if changed:
         db.commit()
     _templates_seeded = True
@@ -1165,7 +1195,7 @@ def _template_to_out(row: AlertWorkflowTemplate) -> AlertTemplateOut:
         name=row.name,
         description=row.description,
         category=row.category,
-        workflow_dsl=_workflow_dsl(_json_loads(row.workflow_dsl_json, {})),
+        workflow_dsl=_workflow_dsl(_json_loads(row.workflow_dsl_json, {}), hydrate=False),
         graph_dsl=_graph_dsl(_json_loads(row.graph_dsl_json, {})),
         is_active=row.is_active,
         created_at=row.created_at,
@@ -1226,7 +1256,7 @@ def get_template(db: Session, template_id: str) -> AlertTemplateOut | None:
 def _workflow_to_out(row: AlertWorkflow) -> AlertWorkflowOut:
     instrument_ref_payload = _json_loads(row.instrument_ref_json, {})
     workflow_dsl_payload = _json_loads(row.workflow_dsl_json, {})
-    workflow_dsl = _workflow_dsl(workflow_dsl_payload)
+    workflow_dsl = _workflow_dsl(workflow_dsl_payload, hydrate=False)
     workflow_dsl.targeting = _normalize_targeting(
         workflow_dsl_payload.get("targeting") if isinstance(workflow_dsl_payload, dict) else None
     )
@@ -1275,7 +1305,13 @@ def _sync_workflow_subscription(db: Session, workflow: AlertWorkflow) -> None:
 
 
 def _repair_chat_snapshot_status_drift(db: Session, user_id: str) -> None:
-    """Heal workflows hidden by older chat applies that forced status=draft."""
+    """Heal workflows hidden by older chat applies that forced status=draft.
+
+    Runs at most once per user per process — the issue is a one-time migration
+    artifact, and the previous N+1 snapshot lookup was too expensive for list/get.
+    """
+    if user_id in _repaired_drift_users:
+        return
 
     rows = db.scalars(
         select(AlertWorkflow).where(
@@ -1308,10 +1344,11 @@ def _repair_chat_snapshot_status_drift(db: Session, user_id: str) -> None:
             changed = True
     if changed:
         db.commit()
+    _repaired_drift_users.add(user_id)
 
 
 def list_workflows(db: Session, user_id: str, *, status: str | None = None) -> list[AlertWorkflowOut]:
-    ensure_system_templates(db)
+    # Templates are seeded lazily elsewhere; avoid compiling them on every list.
     _repair_chat_snapshot_status_drift(db, user_id)
     stmt = select(AlertWorkflow).where(AlertWorkflow.user_id == user_id)
     if status:
