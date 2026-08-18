@@ -62,6 +62,7 @@ ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "open-broker",
         "select",
         "remove",
+        "duplicate",
     }
 )
 
@@ -201,3 +202,34 @@ def parse_workspace_spec(payload: dict[str, Any]) -> WorkspaceSpec:
 
 def component_type_for_tool(tool_name: str) -> str | None:
     return TOOL_COMPONENT_MAP.get(tool_name)
+
+
+def empty_workspace_spec(title: str = "Untitled desk") -> WorkspaceSpec:
+    return WorkspaceSpec(title=title)
+
+
+def workspace_spec_dump(spec: WorkspaceSpec) -> dict[str, Any]:
+    return spec.model_dump(mode="json")
+
+
+def next_component_id(existing_ids: list[str], prefix: str) -> str:
+    slug = "".join(ch if ch.isalnum() else "-" for ch in prefix.lower()).strip("-") or "widget"
+    slug = slug[:40]
+    if slug[0].isdigit():
+        slug = f"c-{slug}"
+    candidate = slug
+    index = 2
+    taken = set(existing_ids)
+    while candidate in taken:
+        candidate = f"{slug}-{index}"
+        index += 1
+    return candidate
+
+
+def next_grid_position(components: list[WorkspaceComponent], w: int = 6, h: int = 3) -> WorkspacePosition:
+    width = max(1, min(w, GRID_COLUMNS))
+    height = max(1, min(h, 24))
+    bottom = 0
+    for item in components:
+        bottom = max(bottom, item.position.y + item.position.h)
+    return WorkspacePosition(x=0, y=bottom, w=width, h=height)

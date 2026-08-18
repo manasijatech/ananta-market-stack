@@ -6,6 +6,7 @@ import {
     type WorkspaceSpec,
     type WorkspaceSpecIssue
 } from "@/service/types/adaptive-workspace";
+import { isRecord, unwrapToolOutput } from "@/lib/adaptive-workspace/tool-envelope";
 
 const FORBIDDEN_PROP_KEYS = new Set([
     "class",
@@ -24,10 +25,6 @@ const FORBIDDEN_PROP_KEYS = new Set([
 
 const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const SECRET_PARAM_KEYS = new Set(["api_key", "password", "pin", "totp", "secret", "token", "access_token"]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function issue(path: string, message: string): WorkspaceSpecIssue {
     return { path, message };
@@ -121,4 +118,81 @@ export function parseWorkspaceSpec(payload: unknown): WorkspaceSpec | null {
         return null;
     }
     return payload as WorkspaceSpec;
+}
+
+export function emptyWorkspaceSpec(title = "Untitled desk"): WorkspaceSpec {
+    return {
+        components: [],
+        layout: { columns: 12, mode: "grid" },
+        title,
+        version: "1"
+    };
+}
+
+export function cloneWorkspaceSpec(spec: WorkspaceSpec): WorkspaceSpec {
+    return JSON.parse(JSON.stringify(spec)) as WorkspaceSpec;
+}
+
+export function nextComponentId(existingIds: string[], prefix: string): string {
+    const slug = prefix
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40) || "widget";
+    const base = /^\d/.test(slug) ? `c-${slug}` : slug;
+    let candidate = base;
+    let index = 2;
+    const taken = new Set(existingIds);
+    while (taken.has(candidate)) {
+        candidate = `${base}-${index}`;
+        index += 1;
+    }
+    return candidate;
+}
+
+export function nextGridPosition(
+    spec: WorkspaceSpec,
+    w = 6,
+    h = 3
+): { h: number; w: number; x: number; y: number } {
+    const width = Math.max(1, Math.min(w, GRID_COLUMNS));
+    const height = Math.max(1, Math.min(h, 24));
+    const bottom = spec.components.reduce((maxY, item) => Math.max(maxY, item.position.y + item.position.h), 0);
+    return { h: height, w: width, x: 0, y: bottom };
+}
+
+export function workspaceSpecsEqual(left: WorkspaceSpec, right: WorkspaceSpec): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function specFromToolOutput(output: unknown): WorkspaceSpec | null {
+    const unwrapped = unwrapToolOutput(output);
+    if (!isRecord(unwrapped) || unwrapped.ok === false) {
+        return null;
+    }
+    if (isRecord(unwrapped.spec)) {
+        return parseWorkspaceSpec(unwrapped.spec);
+    }
+    return parseWorkspaceSpec(unwrapped);
+}
+
+export function latestSurfaceSpecFromMessages(messages: Array<{ parts?: unknown[]; role?: string }>): {
+    key: string;
+    spec: WorkspaceSpec;
+} | null {
+    for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+        const message = messages[messageIndex];
+        if (message.role !== "assistant" || !Array.isArray(message.parts)) continue;
+        for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+            const part = message.parts[partIndex];
+            if (!isRecord(part)) continue;
+            const type = typeof part.type === "string" ? part.type : "";
+            if (!type.includes("compose_surface") && !type.includes("patch_surface")) continue;
+            const spec = specFromToolOutput(part.output);
+            if (!spec) continue;
+            const key = typeof part.toolCallId === "string" ? part.toolCallId : `${messageIndex}:${partIndex}`;
+            return { key, spec };
+        }
+    }
+    return null;
 }

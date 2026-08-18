@@ -493,6 +493,32 @@ class BrokerChatEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class AdaptiveWorkspaceSnapshot(Base):
+    __tablename__ = "adaptive_workspace_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "version",
+            name="uq_adaptive_workspace_snapshots_session_version",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    label: Mapped[str] = mapped_column(String(256), default="Workspace snapshot")
+    workspace_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    validation_json: Mapped[str] = mapped_column(Text, default="{}")
+    valid: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class UserAlertWorkflowChatPreference(Base):
     __tablename__ = "user_alert_workflow_chat_preferences"
 

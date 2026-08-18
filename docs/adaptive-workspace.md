@@ -73,12 +73,12 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 
 ### Phase 2 — Sidecar adaptive canvas (same route)
 
-- [ ] Centre canvas becomes the primary pane; chat becomes a collapsible inspector.
-- [ ] `compose_surface` / `patch_surface` tools that emit `WorkspaceSpec`.
-- [ ] Drag, resize, remove, duplicate, refresh, undo on catalog widgets only.
-- [ ] Versioned workspace snapshots, modeled on alert-workflow snapshots (`workflow_payload` → `workspace_payload`).
-- [ ] Restore canvas independently of chat history.
-- [ ] Component-scoped prompting: “change this chart.”
+- [x] Centre canvas becomes the primary pane; chat becomes a collapsible inspector.
+- [x] `compose_surface` / `patch_surface` tools that emit `WorkspaceSpec`.
+- [x] Drag, resize, remove, duplicate, refresh, undo on catalog widgets only.
+- [x] Versioned workspace snapshots, modeled on alert-workflow snapshots (`workflow_payload` → `workspace_payload`).
+- [x] Restore canvas independently of chat history.
+- [x] Component-scoped prompting: “change this chart.”
 
 ### Phase 3 — Personalization
 
@@ -100,22 +100,33 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 - [ ] Sandboxed micro-apps only after the curated registry works.
 - [ ] Cut over: make this route the default Intelligence surface; keep `/broker-chat` as legacy or redirect.
 
-## File map (Phase 0–1)
+## File map (Phase 0–2)
 
 ```text
 docs/adaptive-workspace.md
 backend/app/schemas/adaptive_workspace.py
+backend/app/schemas/adaptive_workspace_api.py
+backend/app/services/adaptive_workspace.py
+backend/app/agent_tools/workspace_tools.py
+backend/app/api/v1/adaptive_workspace.py
 backend/tests/test_adaptive_workspace_spec.py
+backend/tests/test_adaptive_workspace_phase2.py
 frontend/app/(workspace)/adaptive-workspace/page.tsx
 frontend/service/types/adaptive-workspace.ts
+frontend/service/actions/adaptive-workspace.ts
 frontend/lib/adaptive-workspace/spec.ts
 frontend/lib/adaptive-workspace/catalog.ts
+frontend/lib/adaptive-workspace/layout.ts
 frontend/lib/adaptive-workspace/tool-envelope.ts
 frontend/lib/adaptive-workspace/chat-events.ts
 frontend/hooks/use-adaptive-workspace-chat.ts
 frontend/components/adaptive-workspace/*
 frontend/components/workspace-shell.tsx   # nav entry only
 ```
+
+`compose_surface` and `patch_surface` are attached only when a broker-chat run’s metadata includes `adaptive_workspace: true`. The preview page sends that flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
+
+Snapshots live in `adaptive_workspace_snapshots` (`workspace_payload_json`), keyed by the existing broker-chat session. Canvas restore uses the latest applied snapshot, not chat history.
 
 Do not edit `frontend/components/broker-chat/broker-chat-workspace.tsx` for this feature.
 
@@ -133,8 +144,8 @@ Grid: 12 columns. `x + w <= 12`. Unique component ids. Unknown `type` or `data.t
 
 - Keep using existing broker tools. They never accept secrets.
 - Preview page does not add order tools.
-- Persist configuration separately from fetched market data (Phase 2+).
-- Version every accepted workspace change (Phase 2+).
+- Persist configuration separately from fetched market data.
+- Version every accepted workspace change.
 
 ## Success signals (measure after Phase 1)
 

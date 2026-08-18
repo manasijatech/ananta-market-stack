@@ -25,6 +25,7 @@ from app.api.v1 import (
     system_config,
     users,
     watchlists,
+    adaptive_workspace,
 )
 
 api_router = APIRouter()
@@ -79,6 +80,9 @@ api_router.include_router(
 )
 api_router.include_router(
     broker_chat.router, prefix="/broker-chat", tags=["broker-chat"]
+)
+api_router.include_router(
+    adaptive_workspace.router, prefix="/adaptive-workspace", tags=["adaptive-workspace"]
 )
 api_router.include_router(
     system_config.router, prefix="/system-config", tags=["system-config"]

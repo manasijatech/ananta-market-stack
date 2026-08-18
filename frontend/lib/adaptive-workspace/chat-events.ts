@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai";
-import { isPhase1RenderTool } from "@/lib/adaptive-workspace/catalog";
+import { isAdaptiveRenderTool } from "@/lib/adaptive-workspace/catalog";
 import type { BrokerChatEvent, BrokerChatRun } from "@/service/types/broker-chat";
 
 export const LIVE_BROKER_CHAT_STATUSES = new Set(["queued", "running"]);
@@ -236,7 +236,7 @@ export function buildAdaptiveWorkspaceMessages({
                     });
                     continue;
                 }
-                const mapped = isPhase1RenderTool(item.toolName);
+                const mapped = isAdaptiveRenderTool(item.toolName);
                 if (mapped || includeUnmappedTools || running || !item.output) {
                     assistantParts.push(brokerToolPart(item, running));
                 }

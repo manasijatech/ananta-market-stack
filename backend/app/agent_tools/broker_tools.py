@@ -67,6 +67,22 @@ class BrokerAgentContext(BaseModel):
         default=None,
         description="Optional broker account id to prefer for instrument search tools.",
     )
+    adaptive_workspace: bool = Field(
+        default=False,
+        description="When true, this run is an Adaptive Workspace desk session.",
+    )
+    session_id: str | None = Field(
+        default=None,
+        description="Broker chat session id used to persist Adaptive Workspace snapshots.",
+    )
+    workspace_spec: dict[str, Any] | None = Field(
+        default=None,
+        description="Current WorkspaceSpec for Adaptive Workspace patch tools.",
+    )
+    selected_component_id: str | None = Field(
+        default=None,
+        description="Canvas component the user selected for scoped follow-ups.",
+    )
 
 
 class BrokerToolActionRequired(Exception):

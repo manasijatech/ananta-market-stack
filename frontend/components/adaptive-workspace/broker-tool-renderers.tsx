@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import type { CustomToolRendererProps } from "@/components/agent-elements/types";
+import { ComposeSurfaceCard } from "@/components/adaptive-workspace/compose-surface-card";
 import { HoldingsTableCard } from "@/components/adaptive-workspace/holdings-table-card";
 import { PriceChartCard } from "@/components/adaptive-workspace/price-chart-card";
 import { QuoteTickerCard } from "@/components/adaptive-workspace/quote-ticker-card";
@@ -12,5 +13,7 @@ export const adaptiveBrokerToolRenderers: Record<string, ComponentType<CustomToo
     broker_get_portfolio: HoldingsTableCard,
     broker_get_quotes: QuoteTickerCard,
     broker_get_session_status: SessionStatusCard,
-    broker_verify_connection: SessionStatusCard
+    broker_verify_connection: SessionStatusCard,
+    compose_surface: ComposeSurfaceCard,
+    patch_surface: ComposeSurfaceCard
 };

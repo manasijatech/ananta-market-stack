@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardPanel } from "@/components/ui/card";
@@ -8,9 +9,15 @@ import { formatIstDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import type { WorkspaceProvenance } from "@/service/types/adaptive-workspace";
 
+const PinEnabledContext = createContext(true);
+
+export function SuppressPin({ children }: { children: ReactNode }) {
+    return <PinEnabledContext.Provider value={false}>{children}</PinEnabledContext.Provider>;
+}
+
 type Props = {
-    actions?: React.ReactNode;
-    children?: React.ReactNode;
+    actions?: ReactNode;
+    children?: ReactNode;
     error?: string | null;
     pending?: boolean;
     pendingLabel?: string;
@@ -63,6 +70,8 @@ export function ToolCardShell({
 }
 
 export function PinButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
+    const pinEnabled = useContext(PinEnabledContext);
+    if (!pinEnabled) return null;
     return (
         <Button disabled={disabled} onClick={onClick} size="xs" type="button" variant="outline">
             Pin

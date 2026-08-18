@@ -12,7 +12,7 @@ from agents.models.chatcmpl_converter import Converter
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
-from app.agent_tools import BROKER_DATA_TOOLS, BrokerAgentContext
+from app.agent_tools import BROKER_DATA_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.services import broker_chat, broker_chat_mcp, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
@@ -120,6 +120,47 @@ Answer quality:
 - If a requested analysis is blocked by missing broker permissions, explain the
   exact broker error and provide the best available fallback snapshot.
 """
+
+ADAPTIVE_WORKSPACE_INSTRUCTIONS = """
+This run is an Adaptive Workspace desk session. Chat authors the canvas.
+
+You may call compose_surface with a full WorkspaceSpec, or patch_surface to
+add, remove, move, update, duplicate, or retitle catalog widgets.
+
+WorkspaceSpec rules:
+- version must be "1". layout.mode must be "grid" and layout.columns must be 12.
+- Use only catalog component types. Unknown types are rejected.
+- data.tool must be an allowlisted broker data tool. Never include secrets.
+- Never emit React, HTML, CSS, className, style, href, src, or script.
+- Prefer readable sizes: quotes 6x3, holdings 12x5, charts 8x4, health 4x3.
+- After fetching broker data, compose or patch the desk so the canvas matches
+  the useful cards. Do not dump the full JSON in the chat reply.
+- If a component is selected, prefer patch_surface on that id for "change this"
+  requests instead of rebuilding the whole desk.
+"""
+
+
+def _truncate_json(value: Any, limit: int = 8000) -> str:
+    text = json.dumps(value, default=str, ensure_ascii=False)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 15] + "...[truncated]"
+
+
+def _adaptive_workspace_enabled(metadata: dict[str, Any]) -> bool:
+    return bool(metadata.get("adaptive_workspace"))
+
+
+def _workspace_spec_from_metadata(metadata: dict[str, Any]) -> dict[str, Any] | None:
+    spec = metadata.get("workspace_spec")
+    return spec if isinstance(spec, dict) else None
+
+
+def _selected_component_id(metadata: dict[str, Any]) -> str | None:
+    value = metadata.get("selected_component_id")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 class BrokerChatCancelled(Exception):
@@ -243,12 +284,26 @@ def _install_chat_completions_message_sanitizer() -> None:
     _CHAT_COMPLETIONS_SANITIZER_INSTALLED = True
 
 
-def _broker_chat_instructions(mcp_context: str = "") -> str:
+def _broker_chat_instructions(
+    mcp_context: str = "",
+    *,
+    adaptive_workspace: bool = False,
+    workspace_spec: dict[str, Any] | None = None,
+    selected_component_id: str | None = None,
+) -> str:
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     current_day_context = now.strftime("Today is %A, %B %d, %Y in Asia/Kolkata (IST).")
     instructions = BROKER_CHAT_INSTRUCTIONS_TEMPLATE.replace("__CURRENT_DAY_CONTEXT__", current_day_context)
     if mcp_context.strip():
         instructions = f"{instructions}\n\nConnected MCP context:\n{mcp_context.strip()}"
+    if adaptive_workspace:
+        instructions = f"{instructions}\n{ADAPTIVE_WORKSPACE_INSTRUCTIONS}"
+        if selected_component_id:
+            instructions = f"{instructions}\nSelected canvas component id: {selected_component_id}"
+        if workspace_spec:
+            instructions = (
+                f"{instructions}\nCurrent WorkspaceSpec JSON:\n{_truncate_json(workspace_spec)}"
+            )
     return instructions
 
 
@@ -424,23 +479,36 @@ async def _run_broker_chat(run_id: str) -> None:
         )
 
         metadata = broker_chat.json_loads(run.metadata_json, {})
+        adaptive_workspace = _adaptive_workspace_enabled(metadata)
+        workspace_spec = _workspace_spec_from_metadata(metadata)
+        selected_component_id = _selected_component_id(metadata)
         context = BrokerAgentContext(
             user_id=run.user_id,
             default_account_id=metadata.get("default_account_id"),
             search_account_id=metadata.get("search_account_id"),
+            adaptive_workspace=adaptive_workspace,
+            session_id=run.session_id,
+            workspace_spec=workspace_spec,
+            selected_component_id=selected_component_id,
         )
         mcp_handle = await broker_chat_mcp.connect_broker_chat_mcp(db, run, metadata)
         mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle)
+        tools = [*BROKER_DATA_TOOLS, *WORKSPACE_TOOLS] if adaptive_workspace else BROKER_DATA_TOOLS
         agent = Agent[BrokerAgentContext](
             name="Ananta Market Stack Broker Data Agent",
-            instructions=_broker_chat_instructions(mcp_context),
+            instructions=_broker_chat_instructions(
+                mcp_context,
+                adaptive_workspace=adaptive_workspace,
+                workspace_spec=workspace_spec,
+                selected_component_id=selected_component_id,
+            ),
             model=_build_model(db, run),
             model_settings=ModelSettings(
                 temperature=0.3,
                 max_tokens=5000,
                 include_usage=True,
             ),
-            tools=BROKER_DATA_TOOLS,
+            tools=tools,
             mcp_servers=mcp_handle.active_servers,
             mcp_config=broker_chat_mcp.broker_chat_mcp_config(),
         )

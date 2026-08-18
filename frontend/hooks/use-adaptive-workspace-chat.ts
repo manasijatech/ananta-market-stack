@@ -34,6 +34,7 @@ import type {
 } from "@/service/types/broker-chat";
 
 type Args = {
+    getRunMetadata?: () => Record<string, unknown>;
     initialRuns: BrokerChatRun[];
     initialSessions: BrokerChatSession[];
     llmProviders: LlmProviderConfig[];
@@ -47,6 +48,7 @@ function enabledModels(provider?: LlmProviderConfig) {
 }
 
 export function useAdaptiveWorkspaceChat({
+    getRunMetadata,
     initialRuns,
     initialSessions,
     llmProviders,
@@ -406,6 +408,10 @@ export function useAdaptiveWorkspaceChat({
                 include_tool_outputs: true,
                 mcp_server_ids: selectedMcpServerIds,
                 message: trimmed,
+                metadata: {
+                    adaptive_workspace: true,
+                    ...(getRunMetadata?.() ?? {})
+                },
                 model,
                 provider,
                 session_id: activeSessionId || null,

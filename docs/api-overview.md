@@ -106,3 +106,11 @@ Broker chat provides a durable asynchronous chat surface for broker-data tools. 
 - [Broker agent tools](../backend/docs/broker_agent_tools.md)
 - [LLM provider config](../backend/docs/llm_provider_config.md)
 - [Adaptive Workspace preview](adaptive-workspace.md) (`/adaptive-workspace`; does not replace `/broker-chat` yet)
+
+Adaptive Workspace snapshot API (preview page only):
+
+- `GET /adaptive-workspace/sessions/{session_id}/current`
+- `GET /adaptive-workspace/sessions/{session_id}/snapshots`
+- `POST /adaptive-workspace/sessions/{session_id}/snapshots`
+- `GET /adaptive-workspace/snapshots/{snapshot_id}`
+- `POST /adaptive-workspace/snapshots/{snapshot_id}/apply`

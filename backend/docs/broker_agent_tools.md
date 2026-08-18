@@ -24,6 +24,9 @@ The context fields are:
 - `user_id`: Ananta Market Stack user id. Defaults to `local-dev-user` to match the current API dependency.
 - `default_account_id`: Optional preferred account for live market data and portfolio tools.
 - `search_account_id`: Optional preferred account for instrument-search tools.
+- `adaptive_workspace`, `session_id`, `workspace_spec`, `selected_component_id`: Optional Adaptive Workspace fields. Broker Chat leaves these unset.
+
+`compose_surface` and `patch_surface` live in `app.agent_tools.workspace_tools` (`WORKSPACE_TOOLS`). The broker chat runner attaches them only when run metadata includes `adaptive_workspace: true`. The Adaptive Workspace preview sends that flag; `/broker-chat` does not.
 
 ## Safety and Credential Handling
 

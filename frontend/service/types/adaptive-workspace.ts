@@ -50,7 +50,8 @@ export const ALLOWED_ACTIONS = [
     "create-alert",
     "open-broker",
     "select",
-    "remove"
+    "remove",
+    "duplicate"
 ] as const;
 
 export type AdaptiveAction = (typeof ALLOWED_ACTIONS)[number];
@@ -79,6 +80,8 @@ export const PHASE1_RENDER_TOOLS = [
     "broker_get_session_status",
     "broker_verify_connection"
 ] as const;
+
+export const SURFACE_TOOLS = ["compose_surface", "patch_surface"] as const;
 
 export interface WorkspaceLayout {
     mode: "grid";
@@ -140,4 +143,28 @@ export interface PinnedWorkspaceItem {
 export interface WorkspaceSpecIssue {
     message: string;
     path: string;
+}
+
+export interface WorkspaceWidgetOutput {
+    input: Record<string, unknown>;
+    output: unknown;
+    toolName: string;
+}
+
+export interface AdaptiveWorkspaceSnapshot {
+    applied_at?: string | null;
+    created_at: string;
+    id: string;
+    label: string;
+    session_id: string;
+    user_id: string;
+    valid: boolean;
+    validation: Record<string, unknown>;
+    version: number;
+    workspace_payload: WorkspaceSpec;
+}
+
+export interface AdaptiveWorkspaceCurrent {
+    snapshot: AdaptiveWorkspaceSnapshot | null;
+    spec: WorkspaceSpec;
 }

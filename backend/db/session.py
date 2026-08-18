@@ -612,6 +612,22 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "adaptive_workspace_snapshots",
+            {
+                "id": "VARCHAR(36)",
+                "session_id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "version": "INTEGER DEFAULT 1",
+                "label": "VARCHAR(256) DEFAULT 'Workspace snapshot'",
+                "workspace_payload_json": "TEXT DEFAULT '{}'",
+                "validation_json": "TEXT DEFAULT '{}'",
+                "valid": "BOOLEAN DEFAULT 0",
+                "applied_at": "DATETIME",
+                "created_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "live_symbol_subscriptions",
             {
                 "id": "VARCHAR(36)",
