@@ -1,0 +1,16 @@
+import type { ComponentType } from "react";
+import type { CustomToolRendererProps } from "@/components/agent-elements/types";
+import { HoldingsTableCard } from "@/components/adaptive-workspace/holdings-table-card";
+import { PriceChartCard } from "@/components/adaptive-workspace/price-chart-card";
+import { QuoteTickerCard } from "@/components/adaptive-workspace/quote-ticker-card";
+import { SessionStatusCard } from "@/components/adaptive-workspace/session-status-card";
+
+export const adaptiveBrokerToolRenderers: Record<string, ComponentType<CustomToolRendererProps>> = {
+    broker_get_cached_quotes: QuoteTickerCard,
+    broker_get_historical: PriceChartCard,
+    broker_get_ohlc: QuoteTickerCard,
+    broker_get_portfolio: HoldingsTableCard,
+    broker_get_quotes: QuoteTickerCard,
+    broker_get_session_status: SessionStatusCard,
+    broker_verify_connection: SessionStatusCard
+};

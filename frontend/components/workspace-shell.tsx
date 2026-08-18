@@ -7,6 +7,7 @@ import {
     IconBellRinging,
     IconExternalLink,
     IconBrain,
+    IconLayoutDashboard,
     IconLayoutGrid,
     IconListCheck,
     IconLogout,
@@ -61,6 +62,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
             { href: "/heatmap", label: "Heatmap", icon: IconLayoutGrid },
             { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
+            { href: "/adaptive-workspace", label: "Adaptive Workspace", icon: IconLayoutDashboard },
             { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
         ]
     },

@@ -11,6 +11,7 @@ See `docs/broker_auth_flows.md` for broker session/auth behavior and `docs/migra
 See `docs/windows_runtime_compat.md` for Python 3.10 / Windows-safe runtime conventions.
 See `docs/broker_agent_tools.md` for the OpenAI Agents SDK broker-data tool surface.
 See `docs/broker_chat.md` for the asynchronous broker chat API, RQ worker, and SSE stream behavior.
+See `docs/adaptive-workspace.md` for the Adaptive Workspace preview (`/adaptive-workspace`). Broker Chat at `/broker-chat` stays unchanged until that preview is ready to become the default.
 
 ## Current phase (roadmap)
 

@@ -105,3 +105,4 @@ Broker chat provides a durable asynchronous chat surface for broker-data tools. 
 - [Broker chat backend](../backend/docs/broker_chat.md)
 - [Broker agent tools](../backend/docs/broker_agent_tools.md)
 - [LLM provider config](../backend/docs/llm_provider_config.md)
+- [Adaptive Workspace preview](adaptive-workspace.md) (`/adaptive-workspace`; does not replace `/broker-chat` yet)
