@@ -2,35 +2,35 @@
 
 import { useRef, useState, type PointerEvent } from "react";
 import {
+    IconArrowsMaximize,
+    IconArrowsMinimize,
     IconCopy,
     IconGripVertical,
     IconRefresh,
     IconTrash
 } from "@tabler/icons-react";
-import { adaptiveBrokerToolRenderers } from "@/components/adaptive-workspace/broker-tool-renderers";
-import { SuppressPin } from "@/components/adaptive-workspace/tool-card-shell";
+import { LiveCanvasBody } from "@/components/adaptive-workspace/live-canvas-body";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { Button } from "@/components/ui/button";
-import { titleForComponentType } from "@/lib/adaptive-workspace/catalog";
-import { CANVAS_MIN_H, CANVAS_MIN_W, pointerDeltaToGrid } from "@/lib/adaptive-workspace/layout";
+import { defaultSizeForType, titleForComponentType } from "@/lib/adaptive-workspace/catalog";
+import { CANVAS_MIN_H, CANVAS_MIN_W, expandedSizeForType, pointerDeltaToGrid } from "@/lib/adaptive-workspace/layout";
+import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
 import { cn } from "@/lib/utils";
 import type { WorkspaceComponent, WorkspacePosition } from "@/service/types/adaptive-workspace";
 
 type Props = {
     component: WorkspaceComponent;
     containerWidth: number;
-    onRefresh: (prompt: string) => void;
 };
 
-export function AdaptiveCanvasWidget({ component, containerWidth, onRefresh }: Props) {
-    const { duplicate, outputs, remove, select, selectedId, updatePosition } = useAdaptiveWorkspace();
+export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
+    const { duplicate, patchComponent, remove, select, selectedId, updatePosition } = useAdaptiveWorkspace();
     const selected = selectedId === component.id;
     const [draft, setDraft] = useState<WorkspacePosition | null>(null);
+    const [refreshNonce, setRefreshNonce] = useState(0);
     const dragRef = useRef<{ kind: "move" | "resize"; startX: number; startY: number; origin: WorkspacePosition } | null>(null);
     const position = draft ?? component.position;
-    const cached = outputs[component.id];
-    const toolName = cached?.toolName ?? component.data?.tool ?? "";
-    const Renderer = toolName ? adaptiveBrokerToolRenderers[toolName] : null;
+    const expanded = component.props?.expanded === true;
 
     function beginDrag(kind: "move" | "resize", event: PointerEvent<HTMLElement>) {
         event.preventDefault();
@@ -71,11 +71,29 @@ export function AdaptiveCanvasWidget({ component, containerWidth, onRefresh }: P
         if (next) updatePosition(component.id, next);
     }
 
+    function toggleExpanded() {
+        if (expanded) {
+            const compact = isRecord(component.props?.compactPosition)
+                ? (component.props?.compactPosition as WorkspacePosition)
+                : { ...defaultSizeForType(component.type), x: component.position.x, y: component.position.y };
+            patchComponent(component.id, {
+                position: { ...compact, x: component.position.x, y: component.position.y },
+                props: { expanded: false }
+            });
+            return;
+        }
+        const size = expandedSizeForType(component.type);
+        patchComponent(component.id, {
+            position: { ...component.position, h: size.h, w: size.w, x: 0 },
+            props: { compactPosition: component.position, expanded: true }
+        });
+    }
+
     return (
         <article
             className={cn(
-                "group relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card",
-                selected ? "border-primary shadow-sm" : "border-border"
+                "group relative z-0 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card",
+                selected ? "z-10 border-primary shadow-sm" : "border-border"
             )}
             onClick={() => select(component.id)}
             style={{
@@ -98,18 +116,28 @@ export function AdaptiveCanvasWidget({ component, containerWidth, onRefresh }: P
                     {titleForComponentType(component.type, component.type)}
                 </p>
                 <Button
-                    onClick={() =>
-                        onRefresh(
-                            `Refresh the ${titleForComponentType(component.type, component.type)} widget ${component.id}${
-                                toolName ? ` using ${toolName}` : ""
-                            }.`
-                        )
-                    }
+                    aria-label="Refresh widget data"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        setRefreshNonce((value) => value + 1);
+                    }}
                     size="xs"
                     type="button"
                     variant="ghost"
                 >
                     <IconRefresh className="size-3.5" stroke={1.8} />
+                </Button>
+                <Button
+                    aria-label={expanded ? "Collapse widget" : "Expand widget"}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        toggleExpanded();
+                    }}
+                    size="xs"
+                    type="button"
+                    variant="ghost"
+                >
+                    {expanded ? <IconArrowsMinimize className="size-3.5" stroke={1.8} /> : <IconArrowsMaximize className="size-3.5" stroke={1.8} />}
                 </Button>
                 <Button onClick={() => duplicate(component.id)} size="xs" type="button" variant="ghost">
                     <IconCopy className="size-3.5" stroke={1.8} />
@@ -119,17 +147,11 @@ export function AdaptiveCanvasWidget({ component, containerWidth, onRefresh }: P
                 </Button>
             </header>
             <div className="min-h-0 flex-1 overflow-auto">
-                <SuppressPin>
-                    {Renderer && cached ? (
-                        <Renderer input={cached.input} name={toolName} output={cached.output} status="success" />
-                    ) : Renderer && component.data ? (
-                        <div className="p-3 text-sm text-muted-foreground">
-                            Bound to <span className="font-mono">{component.data.tool}</span>. Ask chat to load this widget.
-                        </div>
-                    ) : (
-                        <div className="p-3 text-sm text-muted-foreground">No live data on this widget yet. Pin a card or ask the agent to compose it.</div>
-                    )}
-                </SuppressPin>
+                <LiveCanvasBody
+                    component={component}
+                    onPatch={(props) => patchComponent(component.id, { props })}
+                    refreshNonce={refreshNonce}
+                />
             </div>
             <button
                 aria-label="Resize widget"

@@ -3,10 +3,10 @@
 import type { CustomToolRendererProps } from "@/components/agent-elements/types";
 import { PinButton, ToolCardShell } from "@/components/adaptive-workspace/tool-card-shell";
 import { useAdaptiveWorkspacePins } from "@/components/adaptive-workspace/workspace-provider";
+import { quoteMoveFromRecord } from "@/lib/adaptive-workspace/quote-fields";
 import {
     asToolEnvelope,
     isRecord,
-    numberFrom,
     provenanceFromEnvelope,
     stringFrom,
     toolEnvelopeMessage,
@@ -17,14 +17,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 function quoteRows(envelope: Record<string, unknown> | null) {
     const rows = envelope && Array.isArray(envelope.rows) ? envelope.rows.filter(isRecord) : [];
     return rows.map((row, index) => {
-        const detail = isRecord(row.detail) ? row.detail : {};
-        const change = numberFrom(detail, ["netChange", "change", "day_change", "absoluteChange"]);
-        const changePercent = numberFrom(detail, ["pChange", "percent_change", "day_change_percentage", "percentageChange"]);
+        const move = quoteMoveFromRecord(row);
         return {
-            change,
-            changePercent,
+            change: move.change,
+            changePercent: move.changePercent,
             id: `${stringFrom(row, ["symbol"], "quote")}-${index}`,
-            ltp: numberFrom(row, ["ltp", "last_price", "lastPrice"]) ?? numberFrom(detail, ["ltp", "last_price", "lastPrice"]),
+            ltp: move.ltp,
             symbol: stringFrom(row, ["symbol", "tradingsymbol", "trading_symbol"], `Instrument ${index + 1}`)
         };
     });
@@ -67,9 +65,11 @@ export function QuoteTickerCard({ input, name, output, status }: CustomToolRende
                             <TableRow key={row.id}>
                                 <TableCell className="font-semibold">{row.symbol}</TableCell>
                                 <TableCell className="text-right font-mono">{row.ltp ?? "—"}</TableCell>
-                                <TableCell className="text-right font-mono">{row.change ?? "—"}</TableCell>
-                                <TableCell className="text-right font-mono">
-                                    {row.changePercent == null ? "—" : `${row.changePercent.toFixed(2)}%`}
+                                <TableCell className={row.change == null ? "text-right font-mono" : row.change >= 0 ? "text-right font-mono text-emerald-400" : "text-right font-mono text-red-400"}>
+                                    {row.change == null ? "—" : `${row.change > 0 ? "+" : ""}${row.change.toFixed(2)}`}
+                                </TableCell>
+                                <TableCell className={row.changePercent == null ? "text-right font-mono" : row.changePercent >= 0 ? "text-right font-mono text-emerald-400" : "text-right font-mono text-red-400"}>
+                                    {row.changePercent == null ? "—" : `${row.changePercent > 0 ? "+" : ""}${row.changePercent.toFixed(2)}%`}
                                 </TableCell>
                             </TableRow>
                         ))}

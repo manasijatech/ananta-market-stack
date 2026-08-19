@@ -24,3 +24,50 @@ export function pointerDeltaToGrid(
         dy: Math.round(deltaY / (CANVAS_ROW_HEIGHT + CANVAS_GAP))
     };
 }
+
+export function rectanglesOverlap(left: WorkspacePosition, right: WorkspacePosition): boolean {
+    return left.x < right.x + right.w && left.x + left.w > right.x && left.y < right.y + right.h && left.y + left.h > right.y;
+}
+
+export function expandedSizeForType(type: string): WorkspacePosition {
+    switch (type) {
+        case "holdings-table":
+            return { h: 8, w: 12, x: 0, y: 0 };
+        case "price-chart":
+            return { h: 6, w: 12, x: 0, y: 0 };
+        case "intel-feed":
+            return { h: 8, w: 12, x: 0, y: 0 };
+        case "watchlist":
+            return { h: 8, w: 12, x: 0, y: 0 };
+        case "alert-rule-draft":
+            return { h: 7, w: 12, x: 0, y: 0 };
+        case "quote-ticker":
+            return { h: 6, w: 12, x: 0, y: 0 };
+        default:
+            return { h: 6, w: 12, x: 0, y: 0 };
+    }
+}
+
+export function placeWithoutOverlap(
+    components: Array<{ id: string; position: WorkspacePosition }>,
+    id: string,
+    position: WorkspacePosition
+): Array<{ id: string; position: WorkspacePosition }> {
+    const nextPosition = clampPosition(position);
+    const moved = components.find((item) => item.id === id);
+    if (!moved) return components.map((item) => ({ id: item.id, position: item.position }));
+    const placed: Array<{ id: string; position: WorkspacePosition }> = [{ id, position: nextPosition }];
+    const others = components
+        .filter((item) => item.id !== id)
+        .sort((left, right) => left.position.y - right.position.y || left.position.x - right.position.x);
+    for (const item of others) {
+        let candidate = clampPosition(item.position);
+        let guard = 0;
+        while (placed.some((entry) => rectanglesOverlap(entry.position, candidate)) && guard < 240) {
+            candidate = clampPosition({ ...candidate, y: candidate.y + 1 });
+            guard += 1;
+        }
+        placed.push({ id: item.id, position: candidate });
+    }
+    return placed;
+}

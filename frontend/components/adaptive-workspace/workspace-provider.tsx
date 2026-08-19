@@ -12,7 +12,7 @@ import {
 } from "react";
 import { componentTypeForTool, defaultSizeForType, pinTitleForTool } from "@/lib/adaptive-workspace/catalog";
 import { outputsForSpec, toolOutputsFromMessages } from "@/lib/adaptive-workspace/bind-outputs";
-import { clampPosition } from "@/lib/adaptive-workspace/layout";
+import { clampPosition, placeWithoutOverlap } from "@/lib/adaptive-workspace/layout";
 import {
     cloneWorkspaceSpec,
     emptyWorkspaceSpec,
@@ -49,6 +49,7 @@ type AdaptiveWorkspaceContextValue = {
     pin: (item: PinInput) => void;
     pinEnabled: boolean;
     pins: PinnedWorkspaceItem[];
+    patchComponent: (id: string, patch: { position?: WorkspacePosition; props?: Record<string, unknown> }) => void;
     remove: (id: string) => void;
     select: (id: string | null) => void;
     selectedId: string | null;
@@ -269,19 +270,41 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             setSpec((current) => {
                 const index = current.components.findIndex((item) => item.id === id);
                 if (index < 0) return current;
-                const existing = current.components[index];
-                if (
-                    existing.position.x === clamped.x &&
-                    existing.position.y === clamped.y &&
-                    existing.position.w === clamped.w &&
-                    existing.position.h === clamped.h
-                ) {
-                    return current;
-                }
+                const packed = placeWithoutOverlap(current.components, id, clamped);
                 const next = cloneWorkspaceSpec(current);
-                next.components[index] = { ...existing, position: clamped };
+                next.components = next.components.map((item) => {
+                    const match = packed.find((entry) => entry.id === item.id);
+                    return match ? { ...item, position: match.position } : item;
+                });
+                if (workspaceSpecsEqual(current, next)) return current;
                 setHistory((historyItems) => [cloneWorkspaceSpec(current), ...historyItems].slice(0, HISTORY_LIMIT));
                 persist(next, "Move widget");
+                return next;
+            });
+        },
+        [persist]
+    );
+
+    const patchComponent = useCallback(
+        (id: string, patch: { position?: WorkspacePosition; props?: Record<string, unknown> }) => {
+            setSpec((current) => {
+                const index = current.components.findIndex((item) => item.id === id);
+                if (index < 0) return current;
+                const existing = current.components[index];
+                const nextPosition = patch.position ? clampPosition(patch.position) : existing.position;
+                const nextProps = patch.props ? { ...(existing.props ?? {}), ...patch.props } : existing.props;
+                let next = cloneWorkspaceSpec(current);
+                next.components[index] = { ...existing, position: nextPosition, props: nextProps };
+                if (patch.position) {
+                    const packed = placeWithoutOverlap(next.components, id, nextPosition);
+                    next.components = next.components.map((item) => {
+                        const match = packed.find((entry) => entry.id === item.id);
+                        return match ? { ...item, position: match.position } : item;
+                    });
+                }
+                if (workspaceSpecsEqual(current, next)) return current;
+                setHistory((historyItems) => [cloneWorkspaceSpec(current), ...historyItems].slice(0, HISTORY_LIMIT));
+                persist(next, "Update widget");
                 return next;
             });
         },
@@ -328,6 +351,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             pin,
             pinEnabled: true,
             pins,
+            patchComponent,
             remove,
             select,
             selectedId,
@@ -346,6 +370,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             outputs,
             pin,
             pins,
+            patchComponent,
             remove,
             select,
             selectedId,

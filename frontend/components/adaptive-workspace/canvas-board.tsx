@@ -85,7 +85,6 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
                                 component={component}
                                 containerWidth={containerWidth}
                                 key={component.id}
-                                onRefresh={(prompt) => onPrompt(prompt)}
                             />
                         ))}
                     </div>
