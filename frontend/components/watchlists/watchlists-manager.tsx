@@ -18,6 +18,7 @@ import {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import { livePriceWebSocketCandidates } from "@/lib/live-price-ws";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
@@ -626,26 +627,33 @@ export function WatchlistsManager({
             }
         }
 
+        let urlIndex = 0;
+        let openedOnce = false;
+        let switchUrl = false;
+
         async function connect() {
             if (!livePriceRefs.length) {
                 setLiveState("disconnected");
                 return;
             }
-            setLiveState("connecting");
+            setLiveState(openedOnce ? "disconnected" : "connecting");
             try {
                 const userId = initialWatchlists[0]?.user_id;
                 if (!userId) {
                     setLiveState("disconnected");
                     return;
                 }
-                const url = new URL("/api/v1/live-streams/prices/ws", window.location.origin);
-                url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-                url.searchParams.set("user_id", userId);
-                url.searchParams.set("scope", "client");
+                const urls = livePriceWebSocketCandidates(userId);
+                const url = urls[Math.min(urlIndex, Math.max(urls.length - 1, 0))];
+                if (!url) {
+                    setLiveState("error");
+                    return;
+                }
                 if (cancelled) return;
-                const socket = new WebSocket(url.toString());
+                const socket = new WebSocket(url);
                 liveSocketRef.current = socket;
                 socket.onopen = () => {
+                    openedOnce = true;
                     socket.send(
                         JSON.stringify({
                             type: "subscribe",
@@ -667,14 +675,18 @@ export function WatchlistsManager({
                     }
                 };
                 socket.onerror = () => {
-                    setLiveState("connecting");
+                    if (!openedOnce && urlIndex < urls.length - 1) {
+                        urlIndex += 1;
+                        switchUrl = true;
+                    }
                     socket.close();
                 };
                 socket.onclose = () => {
                     if (liveSocketRef.current === socket) liveSocketRef.current = null;
                     if (cancelled) return;
-                    setLiveState("disconnected");
-                    reconnectTimer = setTimeout(connect, 2500);
+                    setLiveState(openedOnce ? "disconnected" : "connecting");
+                    reconnectTimer = setTimeout(connect, switchUrl ? 150 : 2500);
+                    switchUrl = false;
                 };
             } catch {
                 if (cancelled) return;

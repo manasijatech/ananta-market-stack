@@ -32,6 +32,50 @@ class AdaptiveWorkspaceCurrentOut(BaseModel):
     spec: WorkspaceSpec
 
 
+class AdaptiveWorkspaceSavedDeskCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    workspace_payload: dict[str, Any]
+
+
+class AdaptiveWorkspaceSavedDeskRenameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class AdaptiveWorkspaceSavedDeskOut(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    workspace_payload: dict[str, Any]
+    valid: bool = True
+    validation: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdaptiveWorkspacePreferencePutIn(BaseModel):
+    key: str = Field(min_length=1, max_length=64)
+    value: Any = None
+
+
+class AdaptiveWorkspacePreferenceOut(BaseModel):
+    key: str
+    value: Any = None
+    updated_at: datetime
+    deletable: bool = True
+
+
+class AdaptiveWorkspaceSuggestionOut(BaseModel):
+    id: str
+    kind: Literal["template", "skill"]
+    target_id: str
+    message: str
+    auto_apply: bool = False
+
+
+class AdaptiveWorkspaceApplyIn(BaseModel):
+    confirm: bool = True
+
+
 WorkspacePatchOperation = Literal[
     "replace",
     "add",

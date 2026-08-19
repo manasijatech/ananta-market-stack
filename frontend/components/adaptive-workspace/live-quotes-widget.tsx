@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { LiveStatusBadge, MoveCell, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDeskAccounts, useDeskWatchlists, resolveWatchlist, stringListParam, symbolsFromComponent } from "@/hooks/use-desk-data";
+import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { liveTickMove, useLivePrices } from "@/hooks/use-live-prices";
+import { useQuoteSnapshots } from "@/hooks/use-quote-snapshots";
 import { quoteMoveFromRecord } from "@/lib/adaptive-workspace/quote-fields";
 import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
-import { getDataQuotes } from "@/service/actions/broker";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
-import type { InstrumentRef, QuoteResponse } from "@/service/types/broker";
+import type { InstrumentRef } from "@/service/types/broker";
 
 type Props = {
     component: WorkspaceComponent;
@@ -38,70 +39,45 @@ function instrumentsFor(component: WorkspaceComponent, watchlist: ReturnType<typ
 export function LiveQuotesWidget({ component, refreshNonce }: Props) {
     const { account, error: accountError } = useDeskAccounts();
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
-    const watchlist = resolveWatchlist(watchlists, component);
+    const prefs = useOptionalAdaptiveDeskPrefs();
+    const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
     const instruments = useMemo(() => instrumentsFor(component, watchlist), [component, watchlist]);
-    const [rows, setRows] = useState<QuoteResponse[]>([]);
-    const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
+    const { error, loading, rows } = useQuoteSnapshots(account?.id, instruments, refreshNonce);
     const demand = useMemo(
         () =>
-            instruments.slice(0, 40).map((item) => ({
-                account_id: account?.id,
-                broker_code: account?.broker_code,
-                exchange: item.exchange,
-                instrument_ref: item,
-                symbol: item.symbol
-            })),
+            instruments
+                .slice(0, 40)
+                .flatMap((item) => {
+                    const symbol = String(item.symbol ?? "").trim();
+                    if (!symbol) return [];
+                    return [
+                        {
+                            account_id: account?.id,
+                            broker_code: account?.broker_code,
+                            exchange: item.exchange,
+                            instrument_ref: item,
+                            symbol
+                        }
+                    ];
+                }),
         [account?.broker_code, account?.id, instruments]
     );
     const live = useLivePrices(demand, `quotes:${component.id}`, account?.user_id);
 
-    useEffect(() => {
-        if (!account || !instruments.length) {
-            setLoading(false);
-            return;
-        }
-        let cancelled = false;
-        setLoading(true);
-        void getDataQuotes(account.id, { instruments: instruments.slice(0, 40) })
-            .then((result) => {
-                if (!cancelled) {
-                    setRows(result);
-                    setError(null);
-                }
-            })
-            .catch((caught) => {
-                if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load quotes.");
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
-        const poll = window.setInterval(() => {
-            void getDataQuotes(account.id, { instruments: instruments.slice(0, 40) })
-                .then((result) => {
-                    if (!cancelled) setRows(result);
-                })
-                .catch(() => undefined);
-        }, 20_000);
-        return () => {
-            cancelled = true;
-            window.clearInterval(poll);
-        };
-    }, [account, instruments, refreshNonce]);
-
     const tableRows = instruments.slice(0, 40).map((instrument, index) => {
-        const snapshot = rows.find((row) => (row.symbol ?? "").toUpperCase() === instrument.symbol.toUpperCase()) ?? rows[index];
+        const symbol = String(instrument.symbol ?? "").trim();
+        const snapshot = rows.find((row) => (row.symbol ?? "").toUpperCase() === symbol.toUpperCase()) ?? rows[index];
         const snapshotRecord = snapshot
             ? ({ ...snapshot, ...(isRecord(snapshot.detail) ? snapshot.detail : {}) } as Record<string, unknown>)
             : null;
         const fromSnapshot = snapshotRecord ? quoteMoveFromRecord(snapshotRecord) : { change: null, changePercent: null, ltp: null };
-        const tick = live.tickFor(instrument.symbol, account?.id, account?.broker_code);
+        const tick = live.tickFor(symbol, account?.id, account?.broker_code);
         const fromLive = liveTickMove(tick);
         return {
             change: fromLive.change ?? fromSnapshot.change,
             changePercent: fromLive.changePercent ?? fromSnapshot.changePercent,
             ltp: fromLive.ltp ?? fromSnapshot.ltp ?? snapshot?.ltp ?? null,
-            symbol: instrument.symbol
+            symbol
         };
     });
 

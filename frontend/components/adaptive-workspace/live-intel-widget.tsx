@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { resolveWatchlist, stringParam, symbolsFromComponent, useDeskWatchlists } from "@/hooks/use-desk-data";
+import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { isRecord, stringFrom } from "@/lib/adaptive-workspace/tool-envelope";
 import { getCachedAlphaFeed, type AlphaFeedProduct } from "@/service/actions/alpha/feeds";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
@@ -30,10 +31,12 @@ function headlineFrom(item: Record<string, unknown>): string {
 
 export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
-    const watchlist = resolveWatchlist(watchlists, component);
+    const prefs = useOptionalAdaptiveDeskPrefs();
+    const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
     const symbols = symbolsFromComponent(component, watchlist);
     const product = (stringParam(component.props, ["product"]) ||
         stringParam(component.data?.params, ["product"]) ||
+        prefs?.intelProduct ||
         "news") as AlphaFeedProduct;
     const [items, setItems] = useState<Record<string, unknown>[]>([]);
     const [page, setPage] = useState(1);

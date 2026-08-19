@@ -134,6 +134,9 @@ Workspace tools:
   validation.errors before compose_surface.
 - compose_surface: replace the whole desk with a valid WorkspaceSpec.
 - patch_surface: add/remove/move/update/duplicate/retitle one widget.
+- workspace_list_templates / workspace_list_skills / workspace_list_saved_desks:
+  named layouts. If the user asks to apply one, compose_surface with that spec.
+  Never rearrange because a request was repeated. Suggest only.
 
 Adaptive-only data tools (not on /broker-chat):
 - intel_get_feed(product, symbols): news, announcements, earnings, concalls, or

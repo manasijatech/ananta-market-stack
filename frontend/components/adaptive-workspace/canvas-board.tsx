@@ -3,9 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { IconArrowBackUp } from "@tabler/icons-react";
 import { AdaptiveCanvasWidget } from "@/components/adaptive-workspace/canvas-widget";
+import { AdaptiveDeskPersonalization } from "@/components/adaptive-workspace/desk-personalization";
+import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { CANVAS_GAP, CANVAS_ROW_HEIGHT } from "@/lib/adaptive-workspace/layout";
+import { cn } from "@/lib/utils";
 
 type Props = {
     onPrompt: (prompt: string) => void;
@@ -14,6 +17,7 @@ type Props = {
 
 export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
     const { canUndo, loading, spec, undo } = useAdaptiveWorkspace();
+    const prefs = useOptionalAdaptiveDeskPrefs();
     const boardRef = useRef<HTMLDivElement>(null);
     const [containerWidth, setContainerWidth] = useState(960);
 
@@ -41,12 +45,15 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
                     <p className="font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">Canvas</p>
                     <h2 className="truncate text-lg font-heading font-semibold tracking-tight">{spec.title}</h2>
                 </div>
-                <Button disabled={!canUndo} onClick={undo} size="sm" type="button" variant="outline">
-                    <IconArrowBackUp className="size-4" stroke={1.8} />
-                    Undo
-                </Button>
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                    <AdaptiveDeskPersonalization />
+                    <Button disabled={!canUndo} onClick={undo} size="sm" type="button" variant="outline">
+                        <IconArrowBackUp className="size-4" stroke={1.8} />
+                        Undo
+                    </Button>
+                </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto p-4" ref={boardRef}>
+            <div className={cn("min-h-0 flex-1 overflow-auto p-4", prefs?.density === "compact" && "[&_td]:py-1 [&_th]:py-1")} ref={boardRef}>
                 {loading ? (
                     <p className="text-sm text-muted-foreground">Restoring saved desk…</p>
                 ) : !spec.components.length ? (

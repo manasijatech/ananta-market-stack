@@ -71,11 +71,20 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
         if (next) updatePosition(component.id, next);
     }
 
+    function readPosition(value: unknown): WorkspacePosition | null {
+        if (!isRecord(value)) return null;
+        const { h, w, x, y } = value;
+        if ([h, w, x, y].some((n) => typeof n !== "number" || !Number.isFinite(n))) return null;
+        return { h: h as number, w: w as number, x: x as number, y: y as number };
+    }
+
     function toggleExpanded() {
         if (expanded) {
-            const compact = isRecord(component.props?.compactPosition)
-                ? (component.props?.compactPosition as WorkspacePosition)
-                : { ...defaultSizeForType(component.type), x: component.position.x, y: component.position.y };
+            const compact = readPosition(component.props?.compactPosition) ?? {
+                ...defaultSizeForType(component.type),
+                x: component.position.x,
+                y: component.position.y
+            };
             patchComponent(component.id, {
                 position: { ...compact, x: component.position.x, y: component.position.y },
                 props: { expanded: false }

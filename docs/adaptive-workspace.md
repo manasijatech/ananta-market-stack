@@ -83,11 +83,11 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 
 ### Phase 3 — Personalization
 
-- [ ] Named saved desks on this route.
-- [ ] Explicit display preferences, inspectable and deletable.
-- [ ] Templates: investor, trader, researcher, operations.
-- [ ] Desk skills: morning brief, F&O desk, earnings week.
-- [ ] Suggestions after repeated requests. No silent rearrangement.
+- [x] Named saved desks on this route.
+- [x] Explicit display preferences, inspectable and deletable.
+- [x] Templates: investor, trader, researcher, operations.
+- [x] Desk skills: morning brief, F&O desk, earnings week.
+- [x] Suggestions after repeated requests. No silent rearrangement.
 
 ### Phase 4 — Workflow studio on the same contract
 
@@ -124,6 +124,8 @@ frontend/hooks/use-adaptive-workspace-chat.ts
 frontend/components/adaptive-workspace/*
 frontend/components/workspace-shell.tsx   # nav entry only
 ```
+
+Phase 3 adds named saved desks (`adaptive_workspace_saved_desks`), inspectable display preferences (`adaptive_workspace_preferences`), canned templates/skills, and suggestion chips. Applying a template or skill always requires an explicit confirm in the UI. The agent may list templates/skills and compose when the user asks; it must not rearrange because a request was repeated.
 
 `compose_surface`, `patch_surface`, and helper tools (`workspace_get_authoring_docs`, `workspace_get_current`, `workspace_validate_spec`) are attached only when a broker-chat run’s metadata includes `adaptive_workspace: true`. Invalid compose/patch returns `ok: true` with `applied: false` and `validation.errors` so the model can self-correct without a retry loop. The preview page sends that flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
 

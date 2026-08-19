@@ -98,7 +98,11 @@ export const WORKSPACE_HELPER_TOOLS = [
     "workspace_get_authoring_docs",
     "workspace_get_current",
     "workspace_validate_spec",
-    "workspace_evaluate_request"
+    "workspace_evaluate_request",
+    "workspace_list_templates",
+    "workspace_list_skills",
+    "workspace_list_saved_desks",
+    "workspace_list_preferences"
 ] as const;
 
 export interface WorkspaceLayout {
@@ -184,5 +188,38 @@ export interface AdaptiveWorkspaceSnapshot {
 
 export interface AdaptiveWorkspaceCurrent {
     snapshot: AdaptiveWorkspaceSnapshot | null;
+    spec: WorkspaceSpec;
+}
+
+export interface AdaptiveWorkspaceSavedDesk {
+    created_at: string;
+    id: string;
+    name: string;
+    updated_at: string;
+    user_id: string;
+    valid: boolean;
+    validation: Record<string, unknown>;
+    workspace_payload: WorkspaceSpec;
+}
+
+export interface AdaptiveWorkspacePreference {
+    deletable: boolean;
+    key: string;
+    updated_at: string;
+    value: unknown;
+}
+
+export interface AdaptiveWorkspaceSuggestion {
+    auto_apply: boolean;
+    id: string;
+    kind: "skill" | "template";
+    message: string;
+    target_id: string;
+}
+
+export interface AdaptiveWorkspaceCatalogItem {
+    description: string;
+    id: string;
+    label: string;
     spec: WorkspaceSpec;
 }

@@ -6,11 +6,19 @@ from sqlalchemy.orm import Session
 from app.deps import get_current_user
 from app.schemas.adaptive_workspace import WorkspaceSpec
 from app.schemas.adaptive_workspace_api import (
+    AdaptiveWorkspaceApplyIn,
     AdaptiveWorkspaceCurrentOut,
+    AdaptiveWorkspacePreferenceOut,
+    AdaptiveWorkspacePreferencePutIn,
+    AdaptiveWorkspaceSavedDeskCreateIn,
+    AdaptiveWorkspaceSavedDeskOut,
+    AdaptiveWorkspaceSavedDeskRenameIn,
     AdaptiveWorkspaceSnapshotCreateIn,
     AdaptiveWorkspaceSnapshotOut,
+    AdaptiveWorkspaceSuggestionOut,
 )
 from app.services import adaptive_workspace as workspace_svc
+from app.services import adaptive_workspace_personalization as personalization
 from db.models import AdaptiveWorkspaceSnapshot, User
 from db.session import get_db
 
@@ -110,3 +118,195 @@ def apply_workspace_snapshot(
     except ValueError as exc:
         raise _http_error(exc) from exc
     return AdaptiveWorkspaceCurrentOut(snapshot=workspace_svc.snapshot_to_out(row), spec=spec)
+
+
+@router.get("/templates")
+def list_workspace_templates(
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    _ = user
+    return personalization.list_templates()
+
+
+@router.post("/templates/{template_id}/apply", response_model=AdaptiveWorkspaceCurrentOut)
+def apply_workspace_template(
+    template_id: str,
+    session_id: str = Query(...),
+    payload: AdaptiveWorkspaceApplyIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveWorkspaceCurrentOut:
+    if payload is not None and payload.confirm is False:
+        raise HTTPException(status_code=400, detail="Applying a template requires confirm=true")
+    try:
+        template = personalization.get_template(template_id)
+        row = workspace_svc.create_snapshot(
+            db,
+            user.id,
+            session_id,
+            template["spec"],
+            label=f"Template: {template['label']}",
+            apply=True,
+        )
+        spec = _spec_from_snapshot(row)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return AdaptiveWorkspaceCurrentOut(snapshot=workspace_svc.snapshot_to_out(row), spec=spec)
+
+
+@router.get("/skills")
+def list_workspace_skills(
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    _ = user
+    return personalization.list_skills()
+
+
+@router.post("/skills/{skill_id}/apply", response_model=AdaptiveWorkspaceCurrentOut)
+def apply_workspace_skill(
+    skill_id: str,
+    session_id: str = Query(...),
+    payload: AdaptiveWorkspaceApplyIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveWorkspaceCurrentOut:
+    if payload is not None and payload.confirm is False:
+        raise HTTPException(status_code=400, detail="Applying a skill requires confirm=true")
+    try:
+        skill = personalization.get_skill(skill_id)
+        row = workspace_svc.create_snapshot(
+            db,
+            user.id,
+            session_id,
+            skill["spec"],
+            label=f"Skill: {skill['label']}",
+            apply=True,
+        )
+        spec = _spec_from_snapshot(row)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return AdaptiveWorkspaceCurrentOut(snapshot=workspace_svc.snapshot_to_out(row), spec=spec)
+
+
+@router.get("/desks", response_model=list[AdaptiveWorkspaceSavedDeskOut])
+def list_named_desks(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AdaptiveWorkspaceSavedDeskOut]:
+    return [AdaptiveWorkspaceSavedDeskOut.model_validate(item) for item in personalization.list_saved_desks(db, user.id)]
+
+
+@router.post("/desks", response_model=AdaptiveWorkspaceSavedDeskOut)
+def create_named_desk(
+    payload: AdaptiveWorkspaceSavedDeskCreateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveWorkspaceSavedDeskOut:
+    try:
+        item = personalization.save_desk(db, user.id, payload.name, payload.workspace_payload)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return AdaptiveWorkspaceSavedDeskOut.model_validate(item)
+
+
+@router.get("/desks/{desk_id}", response_model=AdaptiveWorkspaceSavedDeskOut)
+def get_named_desk(
+    desk_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveWorkspaceSavedDeskOut:
+    try:
+        item = personalization.get_saved_desk(db, user.id, desk_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return AdaptiveWorkspaceSavedDeskOut.model_validate(item)
+
+
+@router.patch("/desks/{desk_id}", response_model=AdaptiveWorkspaceSavedDeskOut)
+def rename_named_desk(
+    desk_id: str,
+    payload: AdaptiveWorkspaceSavedDeskRenameIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveWorkspaceSavedDeskOut:
+    try:
+        item = personalization.rename_saved_desk(db, user.id, desk_id, payload.name)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return AdaptiveWorkspaceSavedDeskOut.model_validate(item)
+
+
+@router.post("/desks/{desk_id}/apply", response_model=AdaptiveWorkspaceCurrentOut)
+def apply_named_desk(
+    desk_id: str,
+    session_id: str = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveWorkspaceCurrentOut:
+    try:
+        desk = personalization.get_saved_desk(db, user.id, desk_id)
+        row = workspace_svc.create_snapshot(
+            db,
+            user.id,
+            session_id,
+            desk["workspace_payload"],
+            label=f"Saved desk: {desk['name']}",
+            apply=True,
+        )
+        spec = _spec_from_snapshot(row)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return AdaptiveWorkspaceCurrentOut(snapshot=workspace_svc.snapshot_to_out(row), spec=spec)
+
+
+@router.delete("/desks/{desk_id}", status_code=204)
+def delete_named_desk(
+    desk_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    try:
+        personalization.delete_saved_desk(db, user.id, desk_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/preferences", response_model=list[AdaptiveWorkspacePreferenceOut])
+def list_workspace_preferences(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AdaptiveWorkspacePreferenceOut]:
+    return [AdaptiveWorkspacePreferenceOut.model_validate(item) for item in personalization.list_preferences(db, user.id)]
+
+
+@router.put("/preferences", response_model=AdaptiveWorkspacePreferenceOut)
+def put_workspace_preference(
+    payload: AdaptiveWorkspacePreferencePutIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveWorkspacePreferenceOut:
+    try:
+        item = personalization.upsert_preference(db, user.id, payload.key, payload.value)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return AdaptiveWorkspacePreferenceOut.model_validate(item)
+
+
+@router.delete("/preferences/{key}", status_code=204)
+def delete_workspace_preference(
+    key: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    try:
+        personalization.delete_preference(db, user.id, key)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/suggestions", response_model=list[AdaptiveWorkspaceSuggestionOut])
+def list_workspace_suggestions(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AdaptiveWorkspaceSuggestionOut]:
+    return [AdaptiveWorkspaceSuggestionOut.model_validate(item) for item in personalization.list_suggestions(db, user.id)]

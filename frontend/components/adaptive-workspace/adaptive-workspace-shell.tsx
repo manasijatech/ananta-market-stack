@@ -9,6 +9,7 @@ import {
     IconPlugConnected
 } from "@tabler/icons-react";
 import { AdaptiveCanvasBoard } from "@/components/adaptive-workspace/canvas-board";
+import { AdaptiveDeskPrefsProvider } from "@/components/adaptive-workspace/desk-prefs";
 import { adaptiveBrokerToolRenderers } from "@/components/adaptive-workspace/broker-tool-renderers";
 import { AdaptiveDeskSwitcher } from "@/components/adaptive-workspace/desk-switcher";
 import { AdaptiveWorkspaceProvider, useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
@@ -39,9 +40,9 @@ type Props = {
 
 const STARTER_PROMPTS = [
     "Compose a desk with my last watchlist, its news, live price movements, and alerts",
-    "Compose a desk with my holdings and broker health",
-    "Show news and announcements for my watchlist with live quotes",
-    "Get latest quotes for my largest holdings"
+    "Apply the investor template",
+    "Compose a morning brief desk",
+    "Compose a desk with my holdings and broker health"
 ];
 
 function AdaptiveWorkspaceShellInner({
@@ -318,7 +319,9 @@ function AdaptiveWorkspaceShellInner({
 export function AdaptiveWorkspaceShell(props: Props) {
     return (
         <AdaptiveWorkspaceProvider>
-            <AdaptiveWorkspaceShellInner {...props} />
+            <AdaptiveDeskPrefsProvider>
+                <AdaptiveWorkspaceShellInner {...props} />
+            </AdaptiveDeskPrefsProvider>
         </AdaptiveWorkspaceProvider>
     );
 }

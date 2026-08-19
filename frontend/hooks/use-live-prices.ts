@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { livePriceWebSocketCandidates } from "@/lib/live-price-ws";
 import { touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import type { InstrumentRef, LivePriceTick } from "@/service/types/alerts";
 
@@ -79,7 +80,7 @@ export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userI
                 setPrices((current) => {
                     const next = { ...current };
                     for (const row of rows) {
-                        const quote = (row.last_quote || {}) as LivePriceTick;
+                        const quote = (row.last_quote || {}) as unknown as LivePriceTick;
                         if (!row.symbol) continue;
                         const tick: LivePriceTick = {
                             ...quote,
@@ -114,6 +115,10 @@ export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userI
         let cancelled = false;
         let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
         let socket: WebSocket | null = null;
+        let urlIndex = 0;
+        let openedOnce = false;
+        let switchUrl = false;
+        const urls = livePriceWebSocketCandidates(userId as string);
 
         function flush() {
             flushTimerRef.current = null;
@@ -140,13 +145,15 @@ export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userI
         }
 
         function connect() {
-            setState("connecting");
-            const url = new URL("/api/v1/live-streams/prices/ws", window.location.origin);
-            url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-            url.searchParams.set("user_id", userId as string);
-            url.searchParams.set("scope", "client");
-            socket = new WebSocket(url.toString());
+            if (!urls.length) {
+                setState("error");
+                return;
+            }
+            setState(openedOnce ? "disconnected" : "connecting");
+            const url = urls[Math.min(urlIndex, urls.length - 1)];
+            socket = new WebSocket(url);
             socket.onopen = () => {
+                openedOnce = true;
                 socket?.send(
                     JSON.stringify({
                         refs: refs.map((ref) => `${ref.account_id}|${ref.broker_code}|${ref.symbol}`),
@@ -166,13 +173,18 @@ export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userI
                 }
             };
             socket.onerror = () => {
-                setState("connecting");
+                if (!openedOnce && urlIndex < urls.length - 1) {
+                    urlIndex += 1;
+                    switchUrl = true;
+                }
                 socket?.close();
             };
             socket.onclose = () => {
                 if (cancelled) return;
-                setState("disconnected");
-                reconnectTimer = setTimeout(connect, 2500);
+                setState(openedOnce ? "disconnected" : "connecting");
+                const retryMs = switchUrl ? 150 : 2500;
+                switchUrl = false;
+                reconnectTimer = setTimeout(connect, retryMs);
             };
         }
 

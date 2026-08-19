@@ -17,6 +17,7 @@ from agents import RunContextWrapper, function_tool
 
 from app.agent_tools.broker_tools import BrokerAgentContext
 from app.services import adaptive_workspace as workspace_svc
+from app.services import adaptive_workspace_personalization as personalization
 from db.session import SessionLocal
 
 PatchOperation = Literal["replace", "add", "remove", "move", "update", "duplicate", "set_title"]
@@ -246,7 +247,86 @@ def workspace_evaluate_request(
             spec=current if isinstance(current, dict) else None,
             observations=observations if isinstance(observations, dict) else None,
         )
+        if context.user_id:
+            db = SessionLocal()
+            try:
+                evaluation["suggestions"] = personalization.record_request_intents(
+                    db, context.user_id, list(evaluation.get("intents") or [])
+                )
+            finally:
+                db.close()
+        else:
+            evaluation["suggestions"] = []
         return _ok(**evaluation)
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_list_templates(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """List named desk templates. Do not apply unless the user asked. Never rearrange silently."""
+
+    def call() -> dict[str, Any]:
+        refused = _require_adaptive(_context(ctx), "workspace_list_templates")
+        if refused:
+            return refused
+        return _ok(templates=personalization.list_templates(), **personalization.catalog_summaries())
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_list_skills(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """List desk skills (morning brief, F&O, earnings week). Suggest only; do not auto-apply."""
+
+    def call() -> dict[str, Any]:
+        refused = _require_adaptive(_context(ctx), "workspace_list_skills")
+        if refused:
+            return refused
+        return _ok(skills=personalization.list_skills(), apply_rule=personalization.catalog_summaries()["apply_rule"])
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_list_saved_desks(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """List the user's named saved desks. Load only when the user asks."""
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+        refused = _require_adaptive(context, "workspace_list_saved_desks")
+        if refused:
+            return refused
+        if not context.user_id:
+            return _ok(desks=[])
+        db = SessionLocal()
+        try:
+            return _ok(desks=personalization.list_saved_desks(db, context.user_id))
+        finally:
+            db.close()
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_list_preferences(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """Return inspectable display preferences. Users delete these from the inspector, not via tools."""
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+        refused = _require_adaptive(context, "workspace_list_preferences")
+        if refused:
+            return refused
+        if not context.user_id:
+            return _ok(preferences=[], allowed_keys=sorted(personalization.ALLOWED_PREFERENCE_KEYS))
+        db = SessionLocal()
+        try:
+            return _ok(
+                preferences=personalization.list_preferences(db, context.user_id),
+                allowed_keys=sorted(personalization.ALLOWED_PREFERENCE_KEYS),
+            )
+        finally:
+            db.close()
 
     return _tool_call(call)
 
@@ -256,6 +336,10 @@ WORKSPACE_TOOLS = [
     workspace_get_current,
     workspace_validate_spec,
     workspace_evaluate_request,
+    workspace_list_templates,
+    workspace_list_skills,
+    workspace_list_saved_desks,
+    workspace_list_preferences,
     compose_surface,
     patch_surface,
 ]

@@ -53,6 +53,7 @@ type AdaptiveWorkspaceContextValue = {
     remove: (id: string) => void;
     select: (id: string | null) => void;
     selectedId: string | null;
+    sessionId: string | null;
     spec: WorkspaceSpec;
     undo: () => void;
     unpin: (id: string) => void;
@@ -86,6 +87,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [history, setHistory] = useState<WorkspaceSpec[]>([]);
     const [loading, setLoading] = useState(false);
+    const [sessionId, setSessionId] = useState<string | null>(null);
     const sessionIdRef = useRef<string | null>(null);
     const persistTimerRef = useRef<number | null>(null);
     const specRef = useRef(spec);
@@ -157,6 +159,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             }
             const keepLocal = !previous && Boolean(sessionId) && specRef.current.components.length > 0;
             sessionIdRef.current = sessionId;
+            setSessionId(sessionId);
             if (!keepLocal) {
                 setSelectedId(null);
                 setHistory([]);
@@ -355,6 +358,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             remove,
             select,
             selectedId,
+            sessionId,
             spec,
             undo,
             unpin,
@@ -374,6 +378,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             remove,
             select,
             selectedId,
+            sessionId,
             spec,
             undo,
             unpin,

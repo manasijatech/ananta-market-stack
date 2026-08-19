@@ -307,6 +307,8 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Never emit React, HTML, CSS, className, style, href, src, or script.",
             "Component ids must be unique and match ^[a-z][a-z0-9-]*$.",
             "Do not add extra keys on spec, component, position, layout, or data.",
+            "Templates: investor, trader, researcher, operations. Skills: morning-brief, fno-desk, earnings-week.",
+            "Repeated requests may be suggested as a template/skill. Never auto-apply.",
         ],
     }
 

@@ -5,6 +5,7 @@ import { PriceChartCard } from "@/components/adaptive-workspace/price-chart-card
 import { SuppressPin } from "@/components/adaptive-workspace/tool-card-shell";
 import { WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import { resolveWatchlist, stringParam, symbolsFromComponent, useDeskAccounts, useDeskWatchlists } from "@/hooks/use-desk-data";
+import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
 import { getHistoricalData } from "@/service/actions/broker";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
@@ -19,7 +20,8 @@ function isoDaysAgo(days: number) {
 export function LiveChartWidget({ component, refreshNonce }: { component: WorkspaceComponent; refreshNonce: number }) {
     const { account, error: accountError } = useDeskAccounts();
     const { watchlists } = useDeskWatchlists();
-    const watchlist = resolveWatchlist(watchlists, component);
+    const prefs = useOptionalAdaptiveDeskPrefs();
+    const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
     const params = component.data?.params ?? {};
     const symbol = stringParam(params, ["symbol"]) || symbolsFromComponent(component, watchlist)[0] || "";
     const [output, setOutput] = useState<Record<string, unknown> | null>(null);

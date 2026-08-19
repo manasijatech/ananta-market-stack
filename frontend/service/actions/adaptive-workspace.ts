@@ -1,7 +1,15 @@
 "use server";
 
 import { fetchFastApi } from "@/lib/fastapi";
-import type { AdaptiveWorkspaceCurrent, AdaptiveWorkspaceSnapshot, WorkspaceSpec } from "@/service/types/adaptive-workspace";
+import type {
+    AdaptiveWorkspaceCatalogItem,
+    AdaptiveWorkspaceCurrent,
+    AdaptiveWorkspacePreference,
+    AdaptiveWorkspaceSavedDesk,
+    AdaptiveWorkspaceSnapshot,
+    AdaptiveWorkspaceSuggestion,
+    WorkspaceSpec
+} from "@/service/types/adaptive-workspace";
 
 type JsonObject = Record<string, unknown>;
 
@@ -65,4 +73,77 @@ export async function applyAdaptiveWorkspaceSnapshot(snapshotId: string): Promis
     return request<AdaptiveWorkspaceCurrent>(`/adaptive-workspace/snapshots/${snapshotId}/apply`, {
         method: "POST"
     });
+}
+
+export async function listAdaptiveWorkspaceTemplates(): Promise<AdaptiveWorkspaceCatalogItem[]> {
+    return request<AdaptiveWorkspaceCatalogItem[]>("/adaptive-workspace/templates");
+}
+
+export async function applyAdaptiveWorkspaceTemplate(
+    templateId: string,
+    sessionId: string
+): Promise<AdaptiveWorkspaceCurrent> {
+    return request<AdaptiveWorkspaceCurrent>(
+        `/adaptive-workspace/templates/${templateId}/apply?session_id=${encodeURIComponent(sessionId)}`,
+        { body: JSON.stringify({ confirm: true }), method: "POST" }
+    );
+}
+
+export async function listAdaptiveWorkspaceSkills(): Promise<AdaptiveWorkspaceCatalogItem[]> {
+    return request<AdaptiveWorkspaceCatalogItem[]>("/adaptive-workspace/skills");
+}
+
+export async function applyAdaptiveWorkspaceSkill(skillId: string, sessionId: string): Promise<AdaptiveWorkspaceCurrent> {
+    return request<AdaptiveWorkspaceCurrent>(
+        `/adaptive-workspace/skills/${skillId}/apply?session_id=${encodeURIComponent(sessionId)}`,
+        { body: JSON.stringify({ confirm: true }), method: "POST" }
+    );
+}
+
+export async function listAdaptiveWorkspaceDesks(): Promise<AdaptiveWorkspaceSavedDesk[]> {
+    return request<AdaptiveWorkspaceSavedDesk[]>("/adaptive-workspace/desks");
+}
+
+export async function saveAdaptiveWorkspaceDesk(name: string, spec: WorkspaceSpec): Promise<AdaptiveWorkspaceSavedDesk> {
+    return request<AdaptiveWorkspaceSavedDesk>("/adaptive-workspace/desks", {
+        body: JSON.stringify({ name, workspace_payload: spec }),
+        method: "POST"
+    });
+}
+
+export async function renameAdaptiveWorkspaceDesk(deskId: string, name: string): Promise<AdaptiveWorkspaceSavedDesk> {
+    return request<AdaptiveWorkspaceSavedDesk>(`/adaptive-workspace/desks/${deskId}`, {
+        body: JSON.stringify({ name }),
+        method: "PATCH"
+    });
+}
+
+export async function applyAdaptiveWorkspaceDesk(deskId: string, sessionId: string): Promise<AdaptiveWorkspaceCurrent> {
+    return request<AdaptiveWorkspaceCurrent>(
+        `/adaptive-workspace/desks/${deskId}/apply?session_id=${encodeURIComponent(sessionId)}`,
+        { method: "POST" }
+    );
+}
+
+export async function deleteAdaptiveWorkspaceDesk(deskId: string): Promise<void> {
+    await request(`/adaptive-workspace/desks/${deskId}`, { method: "DELETE" });
+}
+
+export async function listAdaptiveWorkspacePreferences(): Promise<AdaptiveWorkspacePreference[]> {
+    return request<AdaptiveWorkspacePreference[]>("/adaptive-workspace/preferences");
+}
+
+export async function putAdaptiveWorkspacePreference(key: string, value: unknown): Promise<AdaptiveWorkspacePreference> {
+    return request<AdaptiveWorkspacePreference>("/adaptive-workspace/preferences", {
+        body: JSON.stringify({ key, value }),
+        method: "PUT"
+    });
+}
+
+export async function deleteAdaptiveWorkspacePreference(key: string): Promise<void> {
+    await request(`/adaptive-workspace/preferences/${key}`, { method: "DELETE" });
+}
+
+export async function listAdaptiveWorkspaceSuggestions(): Promise<AdaptiveWorkspaceSuggestion[]> {
+    return request<AdaptiveWorkspaceSuggestion[]>("/adaptive-workspace/suggestions");
 }

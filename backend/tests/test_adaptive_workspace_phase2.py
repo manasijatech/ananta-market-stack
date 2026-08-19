@@ -47,6 +47,10 @@ def test_workspace_tools_are_not_on_broker_chat_by_default():
         "workspace_evaluate_request",
         "workspace_get_authoring_docs",
         "workspace_get_current",
+        "workspace_list_preferences",
+        "workspace_list_saved_desks",
+        "workspace_list_skills",
+        "workspace_list_templates",
         "workspace_validate_spec",
     }
     assert intel_names == {
@@ -143,6 +147,11 @@ def test_adaptive_workspace_routes_are_mounted_under_api_v1():
     assert "/api/v1/adaptive-workspace/sessions/{session_id}/current" in paths
     assert "/api/v1/adaptive-workspace/sessions/{session_id}/snapshots" in paths
     assert "/api/v1/adaptive-workspace/snapshots/{snapshot_id}/apply" in paths
+    assert "/api/v1/adaptive-workspace/templates" in paths
+    assert "/api/v1/adaptive-workspace/skills" in paths
+    assert "/api/v1/adaptive-workspace/desks" in paths
+    assert "/api/v1/adaptive-workspace/preferences" in paths
+    assert "/api/v1/adaptive-workspace/suggestions" in paths
 
 
 def test_adaptive_workspace_routes_are_registered_with_testclient_context():

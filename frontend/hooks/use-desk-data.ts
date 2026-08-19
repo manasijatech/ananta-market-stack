@@ -88,11 +88,18 @@ export function useDeskWatchlists() {
     return { error, loading, reload, watchlists };
 }
 
-export function resolveWatchlist(watchlists: Watchlist[], component: WorkspaceComponent): Watchlist | null {
+export function resolveWatchlist(
+    watchlists: Watchlist[],
+    component: WorkspaceComponent,
+    defaultWatchlistId?: string
+): Watchlist | null {
     if (!watchlists.length) return null;
     const params = component.data?.params ?? {};
     const props = component.props ?? {};
-    const id = stringParam(props, ["watchlistId", "watchlist_id"]) || stringParam(params, ["watchlist_id", "watchlistId"]);
+    const id =
+        stringParam(props, ["watchlistId", "watchlist_id"]) ||
+        stringParam(params, ["watchlist_id", "watchlistId"]) ||
+        (defaultWatchlistId || "");
     const name = stringParam(props, ["watchlistName"]) || stringParam(params, ["name", "watchlist", "watchlist_name"]);
     if (id) {
         return watchlists.find((item) => item.id === id) ?? watchlists[0] ?? null;
