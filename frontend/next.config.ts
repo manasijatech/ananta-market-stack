@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
             static: 180
         }
     },
+    allowedDevOrigins: ["127.0.0.1", "localhost"],
     async redirects() {
         return [
             {

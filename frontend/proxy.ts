@@ -17,6 +17,7 @@ const PROTECTED_PREFIXES = [
     "/market-intelligence",
     "/heatmap",
     "/broker-chat",
+    "/adaptive-workspace",
     "/alerts-workspace",
     "/settings",
     "/llm-usage",
@@ -64,8 +65,7 @@ export function proxy(request: NextRequest): NextResponse {
     }
 
     if (hasSession && AUTH_ROUTES.includes(pathname as (typeof AUTH_ROUTES)[number])) {
-        // Let server pages call redirectIfAuthenticated() for RBAC-aware routing.
-        return NextResponse.next();
+        return redirectTo(request, "/broker-connections");
     }
 
     return NextResponse.next();
@@ -85,6 +85,8 @@ export const config = {
         "/market-intelligence/:path*",
         "/heatmap/:path*",
         "/broker-chat/:path*",
+        "/adaptive-workspace",
+        "/adaptive-workspace/:path*",
         "/alerts-workspace/:path*",
         "/settings/:path*",
         "/llm-usage/:path*",

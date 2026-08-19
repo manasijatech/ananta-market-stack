@@ -81,6 +81,11 @@ export function AuthSplitLayout({ children, className, panel = "default" }: Auth
                     </Link>
 
                     <div className="flex flex-1 flex-col justify-center">{children}</div>
+                    <noscript>
+                        <p className="mt-4 text-sm text-muted-foreground">
+                            JavaScript is optional for sign-in, but the password reveal button needs it. Forms still submit without it.
+                        </p>
+                    </noscript>
                 </div>
 
                 <AuthVisualPanel variant={panel} />

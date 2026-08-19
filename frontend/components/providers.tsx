@@ -3,7 +3,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 import { useCallback } from "react";
 
 import { AuthProvider } from "@/components/auth/auth-provider";
@@ -14,6 +14,35 @@ import { resolvePostAuthRoute } from "@/service/actions/auth-routing";
 
 const postAuthTargets = new Set(["/", "/broker-connections"]);
 
+function AuthLink({
+    href,
+    to,
+    children,
+    ...props
+}: {
+    href?: string;
+    to?: string;
+    children: ReactNode;
+    className?: string;
+    "aria-disabled"?: boolean | "true" | "false";
+    tabIndex?: number;
+    onClick?: MouseEventHandler<HTMLAnchorElement>;
+}) {
+    return (
+        <Link href={href || to || "/"} {...props}>
+            {children}
+        </Link>
+    );
+}
+
+async function destinationAfterAuth(fallback: string): Promise<string> {
+    try {
+        return await resolvePostAuthRoute();
+    } catch {
+        return fallback;
+    }
+}
+
 export function Providers({ children }: { children: ReactNode }) {
     const router = useRouter();
     const queryClient = getQueryClient();
@@ -21,7 +50,18 @@ export function Providers({ children }: { children: ReactNode }) {
     const navigate = useCallback(
         ({ to, replace }: { to: string; replace?: boolean }) => {
             void (async () => {
-                const destination = postAuthTargets.has(to) ? await resolvePostAuthRoute() : to;
+                const destination = postAuthTargets.has(to)
+                    ? await destinationAfterAuth("/broker-connections")
+                    : to;
+
+                if (
+                    postAuthTargets.has(to) ||
+                    destination.startsWith("/onboarding") ||
+                    destination === "/pending-approval"
+                ) {
+                    window.location.assign(destination);
+                    return;
+                }
 
                 if (replace) {
                     router.replace(destination);
@@ -42,10 +82,11 @@ export function Providers({ children }: { children: ReactNode }) {
                 emailAndPassword={{
                     enabled: true,
                     forgotPassword: true,
-                    rememberMe: true
+                    rememberMe: true,
+                    confirmPassword: true
                 }}
                 navigate={navigate}
-                Link={Link}
+                Link={AuthLink}
             >
                 {children}
                 <Toaster />

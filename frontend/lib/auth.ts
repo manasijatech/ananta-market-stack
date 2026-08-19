@@ -10,6 +10,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { betterAuth } from "better-auth";
+import { nextCookies } from "better-auth/next-js";
 import { storeDevPasswordResetLink } from "@/lib/dev-password-reset-links";
 import { getPublicAppUrl } from "@/lib/runtime-config";
 
@@ -173,5 +174,6 @@ export const auth = betterAuth({
         database: {
             generateId: "uuid"
         }
-    }
+    },
+    plugins: [nextCookies()]
 });
