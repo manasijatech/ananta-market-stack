@@ -78,7 +78,7 @@ export function ComposeSurfaceCard({ name, output, status }: CustomToolRendererP
                         </ul>
                     ) : (
                         <p className="text-xs text-muted-foreground">
-                            Check catalog types (holdings-table, quote-ticker, price-chart, broker-health) and grid rules.
+                            Check catalog types (holdings-table, quote-ticker, watchlist, intel-feed, alert-rule-draft) and grid rules.
                         </p>
                     )}
                     {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}

@@ -112,6 +112,9 @@ def test_maps_existing_broker_tools_to_catalog_types():
     assert component_type_for_tool("broker_get_historical") == "price-chart"
     assert component_type_for_tool("broker_get_portfolio") == "holdings-table"
     assert component_type_for_tool("broker_get_session_status") == "broker-health"
+    assert component_type_for_tool("broker_get_watchlist_symbols") == "watchlist"
+    assert component_type_for_tool("intel_get_feed") == "intel-feed"
+    assert component_type_for_tool("intel_list_alert_workflows") == "alert-rule-draft"
     assert "broker_place_order" not in TOOL_COMPONENT_MAP
 
 
@@ -121,3 +124,99 @@ def test_authoring_docs_list_catalog_and_example_spec():
     assert "broker-health" in docs["preferred_component_types"]
     assert docs["example_spec"]["components"][0]["type"] == "holdings-table"
     assert "broker_get_portfolio" in docs["data_tools"]
+    assert "intel_get_feed" in docs["data_tools"]
+    assert "watchlist" in docs["preferred_component_types"]
+    assert "intel-feed" in docs["preferred_component_types"]
+
+
+def test_evaluate_request_covers_watchlist_news_quotes_and_alerts():
+    from app.services.adaptive_workspace import evaluate_request
+
+    query = "Compose a desk with my last watchlist, add its news, as well as live price movements of them, along with their alerts."
+    planned = evaluate_request(query)
+    assert planned["intents"] == ["watchlist", "quotes", "news", "alerts"]
+    assert "broker_get_watchlist_symbols" in planned["recommended_tools"]
+    assert "broker_get_quotes" in planned["recommended_tools"]
+    assert "intel_get_feed" in planned["recommended_tools"]
+    assert "intel_list_alert_workflows" in planned["recommended_tools"]
+    assert planned["recommended_types"] == ["watchlist", "quote-ticker", "intel-feed", "alert-rule-draft"]
+    assert planned["complements_query"] is False
+    assert planned["missing_from_spec"] == planned["recommended_types"]
+
+    spec = {
+        "version": "1",
+        "title": "Watchlist desk",
+        "layout": {"mode": "grid", "columns": 12},
+        "components": [
+            {
+                "id": "watchlist",
+                "type": "watchlist",
+                "position": {"x": 0, "y": 0, "w": 4, "h": 4},
+                "data": {"tool": "broker_get_watchlist_symbols", "params": {}},
+            },
+            {
+                "id": "quotes",
+                "type": "quote-ticker",
+                "position": {"x": 4, "y": 0, "w": 8, "h": 3},
+                "data": {"tool": "broker_get_quotes", "params": {}},
+            },
+            {
+                "id": "news",
+                "type": "intel-feed",
+                "position": {"x": 0, "y": 4, "w": 6, "h": 5},
+                "data": {"tool": "intel_get_feed", "params": {"product": "news"}},
+            },
+            {
+                "id": "alerts",
+                "type": "alert-rule-draft",
+                "position": {"x": 6, "y": 4, "w": 6, "h": 4},
+                "data": {"tool": "intel_list_alert_workflows", "params": {}},
+            },
+        ],
+    }
+    covered = evaluate_request(
+        query,
+        spec=spec,
+        observations={
+            "watchlist_symbol_count": 3,
+            "quote_count": 3,
+            "quotes_with_change_pct": 3,
+            "news_item_count": 4,
+            "alert_workflow_count": 1,
+            "alert_notification_count": 2,
+        },
+    )
+    assert covered["missing_from_spec"] == []
+    assert covered["complements_query"] is True
+    assert covered["backtest_lite"]["session_move_ok"] is True
+    assert covered["backtest_lite"]["needs_historical"] is False
+
+
+def test_evaluate_request_flags_empty_quotes_as_not_complementing():
+    from app.services.adaptive_workspace import evaluate_request
+
+    result = evaluate_request(
+        "live price movements for my watchlist",
+        spec={
+            "version": "1",
+            "title": "Quotes only",
+            "layout": {"mode": "grid", "columns": 12},
+            "components": [
+                {
+                    "id": "quotes",
+                    "type": "quote-ticker",
+                    "position": {"x": 0, "y": 0, "w": 6, "h": 3},
+                    "data": {"tool": "broker_get_quotes", "params": {}},
+                },
+                {
+                    "id": "watchlist",
+                    "type": "watchlist",
+                    "position": {"x": 6, "y": 0, "w": 6, "h": 3},
+                    "data": {"tool": "broker_get_watchlist_symbols", "params": {}},
+                },
+            ],
+        },
+        observations={"quote_count": 0, "watchlist_symbol_count": 4},
+    )
+    assert result["complements_query"] is False
+    assert any("Quotes intent is unmet" in note for note in result["notes"])

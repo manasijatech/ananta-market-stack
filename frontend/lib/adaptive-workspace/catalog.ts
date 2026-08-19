@@ -37,6 +37,12 @@ export function titleForComponentType(type: string, fallback = "Widget"): string
             return "Price chart";
         case "broker-health":
             return "Broker health";
+        case "watchlist":
+            return "Watchlist";
+        case "intel-feed":
+            return "Market intelligence";
+        case "alert-rule-draft":
+            return "Alerts";
         default:
             return fallback;
     }
@@ -56,6 +62,12 @@ export function defaultSizeForType(type: string): WorkspacePosition {
             return { h: 3, w: 4, x: 0, y: 0 };
         case "quote-ticker":
             return { h: 3, w: 6, x: 0, y: 0 };
+        case "watchlist":
+            return { h: 4, w: 4, x: 0, y: 0 };
+        case "intel-feed":
+            return { h: 5, w: 6, x: 0, y: 0 };
+        case "alert-rule-draft":
+            return { h: 4, w: 6, x: 0, y: 0 };
         default:
             return { h: 3, w: 6, x: 0, y: 0 };
     }

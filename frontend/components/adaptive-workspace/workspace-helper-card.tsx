@@ -7,12 +7,14 @@ import { isRecord, unwrapToolOutput } from "@/lib/adaptive-workspace/tool-envelo
 function titleForHelper(name: string) {
     if (name === "workspace_get_authoring_docs") return "Workspace catalog";
     if (name === "workspace_get_current") return "Current desk";
+    if (name === "workspace_evaluate_request") return "Request coverage";
     return "Workspace validate";
 }
 
 function pendingLabelForHelper(name: string) {
     if (name === "workspace_get_authoring_docs") return "Loading catalog";
     if (name === "workspace_get_current") return "Reading canvas";
+    if (name === "workspace_evaluate_request") return "Evaluating request";
     return "Validating WorkspaceSpec";
 }
 
@@ -50,6 +52,21 @@ export function WorkspaceHelperCard({ name, output, status }: CustomToolRenderer
             ) : null}
             {name === "workspace_validate_spec" && valid === true ? (
                 <p className="text-sm">WorkspaceSpec is valid. It has not been applied yet.</p>
+            ) : null}
+            {name === "workspace_evaluate_request" && isRecord(payload) ? (
+                <div className="grid gap-1 text-sm">
+                    <p>
+                        {payload.complements_query === true ? "Desk complements the request." : "Coverage still incomplete."}
+                    </p>
+                    {Array.isArray(payload.intents) ? (
+                        <p className="text-xs text-muted-foreground">Intents: {payload.intents.filter((item): item is string => typeof item === "string").join(", ") || "none"}</p>
+                    ) : null}
+                    {Array.isArray(payload.missing_from_spec) && payload.missing_from_spec.length ? (
+                        <p className="text-xs text-muted-foreground">
+                            Missing: {payload.missing_from_spec.filter((item): item is string => typeof item === "string").join(", ")}
+                        </p>
+                    ) : null}
+                </div>
             ) : null}
             {name === "workspace_validate_spec" && rejected ? (
                 <ul className="list-disc space-y-1 pl-4 text-xs text-destructive">

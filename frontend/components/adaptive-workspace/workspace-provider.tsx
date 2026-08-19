@@ -11,6 +11,7 @@ import {
     type ReactNode
 } from "react";
 import { componentTypeForTool, defaultSizeForType, pinTitleForTool } from "@/lib/adaptive-workspace/catalog";
+import { outputsForSpec, toolOutputsFromMessages } from "@/lib/adaptive-workspace/bind-outputs";
 import { clampPosition } from "@/lib/adaptive-workspace/layout";
 import {
     cloneWorkspaceSpec,
@@ -42,6 +43,7 @@ type AdaptiveWorkspaceContextValue = {
     bindSession: (sessionId: string | null) => void;
     canUndo: boolean;
     duplicate: (id: string) => void;
+    ingestMessageOutputs: (messages: Array<{ parts?: unknown[]; role?: string }>) => void;
     loading: boolean;
     outputs: Record<string, WorkspaceWidgetOutput>;
     pin: (item: PinInput) => void;
@@ -122,6 +124,27 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
         },
         [pushAndSet]
     );
+
+    const ingestMessageOutputs = useCallback((messages: Array<{ parts?: unknown[]; role?: string }>) => {
+        const bound = outputsForSpec(specRef.current, toolOutputsFromMessages(messages));
+        if (!Object.keys(bound).length) return;
+        setOutputs((current) => {
+            let changed = false;
+            const next = { ...current };
+            for (const [id, value] of Object.entries(bound)) {
+                const previous = current[id];
+                if (
+                    !previous ||
+                    previous.toolName !== value.toolName ||
+                    JSON.stringify(previous.output) !== JSON.stringify(value.output)
+                ) {
+                    next[id] = value;
+                    changed = true;
+                }
+            }
+            return changed ? next : current;
+        });
+    }, []);
 
     const bindSession = useCallback(
         (sessionId: string | null) => {
@@ -299,6 +322,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             bindSession,
             canUndo: history.length > 0,
             duplicate,
+            ingestMessageOutputs,
             loading,
             outputs,
             pin,
@@ -317,6 +341,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             bindSession,
             duplicate,
             history.length,
+            ingestMessageOutputs,
             loading,
             outputs,
             pin,

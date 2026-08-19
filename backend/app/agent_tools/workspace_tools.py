@@ -220,10 +220,42 @@ def patch_surface(
     return _tool_call(call)
 
 
+@function_tool(strict_mode=False)
+def workspace_evaluate_request(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    user_query: str,
+    spec: dict[str, Any] | None = None,
+    observations: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Plan coverage for the user request and check whether a desk actually complements it.
+
+    Call once after reading the query, then again after fetching data (and optionally
+    with a draft spec) before compose_surface. Observations may include quote_count,
+    quotes_with_change_pct, watchlist_symbol_count, news_item_count,
+    alert_workflow_count, and alert_notification_count.
+    """
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+        refused = _require_adaptive(context, "workspace_evaluate_request")
+        if refused:
+            return refused
+        current = spec if isinstance(spec, dict) else _current_spec(context)
+        evaluation = workspace_svc.evaluate_request(
+            user_query,
+            spec=current if isinstance(current, dict) else None,
+            observations=observations if isinstance(observations, dict) else None,
+        )
+        return _ok(**evaluation)
+
+    return _tool_call(call)
+
+
 WORKSPACE_TOOLS = [
     workspace_get_authoring_docs,
     workspace_get_current,
     workspace_validate_spec,
+    workspace_evaluate_request,
     compose_surface,
     patch_surface,
 ]

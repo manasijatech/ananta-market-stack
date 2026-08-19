@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import {
     IconBook,
     IconBellRinging,
+    IconChevronLeft,
+    IconChevronRight,
     IconExternalLink,
     IconBrain,
     IconLayoutDashboard,
@@ -89,6 +91,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     }
 ];
 
+const NAV_COLLAPSE_STORAGE_KEY = "ananta.workspace.nav-collapsed";
+
 function isNavItemActive(pathname: string, href: string) {
     if (href === "/settings") {
         return pathname === "/settings";
@@ -150,10 +154,12 @@ function storedHeatmapHref() {
 }
 
 function NavigationGroups({
+    compact = false,
     pathname,
     principal,
     closeOnSelect = false
 }: {
+    compact?: boolean;
     pathname: string;
     principal?: RbacPrincipal | null;
     closeOnSelect?: boolean;
@@ -169,10 +175,10 @@ function NavigationGroups({
     }, []);
 
     return (
-        <nav className="flex flex-col gap-6 py-2" aria-label="Primary navigation">
+        <nav className={cn("flex flex-col py-2", compact ? "gap-1" : "gap-6")} aria-label="Primary navigation">
             {groups.map((group) => (
                 <div className="flex flex-col gap-0.5" key={group.label}>
-                    <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{group.label}</p>
+                    {compact ? null : <p className="px-3 pb-1 text-xs font-medium text-muted-foreground">{group.label}</p>}
                     {group.items.map((item) => {
                         const Icon = item.icon;
                         const active = isNavItemActive(pathname, item.href);
@@ -180,17 +186,19 @@ function NavigationGroups({
                         const link = (
                             <Link
                                 className={cn(
-                                    "flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-3 text-sm font-medium transition-colors",
+                                    "flex h-9 min-w-0 items-center rounded-lg text-sm font-medium transition-colors",
+                                    compact ? "justify-center px-0" : "gap-2.5 px-3",
                                     active
                                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                                         : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
                                 )}
                                 href={href}
                                 key={item.href}
+                                title={item.label}
                             >
                                 <Icon className="size-4 shrink-0 opacity-80" stroke={1.75} />
-                                <span className="truncate">{item.label}</span>
-                                {item.external ? (
+                                {compact ? <span className="sr-only">{item.label}</span> : <span className="truncate">{item.label}</span>}
+                                {!compact && item.external ? (
                                     <IconExternalLink className="ml-auto size-3.5 shrink-0 opacity-50" stroke={1.75} />
                                 ) : null}
                             </Link>
@@ -231,7 +239,17 @@ export function WorkspaceShell({
     const router = useRouter();
     const { user, isLoading, signOut } = useSession();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [navCollapsed, setNavCollapsed] = useState(false);
     const fullHeight = isFullHeightPath(pathname);
+    const adaptive = pathname.startsWith("/adaptive-workspace");
+
+    useEffect(() => {
+        try {
+            setNavCollapsed(window.localStorage.getItem(NAV_COLLAPSE_STORAGE_KEY) === "1");
+        } catch {
+            setNavCollapsed(false);
+        }
+    }, []);
 
     useEffect(() => {
         if (!isLoading && !user) {
@@ -248,6 +266,14 @@ export function WorkspaceShell({
     async function handleSignOut() {
         await signOut();
         router.replace("/auth/sign-in");
+    }
+
+    function toggleNavCollapsed() {
+        setNavCollapsed((current) => {
+            const next = !current;
+            window.localStorage.setItem(NAV_COLLAPSE_STORAGE_KEY, next ? "1" : "0");
+            return next;
+        });
     }
 
     if (isLoading || !user) {
@@ -322,37 +348,65 @@ export function WorkspaceShell({
                 </div>
             </header>
 
-            <aside className="hidden border-border bg-muted min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:w-60 min-[980px]:overflow-hidden">
+            <aside
+                className={cn(
+                    "hidden border-border bg-muted min-[980px]:fixed min-[980px]:inset-y-0 min-[980px]:left-0 min-[980px]:flex min-[980px]:overflow-hidden",
+                    navCollapsed ? "min-[980px]:w-16" : "min-[980px]:w-60"
+                )}
+            >
                 <div className="flex h-full w-full flex-col border-r border-border">
-                    <div className="flex h-16 items-center px-4">
-                        <BrandLogo imageClassName="text-[1.35rem]" />
+                    <div className={cn("flex h-16 items-center gap-1", navCollapsed ? "justify-center px-1" : "px-3")}>
+                        {navCollapsed ? null : <BrandLogo imageClassName="text-[1.35rem]" />}
+                        <Button
+                            aria-label={navCollapsed ? "Expand navigation" : "Collapse navigation"}
+                            className="size-8 shrink-0 text-muted-foreground"
+                            onClick={toggleNavCollapsed}
+                            size="icon"
+                            type="button"
+                            variant="ghost"
+                        >
+                            {navCollapsed ? (
+                                <IconChevronRight className="size-4" stroke={1.8} />
+                            ) : (
+                                <IconChevronLeft className="size-4" stroke={1.8} />
+                            )}
+                        </Button>
                     </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-                        <NavigationGroups pathname={pathname} principal={principal} />
+                    <div className={cn("min-h-0 flex-1 overflow-y-auto pb-4", navCollapsed ? "px-1" : "px-2")}>
+                        <NavigationGroups compact={navCollapsed} pathname={pathname} principal={principal} />
                     </div>
                     <div className="mt-auto border-t border-border p-2">
-                        <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+                        <div className={cn("flex items-center rounded-lg py-2", navCollapsed ? "justify-center px-0" : "gap-2.5 px-2")}>
                             <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
                                 {initials(user.name, user.email)}
                             </span>
-                            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{user.email}</span>
-                            <Button
-                                aria-label="Sign out"
-                                className="size-8 shrink-0 text-muted-foreground hover:text-primary"
-                                onClick={handleSignOut}
-                                size="icon"
-                                type="button"
-                                variant="outline"
-                            >
-                                <IconLogout className="size-4" stroke={1.8} />
-                            </Button>
+                            {navCollapsed ? null : (
+                                <>
+                                    <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{user.email}</span>
+                                    <Button
+                                        aria-label="Sign out"
+                                        className="size-8 shrink-0 text-muted-foreground hover:text-primary"
+                                        onClick={handleSignOut}
+                                        size="icon"
+                                        type="button"
+                                        variant="outline"
+                                    >
+                                        <IconLogout className="size-4" stroke={1.8} />
+                                    </Button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
             </aside>
 
-            <div className="min-[980px]:pl-60">
-                <header className="fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:left-60 min-[980px]:flex min-[980px]:h-16 min-[980px]:items-center min-[980px]:px-8 min-[980px]:py-0">
+            <div className={navCollapsed ? "min-[980px]:pl-16" : "min-[980px]:pl-60"}>
+                <header
+                    className={cn(
+                        "fixed right-0 top-0 z-[70] hidden border-b border-border bg-background px-5 py-4 min-[760px]:px-8 min-[980px]:flex min-[980px]:h-16 min-[980px]:items-center min-[980px]:py-0",
+                        navCollapsed ? "min-[980px]:left-16 min-[980px]:px-4" : "min-[980px]:left-60 min-[980px]:px-8"
+                    )}
+                >
                     <div className="flex w-full items-center justify-end">
                         <div className="flex flex-wrap items-center gap-2">
                             <GithubStarButton />
@@ -366,6 +420,8 @@ export function WorkspaceShell({
                         "min-w-0 px-3 pb-8 pt-[calc(3.75rem+0.75rem+env(safe-area-inset-top))] sm:px-4 sm:pb-10 sm:pt-[calc(4.5rem+0.75rem+env(safe-area-inset-top))] min-[760px]:px-8 min-[980px]:px-8 min-[980px]:pb-10 min-[980px]:pt-5",
                         fullHeight &&
                             "min-[980px]:flex min-[980px]:h-dvh min-[980px]:flex-col min-[980px]:overflow-hidden",
+                        adaptive &&
+                            "min-[980px]:px-3 min-[980px]:pb-3 min-[980px]:pt-16",
                         pathname === "/settings" &&
                             "min-[980px]:mt-16 min-[980px]:h-[calc(100vh-4rem)] min-[980px]:overflow-hidden min-[980px]:pb-0 min-[980px]:pt-0"
                     )}

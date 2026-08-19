@@ -50,6 +50,9 @@ ALLOWED_DATA_TOOLS: frozenset[str] = frozenset(
         "broker_get_watchlist_symbols",
         "broker_get_data_capabilities",
         "broker_list_accounts",
+        "intel_get_feed",
+        "intel_list_alert_workflows",
+        "intel_list_alert_notifications",
     }
 )
 
@@ -97,6 +100,9 @@ TOOL_COMPONENT_MAP: dict[str, str] = {
     "broker_calculate_margin": "margin-scenario",
     "broker_list_watchlists": "watchlist",
     "broker_get_watchlist_symbols": "watchlist",
+    "intel_get_feed": "intel-feed",
+    "intel_list_alert_workflows": "alert-rule-draft",
+    "intel_list_alert_notifications": "alert-rule-draft",
 }
 
 
@@ -247,10 +253,13 @@ def workspace_authoring_docs() -> dict[str, Any]:
                 "holdings-table": {"w": 12, "h": 5},
                 "price-chart": {"w": 8, "h": 4},
                 "broker-health": {"w": 4, "h": 3},
+                "watchlist": {"w": 4, "h": 4},
+                "intel-feed": {"w": 6, "h": 5},
+                "alert-rule-draft": {"w": 6, "h": 4},
             },
         },
         "component_types": sorted(ALLOWED_COMPONENT_TYPES),
-        "preferred_component_types": list(preferred),
+        "preferred_component_types": list(preferred) + ["watchlist", "intel-feed", "alert-rule-draft"],
         "data_tools": sorted(ALLOWED_DATA_TOOLS),
         "actions": sorted(ALLOWED_ACTIONS),
         "forbidden_prop_keys": sorted(FORBIDDEN_PROP_KEYS),
@@ -264,6 +273,10 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "session-status": "broker-health",
             "broker-status": "broker-health",
             "health": "broker-health",
+            "news": "intel-feed",
+            "announcements": "intel-feed",
+            "watchlist": "watchlist",
+            "alerts": "alert-rule-draft",
         },
         "example_spec": {
             "version": "1",
@@ -290,7 +303,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "version must be the string '1'.",
             "layout.mode must be grid and layout.columns must be 12.",
             "Use only catalog component types. Unknown types are rejected.",
-            "data.tool must be an allowlisted broker data tool. Never include secrets.",
+            "data.tool must be an allowlisted data tool (broker_* or intel_*). Never include secrets.",
             "Never emit React, HTML, CSS, className, style, href, src, or script.",
             "Component ids must be unique and match ^[a-z][a-z0-9-]*$.",
             "Do not add extra keys on spec, component, position, layout, or data.",

@@ -73,7 +73,7 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 
 ### Phase 2 — Sidecar adaptive canvas (same route)
 
-- [x] Centre canvas becomes the primary pane; chat becomes a collapsible inspector.
+- [x] Centre canvas becomes the primary pane; chat becomes a collapsible, resizable inspector. Conversation history is an inspector desk switcher, not a third column.
 - [x] `compose_surface` / `patch_surface` tools that emit `WorkspaceSpec`.
 - [x] Catalog, current-desk, and dry-run validate tools so the agent can self-correct instead of looping.
 - [x] Drag, resize, remove, duplicate, refresh, undo on catalog widgets only.

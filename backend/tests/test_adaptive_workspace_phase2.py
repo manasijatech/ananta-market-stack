@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.agent_tools import BROKER_DATA_TOOLS, WORKSPACE_TOOLS
+from app.agent_tools import BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS
 from app.main import app
 from app.schemas.adaptive_workspace import parse_workspace_spec
 from app.services import adaptive_workspace as workspace_svc
@@ -39,16 +39,25 @@ def _db():
 def test_workspace_tools_are_not_on_broker_chat_by_default():
     broker_names = {tool.name for tool in BROKER_DATA_TOOLS}
     workspace_names = {tool.name for tool in WORKSPACE_TOOLS}
+    intel_names = {tool.name for tool in INTEL_TOOLS}
 
     assert workspace_names == {
         "compose_surface",
         "patch_surface",
+        "workspace_evaluate_request",
         "workspace_get_authoring_docs",
         "workspace_get_current",
         "workspace_validate_spec",
     }
+    assert intel_names == {
+        "intel_get_feed",
+        "intel_list_alert_notifications",
+        "intel_list_alert_workflows",
+    }
     assert workspace_names.isdisjoint(broker_names)
+    assert intel_names.isdisjoint(broker_names)
     assert all(tool.description for tool in WORKSPACE_TOOLS)
+    assert all(tool.description for tool in INTEL_TOOLS)
 
 
 def test_duplicate_action_is_allowlisted():

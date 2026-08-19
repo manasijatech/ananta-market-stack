@@ -38,7 +38,10 @@ export const ALLOWED_DATA_TOOLS = [
     "broker_list_watchlists",
     "broker_get_watchlist_symbols",
     "broker_get_data_capabilities",
-    "broker_list_accounts"
+    "broker_list_accounts",
+    "intel_get_feed",
+    "intel_list_alert_workflows",
+    "intel_list_alert_notifications"
 ] as const;
 
 export type AdaptiveDataTool = (typeof ALLOWED_DATA_TOOLS)[number];
@@ -68,7 +71,10 @@ export const TOOL_COMPONENT_MAP: Record<string, AdaptiveComponentType> = {
     broker_get_greeks: "greeks-panel",
     broker_calculate_margin: "margin-scenario",
     broker_list_watchlists: "watchlist",
-    broker_get_watchlist_symbols: "watchlist"
+    broker_get_watchlist_symbols: "watchlist",
+    intel_get_feed: "intel-feed",
+    intel_list_alert_workflows: "alert-rule-draft",
+    intel_list_alert_notifications: "alert-rule-draft"
 };
 
 export const PHASE1_RENDER_TOOLS = [
@@ -78,7 +84,12 @@ export const PHASE1_RENDER_TOOLS = [
     "broker_get_historical",
     "broker_get_portfolio",
     "broker_get_session_status",
-    "broker_verify_connection"
+    "broker_verify_connection",
+    "broker_list_watchlists",
+    "broker_get_watchlist_symbols",
+    "intel_get_feed",
+    "intel_list_alert_workflows",
+    "intel_list_alert_notifications"
 ] as const;
 
 export const SURFACE_TOOLS = ["compose_surface", "patch_surface"] as const;
@@ -86,7 +97,8 @@ export const SURFACE_TOOLS = ["compose_surface", "patch_surface"] as const;
 export const WORKSPACE_HELPER_TOOLS = [
     "workspace_get_authoring_docs",
     "workspace_get_current",
-    "workspace_validate_spec"
+    "workspace_validate_spec",
+    "workspace_evaluate_request"
 ] as const;
 
 export interface WorkspaceLayout {

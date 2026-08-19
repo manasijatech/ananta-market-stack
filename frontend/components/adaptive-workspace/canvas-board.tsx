@@ -54,7 +54,7 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
                         <div className="w-full max-w-2xl">
                             <h3 className="text-2xl font-heading font-semibold tracking-tight">This desk is empty</h3>
                             <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-                                Ask in chat to compose a workspace, or pin quote, portfolio, chart, and broker health cards onto this canvas.
+                                Ask in chat to compose a workspace from holdings, watchlists, quotes, market intelligence, and alerts.
                             </p>
                             <div className="mx-auto mt-6 grid max-w-xl gap-2 min-[640px]:grid-cols-2">
                                 {starterPrompts.map((prompt) => (

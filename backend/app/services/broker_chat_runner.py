@@ -12,7 +12,7 @@ from agents.models.chatcmpl_converter import Converter
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
-from app.agent_tools import BROKER_DATA_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
+from app.agent_tools import BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.services import broker_chat, broker_chat_mcp, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
@@ -125,6 +125,8 @@ ADAPTIVE_WORKSPACE_INSTRUCTIONS = """
 This run is an Adaptive Workspace desk session. Chat authors the canvas.
 
 Workspace tools:
+- workspace_evaluate_request: plan intents, recommended tools/types, and whether
+  a draft spec actually complements the query (not just matching type names).
 - workspace_get_authoring_docs: catalog types, allowlisted data.tool names, grid
   rules, forbidden props, and a valid example spec. Call this if you are unsure.
 - workspace_get_current: the desk currently on the canvas.
@@ -133,24 +135,41 @@ Workspace tools:
 - compose_surface: replace the whole desk with a valid WorkspaceSpec.
 - patch_surface: add/remove/move/update/duplicate/retitle one widget.
 
-Preferred component types for the first desk: holdings-table, quote-ticker,
-price-chart, broker-health. Common mistakes that WILL be rejected:
+Adaptive-only data tools (not on /broker-chat):
+- intel_get_feed(product, symbols): news, announcements, earnings, concalls, or
+  alpha alerts from Market Intelligence cache.
+- intel_list_alert_workflows / intel_list_alert_notifications: read-only alerts.
+
+Preferred component types: holdings-table, quote-ticker, price-chart,
+broker-health, watchlist, intel-feed, alert-rule-draft.
+Common mistakes that WILL be rejected:
 - holdings / portfolio → holdings-table
 - quotes / quote → quote-ticker
 - chart → price-chart
 - session-status / health / broker-status → broker-health
+- news / announcements / earnings / concalls → intel-feed + intel_get_feed
+- alerts / notifications → alert-rule-draft + intel_list_alert_*
+- watchlist / last watchlist → watchlist + broker_list_watchlists then
+  broker_get_watchlist_symbols
 
 WorkspaceSpec rules:
 - version must be the string "1". layout.mode must be "grid" and columns 12.
 - ids match ^[a-z][a-z0-9-]*$ and must be unique.
 - data.tool must be allowlisted. Never include secrets.
 - Never emit React, HTML, CSS, className, style, href, src, extra keys, or script.
-- Prefer readable sizes: quotes 6x3, holdings 12x5, charts 8x4, health 4x3.
+- Prefer readable sizes: quotes 6x3, holdings 12x5, charts 8x4, health 4x3,
+  watchlist 4x4, intel-feed 6x5, alerts 6x4.
 - x + w must be <= 12.
 
 Operating rules:
-- Fetch broker data first (portfolio, session status, quotes) so widgets have
-  real bindings. Then validate, then compose once.
+- Call workspace_evaluate_request on the user query first.
+- Fetch real data before compose: watchlist symbols, then quotes for those
+  symbols (cap 20), then intel_get_feed / alert lists as the query requires.
+- Pass observations (quote_count, quotes_with_change_pct, news_item_count,
+  watchlist_symbol_count, alert_workflow_count) into evaluate_request and only
+  compose when complements_query is true or you have explained the gap.
+- Session change% is enough for "live price movements". Use broker_get_historical
+  only for multi-day / backtest-style asks, and only on a few symbols.
 - If validate or compose returns valid=false, read validation.errors, fix the
   listed paths, and retry at most once. Do not loop.
 - After one successful compose or patch (applied=true), summarize what landed
@@ -514,7 +533,7 @@ async def _run_broker_chat(run_id: str) -> None:
         )
         mcp_handle = await broker_chat_mcp.connect_broker_chat_mcp(db, run, metadata)
         mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle)
-        tools = [*BROKER_DATA_TOOLS, *WORKSPACE_TOOLS] if adaptive_workspace else BROKER_DATA_TOOLS
+        tools = [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *WORKSPACE_TOOLS] if adaptive_workspace else BROKER_DATA_TOOLS
         agent = Agent[BrokerAgentContext](
             name="Ananta Market Stack Broker Data Agent",
             instructions=_broker_chat_instructions(
@@ -539,7 +558,7 @@ async def _run_broker_chat(run_id: str) -> None:
             starting_agent=agent,
             input=messages,
             context=context,
-            max_turns=16 if adaptive_workspace else 28,
+            max_turns=20 if adaptive_workspace else 28,
             run_config=RunConfig(
                 tracing_disabled=run.provider != "openai",
                 workflow_name="Ananta Market Stack broker chat",
