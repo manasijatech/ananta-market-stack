@@ -98,13 +98,13 @@ function AdaptiveWorkspaceShellInner({
     return (
         <section
             className={cn(
-                "grid min-h-0 flex-1 gap-4",
+                "grid h-full min-h-0 flex-1 gap-4 overflow-hidden",
                 chatOpen
-                    ? "min-[1280px]:grid-cols-[220px_minmax(0,1fr)_minmax(320px,400px)]"
-                    : "min-[1280px]:grid-cols-[220px_minmax(0,1fr)_auto]"
+                    ? "grid-rows-[minmax(8.5rem,10.5rem)_minmax(0,1fr)_minmax(16rem,42vh)] min-[1280px]:grid-rows-none min-[1280px]:grid-cols-[220px_minmax(0,1fr)_minmax(320px,400px)]"
+                    : "grid-rows-[minmax(8.5rem,10.5rem)_minmax(0,1fr)_auto] min-[1280px]:grid-rows-none min-[1280px]:grid-cols-[220px_minmax(0,1fr)_auto]"
             )}
         >
-            <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+            <Card className="grid min-h-0 overflow-hidden grid-rows-[auto_minmax(0,1fr)]">
                 <CardHeader className="border-b border-border p-3">
                     <Button
                         className="h-10 w-full justify-start gap-2"
@@ -168,7 +168,7 @@ function AdaptiveWorkspaceShellInner({
                 </CardPanel>
             </Card>
 
-            <Card className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden">
+            <Card className="grid min-h-0 overflow-hidden grid-rows-[minmax(0,1fr)]">
                 <AdaptiveCanvasBoard
                     onPrompt={(prompt) => {
                         setChatOpen(true);
@@ -179,7 +179,7 @@ function AdaptiveWorkspaceShellInner({
             </Card>
 
             {chatOpen ? (
-                <Card className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px] [--an-max-width:760px] [--an-tool-border-radius:8px]">
+                <Card className="grid min-h-0 overflow-hidden grid-rows-[auto_minmax(0,1fr)_auto] [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px] [--an-max-width:760px] [--an-tool-border-radius:8px]">
                     <CardHeader className="border-b border-border p-4">
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -234,7 +234,7 @@ function AdaptiveWorkspaceShellInner({
                             </div>
                         ) : (
                             <MessageList
-                                className="h-full"
+                                className="h-full min-h-0"
                                 messages={chat.messages}
                                 showCopyToolbar
                                 status={chat.chatStatus}

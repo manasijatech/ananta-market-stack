@@ -61,7 +61,10 @@ export function ToolCardShell({
                     </div>
                 ) : null}
                 {!pending && error ? (
-                    <p className={cn("text-sm", "text-destructive")}>{error}</p>
+                    <div className="grid gap-2">
+                        <p className={cn("text-sm", "text-destructive")}>{error}</p>
+                        {children}
+                    </div>
                 ) : null}
                 {!pending && !error ? children : null}
             </CardPanel>

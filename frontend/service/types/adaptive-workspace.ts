@@ -83,6 +83,12 @@ export const PHASE1_RENDER_TOOLS = [
 
 export const SURFACE_TOOLS = ["compose_surface", "patch_surface"] as const;
 
+export const WORKSPACE_HELPER_TOOLS = [
+    "workspace_get_authoring_docs",
+    "workspace_get_current",
+    "workspace_validate_spec"
+] as const;
+
 export interface WorkspaceLayout {
     mode: "grid";
     columns: 12;

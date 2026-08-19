@@ -40,7 +40,13 @@ def test_workspace_tools_are_not_on_broker_chat_by_default():
     broker_names = {tool.name for tool in BROKER_DATA_TOOLS}
     workspace_names = {tool.name for tool in WORKSPACE_TOOLS}
 
-    assert workspace_names == {"compose_surface", "patch_surface"}
+    assert workspace_names == {
+        "compose_surface",
+        "patch_surface",
+        "workspace_get_authoring_docs",
+        "workspace_get_current",
+        "workspace_validate_spec",
+    }
     assert workspace_names.isdisjoint(broker_names)
     assert all(tool.description for tool in WORKSPACE_TOOLS)
 
@@ -77,16 +83,14 @@ def test_patch_add_remove_and_duplicate():
 
 
 def test_patch_rejects_unknown_component_type():
-    try:
-        workspace_svc.patch_workspace_spec(
-            _valid_spec(),
-            operation="add",
-            component={"id": "bad-widget", "type": "made-up", "position": {"x": 0, "y": 4, "w": 4, "h": 2}},
-        )
-    except ValueError as exc:
-        assert "not in the catalog" in str(exc) or "invalid" in str(exc).lower()
-    else:
-        raise AssertionError("expected invalid catalog type to fail")
+    parsed, validation = workspace_svc.patch_workspace_spec_or_error(
+        _valid_spec(),
+        operation="add",
+        component={"id": "bad-widget", "type": "made-up", "position": {"x": 0, "y": 4, "w": 4, "h": 2}},
+    )
+    assert parsed is None
+    assert validation["ok"] is False
+    assert any("catalog" in item["message"] for item in validation["errors"])
 
 
 def test_snapshots_persist_and_restore_independently_of_chat():

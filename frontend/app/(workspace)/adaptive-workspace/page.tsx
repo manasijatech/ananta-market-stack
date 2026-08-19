@@ -13,7 +13,7 @@ export default async function AdaptiveWorkspacePage() {
     ]);
 
     return (
-        <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-1 flex-col min-[980px]:h-auto">
+        <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-1 flex-col min-[980px]:h-full">
             <AdaptiveWorkspaceShell
                 initialConfig={config}
                 initialRuns={runs}

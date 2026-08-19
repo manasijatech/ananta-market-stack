@@ -4,6 +4,7 @@ from app.schemas.adaptive_workspace import (
     TOOL_COMPONENT_MAP,
     component_type_for_tool,
     parse_workspace_spec,
+    workspace_authoring_docs,
 )
 
 
@@ -112,3 +113,11 @@ def test_maps_existing_broker_tools_to_catalog_types():
     assert component_type_for_tool("broker_get_portfolio") == "holdings-table"
     assert component_type_for_tool("broker_get_session_status") == "broker-health"
     assert "broker_place_order" not in TOOL_COMPONENT_MAP
+
+
+def test_authoring_docs_list_catalog_and_example_spec():
+    docs = workspace_authoring_docs()
+    assert "holdings-table" in docs["component_types"]
+    assert "broker-health" in docs["preferred_component_types"]
+    assert docs["example_spec"]["components"][0]["type"] == "holdings-table"
+    assert "broker_get_portfolio" in docs["data_tools"]

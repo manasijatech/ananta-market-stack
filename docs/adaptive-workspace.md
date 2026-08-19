@@ -75,6 +75,7 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 
 - [x] Centre canvas becomes the primary pane; chat becomes a collapsible inspector.
 - [x] `compose_surface` / `patch_surface` tools that emit `WorkspaceSpec`.
+- [x] Catalog, current-desk, and dry-run validate tools so the agent can self-correct instead of looping.
 - [x] Drag, resize, remove, duplicate, refresh, undo on catalog widgets only.
 - [x] Versioned workspace snapshots, modeled on alert-workflow snapshots (`workflow_payload` → `workspace_payload`).
 - [x] Restore canvas independently of chat history.
@@ -124,7 +125,7 @@ frontend/components/adaptive-workspace/*
 frontend/components/workspace-shell.tsx   # nav entry only
 ```
 
-`compose_surface` and `patch_surface` are attached only when a broker-chat run’s metadata includes `adaptive_workspace: true`. The preview page sends that flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
+`compose_surface`, `patch_surface`, and helper tools (`workspace_get_authoring_docs`, `workspace_get_current`, `workspace_validate_spec`) are attached only when a broker-chat run’s metadata includes `adaptive_workspace: true`. Invalid compose/patch returns `ok: true` with `applied: false` and `validation.errors` so the model can self-correct without a retry loop. The preview page sends that flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
 
 Snapshots live in `adaptive_workspace_snapshots` (`workspace_payload_json`), keyed by the existing broker-chat session. Canvas restore uses the latest applied snapshot, not chat history.
 

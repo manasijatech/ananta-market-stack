@@ -22,7 +22,7 @@ function AuthLink({
 }: {
     href?: string;
     to?: string;
-    children: ReactNode;
+    children?: ReactNode;
     className?: string;
     "aria-disabled"?: boolean | "true" | "false";
     tabIndex?: number;

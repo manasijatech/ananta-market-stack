@@ -215,7 +215,8 @@ function isFullHeightPath(pathname: string) {
         pathname === "/watchlists" ||
         pathname === "/heatmap" ||
         pathname === "/settings" ||
-        pathname.startsWith("/broker-chat")
+        pathname.startsWith("/broker-chat") ||
+        pathname.startsWith("/adaptive-workspace")
     );
 }
 
@@ -374,7 +375,10 @@ export function WorkspaceShell({
                         children
                     ) : (
                         <PageContainer
-                            className={cn(fullHeight && "flex min-h-0 flex-1 flex-col")}
+                            className={cn(
+                                fullHeight && "flex min-h-0 flex-1 flex-col",
+                                pathname.startsWith("/adaptive-workspace") && "max-w-none"
+                            )}
                         >
                             {children}
                         </PageContainer>

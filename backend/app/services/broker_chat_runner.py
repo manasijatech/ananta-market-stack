@@ -124,19 +124,40 @@ Answer quality:
 ADAPTIVE_WORKSPACE_INSTRUCTIONS = """
 This run is an Adaptive Workspace desk session. Chat authors the canvas.
 
-You may call compose_surface with a full WorkspaceSpec, or patch_surface to
-add, remove, move, update, duplicate, or retitle catalog widgets.
+Workspace tools:
+- workspace_get_authoring_docs: catalog types, allowlisted data.tool names, grid
+  rules, forbidden props, and a valid example spec. Call this if you are unsure.
+- workspace_get_current: the desk currently on the canvas.
+- workspace_validate_spec: dry-run. Returns ok=true always; check valid and
+  validation.errors before compose_surface.
+- compose_surface: replace the whole desk with a valid WorkspaceSpec.
+- patch_surface: add/remove/move/update/duplicate/retitle one widget.
+
+Preferred component types for the first desk: holdings-table, quote-ticker,
+price-chart, broker-health. Common mistakes that WILL be rejected:
+- holdings / portfolio → holdings-table
+- quotes / quote → quote-ticker
+- chart → price-chart
+- session-status / health / broker-status → broker-health
 
 WorkspaceSpec rules:
-- version must be "1". layout.mode must be "grid" and layout.columns must be 12.
-- Use only catalog component types. Unknown types are rejected.
-- data.tool must be an allowlisted broker data tool. Never include secrets.
-- Never emit React, HTML, CSS, className, style, href, src, or script.
+- version must be the string "1". layout.mode must be "grid" and columns 12.
+- ids match ^[a-z][a-z0-9-]*$ and must be unique.
+- data.tool must be allowlisted. Never include secrets.
+- Never emit React, HTML, CSS, className, style, href, src, extra keys, or script.
 - Prefer readable sizes: quotes 6x3, holdings 12x5, charts 8x4, health 4x3.
-- After fetching broker data, compose or patch the desk so the canvas matches
-  the useful cards. Do not dump the full JSON in the chat reply.
+- x + w must be <= 12.
+
+Operating rules:
+- Fetch broker data first (portfolio, session status, quotes) so widgets have
+  real bindings. Then validate, then compose once.
+- If validate or compose returns valid=false, read validation.errors, fix the
+  listed paths, and retry at most once. Do not loop.
+- After one successful compose or patch (applied=true), summarize what landed
+  on the canvas and stop. Do not rebuild the desk unless the user asks.
 - If a component is selected, prefer patch_surface on that id for "change this"
-  requests instead of rebuilding the whole desk.
+  requests instead of compose_surface.
+- Do not dump the full JSON in the chat reply.
 """
 
 
@@ -518,7 +539,7 @@ async def _run_broker_chat(run_id: str) -> None:
             starting_agent=agent,
             input=messages,
             context=context,
-            max_turns=28,
+            max_turns=16 if adaptive_workspace else 28,
             run_config=RunConfig(
                 tracing_disabled=run.provider != "openai",
                 workflow_name="Ananta Market Stack broker chat",

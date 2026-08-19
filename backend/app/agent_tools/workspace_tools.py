@@ -3,6 +3,10 @@
 These tools are attached only to broker-chat runs whose metadata includes
 ``adaptive_workspace: true``. Broker Chat at ``/broker-chat`` does not send
 that flag and therefore never sees these tools.
+
+Validation follows the workflow-chat pattern: catalog/docs and dry-run
+validate return ``ok: true`` with ``valid`` / ``validation.errors`` so the
+model can self-correct. Invalid compose/patch calls are not applied.
 """
 
 from __future__ import annotations
@@ -17,6 +21,11 @@ from db.session import SessionLocal
 
 PatchOperation = Literal["replace", "add", "remove", "move", "update", "duplicate", "set_title"]
 
+_RETRY_HINT = (
+    "Read validation.errors, fix the spec using only catalog types from "
+    "workspace_get_authoring_docs, and retry at most once. Do not invent types."
+)
+
 
 def _ok(**payload: Any) -> dict[str, Any]:
     return {"ok": True, **payload}
@@ -24,6 +33,17 @@ def _ok(**payload: Any) -> dict[str, Any]:
 
 def _error(message: str, *, code: str = "workspace_tool_error", **payload: Any) -> dict[str, Any]:
     return {"ok": False, "code": code, "message": message, **payload}
+
+
+def _rejected(validation: dict[str, Any], *, spec: dict[str, Any] | None = None, **payload: Any) -> dict[str, Any]:
+    return _ok(
+        applied=False,
+        valid=False,
+        spec=spec,
+        validation=validation,
+        hint=_RETRY_HINT,
+        **payload,
+    )
 
 
 def _context(ctx: RunContextWrapper[BrokerAgentContext]) -> BrokerAgentContext:
@@ -60,6 +80,73 @@ def _current_spec(context: BrokerAgentContext) -> dict[str, Any] | None:
     return None
 
 
+def _require_adaptive(context: BrokerAgentContext, tool_name: str) -> dict[str, Any] | None:
+    if context.adaptive_workspace:
+        return None
+    return _error(f"{tool_name} is only available on Adaptive Workspace runs")
+
+
+@function_tool(strict_mode=False)
+def workspace_get_authoring_docs(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """Return the Adaptive Workspace catalog, grid rules, allowlisted tools, and an example spec.
+
+    Call this before composing if you are unsure of valid component types.
+    Do not invent types, tools, actions, or extra JSON keys.
+    """
+
+    def call() -> dict[str, Any]:
+        refused = _require_adaptive(_context(ctx), "workspace_get_authoring_docs")
+        if refused:
+            return refused
+        return _ok(**workspace_svc.authoring_docs())
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_get_current(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """Return the current canvas WorkspaceSpec for this desk session."""
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+        refused = _require_adaptive(context, "workspace_get_current")
+        if refused:
+            return refused
+        spec = _current_spec(context)
+        if spec is None:
+            empty = workspace_svc.workspace_spec_dump(workspace_svc.empty_spec())
+            return _ok(spec=empty, empty=True)
+        parsed, validation = workspace_svc.parse_spec_or_error(spec)
+        if parsed is None:
+            return _ok(spec=spec, empty=False, valid=False, validation=validation)
+        return _ok(spec=workspace_svc.workspace_spec_dump(parsed), empty=False, valid=True, validation=validation)
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_validate_spec(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Dry-run validate a WorkspaceSpec without applying it to the canvas.
+
+    Always returns ok=true. Check ``valid`` and ``validation.errors`` before
+    calling compose_surface. Fix listed path/message issues instead of retrying blindly.
+    """
+
+    def call() -> dict[str, Any]:
+        refused = _require_adaptive(_context(ctx), "workspace_validate_spec")
+        if refused:
+            return refused
+        parsed, validation = workspace_svc.parse_spec_or_error(spec)
+        if parsed is None:
+            return _ok(valid=False, applied=False, spec=spec if isinstance(spec, dict) else None, validation=validation, hint=_RETRY_HINT)
+        return _ok(valid=True, applied=False, spec=workspace_svc.workspace_spec_dump(parsed), validation=validation)
+
+    return _tool_call(call)
+
+
 @function_tool(strict_mode=False)
 def compose_surface(
     ctx: RunContextWrapper[BrokerAgentContext],
@@ -67,22 +154,23 @@ def compose_surface(
 ) -> dict[str, Any]:
     """Replace the Adaptive Workspace canvas with a validated WorkspaceSpec.
 
-    Use this after fetching broker data when the user asks to build, rebuild,
-    or lay out a desk. Emit only catalog component types. Never include React,
-    HTML, CSS, className, style, href, src, or credentials.
+    Fetch broker data first. Prefer workspace_validate_spec when unsure.
+    Emit only catalog component types from workspace_get_authoring_docs.
+    Never include React, HTML, CSS, className, style, href, src, or credentials.
     """
 
     def call() -> dict[str, Any]:
         context = _context(ctx)
-        if not context.adaptive_workspace:
-            return _error("compose_surface is only available on Adaptive Workspace runs")
+        refused = _require_adaptive(context, "compose_surface")
+        if refused:
+            return refused
         parsed, validation = workspace_svc.parse_spec_or_error(spec)
         if parsed is None:
-            return _error("WorkspaceSpec failed validation", validation=validation)
+            return _rejected(validation, spec=spec if isinstance(spec, dict) else None)
         dumped = workspace_svc.workspace_spec_dump(parsed)
         context.workspace_spec = dumped
         _maybe_persist(context, parsed, label="compose_surface")
-        return _ok(spec=dumped, validation=validation)
+        return _ok(applied=True, valid=True, spec=dumped, validation=validation)
 
     return _tool_call(call)
 
@@ -110,9 +198,10 @@ def patch_surface(
 
     def call() -> dict[str, Any]:
         context = _context(ctx)
-        if not context.adaptive_workspace:
-            return _error("patch_surface is only available on Adaptive Workspace runs")
-        parsed = workspace_svc.patch_workspace_spec(
+        refused = _require_adaptive(context, "patch_surface")
+        if refused:
+            return refused
+        parsed, validation = workspace_svc.patch_workspace_spec_or_error(
             _current_spec(context),
             operation=operation,
             spec=spec,
@@ -121,12 +210,20 @@ def patch_surface(
             position=position,
             title=title,
         )
+        if parsed is None:
+            return _rejected(validation, spec=_current_spec(context), operation=operation)
         dumped = workspace_svc.workspace_spec_dump(parsed)
         context.workspace_spec = dumped
         _maybe_persist(context, parsed, label=f"patch_surface:{operation}")
-        return _ok(spec=dumped, operation=operation)
+        return _ok(applied=True, valid=True, spec=dumped, operation=operation, validation=validation)
 
     return _tool_call(call)
 
 
-WORKSPACE_TOOLS = [compose_surface, patch_surface]
+WORKSPACE_TOOLS = [
+    workspace_get_authoring_docs,
+    workspace_get_current,
+    workspace_validate_spec,
+    compose_surface,
+    patch_surface,
+]

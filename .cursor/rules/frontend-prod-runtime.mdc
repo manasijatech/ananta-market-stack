@@ -1,0 +1,31 @@
+---
+description: Run the Ananta frontend as a production build by default; use next dev only while iterating, then rebuild.
+alwaysApply: true
+---
+
+# Frontend runtime (local)
+
+This app's idle local frontend is the **production standalone build** on **:3004**, not `next dev`. Ports **3000** and **8000** are used by other processes — do not bind them. Backend stays on **:8004**. Tmux session: `ananta`, window `frontend`.
+
+Dev and `next build` share `.next`. Always stop the running frontend before switching modes.
+
+## Default (after work, or when not iterating)
+
+```bash
+cd frontend
+set -a
+[ -f .env ] && . ./.env
+[ -f .env.local ] && . ./.env.local
+set +a
+PORT=3004 HOSTNAME=0.0.0.0 npm start
+```
+
+`npm start` runs `scripts/start-standalone.sh` (requires a prior `npm run build`). `NEXT_PUBLIC_*` is baked in at **build** time; runtime secrets come from `.env.local`. Bake app URL `http://127.0.0.1:3004` and API `http://127.0.0.1:8004/api/v1`.
+
+## While making or evaluating code changes
+
+1. Stop the production server on :3004.
+2. `npm run dev -- --hostname 0.0.0.0 --port 3004`
+3. When the task is done: stop dev, `npm run build`, start production again on :3004.
+
+Do not leave `next dev` running after the work is finished.

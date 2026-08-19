@@ -226,6 +226,78 @@ def next_component_id(existing_ids: list[str], prefix: str) -> str:
     return candidate
 
 
+def workspace_authoring_docs() -> dict[str, Any]:
+    """Catalog and fail-closed rules the agent must follow when composing a desk."""
+
+    preferred = (
+        "holdings-table",
+        "quote-ticker",
+        "price-chart",
+        "broker-health",
+    )
+    return {
+        "version": WORKSPACE_SPEC_VERSION,
+        "grid": {
+            "mode": "grid",
+            "columns": GRID_COLUMNS,
+            "id_pattern": "^[a-z][a-z0-9-]*$",
+            "position_rule": "x >= 0, y >= 0, w >= 1, h >= 1, x + w <= 12",
+            "preferred_sizes": {
+                "quote-ticker": {"w": 6, "h": 3},
+                "holdings-table": {"w": 12, "h": 5},
+                "price-chart": {"w": 8, "h": 4},
+                "broker-health": {"w": 4, "h": 3},
+            },
+        },
+        "component_types": sorted(ALLOWED_COMPONENT_TYPES),
+        "preferred_component_types": list(preferred),
+        "data_tools": sorted(ALLOWED_DATA_TOOLS),
+        "actions": sorted(ALLOWED_ACTIONS),
+        "forbidden_prop_keys": sorted(FORBIDDEN_PROP_KEYS),
+        "tool_component_map": dict(TOOL_COMPONENT_MAP),
+        "common_mistakes": {
+            "holdings": "holdings-table",
+            "portfolio": "holdings-table",
+            "quotes": "quote-ticker",
+            "quote": "quote-ticker",
+            "chart": "price-chart",
+            "session-status": "broker-health",
+            "broker-status": "broker-health",
+            "health": "broker-health",
+        },
+        "example_spec": {
+            "version": "1",
+            "title": "Morning portfolio review",
+            "layout": {"mode": "grid", "columns": 12},
+            "components": [
+                {
+                    "id": "holdings",
+                    "type": "holdings-table",
+                    "position": {"x": 0, "y": 0, "w": 8, "h": 5},
+                    "data": {"tool": "broker_get_portfolio", "params": {"sections": ["holdings", "funds"]}},
+                    "actions": ["select", "refresh", "remove", "duplicate"],
+                },
+                {
+                    "id": "broker-health",
+                    "type": "broker-health",
+                    "position": {"x": 8, "y": 0, "w": 4, "h": 3},
+                    "data": {"tool": "broker_get_session_status", "params": {}},
+                    "actions": ["select", "refresh", "open-broker"],
+                },
+            ],
+        },
+        "rules": [
+            "version must be the string '1'.",
+            "layout.mode must be grid and layout.columns must be 12.",
+            "Use only catalog component types. Unknown types are rejected.",
+            "data.tool must be an allowlisted broker data tool. Never include secrets.",
+            "Never emit React, HTML, CSS, className, style, href, src, or script.",
+            "Component ids must be unique and match ^[a-z][a-z0-9-]*$.",
+            "Do not add extra keys on spec, component, position, layout, or data.",
+        ],
+    }
+
+
 def next_grid_position(components: list[WorkspaceComponent], w: int = 6, h: int = 3) -> WorkspacePosition:
     width = max(1, min(w, GRID_COLUMNS))
     height = max(1, min(h, 24))

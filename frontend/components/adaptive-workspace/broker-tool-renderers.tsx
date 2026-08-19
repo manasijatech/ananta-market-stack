@@ -5,6 +5,7 @@ import { HoldingsTableCard } from "@/components/adaptive-workspace/holdings-tabl
 import { PriceChartCard } from "@/components/adaptive-workspace/price-chart-card";
 import { QuoteTickerCard } from "@/components/adaptive-workspace/quote-ticker-card";
 import { SessionStatusCard } from "@/components/adaptive-workspace/session-status-card";
+import { WorkspaceHelperCard } from "@/components/adaptive-workspace/workspace-helper-card";
 
 export const adaptiveBrokerToolRenderers: Record<string, ComponentType<CustomToolRendererProps>> = {
     broker_get_cached_quotes: QuoteTickerCard,
@@ -15,5 +16,8 @@ export const adaptiveBrokerToolRenderers: Record<string, ComponentType<CustomToo
     broker_get_session_status: SessionStatusCard,
     broker_verify_connection: SessionStatusCard,
     compose_surface: ComposeSurfaceCard,
-    patch_surface: ComposeSurfaceCard
+    patch_surface: ComposeSurfaceCard,
+    workspace_get_authoring_docs: WorkspaceHelperCard,
+    workspace_get_current: WorkspaceHelperCard,
+    workspace_validate_spec: WorkspaceHelperCard
 };

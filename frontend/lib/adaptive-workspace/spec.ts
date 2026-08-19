@@ -167,7 +167,7 @@ export function workspaceSpecsEqual(left: WorkspaceSpec, right: WorkspaceSpec): 
 
 export function specFromToolOutput(output: unknown): WorkspaceSpec | null {
     const unwrapped = unwrapToolOutput(output);
-    if (!isRecord(unwrapped) || unwrapped.ok === false) {
+    if (!isRecord(unwrapped) || unwrapped.ok === false || unwrapped.valid === false || unwrapped.applied === false) {
         return null;
     }
     if (isRecord(unwrapped.spec)) {

@@ -1,6 +1,7 @@
 import {
     PHASE1_RENDER_TOOLS,
     SURFACE_TOOLS,
+    WORKSPACE_HELPER_TOOLS,
     TOOL_COMPONENT_MAP,
     type AdaptiveComponentType,
     type WorkspacePosition
@@ -14,8 +15,12 @@ export function isSurfaceTool(toolName: string): boolean {
     return (SURFACE_TOOLS as readonly string[]).includes(toolName);
 }
 
+export function isWorkspaceHelperTool(toolName: string): boolean {
+    return (WORKSPACE_HELPER_TOOLS as readonly string[]).includes(toolName);
+}
+
 export function isAdaptiveRenderTool(toolName: string): boolean {
-    return isPhase1RenderTool(toolName) || isSurfaceTool(toolName);
+    return isPhase1RenderTool(toolName) || isSurfaceTool(toolName) || isWorkspaceHelperTool(toolName);
 }
 
 export function componentTypeForTool(toolName: string): AdaptiveComponentType | null {

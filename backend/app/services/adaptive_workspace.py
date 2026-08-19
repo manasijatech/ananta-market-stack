@@ -16,6 +16,7 @@ from app.schemas.adaptive_workspace import (
     next_component_id,
     next_grid_position,
     parse_workspace_spec,
+    workspace_authoring_docs,
     workspace_spec_dump,
 )
 from app.schemas.adaptive_workspace_api import AdaptiveWorkspaceSnapshotOut
@@ -58,6 +59,49 @@ def parse_spec_or_error(payload: Any) -> tuple[WorkspaceSpec | None, dict[str, A
         return parse_workspace_spec(payload), validation_payload()
     except ValidationError as exc:
         return None, validation_payload(exc)
+
+
+def authoring_docs() -> dict[str, Any]:
+    return workspace_authoring_docs()
+
+
+def _validation_from_value_error(exc: ValueError) -> dict[str, Any]:
+    message = str(exc)
+    try:
+        parsed = json.loads(message)
+    except json.JSONDecodeError:
+        return validation_payload(issues=[{"path": "", "message": message}])
+    if isinstance(parsed, dict) and isinstance(parsed.get("errors"), list):
+        return {
+            "ok": False,
+            "errors": parsed["errors"],
+        }
+    return validation_payload(issues=[{"path": "", "message": message}])
+
+
+def patch_workspace_spec_or_error(
+    current: dict[str, Any] | WorkspaceSpec | None,
+    *,
+    operation: str,
+    spec: dict[str, Any] | None = None,
+    component: dict[str, Any] | None = None,
+    component_id: str | None = None,
+    position: dict[str, Any] | None = None,
+    title: str | None = None,
+) -> tuple[WorkspaceSpec | None, dict[str, Any]]:
+    try:
+        parsed = patch_workspace_spec(
+            current,
+            operation=operation,
+            spec=spec,
+            component=component,
+            component_id=component_id,
+            position=position,
+            title=title,
+        )
+        return parsed, validation_payload()
+    except ValueError as exc:
+        return None, _validation_from_value_error(exc)
 
 
 def empty_spec(title: str = "Untitled desk") -> WorkspaceSpec:
