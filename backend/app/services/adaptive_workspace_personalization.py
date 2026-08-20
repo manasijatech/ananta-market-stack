@@ -505,7 +505,7 @@ def list_preferences(db: Session, user_id: str) -> list[dict[str, Any]]:
         .where(AdaptiveWorkspacePreference.user_id == user_id)
         .order_by(AdaptiveWorkspacePreference.pref_key.asc())
     ).all()
-    return [_pref_out(row) for row in rows]
+    return [_pref_out(row) for row in rows if row.pref_key != INTERNAL_INTENT_COUNTS_KEY]
 
 
 def upsert_preference(db: Session, user_id: str, key: str, value: Any) -> dict[str, Any]:

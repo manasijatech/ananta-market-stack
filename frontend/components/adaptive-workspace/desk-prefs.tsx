@@ -44,7 +44,7 @@ export function AdaptiveDeskPrefsProvider({ children }: { children: ReactNode })
             defaultWorkflowId: stringPref(items, "default_workflow_id"),
             density,
             intelProduct: stringPref(items, "intel_product"),
-            items,
+            items: items.filter((item) => item.key !== "request_intent_counts"),
             reload
         };
     }, [items, reload]);

@@ -300,7 +300,7 @@ export function AdaptiveDeskPersonalization() {
             </Dialog>
 
             <Dialog onOpenChange={(open) => !open && setPending(null)} open={Boolean(pending)}>
-                <DialogContent>
+                <DialogContent className="h-fit max-h-[min(24rem,calc(100dvh-2rem))] overflow-hidden">
                     <DialogHeader>
                         <DialogTitle>{pending?.title ?? "Apply layout"}</DialogTitle>
                         <DialogDescription>{pending?.confirm}</DialogDescription>
@@ -321,12 +321,13 @@ export function AdaptiveDeskPersonalization() {
             </Dialog>
 
             <Dialog onOpenChange={setPrefsOpen} open={prefsOpen}>
-                <DialogContent>
+                <DialogContent className="flex h-fit max-h-[min(36rem,calc(100dvh-2rem))] flex-col overflow-hidden">
                     <DialogHeader>
                         <DialogTitle>Display preferences</DialogTitle>
                         <DialogDescription>These are inspectable and deletable. Nothing here rearranges the canvas by itself.</DialogDescription>
                     </DialogHeader>
-                    <div className="grid gap-3 px-6 pb-2">
+                    <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 pb-2">
+                    <div className="grid gap-3">
                         <div className="grid gap-1.5">
                             <Label>Density</Label>
                             <SimpleSelect
@@ -347,7 +348,10 @@ export function AdaptiveDeskPersonalization() {
                                 onValueChange={(value) =>
                                     void putAdaptiveWorkspacePreference("default_watchlist_id", value).then(() => prefs.reload())
                                 }
-                                options={watchlists.map((item) => ({ label: item.name, value: item.id }))}
+                                options={[
+                                    { label: "Latest watchlist", value: "" },
+                                    ...watchlists.map((item) => ({ label: item.name, value: item.id }))
+                                ]}
                                 placeholder="Latest watchlist"
                                 size="sm"
                                 value={prefs.defaultWatchlistId}
@@ -359,10 +363,13 @@ export function AdaptiveDeskPersonalization() {
                                 onValueChange={(value) =>
                                     void putAdaptiveWorkspacePreference("default_workflow_id", value).then(() => prefs.reload())
                                 }
-                                options={workflows.map((item) => ({
-                                    label: `${item.name}${item.status ? ` (${item.status})` : ""}`,
-                                    value: item.id
-                                }))}
+                                options={[
+                                    { label: "Latest workflow", value: "" },
+                                    ...workflows.map((item) => ({
+                                        label: `${item.name}${item.status ? ` (${item.status})` : ""}`,
+                                        value: item.id
+                                    }))
+                                ]}
                                 placeholder="Latest workflow"
                                 size="sm"
                                 value={prefs.defaultWorkflowId}
@@ -388,27 +395,32 @@ export function AdaptiveDeskPersonalization() {
                             <div className="grid gap-1">
                                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Saved keys</p>
                                 {prefs.items.map((item) => (
-                                    <div className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5" key={item.key}>
-                                        <span className="min-w-0 truncate text-sm">
+                                    <div className="flex min-w-0 items-start justify-between gap-2 rounded-md border border-border px-2 py-1.5" key={item.key}>
+                                        <span className="min-w-0 text-sm">
                                             <span className="font-semibold">{item.key}</span>
-                                            <span className="text-muted-foreground"> = {JSON.stringify(item.value)}</span>
+                                            <span className="block max-h-16 overflow-hidden break-all text-muted-foreground">
+                                                = {typeof item.value === "string" ? item.value : JSON.stringify(item.value)}
+                                            </span>
                                         </span>
-                                        <Button
-                                            onClick={() =>
-                                                void deleteAdaptiveWorkspacePreference(item.key).then(() => prefs.reload())
-                                            }
-                                            size="xs"
-                                            type="button"
-                                            variant="ghost"
-                                        >
-                                            Delete
-                                        </Button>
+                                        {item.deletable ? (
+                                            <Button
+                                                onClick={() =>
+                                                    void deleteAdaptiveWorkspacePreference(item.key).then(() => prefs.reload())
+                                                }
+                                                size="xs"
+                                                type="button"
+                                                variant="ghost"
+                                            >
+                                                Delete
+                                            </Button>
+                                        ) : null}
                                     </div>
                                 ))}
                             </div>
                         ) : (
                             <p className="text-sm text-muted-foreground">No saved preferences yet.</p>
                         )}
+                    </div>
                     </div>
                     <DialogFooter>
                         <Button onClick={() => setPrefsOpen(false)} type="button" variant="outline">

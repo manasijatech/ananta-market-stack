@@ -78,7 +78,7 @@ export function SimpleSelect({
         size={size}
       >
         <SelectValue placeholder={placeholder}>
-          {selectedLabel}
+          {selectedLabel ?? null}
         </SelectValue>
       </SelectTrigger>
       <SelectContent

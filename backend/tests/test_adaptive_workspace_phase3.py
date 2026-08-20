@@ -62,6 +62,10 @@ def test_named_desks_and_deletable_preferences():
     personalization.delete_preference(db, "desk-user", "density")
     assert personalization.list_preferences(db, "desk-user") == []
 
+    personalization.record_request_intents(db, "desk-user", ["watchlist"])
+    keys = {item["key"] for item in personalization.list_preferences(db, "desk-user")}
+    assert "request_intent_counts" not in keys
+
     personalization.delete_saved_desk(db, "desk-user", saved["id"])
     assert personalization.list_saved_desks(db, "desk-user") == []
 
