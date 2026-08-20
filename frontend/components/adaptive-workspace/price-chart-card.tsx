@@ -64,7 +64,7 @@ function extractCloses(envelope: Record<string, unknown> | null): CandlePoint[] 
             }
             if (!isRecord(row)) continue;
             const time = toUnix(row.time ?? row.timestamp ?? row.date ?? row.datetime);
-            const close = numberFrom(row, ["close", "c", "ltp", "last_price"]);
+            const close = numberFrom(row, ["close", "c", "ltp", "last_price", "value"]);
             if (time != null && close != null) {
                 points.push({ time, value: close });
             }

@@ -80,5 +80,14 @@ def test_suggestions_require_repeated_requests_and_never_auto_apply():
     third = personalization.record_request_intents(db, "desk-user", ["watchlist", "news"])
     match = next(item for item in third if item["target_id"] == "researcher")
     assert match["auto_apply"] is False
+    assert match["label"] == "Researcher"
     assert "Researcher" in match["message"]
     assert personalization.list_suggestions(db, "desk-user")
+
+    personalization.record_request_intents(db, "desk-user", ["quotes", "watchlist", "alerts"] * 3)
+    stacked = personalization.list_suggestions(db, "desk-user")
+    labels = [item["label"] for item in stacked]
+    assert len(labels) == len(set(labels))
+    assert "Researcher" in labels
+    assert "F&O desk" in labels
+    assert all(item["auto_apply"] is False for item in stacked)

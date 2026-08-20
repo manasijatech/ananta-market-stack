@@ -88,6 +88,67 @@ export function useDeskWatchlists() {
     return { error, loading, reload, watchlists };
 }
 
+export function componentScope(component: WorkspaceComponent): "watchlist" | "symbol" {
+    const declared = stringParam(component.props, ["scope"]) || stringParam(component.data?.params, ["scope"]);
+    if (declared === "symbol" || declared === "watchlist") return declared;
+    const symbol = stringParam(component.props, ["symbol"]) || stringParam(component.data?.params, ["symbol"]);
+    const symbols = stringListParam(component.props, ["symbols"]).concat(
+        stringListParam(component.data?.params, ["symbols", "instruments"])
+    );
+    if (symbol || (symbols.length > 0 && symbols.length <= 3 && !stringParam(component.props, ["watchlistId", "watchlist_id"]))) {
+        return "symbol";
+    }
+    return "watchlist";
+}
+
+export function explicitSymbols(component: WorkspaceComponent): string[] {
+    const single = stringParam(component.props, ["symbol"]) || stringParam(component.data?.params, ["symbol"]);
+    const listed = stringListParam(component.props, ["symbols"]).concat(
+        stringListParam(component.data?.params, ["symbols", "instruments"])
+    );
+    return Array.from(new Set([...(single ? [single.toUpperCase()] : []), ...listed]));
+}
+
+export function uniqueWatchlistSymbols(watchlists: Watchlist[]): Array<{ label: string; value: string }> {
+    const seen = new Map<string, string>();
+    for (const list of watchlists) {
+        for (const item of list.items ?? []) {
+            const symbol = String(item.symbol ?? "").trim().toUpperCase();
+            if (!symbol || seen.has(symbol)) continue;
+            const exchange = item.exchange || item.instrument_ref?.exchange || "";
+            seen.set(symbol, exchange ? `${symbol} · ${exchange}` : symbol);
+        }
+        for (const symbol of list.symbols ?? []) {
+            const next = String(symbol ?? "").trim().toUpperCase();
+            if (next && !seen.has(next)) seen.set(next, next);
+        }
+    }
+    return [...seen.entries()].map(([value, label]) => ({ label, value }));
+}
+
+export function instrumentForSymbol(
+    watchlists: Watchlist[],
+    symbol: string,
+    component?: WorkspaceComponent
+): { exchange?: string; symbol: string } & Record<string, unknown> {
+    const needle = symbol.trim().toUpperCase();
+    const params = component?.data?.params ?? {};
+    if (isRecord(params.instrument) && typeof params.instrument.symbol === "string") {
+        return { ...params.instrument, symbol: String(params.instrument.symbol).toUpperCase() };
+    }
+    for (const list of watchlists) {
+        const match = (list.items ?? []).find((item) => String(item.symbol ?? "").trim().toUpperCase() === needle);
+        if (match) {
+            return {
+                ...(match.instrument_ref ?? {}),
+                exchange: match.exchange ?? match.instrument_ref?.exchange ?? "NSE",
+                symbol: needle
+            };
+        }
+    }
+    return { exchange: "NSE", symbol: needle };
+}
+
 export function resolveWatchlist(
     watchlists: Watchlist[],
     component: WorkspaceComponent,
@@ -117,7 +178,8 @@ export function resolveWatchlist(
 }
 
 export function symbolsFromComponent(component: WorkspaceComponent, watchlist: Watchlist | null): string[] {
-    const explicit = stringListParam(component.props, ["symbols"]).concat(stringListParam(component.data?.params, ["symbols", "instruments"]));
+    const explicit = explicitSymbols(component);
+    if (explicit.length && componentScope(component) === "symbol") return explicit;
     if (explicit.length) return Array.from(new Set(explicit));
     return watchlist?.items.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean) ?? watchlist?.symbols ?? [];
 }

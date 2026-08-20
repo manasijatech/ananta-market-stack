@@ -123,7 +123,7 @@ export function LiveWatchlistWidget({ component, onPatch, refreshNonce }: Props)
                     </TableBody>
                 </Table>
             ) : (
-                <LiveQuotesWidget component={component} refreshNonce={refreshNonce} />
+                <LiveQuotesWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />
             )}
         </WidgetState>
     );

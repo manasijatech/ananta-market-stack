@@ -312,7 +312,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
         "forbidden_prop_keys": sorted(FORBIDDEN_PROP_KEYS),
         "tool_component_map": dict(TOOL_COMPONENT_MAP),
         "micro_apps": sorted(MICRO_APP_IDS),
-        "a2ui": {"version": A2UI_VERSION, "catalog_id": A2UI_CATALOG_ID},
+        "a2ui": {"version": A2UI_VERSION, "catalog_id": A2UI_CATALOG_ID, "internal": True},
         "common_mistakes": {
             "holdings": "holdings-table",
             "portfolio": "holdings-table",
@@ -367,9 +367,9 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Templates: investor, trader, researcher, operations. Skills: morning-brief, fno-desk, earnings-week, alert-studio, research-sandbox.",
             "Repeated requests may be suggested as a template/skill. Never auto-apply.",
             "Alert studio: alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
-            "Interop: compose_surface still takes WorkspaceSpec. A2UI is an export of that spec. AG-UI is derived from existing SSE.",
             "micro-app requires props.appId from the curated registry (payoff-diagram, notes-scratch). Never emit src, href, or script.",
-            "notes-block is plain text only. agent-timeline has no data.tool; it shows AG-UI events from this run.",
+            "notes-block is plain text only.",
+            "Symbol desks: set props.scope=symbol and props.symbol on quote-ticker, price-chart, intel-feed, and alerts. Watchlist desks: props.scope=watchlist and props.watchlistId.",
         ],
     }
 

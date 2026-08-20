@@ -39,7 +39,7 @@ type PinInput = {
 type ApplySource = "agent" | "restore" | "user";
 
 type AdaptiveWorkspaceContextValue = {
-    applySpec: (spec: WorkspaceSpec, source?: ApplySource) => void;
+    applySpec: (spec: WorkspaceSpec, source?: ApplySource, forSessionId?: string | null) => void;
     bindSession: (sessionId: string | null) => void;
     canUndo: boolean;
     duplicate: (id: string) => void;
@@ -122,7 +122,8 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
     );
 
     const applySpec = useCallback(
-        (next: WorkspaceSpec, source: ApplySource = "agent") => {
+        (next: WorkspaceSpec, source: ApplySource = "agent", forSessionId?: string | null) => {
+            if (forSessionId !== undefined && forSessionId !== sessionIdRef.current) return;
             pushAndSet(next, source);
         },
         [pushAndSet]
@@ -157,20 +158,13 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
                 window.clearTimeout(persistTimerRef.current);
                 persistTimerRef.current = null;
             }
-            const keepLocal = !previous && Boolean(sessionId) && specRef.current.components.length > 0;
             sessionIdRef.current = sessionId;
             setSessionId(sessionId);
-            if (!keepLocal) {
-                setSelectedId(null);
-                setHistory([]);
-                setOutputs({});
-            }
+            setSelectedId(null);
+            setHistory([]);
+            setOutputs({});
             if (!sessionId) {
                 setSpec(emptyWorkspaceSpec());
-                return;
-            }
-            if (keepLocal) {
-                persist(specRef.current, "Pin to canvas");
                 return;
             }
             setLoading(true);
@@ -188,7 +182,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
                     if (sessionIdRef.current === sessionId) setLoading(false);
                 });
         },
-        [persist]
+        []
     );
 
     const pin = useCallback(

@@ -2,8 +2,16 @@
 
 import { useMemo } from "react";
 import { LiveStatusBadge, MoveCell, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { WidgetScopeBar, scopeHint } from "@/components/adaptive-workspace/widget-scope-bar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useDeskAccounts, useDeskWatchlists, resolveWatchlist, stringListParam, symbolsFromComponent } from "@/hooks/use-desk-data";
+import {
+    componentScope,
+    instrumentForSymbol,
+    resolveWatchlist,
+    symbolsFromComponent,
+    useDeskAccounts,
+    useDeskWatchlists
+} from "@/hooks/use-desk-data";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { liveTickMove, useLivePrices } from "@/hooks/use-live-prices";
 import { useQuoteSnapshots } from "@/hooks/use-quote-snapshots";
@@ -14,35 +22,30 @@ import type { InstrumentRef } from "@/service/types/broker";
 
 type Props = {
     component: WorkspaceComponent;
+    onPatch: (props: Record<string, unknown>) => void;
     refreshNonce: number;
 };
 
-function instrumentsFor(component: WorkspaceComponent, watchlist: ReturnType<typeof resolveWatchlist>): InstrumentRef[] {
-    const params = component.data?.params ?? {};
-    const raw = params.instruments;
-    if (Array.isArray(raw)) {
-        return raw.flatMap((item) => {
-            if (!isRecord(item) || typeof item.symbol !== "string" || !item.symbol.trim()) return [];
-            return [{ ...item, symbol: item.symbol.trim().toUpperCase() } as InstrumentRef];
-        });
-    }
-    if (watchlist?.items.length) {
-        return watchlist.items.map((item) => ({
-            ...(item.instrument_ref ?? {}),
-            exchange: item.exchange ?? item.instrument_ref?.exchange,
-            symbol: item.symbol
-        }));
-    }
-    return symbolsFromComponent(component, watchlist).map((symbol) => ({ symbol, exchange: "NSE" }));
-}
-
-export function LiveQuotesWidget({ component, refreshNonce }: Props) {
+export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
     const { account, error: accountError } = useDeskAccounts();
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
-    const instruments = useMemo(() => instrumentsFor(component, watchlist), [component, watchlist]);
-    const { error, loading, rows } = useQuoteSnapshots(account?.id, instruments, refreshNonce);
+    const instruments = useMemo<InstrumentRef[]>(() => {
+        const symbols = symbolsFromComponent(component, watchlist);
+        if (componentScope(component) === "symbol") {
+            return symbols.map((symbol) => instrumentForSymbol(watchlists, symbol, component) as InstrumentRef);
+        }
+        if (watchlist?.items.length) {
+            return watchlist.items.map((item) => ({
+                ...(item.instrument_ref ?? {}),
+                exchange: item.exchange ?? item.instrument_ref?.exchange,
+                symbol: item.symbol
+            }));
+        }
+        return symbols.map((symbol) => instrumentForSymbol(watchlists, symbol, component) as InstrumentRef);
+    }, [component, watchlist, watchlists]);
+    const { error, rows } = useQuoteSnapshots(account?.id, instruments, refreshNonce);
     const demand = useMemo(
         () =>
             instruments
@@ -63,6 +66,7 @@ export function LiveQuotesWidget({ component, refreshNonce }: Props) {
         [account?.broker_code, account?.id, instruments]
     );
     const live = useLivePrices(demand, `quotes:${component.id}`, account?.user_id);
+    const focusSymbol = symbolsFromComponent(component, watchlist)[0] || "";
 
     const tableRows = instruments.slice(0, 40).map((instrument, index) => {
         const symbol = String(instrument.symbol ?? "").trim();
@@ -82,16 +86,21 @@ export function LiveQuotesWidget({ component, refreshNonce }: Props) {
     });
 
     return (
-        <WidgetState error={error || accountError} loading={loading || listsLoading} loadingLabel="Loading live quotes">
-            <div className="flex items-center justify-between gap-2 px-3 pt-2">
-                <p className="truncate text-xs text-muted-foreground">
-                    {watchlist ? watchlist.name : stringListParam(component.data?.params, ["symbols"]).length ? "Requested symbols" : "Quotes"}
-                </p>
+        <WidgetState error={error || accountError} loading={listsLoading && !instruments.length} loadingLabel="Loading live quotes">
+            <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
+                <WidgetScopeBar
+                    component={component}
+                    onPatch={onPatch}
+                    selectedWatchlist={watchlist}
+                    symbol={focusSymbol}
+                    watchlists={watchlists}
+                />
                 <LiveStatusBadge
                     label={live.state === "connected" ? "Live" : live.state === "connecting" ? "Connecting" : "Snapshot"}
                     tone={live.state === "connected" ? "live" : live.state === "error" ? "error" : "cached"}
                 />
             </div>
+            <p className="px-3 pt-2 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name)}</p>
             {tableRows.length ? (
                 <Table>
                     <TableHeader>

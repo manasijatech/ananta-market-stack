@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { WidgetScopeBar } from "@/components/adaptive-workspace/widget-scope-bar";
 import { Badge } from "@/components/ui/badge";
+import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
+import { resolveWatchlist, stringParam, symbolsFromComponent, useDeskWatchlists } from "@/hooks/use-desk-data";
 import { subscribeToAlertNotificationStream } from "@/lib/alert-notification-stream";
 import { getAlertNotifications, getAlertWorkflows } from "@/service/actions/alerts";
 import type { AlertNotification, AlertWorkflow } from "@/service/types/alerts";
@@ -10,11 +13,17 @@ import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 
 type Props = {
     component: WorkspaceComponent;
+    onPatch: (props: Record<string, unknown>) => void;
     refreshNonce: number;
 };
 
-export function LiveAlertsWidget({ component, refreshNonce }: Props) {
+export function LiveAlertsWidget({ component, onPatch, refreshNonce }: Props) {
     const unreadOnly = component.props?.unreadOnly === true || component.data?.params?.unread_only === true;
+    const { watchlists } = useDeskWatchlists();
+    const prefs = useOptionalAdaptiveDeskPrefs();
+    const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
+    const symbols = symbolsFromComponent(component, watchlist).map((item) => item.toUpperCase());
+    const symbolFilter = stringParam(component.props, ["symbol"]).toUpperCase();
     const [workflows, setWorkflows] = useState<AlertWorkflow[]>([]);
     const [notifications, setNotifications] = useState<AlertNotification[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -51,20 +60,35 @@ export function LiveAlertsWidget({ component, refreshNonce }: Props) {
         });
     }, [load]);
 
+    const wanted = new Set(symbolFilter ? [symbolFilter] : symbols);
+    const visibleWorkflows = wanted.size
+        ? workflows.filter((row) => !row.symbol || wanted.has(String(row.symbol).toUpperCase()))
+        : workflows;
+    const visibleNotes = wanted.size
+        ? notifications.filter((row) => !row.symbol || wanted.has(String(row.symbol).toUpperCase()))
+        : notifications;
+
     return (
         <WidgetState error={error} loading={loading} loadingLabel="Loading alerts">
-            <div className="flex items-center justify-between gap-2 px-3 pt-2">
-                <p className="text-xs text-muted-foreground">
-                    {workflows.length} workflows · {notifications.length} notifications
-                </p>
+            <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
+                <WidgetScopeBar
+                    component={component}
+                    onPatch={onPatch}
+                    selectedWatchlist={watchlist}
+                    symbol={symbolFilter || symbols[0] || ""}
+                    watchlists={watchlists}
+                />
                 <LiveStatusBadge label={live ? "Live" : "Polled"} tone={live ? "live" : "cached"} />
             </div>
+            <p className="px-3 pt-2 text-[11px] text-muted-foreground">
+                {visibleWorkflows.length} workflows · {visibleNotes.length} notifications
+            </p>
             <div className="grid gap-3 p-2">
                 <section>
                     <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Workflows</p>
-                    {workflows.length ? (
+                    {visibleWorkflows.length ? (
                         <ul className="grid gap-1.5">
-                            {workflows.slice(0, 12).map((row) => (
+                            {visibleWorkflows.slice(0, 12).map((row) => (
                                 <li className="rounded-md border border-border/70 px-2.5 py-2" key={row.id}>
                                     <div className="flex flex-wrap items-center gap-1.5">
                                         {row.symbol ? (
@@ -84,9 +108,9 @@ export function LiveAlertsWidget({ component, refreshNonce }: Props) {
                 </section>
                 <section>
                     <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Notifications</p>
-                    {notifications.length ? (
+                    {visibleNotes.length ? (
                         <ul className="grid gap-1.5">
-                            {notifications.slice(0, 20).map((row) => (
+                            {visibleNotes.slice(0, 20).map((row) => (
                                 <li className="rounded-md border border-border/70 px-2.5 py-2" key={row.id}>
                                     <div className="flex flex-wrap items-center gap-1.5">
                                         {row.symbol ? (

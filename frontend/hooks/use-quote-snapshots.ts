@@ -12,16 +12,20 @@ export function useQuoteSnapshots(
     const [rows, setRows] = useState<QuoteResponse[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const instrumentKey = instruments
+        .map((item) => `${item.symbol ?? ""}:${item.exchange ?? ""}:${item.upstox_instrument_key ?? item.zerodha_instrument_token ?? item.angel_token ?? ""}`)
+        .join("|");
 
     useEffect(() => {
-        if (!accountId || !instruments.length) {
+        if (!accountId || !instrumentKey) {
             setRows([]);
             setLoading(false);
             return;
         }
         let cancelled = false;
         setLoading(true);
-        void getDataQuotes(accountId, { instruments: instruments.slice(0, 40) })
+        const payload = instruments.slice(0, 40);
+        void getDataQuotes(accountId, { instruments: payload })
             .then((result) => {
                 if (!cancelled) {
                     setRows(result);
@@ -35,7 +39,7 @@ export function useQuoteSnapshots(
                 if (!cancelled) setLoading(false);
             });
         const poll = window.setInterval(() => {
-            void getDataQuotes(accountId, { instruments: instruments.slice(0, 40) })
+            void getDataQuotes(accountId, { instruments: payload })
                 .then((result) => {
                     if (!cancelled) setRows(result);
                 })
@@ -45,7 +49,7 @@ export function useQuoteSnapshots(
             cancelled = true;
             window.clearInterval(poll);
         };
-    }, [accountId, instruments, refreshNonce]);
+    }, [accountId, instrumentKey, refreshNonce]);
 
     return { error, loading, rows };
 }

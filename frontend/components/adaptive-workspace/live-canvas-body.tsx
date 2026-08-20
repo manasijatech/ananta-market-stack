@@ -27,14 +27,14 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
         case "watchlist":
             return <LiveWatchlistWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "quote-ticker":
-            return <LiveQuotesWidget component={component} refreshNonce={refreshNonce} />;
+            return <LiveQuotesWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "intel-feed":
             return <LiveIntelWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "alert-rule-draft":
             if (component.data?.tool === "alert_get_studio") {
                 return <LiveAlertDraftWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
             }
-            return <LiveAlertsWidget component={component} refreshNonce={refreshNonce} />;
+            return <LiveAlertsWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "workflow-graph":
             return <LiveWorkflowGraphWidget component={component} refreshNonce={refreshNonce} />;
         case "workflow-simulation":
@@ -55,7 +55,7 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
                 </SuppressPin>
             );
         case "price-chart":
-            return <LiveChartWidget component={component} refreshNonce={refreshNonce} />;
+            return <LiveChartWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "micro-app":
             return <LiveMicroAppWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "notes-block":

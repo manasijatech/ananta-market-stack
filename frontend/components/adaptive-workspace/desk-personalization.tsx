@@ -60,6 +60,16 @@ type PendingApply = {
     title: string;
 };
 
+function suggestionLabel(
+    item: AdaptiveWorkspaceSuggestion,
+    templates: AdaptiveWorkspaceCatalogItem[],
+    skills: AdaptiveWorkspaceCatalogItem[]
+) {
+    if (item.label?.trim()) return item.label.trim();
+    const pool = item.kind === "skill" ? skills : templates;
+    return pool.find((entry) => entry.id === item.target_id)?.label ?? item.target_id;
+}
+
 export function AdaptiveDeskPersonalization() {
     const canvas = useAdaptiveWorkspace();
     const prefs = useAdaptiveDeskPrefs();
@@ -96,7 +106,8 @@ export function AdaptiveDeskPersonalization() {
     }, [reloadLists, canvas.sessionId]);
 
     async function applyCurrent(kind: PendingApply["kind"], id: string) {
-        if (!canvas.sessionId) {
+        const sessionId = canvas.sessionId;
+        if (!sessionId) {
             setError("Start a desk conversation first, then apply a layout.");
             return;
         }
@@ -105,12 +116,16 @@ export function AdaptiveDeskPersonalization() {
         try {
             const current =
                 kind === "template"
-                    ? await applyAdaptiveWorkspaceTemplate(id, canvas.sessionId)
+                    ? await applyAdaptiveWorkspaceTemplate(id, sessionId)
                     : kind === "skill"
-                      ? await applyAdaptiveWorkspaceSkill(id, canvas.sessionId)
-                      : await applyAdaptiveWorkspaceDesk(id, canvas.sessionId);
+                      ? await applyAdaptiveWorkspaceSkill(id, sessionId)
+                      : await applyAdaptiveWorkspaceDesk(id, sessionId);
+            if (canvas.sessionId !== sessionId) {
+                setPending(null);
+                return;
+            }
             const parsed = parseWorkspaceSpec(current.spec);
-            if (parsed) canvas.applySpec(parsed, "agent");
+            if (parsed) canvas.applySpec(parsed, "user", sessionId);
             setPending(null);
             await reloadLists();
         } catch (caught) {
@@ -139,25 +154,44 @@ export function AdaptiveDeskPersonalization() {
 
     return (
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-            {suggestions.slice(0, 2).map((item) => (
-                <Button
-                    key={item.id}
-                    onClick={() =>
-                        setPending({
-                            confirm: item.message,
-                            id: item.target_id,
-                            kind: item.kind === "skill" ? "skill" : "template",
-                            title: item.kind === "skill" ? "Apply desk skill" : "Apply template"
-                        })
-                    }
-                    size="xs"
-                    type="button"
-                    variant="outline"
-                >
-                    <IconSparkles className="size-3.5" stroke={1.8} />
-                    Suggest
-                </Button>
-            ))}
+            {suggestions.length ? (
+                <DropdownMenu onOpenChange={(open) => open && void reloadLists()}>
+                    <DropdownMenuTrigger
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-xs font-semibold"
+                        type="button"
+                    >
+                        <IconSparkles className="size-3.5" stroke={1.8} />
+                        Suggest
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-80">
+                        <DropdownMenuLabel>Based on what you keep asking</DropdownMenuLabel>
+                        <p className="px-2 pb-1 text-[11px] leading-4 text-muted-foreground">
+                            Applies only to this desk. Other conversations keep their canvas.
+                        </p>
+                        {suggestions.map((item) => {
+                            const label = suggestionLabel(item, templates, skills);
+                            return (
+                                <DropdownMenuItem
+                                    key={item.id}
+                                    onSelect={() =>
+                                        setPending({
+                                            confirm: `${item.message} This replaces the current canvas on this desk only.`,
+                                            id: item.target_id,
+                                            kind: item.kind === "skill" ? "skill" : "template",
+                                            title: label
+                                        })
+                                    }
+                                >
+                                    <span className="min-w-0">
+                                        <span className="block font-semibold">{label}</span>
+                                        <span className="block text-[11px] font-normal text-muted-foreground">{item.message}</span>
+                                    </span>
+                                </DropdownMenuItem>
+                            );
+                        })}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            ) : null}
             <DropdownMenu onOpenChange={(open) => open && void reloadLists()}>
                 <DropdownMenuTrigger
                     className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-xs font-semibold"

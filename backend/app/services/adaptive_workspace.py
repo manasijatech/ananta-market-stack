@@ -411,9 +411,6 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "micro-app",
         "micro app",
         "sandbox",
-        "a2ui",
-        "ag-ui",
-        "agent timeline",
         "research sandbox",
     )),
     ("alerts", ("alert", "alerts", "notification", "notifications")),
@@ -519,7 +516,7 @@ def evaluate_request(
                 recommended_types.append(component_type)
 
     if "sandbox" in intents:
-        for component_type in ("micro-app", "notes-block", "agent-timeline"):
+        for component_type in ("micro-app", "notes-block"):
             if component_type not in recommended_types:
                 recommended_types.append(component_type)
 
@@ -539,7 +536,7 @@ def evaluate_request(
         plan.append("Call intel_list_alert_workflows and intel_list_alert_notifications (read-only).")
     if "sandbox" in intents:
         plan.append(
-            "Call workspace_get_micro_app. Compose micro-app with props.appId from the registry, plus notes-block and agent-timeline. Never emit src, href, or script."
+            "Call workspace_get_micro_app. Compose micro-app with props.appId from the registry, plus notes-block. Never emit src, href, or script."
         )
     if "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")

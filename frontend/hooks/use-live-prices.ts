@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flattenLivePriceTick, livePriceNumber, mergeLivePriceTick } from "@/lib/live-price-tick";
 import { livePriceWebSocketCandidates } from "@/lib/live-price-ws";
 import { touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import type { InstrumentRef, LivePriceTick } from "@/service/types/alerts";
@@ -14,35 +15,11 @@ export type LivePriceDemand = {
 };
 
 function toNumber(value: unknown): number | null {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
-    return null;
+    return livePriceNumber(value);
 }
 
 function livePriceKey(row: { account_id?: string | null; broker_code?: string | null; symbol: string }): string {
     return [row.account_id || "", row.broker_code || "", row.symbol.trim().toUpperCase()].join(":");
-}
-
-function tickHasLivePrice(tick: LivePriceTick | undefined): boolean {
-    return toNumber(tick?.ltp ?? tick?.last_price) !== null;
-}
-
-function mergeLivePriceTick(current: LivePriceTick | undefined, incoming: LivePriceTick): LivePriceTick {
-    if (!current || !tickHasLivePrice(current)) return incoming;
-    if (!tickHasLivePrice(incoming)) return current;
-    const incomingChange = toNumber(incoming.change_pct ?? incoming.day_change_perc ?? incoming.day_change);
-    if (incomingChange !== null) return incoming;
-    return {
-        ...incoming,
-        change_pct: current.change_pct ?? current.day_change_perc,
-        day_change_perc: current.day_change_perc ?? current.change_pct,
-        day_change: incoming.day_change ?? current.day_change,
-        open: incoming.open ?? current.open,
-        high: incoming.high ?? current.high,
-        low: incoming.low ?? current.low,
-        close: incoming.close ?? current.close,
-        volume: incoming.volume ?? current.volume
-    };
 }
 
 export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userId?: string | null) {
@@ -80,15 +57,15 @@ export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userI
                 setPrices((current) => {
                     const next = { ...current };
                     for (const row of rows) {
-                        const quote = (row.last_quote || {}) as unknown as LivePriceTick;
                         if (!row.symbol) continue;
-                        const tick: LivePriceTick = {
-                            ...quote,
-                            account_id: row.account_id ?? quote.account_id,
-                            broker_code: row.broker_code ?? quote.broker_code,
-                            symbol: row.symbol,
-                            exchange: row.exchange ?? quote.exchange
-                        };
+                        const tick =
+                            flattenLivePriceTick((row.last_quote || {}) as Record<string, unknown>, {
+                                account_id: row.account_id ?? undefined,
+                                broker_code: row.broker_code ?? undefined,
+                                exchange: row.exchange,
+                                received_at: row.last_received_at,
+                                symbol: row.symbol
+                            }) ?? ({ symbol: row.symbol } as LivePriceTick);
                         next[livePriceKey(tick)] = mergeLivePriceTick(next[livePriceKey(tick)], tick);
                         next[livePriceKey({ symbol: row.symbol })] = mergeLivePriceTick(next[livePriceKey({ symbol: row.symbol })], tick);
                     }
@@ -138,8 +115,9 @@ export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userI
         function enqueue(rows: LivePriceTick[]) {
             for (const row of rows) {
                 if (!row?.symbol) continue;
-                pendingRef.current.set(livePriceKey(row), row);
-                pendingRef.current.set(livePriceKey({ symbol: row.symbol }), row);
+                const tick = flattenLivePriceTick(row as unknown as Record<string, unknown>, { symbol: row.symbol }) ?? row;
+                pendingRef.current.set(livePriceKey(tick), tick);
+                pendingRef.current.set(livePriceKey({ symbol: tick.symbol }), tick);
             }
             if (!flushTimerRef.current) flushTimerRef.current = setTimeout(flush, 200);
         }

@@ -101,9 +101,7 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 - [x] Sandboxed micro-apps only after the curated registry works.
 - [ ] Cut over: make this route the default Intelligence surface; keep `/broker-chat` as legacy or redirect.
 
-AG-UI is a derived view of existing broker-chat SSE (`token`, `tool_call_*`, `run_*`) plus a `STATE_SNAPSHOT` of the current `WorkspaceSpec`. The inspector Interop tab and `agent-timeline` widget show that mapping. Chat does not switch to an AG-UI transport.
-
-A2UI v0.9 (`createSurface` + `updateComponents`, catalog `ananta-workspace-v1`) is a round-trip of the same spec. Import fails closed through `parse_workspace_spec`. The compose path remains `compose_surface` / `WorkspaceSpec`.
+AG-UI and A2UI stay **internal adapters** (Python mapping, tests, and `/adaptive-workspace/interop/*` APIs). They are not a user-facing inspector tab, copy buttons, or agent tools. Chat still streams existing broker-chat SSE. Compose still uses `WorkspaceSpec`.
 
 Sandboxed micro-apps are a catalog type (`micro-app`) bound to `workspace_get_micro_app`. Only `payoff-diagram` and `notes-scratch` are registered. The iframe is `sandbox="allow-scripts"` without `allow-same-origin`, with a server-owned `srcDoc` template and `postMessage` limited to `select` / `refresh`. Intelligence default and `/broker-chat` are unchanged so this preview can keep evolving.
 
@@ -145,7 +143,7 @@ Phase 3 adds named saved desks (`adaptive_workspace_saved_desks`), inspectable d
 
 Phase 4 activates the reserved studio types (`alert-rule-draft` as a draft summary when `data.tool` is `alert_get_studio`, plus `workflow-graph`, `workflow-simulation`, `approval-card`). Studio payloads come from `GET/POST /adaptive-workspace/alert-studio*` and reuse `alert_workflow_chat_snapshots` (`workflow_payload_json`, `validation_json`, `compile_json`, `explanation_json`, `samples_json`, `diff_json`). `adaptive_workspace_snapshots` stays layout-only. Deploy requires `confirm=true`. Full rule authoring stays on `/alerts-workspace`.
 
-Phase 5 adds AG-UI/A2UI adapters and a curated `micro-app` registry on this same contract. SSE and `WorkspaceSpec` stay authoritative. Cut-over of the Intelligence default is deferred.
+Phase 5 adds AG-UI/A2UI adapters and a curated `micro-app` registry on this same contract. SSE and `WorkspaceSpec` stay authoritative. Those adapters are not a user copy/export surface. Cut-over of the Intelligence default is deferred.
 
 `compose_surface`, `patch_surface`, and helper tools (`workspace_get_authoring_docs`, `workspace_get_current`, `workspace_validate_spec`) are attached only when a broker-chat run’s metadata includes `adaptive_workspace: true`. Invalid compose/patch returns `ok: true` with `applied: false` and `validation.errors` so the model can self-correct without a retry loop. The preview page sends that flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
 

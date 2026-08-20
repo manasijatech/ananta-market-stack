@@ -68,6 +68,7 @@ class AdaptiveWorkspaceSuggestionOut(BaseModel):
     id: str
     kind: Literal["template", "skill"]
     target_id: str
+    label: str = ""
     message: str
     auto_apply: bool = False
 

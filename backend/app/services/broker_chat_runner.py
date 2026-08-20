@@ -137,9 +137,6 @@ Workspace tools:
 - workspace_list_templates / workspace_list_skills / workspace_list_saved_desks:
   named layouts. If the user asks to apply one, compose_surface with that spec.
   Never rearrange because a request was repeated. Suggest only.
-- workspace_export_a2ui / workspace_validate_a2ui: A2UI v0.9 export of the desk.
-  Convert, then compose_surface with WorkspaceSpec. Never emit raw A2UI as compose.
-- workspace_export_agui: desk STATE_SNAPSHOT. Chat still uses existing SSE.
 - workspace_get_micro_app: curated sandbox apps (payoff-diagram, notes-scratch).
 
 Adaptive-only data tools (not on /broker-chat):
@@ -152,7 +149,7 @@ Adaptive-only data tools (not on /broker-chat):
 
 Preferred component types: holdings-table, quote-ticker, price-chart,
 broker-health, watchlist, intel-feed, alert-rule-draft, workflow-graph,
-workflow-simulation, approval-card, micro-app, agent-timeline, notes-block.
+workflow-simulation, approval-card, micro-app, notes-block.
 Common mistakes that WILL be rejected:
 - holdings / portfolio → holdings-table
 - quotes / quote → quote-ticker
@@ -165,9 +162,9 @@ Common mistakes that WILL be rejected:
   data.tool=alert_get_studio. Never silent-deploy.
 - watchlist / last watchlist → watchlist + broker_list_watchlists then
   broker_get_watchlist_symbols
-- payoff / straddle / sandbox / a2ui / ag-ui / timeline → micro-app with
-  props.appId from workspace_get_micro_app, plus notes-block and agent-timeline.
-  Never src, href, HTML, or a second chat stream.
+- payoff / straddle / sandbox → micro-app with props.appId from
+  workspace_get_micro_app, plus notes-block. Never src, href, HTML, or a
+  second chat stream.
 
 WorkspaceSpec rules:
 - version must be the string "1". layout.mode must be "grid" and columns 12.
@@ -176,8 +173,12 @@ WorkspaceSpec rules:
 - Never emit React, HTML, CSS, className, style, href, src, extra keys, or script.
 - Prefer readable sizes: quotes 6x3, holdings 12x5, charts 8x4, health 4x3,
   watchlist 4x4, intel-feed 6x5, alerts 6x4, graph 6x5, simulation 6x4,
-  approval 6x4, micro-app 6x5, notes 4x4, timeline 12x4.
+  approval 6x4, micro-app 6x5, notes 4x4.
 - x + w must be <= 12.
+- For a named symbol (RELIANCE, TCS, …) set props.scope="symbol" and
+  props.symbol (and data.params.symbol) on quote-ticker, price-chart,
+  intel-feed, and alert-rule-draft. For a whole list use props.scope="watchlist"
+  and props.watchlistId. Never leave a chart without a symbol.
 
 Operating rules:
 - Call workspace_evaluate_request on the user query first.

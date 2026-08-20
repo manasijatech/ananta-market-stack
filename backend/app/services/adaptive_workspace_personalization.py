@@ -247,7 +247,7 @@ DESK_SKILLS: dict[str, dict[str, Any]] = {
     "research-sandbox": {
         "id": "research-sandbox",
         "label": "Research sandbox",
-        "description": "Sandboxed payoff toy, notes, and an AG-UI agent timeline.",
+        "description": "Sandboxed payoff toy and notes.",
         "spec": _spec(
             "Research sandbox",
             [
@@ -278,7 +278,6 @@ DESK_SKILLS: dict[str, dict[str, Any]] = {
                     h=5,
                     props={"text": "Sandboxed payoff toy. Numbers only; no orders or credentials."},
                 ),
-                _component("timeline", "agent-timeline", x=0, y=5, w=12, h=4),
             ],
         ),
     },
@@ -580,24 +579,36 @@ def _intent_counts(db: Session, user_id: str) -> dict[str, int]:
     return out
 
 
+def _catalog_label(kind: str, target_id: str) -> str:
+    catalog = DESK_SKILLS if kind == "skill" else DESK_TEMPLATES
+    item = catalog.get(target_id) or {}
+    return str(item.get("label") or target_id)
+
+
 def suggestions_from_counts(counts: dict[str, int]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for required, kind, target_id, message in _SUGGESTION_RECIPES:
+    matched: list[tuple[int, tuple[frozenset[str], str, str, str]]] = []
+    for recipe in _SUGGESTION_RECIPES:
+        required, kind, target_id, _message = recipe
         if all(counts.get(intent, 0) >= SUGGESTION_THRESHOLD for intent in required):
-            key = f"{kind}:{target_id}"
-            if key in seen:
-                continue
-            seen.add(key)
-            items.append(
-                {
-                    "id": key,
-                    "kind": kind,
-                    "target_id": target_id,
-                    "message": message,
-                    "auto_apply": False,
-                }
-            )
+            matched.append((len(required), recipe))
+    matched.sort(key=lambda item: (-item[0], item[1][2]))
+    for _specificity, (required, kind, target_id, message) in matched:
+        key = f"{kind}:{target_id}"
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(
+            {
+                "id": key,
+                "kind": kind,
+                "target_id": target_id,
+                "label": _catalog_label(kind, target_id),
+                "message": message,
+                "auto_apply": False,
+            }
+        )
     return items
 
 

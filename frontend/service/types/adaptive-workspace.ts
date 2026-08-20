@@ -112,9 +112,6 @@ export const WORKSPACE_HELPER_TOOLS = [
     "workspace_list_skills",
     "workspace_list_saved_desks",
     "workspace_list_preferences",
-    "workspace_export_a2ui",
-    "workspace_validate_a2ui",
-    "workspace_export_agui",
     "workspace_get_micro_app"
 ] as const;
 
@@ -232,6 +229,7 @@ export interface AdaptiveWorkspaceSuggestion {
     auto_apply: boolean;
     id: string;
     kind: "skill" | "template";
+    label?: string;
     message: string;
     target_id: string;
 }

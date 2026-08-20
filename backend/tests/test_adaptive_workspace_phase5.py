@@ -211,7 +211,7 @@ def test_agui_maps_existing_sse_without_replacing_it():
 def test_research_sandbox_skill_uses_curated_micro_app():
     skill = get_skill("research-sandbox")
     types = [item["type"] for item in skill["spec"]["components"]]
-    assert types == ["micro-app", "notes-block", "agent-timeline"]
+    assert types == ["micro-app", "notes-block"]
     payoff = skill["spec"]["components"][0]
     assert payoff["props"]["appId"] == "payoff-diagram"
     assert payoff["data"]["tool"] == "workspace_get_micro_app"
@@ -219,11 +219,11 @@ def test_research_sandbox_skill_uses_curated_micro_app():
 
 
 def test_evaluate_request_covers_sandbox_intent():
-    planned = workspace_svc.evaluate_request("Add a sandboxed straddle payoff and an agent timeline")
+    planned = workspace_svc.evaluate_request("Add a sandboxed straddle payoff")
     assert "sandbox" in planned["intents"]
     assert "workspace_get_micro_app" in planned["recommended_tools"]
     assert "micro-app" in planned["recommended_types"]
-    assert "agent-timeline" in planned["recommended_types"]
+    assert "notes-block" in planned["recommended_types"]
 
 
 def test_phase5_routes_are_mounted_under_api_v1():

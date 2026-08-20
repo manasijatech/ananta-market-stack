@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { WidgetScopeBar, scopeHint } from "@/components/adaptive-workspace/widget-scope-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SimpleSelect } from "@/components/ui/simple-select";
@@ -121,9 +122,16 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
                     size="sm"
                     value={product}
                 />
-                <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{watchlist?.name || "Watchlist symbols"}</p>
+                <WidgetScopeBar
+                    component={component}
+                    onPatch={onPatch}
+                    selectedWatchlist={watchlist}
+                    symbol={symbols[0] || ""}
+                    watchlists={watchlists}
+                />
                 <LiveStatusBadge label={fromCache ? "Cached" : "Feed"} tone={fromCache ? "cached" : "live"} />
             </div>
+            <p className="px-3 pt-2 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name)}</p>
             {rows.length ? (
                 <ul className="grid gap-2 p-2">
                     {rows.map((row) => (
