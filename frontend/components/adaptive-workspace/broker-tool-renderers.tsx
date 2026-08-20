@@ -32,5 +32,13 @@ export const adaptiveBrokerToolRenderers: Record<string, ComponentType<CustomToo
     workspace_get_authoring_docs: WorkspaceHelperCard,
     workspace_get_current: WorkspaceHelperCard,
     workspace_validate_spec: WorkspaceHelperCard,
-    workspace_evaluate_request: WorkspaceHelperCard
+    workspace_evaluate_request: WorkspaceHelperCard,
+    workspace_list_templates: WorkspaceHelperCard,
+    workspace_list_skills: WorkspaceHelperCard,
+    workspace_list_saved_desks: WorkspaceHelperCard,
+    workspace_list_preferences: WorkspaceHelperCard,
+    workspace_export_a2ui: WorkspaceHelperCard,
+    workspace_validate_a2ui: WorkspaceHelperCard,
+    workspace_export_agui: WorkspaceHelperCard,
+    workspace_get_micro_app: WorkspaceHelperCard
 };

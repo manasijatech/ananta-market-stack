@@ -100,6 +100,22 @@ class AdaptiveAlertStudioDeployIn(BaseModel):
     confirm: bool = False
 
 
+class AdaptiveA2UIExportIn(BaseModel):
+    workspace_payload: dict[str, Any] | None = None
+    surface_id: str = Field(default="desk", min_length=1, max_length=80)
+
+
+class AdaptiveA2UIImportIn(BaseModel):
+    messages: list[dict[str, Any]] = Field(min_length=1)
+
+
+class AdaptiveAguiExportIn(BaseModel):
+    thread_id: str = Field(min_length=1, max_length=80)
+    run_id: str = Field(min_length=1, max_length=80)
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    workspace_payload: dict[str, Any] | None = None
+
+
 WorkspacePatchOperation = Literal[
     "replace",
     "add",

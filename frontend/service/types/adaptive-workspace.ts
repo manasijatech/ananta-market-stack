@@ -19,7 +19,8 @@ export const ADAPTIVE_COMPONENT_TYPES = [
     "workflow-simulation",
     "agent-timeline",
     "approval-card",
-    "notes-block"
+    "notes-block",
+    "micro-app"
 ] as const;
 
 export type AdaptiveComponentType = (typeof ADAPTIVE_COMPONENT_TYPES)[number];
@@ -42,7 +43,8 @@ export const ALLOWED_DATA_TOOLS = [
     "intel_get_feed",
     "intel_list_alert_workflows",
     "intel_list_alert_notifications",
-    "alert_get_studio"
+    "alert_get_studio",
+    "workspace_get_micro_app"
 ] as const;
 
 export type AdaptiveDataTool = (typeof ALLOWED_DATA_TOOLS)[number];
@@ -77,7 +79,8 @@ export const TOOL_COMPONENT_MAP: Record<string, AdaptiveComponentType> = {
     intel_get_feed: "intel-feed",
     intel_list_alert_workflows: "alert-rule-draft",
     intel_list_alert_notifications: "alert-rule-draft",
-    alert_get_studio: "alert-rule-draft"
+    alert_get_studio: "alert-rule-draft",
+    workspace_get_micro_app: "micro-app"
 };
 
 export const PHASE1_RENDER_TOOLS = [
@@ -108,8 +111,18 @@ export const WORKSPACE_HELPER_TOOLS = [
     "workspace_list_templates",
     "workspace_list_skills",
     "workspace_list_saved_desks",
-    "workspace_list_preferences"
+    "workspace_list_preferences",
+    "workspace_export_a2ui",
+    "workspace_validate_a2ui",
+    "workspace_export_agui",
+    "workspace_get_micro_app"
 ] as const;
+
+export const MICRO_APP_IDS = ["payoff-diagram", "notes-scratch"] as const;
+export type MicroAppId = (typeof MICRO_APP_IDS)[number];
+export const A2UI_VERSION = "v0.9";
+export const A2UI_CATALOG_ID = "ananta-workspace-v1";
+export const A2UI_ROOT_ID = "a2ui-root";
 
 export interface WorkspaceLayout {
     mode: "grid";

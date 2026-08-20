@@ -8,6 +8,9 @@ from app.schemas.adaptive_workspace import WorkspaceSpec
 from app.schemas.adaptive_workspace_api import (
     AdaptiveAlertStudioDeployIn,
     AdaptiveAlertStudioOut,
+    AdaptiveA2UIExportIn,
+    AdaptiveA2UIImportIn,
+    AdaptiveAguiExportIn,
     AdaptiveWorkspaceApplyIn,
     AdaptiveWorkspaceCurrentOut,
     AdaptiveWorkspacePreferenceOut,
@@ -21,7 +24,9 @@ from app.schemas.adaptive_workspace_api import (
 )
 from app.services import adaptive_workspace as workspace_svc
 from app.services import adaptive_workspace_alert_studio as alert_studio
+from app.services import adaptive_workspace_interop as interop
 from app.services import adaptive_workspace_personalization as personalization
+from app.services import broker_chat as chat_svc
 from db.models import AdaptiveWorkspaceSnapshot, User
 from db.session import get_db
 
@@ -350,3 +355,112 @@ def deploy_alert_studio(
         return alert_studio.deploy_studio(db, user.id, payload.snapshot_id, confirm=payload.confirm)
     except ValueError as exc:
         raise _http_error(exc) from exc
+
+
+@router.post("/interop/a2ui/export")
+def export_a2ui(
+    payload: AdaptiveA2UIExportIn,
+    user: User = Depends(get_current_user),
+) -> dict:
+    spec_payload = payload.workspace_payload
+    if spec_payload is None:
+        return {
+            "ok": True,
+            "valid": True,
+            "messages": interop.workspace_spec_to_a2ui(workspace_svc.empty_spec(), surface_id=payload.surface_id),
+            "catalog_id": interop.A2UI_CATALOG_ID,
+            "version": interop.A2UI_VERSION,
+        }
+    parsed, validation = workspace_svc.parse_spec_or_error(spec_payload)
+    if parsed is None:
+        return {"ok": True, "valid": False, "messages": [], "validation": validation}
+    return {
+        "ok": True,
+        "valid": True,
+        "messages": interop.workspace_spec_to_a2ui(parsed, surface_id=payload.surface_id),
+        "catalog_id": interop.A2UI_CATALOG_ID,
+        "version": interop.A2UI_VERSION,
+        "validation": validation,
+    }
+
+
+@router.post("/interop/a2ui/import")
+def import_a2ui(
+    payload: AdaptiveA2UIImportIn,
+    user: User = Depends(get_current_user),
+) -> dict:
+    parsed, validation = interop.a2ui_to_workspace_spec(payload.messages)
+    if parsed is None:
+        return {"ok": True, "valid": False, "applied": False, "spec": None, "validation": validation}
+    return {
+        "ok": True,
+        "valid": True,
+        "applied": False,
+        "spec": workspace_svc.workspace_spec_dump(parsed),
+        "validation": validation,
+    }
+
+
+@router.post("/interop/ag-ui")
+def map_agui_events(
+    payload: AdaptiveAguiExportIn,
+    user: User = Depends(get_current_user),
+) -> dict:
+    events = interop.broker_events_to_agui(
+        payload.events,
+        thread_id=payload.thread_id,
+        run_id=payload.run_id,
+        spec=payload.workspace_payload,
+    )
+    return {"ok": True, "protocol": interop.AGUI_PROTOCOL, "events": events}
+
+
+@router.get("/interop/ag-ui")
+def export_agui_for_run(
+    run_id: str = Query(min_length=1),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    try:
+        run = chat_svc.get_owned_run(db, user.id, run_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    page = chat_svc.list_events(
+        db,
+        run,
+        limit=500,
+        visibility="full",
+        include_tool_outputs=True,
+        include_reasoning=True,
+    )
+    spec = None
+    try:
+        snapshot = workspace_svc.get_current_snapshot(db, user.id, run.session_id)
+        if snapshot is not None:
+            spec = workspace_svc.snapshot_to_out(snapshot).workspace_payload
+    except ValueError:
+        spec = None
+    events = interop.broker_events_to_agui(
+        [item.model_dump(mode="json") for item in page.events],
+        thread_id=run.session_id,
+        run_id=run.id,
+        spec=spec if isinstance(spec, dict) else None,
+    )
+    return {"ok": True, "protocol": interop.AGUI_PROTOCOL, "thread_id": run.session_id, "run_id": run.id, "events": events}
+
+
+@router.get("/micro-apps")
+def list_micro_apps(user: User = Depends(get_current_user)) -> dict:
+    return {"ok": True, "apps": interop.list_micro_apps()}
+
+
+@router.get("/micro-apps/{app_id}")
+def get_micro_app(
+    app_id: str,
+    user: User = Depends(get_current_user),
+) -> dict:
+    try:
+        app = interop.get_micro_app(app_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return {"ok": True, "app": app, "bind": interop.bind_micro_app_payload(app_id)}

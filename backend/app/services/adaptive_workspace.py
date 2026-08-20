@@ -405,6 +405,17 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "approval card",
         "alert-studio",
     )),
+    ("sandbox", (
+        "payoff",
+        "straddle",
+        "micro-app",
+        "micro app",
+        "sandbox",
+        "a2ui",
+        "ag-ui",
+        "agent timeline",
+        "research sandbox",
+    )),
     ("alerts", ("alert", "alerts", "notification", "notifications")),
     ("holdings", ("holding", "holdings", "portfolio", "funds")),
     ("chart", ("chart", "historical", "ohlc", "candlestick")),
@@ -419,6 +430,7 @@ _INTENT_TOOLS: dict[str, list[str]] = {
     "earnings": ["intel_get_feed"],
     "concalls": ["intel_get_feed"],
     "alert_studio": ["alert_get_studio"],
+    "sandbox": ["workspace_get_micro_app"],
     "alerts": ["intel_list_alert_workflows", "intel_list_alert_notifications"],
     "holdings": ["broker_get_portfolio"],
     "chart": ["broker_get_historical"],
@@ -433,6 +445,7 @@ _INTENT_TYPES: dict[str, str] = {
     "earnings": "intel-feed",
     "concalls": "intel-feed",
     "alert_studio": "alert-rule-draft",
+    "sandbox": "micro-app",
     "alerts": "alert-rule-draft",
     "holdings": "holdings-table",
     "chart": "price-chart",
@@ -505,6 +518,11 @@ def evaluate_request(
             if component_type not in recommended_types:
                 recommended_types.append(component_type)
 
+    if "sandbox" in intents:
+        for component_type in ("micro-app", "notes-block", "agent-timeline"):
+            if component_type not in recommended_types:
+                recommended_types.append(component_type)
+
     if "watchlist" in intents:
         plan.append("Call broker_list_watchlists, then broker_get_watchlist_symbols on the newest matching list.")
         if last_watchlist:
@@ -519,6 +537,10 @@ def evaluate_request(
         )
     elif "alerts" in intents:
         plan.append("Call intel_list_alert_workflows and intel_list_alert_notifications (read-only).")
+    if "sandbox" in intents:
+        plan.append(
+            "Call workspace_get_micro_app. Compose micro-app with props.appId from the registry, plus notes-block and agent-timeline. Never emit src, href, or script."
+        )
     if "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")
     if "chart" in intents or longer_horizon:
@@ -563,6 +585,8 @@ def evaluate_request(
             notes.append("No alert workflows or notifications. Compose alert-rule-draft anyway and say none are deployed.")
         elif isinstance(workflow_count, int) or isinstance(notification_count, int):
             notes.append("Alert coverage should list matching workflows/notifications, not invent a new rule.")
+    if "sandbox" in intents:
+        notes.append("Sandbox coverage is a curated micro-app plus notes and an agent timeline. Do not load arbitrary URLs.")
     if spec is None:
         notes.append("No spec yet. Fetch data first, then evaluate coverage, then compose once.")
     elif missing_types:

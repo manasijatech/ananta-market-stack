@@ -45,12 +45,16 @@ def test_workspace_tools_are_not_on_broker_chat_by_default():
         "compose_surface",
         "patch_surface",
         "workspace_evaluate_request",
+        "workspace_export_a2ui",
+        "workspace_export_agui",
         "workspace_get_authoring_docs",
         "workspace_get_current",
+        "workspace_get_micro_app",
         "workspace_list_preferences",
         "workspace_list_saved_desks",
         "workspace_list_skills",
         "workspace_list_templates",
+        "workspace_validate_a2ui",
         "workspace_validate_spec",
     }
     assert intel_names == {
@@ -155,6 +159,11 @@ def test_adaptive_workspace_routes_are_mounted_under_api_v1():
     assert "/api/v1/adaptive-workspace/alert-studio" in paths
     assert "/api/v1/adaptive-workspace/alert-studio/refresh" in paths
     assert "/api/v1/adaptive-workspace/alert-studio/deploy" in paths
+    assert "/api/v1/adaptive-workspace/interop/a2ui/export" in paths
+    assert "/api/v1/adaptive-workspace/interop/a2ui/import" in paths
+    assert "/api/v1/adaptive-workspace/interop/ag-ui" in paths
+    assert "/api/v1/adaptive-workspace/micro-apps" in paths
+    assert "/api/v1/adaptive-workspace/micro-apps/{app_id}" in paths
 
 
 def test_adaptive_workspace_routes_are_registered_with_testclient_context():

@@ -45,6 +45,10 @@ export function expandedSizeForType(type: string): WorkspacePosition {
         case "workflow-simulation":
         case "approval-card":
             return { h: 7, w: 12, x: 0, y: 0 };
+        case "micro-app":
+        case "agent-timeline":
+        case "notes-block":
+            return { h: 7, w: 12, x: 0, y: 0 };
         case "quote-ticker":
             return { h: 6, w: 12, x: 0, y: 0 };
         default:

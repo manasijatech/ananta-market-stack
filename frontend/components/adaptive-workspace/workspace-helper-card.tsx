@@ -8,6 +8,10 @@ function titleForHelper(name: string) {
     if (name === "workspace_get_authoring_docs") return "Workspace catalog";
     if (name === "workspace_get_current") return "Current desk";
     if (name === "workspace_evaluate_request") return "Request coverage";
+    if (name === "workspace_export_a2ui") return "A2UI export";
+    if (name === "workspace_validate_a2ui") return "A2UI validate";
+    if (name === "workspace_export_agui") return "AG-UI snapshot";
+    if (name === "workspace_get_micro_app") return "Micro-app registry";
     return "Workspace validate";
 }
 

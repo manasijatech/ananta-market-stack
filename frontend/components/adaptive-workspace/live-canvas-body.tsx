@@ -2,9 +2,12 @@
 
 import { LiveAlertDraftWidget } from "@/components/adaptive-workspace/live-alert-draft-widget";
 import { LiveAlertsWidget } from "@/components/adaptive-workspace/live-alerts-widget";
+import { LiveAgentTimelineWidget } from "@/components/adaptive-workspace/live-agent-timeline-widget";
 import { LiveApprovalCardWidget } from "@/components/adaptive-workspace/live-approval-card-widget";
 import { LiveChartWidget } from "@/components/adaptive-workspace/live-chart-widget";
 import { LiveIntelWidget } from "@/components/adaptive-workspace/live-intel-widget";
+import { LiveMicroAppWidget } from "@/components/adaptive-workspace/live-micro-app-widget";
+import { LiveNotesWidget } from "@/components/adaptive-workspace/live-notes-widget";
 import { LiveHealthWidget, LiveHoldingsWidget } from "@/components/adaptive-workspace/live-portfolio-widgets";
 import { LiveQuotesWidget } from "@/components/adaptive-workspace/live-quotes-widget";
 import { LiveWatchlistWidget } from "@/components/adaptive-workspace/live-watchlist-widget";
@@ -53,6 +56,12 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
             );
         case "price-chart":
             return <LiveChartWidget component={component} refreshNonce={refreshNonce} />;
+        case "micro-app":
+            return <LiveMicroAppWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
+        case "notes-block":
+            return <LiveNotesWidget component={component} />;
+        case "agent-timeline":
+            return <LiveAgentTimelineWidget />;
         default:
             return <p className="p-3 text-sm text-muted-foreground">This widget type does not have a live renderer yet.</p>;
     }

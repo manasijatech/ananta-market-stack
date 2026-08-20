@@ -3,6 +3,7 @@ import {
     ALLOWED_ACTIONS,
     ALLOWED_DATA_TOOLS,
     GRID_COLUMNS,
+    MICRO_APP_IDS,
     type WorkspaceSpec,
     type WorkspaceSpecIssue
 } from "@/service/types/adaptive-workspace";
@@ -84,6 +85,16 @@ export function validateWorkspaceSpec(payload: unknown): WorkspaceSpecIssue[] {
             const blocked = Object.keys(params).filter((key) => SECRET_PARAM_KEYS.has(key.toLowerCase()));
             if (blocked.length) {
                 issues.push(issue(`${path}.data.params`, `data params must not include ${blocked.join(", ")}`));
+            }
+        }
+        if (item.type === "micro-app") {
+            const props = isRecord(item.props) ? item.props : {};
+            const appId = typeof props.appId === "string" ? props.appId : typeof props.app_id === "string" ? props.app_id : "";
+            if (!MICRO_APP_IDS.includes(appId as (typeof MICRO_APP_IDS)[number])) {
+                issues.push(issue(`${path}.props.appId`, "micro-app requires props.appId from the curated registry"));
+            }
+            if (item.data != null && isRecord(item.data) && item.data.tool !== "workspace_get_micro_app") {
+                issues.push(issue(`${path}.data.tool`, "micro-app data.tool must be workspace_get_micro_app"));
             }
         }
         if (item.props != null) {

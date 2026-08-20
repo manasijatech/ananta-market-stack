@@ -96,10 +96,16 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 
 ### Phase 5 — Interop, then cut over
 
-- [ ] Optional AG-UI adapter. Do not replace current SSE first.
-- [ ] Optional A2UI renderer after the internal schema is stable.
-- [ ] Sandboxed micro-apps only after the curated registry works.
+- [x] Optional AG-UI adapter. Do not replace current SSE first.
+- [x] Optional A2UI renderer after the internal schema is stable.
+- [x] Sandboxed micro-apps only after the curated registry works.
 - [ ] Cut over: make this route the default Intelligence surface; keep `/broker-chat` as legacy or redirect.
+
+AG-UI is a derived view of existing broker-chat SSE (`token`, `tool_call_*`, `run_*`) plus a `STATE_SNAPSHOT` of the current `WorkspaceSpec`. The inspector Interop tab and `agent-timeline` widget show that mapping. Chat does not switch to an AG-UI transport.
+
+A2UI v0.9 (`createSurface` + `updateComponents`, catalog `ananta-workspace-v1`) is a round-trip of the same spec. Import fails closed through `parse_workspace_spec`. The compose path remains `compose_surface` / `WorkspaceSpec`.
+
+Sandboxed micro-apps are a catalog type (`micro-app`) bound to `workspace_get_micro_app`. Only `payoff-diagram` and `notes-scratch` are registered. The iframe is `sandbox="allow-scripts"` without `allow-same-origin`, with a server-owned `srcDoc` template and `postMessage` limited to `select` / `refresh`. Intelligence default and `/broker-chat` are unchanged so this preview can keep evolving.
 
 ## File map (Phase 0–2)
 
@@ -109,6 +115,7 @@ backend/app/schemas/adaptive_workspace.py
 backend/app/schemas/adaptive_workspace_api.py
 backend/app/services/adaptive_workspace.py
 backend/app/services/adaptive_workspace_alert_studio.py
+backend/app/services/adaptive_workspace_interop.py
 backend/app/agent_tools/workspace_tools.py
 backend/app/agent_tools/alert_studio_tools.py
 backend/app/api/v1/adaptive_workspace.py
@@ -116,6 +123,7 @@ backend/tests/test_adaptive_workspace_spec.py
 backend/tests/test_adaptive_workspace_phase2.py
 backend/tests/test_adaptive_workspace_phase3.py
 backend/tests/test_adaptive_workspace_phase4.py
+backend/tests/test_adaptive_workspace_phase5.py
 frontend/app/(workspace)/adaptive-workspace/page.tsx
 frontend/service/types/adaptive-workspace.ts
 frontend/service/actions/adaptive-workspace.ts
@@ -124,6 +132,9 @@ frontend/lib/adaptive-workspace/catalog.ts
 frontend/lib/adaptive-workspace/layout.ts
 frontend/lib/adaptive-workspace/tool-envelope.ts
 frontend/lib/adaptive-workspace/chat-events.ts
+frontend/lib/adaptive-workspace/ag-ui.ts
+frontend/lib/adaptive-workspace/a2ui.ts
+frontend/lib/adaptive-workspace/micro-apps.ts
 frontend/hooks/use-adaptive-workspace-chat.ts
 frontend/hooks/use-alert-studio.ts
 frontend/components/adaptive-workspace/*
@@ -133,6 +144,8 @@ frontend/components/workspace-shell.tsx   # nav entry only
 Phase 3 adds named saved desks (`adaptive_workspace_saved_desks`), inspectable display preferences (`adaptive_workspace_preferences`), canned templates/skills, and suggestion chips. Applying a template or skill always requires an explicit confirm in the UI. The agent may list templates/skills and compose when the user asks; it must not rearrange because a request was repeated.
 
 Phase 4 activates the reserved studio types (`alert-rule-draft` as a draft summary when `data.tool` is `alert_get_studio`, plus `workflow-graph`, `workflow-simulation`, `approval-card`). Studio payloads come from `GET/POST /adaptive-workspace/alert-studio*` and reuse `alert_workflow_chat_snapshots` (`workflow_payload_json`, `validation_json`, `compile_json`, `explanation_json`, `samples_json`, `diff_json`). `adaptive_workspace_snapshots` stays layout-only. Deploy requires `confirm=true`. Full rule authoring stays on `/alerts-workspace`.
+
+Phase 5 adds AG-UI/A2UI adapters and a curated `micro-app` registry on this same contract. SSE and `WorkspaceSpec` stay authoritative. Cut-over of the Intelligence default is deferred.
 
 `compose_surface`, `patch_surface`, and helper tools (`workspace_get_authoring_docs`, `workspace_get_current`, `workspace_validate_spec`) are attached only when a broker-chat run’s metadata includes `adaptive_workspace: true`. Invalid compose/patch returns `ok: true` with `applied: false` and `validation.errors` so the model can self-correct without a retry loop. The preview page sends that flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
 

@@ -18,6 +18,7 @@ from agents import RunContextWrapper, function_tool
 from app.agent_tools.broker_tools import BrokerAgentContext
 from app.services import adaptive_workspace as workspace_svc
 from app.services import adaptive_workspace_personalization as personalization
+from app.services import adaptive_workspace_interop as interop
 from db.session import SessionLocal
 
 PatchOperation = Literal["replace", "add", "remove", "move", "update", "duplicate", "set_title"]
@@ -331,6 +332,121 @@ def workspace_list_preferences(ctx: RunContextWrapper[BrokerAgentContext]) -> di
     return _tool_call(call)
 
 
+@function_tool(strict_mode=False)
+def workspace_export_a2ui(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """Export the current desk as A2UI v0.9 messages. Does not change the canvas.
+
+    Compose still uses WorkspaceSpec. Convert A2UI with workspace_validate_a2ui
+    before compose_surface. Never emit raw A2UI as the compose path.
+    """
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+        refused = _require_adaptive(context, "workspace_export_a2ui")
+        if refused:
+            return refused
+        spec = _current_spec(context)
+        parsed, validation = workspace_svc.parse_spec_or_error(spec if isinstance(spec, dict) else workspace_svc.workspace_spec_dump(workspace_svc.empty_spec()))
+        if parsed is None:
+            return _ok(valid=False, messages=[], validation=validation, hint=_RETRY_HINT)
+        messages = interop.workspace_spec_to_a2ui(parsed, surface_id=context.session_id or "desk")
+        return _ok(valid=True, messages=messages, catalog_id=interop.A2UI_CATALOG_ID, version=interop.A2UI_VERSION)
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_validate_a2ui(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Dry-run convert A2UI v0.9 messages into a WorkspaceSpec without applying it.
+
+    Always returns ok=true. Check valid and validation.errors. If valid, pass the
+    returned spec to compose_surface. Unknown catalog types are rejected.
+    """
+
+    def call() -> dict[str, Any]:
+        refused = _require_adaptive(_context(ctx), "workspace_validate_a2ui")
+        if refused:
+            return refused
+        parsed, validation = interop.a2ui_to_workspace_spec(messages)
+        if parsed is None:
+            return _ok(valid=False, applied=False, spec=None, validation=validation, hint=_RETRY_HINT)
+        return _ok(valid=True, applied=False, spec=workspace_svc.workspace_spec_dump(parsed), validation=validation)
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_export_agui(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
+    """Export the current desk as an AG-UI STATE_SNAPSHOT.
+
+    Chat still uses existing broker-chat SSE. Token and tool AG-UI events are
+    derived in the inspector from that stream, not from a second protocol.
+    """
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+        refused = _require_adaptive(context, "workspace_export_agui")
+        if refused:
+            return refused
+        spec = _current_spec(context) or workspace_svc.workspace_spec_dump(workspace_svc.empty_spec())
+        events = interop.desk_state_agui(
+            thread_id=context.session_id or "desk",
+            run_id="desk-state",
+            spec=spec if isinstance(spec, dict) else None,
+        )
+        return _ok(events=events, protocol=interop.AGUI_PROTOCOL, note="Full token/tool AG-UI events are derived from existing SSE in the inspector.")
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_get_micro_app(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    app_id: str | None = None,
+    kind: str | None = None,
+    spot: float | None = None,
+    strike: float | None = None,
+    premium: float | None = None,
+    width_pct: float | None = None,
+    text: str | None = None,
+) -> dict[str, Any]:
+    """Return a curated sandboxed micro-app, or list the registry when app_id is omitted.
+
+    Allowed ids: payoff-diagram, notes-scratch. Bind numbers or plain text only.
+    Never pass src, href, HTML, credentials, or order instructions.
+    """
+
+    def call() -> dict[str, Any]:
+        refused = _require_adaptive(_context(ctx), "workspace_get_micro_app")
+        if refused:
+            return refused
+        if not app_id:
+            return _ok(apps=interop.list_micro_apps())
+        try:
+            app = interop.get_micro_app(app_id)
+        except ValueError as exc:
+            return _error(str(exc), code="unknown_micro_app", apps=interop.list_micro_apps())
+        params = {
+            key: value
+            for key, value in {
+                "kind": kind,
+                "spot": spot,
+                "strike": strike,
+                "premium": premium,
+                "width_pct": width_pct,
+                "text": text,
+            }.items()
+            if value is not None
+        }
+        bound = interop.bind_micro_app_payload(app_id, params=params)
+        return _ok(app=app, bind=bound, component_type="micro-app")
+
+    return _tool_call(call)
+
+
 WORKSPACE_TOOLS = [
     workspace_get_authoring_docs,
     workspace_get_current,
@@ -340,6 +456,10 @@ WORKSPACE_TOOLS = [
     workspace_list_skills,
     workspace_list_saved_desks,
     workspace_list_preferences,
+    workspace_export_a2ui,
+    workspace_validate_a2ui,
+    workspace_export_agui,
+    workspace_get_micro_app,
     compose_surface,
     patch_surface,
 ]

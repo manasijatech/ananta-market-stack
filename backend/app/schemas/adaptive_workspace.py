@@ -30,9 +30,16 @@ WorkspaceComponentType = Literal[
     "agent-timeline",
     "approval-card",
     "notes-block",
+    "micro-app",
 ]
 
 ALLOWED_COMPONENT_TYPES: frozenset[str] = frozenset(WorkspaceComponentType.__args__)
+
+MICRO_APP_IDS: frozenset[str] = frozenset({"payoff-diagram", "notes-scratch"})
+MICRO_APP_KINDS: frozenset[str] = frozenset({"call", "put", "straddle"})
+NOTES_TEXT_MAX = 4000
+A2UI_VERSION = "v0.9"
+A2UI_CATALOG_ID = "ananta-workspace-v1"
 
 ALLOWED_DATA_TOOLS: frozenset[str] = frozenset(
     {
@@ -54,6 +61,7 @@ ALLOWED_DATA_TOOLS: frozenset[str] = frozenset(
         "intel_list_alert_workflows",
         "intel_list_alert_notifications",
         "alert_get_studio",
+        "workspace_get_micro_app",
     }
 )
 
@@ -106,6 +114,7 @@ TOOL_COMPONENT_MAP: dict[str, str] = {
     "intel_list_alert_workflows": "alert-rule-draft",
     "intel_list_alert_notifications": "alert-rule-draft",
     "alert_get_studio": "alert-rule-draft",
+    "workspace_get_micro_app": "micro-app",
 }
 
 
@@ -188,6 +197,35 @@ class WorkspaceComponent(BaseModel):
             raise ValueError(f"unsupported actions: {unknown}")
         return value
 
+    @model_validator(mode="after")
+    def catalog_specific_props(self):
+        props = self.props
+        if self.type == "micro-app":
+            app_id = props.get("appId") if isinstance(props.get("appId"), str) else props.get("app_id")
+            if not isinstance(app_id, str) or app_id not in MICRO_APP_IDS:
+                raise ValueError("micro-app requires props.appId from the curated registry")
+            props["appId"] = app_id
+            props.pop("app_id", None)
+            if self.data is not None and self.data.tool != "workspace_get_micro_app":
+                raise ValueError("micro-app data.tool must be workspace_get_micro_app")
+            kind = props.get("kind")
+            if kind is not None and kind not in MICRO_APP_KINDS:
+                raise ValueError("micro-app kind must be call, put, or straddle")
+            for key in ("spot", "strike", "premium", "width_pct"):
+                if key not in props:
+                    continue
+                value = props[key]
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError(f"micro-app {key} must be a number")
+            text = props.get("text")
+            if text is not None and (not isinstance(text, str) or len(text) > NOTES_TEXT_MAX):
+                raise ValueError("micro-app text must be a short string")
+        if self.type == "notes-block":
+            text = props.get("text")
+            if text is not None and (not isinstance(text, str) or len(text) > NOTES_TEXT_MAX):
+                raise ValueError("notes-block text must be a short string")
+        return self
+
 
 class WorkspaceSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -262,6 +300,9 @@ def workspace_authoring_docs() -> dict[str, Any]:
                 "workflow-graph": {"w": 6, "h": 5},
                 "workflow-simulation": {"w": 6, "h": 4},
                 "approval-card": {"w": 6, "h": 4},
+                "micro-app": {"w": 6, "h": 5},
+                "agent-timeline": {"w": 12, "h": 4},
+                "notes-block": {"w": 4, "h": 4},
             },
         },
         "component_types": sorted(ALLOWED_COMPONENT_TYPES),
@@ -270,6 +311,8 @@ def workspace_authoring_docs() -> dict[str, Any]:
         "actions": sorted(ALLOWED_ACTIONS),
         "forbidden_prop_keys": sorted(FORBIDDEN_PROP_KEYS),
         "tool_component_map": dict(TOOL_COMPONENT_MAP),
+        "micro_apps": sorted(MICRO_APP_IDS),
+        "a2ui": {"version": A2UI_VERSION, "catalog_id": A2UI_CATALOG_ID},
         "common_mistakes": {
             "holdings": "holdings-table",
             "portfolio": "holdings-table",
@@ -287,6 +330,10 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "workflow-studio": "workflow-graph",
             "simulation": "workflow-simulation",
             "deploy": "approval-card",
+            "payoff": "micro-app",
+            "sandbox": "micro-app",
+            "timeline": "agent-timeline",
+            "notes": "notes-block",
         },
         "example_spec": {
             "version": "1",
@@ -313,13 +360,16 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "version must be the string '1'.",
             "layout.mode must be grid and layout.columns must be 12.",
             "Use only catalog component types. Unknown types are rejected.",
-            "data.tool must be an allowlisted data tool (broker_*, intel_*, or alert_get_studio). Never include secrets.",
+            "data.tool must be an allowlisted data tool (broker_*, intel_*, alert_get_studio, or workspace_get_micro_app). Never include secrets.",
             "Never emit React, HTML, CSS, className, style, href, src, or script.",
             "Component ids must be unique and match ^[a-z][a-z0-9-]*$.",
             "Do not add extra keys on spec, component, position, layout, or data.",
-            "Templates: investor, trader, researcher, operations. Skills: morning-brief, fno-desk, earnings-week, alert-studio.",
+            "Templates: investor, trader, researcher, operations. Skills: morning-brief, fno-desk, earnings-week, alert-studio, research-sandbox.",
             "Repeated requests may be suggested as a template/skill. Never auto-apply.",
             "Alert studio: alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
+            "Interop: compose_surface still takes WorkspaceSpec. A2UI is an export of that spec. AG-UI is derived from existing SSE.",
+            "micro-app requires props.appId from the curated registry (payoff-diagram, notes-scratch). Never emit src, href, or script.",
+            "notes-block is plain text only. agent-timeline has no data.tool; it shows AG-UI events from this run.",
         ],
     }
 

@@ -27,7 +27,13 @@ def test_templates_and_skills_are_valid_workspace_specs():
     templates = personalization.list_templates()
     skills = personalization.list_skills()
     assert {item["id"] for item in templates} == {"investor", "trader", "researcher", "operations"}
-    assert {item["id"] for item in skills} == {"morning-brief", "fno-desk", "earnings-week", "alert-studio"}
+    assert {item["id"] for item in skills} == {
+        "morning-brief",
+        "fno-desk",
+        "earnings-week",
+        "alert-studio",
+        "research-sandbox",
+    }
     for item in templates + skills:
         assert item["spec"]["version"] == "1"
         assert item["spec"]["layout"]["columns"] == 12

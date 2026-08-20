@@ -45,7 +45,7 @@ def _component(
     y: int,
     w: int,
     h: int,
-    tool: str,
+    tool: str | None = None,
     params: dict[str, Any] | None = None,
     props: dict[str, Any] | None = None,
     actions: list[str] | None = None,
@@ -54,9 +54,10 @@ def _component(
         "id": component_id,
         "type": component_type,
         "position": {"x": x, "y": y, "w": w, "h": h},
-        "data": {"tool": tool, "params": params or {}},
         "actions": actions or ["select", "refresh", "remove", "duplicate"],
     }
+    if tool:
+        item["data"] = {"tool": tool, "params": params or {}}
     if props:
         item["props"] = props
     return item
@@ -243,6 +244,44 @@ DESK_SKILLS: dict[str, dict[str, Any]] = {
             ],
         ),
     },
+    "research-sandbox": {
+        "id": "research-sandbox",
+        "label": "Research sandbox",
+        "description": "Sandboxed payoff toy, notes, and an AG-UI agent timeline.",
+        "spec": _spec(
+            "Research sandbox",
+            [
+                _component(
+                    "payoff",
+                    "micro-app",
+                    x=0,
+                    y=0,
+                    w=7,
+                    h=5,
+                    tool="workspace_get_micro_app",
+                    params={"app_id": "payoff-diagram"},
+                    props={
+                        "appId": "payoff-diagram",
+                        "kind": "straddle",
+                        "spot": 25000,
+                        "strike": 25000,
+                        "premium": 180,
+                        "width_pct": 8,
+                    },
+                ),
+                _component(
+                    "notes",
+                    "notes-block",
+                    x=7,
+                    y=0,
+                    w=5,
+                    h=5,
+                    props={"text": "Sandboxed payoff toy. Numbers only; no orders or credentials."},
+                ),
+                _component("timeline", "agent-timeline", x=0, y=5, w=12, h=4),
+            ],
+        ),
+    },
 }
 
 _SUGGESTION_RECIPES: tuple[tuple[frozenset[str], str, str, str], ...] = (
@@ -293,6 +332,12 @@ _SUGGESTION_RECIPES: tuple[tuple[frozenset[str], str, str, str], ...] = (
         "skill",
         "alert-studio",
         "You keep opening the alert workflow studio. Apply the Alert studio skill?",
+    ),
+    (
+        frozenset({"sandbox"}),
+        "skill",
+        "research-sandbox",
+        "You keep opening a sandboxed research toy. Apply the Research sandbox skill?",
     ),
 )
 

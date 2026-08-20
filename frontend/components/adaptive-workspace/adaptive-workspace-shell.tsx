@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
     IconAlertTriangle,
     IconChevronRight,
@@ -10,6 +10,8 @@ import {
 } from "@tabler/icons-react";
 import { AdaptiveCanvasBoard } from "@/components/adaptive-workspace/canvas-board";
 import { AdaptiveDeskPrefsProvider } from "@/components/adaptive-workspace/desk-prefs";
+import { AdaptiveInteropPanel } from "@/components/adaptive-workspace/interop-panel";
+import { AdaptiveInteropProvider } from "@/components/adaptive-workspace/interop-context";
 import { adaptiveBrokerToolRenderers } from "@/components/adaptive-workspace/broker-tool-renderers";
 import { AdaptiveDeskSwitcher } from "@/components/adaptive-workspace/desk-switcher";
 import { AdaptiveWorkspaceProvider, useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
@@ -20,8 +22,10 @@ import { Card, CardFooter, CardHeader, CardPanel } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAdaptiveWorkspaceChat } from "@/hooks/use-adaptive-workspace-chat";
 import { useAdaptiveWorkspaceLayout } from "@/hooks/use-adaptive-workspace-layout";
+import { brokerEventsToAgui } from "@/lib/adaptive-workspace/ag-ui";
 import { latestSurfaceSpecFromMessages } from "@/lib/adaptive-workspace/spec";
 import { cn } from "@/lib/utils";
 import type { OpenRouterModel } from "@/service/actions/llm-models";
@@ -43,6 +47,7 @@ const STARTER_PROMPTS = [
     "Apply the investor template",
     "Compose a morning brief desk",
     "Open an alert workflow studio on this canvas",
+    "Apply the research sandbox skill",
     "Compose a desk with my holdings and broker health"
 ];
 
@@ -103,8 +108,22 @@ function AdaptiveWorkspaceShellInner({
 
     const selectedLabel = canvas.spec.components.find((item) => item.id === canvas.selectedId)?.type;
     const deskTitle = chat.activeSession?.title ?? canvas.spec.title ?? "Adaptive workspace";
+    const inspectedRun = chat.activeRun ?? chat.runsForActiveSession.at(-1) ?? null;
+    const aguiEvents = useMemo(
+        () =>
+            inspectedRun
+                ? brokerEventsToAgui({
+                      events: chat.eventsByRun[inspectedRun.id] ?? [],
+                      run: inspectedRun,
+                      spec: canvas.spec,
+                      threadId: chat.activeSessionId || inspectedRun.session_id
+                  })
+                : [],
+        [canvas.spec, chat.activeSessionId, chat.eventsByRun, inspectedRun]
+    );
 
     return (
+        <AdaptiveInteropProvider aguiEvents={aguiEvents} runId={inspectedRun?.id ?? null} threadId={chat.activeSessionId || null}>
         <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden min-[980px]:flex-row">
             <Card className="grid min-h-0 min-w-0 flex-1 overflow-hidden grid-rows-[minmax(0,1fr)]">
                 <AdaptiveCanvasBoard
@@ -185,6 +204,18 @@ function AdaptiveWorkspaceShellInner({
                             ) : null}
                         </CardHeader>
                         <CardPanel className="relative min-h-0 overflow-hidden p-0">
+                            <Tabs className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-0" defaultValue="chat">
+                                <div className="border-b border-border px-3 py-2">
+                                    <TabsList className="h-8">
+                                        <TabsTrigger className="h-7 px-2.5 text-xs" value="chat">
+                                            Chat
+                                        </TabsTrigger>
+                                        <TabsTrigger className="h-7 px-2.5 text-xs" value="interop">
+                                            Interop
+                                        </TabsTrigger>
+                                    </TabsList>
+                                </div>
+                                <TabsContent className="min-h-0 overflow-hidden data-[hidden]:hidden" value="chat">
                             {!chat.messages.length ? (
                                 <div className="flex h-full min-h-0 items-center justify-center px-4 py-10 text-center">
                                     <div className="w-full max-w-sm">
@@ -203,6 +234,15 @@ function AdaptiveWorkspaceShellInner({
                                     toolRenderers={adaptiveBrokerToolRenderers}
                                 />
                             )}
+                                </TabsContent>
+                                <TabsContent className="min-h-0 overflow-hidden data-[hidden]:hidden" value="interop">
+                                    <AdaptiveInteropPanel
+                                        events={aguiEvents}
+                                        runId={inspectedRun?.id ?? null}
+                                        threadId={chat.activeSessionId || null}
+                                    />
+                                </TabsContent>
+                            </Tabs>
                         </CardPanel>
                         <CardFooter className="border-t border-border bg-secondary/20 px-3 pb-3 pt-3">
                             <div className="mx-auto w-full">
@@ -314,6 +354,7 @@ function AdaptiveWorkspaceShellInner({
                 </Button>
             )}
         </section>
+        </AdaptiveInteropProvider>
     );
 }
 

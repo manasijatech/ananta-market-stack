@@ -464,6 +464,8 @@ export function useAdaptiveWorkspaceChat({
         setSelectedMcpServerIds,
         setUseMcp,
         stopActiveRun,
-        useMcp
+        useMcp,
+        eventsByRun,
+        runsForActiveSession
     };
 }
