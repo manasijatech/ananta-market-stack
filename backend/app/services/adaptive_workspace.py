@@ -395,6 +395,16 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("announcements", ("announcement", "filings", "disclosure", "corporate action")),
     ("earnings", ("earning", "results day", "quarterly result")),
     ("concalls", ("concall", "conference call", "earnings call")),
+    ("alert_studio", (
+        "workflow studio",
+        "alert studio",
+        "alert workflow studio",
+        "deploy alert",
+        "simulate alert",
+        "workflow graph",
+        "approval card",
+        "alert-studio",
+    )),
     ("alerts", ("alert", "alerts", "notification", "notifications")),
     ("holdings", ("holding", "holdings", "portfolio", "funds")),
     ("chart", ("chart", "historical", "ohlc", "candlestick")),
@@ -408,6 +418,7 @@ _INTENT_TOOLS: dict[str, list[str]] = {
     "announcements": ["intel_get_feed"],
     "earnings": ["intel_get_feed"],
     "concalls": ["intel_get_feed"],
+    "alert_studio": ["alert_get_studio"],
     "alerts": ["intel_list_alert_workflows", "intel_list_alert_notifications"],
     "holdings": ["broker_get_portfolio"],
     "chart": ["broker_get_historical"],
@@ -421,6 +432,7 @@ _INTENT_TYPES: dict[str, str] = {
     "announcements": "intel-feed",
     "earnings": "intel-feed",
     "concalls": "intel-feed",
+    "alert_studio": "alert-rule-draft",
     "alerts": "alert-rule-draft",
     "holdings": "holdings-table",
     "chart": "price-chart",
@@ -481,6 +493,18 @@ def evaluate_request(
         if product and product not in feed_products:
             feed_products.append(product)
 
+    if "alert_studio" in intents:
+        recommended_tools[:] = [
+            tool
+            for tool in recommended_tools
+            if tool not in {"intel_list_alert_workflows", "intel_list_alert_notifications"}
+        ]
+        if "alert_get_studio" not in recommended_tools:
+            recommended_tools.append("alert_get_studio")
+        for component_type in ("alert-rule-draft", "workflow-graph", "workflow-simulation", "approval-card"):
+            if component_type not in recommended_types:
+                recommended_types.append(component_type)
+
     if "watchlist" in intents:
         plan.append("Call broker_list_watchlists, then broker_get_watchlist_symbols on the newest matching list.")
         if last_watchlist:
@@ -489,7 +513,11 @@ def evaluate_request(
         plan.append("Call broker_get_quotes with those symbols so live LTP and change% fill quote-ticker. Cap at 20 symbols.")
     for product in feed_products or (["news"] if "news" in intents else []):
         plan.append(f"Call intel_get_feed with product={product} and the same symbols.")
-    if "alerts" in intents:
+    if "alert_studio" in intents:
+        plan.append(
+            "Call alert_get_studio, then compose alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Deploy only with confirm=true."
+        )
+    elif "alerts" in intents:
         plan.append("Call intel_list_alert_workflows and intel_list_alert_notifications (read-only).")
     if "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")
@@ -528,7 +556,9 @@ def evaluate_request(
             notes.append("News/intel items exist and complement the watchlist universe.")
     if "watchlist" in intents and isinstance(symbol_count, int) and symbol_count <= 0:
         notes.append("Watchlist has no symbols. Do not compose an empty quotes table as if it were the last watchlist.")
-    if "alerts" in intents:
+    if "alert_studio" in intents:
+        notes.append("Studio coverage is draft + graph + simulation + approval-card from alert_get_studio. Deploy only after confirm.")
+    elif "alerts" in intents:
         if isinstance(workflow_count, int) and isinstance(notification_count, int) and workflow_count + notification_count <= 0:
             notes.append("No alert workflows or notifications. Compose alert-rule-draft anyway and say none are deployed.")
         elif isinstance(workflow_count, int) or isinstance(notification_count, int):

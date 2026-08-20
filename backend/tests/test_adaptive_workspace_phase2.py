@@ -152,6 +152,9 @@ def test_adaptive_workspace_routes_are_mounted_under_api_v1():
     assert "/api/v1/adaptive-workspace/desks" in paths
     assert "/api/v1/adaptive-workspace/preferences" in paths
     assert "/api/v1/adaptive-workspace/suggestions" in paths
+    assert "/api/v1/adaptive-workspace/alert-studio" in paths
+    assert "/api/v1/adaptive-workspace/alert-studio/refresh" in paths
+    assert "/api/v1/adaptive-workspace/alert-studio/deploy" in paths
 
 
 def test_adaptive_workspace_routes_are_registered_with_testclient_context():

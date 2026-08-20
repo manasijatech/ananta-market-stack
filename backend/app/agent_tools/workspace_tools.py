@@ -277,7 +277,7 @@ def workspace_list_templates(ctx: RunContextWrapper[BrokerAgentContext]) -> dict
 
 @function_tool(strict_mode=False)
 def workspace_list_skills(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[str, Any]:
-    """List desk skills (morning brief, F&O, earnings week). Suggest only; do not auto-apply."""
+    """List desk skills (morning brief, F&O, earnings week, alert studio). Suggest only; do not auto-apply."""
 
     def call() -> dict[str, Any]:
         refused = _require_adaptive(_context(ctx), "workspace_list_skills")

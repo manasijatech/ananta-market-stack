@@ -91,8 +91,8 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 
 ### Phase 4 — Workflow studio on the same contract
 
-- [ ] Alert draft, graph, validation, simulation, diff, deploy as catalog components on this canvas.
-- [ ] Reuse existing alert snapshot fields. Do not invent a second snapshot system.
+- [x] Alert draft, graph, validation, simulation, diff, deploy as catalog components on this canvas.
+- [x] Reuse existing alert snapshot fields. Do not invent a second snapshot system.
 
 ### Phase 5 — Interop, then cut over
 
@@ -108,10 +108,14 @@ docs/adaptive-workspace.md
 backend/app/schemas/adaptive_workspace.py
 backend/app/schemas/adaptive_workspace_api.py
 backend/app/services/adaptive_workspace.py
+backend/app/services/adaptive_workspace_alert_studio.py
 backend/app/agent_tools/workspace_tools.py
+backend/app/agent_tools/alert_studio_tools.py
 backend/app/api/v1/adaptive_workspace.py
 backend/tests/test_adaptive_workspace_spec.py
 backend/tests/test_adaptive_workspace_phase2.py
+backend/tests/test_adaptive_workspace_phase3.py
+backend/tests/test_adaptive_workspace_phase4.py
 frontend/app/(workspace)/adaptive-workspace/page.tsx
 frontend/service/types/adaptive-workspace.ts
 frontend/service/actions/adaptive-workspace.ts
@@ -121,11 +125,14 @@ frontend/lib/adaptive-workspace/layout.ts
 frontend/lib/adaptive-workspace/tool-envelope.ts
 frontend/lib/adaptive-workspace/chat-events.ts
 frontend/hooks/use-adaptive-workspace-chat.ts
+frontend/hooks/use-alert-studio.ts
 frontend/components/adaptive-workspace/*
 frontend/components/workspace-shell.tsx   # nav entry only
 ```
 
 Phase 3 adds named saved desks (`adaptive_workspace_saved_desks`), inspectable display preferences (`adaptive_workspace_preferences`), canned templates/skills, and suggestion chips. Applying a template or skill always requires an explicit confirm in the UI. The agent may list templates/skills and compose when the user asks; it must not rearrange because a request was repeated.
+
+Phase 4 activates the reserved studio types (`alert-rule-draft` as a draft summary when `data.tool` is `alert_get_studio`, plus `workflow-graph`, `workflow-simulation`, `approval-card`). Studio payloads come from `GET/POST /adaptive-workspace/alert-studio*` and reuse `alert_workflow_chat_snapshots` (`workflow_payload_json`, `validation_json`, `compile_json`, `explanation_json`, `samples_json`, `diff_json`). `adaptive_workspace_snapshots` stays layout-only. Deploy requires `confirm=true`. Full rule authoring stays on `/alerts-workspace`.
 
 `compose_surface`, `patch_surface`, and helper tools (`workspace_get_authoring_docs`, `workspace_get_current`, `workspace_validate_spec`) are attached only when a broker-chat run’s metadata includes `adaptive_workspace: true`. Invalid compose/patch returns `ok: true` with `applied: false` and `validation.errors` so the model can self-correct without a retry loop. The preview page sends that flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
 

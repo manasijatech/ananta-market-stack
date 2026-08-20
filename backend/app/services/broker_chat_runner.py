@@ -12,7 +12,7 @@ from agents.models.chatcmpl_converter import Converter
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
-from app.agent_tools import BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
+from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.services import broker_chat, broker_chat_mcp, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
@@ -141,10 +141,14 @@ Workspace tools:
 Adaptive-only data tools (not on /broker-chat):
 - intel_get_feed(product, symbols): news, announcements, earnings, concalls, or
   alpha alerts from Market Intelligence cache.
-- intel_list_alert_workflows / intel_list_alert_notifications: read-only alerts.
+- intel_list_alert_workflows / intel_list_alert_notifications: read-only alerts inbox.
+- alert_get_studio / alert_refresh_studio / alert_deploy_snapshot: workflow studio.
+  alert_get_studio reuses alert_workflow_chat_snapshots (validation, samples, diff).
+  Never call alert_deploy_snapshot unless the user explicitly confirmed; pass confirm=true.
 
 Preferred component types: holdings-table, quote-ticker, price-chart,
-broker-health, watchlist, intel-feed, alert-rule-draft.
+broker-health, watchlist, intel-feed, alert-rule-draft, workflow-graph,
+workflow-simulation, approval-card.
 Common mistakes that WILL be rejected:
 - holdings / portfolio → holdings-table
 - quotes / quote → quote-ticker
@@ -152,6 +156,9 @@ Common mistakes that WILL be rejected:
 - session-status / health / broker-status → broker-health
 - news / announcements / earnings / concalls → intel-feed + intel_get_feed
 - alerts / notifications → alert-rule-draft + intel_list_alert_*
+- workflow studio / deploy alert / simulate alert → alert-rule-draft +
+  workflow-graph + workflow-simulation + approval-card, all with
+  data.tool=alert_get_studio. Never silent-deploy.
 - watchlist / last watchlist → watchlist + broker_list_watchlists then
   broker_get_watchlist_symbols
 
@@ -161,7 +168,8 @@ WorkspaceSpec rules:
 - data.tool must be allowlisted. Never include secrets.
 - Never emit React, HTML, CSS, className, style, href, src, extra keys, or script.
 - Prefer readable sizes: quotes 6x3, holdings 12x5, charts 8x4, health 4x3,
-  watchlist 4x4, intel-feed 6x5, alerts 6x4.
+  watchlist 4x4, intel-feed 6x5, alerts 6x4, graph 6x5, simulation 6x4,
+  approval 6x4.
 - x + w must be <= 12.
 
 Operating rules:
@@ -536,7 +544,7 @@ async def _run_broker_chat(run_id: str) -> None:
         )
         mcp_handle = await broker_chat_mcp.connect_broker_chat_mcp(db, run, metadata)
         mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle)
-        tools = [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *WORKSPACE_TOOLS] if adaptive_workspace else BROKER_DATA_TOOLS
+        tools = [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS] if adaptive_workspace else BROKER_DATA_TOOLS
         agent = Agent[BrokerAgentContext](
             name="Ananta Market Stack Broker Data Agent",
             instructions=_broker_chat_instructions(

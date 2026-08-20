@@ -7,6 +7,7 @@ import type { AdaptiveWorkspacePreference } from "@/service/types/adaptive-works
 type DeskPrefsContextValue = {
     defaultAccountId: string;
     defaultWatchlistId: string;
+    defaultWorkflowId: string;
     density: "comfortable" | "compact";
     intelProduct: string;
     items: AdaptiveWorkspacePreference[];
@@ -40,6 +41,7 @@ export function AdaptiveDeskPrefsProvider({ children }: { children: ReactNode })
         return {
             defaultAccountId: stringPref(items, "default_account_id"),
             defaultWatchlistId: stringPref(items, "default_watchlist_id"),
+            defaultWorkflowId: stringPref(items, "default_workflow_id"),
             density,
             intelProduct: stringPref(items, "intel_product"),
             items,

@@ -21,6 +21,7 @@ ALLOWED_PREFERENCE_KEYS = frozenset(
         "default_watchlist_id",
         "intel_product",
         "default_account_id",
+        "default_workflow_id",
     }
 )
 INTERNAL_INTENT_COUNTS_KEY = "request_intent_counts"
@@ -47,13 +48,14 @@ def _component(
     tool: str,
     params: dict[str, Any] | None = None,
     props: dict[str, Any] | None = None,
+    actions: list[str] | None = None,
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "id": component_id,
         "type": component_type,
         "position": {"x": x, "y": y, "w": w, "h": h},
         "data": {"tool": tool, "params": params or {}},
-        "actions": ["select", "refresh", "remove", "duplicate"],
+        "actions": actions or ["select", "refresh", "remove", "duplicate"],
     }
     if props:
         item["props"] = props
@@ -218,6 +220,29 @@ DESK_SKILLS: dict[str, dict[str, Any]] = {
             ],
         ),
     },
+    "alert-studio": {
+        "id": "alert-studio",
+        "label": "Alert studio",
+        "description": "Draft, graph, simulation, and confirm-to-deploy for an alert workflow.",
+        "spec": _spec(
+            "Alert studio",
+            [
+                _component("draft", "alert-rule-draft", x=0, y=0, w=6, h=5, tool="alert_get_studio"),
+                _component("graph", "workflow-graph", x=6, y=0, w=6, h=5, tool="alert_get_studio"),
+                _component("simulation", "workflow-simulation", x=0, y=5, w=6, h=4, tool="alert_get_studio"),
+                _component(
+                    "approval",
+                    "approval-card",
+                    x=6,
+                    y=5,
+                    w=6,
+                    h=4,
+                    tool="alert_get_studio",
+                    actions=["select", "refresh", "remove", "duplicate", "deploy-alert"],
+                ),
+            ],
+        ),
+    },
 }
 
 _SUGGESTION_RECIPES: tuple[tuple[frozenset[str], str, str, str], ...] = (
@@ -262,6 +287,12 @@ _SUGGESTION_RECIPES: tuple[tuple[frozenset[str], str, str, str], ...] = (
         "skill",
         "earnings-week",
         "You keep asking about earnings. Apply the Earnings week skill?",
+    ),
+    (
+        frozenset({"alert_studio"}),
+        "skill",
+        "alert-studio",
+        "You keep opening the alert workflow studio. Apply the Alert studio skill?",
     ),
 )
 
@@ -441,7 +472,7 @@ def upsert_preference(db: Session, user_id: str, key: str, value: Any) -> dict[s
     allowed = _PREF_VALUE_LIMITS.get(pref_key)
     if allowed is not None and value not in allowed and value is not None:
         raise ValueError(f"preference {pref_key} must be one of {sorted(allowed)}")
-    if pref_key in {"default_watchlist_id", "default_account_id"} and value is not None:
+    if pref_key in {"default_watchlist_id", "default_account_id", "default_workflow_id"} and value is not None:
         text = str(value).strip()
         if not text:
             value = None

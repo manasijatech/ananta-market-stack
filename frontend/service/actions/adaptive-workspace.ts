@@ -8,6 +8,7 @@ import type {
     AdaptiveWorkspaceSavedDesk,
     AdaptiveWorkspaceSnapshot,
     AdaptiveWorkspaceSuggestion,
+    AdaptiveAlertStudio,
     WorkspaceSpec
 } from "@/service/types/adaptive-workspace";
 
@@ -146,4 +147,30 @@ export async function deleteAdaptiveWorkspacePreference(key: string): Promise<vo
 
 export async function listAdaptiveWorkspaceSuggestions(): Promise<AdaptiveWorkspaceSuggestion[]> {
     return request<AdaptiveWorkspaceSuggestion[]>("/adaptive-workspace/suggestions");
+}
+
+export async function getAdaptiveAlertStudio(params?: {
+    snapshotId?: string;
+    workflowId?: string;
+}): Promise<AdaptiveAlertStudio> {
+    const query = new URLSearchParams();
+    if (params?.workflowId) query.set("workflow_id", params.workflowId);
+    if (params?.snapshotId) query.set("snapshot_id", params.snapshotId);
+    const encoded = query.toString();
+    const suffix = encoded ? `?${encoded}` : "";
+    return request<AdaptiveAlertStudio>(`/adaptive-workspace/alert-studio${suffix}`);
+}
+
+export async function refreshAdaptiveAlertStudio(workflowId?: string): Promise<AdaptiveAlertStudio> {
+    const suffix = workflowId ? `?workflow_id=${encodeURIComponent(workflowId)}` : "";
+    return request<AdaptiveAlertStudio>(`/adaptive-workspace/alert-studio/refresh${suffix}`, {
+        method: "POST"
+    });
+}
+
+export async function deployAdaptiveAlertStudio(snapshotId: string, confirm: boolean): Promise<AdaptiveAlertStudio> {
+    return request<AdaptiveAlertStudio>("/adaptive-workspace/alert-studio/deploy", {
+        body: JSON.stringify({ confirm, snapshot_id: snapshotId }),
+        method: "POST"
+    });
 }

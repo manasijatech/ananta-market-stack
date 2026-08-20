@@ -41,7 +41,8 @@ export const ALLOWED_DATA_TOOLS = [
     "broker_list_accounts",
     "intel_get_feed",
     "intel_list_alert_workflows",
-    "intel_list_alert_notifications"
+    "intel_list_alert_notifications",
+    "alert_get_studio"
 ] as const;
 
 export type AdaptiveDataTool = (typeof ALLOWED_DATA_TOOLS)[number];
@@ -54,7 +55,8 @@ export const ALLOWED_ACTIONS = [
     "open-broker",
     "select",
     "remove",
-    "duplicate"
+    "duplicate",
+    "deploy-alert"
 ] as const;
 
 export type AdaptiveAction = (typeof ALLOWED_ACTIONS)[number];
@@ -74,7 +76,8 @@ export const TOOL_COMPONENT_MAP: Record<string, AdaptiveComponentType> = {
     broker_get_watchlist_symbols: "watchlist",
     intel_get_feed: "intel-feed",
     intel_list_alert_workflows: "alert-rule-draft",
-    intel_list_alert_notifications: "alert-rule-draft"
+    intel_list_alert_notifications: "alert-rule-draft",
+    alert_get_studio: "alert-rule-draft"
 };
 
 export const PHASE1_RENDER_TOOLS = [
@@ -89,7 +92,10 @@ export const PHASE1_RENDER_TOOLS = [
     "broker_get_watchlist_symbols",
     "intel_get_feed",
     "intel_list_alert_workflows",
-    "intel_list_alert_notifications"
+    "intel_list_alert_notifications",
+    "alert_get_studio",
+    "alert_refresh_studio",
+    "alert_deploy_snapshot"
 ] as const;
 
 export const SURFACE_TOOLS = ["compose_surface", "patch_surface"] as const;
@@ -222,4 +228,33 @@ export interface AdaptiveWorkspaceCatalogItem {
     id: string;
     label: string;
     spec: WorkspaceSpec;
+}
+
+export interface AdaptiveAlertStudioWorkflow {
+    id?: string | null;
+    name?: string | null;
+    status?: string | null;
+    symbol?: string | null;
+}
+
+export interface AdaptiveAlertStudio {
+    applied_at?: string | null;
+    compile: Record<string, unknown>;
+    diff: Record<string, unknown>;
+    explanation: Record<string, unknown>;
+    graph_dsl: {
+        edges: Array<{ source?: string; target?: string }>;
+        nodes: Array<{ id?: string; kind?: string; label?: string }>;
+    };
+    name: string;
+    samples: Record<string, unknown>;
+    session_id?: string | null;
+    snapshot_id?: string | null;
+    source: "snapshot" | "workflow" | "empty";
+    status: string;
+    valid: boolean;
+    validation: Record<string, unknown>;
+    workflow_id?: string | null;
+    workflow_payload: Record<string, unknown>;
+    workflows: AdaptiveAlertStudioWorkflow[];
 }

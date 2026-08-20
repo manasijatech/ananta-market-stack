@@ -45,11 +45,13 @@ import {
     putAdaptiveWorkspacePreference,
     saveAdaptiveWorkspaceDesk
 } from "@/service/actions/adaptive-workspace";
+import { getAlertWorkflows } from "@/service/actions/alerts";
 import type {
     AdaptiveWorkspaceCatalogItem,
     AdaptiveWorkspaceSavedDesk,
     AdaptiveWorkspaceSuggestion
 } from "@/service/types/adaptive-workspace";
+import type { AlertWorkflow } from "@/service/types/alerts";
 
 type PendingApply = {
     confirm: string;
@@ -66,6 +68,7 @@ export function AdaptiveDeskPersonalization() {
     const [skills, setSkills] = useState<AdaptiveWorkspaceCatalogItem[]>([]);
     const [desks, setDesks] = useState<AdaptiveWorkspaceSavedDesk[]>([]);
     const [suggestions, setSuggestions] = useState<AdaptiveWorkspaceSuggestion[]>([]);
+    const [workflows, setWorkflows] = useState<AlertWorkflow[]>([]);
     const [saveOpen, setSaveOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [deskName, setDeskName] = useState("");
@@ -74,16 +77,18 @@ export function AdaptiveDeskPersonalization() {
     const [error, setError] = useState<string | null>(null);
 
     const reloadLists = useCallback(async () => {
-        const [nextTemplates, nextSkills, nextDesks, nextSuggestions] = await Promise.allSettled([
+        const [nextTemplates, nextSkills, nextDesks, nextSuggestions, nextWorkflows] = await Promise.allSettled([
             listAdaptiveWorkspaceTemplates(),
             listAdaptiveWorkspaceSkills(),
             listAdaptiveWorkspaceDesks(),
-            listAdaptiveWorkspaceSuggestions()
+            listAdaptiveWorkspaceSuggestions(),
+            getAlertWorkflows()
         ]);
         if (nextTemplates.status === "fulfilled") setTemplates(nextTemplates.value);
         if (nextSkills.status === "fulfilled") setSkills(nextSkills.value);
         if (nextDesks.status === "fulfilled") setDesks(nextDesks.value);
         if (nextSuggestions.status === "fulfilled") setSuggestions(nextSuggestions.value);
+        if (nextWorkflows.status === "fulfilled") setWorkflows(nextWorkflows.value);
     }, []);
 
     useEffect(() => {
@@ -346,6 +351,21 @@ export function AdaptiveDeskPersonalization() {
                                 placeholder="Latest watchlist"
                                 size="sm"
                                 value={prefs.defaultWatchlistId}
+                            />
+                        </div>
+                        <div className="grid gap-1.5">
+                            <Label>Default alert workflow</Label>
+                            <SimpleSelect
+                                onValueChange={(value) =>
+                                    void putAdaptiveWorkspacePreference("default_workflow_id", value).then(() => prefs.reload())
+                                }
+                                options={workflows.map((item) => ({
+                                    label: `${item.name}${item.status ? ` (${item.status})` : ""}`,
+                                    value: item.id
+                                }))}
+                                placeholder="Latest workflow"
+                                size="sm"
+                                value={prefs.defaultWorkflowId}
                             />
                         </div>
                         <div className="grid gap-1.5">

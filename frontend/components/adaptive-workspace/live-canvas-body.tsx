@@ -1,11 +1,15 @@
 "use client";
 
+import { LiveAlertDraftWidget } from "@/components/adaptive-workspace/live-alert-draft-widget";
 import { LiveAlertsWidget } from "@/components/adaptive-workspace/live-alerts-widget";
+import { LiveApprovalCardWidget } from "@/components/adaptive-workspace/live-approval-card-widget";
 import { LiveChartWidget } from "@/components/adaptive-workspace/live-chart-widget";
 import { LiveIntelWidget } from "@/components/adaptive-workspace/live-intel-widget";
 import { LiveHealthWidget, LiveHoldingsWidget } from "@/components/adaptive-workspace/live-portfolio-widgets";
 import { LiveQuotesWidget } from "@/components/adaptive-workspace/live-quotes-widget";
 import { LiveWatchlistWidget } from "@/components/adaptive-workspace/live-watchlist-widget";
+import { LiveWorkflowGraphWidget } from "@/components/adaptive-workspace/live-workflow-graph-widget";
+import { LiveWorkflowSimulationWidget } from "@/components/adaptive-workspace/live-workflow-simulation-widget";
 import { SuppressPin } from "@/components/adaptive-workspace/tool-card-shell";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 
@@ -24,7 +28,16 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
         case "intel-feed":
             return <LiveIntelWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "alert-rule-draft":
+            if (component.data?.tool === "alert_get_studio") {
+                return <LiveAlertDraftWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
+            }
             return <LiveAlertsWidget component={component} refreshNonce={refreshNonce} />;
+        case "workflow-graph":
+            return <LiveWorkflowGraphWidget component={component} refreshNonce={refreshNonce} />;
+        case "workflow-simulation":
+            return <LiveWorkflowSimulationWidget component={component} refreshNonce={refreshNonce} />;
+        case "approval-card":
+            return <LiveApprovalCardWidget component={component} refreshNonce={refreshNonce} />;
         case "holdings-table":
         case "portfolio-summary":
             return (

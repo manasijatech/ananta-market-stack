@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { CustomToolRendererProps } from "@/components/agent-elements/types";
 import { AlertInboxCard } from "@/components/adaptive-workspace/alert-inbox-card";
+import { AlertStudioCard } from "@/components/adaptive-workspace/alert-studio-card";
 import { ComposeSurfaceCard } from "@/components/adaptive-workspace/compose-surface-card";
 import { HoldingsTableCard } from "@/components/adaptive-workspace/holdings-table-card";
 import { IntelFeedCard } from "@/components/adaptive-workspace/intel-feed-card";
@@ -23,6 +24,9 @@ export const adaptiveBrokerToolRenderers: Record<string, ComponentType<CustomToo
     intel_get_feed: IntelFeedCard,
     intel_list_alert_workflows: AlertInboxCard,
     intel_list_alert_notifications: AlertInboxCard,
+    alert_get_studio: AlertStudioCard,
+    alert_refresh_studio: AlertStudioCard,
+    alert_deploy_snapshot: AlertStudioCard,
     compose_surface: ComposeSurfaceCard,
     patch_surface: ComposeSurfaceCard,
     workspace_get_authoring_docs: WorkspaceHelperCard,

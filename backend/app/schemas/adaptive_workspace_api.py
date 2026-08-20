@@ -76,6 +76,30 @@ class AdaptiveWorkspaceApplyIn(BaseModel):
     confirm: bool = True
 
 
+class AdaptiveAlertStudioOut(BaseModel):
+    workflow_id: str | None = None
+    snapshot_id: str | None = None
+    session_id: str | None = None
+    source: Literal["snapshot", "workflow", "empty"] = "empty"
+    name: str = ""
+    status: str = ""
+    workflow_payload: dict[str, Any] = Field(default_factory=dict)
+    graph_dsl: dict[str, Any] = Field(default_factory=dict)
+    validation: dict[str, Any] = Field(default_factory=dict)
+    compile: dict[str, Any] = Field(default_factory=dict)
+    explanation: dict[str, Any] = Field(default_factory=dict)
+    samples: dict[str, Any] = Field(default_factory=dict)
+    diff: dict[str, Any] = Field(default_factory=dict)
+    valid: bool = False
+    applied_at: datetime | None = None
+    workflows: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AdaptiveAlertStudioDeployIn(BaseModel):
+    snapshot_id: str = Field(min_length=1, max_length=64)
+    confirm: bool = False
+
+
 WorkspacePatchOperation = Literal[
     "replace",
     "add",

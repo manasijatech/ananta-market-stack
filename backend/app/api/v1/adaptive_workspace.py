@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.deps import get_current_user
 from app.schemas.adaptive_workspace import WorkspaceSpec
 from app.schemas.adaptive_workspace_api import (
+    AdaptiveAlertStudioDeployIn,
+    AdaptiveAlertStudioOut,
     AdaptiveWorkspaceApplyIn,
     AdaptiveWorkspaceCurrentOut,
     AdaptiveWorkspacePreferenceOut,
@@ -18,6 +20,7 @@ from app.schemas.adaptive_workspace_api import (
     AdaptiveWorkspaceSuggestionOut,
 )
 from app.services import adaptive_workspace as workspace_svc
+from app.services import adaptive_workspace_alert_studio as alert_studio
 from app.services import adaptive_workspace_personalization as personalization
 from db.models import AdaptiveWorkspaceSnapshot, User
 from db.session import get_db
@@ -310,3 +313,40 @@ def list_workspace_suggestions(
     user: User = Depends(get_current_user),
 ) -> list[AdaptiveWorkspaceSuggestionOut]:
     return [AdaptiveWorkspaceSuggestionOut.model_validate(item) for item in personalization.list_suggestions(db, user.id)]
+
+
+@router.get("/alert-studio", response_model=AdaptiveAlertStudioOut)
+def get_alert_studio(
+    workflow_id: str | None = Query(default=None),
+    snapshot_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveAlertStudioOut:
+    try:
+        return alert_studio.get_studio(db, user.id, workflow_id=workflow_id, snapshot_id=snapshot_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/alert-studio/refresh", response_model=AdaptiveAlertStudioOut)
+def refresh_alert_studio(
+    workflow_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveAlertStudioOut:
+    try:
+        return alert_studio.refresh_studio(db, user.id, workflow_id=workflow_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/alert-studio/deploy", response_model=AdaptiveAlertStudioOut)
+def deploy_alert_studio(
+    payload: AdaptiveAlertStudioDeployIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveAlertStudioOut:
+    try:
+        return alert_studio.deploy_studio(db, user.id, payload.snapshot_id, confirm=payload.confirm)
+    except ValueError as exc:
+        raise _http_error(exc) from exc

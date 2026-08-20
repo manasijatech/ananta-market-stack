@@ -53,6 +53,7 @@ ALLOWED_DATA_TOOLS: frozenset[str] = frozenset(
         "intel_get_feed",
         "intel_list_alert_workflows",
         "intel_list_alert_notifications",
+        "alert_get_studio",
     }
 )
 
@@ -66,6 +67,7 @@ ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "select",
         "remove",
         "duplicate",
+        "deploy-alert",
     }
 )
 
@@ -103,6 +105,7 @@ TOOL_COMPONENT_MAP: dict[str, str] = {
     "intel_get_feed": "intel-feed",
     "intel_list_alert_workflows": "alert-rule-draft",
     "intel_list_alert_notifications": "alert-rule-draft",
+    "alert_get_studio": "alert-rule-draft",
 }
 
 
@@ -256,6 +259,9 @@ def workspace_authoring_docs() -> dict[str, Any]:
                 "watchlist": {"w": 4, "h": 4},
                 "intel-feed": {"w": 6, "h": 5},
                 "alert-rule-draft": {"w": 6, "h": 4},
+                "workflow-graph": {"w": 6, "h": 5},
+                "workflow-simulation": {"w": 6, "h": 4},
+                "approval-card": {"w": 6, "h": 4},
             },
         },
         "component_types": sorted(ALLOWED_COMPONENT_TYPES),
@@ -277,6 +283,10 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "announcements": "intel-feed",
             "watchlist": "watchlist",
             "alerts": "alert-rule-draft",
+            "studio": "alert-rule-draft",
+            "workflow-studio": "workflow-graph",
+            "simulation": "workflow-simulation",
+            "deploy": "approval-card",
         },
         "example_spec": {
             "version": "1",
@@ -303,12 +313,13 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "version must be the string '1'.",
             "layout.mode must be grid and layout.columns must be 12.",
             "Use only catalog component types. Unknown types are rejected.",
-            "data.tool must be an allowlisted data tool (broker_* or intel_*). Never include secrets.",
+            "data.tool must be an allowlisted data tool (broker_*, intel_*, or alert_get_studio). Never include secrets.",
             "Never emit React, HTML, CSS, className, style, href, src, or script.",
             "Component ids must be unique and match ^[a-z][a-z0-9-]*$.",
             "Do not add extra keys on spec, component, position, layout, or data.",
-            "Templates: investor, trader, researcher, operations. Skills: morning-brief, fno-desk, earnings-week.",
+            "Templates: investor, trader, researcher, operations. Skills: morning-brief, fno-desk, earnings-week, alert-studio.",
             "Repeated requests may be suggested as a template/skill. Never auto-apply.",
+            "Alert studio: alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
         ],
     }
 

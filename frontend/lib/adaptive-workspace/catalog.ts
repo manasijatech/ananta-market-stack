@@ -43,6 +43,12 @@ export function titleForComponentType(type: string, fallback = "Widget"): string
             return "Market intelligence";
         case "alert-rule-draft":
             return "Alerts";
+        case "workflow-graph":
+            return "Workflow graph";
+        case "workflow-simulation":
+            return "Simulation";
+        case "approval-card":
+            return "Deploy";
         default:
             return fallback;
     }
@@ -67,6 +73,12 @@ export function defaultSizeForType(type: string): WorkspacePosition {
         case "intel-feed":
             return { h: 5, w: 6, x: 0, y: 0 };
         case "alert-rule-draft":
+            return { h: 4, w: 6, x: 0, y: 0 };
+        case "workflow-graph":
+            return { h: 5, w: 6, x: 0, y: 0 };
+        case "workflow-simulation":
+            return { h: 4, w: 6, x: 0, y: 0 };
+        case "approval-card":
             return { h: 4, w: 6, x: 0, y: 0 };
         default:
             return { h: 3, w: 6, x: 0, y: 0 };

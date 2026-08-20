@@ -42,6 +42,7 @@ const STARTER_PROMPTS = [
     "Compose a desk with my last watchlist, its news, live price movements, and alerts",
     "Apply the investor template",
     "Compose a morning brief desk",
+    "Open an alert workflow studio on this canvas",
     "Compose a desk with my holdings and broker health"
 ];
 
