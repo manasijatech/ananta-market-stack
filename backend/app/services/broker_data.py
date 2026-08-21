@@ -807,6 +807,82 @@ def search_instruments(
     )
 
 
+_CASH_EXCHANGES = frozenset({"NSE", "BSE"})
+_BROKER_EXCHANGE_TOKEN_KEYS = (
+    "zerodha_instrument_token",
+    "upstox_instrument_key",
+    "angel_token",
+    "angel_exchange",
+    "arrow_token",
+    "dhan_security_id",
+    "dhan_exchange_segment",
+    "groww_exchange",
+    "groww_segment",
+    "groww_trading_symbol",
+    "groww_symbol",
+    "groww_exchange_token",
+    "indmoney_scrip_code",
+    "kotak_query",
+    "kotak_segment",
+    "kotak_psymbol",
+)
+
+
+def cash_alt_exchange(exchange: str | None) -> str | None:
+    current = str(exchange or "NSE").strip().upper() or "NSE"
+    if current == "NSE":
+        return "BSE"
+    if current == "BSE":
+        return "NSE"
+    return None
+
+
+def retarget_cash_instrument(instrument: dict[str, Any], exchange: str) -> dict[str, Any]:
+    next_item = {key: value for key, value in instrument.items() if key not in _BROKER_EXCHANGE_TOKEN_KEYS}
+    next_item["symbol"] = str(instrument.get("symbol") or "").strip()
+    next_item["exchange"] = exchange
+    return next_item
+
+
+def _quote_ltp_missing(row: QuoteRow) -> bool:
+    if float(row.ltp or 0) > 0:
+        return False
+    detail = row.detail if isinstance(row.detail, dict) else {}
+    raw = detail.get("raw") if isinstance(detail.get("raw"), dict) else detail
+    for key in ("ltp", "last_price", "lastPrice", "lastTradedPrice"):
+        value = raw.get(key) if isinstance(raw, dict) else None
+        try:
+            if value is not None and float(value) > 0:
+                return False
+        except (TypeError, ValueError):
+            continue
+    return True
+
+
+def _quote_row_from_raw(acc: BrokerAccount, row: dict[str, Any]) -> QuoteRow:
+    detail = {key: value for key, value in row.items() if key not in {"symbol", "ltp"}}
+    return QuoteRow(
+        symbol=row.get("symbol"),
+        ltp=float(row.get("ltp") or 0),
+        broker_code=acc.broker_code,
+        account_id=acc.id,
+        detail=detail,
+    )
+
+
+def _historical_payload_empty(payload: dict[str, Any] | None) -> bool:
+    if not isinstance(payload, dict):
+        return True
+    for key in ("candles", "data", "timestamp", "timestamps"):
+        value = payload.get(key)
+        if isinstance(value, list) and value:
+            return False
+    nested = payload.get("data")
+    if isinstance(nested, dict):
+        return _historical_payload_empty(nested)
+    return True
+
+
 def fetch_quotes(
     db: Session,
     acc: BrokerAccount,
@@ -814,17 +890,73 @@ def fetch_quotes(
 ) -> list[QuoteRow]:
     client = _client(db, acc)
     hydrated = hydrate_instruments(db, acc, instruments)
-    rows = client.fetch_quotes(hydrated)
-    return [
-        QuoteRow(
-            symbol=row.get("symbol"),
-            ltp=float(row.get("ltp") or 0),
-            broker_code=acc.broker_code,
-            account_id=acc.id,
-            detail={k: v for k, v in row.items() if k not in {"symbol", "ltp"}},
-        )
-        for row in rows
-    ]
+    rows = [_quote_row_from_raw(acc, row) for row in client.fetch_quotes(hydrated)]
+    return _fill_cash_quote_fallbacks(db, acc, client, hydrated, rows)
+
+
+def _fill_cash_quote_fallbacks(
+    db: Session,
+    acc: BrokerAccount,
+    client: Any,
+    requested: list[dict[str, Any]],
+    rows: list[QuoteRow],
+) -> list[QuoteRow]:
+    by_symbol: dict[str, QuoteRow] = {}
+    for row in rows:
+        symbol = str(row.symbol or "").strip().upper()
+        if symbol and (symbol not in by_symbol or not _quote_ltp_missing(row)):
+            by_symbol[symbol] = row
+
+    retries: list[dict[str, Any]] = []
+    retry_for: dict[str, str] = {}
+    for item in requested:
+        symbol = str(item.get("symbol") or "").strip().upper()
+        if not symbol:
+            continue
+        existing = by_symbol.get(symbol)
+        if existing is not None and not _quote_ltp_missing(existing):
+            continue
+        current_exchange = str(item.get("exchange") or "NSE").strip().upper() or "NSE"
+        if current_exchange not in _CASH_EXCHANGES:
+            continue
+        alt = cash_alt_exchange(current_exchange)
+        if not alt:
+            continue
+        retries.append(retarget_cash_instrument(item, alt))
+        retry_for[symbol] = alt
+
+    if not retries:
+        return list(by_symbol.values()) if by_symbol and len(by_symbol) >= len(rows) else rows
+
+    alt_hydrated = hydrate_instruments(db, acc, retries)
+    for raw in client.fetch_quotes(alt_hydrated):
+        row = _quote_row_from_raw(acc, raw)
+        symbol = str(row.symbol or "").strip().upper()
+        if not symbol or _quote_ltp_missing(row):
+            continue
+        detail = dict(row.detail or {})
+        detail["exchange"] = retry_for.get(symbol) or detail.get("exchange")
+        detail["exchange_fallback"] = retry_for.get(symbol)
+        detail["requested_exchange"] = "NSE" if retry_for.get(symbol) == "BSE" else "BSE"
+        row.detail = detail
+        by_symbol[symbol] = row
+
+    ordered: list[QuoteRow] = []
+    seen: set[str] = set()
+    for item in requested:
+        symbol = str(item.get("symbol") or "").strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        match = by_symbol.get(symbol)
+        if match is not None:
+            ordered.append(match)
+    for row in rows:
+        symbol = str(row.symbol or "").strip().upper()
+        if symbol and symbol not in seen:
+            seen.add(symbol)
+            ordered.append(by_symbol.get(symbol, row))
+    return ordered
 
 
 def hydrate_instruments(
@@ -847,14 +979,66 @@ def fetch_ohlc(
 ) -> list[dict[str, Any]]:
     client = _client(db, acc)
     hydrated = [_hydrate_exact_match(db, acc.broker_code, item) for item in instruments]
-    return client.fetch_ohlc(hydrated)
+    rows = list(client.fetch_ohlc(hydrated) or [])
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if isinstance(row, dict):
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if symbol:
+                by_symbol[symbol] = row
+    retries: list[dict[str, Any]] = []
+    for item in hydrated:
+        symbol = str(item.get("symbol") or "").strip().upper()
+        current_exchange = str(item.get("exchange") or "NSE").strip().upper() or "NSE"
+        if not symbol or current_exchange not in _CASH_EXCHANGES:
+            continue
+        existing = by_symbol.get(symbol)
+        ltp = 0.0
+        if isinstance(existing, dict):
+            try:
+                ltp = float(existing.get("close") or existing.get("ltp") or 0)
+            except (TypeError, ValueError):
+                ltp = 0.0
+        if existing is not None and ltp > 0:
+            continue
+        alt = cash_alt_exchange(current_exchange)
+        if alt:
+            retries.append(retarget_cash_instrument(item, alt))
+    if retries:
+        for row in client.fetch_ohlc(hydrate_instruments(db, acc, retries)) or []:
+            if not isinstance(row, dict):
+                continue
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if symbol:
+                row = dict(row)
+                row["exchange_fallback"] = cash_alt_exchange(
+                    str(next((item.get("exchange") for item in hydrated if str(item.get("symbol") or "").upper() == symbol), "NSE"))
+                )
+                by_symbol[symbol] = row
+        rows = list(by_symbol.values()) or rows
+    return rows
 
 
 def fetch_historical(db: Session, acc: BrokerAccount, payload: dict[str, Any]) -> dict[str, Any]:
     client = _client(db, acc)
     request = dict(payload)
-    request["instrument"] = _hydrate_exact_match(db, acc.broker_code, dict(payload.get("instrument") or {}))
-    return client.fetch_historical(request)
+    instrument = dict(payload.get("instrument") or {})
+    request["instrument"] = _hydrate_exact_match(db, acc.broker_code, instrument)
+    result = client.fetch_historical(request)
+    payload_out = result if isinstance(result, dict) else {}
+    exchange = str(request["instrument"].get("exchange") or "NSE").strip().upper() or "NSE"
+    if _historical_payload_empty(payload_out) and exchange in _CASH_EXCHANGES:
+        alt = cash_alt_exchange(exchange)
+        if alt:
+            retry = dict(request)
+            retry["instrument"] = _hydrate_exact_match(db, acc.broker_code, retarget_cash_instrument(instrument, alt))
+            alt_result = client.fetch_historical(retry)
+            if isinstance(alt_result, dict) and not _historical_payload_empty(alt_result):
+                alt_result = dict(alt_result)
+                alt_result["exchange_fallback"] = alt
+                alt_result["requested_exchange"] = exchange
+                return alt_result
+    return payload_out
 
 
 def fetch_option_chain(db: Session, acc: BrokerAccount, payload: dict[str, Any]) -> dict[str, Any]:

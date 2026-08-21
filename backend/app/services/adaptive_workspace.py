@@ -468,6 +468,16 @@ def detect_workspace_intents(query: str) -> list[str]:
     return found
 
 
+def _spec_covers_type(needed: str, spec_types: list[str]) -> bool:
+    if needed in spec_types:
+        return True
+    if needed in {"quote-ticker", "price-chart"} and "quote-chart" in spec_types:
+        return True
+    if needed == "quote-chart" and {"quote-ticker", "price-chart"}.issubset(set(spec_types)):
+        return True
+    return False
+
+
 def evaluate_request(
     query: str,
     *,
@@ -525,9 +535,17 @@ def evaluate_request(
         if last_watchlist:
             plan.append("Use the first returned watchlist (most recently updated) unless the user named one.")
     if "quotes" in intents:
-        plan.append("Call broker_get_quotes with those symbols so live LTP and change% fill quote-ticker. Cap at 20 symbols.")
+        plan.append(
+            "Call broker_get_quotes. Prefer NSE; if a cash symbol has no LTP, retry BSE in the same call path (the quote layer does this). Cap at 20 symbols."
+        )
     for product in feed_products or (["news"] if "news" in intents else []):
-        plan.append(f"Call intel_get_feed with product={product} and the same symbols.")
+        plan.append(
+            f"Call intel_get_feed with product={product}, the same symbols, and force_refresh=true so Drishti is pulled once and cached."
+        )
+    if len(feed_products) > 1:
+        plan.append(
+            "Compose one intel-feed with props.products covering those products (and props.scope=watchlist or the named symbols). Do not emit one intel widget per company or per product unless the user asked to split them."
+        )
     if "alert_studio" in intents:
         plan.append(
             "Call alert_get_studio, then compose alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Deploy only with confirm=true."
@@ -541,17 +559,24 @@ def evaluate_request(
     if "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")
     if "chart" in intents or longer_horizon:
-        plan.append("Call broker_get_historical on the top 2-3 symbols for multi-day movement, not only session change%.")
+        plan.append("Call broker_get_historical / chart data on the bound symbols. Cash equities fall back NSE→BSE when candles are empty.")
         if "price-chart" not in recommended_types:
             recommended_types.append("price-chart")
         if "broker_get_historical" not in recommended_tools:
             recommended_tools.append("broker_get_historical")
+    if "quotes" in intents and ("chart" in intents or longer_horizon):
+        recommended_types[:] = [item for item in recommended_types if item not in {"quote-ticker", "price-chart"}]
+        if "quote-chart" not in recommended_types:
+            recommended_types.append("quote-chart")
+        plan.append(
+            "Prefer a single quote-chart (quotes table + multi-symbol overlay, props.symbols / hiddenSymbols) instead of separate quote-ticker and price-chart widgets."
+        )
     if "health" in intents:
         plan.append("Call broker_get_session_status for broker-health.")
     plan.append("Call workspace_evaluate_request again with the draft spec and observations before compose_surface.")
     plan.append("compose_surface once with catalog types only. Do not invent types.")
 
-    missing_types = [item for item in recommended_types if item not in spec_types]
+    missing_types = [item for item in recommended_types if not _spec_covers_type(item, spec_types)]
     missing_tools = [item for item in recommended_tools if item not in spec_tools]
     notes: list[str] = []
     quote_count = observed.get("quote_count")
@@ -563,16 +588,16 @@ def evaluate_request(
 
     if "quotes" in intents:
         if isinstance(quote_count, int) and quote_count <= 0:
-            notes.append("Quotes intent is unmet: no quote rows. Live price movements will not show.")
+            notes.append("Quotes intent is unmet: no quote rows. Try BSE fallback then still compose so the gap is visible.")
         elif isinstance(quotes_with_change, int) and quotes_with_change <= 0 and isinstance(quote_count, int) and quote_count > 0:
             notes.append("Quotes landed without change%. Session movements are not actually visible.")
         elif isinstance(quotes_with_change, int) and quotes_with_change > 0:
             notes.append("Session change% is enough for 'live movements'. Historical is only needed for multi-day asks.")
     if any(intent in intents for intent in ("news", "announcements", "earnings", "concalls")):
         if isinstance(news_count, int) and news_count <= 0:
-            notes.append("Intel feed is empty for these symbols. Still compose intel-feed so the gap is visible, and say Alpha cache missed.")
+            notes.append("Intel feed is empty after a fresh Drishti pull. Still compose one intel-feed and say which products missed.")
         elif isinstance(news_count, int) and news_count > 0:
-            notes.append("News/intel items exist and complement the watchlist universe.")
+            notes.append("News/intel items exist. Prefer one combined intel-feed for multiple companies/products.")
     if "watchlist" in intents and isinstance(symbol_count, int) and symbol_count <= 0:
         notes.append("Watchlist has no symbols. Do not compose an empty quotes table as if it were the last watchlist.")
     if "alert_studio" in intents:

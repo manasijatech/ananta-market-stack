@@ -31,6 +31,8 @@ export function titleForComponentType(type: string, fallback = "Widget"): string
     switch (type) {
         case "quote-ticker":
             return "Quotes";
+        case "quote-chart":
+            return "Quotes & chart";
         case "holdings-table":
             return "Portfolio";
         case "price-chart":
@@ -74,6 +76,8 @@ export function defaultSizeForType(type: string): WorkspacePosition {
             return { h: 3, w: 4, x: 0, y: 0 };
         case "quote-ticker":
             return { h: 3, w: 6, x: 0, y: 0 };
+        case "quote-chart":
+            return { h: 7, w: 12, x: 0, y: 0 };
         case "watchlist":
             return { h: 4, w: 4, x: 0, y: 0 };
         case "intel-feed":

@@ -7,6 +7,7 @@ export const ADAPTIVE_COMPONENT_TYPES = [
     "pnl-exposure-strip",
     "price-chart",
     "quote-ticker",
+    "quote-chart",
     "watchlist",
     "market-heatmap",
     "option-chain",

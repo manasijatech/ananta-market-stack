@@ -126,7 +126,8 @@ def test_authoring_docs_list_catalog_and_example_spec():
     assert "broker_get_portfolio" in docs["data_tools"]
     assert "intel_get_feed" in docs["data_tools"]
     assert "watchlist" in docs["preferred_component_types"]
-    assert "intel-feed" in docs["preferred_component_types"]
+    assert "quote-chart" in docs["component_types"]
+    assert "quote-chart" in docs["preferred_component_types"]
 
 
 def test_evaluate_request_covers_watchlist_news_quotes_and_alerts():
@@ -190,6 +191,74 @@ def test_evaluate_request_covers_watchlist_news_quotes_and_alerts():
     assert covered["complements_query"] is True
     assert covered["backtest_lite"]["session_move_ok"] is True
     assert covered["backtest_lite"]["needs_historical"] is False
+
+
+def test_evaluate_request_prefers_combined_quote_chart_for_quotes_and_chart():
+    from app.services.adaptive_workspace import evaluate_request
+
+    planned = evaluate_request("Show live quotes and a price chart for RELIANCE and TCS")
+    assert "quotes" in planned["intents"]
+    assert "chart" in planned["intents"]
+    assert "quote-chart" in planned["recommended_types"]
+    assert "quote-ticker" not in planned["recommended_types"]
+    assert "price-chart" not in planned["recommended_types"]
+
+    combined = evaluate_request(
+        "Show live quotes and a price chart for RELIANCE and TCS",
+        spec={
+            "version": "1",
+            "title": "Combined",
+            "layout": {"mode": "grid", "columns": 12},
+            "components": [
+                {
+                    "id": "market",
+                    "type": "quote-chart",
+                    "position": {"x": 0, "y": 0, "w": 12, "h": 7},
+                    "data": {"tool": "broker_get_quotes", "params": {}},
+                    "props": {"scope": "symbol", "symbols": ["RELIANCE", "TCS"]},
+                }
+            ],
+        },
+        observations={"quote_count": 2, "quotes_with_change_pct": 2},
+    )
+    assert combined["missing_from_spec"] == []
+    assert combined["complements_query"] is True
+
+
+def test_quote_chart_and_combined_intel_products_are_valid():
+    spec = parse_workspace_spec(
+        {
+            "version": "1",
+            "title": "Research desk",
+            "layout": {"mode": "grid", "columns": 12},
+            "components": [
+                {
+                    "id": "market",
+                    "type": "quote-chart",
+                    "position": {"x": 0, "y": 0, "w": 12, "h": 7},
+                    "data": {"tool": "broker_get_quotes", "params": {}},
+                    "props": {
+                        "scope": "symbol",
+                        "symbols": ["RELIANCE", "TCS"],
+                        "hiddenSymbols": ["TCS"],
+                        "showChart": True,
+                        "showQuotes": True,
+                        "historyDays": 90,
+                    },
+                },
+                {
+                    "id": "intel",
+                    "type": "intel-feed",
+                    "position": {"x": 0, "y": 7, "w": 12, "h": 5},
+                    "data": {"tool": "intel_get_feed", "params": {"products": ["news", "concalls"]}},
+                    "props": {"products": ["news", "announcements", "concalls"]},
+                },
+            ],
+        }
+    )
+    assert spec.components[0].type == "quote-chart"
+    assert spec.components[0].props["hiddenSymbols"] == ["TCS"]
+    assert spec.components[1].props["products"] == ["news", "announcements", "concalls"]
 
 
 def test_evaluate_request_flags_empty_quotes_as_not_complementing():

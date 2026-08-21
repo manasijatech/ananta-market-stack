@@ -9,6 +9,7 @@ import { LiveIntelWidget } from "@/components/adaptive-workspace/live-intel-widg
 import { LiveMicroAppWidget } from "@/components/adaptive-workspace/live-micro-app-widget";
 import { LiveNotesWidget } from "@/components/adaptive-workspace/live-notes-widget";
 import { LiveHealthWidget, LiveHoldingsWidget } from "@/components/adaptive-workspace/live-portfolio-widgets";
+import { LiveQuoteChartWidget } from "@/components/adaptive-workspace/live-quote-chart-widget";
 import { LiveQuotesWidget } from "@/components/adaptive-workspace/live-quotes-widget";
 import { LiveWatchlistWidget } from "@/components/adaptive-workspace/live-watchlist-widget";
 import { LiveWorkflowGraphWidget } from "@/components/adaptive-workspace/live-workflow-graph-widget";
@@ -28,6 +29,8 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
             return <LiveWatchlistWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "quote-ticker":
             return <LiveQuotesWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
+        case "quote-chart":
+            return <LiveQuoteChartWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "intel-feed":
             return <LiveIntelWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "alert-rule-draft":

@@ -17,6 +17,7 @@ WorkspaceComponentType = Literal[
     "pnl-exposure-strip",
     "price-chart",
     "quote-ticker",
+    "quote-chart",
     "watchlist",
     "market-heatmap",
     "option-chain",
@@ -38,6 +39,7 @@ ALLOWED_COMPONENT_TYPES: frozenset[str] = frozenset(WorkspaceComponentType.__arg
 MICRO_APP_IDS: frozenset[str] = frozenset({"payoff-diagram", "notes-scratch"})
 MICRO_APP_KINDS: frozenset[str] = frozenset({"call", "put", "straddle"})
 NOTES_TEXT_MAX = 4000
+INTEL_FEED_PRODUCTS: frozenset[str] = frozenset({"news", "announcements", "earnings", "concalls", "alerts"})
 A2UI_VERSION = "v0.9"
 A2UI_CATALOG_ID = "ananta-workspace-v1"
 
@@ -224,6 +226,33 @@ class WorkspaceComponent(BaseModel):
             text = props.get("text")
             if text is not None and (not isinstance(text, str) or len(text) > NOTES_TEXT_MAX):
                 raise ValueError("notes-block text must be a short string")
+        if self.type == "intel-feed":
+            products = props.get("products")
+            if products is not None:
+                if not isinstance(products, list) or not products:
+                    raise ValueError("intel-feed products must be a non-empty list")
+                unknown = [item for item in products if item not in INTEL_FEED_PRODUCTS]
+                if unknown:
+                    raise ValueError(f"intel-feed products must be news, announcements, earnings, concalls, or alerts: {unknown}")
+            product = props.get("product")
+            if product is not None and product not in INTEL_FEED_PRODUCTS:
+                raise ValueError("intel-feed product must be news, announcements, earnings, concalls, or alerts")
+        if self.type in {"quote-ticker", "quote-chart", "price-chart", "intel-feed"}:
+            hidden = props.get("hiddenSymbols") or props.get("hidden_symbols")
+            if hidden is not None:
+                if not isinstance(hidden, list) or any(not isinstance(item, str) for item in hidden):
+                    raise ValueError("hiddenSymbols must be a list of symbol strings")
+                props["hiddenSymbols"] = [str(item).strip().upper() for item in hidden if str(item).strip()]
+                props.pop("hidden_symbols", None)
+        if self.type == "quote-chart":
+            for key in ("showChart", "showQuotes"):
+                value = props.get(key)
+                if value is not None and not isinstance(value, bool):
+                    raise ValueError(f"quote-chart {key} must be a boolean")
+            history_days = props.get("historyDays") or props.get("history_days")
+            if history_days is not None:
+                if isinstance(history_days, bool) or not isinstance(history_days, (int, float)) or history_days < 1:
+                    raise ValueError("quote-chart historyDays must be a positive number")
         return self
 
 
@@ -293,6 +322,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
                 "quote-ticker": {"w": 6, "h": 3},
                 "holdings-table": {"w": 12, "h": 5},
                 "price-chart": {"w": 8, "h": 4},
+                "quote-chart": {"w": 12, "h": 7},
                 "broker-health": {"w": 4, "h": 3},
                 "watchlist": {"w": 4, "h": 4},
                 "intel-feed": {"w": 6, "h": 5},
@@ -306,7 +336,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             },
         },
         "component_types": sorted(ALLOWED_COMPONENT_TYPES),
-        "preferred_component_types": list(preferred) + ["watchlist", "intel-feed", "alert-rule-draft"],
+        "preferred_component_types": list(preferred) + ["quote-chart", "watchlist", "intel-feed", "alert-rule-draft"],
         "data_tools": sorted(ALLOWED_DATA_TOOLS),
         "actions": sorted(ALLOWED_ACTIONS),
         "forbidden_prop_keys": sorted(FORBIDDEN_PROP_KEYS),
@@ -318,6 +348,8 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "portfolio": "holdings-table",
             "quotes": "quote-ticker",
             "quote": "quote-ticker",
+            "quote-chart": "quote-chart",
+            "quotes-and-chart": "quote-chart",
             "chart": "price-chart",
             "session-status": "broker-health",
             "broker-status": "broker-health",
@@ -369,7 +401,11 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Alert studio: alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
             "micro-app requires props.appId from the curated registry (payoff-diagram, notes-scratch). Never emit src, href, or script.",
             "notes-block is plain text only.",
-            "Symbol desks: set props.scope=symbol and props.symbol on quote-ticker, price-chart, intel-feed, and alerts. Watchlist desks: props.scope=watchlist and props.watchlistId.",
+            "Symbol desks: set props.scope=symbol and props.symbol on quote-ticker, price-chart, quote-chart, intel-feed, and alerts. Watchlist desks: props.scope=watchlist and props.watchlistId.",
+            "When the user wants both live quotes and a chart for the same names, prefer one quote-chart (props.symbols, optional hiddenSymbols) instead of a separate quote-ticker plus price-chart.",
+            "When the user asks about several companies' news/announcements/concalls, prefer one intel-feed with props.products=['news','announcements','concalls'] instead of one widget per product or per company.",
+            "quote-chart and price-chart may list multiple symbols. hiddenSymbols hides a series and parks that quotes row at the bottom; it does not delete the binding.",
+            "Cash-equity quotes/charts try NSE first, then BSE when NSE has no LTP/candles. Do not ask the user to pick an exchange for that fallback.",
         ],
     }
 

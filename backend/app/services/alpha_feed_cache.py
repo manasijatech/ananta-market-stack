@@ -503,20 +503,23 @@ def refresh_feed_cache_for_symbols(
     if not normalized:
         return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
 
-    # Single-symbol focus: if nothing is cached yet (REST or prior WS), always hit Drishti.
-    effective_force = force_refresh
-    if len(normalized) == 1 and not force_refresh:
-        symbol = normalized[0]
-        if not _symbol_has_cached_items(db, user_id=user_id, product=product, symbol=symbol):
-            effective_force = True
+    empty_symbols = [
+        symbol
+        for symbol in normalized
+        if not _symbol_has_cached_items(db, user_id=user_id, product=product, symbol=symbol)
+    ]
 
     pending = _symbols_needing_sync(
         db,
         user_id=user_id,
         product=product,
         symbols=normalized,
-        force_refresh=effective_force,
+        force_refresh=force_refresh,
     )
+    if not force_refresh:
+        for symbol in empty_symbols:
+            if symbol not in pending:
+                pending.append(symbol)
     if not pending:
         return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
 
@@ -538,12 +541,13 @@ def refresh_feed_cache_for_symbols(
             user_id=user_id,
             product=product,
             batch=batch,
-            force_refresh=force_refresh,
+            force_refresh=force_refresh or bool(empty_symbols),
         )
         try:
             page = 1
             batch_upserted = 0
-            while page <= _FEED_MAX_DRISHTI_PAGES_PER_BATCH:
+            page_cap = 2 if (force_refresh or bool(empty_symbols)) else _FEED_MAX_DRISHTI_PAGES_PER_BATCH
+            while page <= page_cap:
                 rows = _fetch_product_page(
                     client,
                     product,
@@ -769,6 +773,7 @@ def list_cached_feed_items(
 
     return {
         **result,
+        "from_cache": bool(result.get("from_cache")) and int(refresh_stats.get("upserted") or 0) == 0,
         "synced_symbols": int(refresh_stats.get("refreshed_symbols") or 0),
         "pending_symbols": int(refresh_stats.get("pending_remaining") or 0),
     }

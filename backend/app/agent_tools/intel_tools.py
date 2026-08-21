@@ -90,11 +90,14 @@ def intel_get_feed(
     product: AlphaProduct,
     symbols: list[str],
     limit: int = 20,
+    force_refresh: bool = True,
 ) -> dict[str, Any]:
-    """Read cached Market Intelligence items (news, announcements, earnings, concalls, or alpha alerts).
+    """Read Market Intelligence items (news, announcements, earnings, concalls, or alpha alerts).
 
     Pass watchlist symbols from broker_get_watchlist_symbols. Requires Alpha/Drishti
-    to be configured for this workspace. Does not mutate feeds.
+    to be configured. On Adaptive Workspace compose, keep ``force_refresh=true`` so
+    Drishti is queried once and new rows are cached. Subsequent reads can pass
+    force_refresh=false to reuse the DB cache.
     """
 
     def call() -> dict[str, Any]:
@@ -114,6 +117,7 @@ def intel_get_feed(
                 cleaned,
                 page=1,
                 limit=max(1, min(limit, 50)),
+                force_refresh=force_refresh,
             )
             items = payload.get("data") or []
             summarized = [_summarize_feed_item(item) for item in items[:30] if item]
@@ -124,6 +128,7 @@ def intel_get_feed(
                 items=summarized,
                 total=payload.get("total"),
                 from_cache=payload.get("from_cache"),
+                refreshed=bool(force_refresh or payload.get("synced_symbols")),
                 has_next=payload.get("has_next"),
             )
         except ValueError as exc:
