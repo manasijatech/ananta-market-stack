@@ -8,13 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
-import { parseApiDate } from "@/lib/datetime";
+import { formatIstDateTime, parseApiDate } from "@/lib/datetime";
 import { isRecord, stringFrom } from "@/lib/adaptive-workspace/tool-envelope";
 import {
     resolveWatchlist,
     stringListParam,
     stringParam,
     symbolsFromComponent,
+    uniqueCashSymbols,
     universeSymbols,
     useDeskWatchlists
 } from "@/hooks/use-desk-data";
@@ -83,7 +84,17 @@ function hiddenProductList(component: WorkspaceComponent, allowed: AlphaFeedProd
 }
 
 function headlineFrom(item: Record<string, unknown>): string {
-    return stringFrom(item, ["headline", "specific_title", "title", "summary", "reason"], "Untitled item");
+    const native = stringFrom(item, ["headline", "specific_title", "title"], "");
+    if (native) return native;
+    const company = stringFrom(item, ["company_name"], "");
+    const quarter = stringFrom(item, ["quarter"], "");
+    if (company && quarter) return `${company} ${quarter.replaceAll("_", " ")} earnings`;
+    if (company) return `${company} earnings`;
+    return stringFrom(item, ["summary", "reason"], "Untitled item");
+}
+
+function publishedRaw(item: Record<string, unknown>): string {
+    return stringFrom(item, ["published_at", "publishedAt", "date", "timestamp", "datetime", "announcement_date", "created_at"], "");
 }
 
 function productLabel(product: AlphaFeedProduct): string {
@@ -98,7 +109,7 @@ function joinProductNames(products: AlphaFeedProduct[]): string {
 }
 
 function publishedMs(item: Record<string, unknown>): number {
-    const raw = stringFrom(item, ["published_at", "publishedAt", "timestamp", "date", "created_at"], "");
+    const raw = publishedRaw(item);
     if (!raw) return 0;
     const ms = parseApiDate(raw).getTime();
     return Number.isNaN(ms) ? 0 : ms;
@@ -203,7 +214,7 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
         void loadCombinedFeed(visibleProducts.length ? visibleProducts : products, {
             limit: 20,
             page,
-            symbols,
+            symbols: uniqueCashSymbols(symbols),
             force_refresh: forceRefresh
         })
             .then((result) => {
@@ -234,19 +245,23 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
         return () => {
             cancelled = true;
         };
-    }, [fetchKey, page, productKey, refreshNonce, symbolKey]);
+    }, [fetchKey, page, productKey, refreshNonce, symbolKey, visibleKey]);
 
     useEffect(() => {
         if (!symbols.length) return;
         const handle = window.setInterval(() => {
-            void loadCombinedFeed(visibleProducts.length ? visibleProducts : products, { limit: 20, page: 1, symbols }).then((result) => {
+            void loadCombinedFeed(visibleProducts.length ? visibleProducts : products, {
+                limit: 20,
+                page: 1,
+                symbols: uniqueCashSymbols(symbols)
+            }).then((result) => {
                 setItems((current) => (page === 1 ? result.items : current));
                 setFromCache(result.fromCache);
                 if (page === 1) setEmptyProducts(result.emptyProducts);
             }).catch(() => undefined);
         }, 30_000);
         return () => window.clearInterval(handle);
-    }, [page, productKey, symbolKey]);
+    }, [page, productKey, symbolKey, visibleKey]);
 
     const hiddenSet = useMemo(() => new Set(hiddenProducts), [hiddenKey]);
     const rows = useMemo(
@@ -257,7 +272,7 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
                     headline: headlineFrom(item),
                     id: itemIdentity(item, index),
                     product: item.product,
-                    published: stringFrom(item, ["published_at", "publishedAt"], ""),
+                    published: publishedRaw(item),
                     symbol: stringFrom(item, ["symbol"], "")
                 })),
         [hiddenSet, items]
@@ -268,7 +283,10 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
             return "No product is selected. Click News, Earnings, or another chip to show items.";
         }
         if (items.length && !rows.length) {
-            return "No items match the selected products.";
+            const names = joinProductNames(visibleProducts);
+            return freshPull
+                ? `No ${names} items after a fresh pull for these symbols.`
+                : `No ${names} items for these symbols yet.`;
         }
         const vacant = emptyProducts.length ? emptyProducts : visibleProducts;
         const names = joinProductNames(vacant);
@@ -355,7 +373,11 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
                                         {row.symbol}
                                     </Badge>
                                 ) : null}
-                                {row.published ? <span className="text-[11px] text-muted-foreground">{row.published}</span> : null}
+                                {row.published ? (
+                                    <span className="text-[11px] text-muted-foreground">
+                                        {formatIstDateTime(row.published, row.published)}
+                                    </span>
+                                ) : null}
                             </div>
                             <p className="mt-1 text-sm leading-5">{row.headline}</p>
                         </li>

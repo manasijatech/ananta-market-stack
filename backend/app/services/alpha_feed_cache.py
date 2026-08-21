@@ -28,10 +28,17 @@ _FEED_MAX_REFRESH_BATCHES = 4
 # One REST page per symbol batch — avoids replaying deep history (credit-heavy).
 _FEED_MAX_DRISHTI_PAGES_PER_BATCH = 1
 # Incremental REST backfill window when symbols were synced before.
-_FEED_REFRESH_LOOKBACK_DAYS = 7
+_FEED_REFRESH_LOOKBACK_DAYS = {
+    "news": 14,
+    "announcements": 14,
+    "alerts": 14,
+    "earnings": 180,
+    "concalls": 365,
+}
 # Market-wide websocket rows (N/A) only belong in very large watchlist scopes.
 _FEED_INCLUDE_MARKET_WIDE_MIN_SYMBOLS = 50
 _INVALID_FEED_SYMBOLS = frozenset({"N/A", "NA", "NONE", ""})
+_EXCHANGE_TOKENS = frozenset({"NSE", "BSE", "NFO", "BFO", "MCX", "NCDEX", "CDS", "BSEFO", "NSECM", "BSECM"})
 
 
 def _utc_now() -> datetime:
@@ -51,11 +58,25 @@ def _json_loads(value: str | None, default: Any = None) -> Any:
         return default
 
 
+def _lookback_days(product: str) -> int:
+    return int(_FEED_REFRESH_LOOKBACK_DAYS.get(product, 14))
+
+
+def _cash_equity_symbol(value: str) -> str:
+    """Drishti REST takes NSE/BSE tickers only — drop exchange/segment qualifiers."""
+    item = str(value or "").strip().upper().replace(".NS", "").replace(".BO", "")
+    if not item or item in _INVALID_FEED_SYMBOLS or item in _EXCHANGE_TOKENS:
+        return ""
+    parts = [part for part in item.replace("/", ":").split(":") if part]
+    parts = [part for part in parts if part not in _EXCHANGE_TOKENS]
+    return parts[0] if parts else ""
+
+
 def _normalize_symbols(symbols: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for symbol in symbols:
-        item = str(symbol or "").strip().upper()
+        item = _cash_equity_symbol(str(symbol or ""))
         if not item or item in seen:
             continue
         seen.add(item)
@@ -102,10 +123,7 @@ def _published_at(payload: dict[str, Any], fallback: datetime | None = None) -> 
 
 
 def _normalize_feed_symbol(value: str | None) -> str | None:
-    symbol = (value or "").strip().upper()
-    if not symbol or symbol in _INVALID_FEED_SYMBOLS:
-        return None
-    return symbol.split(",")[0].split(":")[0]
+    return _cash_equity_symbol(value or "") or None
 
 
 def _payload_symbol(payload: dict[str, Any], fallback: str | None = None) -> str | None:
@@ -365,11 +383,20 @@ def _refresh_from_date_for_batch(
     product: str,
     batch: list[str],
     force_refresh: bool,
+    requested_from: str | None = None,
 ) -> str | None:
-    """Narrow Drishti REST `from` to the sync gap instead of the UI's 30-day window."""
+    """Narrow Drishti REST `from` to the sync gap instead of a too-short UI window."""
+    lookback = timedelta(days=_lookback_days(product))
+    floor = _utc_now() - lookback
+    if requested_from:
+        try:
+            requested = datetime.strptime(requested_from[:10], "%Y-%m-%d")
+            if requested < floor:
+                floor = requested
+        except ValueError:
+            pass
     if force_refresh:
-        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
-        return cutoff.strftime("%Y-%m-%d")
+        return floor.strftime("%Y-%m-%d")
 
     rows = db.scalars(
         select(AlphaFeedSymbolSync).where(
@@ -381,8 +408,7 @@ def _refresh_from_date_for_batch(
     sync_by_symbol = {row.symbol: row for row in rows}
     never_synced = [symbol for symbol in batch if sync_by_symbol.get(symbol) is None]
     if never_synced:
-        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
-        return cutoff.strftime("%Y-%m-%d")
+        return floor.strftime("%Y-%m-%d")
 
     synced_times = [
         row.last_synced_at
@@ -390,14 +416,12 @@ def _refresh_from_date_for_batch(
         if row.last_synced_at is not None
     ]
     if not synced_times:
-        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
-        return cutoff.strftime("%Y-%m-%d")
+        return floor.strftime("%Y-%m-%d")
 
     oldest_sync = min(synced_times)
     cutoff = oldest_sync - timedelta(hours=1)
-    max_lookback = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
-    if cutoff < max_lookback:
-        cutoff = max_lookback
+    if cutoff < floor:
+        cutoff = floor
     return cutoff.strftime("%Y-%m-%d")
 
 
@@ -542,6 +566,7 @@ def refresh_feed_cache_for_symbols(
             product=product,
             batch=batch,
             force_refresh=force_refresh or bool(empty_symbols),
+            requested_from=from_date,
         )
         try:
             page = 1
@@ -626,7 +651,7 @@ def _feed_query_filters(
         AlphaFeedItem.product == product,
         symbol_clause,
     ]
-    if from_date:
+    if from_date and product not in {"earnings", "concalls"}:
         try:
             start = datetime.strptime(from_date[:10], "%Y-%m-%d")
             filters.append(or_(AlphaFeedItem.published_at.is_(None), AlphaFeedItem.published_at >= start))

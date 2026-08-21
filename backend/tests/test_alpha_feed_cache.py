@@ -51,6 +51,17 @@ def test_payload_symbol_rejects_na_and_uses_fallback():
     assert _payload_symbol({"symbol": "INFY"}, None) == "INFY"
 
 
+def test_normalize_symbols_strips_exchange_qualifiers():
+    assert alpha_feed_cache._normalize_symbols(["NSE:TCS", "INFY:BSE", "M&M", "NSE"]) == ["TCS", "INFY", "M&M"]
+    assert alpha_feed_cache._cash_equity_symbol("TCS.NS") == "TCS"
+
+
+def test_earnings_lookback_is_wider_than_news():
+    assert alpha_feed_cache._lookback_days("earnings") >= 180
+    assert alpha_feed_cache._lookback_days("concalls") >= 180
+    assert alpha_feed_cache._lookback_days("news") < alpha_feed_cache._lookback_days("earnings")
+
+
 def test_should_include_market_wide_feed_threshold():
     assert alpha_feed_cache._should_include_market_wide_feed(["CIPLA"]) is False
     assert alpha_feed_cache._should_include_market_wide_feed([f"S{i}" for i in range(20)]) is False

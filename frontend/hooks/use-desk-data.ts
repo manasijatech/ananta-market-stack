@@ -22,19 +22,40 @@ export function stringListParam(source: Record<string, unknown> | undefined, key
     for (const key of keys) {
         const value = source[key];
         if (Array.isArray(value)) {
-            return value
-                .map((item) => (typeof item === "string" ? item : isRecord(item) ? String(item.symbol ?? "") : ""))
-                .map((item) => item.trim().toUpperCase())
-                .filter(Boolean);
+            return uniqueCashSymbols(
+                value.map((item) => (typeof item === "string" ? item : isRecord(item) ? String(item.symbol ?? "") : ""))
+            );
         }
         if (typeof value === "string" && value.trim()) {
-            return value
-                .split(",")
-                .map((item) => item.trim().toUpperCase())
-                .filter(Boolean);
+            return uniqueCashSymbols(value.split(","));
         }
     }
     return [];
+}
+
+const EXCHANGE_TOKENS = new Set(["NSE", "BSE", "NFO", "BFO", "MCX", "NCDEX", "CDS", "BSEFO", "NSECM", "BSECM"]);
+
+export function cashEquitySymbol(value: string): string {
+    const item = value.trim().toUpperCase().replace(".NS", "").replace(".BO", "");
+    if (!item || EXCHANGE_TOKENS.has(item)) return "";
+    const parts = item
+        .replaceAll("/", ":")
+        .split(":")
+        .map((part) => part.trim())
+        .filter((part) => part && !EXCHANGE_TOKENS.has(part));
+    return parts[0] ?? "";
+}
+
+export function uniqueCashSymbols(values: string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const value of values) {
+        const symbol = cashEquitySymbol(value);
+        if (!symbol || seen.has(symbol)) continue;
+        seen.add(symbol);
+        out.push(symbol);
+    }
+    return out;
 }
 
 export function useDeskAccounts() {
@@ -101,9 +122,7 @@ export function componentScope(component: WorkspaceComponent): "desk" | "watchli
 }
 
 export function universeSymbols(spec?: { universe?: { symbols?: string[] } } | null): string[] {
-    return Array.from(
-        new Set((spec?.universe?.symbols ?? []).map((item) => String(item).trim().toUpperCase()).filter(Boolean))
-    ).slice(0, 40);
+    return uniqueCashSymbols(spec?.universe?.symbols ?? []).slice(0, 40);
 }
 
 export function symbolsFromComponent(

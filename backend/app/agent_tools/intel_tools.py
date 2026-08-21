@@ -35,6 +35,7 @@ _FEED_KEYS = (
     "source",
     "company_name",
     "reason",
+    "date",
     "quarter",
     "url",
     "product",

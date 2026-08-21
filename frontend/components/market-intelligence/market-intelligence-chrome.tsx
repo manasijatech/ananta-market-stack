@@ -296,8 +296,7 @@ async function loadFeeds(
 			},
 		};
 	}
-	const params = {
-		// Full watchlist; backend refreshes every stale/missing symbol (batched for Drishti).
+	const newsParams = {
 		symbols,
 		from: isoDateDaysAgo(30),
 		to: todayIsoDate(),
@@ -306,13 +305,17 @@ async function loadFeeds(
 		detailed: true,
 		force_refresh: options.forceRefresh,
 	};
+	const earningsParams = {
+		...newsParams,
+		from: isoDateDaysAgo(180),
+	};
 	const [news, announcements, earnings, concalls, alerts] =
 		await Promise.allSettled([
-			getCachedAlphaFeed<AlphaNewsItem>("news", params),
-			getCachedAlphaFeed<AlphaAnnouncementDetail>("announcements", params),
-			getCachedAlphaFeed<AlphaEarningsDetail>("earnings", params),
-			getCachedAlphaFeed<AlphaConcall>("concalls", params),
-			getCachedAlphaFeed<AlphaAlert>("alerts", params),
+			getCachedAlphaFeed<AlphaNewsItem>("news", newsParams),
+			getCachedAlphaFeed<AlphaAnnouncementDetail>("announcements", newsParams),
+			getCachedAlphaFeed<AlphaEarningsDetail>("earnings", earningsParams),
+			getCachedAlphaFeed<AlphaConcall>("concalls", earningsParams),
+			getCachedAlphaFeed<AlphaAlert>("alerts", newsParams),
 		]);
 
 	const creditWarningMessage = getAlphaCreditWarningMessage(
@@ -1192,7 +1195,9 @@ export function MarketIntelligenceChrome({
 										try {
 											const page = await getCachedAlphaFeed(section, {
 												symbols: visibleSymbols,
-												from: isoDateDaysAgo(30),
+												from: isoDateDaysAgo(
+													section === "earnings" || section === "concalls" ? 180 : 30
+												),
 												to: todayIsoDate(),
 												page: nextPage,
 												limit: 20,
