@@ -38,6 +38,29 @@ export function ToolCardShell({
     const sourceLabel =
         provenance?.source === "cached" ? "Cached" : provenance?.source === "model" ? "Model-derived" : provenance?.source === "live" ? "Live" : null;
 
+    const pinEnabled = useContext(PinEnabledContext);
+    const body = (
+        <>
+            {pending ? (
+                <div className="grid gap-2">
+                    <p className="text-xs text-muted-foreground">{pendingLabel}</p>
+                    <Skeleton className="h-7 w-40" />
+                    <Skeleton className="h-16 w-full" />
+                </div>
+            ) : null}
+            {!pending && error ? (
+                <div className="grid gap-2">
+                    <p className={cn("text-sm", "text-destructive")}>{error}</p>
+                    {children}
+                </div>
+            ) : null}
+            {!pending && !error ? children : null}
+        </>
+    );
+    if (!pinEnabled) {
+        return <div className="px-3 py-2">{body}</div>;
+    }
+
     return (
         <Card className="my-2 overflow-hidden border-border/80">
             <CardHeader className="flex flex-row items-start justify-between gap-3 border-b border-border/70 px-3 py-2.5">
@@ -52,22 +75,7 @@ export function ToolCardShell({
                 </div>
                 {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
             </CardHeader>
-            <CardPanel className="px-3 py-3">
-                {pending ? (
-                    <div className="grid gap-2">
-                        <p className="text-xs text-muted-foreground">{pendingLabel}</p>
-                        <Skeleton className="h-7 w-40" />
-                        <Skeleton className="h-16 w-full" />
-                    </div>
-                ) : null}
-                {!pending && error ? (
-                    <div className="grid gap-2">
-                        <p className={cn("text-sm", "text-destructive")}>{error}</p>
-                        {children}
-                    </div>
-                ) : null}
-                {!pending && !error ? children : null}
-            </CardPanel>
+            <CardPanel className="px-3 py-3">{body}</CardPanel>
         </Card>
     );
 }

@@ -12,11 +12,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DeskSymbolEditor } from "@/components/adaptive-workspace/desk-symbol-editor";
+import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import {
     componentScope,
     instrumentForSymbol,
     resolveWatchlist,
     symbolsFromComponent,
+    universeSymbols,
     useDeskAccounts,
     useDeskWatchlists
 } from "@/hooks/use-desk-data";
@@ -131,17 +134,17 @@ export function QuotesMoveTable({
         <Table>
             <TableHeader>
                 <TableRow>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead className="text-right">LTP</TableHead>
-                    <TableHead className="text-right">Change</TableHead>
-                    <TableHead className="text-right">Change %</TableHead>
-                    <TableHead className="w-14 text-right"> </TableHead>
+                    <TableHead className="h-8 py-1">Symbol</TableHead>
+                    <TableHead className="h-8 py-1 text-right">LTP</TableHead>
+                    <TableHead className="h-8 py-1 text-right">Change</TableHead>
+                    <TableHead className="h-8 py-1 text-right">Change %</TableHead>
+                    <TableHead className="h-8 w-14 py-1 text-right"> </TableHead>
                 </TableRow>
             </TableHeader>
             <TableBody>
                 {rows.map((row) => (
                     <TableRow className={cn(row.hidden && "text-muted-foreground")} key={row.symbol}>
-                        <TableCell className={cn("font-semibold", row.hidden && "opacity-60")}>
+                        <TableCell className={cn("py-1.5 font-semibold", row.hidden && "opacity-60")}>
                             <span className="inline-flex items-center gap-1.5">
                                 {row.symbol}
                                 {showExchangeBadge && row.exchange ? (
@@ -171,13 +174,19 @@ export function QuotesMoveTable({
 }
 
 export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
+    const { patchUniverse, spec } = useAdaptiveWorkspace();
+    const deskSymbols = universeSymbols(spec);
     const { account, error: accountError } = useDeskAccounts();
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
+    const bound = symbolsFromComponent(component, watchlist, deskSymbols);
     const instruments = useMemo(
-        () => instrumentsForComponent(component, watchlist, watchlists),
-        [component, watchlist, watchlists]
+        () =>
+            componentScope(component) === "desk"
+                ? bound.map((symbol) => instrumentForSymbol(watchlists, symbol, component) as InstrumentRef)
+                : instrumentsForComponent(component, watchlist, watchlists),
+        [bound, component, watchlist, watchlists]
     );
     const hiddenList = readHiddenSymbols(component);
     const hiddenKey = hiddenList.join("|");
@@ -201,14 +210,17 @@ export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
         [account?.broker_code, account?.id, instruments]
     );
     const live = useLivePrices(demand, `quotes:${component.id}`, account?.user_id);
-    const focusSymbol = symbolsFromComponent(component, watchlist)[0] || "";
+    const focusSymbol = bound[0] || "";
     const tableRows = buildQuoteMoveRows(instruments, rows, live, account, hidden);
 
     return (
         <WidgetState error={error || accountError} loading={listsLoading && !instruments.length} loadingLabel="Loading live quotes">
-            <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
+            <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
                 <WidgetScopeBar
+                    allowDesk
+                    allowMultiSymbol
                     component={component}
+                    extraSymbols={deskSymbols}
                     onPatch={onPatch}
                     selectedWatchlist={watchlist}
                     symbol={focusSymbol}
@@ -219,11 +231,17 @@ export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
                     tone={live.state === "connected" ? "live" : live.state === "error" ? "error" : "cached"}
                 />
             </div>
-            <p className="px-3 pt-2 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name)}</p>
+            {componentScope(component) === "desk" ? (
+                <DeskSymbolEditor onChange={patchUniverse} symbols={deskSymbols} />
+            ) : null}
+            <p className="px-3 pt-1 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name, deskSymbols.length)}</p>
+            <div className="min-h-0 flex-1 overflow-auto">
             <QuotesMoveTable
                 onToggleHidden={(symbol) => onPatch({ hiddenSymbols: toggleHiddenSymbol(hiddenList, symbol) })}
                 rows={tableRows}
+                showExchangeBadge
             />
+            </div>
         </WidgetState>
     );
 }

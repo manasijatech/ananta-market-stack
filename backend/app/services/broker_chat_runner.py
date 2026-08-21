@@ -185,10 +185,11 @@ WorkspaceSpec rules:
   approval 6x4, micro-app 6x5, notes 4x4.
 - x + w must be <= 12.
 - For a named symbol (RELIANCE, TCS, …) set props.scope="symbol" and
-  props.symbol (and data.params.symbol) on quote-ticker, price-chart,
-  quote-chart, intel-feed, and alert-rule-draft. For a whole list use
-  props.scope="watchlist" and props.watchlistId. Never leave a chart without
-  a symbol. quote-chart / price-chart may set props.symbols for overlays.
+  props.symbol. For several named companies, set universe.symbols to those
+  names and props.scope="desk" on quote-chart, intel-feed, and quote-ticker.
+  universe is this desk's private list (max 40). Never write it into the user's
+  Watchlists settings. Only use props.scope="watchlist" and watchlistId when the
+  user named an existing watchlist.
 - hiddenSymbols parks a name at the bottom of the quotes table and hides its
   chart series. Do not drop the symbol from the binding.
 

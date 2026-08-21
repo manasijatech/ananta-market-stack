@@ -256,12 +256,34 @@ class WorkspaceComponent(BaseModel):
         return self
 
 
+class WorkspaceUniverse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbols: list[str] = Field(default_factory=list)
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_symbols(cls, value: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for item in value:
+            symbol = str(item or "").strip().upper()
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            out.append(symbol)
+            if len(out) >= 40:
+                break
+        return out
+
+
 class WorkspaceSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: Literal["1"] = "1"
     title: str = Field(min_length=1, max_length=120)
     layout: WorkspaceLayout = Field(default_factory=WorkspaceLayout)
+    universe: WorkspaceUniverse = Field(default_factory=WorkspaceUniverse)
     components: list[WorkspaceComponent] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -395,13 +417,15 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "data.tool must be an allowlisted data tool (broker_*, intel_*, alert_get_studio, or workspace_get_micro_app). Never include secrets.",
             "Never emit React, HTML, CSS, className, style, href, src, or script.",
             "Component ids must be unique and match ^[a-z][a-z0-9-]*$.",
-            "Do not add extra keys on spec, component, position, layout, or data.",
+            "Do not add extra keys on spec, component, position, layout, or data besides universe.",
+            "universe.symbols is this desk's private symbol list (max 40). It is NOT a user Watchlists setting. Prefer it for multi-name research. Only use props.scope=watchlist plus watchlistId when the user named an existing watchlist.",
+            "Set universe.symbols from broker_search_instruments / MCP / the names in the query, then bind quote-chart and intel-feed with props.scope=desk.",
             "Templates: investor, trader, researcher, operations. Skills: morning-brief, fno-desk, earnings-week, alert-studio, research-sandbox.",
             "Repeated requests may be suggested as a template/skill. Never auto-apply.",
             "Alert studio: alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
             "micro-app requires props.appId from the curated registry (payoff-diagram, notes-scratch). Never emit src, href, or script.",
             "notes-block is plain text only.",
-            "Symbol desks: set props.scope=symbol and props.symbol on quote-ticker, price-chart, quote-chart, intel-feed, and alerts. Watchlist desks: props.scope=watchlist and props.watchlistId.",
+            "Symbol desks: set props.scope=symbol and props.symbol. Named-company desks: set universe.symbols and props.scope=desk on quote-chart / intel-feed / quote-ticker. User watchlists only when asked: props.scope=watchlist and props.watchlistId.",
             "When the user wants both live quotes and a chart for the same names, prefer one quote-chart (props.symbols, optional hiddenSymbols) instead of a separate quote-ticker plus price-chart.",
             "When the user asks about several companies' news/announcements/concalls, prefer one intel-feed with props.products=['news','announcements','concalls'] instead of one widget per product or per company.",
             "quote-chart and price-chart may list multiple symbols. hiddenSymbols hides a series and parks that quotes row at the bottom; it does not delete the binding.",

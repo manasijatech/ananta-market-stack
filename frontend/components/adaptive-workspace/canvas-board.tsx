@@ -53,7 +53,7 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
                     </Button>
                 </div>
             </div>
-            <div className={cn("min-h-0 flex-1 overflow-auto p-4", prefs?.density === "compact" && "[&_td]:py-1 [&_th]:py-1")} ref={boardRef}>
+            <div className={cn("min-h-0 flex-1 overflow-auto bg-background/40 p-3", prefs?.density === "compact" && "[&_td]:py-1 [&_th]:py-1")} ref={boardRef}>
                 {loading ? (
                     <p className="text-sm text-muted-foreground">Restoring saved desk…</p>
                 ) : !spec.components.length ? (

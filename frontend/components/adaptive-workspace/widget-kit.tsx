@@ -35,7 +35,7 @@ export function WidgetState({
 }) {
     if (loading) {
         return (
-            <div className="grid gap-2 p-3">
+            <div className="grid h-full gap-2 p-3">
                 <p className="text-xs text-muted-foreground">{loadingLabel}</p>
                 <Skeleton className="h-6 w-32" />
                 <Skeleton className="h-20 w-full" />
@@ -45,7 +45,7 @@ export function WidgetState({
     if (error) {
         return <p className="p-3 text-sm text-destructive">{error}</p>;
     }
-    return <>{children}</>;
+    return <div className="flex h-full min-h-0 flex-col">{children}</div>;
 }
 
 export function MoveCell({ value, suffix = "" }: { suffix?: string; value: number | null }) {

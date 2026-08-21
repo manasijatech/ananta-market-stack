@@ -148,10 +148,15 @@ export interface WorkspaceComponent {
     type: string;
 }
 
+export interface WorkspaceUniverse {
+    symbols: string[];
+}
+
 export interface WorkspaceSpec {
     components: WorkspaceComponent[];
     layout: WorkspaceLayout;
     title: string;
+    universe?: WorkspaceUniverse;
     version: "1";
 }
 

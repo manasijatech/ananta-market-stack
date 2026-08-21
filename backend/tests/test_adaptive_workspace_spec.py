@@ -261,6 +261,26 @@ def test_quote_chart_and_combined_intel_products_are_valid():
     assert spec.components[1].props["products"] == ["news", "announcements", "concalls"]
 
 
+def test_workspace_universe_is_desk_private():
+    spec = parse_workspace_spec(
+        {
+            "version": "1",
+            "title": "Named names",
+            "layout": {"mode": "grid", "columns": 12},
+            "universe": {"symbols": ["reliance", "TCS", "reliance"]},
+            "components": [
+                {
+                    "id": "market",
+                    "type": "quote-chart",
+                    "position": {"x": 0, "y": 0, "w": 12, "h": 7},
+                    "props": {"scope": "desk"},
+                }
+            ],
+        }
+    )
+    assert spec.universe.symbols == ["RELIANCE", "TCS"]
+
+
 def test_evaluate_request_flags_empty_quotes_as_not_complementing():
     from app.services.adaptive_workspace import evaluate_request
 

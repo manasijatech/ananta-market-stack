@@ -101,8 +101,8 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
     return (
         <article
             className={cn(
-                "group relative z-0 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card",
-                selected ? "z-10 border-primary shadow-sm" : "border-border"
+                "group relative z-0 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border/40 bg-card/70",
+                selected ? "z-10 border-primary/70" : ""
             )}
             onClick={() => select(component.id)}
             style={{
@@ -110,7 +110,7 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                 gridRow: `${position.y + 1} / span ${position.h}`
             }}
         >
-            <header className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+            <header className="flex items-center gap-1 border-b border-border/40 px-2 py-1">
                 <button
                     aria-label="Drag widget"
                     className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary"
@@ -155,7 +155,7 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                     <IconTrash className="size-3.5" stroke={1.8} />
                 </Button>
             </header>
-            <div className="min-h-0 flex-1 overflow-auto">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <LiveCanvasBody
                     component={component}
                     onPatch={(props) => patchComponent(component.id, { props })}

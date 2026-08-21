@@ -50,6 +50,13 @@ export function validateWorkspaceSpec(payload: unknown): WorkspaceSpecIssue[] {
         issues.push(issue("components", "components must be an array"));
         return issues;
     }
+    if (payload.universe != null) {
+        if (!isRecord(payload.universe) || !Array.isArray(payload.universe.symbols)) {
+            issues.push(issue("universe", "universe.symbols must be a list of symbols"));
+        } else if (payload.universe.symbols.some((item) => typeof item !== "string")) {
+            issues.push(issue("universe.symbols", "universe.symbols must be strings"));
+        }
+    }
     const ids = new Set<string>();
     payload.components.forEach((item, index) => {
         const path = `components.${index}`;
@@ -128,7 +135,11 @@ export function parseWorkspaceSpec(payload: unknown): WorkspaceSpec | null {
     if (validateWorkspaceSpec(payload).length) {
         return null;
     }
-    return payload as WorkspaceSpec;
+    const spec = payload as WorkspaceSpec;
+    const symbols = Array.from(
+        new Set((spec.universe?.symbols ?? []).map((item) => item.trim().toUpperCase()).filter(Boolean))
+    ).slice(0, 40);
+    return { ...spec, universe: { symbols } };
 }
 
 export function emptyWorkspaceSpec(title = "Untitled desk"): WorkspaceSpec {
@@ -136,6 +147,7 @@ export function emptyWorkspaceSpec(title = "Untitled desk"): WorkspaceSpec {
         components: [],
         layout: { columns: 12, mode: "grid" },
         title,
+        universe: { symbols: [] },
         version: "1"
     };
 }

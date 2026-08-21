@@ -389,7 +389,7 @@ def persist_spec(
 
 
 _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("watchlist", ("watchlist", "watchlists", "universe")),
+    ("watchlist", ("watchlist", "watchlists")),
     ("quotes", ("quote", "quotes", "ltp", "live price", "price movement", "price movements", "live prices")),
     ("news", ("news", "headline", "headlines")),
     ("announcements", ("announcement", "filings", "disclosure", "corporate action")),
@@ -531,9 +531,20 @@ def evaluate_request(
                 recommended_types.append(component_type)
 
     if "watchlist" in intents:
-        plan.append("Call broker_list_watchlists, then broker_get_watchlist_symbols on the newest matching list.")
-        if last_watchlist:
-            plan.append("Use the first returned watchlist (most recently updated) unless the user named one.")
+        desk_private = any(
+            token in text
+            for token in ("desk list", "private symbol", "not my user watchlist", "not my watchlist", "universe.symbols")
+        )
+        if desk_private:
+            recommended_types[:] = [item for item in recommended_types if item != "watchlist"]
+            recommended_tools[:] = [
+                tool for tool in recommended_tools if tool not in {"broker_list_watchlists", "broker_get_watchlist_symbols"}
+            ]
+            plan.append("Do not bind a user Watchlist. Put named companies on universe.symbols and props.scope=desk.")
+        else:
+            plan.append("Call broker_list_watchlists, then broker_get_watchlist_symbols on the newest matching list.")
+            if last_watchlist:
+                plan.append("Use the first returned watchlist (most recently updated) unless the user named one.")
     if "quotes" in intents:
         plan.append(
             "Call broker_get_quotes. Prefer NSE; if a cash symbol has no LTP, retry BSE in the same call path (the quote layer does this). Cap at 20 symbols."
@@ -569,7 +580,7 @@ def evaluate_request(
         if "quote-chart" not in recommended_types:
             recommended_types.append("quote-chart")
         plan.append(
-            "Prefer a single quote-chart (quotes table + multi-symbol overlay, props.symbols / hiddenSymbols) instead of separate quote-ticker and price-chart widgets."
+            "Set universe.symbols to the named companies (desk-private, not a user watchlist). Prefer one quote-chart with props.scope=desk instead of separate quote-ticker and price-chart widgets."
         )
     if "health" in intents:
         plan.append("Call broker_get_session_status for broker-health.")
@@ -577,6 +588,8 @@ def evaluate_request(
     plan.append("compose_surface once with catalog types only. Do not invent types.")
 
     missing_types = [item for item in recommended_types if not _spec_covers_type(item, spec_types)]
+    if parsed is not None and parsed.universe.symbols:
+        missing_types = [item for item in missing_types if item != "watchlist"]
     missing_tools = [item for item in recommended_tools if item not in spec_tools]
     notes: list[str] = []
     quote_count = observed.get("quote_count")

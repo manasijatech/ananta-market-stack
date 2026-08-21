@@ -19,9 +19,11 @@ import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 import type { Watchlist } from "@/service/types/watchlist";
 
 type Props = {
+    allowDesk?: boolean;
     allowMultiSymbol?: boolean;
     allowWatchlist?: boolean;
     component: WorkspaceComponent;
+    extraSymbols?: string[];
     onPatch: (props: Record<string, unknown>) => void;
     selectedWatchlist: Watchlist | null;
     symbol: string;
@@ -62,16 +64,23 @@ export function withHiddenAtBottom<T>(
 }
 
 export function WidgetScopeBar({
+    allowDesk = true,
     allowMultiSymbol = false,
     allowWatchlist = true,
     component,
+    extraSymbols = [],
     onPatch,
     selectedWatchlist,
     symbol,
     watchlists
 }: Props) {
-    const scope = allowWatchlist ? componentScope(component) : "symbol";
+    const scope = componentScope(component);
+    const effectiveScope = !allowWatchlist && scope === "watchlist" ? "symbol" : scope;
     const symbols = uniqueWatchlistSymbols(watchlists);
+    for (const value of extraSymbols) {
+        const next = value.trim().toUpperCase();
+        if (next && !symbols.some((item) => item.value === next)) symbols.unshift({ label: next, value: next });
+    }
     const current = symbol.toUpperCase();
     const selected = Array.from(
         new Set(explicitSymbols(component).map((item) => item.toUpperCase()).filter(Boolean))
@@ -104,7 +113,7 @@ export function WidgetScopeBar({
 
     return (
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            {allowWatchlist ? (
+            {allowWatchlist || allowDesk ? (
                 <SimpleSelect
                     aria-label="Widget scope"
                     className="h-7 w-[7.25rem]"
@@ -116,6 +125,10 @@ export function WidgetScopeBar({
                                 symbols: [],
                                 watchlistId: selectedWatchlist?.id ?? ""
                             });
+                            return;
+                        }
+                        if (next === "desk") {
+                            onPatch({ scope: "desk", symbol: "", symbols: [], watchlistId: "" });
                             return;
                         }
                         const initial = selected.length
@@ -130,14 +143,15 @@ export function WidgetScopeBar({
                         });
                     }}
                     options={[
-                        { label: "Watchlist", value: "watchlist" },
+                        ...(allowDesk ? [{ label: "Desk list", value: "desk" }] : []),
+                        ...(allowWatchlist ? [{ label: "Watchlist", value: "watchlist" }] : []),
                         { label: "Symbol", value: "symbol" }
                     ]}
                     size="sm"
-                    value={scope}
+                    value={effectiveScope === "watchlist" && !allowWatchlist ? "symbol" : effectiveScope}
                 />
             ) : null}
-            {scope === "watchlist" && allowWatchlist ? (
+            {effectiveScope === "watchlist" && allowWatchlist ? (
                 <SimpleSelect
                     aria-label="Watchlist"
                     className="h-7 min-w-0 flex-1"
@@ -147,6 +161,8 @@ export function WidgetScopeBar({
                     size="sm"
                     value={selectedWatchlist?.id ?? ""}
                 />
+            ) : effectiveScope === "desk" ? (
+                <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">Desk symbols</p>
             ) : allowMultiSymbol ? (
                 <DropdownMenu>
                     <DropdownMenuTrigger
@@ -191,11 +207,15 @@ export function WidgetScopeBar({
     );
 }
 
-export function scopeHint(component: WorkspaceComponent, watchlistName?: string | null) {
+export function scopeHint(component: WorkspaceComponent, watchlistName?: string | null, deskCount = 0) {
     const symbols = explicitSymbols(component);
-    if (componentScope(component) === "symbol") {
+    const scope = componentScope(component);
+    if (scope === "symbol") {
         const primary = stringParam(component.props, ["symbol"]) || symbols[0] || "Symbol";
         return symbols.length > 1 ? `${primary} +${symbols.length - 1}` : primary;
+    }
+    if (scope === "desk") {
+        return deskCount ? `Desk list · ${deskCount}` : "Desk list";
     }
     return watchlistName || (symbols.length ? `${symbols.length} symbols` : "Watchlist");
 }

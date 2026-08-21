@@ -50,6 +50,7 @@ type AdaptiveWorkspaceContextValue = {
     pinEnabled: boolean;
     pins: PinnedWorkspaceItem[];
     patchComponent: (id: string, patch: { position?: WorkspacePosition; props?: Record<string, unknown> }) => void;
+    patchUniverse: (symbols: string[]) => void;
     remove: (id: string) => void;
     select: (id: string | null) => void;
     selectedId: string | null;
@@ -308,6 +309,23 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
         [persist]
     );
 
+    const patchUniverse = useCallback(
+        (symbols: string[]) => {
+            setSpec((current) => {
+                const nextSymbols = Array.from(
+                    new Set(symbols.map((item) => item.trim().toUpperCase()).filter(Boolean))
+                ).slice(0, 40);
+                const next = cloneWorkspaceSpec(current);
+                next.universe = { symbols: nextSymbols };
+                if (workspaceSpecsEqual(current, next)) return current;
+                setHistory((historyItems) => [cloneWorkspaceSpec(current), ...historyItems].slice(0, HISTORY_LIMIT));
+                persist(next, "Update desk symbols");
+                return next;
+            });
+        },
+        [persist]
+    );
+
     const undo = useCallback(() => {
         setHistory((currentHistory) => {
             const [previous, ...rest] = currentHistory;
@@ -349,6 +367,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             pinEnabled: true,
             pins,
             patchComponent,
+            patchUniverse,
             remove,
             select,
             selectedId,
@@ -369,6 +388,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             pin,
             pins,
             patchComponent,
+            patchUniverse,
             remove,
             select,
             selectedId,

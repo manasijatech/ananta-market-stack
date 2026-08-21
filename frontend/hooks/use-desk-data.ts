@@ -88,17 +88,38 @@ export function useDeskWatchlists() {
     return { error, loading, reload, watchlists };
 }
 
-export function componentScope(component: WorkspaceComponent): "watchlist" | "symbol" {
+export function componentScope(component: WorkspaceComponent): "desk" | "watchlist" | "symbol" {
     const declared = stringParam(component.props, ["scope"]) || stringParam(component.data?.params, ["scope"]);
-    if (declared === "symbol" || declared === "watchlist") return declared;
+    if (declared === "symbol" || declared === "watchlist" || declared === "desk") return declared;
     const symbol = stringParam(component.props, ["symbol"]) || stringParam(component.data?.params, ["symbol"]);
     const symbols = stringListParam(component.props, ["symbols"]).concat(
         stringListParam(component.data?.params, ["symbols", "instruments"])
     );
-    if (symbol || (symbols.length > 0 && symbols.length <= 3 && !stringParam(component.props, ["watchlistId", "watchlist_id"]))) {
-        return "symbol";
+    if (stringParam(component.props, ["watchlistId", "watchlist_id"])) return "watchlist";
+    if (symbol || (symbols.length > 0 && symbols.length <= 3)) return "symbol";
+    return "desk";
+}
+
+export function universeSymbols(spec?: { universe?: { symbols?: string[] } } | null): string[] {
+    return Array.from(
+        new Set((spec?.universe?.symbols ?? []).map((item) => String(item).trim().toUpperCase()).filter(Boolean))
+    ).slice(0, 40);
+}
+
+export function symbolsFromComponent(
+    component: WorkspaceComponent,
+    watchlist: Watchlist | null,
+    deskSymbols: string[] = []
+): string[] {
+    const explicit = explicitSymbols(component);
+    const scope = componentScope(component);
+    if (scope === "symbol" && explicit.length) return explicit;
+    if (scope === "desk") return deskSymbols.length ? deskSymbols : explicit;
+    if (explicit.length && scope !== "watchlist") return Array.from(new Set(explicit));
+    if (scope === "watchlist") {
+        return watchlist?.items.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean) ?? watchlist?.symbols ?? [];
     }
-    return "watchlist";
+    return deskSymbols.length ? deskSymbols : explicit;
 }
 
 export function explicitSymbols(component: WorkspaceComponent): string[] {
@@ -175,13 +196,6 @@ export function resolveWatchlist(
         );
     }
     return [...watchlists].sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0] ?? null;
-}
-
-export function symbolsFromComponent(component: WorkspaceComponent, watchlist: Watchlist | null): string[] {
-    const explicit = explicitSymbols(component);
-    if (explicit.length && componentScope(component) === "symbol") return explicit;
-    if (explicit.length) return Array.from(new Set(explicit));
-    return watchlist?.items.map((item) => item.symbol.trim().toUpperCase()).filter(Boolean) ?? watchlist?.symbols ?? [];
 }
 
 export function useRefreshNonce() {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import { WidgetScopeBar, scopeHint } from "@/components/adaptive-workspace/widget-scope-bar";
+import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SimpleSelect } from "@/components/ui/simple-select";
@@ -14,6 +15,7 @@ import {
     stringListParam,
     stringParam,
     symbolsFromComponent,
+    universeSymbols,
     useDeskWatchlists
 } from "@/hooks/use-desk-data";
 import { getCachedAlphaFeed, type AlphaFeedProduct } from "@/service/actions/alpha/feeds";
@@ -147,10 +149,12 @@ async function loadCombinedFeed(
 }
 
 export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
+    const { spec } = useAdaptiveWorkspace();
+    const deskSymbols = universeSymbols(spec);
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
-    const symbols = symbolsFromComponent(component, watchlist);
+    const symbols = symbolsFromComponent(component, watchlist, deskSymbols);
     const products = resolveProducts(component, prefs?.intelProduct);
     const hiddenProducts = hiddenProductList(component, products);
     const combined = products.length > 1;
@@ -167,15 +171,17 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
     const symbolKey = symbols.join(",");
     const productKey = products.join(",");
     const hiddenKey = hiddenProducts.join(",");
+    const visibleProducts = products.filter((item) => !hiddenProducts.includes(item));
+    const visibleKey = visibleProducts.join(",");
     const didFreshLoad = useRef(false);
     const lastFetchKey = useRef("");
-    const fetchKey = `${productKey}|${symbolKey}`;
+    const fetchKey = `${visibleKey || productKey}|${symbolKey}`;
 
     useEffect(() => {
         setPage(1);
         setItems([]);
         setEmptyProducts([]);
-    }, [productKey, symbolKey, refreshNonce]);
+    }, [productKey, symbolKey, visibleKey, refreshNonce]);
 
     useEffect(() => {
         if (!symbols.length) {
@@ -194,7 +200,12 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
         const forceRefresh = firstPage && (refreshNonce > 0 || !didFreshLoad.current);
         if (firstPage) setLoading(true);
         else setLoadingMore(true);
-        void loadCombinedFeed(products, { limit: 20, page, symbols, force_refresh: forceRefresh })
+        void loadCombinedFeed(visibleProducts.length ? visibleProducts : products, {
+            limit: 20,
+            page,
+            symbols,
+            force_refresh: forceRefresh
+        })
             .then((result) => {
                 if (cancelled) return;
                 if (firstPage) didFreshLoad.current = true;
@@ -228,7 +239,7 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
     useEffect(() => {
         if (!symbols.length) return;
         const handle = window.setInterval(() => {
-            void loadCombinedFeed(products, { limit: 20, page: 1, symbols }).then((result) => {
+            void loadCombinedFeed(visibleProducts.length ? visibleProducts : products, { limit: 20, page: 1, symbols }).then((result) => {
                 setItems((current) => (page === 1 ? result.items : current));
                 setFromCache(result.fromCache);
                 if (page === 1) setEmptyProducts(result.emptyProducts);
@@ -253,10 +264,13 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
     );
 
     const emptyMessage = (() => {
-        if (items.length && !rows.length) {
-            return "All items are hidden by the product filter.";
+        if (!visibleProducts.length) {
+            return "No product is selected. Click News, Earnings, or another chip to show items.";
         }
-        const vacant = emptyProducts.length ? emptyProducts : products;
+        if (items.length && !rows.length) {
+            return "No items match the selected products.";
+        }
+        const vacant = emptyProducts.length ? emptyProducts : visibleProducts;
         const names = joinProductNames(vacant);
         if (freshPull) {
             return `No ${names} items after a fresh pull for these symbols.`;
@@ -265,10 +279,13 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
     })();
 
     const toggleHidden = (nextProduct: AlphaFeedProduct) => {
-        const next = hiddenSet.has(nextProduct)
-            ? hiddenProducts.filter((item) => item !== nextProduct)
-            : [...hiddenProducts, nextProduct];
-        onPatch({ hiddenProducts: next });
+        const isolating =
+            visibleProducts.length === 1 && visibleProducts[0] === nextProduct && hiddenProducts.length > 0;
+        if (isolating) {
+            onPatch({ hiddenProducts: [] });
+            return;
+        }
+        onPatch({ hiddenProducts: products.filter((item) => item !== nextProduct) });
     };
 
     return (
@@ -288,13 +305,18 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
                     />
                 )}
                 <WidgetScopeBar
+                    allowDesk
                     component={component}
+                    extraSymbols={deskSymbols}
                     onPatch={onPatch}
                     selectedWatchlist={watchlist}
                     symbol={symbols[0] || ""}
                     watchlists={watchlists}
                 />
-                <LiveStatusBadge label={fromCache ? "Cached" : "Feed"} tone={fromCache ? "cached" : "live"} />
+                <LiveStatusBadge
+                    label={fromCache ? "Cached" : freshPull ? "Fresh" : "Feed"}
+                    tone={fromCache ? "cached" : "live"}
+                />
             </div>
             {combined ? (
                 <div className="flex flex-wrap gap-1 border-b border-border/70 px-2 py-1.5">
@@ -316,7 +338,8 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
                     })}
                 </div>
             ) : null}
-            <p className="px-3 pt-2 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name)}</p>
+            <p className="px-3 pt-1 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name, deskSymbols.length)}</p>
+            <div className="min-h-0 flex-1 overflow-auto">
             {rows.length ? (
                 <ul className="grid gap-2 p-2">
                     {rows.map((row) => (
@@ -348,6 +371,7 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
                     </Button>
                 </div>
             ) : null}
+            </div>
         </WidgetState>
     );
 }

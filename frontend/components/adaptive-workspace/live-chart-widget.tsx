@@ -12,12 +12,14 @@ import {
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import {
     instrumentForSymbol,
     resolveWatchlist,
     stringListParam,
     stringParam,
     symbolsFromComponent,
+    universeSymbols,
     useDeskAccounts,
     useDeskWatchlists,
     widgetProp
@@ -70,12 +72,29 @@ function toUnix(value: unknown): UTCTimestamp | null {
     return null;
 }
 
-export function candlePoints(candles: MarketChartCandle[]) {
-    return candles.flatMap((candle) => {
+export function candlePoints(
+    candles: MarketChartCandle[],
+    options: { percent?: boolean } = {}
+) {
+    const byDay = new Map<number, { time: UTCTimestamp; value: number }>();
+    for (const candle of candles) {
         const time = toUnix(candle.time);
-        if (time == null || !Number.isFinite(candle.close)) return [];
-        return [{ time, value: candle.close }];
-    });
+        if (time == null || !Number.isFinite(candle.close)) continue;
+        let day = time;
+        if (typeof candle.time === "string" && /^\d{4}-\d{2}-\d{2}/.test(candle.time)) {
+            const parsed = Date.parse(`${candle.time.slice(0, 10)}T00:00:00Z`);
+            if (Number.isFinite(parsed)) day = Math.floor(parsed / 1000) as UTCTimestamp;
+        } else {
+            const date = new Date(time * 1000);
+            day = Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1000) as UTCTimestamp;
+        }
+        byDay.set(day, { time: day as UTCTimestamp, value: candle.close });
+    }
+    const points = [...byDay.values()].sort((left, right) => left.time - right.time);
+    if (!options.percent || points.length < 2) return points;
+    const base = points[0].value;
+    if (!base) return points;
+    return points.map((point) => ({ time: point.time, value: ((point.value / base) - 1) * 100 }));
 }
 
 export type MarketCandleRow = {
@@ -113,7 +132,7 @@ export function useMarketCandles(
                     const result = await getMarketChartData(accountId, {
                         daily_interval: "day",
                         history_days: historyDays,
-                        include_live_quote: true,
+                        include_live_quote: false,
                         instrument: { ...item.instrument, symbol: item.symbol }
                     });
                     return {
@@ -151,51 +170,70 @@ export function useMarketCandles(
 }
 
 export function OverlayLineChart({
+    className,
     dark,
-    height = 180,
+    percent = false,
     series
 }: {
+    className?: string;
     dark: boolean;
-    height?: number;
+    percent?: boolean;
     series: Array<{ color: string; points: Array<{ time: UTCTimestamp; value: number }>; symbol: string }>;
 }) {
     const hostRef = useRef<HTMLDivElement>(null);
     const visible = series.filter((item) => item.points.length);
-    const signature = visible.map((item) => `${item.symbol}:${item.color}:${item.points.length}`).join("|");
+    const signature = visible.map((item) => `${item.symbol}:${item.color}:${item.points.length}:${percent ? "pct" : "px"}`).join("|");
 
     useEffect(() => {
         const host = hostRef.current;
         if (!host || !visible.length) return;
         const chart = createChart(host, {
             autoSize: true,
-            grid: { horzLines: { visible: false }, vertLines: { visible: false } },
-            height,
+            grid: { horzLines: { color: dark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)", visible: true }, vertLines: { visible: false } },
+            height: Math.max(140, host.clientHeight || 180),
             layout: {
                 attributionLogo: false,
                 background: { color: "transparent", type: ColorType.Solid },
                 textColor: dark ? "#a1a1aa" : "#52525b"
             },
-            rightPriceScale: { borderVisible: false },
-            timeScale: { borderVisible: false }
+            rightPriceScale: { borderVisible: false, scaleMargins: { bottom: 0.08, top: 0.1 } },
+            timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true }
         });
         for (const item of visible) {
-            const line = chart.addSeries(LineSeries, { color: item.color, lineWidth: 2 });
+            const line = chart.addSeries(LineSeries, {
+                color: item.color,
+                lineWidth: 2,
+                priceFormat: percent
+                    ? {
+                          type: "custom",
+                          formatter: (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`,
+                          minMove: 0.1
+                      }
+                    : { minMove: 0.01, precision: 2, type: "price" }
+            });
             line.setData(item.points);
         }
         chart.timeScale().fitContent();
+        const observer = new ResizeObserver(() => {
+            const width = host.clientWidth;
+            const height = host.clientHeight;
+            if (width > 0 && height > 0) chart.applyOptions({ height, width });
+        });
+        observer.observe(host);
         return () => {
+            observer.disconnect();
             chart.remove();
         };
-    }, [dark, height, signature]);
+    }, [dark, percent, signature]);
 
     if (!visible.length) return null;
-    return <div className="w-full px-2 pb-2" ref={hostRef} style={{ height }} />;
+    return <div className={cn("min-h-[140px] w-full flex-1", className)} ref={hostRef} />;
 }
 
 export function ChartSeriesLegend({
     hidden,
     items,
-    minItems = 2,
+    minItems = 1,
     onToggle
 }: {
     hidden: ReadonlySet<string>;
@@ -243,35 +281,43 @@ type Props = {
 
 export function LiveChartWidget({ component, onPatch, refreshNonce }: Props) {
     const { resolvedTheme } = useTheme();
+    const { spec } = useAdaptiveWorkspace();
+    const deskSymbols = universeSymbols(spec);
     const { account, error: accountError } = useDeskAccounts();
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
-    const symbol = stringParam(component.props, ["symbol"]) || symbolsFromComponent(component, watchlist)[0] || "";
-    const overlaySymbols = overlaySymbolsFromComponent(component, symbol);
+    const bound = symbolsFromComponent(component, watchlist, deskSymbols);
+    const symbol = stringParam(component.props, ["symbol"]) || bound[0] || "";
+    const overlaySymbols = overlaySymbolsFromComponent(component, symbol).length
+        ? overlaySymbolsFromComponent(component, symbol)
+        : bound.slice(0, 40);
     const hiddenList = readHiddenSymbols(component);
     const hiddenKey = hiddenList.join("|");
     const hidden = useMemo(() => new Set(hiddenKey ? hiddenKey.split("|") : []), [hiddenKey]);
     const visibleSymbols = overlaySymbols.filter((item) => !hidden.has(item));
     const requests = useMemo(
         () =>
-            visibleSymbols.map((item) => ({
+            overlaySymbols.map((item) => ({
                 instrument: instrumentForSymbol(watchlists, item, component) as InstrumentRef,
                 symbol: item
             })),
-        [component, visibleSymbols, watchlists]
+        [component, overlaySymbols, watchlists]
     );
     const historyDays = historyDaysFromComponent(component);
     const { error, loading, rows } = useMarketCandles(account?.id, requests, historyDays, refreshNonce);
     const dark = resolvedTheme === "dark";
-    const series = rows.map((row) => {
-        const index = overlaySymbols.indexOf(row.symbol);
-        return {
-            color: seriesColor(index < 0 ? 0 : index, dark),
-            points: candlePoints(row.candles),
-            symbol: row.symbol
-        };
-    });
+    const percent = overlaySymbols.length > 1;
+    const series = rows
+        .filter((row) => !hidden.has(row.symbol))
+        .map((row) => {
+            const index = overlaySymbols.indexOf(row.symbol);
+            return {
+                color: seriesColor(index < 0 ? 0 : index, dark),
+                points: candlePoints(row.candles, { percent }),
+                symbol: row.symbol
+            };
+        });
     const hasPoints = series.some((item) => item.points.length);
     const legendItems = overlaySymbols.map((item, index) => {
         const fetched = rows.find((row) => row.symbol === item);
@@ -285,40 +331,49 @@ export function LiveChartWidget({ component, onPatch, refreshNonce }: Props) {
 
     return (
         <WidgetState error={accountError} loading={listsLoading && !watchlists.length} loadingLabel="Loading chart">
-            <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
-                <WidgetScopeBar
-                    allowMultiSymbol
-                    allowWatchlist={false}
-                    component={component}
-                    onPatch={onPatch}
-                    selectedWatchlist={watchlist}
-                    symbol={symbol}
-                    watchlists={watchlists}
+            <div className="flex h-full min-h-0 flex-col">
+                <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
+                    <WidgetScopeBar
+                        allowDesk
+                        allowMultiSymbol
+                        allowWatchlist={false}
+                        component={component}
+                        onPatch={onPatch}
+                        selectedWatchlist={watchlist}
+                        symbol={symbol}
+                        watchlists={watchlists}
+                    />
+                    <LiveStatusBadge
+                        label={
+                            loading
+                                ? "Loading"
+                                : percent
+                                  ? `${visibleSymbols.length} · %`
+                                  : symbol || "Pick a symbol"
+                        }
+                        tone={hasPoints ? "live" : loading ? "cached" : "idle"}
+                    />
+                </div>
+                <ChartSeriesLegend
+                    hidden={hidden}
+                    items={legendItems}
+                    onToggle={(next) => onPatch({ hiddenSymbols: toggleHiddenSymbol(hiddenList, next) })}
                 />
-                <LiveStatusBadge
-                    label={loading ? "Loading" : overlaySymbols.length > 1 ? `${visibleSymbols.length} series` : symbol || "Pick a symbol"}
-                    tone={hasPoints ? "live" : loading ? "cached" : "idle"}
-                />
+                {error ? <p className="p-3 text-sm text-destructive">{error}</p> : null}
+                {!error && hasPoints ? (
+                    <OverlayLineChart className="px-2 pb-2" dark={dark} percent={percent} series={series} />
+                ) : !error ? (
+                    <p className="p-3 text-sm text-muted-foreground">
+                        {loading
+                            ? "Loading daily candles…"
+                            : overlaySymbols.length && !visibleSymbols.length
+                              ? "All series are hidden. Click a symbol in the legend to show it."
+                              : symbol
+                                ? `No daily candles for ${visibleSymbols.join(", ") || symbol} yet.`
+                                : "Pick a symbol to load a price chart."}
+                    </p>
+                ) : null}
             </div>
-            <ChartSeriesLegend
-                hidden={hidden}
-                items={legendItems}
-                onToggle={(next) => onPatch({ hiddenSymbols: toggleHiddenSymbol(hiddenList, next) })}
-            />
-            {error ? <p className="p-3 text-sm text-destructive">{error}</p> : null}
-            {!error && hasPoints ? (
-                <OverlayLineChart dark={dark} series={series} />
-            ) : !error ? (
-                <p className="p-3 text-sm text-muted-foreground">
-                    {loading
-                        ? "Loading daily candles…"
-                        : overlaySymbols.length && !visibleSymbols.length
-                          ? "All series are hidden. Click a symbol in the legend to show it."
-                          : symbol
-                            ? `No daily candles for ${visibleSymbols.join(", ") || symbol} yet.`
-                            : "Pick a symbol to load a price chart."}
-                </p>
-            ) : null}
         </WidgetState>
     );
 }
