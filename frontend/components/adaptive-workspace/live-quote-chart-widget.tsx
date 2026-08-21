@@ -2,7 +2,6 @@
 
 import { useMemo, useRef, type PointerEvent } from "react";
 import { useTheme } from "next-themes";
-import { DeskSymbolEditor } from "@/components/adaptive-workspace/desk-symbol-editor";
 import {
     ChartSeriesLegend,
     OverlayLineChart,
@@ -178,9 +177,6 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
                         tone={live.state === "connected" || hasPoints ? "live" : live.state === "error" ? "error" : "cached"}
                     />
                 </div>
-                {componentScope(component) === "desk" ? (
-                    <DeskSymbolEditor onChange={patchUniverse} symbols={deskSymbols} />
-                ) : null}
                 <p className="px-3 pt-1 text-[11px] text-muted-foreground">
                     {scopeHint(component, watchlist?.name, deskSymbols.length)}
                     {percent ? " · indexed to first close" : ""}
@@ -224,6 +220,11 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
                     <div className="min-h-0 overflow-auto" style={{ flex: showChart ? `${1 - ratio} 1 0` : "1 1 0" }}>
                         <QuotesMoveTable
                             emptyLabel="No symbols on this desk list yet. Add one above."
+                            onRemove={
+                                componentScope(component) === "desk"
+                                    ? (symbol) => patchUniverse(deskSymbols.filter((item) => item !== symbol))
+                                    : undefined
+                            }
                             onToggleHidden={toggleHidden}
                             rows={tableRows}
                             showExchangeBadge

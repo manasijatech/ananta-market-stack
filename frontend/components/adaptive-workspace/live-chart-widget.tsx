@@ -338,6 +338,7 @@ export function LiveChartWidget({ component, onPatch, refreshNonce }: Props) {
                         allowMultiSymbol
                         allowWatchlist={false}
                         component={component}
+                        extraSymbols={deskSymbols}
                         onPatch={onPatch}
                         selectedWatchlist={watchlist}
                         symbol={symbol}

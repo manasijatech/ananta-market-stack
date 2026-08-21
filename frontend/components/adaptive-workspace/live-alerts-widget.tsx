@@ -3,9 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import { WidgetScopeBar } from "@/components/adaptive-workspace/widget-scope-bar";
+import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
-import { resolveWatchlist, stringParam, symbolsFromComponent, useDeskWatchlists } from "@/hooks/use-desk-data";
+import {
+    resolveWatchlist,
+    stringParam,
+    symbolsFromComponent,
+    universeSymbols,
+    useDeskWatchlists
+} from "@/hooks/use-desk-data";
 import { subscribeToAlertNotificationStream } from "@/lib/alert-notification-stream";
 import { getAlertNotifications, getAlertWorkflows } from "@/service/actions/alerts";
 import type { AlertNotification, AlertWorkflow } from "@/service/types/alerts";
@@ -19,10 +26,12 @@ type Props = {
 
 export function LiveAlertsWidget({ component, onPatch, refreshNonce }: Props) {
     const unreadOnly = component.props?.unreadOnly === true || component.data?.params?.unread_only === true;
+    const { spec } = useAdaptiveWorkspace();
+    const deskSymbols = universeSymbols(spec);
     const { watchlists } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
-    const symbols = symbolsFromComponent(component, watchlist).map((item) => item.toUpperCase());
+    const symbols = symbolsFromComponent(component, watchlist, deskSymbols).map((item) => item.toUpperCase());
     const symbolFilter = stringParam(component.props, ["symbol"]).toUpperCase();
     const [workflows, setWorkflows] = useState<AlertWorkflow[]>([]);
     const [notifications, setNotifications] = useState<AlertNotification[]>([]);
@@ -72,6 +81,8 @@ export function LiveAlertsWidget({ component, onPatch, refreshNonce }: Props) {
         <WidgetState error={error} loading={loading} loadingLabel="Loading alerts">
             <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
                 <WidgetScopeBar
+                    allowDesk
+                    extraSymbols={deskSymbols}
                     component={component}
                     onPatch={onPatch}
                     selectedWatchlist={watchlist}

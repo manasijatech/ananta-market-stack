@@ -1,6 +1,8 @@
 "use client";
 
 import { IconChevronDown } from "@tabler/icons-react";
+import { DeskSymbolEditor } from "@/components/adaptive-workspace/desk-symbol-editor";
+import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -13,7 +15,9 @@ import {
     explicitSymbols,
     stringListParam,
     stringParam,
-    uniqueWatchlistSymbols
+    uniqueCashSymbols,
+    uniqueWatchlistSymbols,
+    universeSymbols
 } from "@/hooks/use-desk-data";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 import type { Watchlist } from "@/service/types/watchlist";
@@ -74,6 +78,8 @@ export function WidgetScopeBar({
     symbol,
     watchlists
 }: Props) {
+    const { patchUniverse, spec } = useAdaptiveWorkspace();
+    const deskSymbols = uniqueCashSymbols(extraSymbols.length ? extraSymbols : universeSymbols(spec));
     const scope = componentScope(component);
     const effectiveScope = !allowWatchlist && scope === "watchlist" ? "symbol" : scope;
     const symbols = uniqueWatchlistSymbols(watchlists);
@@ -112,7 +118,8 @@ export function WidgetScopeBar({
     }
 
     return (
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
             {allowWatchlist || allowDesk ? (
                 <SimpleSelect
                     aria-label="Widget scope"
@@ -162,7 +169,7 @@ export function WidgetScopeBar({
                     value={selectedWatchlist?.id ?? ""}
                 />
             ) : effectiveScope === "desk" ? (
-                <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">Desk symbols</p>
+                <DeskSymbolEditor onChange={patchUniverse} symbols={deskSymbols} />
             ) : allowMultiSymbol ? (
                 <DropdownMenu>
                     <DropdownMenuTrigger
@@ -203,6 +210,7 @@ export function WidgetScopeBar({
                     value={current}
                 />
             )}
+            </div>
         </div>
     );
 }

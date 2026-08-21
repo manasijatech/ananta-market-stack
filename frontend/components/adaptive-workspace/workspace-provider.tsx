@@ -22,6 +22,7 @@ import {
     workspaceSpecsEqual
 } from "@/lib/adaptive-workspace/spec";
 import { createAdaptiveWorkspaceSnapshot, getAdaptiveWorkspaceCurrent } from "@/service/actions/adaptive-workspace";
+import { uniqueCashSymbols } from "@/hooks/use-desk-data";
 import type {
     PinnedWorkspaceItem,
     WorkspaceComponent,
@@ -312,9 +313,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
     const patchUniverse = useCallback(
         (symbols: string[]) => {
             setSpec((current) => {
-                const nextSymbols = Array.from(
-                    new Set(symbols.map((item) => item.trim().toUpperCase()).filter(Boolean))
-                ).slice(0, 40);
+                const nextSymbols = uniqueCashSymbols(symbols).slice(0, 40);
                 const next = cloneWorkspaceSpec(current);
                 next.universe = { symbols: nextSymbols };
                 if (workspaceSpecsEqual(current, next)) return current;

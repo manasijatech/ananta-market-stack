@@ -12,7 +12,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DeskSymbolEditor } from "@/components/adaptive-workspace/desk-symbol-editor";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import {
     componentScope,
@@ -118,11 +117,13 @@ export function buildQuoteMoveRows(
 
 export function QuotesMoveTable({
     emptyLabel = "No symbols bound to this quotes widget yet.",
+    onRemove,
     onToggleHidden,
     rows,
     showExchangeBadge = false
 }: {
     emptyLabel?: string;
+    onRemove?: (symbol: string) => void;
     onToggleHidden: (symbol: string) => void;
     rows: QuoteMoveRow[];
     showExchangeBadge?: boolean;
@@ -138,7 +139,7 @@ export function QuotesMoveTable({
                     <TableHead className="h-8 py-1 text-right">LTP</TableHead>
                     <TableHead className="h-8 py-1 text-right">Change</TableHead>
                     <TableHead className="h-8 py-1 text-right">Change %</TableHead>
-                    <TableHead className="h-8 w-14 py-1 text-right"> </TableHead>
+                    <TableHead className="h-8 w-24 py-1 text-right"> </TableHead>
                 </TableRow>
             </TableHeader>
             <TableBody>
@@ -164,7 +165,20 @@ export function QuotesMoveTable({
                             <MoveCell suffix="%" value={row.changePercent} />
                         </TableCell>
                         <TableCell className="text-right">
-                            <HideSymbolButton hidden={row.hidden} onToggle={() => onToggleHidden(row.symbol)} />
+                            <span className="inline-flex items-center justify-end gap-0.5">
+                                <HideSymbolButton hidden={row.hidden} onToggle={() => onToggleHidden(row.symbol)} />
+                                {onRemove ? (
+                                    <Button
+                                        aria-label={`Remove ${row.symbol} from desk list`}
+                                        onClick={() => onRemove(row.symbol)}
+                                        size="xs"
+                                        type="button"
+                                        variant="ghost"
+                                    >
+                                        Remove
+                                    </Button>
+                                ) : null}
+                            </span>
                         </TableCell>
                     </TableRow>
                 ))}
@@ -231,12 +245,14 @@ export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
                     tone={live.state === "connected" ? "live" : live.state === "error" ? "error" : "cached"}
                 />
             </div>
-            {componentScope(component) === "desk" ? (
-                <DeskSymbolEditor onChange={patchUniverse} symbols={deskSymbols} />
-            ) : null}
             <p className="px-3 pt-1 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name, deskSymbols.length)}</p>
             <div className="min-h-0 flex-1 overflow-auto">
             <QuotesMoveTable
+                onRemove={
+                    componentScope(component) === "desk"
+                        ? (symbol) => patchUniverse(deskSymbols.filter((item) => item !== symbol))
+                        : undefined
+                }
                 onToggleHidden={(symbol) => onPatch({ hiddenSymbols: toggleHiddenSymbol(hiddenList, symbol) })}
                 rows={tableRows}
                 showExchangeBadge

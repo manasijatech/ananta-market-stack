@@ -225,6 +225,24 @@ def test_evaluate_request_prefers_combined_quote_chart_for_quotes_and_chart():
     assert combined["complements_query"] is True
 
 
+def test_evaluate_request_covers_notes_and_desk_private_universe():
+    from app.services.adaptive_workspace import evaluate_request
+
+    planned = evaluate_request(
+        "Build a research desk for RELIANCE, HDFCBANK, and SBIN on this desk's private symbol list, "
+        "not my user watchlists. Show quotes and a 1-year chart, news and earnings, holdings and funds, "
+        "broker session health, alerts, and a notes block."
+    )
+    assert "watchlist" not in planned["recommended_types"]
+    assert "quote-chart" in planned["recommended_types"]
+    assert "intel-feed" in planned["recommended_types"]
+    assert "holdings-table" in planned["recommended_types"]
+    assert "broker-health" in planned["recommended_types"]
+    assert "alert-rule-draft" in planned["recommended_types"]
+    assert "notes-block" in planned["recommended_types"]
+    assert "notes" in planned["intents"]
+
+
 def test_quote_chart_and_combined_intel_products_are_valid():
     spec = parse_workspace_spec(
         {

@@ -1,19 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cashEquitySymbol, uniqueCashSymbols } from "@/hooks/use-desk-data";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
 import type { InstrumentSearchRow } from "@/service/types/broker";
 
-function isCashSearchRow(row: InstrumentSearchRow): boolean {
-    const symbol = cashEquitySymbol(row.symbol || row.trading_symbol || "");
-    if (!symbol) return false;
-    if (row.expiry || row.strike || row.option_type) return false;
+function hasDerivativeField(value: unknown): boolean {
+    if (value == null) return false;
+    const text = String(value).trim();
+    if (!text) return false;
+    const numeric = Number(text);
+    if (Number.isFinite(numeric) && numeric === 0) return false;
+    return true;
+}
+
+function isDeskSearchRow(row: InstrumentSearchRow): boolean {
+    if (hasDerivativeField(row.expiry) || hasDerivativeField(row.strike) || hasDerivativeField(row.option_type)) {
+        return false;
+    }
     const exchange = (row.exchange || "").toUpperCase();
     if (["NFO", "BFO", "MCX", "CDS"].includes(exchange)) return false;
-    return true;
+    const symbol = `${row.symbol} ${row.trading_symbol || ""}`.toUpperCase();
+    if (/\b(FUT|CE|PE)\b/.test(symbol)) return false;
+    return Boolean(cashEquitySymbol(row.symbol || row.trading_symbol || ""));
 }
 
 export function DeskSymbolEditor({
@@ -23,97 +36,261 @@ export function DeskSymbolEditor({
     onChange: (symbols: string[]) => void;
     symbols: string[];
 }) {
+    const listId = useId();
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
     const [draft, setDraft] = useState("");
+    const [replacing, setReplacing] = useState<string | null>(null);
     const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
+    const [activeIndex, setActiveIndex] = useState(0);
     const [open, setOpen] = useState(false);
-    const timerRef = useRef<number | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [searchError, setSearchError] = useState<string | null>(null);
+    const [menuBox, setMenuBox] = useState<{ left: number; top: number; width: number } | null>(null);
+
+    function syncMenuBox() {
+        const node = wrapRef.current;
+        if (!node) return;
+        const box = node.getBoundingClientRect();
+        setMenuBox({ left: box.left, top: box.bottom + 4, width: Math.max(box.width, 280) });
+    }
+
+    const symbolKey = symbols.join("|");
 
     useEffect(() => {
         const query = draft.trim();
         if (query.length < 1) {
             setSuggestions([]);
+            setOpen(false);
+            setSearchError(null);
+            setLoading(false);
             return;
         }
-        if (timerRef.current) window.clearTimeout(timerRef.current);
-        timerRef.current = window.setTimeout(() => {
-            void searchDefaultBrokerInstruments({ limit: 12, q: query })
+        let cancelled = false;
+        setLoading(true);
+        const handle = window.setTimeout(() => {
+            void searchDefaultBrokerInstruments({ limit: 20, q: query })
                 .then((rows) => {
+                    if (cancelled) return;
+                    const present = new Set(symbolKey.split("|").filter(Boolean));
                     const seen = new Set<string>();
                     const next: InstrumentSearchRow[] = [];
                     for (const row of rows) {
-                        if (!isCashSearchRow(row)) continue;
+                        if (!isDeskSearchRow(row)) continue;
                         const symbol = cashEquitySymbol(row.symbol || row.trading_symbol || "");
-                        if (!symbol || seen.has(symbol) || symbols.includes(symbol)) continue;
+                        if (!symbol || seen.has(symbol)) continue;
+                        if (!replacing && present.has(symbol)) continue;
+                        if (replacing && symbol === replacing) continue;
                         seen.add(symbol);
                         next.push({ ...row, symbol });
                     }
                     setSuggestions(next.slice(0, 8));
+                    setActiveIndex(0);
+                    setSearchError(null);
                     setOpen(true);
+                    syncMenuBox();
                 })
-                .catch(() => {
+                .catch((caught) => {
+                    if (cancelled) return;
                     setSuggestions([]);
+                    setSearchError(caught instanceof Error ? caught.message : "Could not search symbols.");
+                    setOpen(true);
+                    syncMenuBox();
+                })
+                .finally(() => {
+                    if (!cancelled) setLoading(false);
                 });
-        }, 180);
+        }, 160);
         return () => {
-            if (timerRef.current) window.clearTimeout(timerRef.current);
+            cancelled = true;
+            window.clearTimeout(handle);
         };
-    }, [draft, symbols]);
+    }, [draft, replacing, symbolKey]);
 
-    function add(values: string[]) {
-        const next = uniqueCashSymbols([...symbols, ...values]).slice(0, 40);
-        onChange(next);
+    useEffect(() => {
+        if (!open) return;
+        syncMenuBox();
+        const onReposition = () => syncMenuBox();
+        window.addEventListener("resize", onReposition);
+        window.addEventListener("scroll", onReposition, true);
+        return () => {
+            window.removeEventListener("resize", onReposition);
+            window.removeEventListener("scroll", onReposition, true);
+        };
+    }, [open]);
+
+    function commit(values: string[]) {
+        const incoming = uniqueCashSymbols(values);
+        if (!incoming.length) return;
+        if (replacing) {
+            const without = symbols.filter((item) => item !== replacing);
+            onChange(uniqueCashSymbols([...without, ...incoming]).slice(0, 40));
+        } else {
+            onChange(uniqueCashSymbols([...symbols, ...incoming]).slice(0, 40));
+        }
         setDraft("");
+        setReplacing(null);
         setSuggestions([]);
         setOpen(false);
+        setSearchError(null);
     }
 
+    function remove(symbol: string) {
+        onChange(symbols.filter((item) => item !== symbol));
+        if (replacing === symbol) {
+            setReplacing(null);
+            setDraft("");
+        }
+    }
+
+    function beginReplace(symbol: string) {
+        setReplacing(symbol);
+        setDraft(symbol);
+        setOpen(false);
+        window.setTimeout(() => inputRef.current?.focus(), 0);
+    }
+
+    const typed = cashEquitySymbol(draft);
+    const canAddTyped = Boolean(typed) && (replacing ? typed !== replacing : !symbols.includes(typed));
+
     return (
-        <div className="relative flex flex-wrap items-center gap-1.5 px-2 py-1.5">
-            <Input
-                aria-label="Search or add desk symbol"
-                autoComplete="off"
-                className="h-7 w-44"
-                onChange={(event) => setDraft(event.target.value)}
-                onFocus={() => {
-                    if (suggestions.length) setOpen(true);
-                }}
-                onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                        event.preventDefault();
-                        if (suggestions[0]) {
-                            add([suggestions[0].symbol]);
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 px-0 py-0">
+            {symbols.map((symbol) => (
+                <span className="inline-flex items-center" key={symbol}>
+                    <Badge
+                        className="h-6 gap-0 rounded-r-none pr-1"
+                        onClick={() => beginReplace(symbol)}
+                        size="sm"
+                        variant={replacing === symbol ? "default" : "outline"}
+                    >
+                        {symbol}
+                    </Badge>
+                    <button
+                        aria-label={`Remove ${symbol} from desk list`}
+                        className="inline-flex h-6 items-center rounded-r-sm border border-l-0 border-input bg-background px-1 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => remove(symbol)}
+                        type="button"
+                    >
+                        ×
+                    </button>
+                </span>
+            ))}
+            <div className="relative min-w-[9.5rem] flex-1" ref={wrapRef}>
+                <Input
+                    aria-autocomplete="list"
+                    aria-controls={listId}
+                    aria-expanded={open}
+                    aria-label={replacing ? `Replace ${replacing}` : "Search desk symbol"}
+                    autoComplete="off"
+                    className="h-7 font-mono uppercase"
+                    onBlur={() => {
+                        window.setTimeout(() => setOpen(false), 120);
+                    }}
+                    onChange={(event) => setDraft(event.target.value.toUpperCase())}
+                    onFocus={() => {
+                        if (draft.trim()) {
+                            setOpen(true);
+                            syncMenuBox();
+                        }
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                            event.preventDefault();
+                            setActiveIndex((value) => Math.min(value + 1, Math.max(suggestions.length - 1, 0)));
                             return;
                         }
-                        add(draft.split(/[\s,]+/));
-                    }
-                    if (event.key === "Escape") setOpen(false);
-                }}
-                placeholder="Search symbol"
-                value={draft}
-            />
-            <Button onClick={() => add(draft.split(/[\s,]+/))} size="xs" type="button" variant="outline">
-                Add
+                        if (event.key === "ArrowUp") {
+                            event.preventDefault();
+                            setActiveIndex((value) => Math.max(value - 1, 0));
+                            return;
+                        }
+                        if (event.key === "Enter") {
+                            event.preventDefault();
+                            if (suggestions[activeIndex]) {
+                                commit([suggestions[activeIndex].symbol]);
+                                return;
+                            }
+                            commit(draft.split(/[\s,]+/));
+                        }
+                        if (event.key === "Escape") {
+                            setOpen(false);
+                            setReplacing(null);
+                        }
+                    }}
+                    placeholder={replacing ? `Replace ${replacing}` : "Search symbol"}
+                    ref={inputRef}
+                    role="combobox"
+                    value={draft}
+                />
+                {open && menuBox && typeof document !== "undefined"
+                    ? createPortal(
+                          <ul
+                              className="fixed z-[80] max-h-64 overflow-auto rounded-md border border-border bg-popover py-1 shadow-lg"
+                              id={listId}
+                              role="listbox"
+                              style={{ left: menuBox.left, top: menuBox.top, width: menuBox.width }}
+                          >
+                              {loading ? (
+                                  <li className="px-2.5 py-2 text-xs text-muted-foreground">Searching…</li>
+                              ) : null}
+                              {suggestions.map((row, index) => (
+                                  <li key={`${row.symbol}:${row.exchange ?? ""}:${row.account_id ?? ""}`}>
+                                      <button
+                                          aria-selected={index === activeIndex}
+                                          className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs ${
+                                              index === activeIndex ? "bg-secondary" : "hover:bg-secondary/70"
+                                          }`}
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => commit([row.symbol])}
+                                          onMouseEnter={() => setActiveIndex(index)}
+                                          role="option"
+                                          type="button"
+                                      >
+                                          <span className="min-w-0">
+                                              <span className="block font-mono font-semibold">{row.symbol}</span>
+                                              <span className="block truncate text-[11px] text-muted-foreground">
+                                                  {[row.name, row.trading_symbol].filter(Boolean).join(" · ")}
+                                              </span>
+                                          </span>
+                                          {row.exchange ? (
+                                              <Badge size="sm" variant="outline">
+                                                  {row.exchange}
+                                              </Badge>
+                                          ) : null}
+                                      </button>
+                                  </li>
+                              ))}
+                              {!loading && canAddTyped && !suggestions.some((row) => row.symbol === typed) ? (
+                                  <li>
+                                      <button
+                                          className="flex w-full px-2.5 py-1.5 text-left text-xs hover:bg-secondary"
+                                          onMouseDown={(event) => event.preventDefault()}
+                                          onClick={() => commit([typed])}
+                                          type="button"
+                                      >
+                                          Add {typed}
+                                      </button>
+                                  </li>
+                              ) : null}
+                              {!loading && !suggestions.length ? (
+                                  <li className="px-2.5 py-2 text-xs text-muted-foreground">
+                                      {searchError || "No matching instruments found."}
+                                  </li>
+                              ) : null}
+                          </ul>,
+                          document.body
+                      )
+                    : null}
+            </div>
+            <Button
+                onClick={() => commit(draft.split(/[\s,]+/))}
+                size="xs"
+                type="button"
+                variant="outline"
+            >
+                {replacing ? "Replace" : "Add"}
             </Button>
-            <p className="text-[11px] text-muted-foreground">{symbols.length}/40 desk</p>
-            {open && suggestions.length ? (
-                <ul className="absolute left-2 top-9 z-20 w-64 overflow-hidden rounded-md border border-border/60 bg-popover py-1 shadow-md">
-                    {suggestions.map((row) => (
-                        <li key={`${row.symbol}:${row.exchange ?? ""}`}>
-                            <button
-                                className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-secondary"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => add([row.symbol])}
-                                type="button"
-                            >
-                                <span className="font-semibold">{row.symbol}</span>
-                                <span className="truncate text-muted-foreground">
-                                    {[row.exchange, row.name || row.trading_symbol].filter(Boolean).join(" · ")}
-                                </span>
-                            </button>
-                        </li>
-                    ))}
-                </ul>
-            ) : null}
+            <p className="text-[11px] text-muted-foreground">{symbols.length}/40</p>
         </div>
     );
 }

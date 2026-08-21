@@ -415,8 +415,9 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     )),
     ("alerts", ("alert", "alerts", "notification", "notifications")),
     ("holdings", ("holding", "holdings", "portfolio", "funds")),
-    ("chart", ("chart", "historical", "ohlc", "candlestick")),
+    ("chart", ("chart", "historical", "ohlc", "candlestick", "1-year", "1 year", "performance")),
     ("health", ("health", "session status", "broker connection", "login")),
+    ("notes", ("notes", "research note", "scratch pad", "scratchpad")),
 )
 
 _INTENT_TOOLS: dict[str, list[str]] = {
@@ -432,6 +433,7 @@ _INTENT_TOOLS: dict[str, list[str]] = {
     "holdings": ["broker_get_portfolio"],
     "chart": ["broker_get_historical"],
     "health": ["broker_get_session_status"],
+    "notes": [],
 }
 
 _INTENT_TYPES: dict[str, str] = {
@@ -447,6 +449,7 @@ _INTENT_TYPES: dict[str, str] = {
     "holdings": "holdings-table",
     "chart": "price-chart",
     "health": "broker-health",
+    "notes": "notes-block",
 }
 
 _FEED_PRODUCTS = {
@@ -569,6 +572,8 @@ def evaluate_request(
         )
     if "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")
+    if "notes" in intents and "sandbox" not in intents:
+        plan.append("Compose a notes-block for desk research text. Plain text only.")
     if "chart" in intents or longer_horizon:
         plan.append("Call broker_get_historical / chart data on the bound symbols. Cash equities fall back NSE→BSE when candles are empty.")
         if "price-chart" not in recommended_types:
