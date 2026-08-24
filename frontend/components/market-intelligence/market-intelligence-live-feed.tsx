@@ -1,7 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     marketIntelligenceProducts,
     type AlphaSection,
@@ -162,6 +162,8 @@ export function MarketIntelligenceLiveFeed({
     const [liveUpdateCounts, setLiveUpdateCounts] = useState<Record<AlphaSection, number>>(emptyLiveUpdateCounts);
     const [socketState, setSocketState] = useState<MarketIntelligenceSocketState>("connecting");
     const [socketError, setSocketError] = useState("");
+    const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+    const loadMoreRequestedRef = useRef(false);
     const watchlistSymbols = useMemo(
         () => new Set(symbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean)),
         [symbols]
@@ -175,6 +177,31 @@ export function MarketIntelligenceLiveFeed({
     useEffect(() => {
         onSocketStateChange?.(socketState);
     }, [onSocketStateChange, socketState]);
+
+    useEffect(() => {
+        if (isLoadingMore) {
+            loadMoreRequestedRef.current = true;
+            return;
+        }
+
+        loadMoreRequestedRef.current = false;
+        if (!hasMoreBySection[activeSection] || !onLoadMore) return;
+
+        const sentinel = loadMoreSentinelRef.current;
+        if (!sentinel) return;
+
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (!entry?.isIntersecting || loadMoreRequestedRef.current) return;
+                loadMoreRequestedRef.current = true;
+                onLoadMore(activeSection);
+            },
+            { rootMargin: "600px 0px" }
+        );
+
+        observer.observe(sentinel);
+        return () => observer.disconnect();
+    }, [activeSection, hasMoreBySection, isLoadingMore, onLoadMore]);
 
     useEffect(() => {
         if (!enableLiveUpdates) {
@@ -322,15 +349,13 @@ export function MarketIntelligenceLiveFeed({
             {activeSection === "concalls" ? <ConcallsTab items={feeds.concalls} {...sharedTabProps} /> : null}
             {activeSection === "alerts" ? <AlertsTab items={feeds.alerts} {...sharedTabProps} /> : null}
             {hasMoreBySection[activeSection] ? (
-                <div className="mt-4 flex justify-center">
-                    <Button
-                        disabled={isLoadingMore}
-                        onClick={() => onLoadMore?.(activeSection)}
-                        type="button"
-                        variant="outline"
-                    >
-                        {isLoadingMore ? "Loading more…" : "Load more"}
-                    </Button>
+                <div
+                    aria-hidden={!isLoadingMore}
+                    className="mt-4 flex min-h-8 items-center justify-center text-sm text-muted-foreground"
+                    ref={loadMoreSentinelRef}
+                    role={isLoadingMore ? "status" : undefined}
+                >
+                    {isLoadingMore ? "Loading more…" : null}
                 </div>
             ) : null}
         </div>
