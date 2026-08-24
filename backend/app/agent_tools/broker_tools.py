@@ -1919,7 +1919,8 @@ def broker_calculate_margin(
                 require_session=True,
                 auto_refresh_session=auto_refresh_session,
             )
-            return _ok(account=_account_summary(acc), margin=_client(db, acc).calculate_margin(positions))
+            hydrated = broker_data.hydrate_instruments(db, acc, list(positions or []))
+            return _ok(account=_account_summary(acc), margin=_client(db, acc).calculate_margin(hydrated))
         finally:
             db.close()
 

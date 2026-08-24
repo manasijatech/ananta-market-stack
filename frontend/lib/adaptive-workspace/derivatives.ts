@@ -232,17 +232,39 @@ export function normalizeGreeks(payload: unknown): { message: string; rows: Gree
     };
 }
 
+function metricLabel(key: string) {
+    return key.replaceAll("_", " ").replaceAll(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+}
+
+function metricNumber(value: unknown): number | null {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value.trim())) return Number(value.trim());
+    return null;
+}
+
 export function flattenMetricRows(payload: unknown, limit = 16): Array<{ label: string; value: string }> {
     const nested = nestedPayload(payload);
     const rows: Array<{ label: string; value: string }> = [];
-    for (const [key, value] of Object.entries(nested)) {
-        if (["status", "message", "guidance", "raw", "payload", "data", "result"].includes(key)) continue;
-        if (typeof value === "number" && Number.isFinite(value)) {
-            rows.push({ label: key.replaceAll("_", " "), value: new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value) });
-        } else if (typeof value === "string" && value.trim() && value.length < 80) {
-            rows.push({ label: key.replaceAll("_", " "), value: value.trim() });
+    const visit = (source: Record<string, unknown>, depth = 0) => {
+        for (const [key, value] of Object.entries(source)) {
+            if (["status", "message", "guidance", "raw", "payload", "data", "result"].includes(key)) {
+                if (isRecord(value) && depth < 2) visit(value, depth + 1);
+                continue;
+            }
+            const numeric = metricNumber(value);
+            if (numeric != null) {
+                rows.push({
+                    label: metricLabel(key),
+                    value: new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(numeric)
+                });
+            } else if (isRecord(value) && depth < 2) {
+                visit(value, depth + 1);
+            } else if (typeof value === "string" && value.trim() && value.length < 80) {
+                rows.push({ label: metricLabel(key), value: value.trim() });
+            }
+            if (rows.length >= limit) return;
         }
-        if (rows.length >= limit) break;
-    }
+    };
+    visit(nested);
     return rows;
 }

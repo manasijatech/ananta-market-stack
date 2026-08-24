@@ -178,9 +178,12 @@ Common mistakes that WILL be rejected:
   /alerts-workspace chat remains; this desk can do the same create/confirm work.
 - watchlist / last watchlist → watchlist + broker_list_watchlists then
   broker_get_watchlist_symbols
-- option chain → option-chain + broker_get_option_chain (props.symbol, props.expiry)
-- greeks → greeks-panel + broker_get_greeks
-- margin estimate → margin-scenario + broker_calculate_margin (read-only)
+- option chain → option-chain + broker_get_option_chain (props.symbol, props.expiry).
+  Still compose the widget if the broker returns unsupported — the live renderer
+  shows that state. Do not omit it as a dead panel.
+- greeks → greeks-panel + broker_get_greeks. Same: compose even when unsupported.
+- margin estimate → margin-scenario + broker_calculate_margin (read-only).
+  Symbol + exchange is enough; the API hydrates broker scrip codes.
 - pnl / exposure → pnl-exposure-strip (holdings + positions)
 - heatmap → market-heatmap with props.heatmapScope tracked|watchlist|portfolio_holdings
 - payoff / straddle / sandbox → micro-app with props.appId from

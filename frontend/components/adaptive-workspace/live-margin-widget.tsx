@@ -81,7 +81,9 @@ export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
         };
     }, [account, action, product, quantity, refreshNonce, symbol]);
 
-    const unsupported = isRecord(payload) && String(payload.status ?? "").toLowerCase() === "unsupported";
+    const status = isRecord(payload) ? String(payload.status ?? "").toLowerCase() : "";
+    const unsupported = status === "unsupported";
+    const failed = status === "error" || status === "failed";
     const message = isRecord(payload) ? String(payload.message ?? payload.guidance ?? "") : "";
     const rows = useMemo(() => flattenMetricRows(payload), [payload]);
 
@@ -131,20 +133,22 @@ export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
                     value={String(quantity)}
                 />
                 <LiveStatusBadge
-                    label={unsupported ? "Unsupported" : rows.length ? "Estimate" : "Empty"}
-                    tone={unsupported ? "error" : rows.length ? "cached" : "idle"}
+                    label={unsupported ? "Unsupported" : failed ? "Error" : rows.length ? "Estimate" : "Empty"}
+                    tone={unsupported || failed ? "error" : rows.length ? "cached" : "idle"}
                 />
             </div>
             {unsupported ? (
                 <p className="p-3 text-sm text-muted-foreground">{message || "Margin estimate is not implemented for this broker."}</p>
+            ) : failed ? (
+                <p className="p-3 text-sm text-muted-foreground">{message || "This broker could not estimate margin for the selected symbol."}</p>
             ) : !symbol ? (
                 <p className="p-3 text-sm text-muted-foreground">Pick a symbol to estimate a one-lot MARKET margin.</p>
             ) : !rows.length ? (
                 <p className="p-3 text-sm text-muted-foreground">{message || "No numeric margin fields in this broker response."}</p>
             ) : (
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2 p-3 text-sm">
-                    {rows.map((row) => (
-                        <div key={row.label}>
+                    {rows.map((row, index) => (
+                        <div key={`${row.label}-${index}`}>
                             <dt className="text-[11px] capitalize text-muted-foreground">{row.label}</dt>
                             <dd className="font-mono font-semibold">{row.value}</dd>
                         </div>

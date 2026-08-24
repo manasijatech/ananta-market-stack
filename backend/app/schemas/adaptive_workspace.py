@@ -473,8 +473,8 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "quote-chart and price-chart may list multiple symbols. hiddenSymbols hides a series and parks that quotes row at the bottom; it does not delete the binding.",
             "Cash-equity quotes/charts try NSE first, then BSE when NSE has no LTP/candles. Do not ask the user to pick an exchange for that fallback.",
             "option-chain, greeks-panel, margin-scenario, pnl-exposure-strip, and market-heatmap have live broker renderers. Compose those types instead of listing them as reserved.",
-            "option-chain / greeks-panel: set props.symbol and props.expiry (YYYY-MM-DD) when the broker needs an F&O expiry. Fetch broker_get_option_chain / broker_get_greeks first.",
-            "margin-scenario is a read-only estimate (broker_calculate_margin). Never place or mutate orders from this desk.",
+            "option-chain / greeks-panel: set props.symbol and props.expiry (YYYY-MM-DD) when the broker needs an F&O expiry. Fetch broker_get_option_chain / broker_get_greeks first. Still compose the widgets if those tools return unsupported — the live renderer shows that state instead of leaving empty catalog tiles.",
+            "margin-scenario is a read-only estimate (broker_calculate_margin). Symbol + exchange is enough; the API hydrates broker scrip codes. Never place or mutate orders from this desk.",
             "pnl-exposure-strip reads holdings and positions P&L. market-heatmap uses the live heatmap API; set props.heatmapScope to tracked, watchlist, or portfolio_holdings.",
         ],
     }

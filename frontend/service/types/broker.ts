@@ -356,12 +356,15 @@ export interface GreeksRequest {
 export interface MarginLeg {
     action: string;
     arrow_token?: string | null;
+    dhan_security_id?: string | null;
     exchange: string;
+    indmoney_scrip_code?: string | null;
     instrument_token?: string | null;
     price?: number;
     pricetype?: string;
     product: string;
     quantity: number;
+    security_id?: string | null;
     symbol?: string;
     trigger_price?: number;
 }
