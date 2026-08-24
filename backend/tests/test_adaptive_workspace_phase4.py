@@ -80,6 +80,7 @@ def test_studio_types_and_tools_are_allowlisted():
     assert {tool.name for tool in ALERT_STUDIO_TOOLS} == {
         "alert_get_studio",
         "alert_refresh_studio",
+        "alert_create_draft",
         "alert_deploy_snapshot",
     }
 
@@ -156,6 +157,24 @@ def test_deploy_without_confirm_fails():
     assert deployed.status == "active"
 
 
+def test_create_draft_snapshots_without_deploying():
+    db = _db()
+    db.add(User(id="studio-user", display_name="Studio"))
+    db.commit()
+    created = studio.create_draft(db, "studio-user", symbol="reliance", field="ltp", operator="gte", value=2500)
+    assert created.workflow_id
+    assert created.snapshot_id
+    assert created.status == "draft"
+    assert created.source == "snapshot"
+    assert created.workflow_payload["symbol"] == "RELIANCE"
+    from app.services.alerts import get_workflow
+
+    row = get_workflow(db, "studio-user", created.workflow_id)
+    assert row is not None
+    assert row.status == "draft"
+    assert row.deployment_status == "draft"
+
+
 def test_no_second_snapshot_table_was_added():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -177,7 +196,7 @@ def test_no_second_snapshot_table_was_added():
 def test_evaluate_request_recommends_studio_types():
     planned = workspace_svc.evaluate_request("Open an alert workflow studio on this canvas")
     assert "alert_studio" in planned["intents"]
-    assert planned["recommended_tools"] == ["alert_get_studio"]
+    assert planned["recommended_tools"] == ["alert_get_studio", "alert_create_draft"]
     assert planned["recommended_types"] == [
         "alert-rule-draft",
         "workflow-graph",
@@ -190,4 +209,5 @@ def test_alert_studio_routes_are_mounted():
     paths = set(app.openapi()["paths"])
     assert "/api/v1/adaptive-workspace/alert-studio" in paths
     assert "/api/v1/adaptive-workspace/alert-studio/refresh" in paths
+    assert "/api/v1/adaptive-workspace/alert-studio/draft" in paths
     assert "/api/v1/adaptive-workspace/alert-studio/deploy" in paths

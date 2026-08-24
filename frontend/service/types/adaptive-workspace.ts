@@ -99,6 +99,7 @@ export const PHASE1_RENDER_TOOLS = [
     "intel_list_alert_notifications",
     "alert_get_studio",
     "alert_refresh_studio",
+    "alert_create_draft",
     "alert_deploy_snapshot"
 ] as const;
 

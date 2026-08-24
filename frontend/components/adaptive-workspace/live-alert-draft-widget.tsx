@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { useAlertStudio } from "@/hooks/use-alert-studio";
 import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
@@ -30,9 +33,12 @@ function conditionSummary(payload: Record<string, unknown>): string {
 }
 
 export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props) {
-    const { error, loading, selectWorkflow, studio } = useAlertStudio(component, refreshNonce);
+    const { busy, createDraft, error, loading, selectWorkflow, studio } = useAlertStudio(component, refreshNonce);
     const workflows = studio?.workflows ?? [];
     const selectedId = studio?.workflow_id || "";
+    const [symbol, setSymbol] = useState("");
+    const [operator, setOperator] = useState("gte");
+    const [threshold, setThreshold] = useState("");
 
     return (
         <WidgetState error={error} loading={loading} loadingLabel="Loading alert draft">
@@ -56,15 +62,11 @@ export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props
                 />
             </div>
             {studio?.source === "empty" ? (
-                <p className="p-3 text-sm text-muted-foreground">
-                    No alert workflows yet. Create one in{" "}
-                    <Link className="underline" href="/alerts-workspace">
-                        Alerts Workspace
-                    </Link>
-                    .
+                <p className="px-3 pt-3 text-sm text-muted-foreground">
+                    No alert workflows yet. Create a draft here — Alerts Workspace stays available for the full editor.
                 </p>
             ) : (
-                <div className="grid gap-2 p-3">
+                <div className="grid gap-2 px-3 pt-3">
                     <div className="flex flex-wrap items-center gap-1.5">
                         {typeof studio?.workflow_payload.symbol === "string" && studio.workflow_payload.symbol ? (
                             <Badge size="sm" variant="outline">
@@ -83,6 +85,56 @@ export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props
                     ) : null}
                 </div>
             )}
+            <form
+                className="mt-auto grid gap-2 border-t border-border/50 p-3"
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    const value = Number(threshold);
+                    if (!symbol.trim() || !Number.isFinite(value)) return;
+                    void createDraft({ operator, symbol: symbol.trim().toUpperCase(), value }).then((next) => {
+                        if (next.workflow_id) onPatch({ workflowId: next.workflow_id });
+                        setSymbol("");
+                        setThreshold("");
+                    });
+                }}
+            >
+                <p className="text-[11px] font-medium text-muted-foreground">New LTP draft</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <Input
+                        aria-label="Symbol"
+                        className="h-7 w-[7rem]"
+                        onChange={(event) => setSymbol(event.target.value)}
+                        placeholder="RELIANCE"
+                        size="sm"
+                        value={symbol}
+                    />
+                    <SimpleSelect
+                        aria-label="Operator"
+                        className="h-7 w-[4.5rem]"
+                        onValueChange={setOperator}
+                        options={[
+                            { label: "≥", value: "gte" },
+                            { label: "≤", value: "lte" },
+                            { label: ">", value: "gt" },
+                            { label: "<", value: "lt" }
+                        ]}
+                        size="sm"
+                        value={operator}
+                    />
+                    <Input
+                        aria-label="Threshold"
+                        className="h-7 w-[5.5rem]"
+                        onChange={(event) => setThreshold(event.target.value)}
+                        placeholder="2500"
+                        size="sm"
+                        value={threshold}
+                    />
+                    <Button disabled={busy || !symbol.trim() || !threshold.trim()} size="xs" type="submit">
+                        Create draft
+                    </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Saves as draft only. Deploy stays on the approval card after you confirm.</p>
+            </form>
         </WidgetState>
     );
 }

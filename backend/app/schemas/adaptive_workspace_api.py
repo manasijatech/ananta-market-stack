@@ -101,6 +101,15 @@ class AdaptiveAlertStudioDeployIn(BaseModel):
     confirm: bool = False
 
 
+class AdaptiveAlertStudioDraftIn(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32)
+    field: str = "ltp"
+    operator: str = "gte"
+    value: float
+    name: str | None = Field(default=None, max_length=128)
+    exchange: str = "NSE"
+
+
 class AdaptiveA2UIExportIn(BaseModel):
     workspace_payload: dict[str, Any] | None = None
     surface_id: str = Field(default="desk", min_length=1, max_length=80)

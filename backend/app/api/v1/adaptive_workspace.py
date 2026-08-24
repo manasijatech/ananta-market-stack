@@ -7,6 +7,7 @@ from app.deps import get_current_user
 from app.schemas.adaptive_workspace import WorkspaceSpec
 from app.schemas.adaptive_workspace_api import (
     AdaptiveAlertStudioDeployIn,
+    AdaptiveAlertStudioDraftIn,
     AdaptiveAlertStudioOut,
     AdaptiveA2UIExportIn,
     AdaptiveA2UIImportIn,
@@ -341,6 +342,27 @@ def refresh_alert_studio(
 ) -> AdaptiveAlertStudioOut:
     try:
         return alert_studio.refresh_studio(db, user.id, workflow_id=workflow_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/alert-studio/draft", response_model=AdaptiveAlertStudioOut)
+def create_alert_studio_draft(
+    payload: AdaptiveAlertStudioDraftIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AdaptiveAlertStudioOut:
+    try:
+        return alert_studio.create_draft(
+            db,
+            user.id,
+            symbol=payload.symbol,
+            field=payload.field,
+            operator=payload.operator,
+            value=payload.value,
+            name=payload.name,
+            exchange=payload.exchange,
+        )
     except ValueError as exc:
         raise _http_error(exc) from exc
 

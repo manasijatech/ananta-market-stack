@@ -168,6 +168,20 @@ export async function refreshAdaptiveAlertStudio(workflowId?: string): Promise<A
     });
 }
 
+export async function createAdaptiveAlertStudioDraft(payload: {
+    exchange?: string;
+    field?: string;
+    name?: string;
+    operator?: string;
+    symbol: string;
+    value: number;
+}): Promise<AdaptiveAlertStudio> {
+    return request<AdaptiveAlertStudio>("/adaptive-workspace/alert-studio/draft", {
+        body: JSON.stringify(payload),
+        method: "POST"
+    });
+}
+
 export async function deployAdaptiveAlertStudio(snapshotId: string, confirm: boolean): Promise<AdaptiveAlertStudio> {
     return request<AdaptiveAlertStudio>("/adaptive-workspace/alert-studio/deploy", {
         body: JSON.stringify({ confirm, snapshot_id: snapshotId }),

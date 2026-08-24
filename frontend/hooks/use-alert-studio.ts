@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import {
+    createAdaptiveAlertStudioDraft,
     deployAdaptiveAlertStudio,
     getAdaptiveAlertStudio,
     putAdaptiveWorkspacePreference,
@@ -101,8 +102,31 @@ export function useAlertStudio(component: WorkspaceComponent, refreshNonce: numb
         [studio?.snapshot_id]
     );
 
+    const createDraft = useCallback(
+        async (payload: { field?: string; name?: string; operator?: string; symbol: string; value: number }) => {
+            setBusy(true);
+            try {
+                const next = await createAdaptiveAlertStudioDraft(payload);
+                setStudio(next);
+                setError(null);
+                if (next.workflow_id) {
+                    await putAdaptiveWorkspacePreference("default_workflow_id", next.workflow_id);
+                    await prefs?.reload();
+                }
+                return next;
+            } catch (caught) {
+                const message = caught instanceof Error ? caught.message : "Could not create alert draft.";
+                setError(message);
+                throw caught;
+            } finally {
+                setBusy(false);
+            }
+        },
+        [prefs]
+    );
+
     return useMemo(
-        () => ({ busy, deploy, error, loading, refresh, reload: load, selectWorkflow, studio, workflowId }),
-        [busy, deploy, error, load, loading, refresh, selectWorkflow, studio, workflowId]
+        () => ({ busy, createDraft, deploy, error, loading, refresh, reload: load, selectWorkflow, studio, workflowId }),
+        [busy, createDraft, deploy, error, load, loading, refresh, selectWorkflow, studio, workflowId]
     );
 }

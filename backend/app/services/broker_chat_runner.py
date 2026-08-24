@@ -150,8 +150,9 @@ Adaptive-only data tools (not on /broker-chat):
   first pull for a desk so Drishti is queried and the DB cache is updated.
   Cached rows are still served after that pull.
 - intel_list_alert_workflows / intel_list_alert_notifications: read-only alerts inbox.
-- alert_get_studio / alert_refresh_studio / alert_deploy_snapshot: workflow studio.
-  alert_get_studio reuses alert_workflow_chat_snapshots (validation, samples, diff).
+- alert_get_studio / alert_refresh_studio / alert_create_draft / alert_deploy_snapshot:
+  workflow studio on this canvas. alert_create_draft writes a draft + snapshot
+  (not live). alert_get_studio reuses alert_workflow_chat_snapshots.
   Never call alert_deploy_snapshot unless the user explicitly confirmed; pass confirm=true.
 
 Preferred component types: holdings-table, quote-ticker, quote-chart, price-chart,
@@ -170,9 +171,11 @@ Common mistakes that WILL be rejected:
   with props.products=["news","announcements","concalls"] (subset as asked).
   Do not emit one intel-feed per company unless the user asked to split.
 - alerts / notifications → alert-rule-draft + intel_list_alert_*
-- workflow studio / deploy alert / simulate alert → alert-rule-draft +
+- workflow studio / create alert / deploy alert / simulate alert →
+  alert_create_draft when they asked to make one, then alert-rule-draft +
   workflow-graph + workflow-simulation + approval-card, all with
-  data.tool=alert_get_studio. Never silent-deploy.
+  data.tool=alert_get_studio and params.workflow_id. Never silent-deploy.
+  /alerts-workspace chat remains; this desk can do the same create/confirm work.
 - watchlist / last watchlist → watchlist + broker_list_watchlists then
   broker_get_watchlist_symbols
 - option chain → option-chain + broker_get_option_chain (props.symbol, props.expiry)

@@ -462,7 +462,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Set universe.symbols from broker_search_instruments / MCP / the names in the query, then bind quote-chart and intel-feed with props.scope=desk.",
             "Templates: investor, trader, researcher, operations. Skills: morning-brief, fno-desk, earnings-week, alert-studio, research-sandbox.",
             "Repeated requests may be suggested as a template/skill. Never auto-apply.",
-            "Alert studio: alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
+            "Alert studio: alert_create_draft makes a draft (not live). alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
             "micro-app requires props.appId from the curated registry (payoff-diagram). Notes use notes-block, not a micro-app. Never emit src, href, or script.",
             "notes-block is user-editable plain text (autosaved on the desk). Chat may set or replace props.text; keep it a string, no HTML.",
             "Symbol desks: set props.scope=symbol and props.symbol. Named-company desks: set universe.symbols and props.scope=desk on quote-chart / intel-feed / quote-ticker. User watchlists only when asked: props.scope=watchlist and props.watchlistId.",

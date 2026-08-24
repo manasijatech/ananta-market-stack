@@ -396,6 +396,8 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("earnings", ("earning", "results day", "quarterly result")),
     ("concalls", ("concall", "conference call", "earnings call")),
     ("alert_studio", (
+        "create alert",
+        "create an alert",
         "workflow studio",
         "alert studio",
         "alert workflow studio",
@@ -432,7 +434,7 @@ _INTENT_TOOLS: dict[str, list[str]] = {
     "announcements": ["intel_get_feed"],
     "earnings": ["intel_get_feed"],
     "concalls": ["intel_get_feed"],
-    "alert_studio": ["alert_get_studio"],
+    "alert_studio": ["alert_get_studio", "alert_create_draft"],
     "sandbox": ["workspace_get_micro_app"],
     "alerts": ["intel_list_alert_workflows", "intel_list_alert_notifications"],
     "holdings": ["broker_get_portfolio"],
@@ -539,6 +541,8 @@ def evaluate_request(
         ]
         if "alert_get_studio" not in recommended_tools:
             recommended_tools.append("alert_get_studio")
+        if "alert_create_draft" not in recommended_tools:
+            recommended_tools.append("alert_create_draft")
         for component_type in ("alert-rule-draft", "workflow-graph", "workflow-simulation", "approval-card"):
             if component_type not in recommended_types:
                 recommended_types.append(component_type)

@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.schemas.adaptive_workspace_api import AdaptiveAlertStudioOut
+from app.schemas.alert import AlertCondition, AlertGraphDsl, AlertWorkflowCreate, AlertWorkflowDsl
 from app.schemas.alert_workflow_chat import AlertWorkflowChatSessionCreateIn
 from app.services import alerts as alert_svc
 from app.services.alert_workflow_chat import sessions as chat_sessions
@@ -20,6 +21,8 @@ from app.services.alert_workflow_chat import snapshots as chat_snapshots
 from db.models import AlertWorkflowChatSession, AlertWorkflowChatSnapshot
 
 STUDIO_SESSION_TITLE = "Adaptive workspace studio"
+_ALLOWED_FIELDS = frozenset({"ltp", "day_change_perc", "volume"})
+_ALLOWED_OPERATORS = frozenset({"gte", "lte", "gt", "lt", "eq"})
 
 
 def _workflow_summaries(db: Session, user_id: str) -> list[dict[str, Any]]:
@@ -189,3 +192,45 @@ def deploy_studio(db: Session, user_id: str, snapshot_id: str, confirm: bool = F
     snapshot, _workflow = chat_snapshots.deploy_snapshot(db, user_id, snapshot_id)
     row = chat_snapshots.get_owned_snapshot(db, user_id, snapshot.id)
     return _studio_from_snapshot(db, user_id, row)
+
+
+def create_draft(
+    db: Session,
+    user_id: str,
+    *,
+    symbol: str,
+    field: str = "ltp",
+    operator: str = "gte",
+    value: float,
+    name: str | None = None,
+    exchange: str = "NSE",
+) -> AdaptiveAlertStudioOut:
+    """Create a draft alert workflow and snapshot it. Does not deploy."""
+
+    symbol_key = (symbol or "").strip().upper()
+    if not symbol_key:
+        raise ValueError("symbol is required")
+    field_key = (field or "ltp").strip().lower()
+    operator_key = (operator or "gte").strip().lower()
+    if field_key not in _ALLOWED_FIELDS:
+        raise ValueError(f"field must be one of {sorted(_ALLOWED_FIELDS)}")
+    if operator_key not in _ALLOWED_OPERATORS:
+        raise ValueError(f"operator must be one of {sorted(_ALLOWED_OPERATORS)}")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("value must be a number")
+    label = (name or f"{symbol_key} {field_key} {operator_key} {value}").strip()[:128] or f"{symbol_key} alert"
+    payload = AlertWorkflowCreate(
+        name=label,
+        description="Draft created from Adaptive Workspace.",
+        symbol=symbol_key,
+        exchange=(exchange or "NSE").strip().upper() or "NSE",
+        workflow_dsl=AlertWorkflowDsl(
+            workflow_type="alert",
+            combine="all",
+            conditions=[AlertCondition(field=field_key, operator=operator_key, value=float(value))],
+        ),
+        graph_dsl=AlertGraphDsl(),
+        editor_mode="rule",
+    )
+    workflow = alert_svc.create_draft_workflow(db, user_id, payload)
+    return refresh_studio(db, user_id, workflow.id)
