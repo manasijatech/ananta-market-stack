@@ -167,7 +167,7 @@ export function normalizeOptionChain(payload: unknown): OptionChainView {
         expiries: expiriesFrom(nested),
         message,
         rows,
-        spot: asNumber(nested.spot ?? nested.underlying_price ?? nested.underlyingPrice ?? nested.ltp),
+        spot: asNumber(nested.spot ?? nested.underlying_price ?? nested.underlyingPrice ?? nested.ltp ?? nested.underlying_ltp),
         underlying: asString(nested.underlying ?? nested.symbol ?? nested.underlying_symbol),
         unsupported
     };

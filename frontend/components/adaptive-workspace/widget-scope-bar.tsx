@@ -136,8 +136,8 @@ export function WidgetScopeBar({
     }
 
     return (
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 overflow-hidden">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {allowWatchlist || allowDesk ? (
                 <SimpleSelect
                     aria-label="Widget scope"

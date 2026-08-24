@@ -332,7 +332,7 @@ export function LiveChartWidget({ component, onPatch, refreshNonce }: Props) {
     return (
         <WidgetState error={accountError} loading={listsLoading && !watchlists.length} loadingLabel="Loading chart">
             <div className="flex h-full min-h-0 flex-col">
-                <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border/50 px-2 py-1.5">
                     <WidgetScopeBar
                         allowDesk
                         allowMultiSymbol

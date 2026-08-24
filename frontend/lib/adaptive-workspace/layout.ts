@@ -65,6 +65,31 @@ export function expandedSizeForType(type: string): WorkspacePosition {
     }
 }
 
+export function packComponentPositions<T extends { id: string; position: WorkspacePosition }>(components: T[]): T[] {
+    if (!components.length) return components;
+    const order = components
+        .map((item, index) => ({ index, item }))
+        .sort(
+            (left, right) =>
+                left.item.position.y - right.item.position.y ||
+                left.item.position.x - right.item.position.x ||
+                left.index - right.index
+        );
+    const occupied: WorkspacePosition[] = [];
+    const nextById = new Map<string, WorkspacePosition>();
+    for (const { item } of order) {
+        let candidate = clampPosition(item.position);
+        let guard = 0;
+        while (occupied.some((entry) => rectanglesOverlap(entry, candidate)) && guard < 240) {
+            candidate = clampPosition({ ...candidate, y: candidate.y + 1 });
+            guard += 1;
+        }
+        occupied.push(candidate);
+        nextById.set(item.id, candidate);
+    }
+    return components.map((item) => ({ ...item, position: nextById.get(item.id) ?? clampPosition(item.position) }));
+}
+
 export function placeWithoutOverlap(
     components: Array<{ id: string; position: WorkspacePosition }>,
     id: string,
@@ -72,7 +97,7 @@ export function placeWithoutOverlap(
 ): Array<{ id: string; position: WorkspacePosition }> {
     const nextPosition = clampPosition(position);
     const moved = components.find((item) => item.id === id);
-    if (!moved) return components.map((item) => ({ id: item.id, position: item.position }));
+    if (!moved) return packComponentPositions(components.map((item) => ({ id: item.id, position: item.position })));
     const placed: Array<{ id: string; position: WorkspacePosition }> = [{ id, position: nextPosition }];
     const others = components
         .filter((item) => item.id !== id)

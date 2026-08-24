@@ -14,11 +14,20 @@ export function LiveStatusBadge({
 }) {
     return (
         <Badge
+            className="max-w-[8.5rem] shrink-0 truncate"
             size="sm"
             variant={tone === "live" ? "success" : tone === "error" ? "warning" : "outline"}
         >
             {label}
         </Badge>
+    );
+}
+
+export function WidgetToolbar({ children, className }: { children?: ReactNode; className?: string }) {
+    return (
+        <div className={cn("flex min-w-0 shrink-0 flex-wrap items-center gap-1.5 overflow-hidden border-b border-border/50 px-2 py-1.5", className)}>
+            {children}
+        </div>
     );
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
 import { WidgetScopeBar } from "@/components/adaptive-workspace/widget-scope-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,23 +79,27 @@ export function LiveOptionChainWidget({ component, onPatch, refreshNonce }: Prop
 
     const view = useMemo(() => normalizeOptionChain(payload), [payload]);
     const rows = view.rows.slice(0, 40);
+    const activeExpiry = expiry || view.expiries[0] || "";
 
     return (
         <WidgetState error={error || accountError} loading={loading} loadingLabel="Loading option chain">
-            <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
-                <WidgetScopeBar
-                    allowDesk={false}
-                    allowMultiSymbol={false}
-                    component={component}
-                    extraSymbols={deskSymbols}
-                    onPatch={onPatch}
-                    selectedWatchlist={watchlist}
-                    symbol={symbol}
-                    watchlists={watchlists}
-                />
+            <WidgetToolbar>
+                <div className="flex min-w-0 w-full items-center gap-1.5">
+                    <WidgetScopeBar
+                        allowDesk={false}
+                        allowMultiSymbol={false}
+                        allowWatchlist={false}
+                        component={component}
+                        extraSymbols={deskSymbols}
+                        onPatch={onPatch}
+                        selectedWatchlist={watchlist}
+                        symbol={symbol}
+                        watchlists={watchlists}
+                    />
+                </div>
                 <Input
                     aria-label="Expiry"
-                    className="h-7 w-[9.5rem]"
+                    className="h-7 w-[9.5rem] max-w-full min-w-0 shrink-0"
                     onBlur={() => {
                         if (draftExpiry !== expiry) onPatch({ expiry: draftExpiry });
                     }}
@@ -111,7 +115,7 @@ export function LiveOptionChainWidget({ component, onPatch, refreshNonce }: Prop
                     label={view.unsupported ? "Unsupported" : rows.length ? "Live" : "Empty"}
                     tone={view.unsupported ? "error" : rows.length ? "live" : "idle"}
                 />
-            </div>
+            </WidgetToolbar>
             {view.expiries.length ? (
                 <div className="flex flex-wrap gap-1 border-b border-border/40 px-2 py-1.5">
                     {view.expiries.slice(0, 8).map((item) => (
@@ -120,7 +124,7 @@ export function LiveOptionChainWidget({ component, onPatch, refreshNonce }: Prop
                             onClick={() => onPatch({ expiry: item })}
                             size="xs"
                             type="button"
-                            variant={item === expiry ? "default" : "outline"}
+                            variant={item === activeExpiry ? "default" : "outline"}
                         >
                             {item}
                         </Button>

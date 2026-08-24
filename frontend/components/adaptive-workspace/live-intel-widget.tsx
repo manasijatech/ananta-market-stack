@@ -308,7 +308,7 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
 
     return (
         <WidgetState error={error} loading={loading || listsLoading} loadingLabel="Loading market intelligence">
-            <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border/70 px-2 py-2">
                 {combined ? null : prefs?.canvasLocked !== false ? (
                     <Badge size="sm" variant="outline">
                         {productLabel(product)}

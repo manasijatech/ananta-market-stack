@@ -4,6 +4,7 @@ from app.schemas.adaptive_workspace import (
     TOOL_COMPONENT_MAP,
     component_type_for_tool,
     parse_workspace_spec,
+    rectangles_overlap,
     workspace_authoring_docs,
 )
 
@@ -38,6 +39,45 @@ def test_parses_valid_workspace_spec():
     assert spec.layout.columns == 12
     assert spec.components[0].type == "holdings-table"
     assert spec.components[0].data.tool == "broker_get_portfolio"
+
+
+def test_packs_overlapping_widget_positions_on_parse():
+    payload = _valid_spec(
+        components=[
+            {
+                "id": "heatmap",
+                "type": "market-heatmap",
+                "position": {"x": 0, "y": 0, "w": 12, "h": 6},
+                "props": {},
+                "actions": [],
+            },
+            {
+                "id": "option-chain",
+                "type": "option-chain",
+                "position": {"x": 0, "y": 0, "w": 6, "h": 6},
+                "props": {"symbol": "RELIANCE"},
+                "actions": [],
+            },
+            {
+                "id": "greeks-panel",
+                "type": "greeks-panel",
+                "position": {"x": 6, "y": 0, "w": 6, "h": 6},
+                "props": {"symbol": "RELIANCE"},
+                "actions": [],
+            },
+        ]
+    )
+
+    spec = parse_workspace_spec(payload)
+    positions = {item.id: item.position for item in spec.components}
+
+    assert positions["heatmap"].y == 0
+    assert positions["option-chain"].y >= 6
+    assert positions["greeks-panel"].y >= 6
+    boxes = [item.position for item in spec.components]
+    for index, left in enumerate(boxes):
+        for right in boxes[index + 1 :]:
+            assert not rectangles_overlap(left, right)
 
 
 def test_rejects_unknown_component_type():

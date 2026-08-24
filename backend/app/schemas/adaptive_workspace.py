@@ -274,6 +274,38 @@ class WorkspaceUniverse(BaseModel):
         return out
 
 
+def rectangles_overlap(left: WorkspacePosition, right: WorkspacePosition) -> bool:
+    return (
+        left.x < right.x + right.w
+        and left.x + left.w > right.x
+        and left.y < right.y + right.h
+        and left.y + left.h > right.y
+    )
+
+
+def pack_component_positions(components: list[WorkspaceComponent]) -> list[WorkspaceComponent]:
+    """Push colliding widgets down so a compose/restore turn never stacks them."""
+
+    if len(components) < 2:
+        return components
+    order = sorted(
+        range(len(components)),
+        key=lambda index: (components[index].position.y, components[index].position.x, index),
+    )
+    occupied: list[WorkspacePosition] = []
+    packed_by_id: dict[str, WorkspacePosition] = {}
+    for index in order:
+        item = components[index]
+        candidate = item.position
+        guard = 0
+        while any(rectangles_overlap(candidate, other) for other in occupied) and guard < 240:
+            candidate = candidate.model_copy(update={"y": candidate.y + 1})
+            guard += 1
+        occupied.append(candidate)
+        packed_by_id[item.id] = candidate
+    return [item.model_copy(update={"position": packed_by_id[item.id]}) for item in components]
+
+
 class WorkspaceSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -288,6 +320,9 @@ class WorkspaceSpec(BaseModel):
         ids = [item.id for item in self.components]
         if len(ids) != len(set(ids)):
             raise ValueError("component ids must be unique")
+        packed = pack_component_positions(self.components)
+        if packed is not self.components:
+            self.components = packed
         return self
 
 
@@ -336,7 +371,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "mode": "grid",
             "columns": GRID_COLUMNS,
             "id_pattern": "^[a-z][a-z0-9-]*$",
-            "position_rule": "x >= 0, y >= 0, w >= 1, h >= 1, x + w <= 12",
+            "position_rule": "x >= 0, y >= 0, w >= 1, h >= 1, x + w <= 12. Widgets must not overlap; colliding positions are packed downward before the compose turn is stored.",
             "preferred_sizes": {
                 "quote-ticker": {"w": 6, "h": 3},
                 "holdings-table": {"w": 12, "h": 5},
@@ -457,7 +492,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Use only catalog component types. Unknown types are rejected.",
             "data.tool must be an allowlisted data tool (broker_*, intel_*, alert_get_studio, or workspace_get_micro_app). Never include secrets.",
             "Never emit React, HTML, CSS, className, style, href, src, or script.",
-            "Component ids must be unique and match ^[a-z][a-z0-9-]*$.",
+            "Component ids must be unique and match ^[a-z][a-z0-9-]*$. Positions must not overlap; the server packs colliding widgets downward before the turn is stored.",
             "Do not add extra keys on spec, component, position, layout, or data besides universe.",
             "universe.symbols is this desk's private symbol list (max 40). It is NOT a user Watchlists setting. Prefer it for multi-name research. Only use props.scope=watchlist plus watchlistId when the user named an existing watchlist.",
             "Set universe.symbols from broker_search_instruments / MCP / the names in the query, then bind quote-chart and intel-feed with props.scope=desk.",

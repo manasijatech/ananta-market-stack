@@ -60,7 +60,7 @@ export function LiveWatchlistWidget({ component, onPatch, refreshNonce }: Props)
 
     return (
         <WidgetState error={error || snapshots.error} loading={loading} loadingLabel="Loading watchlist">
-            <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border/70 px-2 py-2">
                 <SimpleSelect
                     aria-label="Watchlist"
                     className="h-7 min-w-0 flex-1"

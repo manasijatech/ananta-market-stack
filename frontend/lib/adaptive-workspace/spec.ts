@@ -7,6 +7,7 @@ import {
     type WorkspaceSpec,
     type WorkspaceSpecIssue
 } from "@/service/types/adaptive-workspace";
+import { packComponentPositions } from "@/lib/adaptive-workspace/layout";
 import { isRecord, unwrapToolOutput } from "@/lib/adaptive-workspace/tool-envelope";
 
 const FORBIDDEN_PROP_KEYS = new Set([
@@ -139,7 +140,11 @@ export function parseWorkspaceSpec(payload: unknown): WorkspaceSpec | null {
     const symbols = Array.from(
         new Set((spec.universe?.symbols ?? []).map((item) => item.trim().toUpperCase()).filter(Boolean))
     ).slice(0, 40);
-    return { ...spec, universe: { symbols } };
+    return {
+        ...spec,
+        components: packComponentPositions(spec.components ?? []),
+        universe: { symbols }
+    };
 }
 
 export function emptyWorkspaceSpec(title = "Untitled desk"): WorkspaceSpec {

@@ -105,7 +105,7 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
     return (
         <article
             className={cn(
-                "group relative z-0 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border/40 bg-card/70",
+                "group relative isolate z-0 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border/40 bg-card",
                 selected ? "z-10 border-primary/70" : ""
             )}
             onClick={() => {
@@ -116,11 +116,11 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                 gridRow: `${position.y + 1} / span ${position.h}`
             }}
         >
-            <header className="flex items-center gap-1 border-b border-border/40 px-2 py-1">
+            <header className="flex min-w-0 shrink-0 flex-wrap items-center gap-1 border-b border-border/40 px-2 py-1">
                 {locked ? null : (
                     <button
                         aria-label="Drag widget"
-                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary"
+                        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary"
                         onPointerDown={(event) => beginDrag("move", event)}
                         onPointerMove={onPointerMove}
                         onPointerUp={onPointerUp}
@@ -129,11 +129,11 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                         <IconGripVertical className="size-4" stroke={1.8} />
                     </button>
                 )}
-                <p className="min-w-0 flex-1 truncate text-xs font-semibold">
+                <p className="min-w-[4.5rem] flex-1 truncate text-xs font-semibold">
                     {titleForComponentType(component.type, component.type)}
                 </p>
                 {locked ? null : (
-                    <>
+                    <div className="flex shrink-0 items-center gap-0.5">
                         <Button
                             aria-label="Refresh widget data"
                             onClick={(event) => {
@@ -164,7 +164,7 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                         <Button onClick={() => remove(component.id)} size="xs" type="button" variant="ghost">
                             <IconTrash className="size-3.5" stroke={1.8} />
                         </Button>
-                    </>
+                    </div>
                 )}
             </header>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

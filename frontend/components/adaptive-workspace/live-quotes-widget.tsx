@@ -233,7 +233,7 @@ export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
 
     return (
         <WidgetState error={error || accountError} loading={listsLoading && !instruments.length} loadingLabel="Loading live quotes">
-            <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border/50 px-2 py-1.5">
                 <WidgetScopeBar
                     allowDesk
                     allowMultiSymbol

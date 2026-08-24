@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
 import { WidgetScopeBar } from "@/components/adaptive-workspace/widget-scope-bar";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -87,20 +87,23 @@ export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
 
     return (
         <WidgetState error={error || accountError} loading={loading} loadingLabel="Loading greeks">
-            <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
-                <WidgetScopeBar
-                    allowDesk={false}
-                    allowMultiSymbol={false}
-                    component={component}
-                    extraSymbols={deskSymbols}
-                    onPatch={onPatch}
-                    selectedWatchlist={watchlist}
-                    symbol={symbol}
-                    watchlists={watchlists}
-                />
+            <WidgetToolbar>
+                <div className="flex min-w-0 w-full items-center gap-1.5">
+                    <WidgetScopeBar
+                        allowDesk={false}
+                        allowMultiSymbol={false}
+                        allowWatchlist={false}
+                        component={component}
+                        extraSymbols={deskSymbols}
+                        onPatch={onPatch}
+                        selectedWatchlist={watchlist}
+                        symbol={symbol}
+                        watchlists={watchlists}
+                    />
+                </div>
                 <Input
                     aria-label="Expiry"
-                    className="h-7 w-[9.5rem]"
+                    className="h-7 w-[9.5rem] max-w-full min-w-0 shrink-0"
                     onBlur={() => {
                         if (draftExpiry !== expiry) onPatch({ expiry: draftExpiry });
                     }}
@@ -113,7 +116,7 @@ export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
                     label={view.unsupported ? "Unsupported" : rows.length ? "Live" : "Empty"}
                     tone={view.unsupported ? "error" : rows.length ? "live" : "idle"}
                 />
-            </div>
+            </WidgetToolbar>
             {view.unsupported ? (
                 <p className="p-3 text-sm text-muted-foreground">
                     {view.message || "This broker does not expose option greeks on the connected account."}
@@ -139,7 +142,9 @@ export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
                                 <TableRow key={`${row.symbol}-${row.optionType}-${row.strike ?? ""}`}>
                                     <TableCell className="py-1.5 font-semibold">
                                         {row.symbol}
-                                        <span className="ml-1 text-[11px] font-normal text-muted-foreground">{row.optionType}</span>
+                                        {row.optionType && !row.symbol.toUpperCase().endsWith(row.optionType) ? (
+                                            <span className="ml-1 text-[11px] font-normal text-muted-foreground">{row.optionType}</span>
+                                        ) : null}
                                     </TableCell>
                                     <TableCell className="py-1.5 text-right font-mono">{num(row.delta)}</TableCell>
                                     <TableCell className="py-1.5 text-right font-mono">{num(row.gamma)}</TableCell>

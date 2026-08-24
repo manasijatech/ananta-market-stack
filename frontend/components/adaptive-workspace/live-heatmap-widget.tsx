@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
-import { WidgetScopeBar } from "@/components/adaptive-workspace/widget-scope-bar";
+import { LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
-import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { resolveWatchlist, useDeskAccounts, useDeskWatchlists, widgetProp } from "@/hooks/use-desk-data";
 import { getLiveHeatmap } from "@/service/actions/heatmap";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
@@ -56,7 +54,6 @@ function CompactTile({ item }: { item: HeatmapSymbol }) {
 }
 
 export function LiveHeatmapWidget({ component, onPatch, refreshNonce }: Props) {
-    const { spec } = useAdaptiveWorkspace();
     const { account, error: accountError } = useDeskAccounts();
     const { watchlists } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
@@ -108,39 +105,48 @@ export function LiveHeatmapWidget({ component, onPatch, refreshNonce }: Props) {
     );
     const advancing = cards.filter((item) => (item.day_change_perc ?? 0) > 0).length;
     const declining = cards.filter((item) => (item.day_change_perc ?? 0) < 0).length;
+    const locked = prefs?.canvasLocked !== false;
+    const scopeLabel =
+        heatmap?.scope_label ||
+        (scope === "watchlist" ? watchlist?.name || "Watchlist" : scope === "portfolio_holdings" ? "Holdings" : "Tracked");
 
     return (
         <WidgetState error={error || accountError} loading={loading} loadingLabel="Loading heatmap">
-            <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1.5">
-                <SimpleSelect
-                    aria-label="Heatmap scope"
-                    className="h-7 min-w-[8.5rem]"
-                    onValueChange={(value) => onPatch({ heatmapScope: value })}
-                    options={[
-                        { label: "Tracked", value: "tracked" },
-                        { label: "Watchlist", value: "watchlist" },
-                        { label: "Holdings", value: "portfolio_holdings" }
-                    ]}
-                    size="sm"
-                    value={scope}
-                />
-                {scope === "watchlist" ? (
-                    <WidgetScopeBar
-                        allowDesk={false}
-                        allowMultiSymbol={false}
-                        component={component}
-                        extraSymbols={spec.universe?.symbols ?? []}
-                        onPatch={onPatch}
-                        selectedWatchlist={watchlist}
-                        symbol=""
-                        watchlists={watchlists}
-                    />
-                ) : null}
-                <p className="ml-auto text-[11px] text-muted-foreground">
+            <WidgetToolbar>
+                {locked ? (
+                    <p className="min-w-0 flex-1 truncate text-[11px] font-semibold text-muted-foreground">{scopeLabel}</p>
+                ) : (
+                    <div className="flex min-w-0 w-full flex-wrap items-center gap-1.5">
+                        <SimpleSelect
+                            aria-label="Heatmap scope"
+                            className="h-7 w-36 max-w-full min-w-0"
+                            onValueChange={(value) => onPatch({ heatmapScope: value })}
+                            options={[
+                                { label: "Tracked", value: "tracked" },
+                                { label: "Watchlist", value: "watchlist" },
+                                { label: "Holdings", value: "portfolio_holdings" }
+                            ]}
+                            size="sm"
+                            value={scope}
+                        />
+                        {scope === "watchlist" ? (
+                            <SimpleSelect
+                                aria-label="Watchlist"
+                                className="h-7 min-w-0 max-w-full flex-1"
+                                onValueChange={(watchlistId) => onPatch({ heatmapScope: "watchlist", scope: "watchlist", watchlistId })}
+                                options={watchlists.map((item) => ({ label: item.name, value: item.id }))}
+                                placeholder="Watchlist"
+                                size="sm"
+                                value={watchlist?.id ?? ""}
+                            />
+                        ) : null}
+                    </div>
+                )}
+                <p className="shrink-0 text-[11px] text-muted-foreground">
                     {advancing} up · {declining} down
                 </p>
-                <LiveStatusBadge label={heatmap?.scope_label || "Heatmap"} tone={cards.length ? "live" : "idle"} />
-            </div>
+                {locked ? null : <LiveStatusBadge label={scopeLabel} tone={cards.length ? "live" : "idle"} />}
+            </WidgetToolbar>
             {!cards.length ? (
                 <p className="p-3 text-sm text-muted-foreground">
                     {heatmap?.scope_label

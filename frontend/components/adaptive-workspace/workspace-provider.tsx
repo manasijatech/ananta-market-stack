@@ -275,8 +275,9 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
         setHistory((currentHistory) => {
             const [previous, ...rest] = currentHistory;
             if (!previous) return currentHistory;
-            setSpec(previous);
-            persist(previous, "Undo canvas");
+            const parsed = parseWorkspaceSpec(previous) ?? previous;
+            setSpec(parsed);
+            persist(parsed, "Undo canvas");
             return rest;
         });
     }, [persist]);

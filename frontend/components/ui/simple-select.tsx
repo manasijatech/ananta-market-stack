@@ -71,7 +71,7 @@ export function SimpleSelect({
       <SelectTrigger
         aria-label={ariaLabel}
         className={cn(
-          "min-w-0 border border-input bg-background px-3 text-sm",
+          "min-w-0 max-w-full border border-input bg-background px-3 text-sm",
           triggerClassName ?? className,
         )}
         id={id}

@@ -79,7 +79,7 @@ export function LiveAlertsWidget({ component, onPatch, refreshNonce }: Props) {
 
     return (
         <WidgetState error={error} loading={loading} loadingLabel="Loading alerts">
-            <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border/70 px-2 py-2">
                 <WidgetScopeBar
                     allowDesk
                     extraSymbols={deskSymbols}

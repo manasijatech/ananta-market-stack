@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from broker.core.data_features import unsupported_operation
 from broker.core.instruments import DefaultInstrumentResolver, InstrumentResolver
 from broker.indmoney import funds as ifunds
 from broker.indmoney import margin as imargin
@@ -81,12 +80,10 @@ class IndmoneyClient:
         return imd.fetch_historical(self._http, request, self.resolver)
 
     def option_chain(self, request: dict[str, Any]) -> dict[str, Any]:
-        _ = request
-        return unsupported_operation(self.broker_code, "option_chain")
+        return imd.fetch_option_chain(self._http, request)
 
     def greeks(self, request: dict[str, Any]) -> dict[str, Any]:
-        _ = request
-        return unsupported_operation(self.broker_code, "greeks")
+        return imd.fetch_greeks(self._http, request)
 
     def stream_capabilities(self) -> dict[str, Any]:
         return imd.stream_capabilities()

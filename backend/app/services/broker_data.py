@@ -11,7 +11,7 @@ from typing import Any
 
 from common.datetime_compat import UTC
 from app.config import get_settings
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.schemas.broker import DataCapabilityItem, InstrumentSearchRow, InstrumentSyncOut, QuoteRow
@@ -150,6 +150,7 @@ def _hydrate_exact_match(
         _native_payload_value(row, "exchange_token") or _raw_payload_value(row, "exchange_token"),
     )
     merged.setdefault("indmoney_scrip_code", row.indmoney_scrip_code)
+    merged.setdefault("security_id", _native_payload_value(row, "security_id"))
     merged.setdefault("kotak_query", row.kotak_query)
     merged.setdefault("kotak_segment", row.kotak_segment)
     merged.setdefault("kotak_psymbol", row.kotak_psymbol)
@@ -365,6 +366,7 @@ def _csv_exact_payload(row: dict[str, Any]) -> dict[str, Any]:
         "groww_trading_symbol": row.get("groww_trading_symbol") or row.get("trading_symbol"),
         "groww_exchange_token": row.get("groww_exchange_token") or row.get("exchange_token") or _csv_json_value(row, "raw_payload", "exchange_token"),
         "indmoney_scrip_code": row.get("indmoney_scrip_code"),
+        "security_id": _csv_json_value(row, "native_payload", "security_id"),
         "kotak_query": row.get("kotak_query"),
         "kotak_segment": row.get("kotak_segment"),
         "kotak_psymbol": row.get("kotak_psymbol"),
@@ -375,9 +377,14 @@ def _csv_json_value(row: dict[str, Any], column: str, key: str) -> str | None:
     raw = row.get(column)
     if not raw:
         return None
-    try:
-        payload = json.loads(str(raw))
-    except json.JSONDecodeError:
+    if isinstance(raw, dict):
+        payload = raw
+    else:
+        try:
+            payload = json.loads(str(raw))
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, dict):
         return None
     value = payload.get(key)
     return str(value) if value is not None else None
@@ -549,14 +556,13 @@ def get_capabilities(db: Session, acc: BrokerAccount) -> dict[str, DataCapabilit
             guidance="Historical data support varies by broker and endpoint maturity.",
         ),
         "option_chain": DataCapabilityItem(
-            supported=acc.broker_code in {"arrow", "groww", "dhan"},
-            guidance="Option chain is wired for Arrow, Groww, and Dhan.",
+            supported=acc.broker_code in {"arrow", "groww", "dhan", "indmoney"},
+            guidance="Option chain is wired for Arrow, Groww, Dhan, and INDmoney. Zerodha, Upstox, Angel, and Kotak still have no local option-chain client.",
         ),
         "greeks": DataCapabilityItem(
-            supported=acc.broker_code in {"groww", "dhan"} or (
-                acc.broker_code == "arrow" and get_settings().arrow_enable_greeks
-            ),
-            guidance="Arrow Greeks are implemented but remain experimental and disabled unless ARROW_ENABLE_GREEKS is set.",
+            supported=acc.broker_code in {"groww", "dhan", "indmoney"}
+            or (acc.broker_code == "arrow" and get_settings().arrow_enable_greeks),
+            guidance="INDmoney, Groww, and Dhan return greeks inside the option chain. Arrow Greeks stay experimental unless ARROW_ENABLE_GREEKS is set.",
         ),
         "stream": DataCapabilityItem(supported=True, guidance="WebSocket v1 is an on-demand test manager that uses a uniform read-only flow."),
     }
@@ -1041,18 +1047,128 @@ def fetch_historical(db: Session, acc: BrokerAccount, payload: dict[str, Any]) -
     return payload_out
 
 
+_INDMONEY_CASH_SEGMENTS = frozenset({"E", "EQUITY", "INDEX", "INDICES"})
+
+
+def _option_expiry_dates(db: Session, broker_code: str, symbol: str) -> list[str]:
+    needle = str(symbol or "").strip().upper()
+    if not needle:
+        return []
+    today = datetime.utcnow().date()
+    dates: set[str] = set()
+
+    def consider(name: Any, symbol_value: Any, trading_symbol: Any, expiry_value: Any) -> None:
+        name_text = str(name or "").strip().upper()
+        symbol_text = str(symbol_value or "").strip().upper()
+        trading_text = str(trading_symbol or "").strip().upper()
+        if needle not in {name_text, symbol_text} and not symbol_text.startswith(needle) and not trading_text.startswith(needle) and not name_text.startswith(f"{needle} "):
+            return
+        parsed = expiry_value if isinstance(expiry_value, datetime) else parse_expiry(expiry_value)
+        if parsed is None:
+            return
+        day = parsed.date()
+        if day >= today:
+            dates.add(day.isoformat())
+
+    stmt = (
+        select(BrokerInstrument)
+        .where(BrokerInstrument.broker_code == broker_code)
+        .where(BrokerInstrument.expiry.is_not(None))
+        .where(
+            or_(
+                BrokerInstrument.name == needle,
+                BrokerInstrument.symbol == needle,
+                BrokerInstrument.trading_symbol.like(f"{needle}%"),
+                BrokerInstrument.symbol.like(f"{needle}%"),
+            )
+        )
+        .limit(400)
+    )
+    for row in db.scalars(stmt):
+        consider(row.name, row.symbol, row.trading_symbol, row.expiry)
+    if dates:
+        return sorted(dates)[:12]
+    for row in _csv_rows_cached(broker_code):
+        consider(row.get("name"), row.get("symbol"), row.get("trading_symbol"), row.get("expiry"))
+        if len(dates) >= 24:
+            break
+    return sorted(dates)[:12]
+
+
+def _hydrate_indmoney_underlying(db: Session, request: dict[str, Any]) -> dict[str, Any]:
+    symbol = str(request.get("symbol") or "").strip().upper()
+    exchange = str(request.get("exchange") or "NSE").strip().upper() or "NSE"
+    if not symbol:
+        return _hydrate_exact_match(db, "indmoney", request)
+    stmt = select(BrokerInstrument).where(
+        BrokerInstrument.broker_code == "indmoney",
+        BrokerInstrument.symbol == symbol,
+    )
+    if exchange in {"NSE", "BSE"}:
+        stmt = stmt.where(BrokerInstrument.exchange == exchange)
+    rows = list(db.scalars(stmt.limit(20)))
+    ranked = sorted(
+        rows,
+        key=lambda row: (
+            0 if str(row.segment or "").upper() in _INDMONEY_CASH_SEGMENTS else 1,
+            0 if row.indmoney_scrip_code else 1,
+        ),
+    )
+    row = ranked[0] if ranked else None
+    if row is None:
+        return _hydrate_exact_match(db, "indmoney", request)
+    merged = dict(request)
+    merged.setdefault("exchange", row.exchange)
+    merged.setdefault("segment", row.segment)
+    merged.setdefault("instrument_type", row.instrument_type)
+    merged.setdefault("indmoney_scrip_code", row.indmoney_scrip_code)
+    merged.setdefault("security_id", _native_payload_value(row, "security_id"))
+    return merged
+
+
+def _with_option_expiries(db: Session, acc: BrokerAccount, request: dict[str, Any]) -> dict[str, Any]:
+    expiries = _option_expiry_dates(db, acc.broker_code, str(request.get("symbol") or ""))
+    if expiries:
+        request["expiry_dates"] = expiries
+        if not request.get("expiry"):
+            request["expiry"] = expiries[0]
+    return request
+
+
 def fetch_option_chain(db: Session, acc: BrokerAccount, payload: dict[str, Any]) -> dict[str, Any]:
     client = _client(db, acc)
     request = dict(payload)
-    request = _hydrate_exact_match(db, acc.broker_code, request)
-    return client.option_chain(request)
+    if acc.broker_code == "indmoney":
+        request = _hydrate_indmoney_underlying(db, request)
+        request = _with_option_expiries(db, acc, request)
+    else:
+        request = _hydrate_exact_match(db, acc.broker_code, request)
+    result = client.option_chain(request)
+    if isinstance(result, dict) and request.get("expiry_dates"):
+        result = dict(result)
+        result.setdefault("expiry_dates", request["expiry_dates"])
+        data = result.get("data")
+        if isinstance(data, dict):
+            data.setdefault("expiry_dates", request["expiry_dates"])
+    return result
 
 
 def fetch_greeks(db: Session, acc: BrokerAccount, payload: dict[str, Any]) -> dict[str, Any]:
     client = _client(db, acc)
     request = dict(payload)
-    request = _hydrate_exact_match(db, acc.broker_code, request)
-    return client.greeks(request)
+    if acc.broker_code == "indmoney":
+        request = _hydrate_indmoney_underlying(db, request)
+        request = _with_option_expiries(db, acc, request)
+    else:
+        request = _hydrate_exact_match(db, acc.broker_code, request)
+    result = client.greeks(request)
+    if isinstance(result, dict) and request.get("expiry_dates"):
+        result = dict(result)
+        result.setdefault("expiry_dates", request["expiry_dates"])
+        data = result.get("data")
+        if isinstance(data, dict):
+            data.setdefault("expiry_dates", request["expiry_dates"])
+    return result
 
 
 def stream_status(db: Session, acc: BrokerAccount) -> dict[str, Any]:
