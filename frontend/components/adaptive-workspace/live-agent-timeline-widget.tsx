@@ -40,7 +40,7 @@ export function LiveAgentTimelineWidget() {
                                 <p className="truncate text-sm font-medium">{row.title}</p>
                                 <p className="truncate font-mono text-[11px] text-muted-foreground">{row.tool}</p>
                             </div>
-                            <LiveStatusBadge label={row.ok ? "Bound" : "Error"} tone={row.ok ? "live" : "error"} />
+                            <LiveStatusBadge label={row.label} tone={row.ok ? "live" : "error"} />
                         </li>
                     ))}
                 </ul>
