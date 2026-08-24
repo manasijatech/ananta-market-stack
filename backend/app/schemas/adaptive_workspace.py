@@ -361,6 +361,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
         },
         "component_types": sorted(ALLOWED_COMPONENT_TYPES),
         "live_component_types": [
+            "agent-timeline",
             "alert-rule-draft",
             "approval-card",
             "broker-health",
@@ -465,8 +466,9 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Alert studio: alert_create_draft makes a draft (not live). alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
             "micro-app requires props.appId from the curated registry (payoff-diagram). Notes use notes-block, not a micro-app. Never emit src, href, or script.",
             "notes-block is user-editable plain text (autosaved on the desk). Chat may set or replace props.text; keep it a string, no HTML.",
+            "Do not answer by listing catalog types. Fetch data, compose live widgets, and brief in chat. MCP and local broker tools still run on this desk. Broker Chat is not deprecated.",
             "Symbol desks: set props.scope=symbol and props.symbol. Named-company desks: set universe.symbols and props.scope=desk on quote-chart / intel-feed / quote-ticker. User watchlists only when asked: props.scope=watchlist and props.watchlistId.",
-            "When the user wants both live quotes and a chart for the same names, prefer one quote-chart (props.symbols, optional hiddenSymbols) instead of a separate quote-ticker plus price-chart.",
+            "Do not answer by listing catalog types. Fetch data, compose live widgets, and brief in chat. MCP and local broker tools still run on this desk.",
             "When the user asks about several companies' news/announcements/concalls, prefer one intel-feed with props.products=['news','announcements','concalls'] instead of one widget per product or per company.",
             "quote-chart and price-chart may list multiple symbols. hiddenSymbols hides a series and parks that quotes row at the bottom; it does not delete the binding.",
             "Cash-equity quotes/charts try NSE first, then BSE when NSE has no LTP/candles. Do not ask the user to pick an exchange for that fallback.",

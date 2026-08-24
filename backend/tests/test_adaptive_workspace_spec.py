@@ -130,7 +130,7 @@ def test_authoring_docs_list_catalog_and_example_spec():
     assert "quote-chart" in docs["preferred_component_types"]
     assert "option-chain" in docs["live_component_types"]
     assert "market-heatmap" in docs["live_component_types"]
-    assert "agent-timeline" not in docs["live_component_types"]
+    assert "agent-timeline" in docs["live_component_types"]
     assert component_type_for_tool("broker_get_option_chain") == "option-chain"
     assert component_type_for_tool("broker_get_greeks") == "greeks-panel"
     assert component_type_for_tool("broker_calculate_margin") == "margin-scenario"

@@ -609,7 +609,7 @@ def evaluate_request(
     if "health" in intents:
         plan.append("Call broker_get_session_status for broker-health.")
     plan.append("Call workspace_evaluate_request again with the draft spec and observations before compose_surface.")
-    plan.append("compose_surface once with catalog types only. Do not invent types.")
+    plan.append("compose_surface once with live catalog types only. Do not invent types and do not list the catalog as the answer.")
 
     missing_types = [item for item in recommended_types if not _spec_covers_type(item, spec_types)]
     if parsed is not None and parsed.universe.symbols:

@@ -40,9 +40,9 @@ type Props = {
 
 const STARTER_PROMPTS = [
     "Compose a desk with my last watchlist, its news, live price movements, and alerts",
-    "Apply the investor template",
-    "Compose a morning brief desk",
+    "Latest news on RELIANCE with quotes on this desk",
     "Open an alert workflow studio on this canvas",
+    "Show a live heatmap and my P&L exposure",
     "Apply the research sandbox skill",
     "Compose a desk with my holdings and broker health"
 ];
