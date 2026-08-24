@@ -10,12 +10,6 @@ export const MICRO_APP_REGISTRY: Record<
         description: "Sandboxed P/L toy for a call, put, or straddle. Numbers only; no orders.",
         id: "payoff-diagram",
         label: "Options payoff"
-    },
-    "notes-scratch": {
-        actions: ["select", "refresh"],
-        description: "Sandboxed plain-text notes. No HTML, links, or network.",
-        id: "notes-scratch",
-        label: "Notes scratch"
     }
 };
 
@@ -40,8 +34,7 @@ export function bindMicroAppPayload(appId: MicroAppId, source: Record<string, un
             width_pct: finiteNumber(source.width_pct, 8, 1, 50)
         };
     }
-    const text = typeof source.text === "string" ? source.text : "Research notes stay on this desk.";
-    return { appId, text: text.slice(0, 4000) };
+    return { appId, kind: "straddle", premium: 180, spot: 25000, strike: 25000, width_pct: 8 };
 }
 
 function payoffSrcDoc(dataJson: string) {
@@ -104,30 +97,9 @@ draw();
 </script></body></html>`;
 }
 
-function notesSrcDoc(dataJson: string) {
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="color-scheme" content="dark light"/>
-<style>
-html,body{margin:0;padding:10px;font:12px/1.5 ui-sans-serif,system-ui,sans-serif;background:transparent;color:#e7e5e4}
-pre{white-space:pre-wrap;margin:0;font:inherit}
-</style></head><body>
-<pre id="text"></pre>
-<script>
-const DATA = ${dataJson};
-function render(){
-  document.getElementById("text").textContent = String(DATA.text||"");
-}
-window.addEventListener("message", function(ev){
-  if(!ev.data || ev.data.source!=="ananta-host" || ev.data.type!=="bind") return;
-  Object.assign(DATA, ev.data.payload||{});
-  render();
-});
-render();
-</script></body></html>`;
-}
-
 export function microAppSrcDoc(appId: MicroAppId, payload: Record<string, unknown>) {
     const dataJson = JSON.stringify(payload).replace(/</g, "\\u003c");
-    return appId === "payoff-diagram" ? payoffSrcDoc(dataJson) : notesSrcDoc(dataJson);
+    return payoffSrcDoc(dataJson);
 }
 
 export function microAppIdFromComponent(props: Record<string, unknown> | undefined, params: Record<string, unknown> | undefined) {

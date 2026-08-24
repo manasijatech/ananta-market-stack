@@ -116,7 +116,7 @@ export const WORKSPACE_HELPER_TOOLS = [
     "workspace_get_micro_app"
 ] as const;
 
-export const MICRO_APP_IDS = ["payoff-diagram", "notes-scratch"] as const;
+export const MICRO_APP_IDS = ["payoff-diagram"] as const;
 export type MicroAppId = (typeof MICRO_APP_IDS)[number];
 export const A2UI_VERSION = "v0.9";
 export const A2UI_CATALOG_ID = "ananta-workspace-v1";

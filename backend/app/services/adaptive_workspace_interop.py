@@ -14,7 +14,6 @@ from app.schemas.adaptive_workspace import (
     A2UI_VERSION,
     ALLOWED_COMPONENT_TYPES,
     MICRO_APP_KINDS,
-    NOTES_TEXT_MAX,
     WorkspaceSpec,
     workspace_spec_dump,
 )
@@ -37,16 +36,6 @@ MICRO_APP_REGISTRY: dict[str, dict[str, Any]] = {
             "strike": 25000,
             "premium": 180,
             "width_pct": 8,
-        },
-    },
-    "notes-scratch": {
-        "id": "notes-scratch",
-        "label": "Notes scratch",
-        "description": "Sandboxed plain-text notes. No HTML, links, or network.",
-        "actions": ["select", "refresh"],
-        "default_props": {
-            "appId": "notes-scratch",
-            "text": "Research notes stay on this desk. No orders, no credentials.",
         },
     },
 }
@@ -414,9 +403,5 @@ def bind_micro_app_payload(app_id: str, props: dict[str, Any] | None = None, par
             }
         )
         return bound
-    text = source.get("text")
-    if not isinstance(text, str):
-        text = str(app["default_props"].get("text") or "")
-    bound["text"] = text[:NOTES_TEXT_MAX]
-    return bound
+    raise ValueError("micro-app is not in the curated registry")
 

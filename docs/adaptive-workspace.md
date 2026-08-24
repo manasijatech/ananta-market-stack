@@ -103,7 +103,7 @@ Success: a holdings or quote question on `/adaptive-workspace` is useful as card
 
 AG-UI and A2UI stay **internal adapters** (Python mapping, tests, and `/adaptive-workspace/interop/*` APIs). They are not a user-facing inspector tab, copy buttons, or agent tools. Chat still streams existing broker-chat SSE. Compose still uses `WorkspaceSpec`.
 
-Sandboxed micro-apps are a catalog type (`micro-app`) bound to `workspace_get_micro_app`. Only `payoff-diagram` and `notes-scratch` are registered. The iframe is `sandbox="allow-scripts"` without `allow-same-origin`, with a server-owned `srcDoc` template and `postMessage` limited to `select` / `refresh`. Intelligence default and `/broker-chat` are unchanged so this preview can keep evolving.
+Sandboxed micro-apps are a catalog type (`micro-app`) bound to `workspace_get_micro_app`. Only `payoff-diagram` is registered. Desk notes use the editable `notes-block` widget (user + agent), not a sandboxed iframe. The iframe is `sandbox="allow-scripts"` without `allow-same-origin`, with a server-owned `srcDoc` template and `postMessage` limited to `select` / `refresh`. Intelligence default and `/broker-chat` are unchanged so this preview can keep evolving.
 
 ## File map (Phase 0–2)
 

@@ -415,7 +415,8 @@ def workspace_get_micro_app(
 ) -> dict[str, Any]:
     """Return a curated sandboxed micro-app, or list the registry when app_id is omitted.
 
-    Allowed ids: payoff-diagram, notes-scratch. Bind numbers or plain text only.
+    Allowed ids: payoff-diagram. Bind numbers only.
+    Research notes belong on notes-block, not this sandbox.
     Never pass src, href, HTML, credentials, or order instructions.
     """
 

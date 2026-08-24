@@ -108,8 +108,12 @@ def test_bind_micro_app_payload_clamps_numbers_and_text():
     assert bound["premium"] == 180
     assert bound["width_pct"] == 50
 
-    notes = interop.bind_micro_app_payload("notes-scratch", props={"text": "x" * 8000})
-    assert len(notes["text"]) == 4000
+    try:
+        interop.bind_micro_app_payload("notes-scratch", props={"text": "x" * 8000})
+    except ValueError as exc:
+        assert "curated registry" in str(exc)
+    else:
+        raise AssertionError("expected notes-scratch to be removed from the registry")
 
 
 def test_a2ui_round_trip_preserves_workspace_spec():

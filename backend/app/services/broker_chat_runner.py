@@ -141,7 +141,8 @@ Workspace tools:
 - workspace_list_templates / workspace_list_skills / workspace_list_saved_desks:
   named layouts. If the user asks to apply one, compose_surface with that spec.
   Never rearrange because a request was repeated. Suggest only.
-- workspace_get_micro_app: curated sandbox apps (payoff-diagram, notes-scratch).
+- workspace_get_micro_app: curated sandbox apps (payoff-diagram only).
+  Research notes go on notes-block, not a micro-app.
 
 Adaptive-only data tools (not on /broker-chat):
 - intel_get_feed(product, symbols, force_refresh=true): news, announcements,
