@@ -432,7 +432,9 @@ export async function revokeDesktopAudioDevice(deviceId: string): Promise<{ ok: 
 }
 
 export async function getLiveStreamsStatus(): Promise<LiveStreamsStatus> {
-    return request<LiveStreamsStatus>("/live-streams/status");
+    return request<LiveStreamsStatus>("/live-streams/status", {
+        signal: AbortSignal.timeout(5_000)
+    });
 }
 
 export async function reconcileLiveSubscriptions(): Promise<AlertReconcileReport> {

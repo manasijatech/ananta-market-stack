@@ -667,6 +667,67 @@ def test_ui_demand_replaces_stale_account_scope_and_clears_empty_scope():
         db.close()
 
 
+def test_ui_demand_inherits_latest_quote_from_existing_watchlist_subscription():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    db = session_factory()
+    received_at = datetime(2026, 8, 24, 10, 15)
+    try:
+        db.add(User(id="u1", display_name="User"))
+        db.add(
+            BrokerAccount(
+                id="b1",
+                user_id="u1",
+                broker_code="dhan",
+                label="Dhan",
+                is_active=True,
+                session_status="active",
+            )
+        )
+        db.add(
+            LiveSymbolSubscription(
+                id="watchlist-tcs",
+                user_id="u1",
+                account_id="b1",
+                broker_code="dhan",
+                symbol="TCS",
+                exchange="NSE",
+                source_kind="watchlist",
+                source_type="watchlist",
+                source_id="watchlist-1",
+                status="active",
+                last_quote_json=json.dumps({"symbol": "TCS", "ltp": 3123.45, "change_pct": 1.2}),
+                last_received_at=received_at,
+                health_status="ok",
+            )
+        )
+        db.commit()
+
+        rows, changed = alert_svc.touch_ui_live_subscriptions(
+            db,
+            "u1",
+            [
+                LiveSubscriptionCreateIn(
+                    symbol="TCS",
+                    exchange="NSE",
+                    source_kind="ui",
+                    source_type="watchlist_view",
+                    source_id="watchlist_active_view",
+                )
+            ],
+            scopes=[("watchlist_view", "watchlist_active_view")],
+        )
+
+        assert changed is True
+        assert rows[0].last_quote["ltp"] == 3123.45
+        assert rows[0].last_quote["change_pct"] == 1.2
+        assert rows[0].last_received_at == received_at
+        assert rows[0].health_status == "stale"
+    finally:
+        db.close()
+
+
 def test_active_period_blocks_market_data_after_close():
     result = evaluate_active_period(
         AlertWorkflowActivePeriod(),

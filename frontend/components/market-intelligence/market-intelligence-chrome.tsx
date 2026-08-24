@@ -90,7 +90,6 @@ import {
 import {
 	emptyMarketIntelligenceFeeds,
 	emptyMarketIntelligenceHasMore,
-	marketIntelligenceProducts,
 	marketIntelligenceSections,
 	type AlphaSection,
 	type MarketIntelligenceFeeds,

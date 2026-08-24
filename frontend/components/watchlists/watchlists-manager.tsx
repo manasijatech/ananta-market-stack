@@ -68,6 +68,7 @@ import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
 import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import { formatMarketCap } from "@/lib/market-cap";
+import { getPublicApiWebSocketUrl } from "@/lib/runtime-config";
 import { typography } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -454,6 +455,7 @@ export function WatchlistsManager({
     const [livePrices, setLivePrices] = useState<Record<string, LivePriceTick>>({});
     const [resolvedLiveDemand, setResolvedLiveDemand] = useState<LiveSubscription[]>([]);
     const [liveState, setLiveState] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
+    const [liveMessage, setLiveMessage] = useState("Connecting to the live price stream.");
     const [isPending, startTransition] = useTransition();
     const searchWrapRef = useRef<HTMLDivElement | null>(null);
     const presetListRef = useRef<HTMLDivElement | null>(null);
@@ -629,17 +631,19 @@ export function WatchlistsManager({
         async function connect() {
             if (!livePriceRefs.length) {
                 setLiveState("disconnected");
+                setLiveMessage("No broker-backed symbols are available for live pricing.");
                 return;
             }
             setLiveState("connecting");
+            setLiveMessage("Connecting to the live price stream.");
             try {
                 const userId = initialWatchlists[0]?.user_id;
                 if (!userId) {
                     setLiveState("disconnected");
+                    setLiveMessage("The watchlist is not linked to the current user.");
                     return;
                 }
-                const url = new URL("/api/v1/live-streams/prices/ws", window.location.origin);
-                url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+                const url = getPublicApiWebSocketUrl("live-streams/prices/ws");
                 url.searchParams.set("user_id", userId);
                 url.searchParams.set("scope", "client");
                 if (cancelled) return;
@@ -655,30 +659,49 @@ export function WatchlistsManager({
                         })
                     );
                     setLiveState("connected");
+                    setLiveMessage("Connected to the live price stream.");
                 };
                 socket.onmessage = (event) => {
                     try {
-                        const payload = JSON.parse(String(event.data)) as { type?: string; rows?: LivePriceTick[] };
+                        const payload = JSON.parse(String(event.data)) as {
+                            type?: string;
+                            rows?: LivePriceTick[];
+                            message?: string;
+                            symbol_count?: number;
+                        };
                         if (payload.type === "snapshot" || payload.type === "prices") {
                             enqueue(Array.isArray(payload.rows) ? payload.rows : []);
+                        } else if (payload.type === "connected" || payload.type === "scope") {
+                            setLiveMessage(`${payload.symbol_count ?? 0} symbols in the live price scope.`);
+                        } else if (payload.type === "error") {
+                            setLiveState("error");
+                            setLiveMessage(payload.message || "The live price stream reported an error.");
                         }
                     } catch {
                         setLiveState("error");
+                        setLiveMessage("The live price stream returned an invalid message.");
                     }
                 };
                 socket.onerror = () => {
-                    setLiveState("connecting");
+                    setLiveState("error");
+                    setLiveMessage("The live price connection was interrupted. Retrying shortly.");
                     socket.close();
                 };
                 socket.onclose = () => {
                     if (liveSocketRef.current === socket) liveSocketRef.current = null;
                     if (cancelled) return;
                     setLiveState("disconnected");
+                    setLiveMessage((current) =>
+                        current.includes("error") || current.includes("interrupted")
+                            ? current
+                            : "The live price connection closed. Retrying shortly."
+                    );
                     reconnectTimer = setTimeout(connect, 2500);
                 };
-            } catch {
+            } catch (caught) {
                 if (cancelled) return;
                 setLiveState("error");
+                setLiveMessage(caught instanceof Error ? caught.message : "Could not open the live price stream.");
                 reconnectTimer = setTimeout(connect, 2500);
             }
         }
@@ -708,7 +731,10 @@ export function WatchlistsManager({
                 });
                 if (!cancelled) setResolvedLiveDemand(rows);
             } catch {
-                if (!cancelled) setLiveState("error");
+                if (!cancelled) {
+                    setLiveState("error");
+                    setLiveMessage("Could not register the watchlist symbols for live pricing.");
+                }
             }
         }
 
@@ -2093,22 +2119,27 @@ export function WatchlistsManager({
                                                 {selected.kind === "preset" ? (
                                                     <Badge variant="outline">Preset</Badge>
                                                 ) : null}
-                                                <Badge variant={liveStateBadgeVariant(liveState)}>
-                                                    <span
-                                                        aria-hidden="true"
-                                                        className={cn(
-                                                            "size-1.5 rounded-full",
-                                                            liveState === "connected"
-                                                                ? "bg-emerald-500"
-                                                                : liveState === "connecting"
-                                                                  ? "bg-amber-500"
-                                                                  : liveState === "error"
-                                                                    ? "bg-red-500"
-                                                                    : "bg-muted-foreground/64"
-                                                        )}
-                                                    />
-                                                    {liveStateLabel(liveState)}
-                                                </Badge>
+                                                <Tooltip>
+                                                    <TooltipTrigger render={<span className="inline-flex" />}>
+                                                        <Badge variant={liveStateBadgeVariant(liveState)}>
+                                                            <span
+                                                                aria-hidden="true"
+                                                                className={cn(
+                                                                    "size-1.5 rounded-full",
+                                                                    liveState === "connected"
+                                                                        ? "bg-emerald-500"
+                                                                        : liveState === "connecting"
+                                                                          ? "bg-amber-500"
+                                                                          : liveState === "error"
+                                                                            ? "bg-red-500"
+                                                                            : "bg-muted-foreground/64"
+                                                                )}
+                                                            />
+                                                            {liveStateLabel(liveState)}
+                                                        </Badge>
+                                                    </TooltipTrigger>
+                                                    <TooltipPopup>{liveMessage}</TooltipPopup>
+                                                </Tooltip>
                                             </CardFrameTitle>
                                             <CardFrameDescription>
                                                 {selected.items.length} symbol

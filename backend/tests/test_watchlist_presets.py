@@ -30,6 +30,10 @@ def test_allowed_equity_index_codes_extract_only_supported_equity_groups():
     assert "debtindex" not in codes
 
 
+def test_symbol_normalization_preserves_valid_nse_ampersands():
+    assert preset_svc._normalize_symbol(" M&M ") == "M&M"
+
+
 def test_list_preset_catalog_hides_blacklisted_rows():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
