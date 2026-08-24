@@ -353,6 +353,24 @@ export interface GreeksRequest {
     tokens?: string[];
 }
 
+export interface MarginLeg {
+    action: string;
+    arrow_token?: string | null;
+    exchange: string;
+    instrument_token?: string | null;
+    price?: number;
+    pricetype?: string;
+    product: string;
+    quantity: number;
+    symbol?: string;
+    trigger_price?: number;
+}
+
+export interface MarginRequest {
+    include_positions?: boolean;
+    positions: MarginLeg[];
+}
+
 export interface StreamStatus {
     broker: BrokerCode | string;
     account_id: string;

@@ -27,6 +27,7 @@ import type {
     Notification,
     OhlcRequest,
     OrderBody,
+    MarginRequest,
     OptionChainRequest,
     QuoteRequest,
     QuoteResponse,
@@ -740,6 +741,13 @@ export async function getOptionChainData(id: string, payload: OptionChainRequest
 
 export async function getGreeksData(id: string, payload: GreeksRequest): Promise<JsonObject> {
     return request<JsonObject>(`/broker-accounts/${id}/data/greeks`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
+export async function calculateMargin(id: string, payload: MarginRequest): Promise<JsonObject> {
+    return request<JsonObject>(`/broker-accounts/${id}/margin/calculate`, {
         method: "POST",
         body: JSON.stringify(payload)
     });

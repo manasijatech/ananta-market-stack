@@ -57,6 +57,18 @@ export function titleForComponentType(type: string, fallback = "Widget"): string
             return "Agent timeline";
         case "notes-block":
             return "Notes";
+        case "option-chain":
+            return "Option chain";
+        case "greeks-panel":
+            return "Greeks";
+        case "margin-scenario":
+            return "Margin";
+        case "pnl-exposure-strip":
+            return "P&L exposure";
+        case "market-heatmap":
+            return "Heatmap";
+        case "portfolio-summary":
+            return "Portfolio";
         default:
             return fallback;
     }
@@ -96,6 +108,18 @@ export function defaultSizeForType(type: string): WorkspacePosition {
             return { h: 4, w: 12, x: 0, y: 0 };
         case "notes-block":
             return { h: 4, w: 4, x: 0, y: 0 };
+        case "option-chain":
+            return { h: 6, w: 8, x: 0, y: 0 };
+        case "greeks-panel":
+            return { h: 5, w: 6, x: 0, y: 0 };
+        case "margin-scenario":
+            return { h: 4, w: 6, x: 0, y: 0 };
+        case "pnl-exposure-strip":
+            return { h: 4, w: 6, x: 0, y: 0 };
+        case "market-heatmap":
+            return { h: 6, w: 8, x: 0, y: 0 };
+        case "portfolio-summary":
+            return { h: 5, w: 12, x: 0, y: 0 };
         default:
             return { h: 3, w: 6, x: 0, y: 0 };
     }

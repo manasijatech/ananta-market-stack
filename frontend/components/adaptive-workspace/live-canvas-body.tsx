@@ -5,9 +5,14 @@ import { LiveAlertsWidget } from "@/components/adaptive-workspace/live-alerts-wi
 import { LiveAgentTimelineWidget } from "@/components/adaptive-workspace/live-agent-timeline-widget";
 import { LiveApprovalCardWidget } from "@/components/adaptive-workspace/live-approval-card-widget";
 import { LiveChartWidget } from "@/components/adaptive-workspace/live-chart-widget";
+import { LiveGreeksWidget } from "@/components/adaptive-workspace/live-greeks-widget";
+import { LiveHeatmapWidget } from "@/components/adaptive-workspace/live-heatmap-widget";
 import { LiveIntelWidget } from "@/components/adaptive-workspace/live-intel-widget";
+import { LiveMarginWidget } from "@/components/adaptive-workspace/live-margin-widget";
 import { LiveMicroAppWidget } from "@/components/adaptive-workspace/live-micro-app-widget";
 import { LiveNotesWidget } from "@/components/adaptive-workspace/live-notes-widget";
+import { LiveOptionChainWidget } from "@/components/adaptive-workspace/live-option-chain-widget";
+import { LivePnlWidget } from "@/components/adaptive-workspace/live-pnl-widget";
 import { LiveHealthWidget, LiveHoldingsWidget } from "@/components/adaptive-workspace/live-portfolio-widgets";
 import { LiveQuoteChartWidget } from "@/components/adaptive-workspace/live-quote-chart-widget";
 import { LiveQuotesWidget } from "@/components/adaptive-workspace/live-quotes-widget";
@@ -51,6 +56,20 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
                     <LiveHoldingsWidget refreshNonce={refreshNonce} />
                 </SuppressPin>
             );
+        case "pnl-exposure-strip":
+            return (
+                <SuppressPin>
+                    <LivePnlWidget refreshNonce={refreshNonce} />
+                </SuppressPin>
+            );
+        case "option-chain":
+            return <LiveOptionChainWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
+        case "greeks-panel":
+            return <LiveGreeksWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
+        case "margin-scenario":
+            return <LiveMarginWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
+        case "market-heatmap":
+            return <LiveHeatmapWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "broker-health":
             return (
                 <SuppressPin>

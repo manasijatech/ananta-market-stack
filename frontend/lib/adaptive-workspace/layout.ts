@@ -53,6 +53,13 @@ export function expandedSizeForType(type: string): WorkspacePosition {
             return { h: 6, w: 12, x: 0, y: 0 };
         case "quote-chart":
             return { h: 10, w: 12, x: 0, y: 0 };
+        case "option-chain":
+        case "market-heatmap":
+            return { h: 8, w: 12, x: 0, y: 0 };
+        case "greeks-panel":
+        case "margin-scenario":
+        case "pnl-exposure-strip":
+            return { h: 7, w: 12, x: 0, y: 0 };
         default:
             return { h: 6, w: 12, x: 0, y: 0 };
     }

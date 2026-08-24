@@ -418,6 +418,11 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("chart", ("chart", "historical", "ohlc", "candlestick", "1-year", "1 year", "performance")),
     ("health", ("health", "session status", "broker connection", "login")),
     ("notes", ("notes", "research note", "scratch pad", "scratchpad")),
+    ("option_chain", ("option chain", "option-chain", "options chain")),
+    ("greeks", ("greeks", "option greeks")),
+    ("margin", ("margin scenario", "calculate margin", "span margin")),
+    ("pnl", ("pnl", "p&l", "profit and loss", "exposure strip")),
+    ("heatmap", ("heatmap", "heat map", "market heatmap")),
 )
 
 _INTENT_TOOLS: dict[str, list[str]] = {
@@ -434,6 +439,11 @@ _INTENT_TOOLS: dict[str, list[str]] = {
     "chart": ["broker_get_historical"],
     "health": ["broker_get_session_status"],
     "notes": [],
+    "option_chain": ["broker_get_option_chain"],
+    "greeks": ["broker_get_greeks"],
+    "margin": ["broker_calculate_margin"],
+    "pnl": ["broker_get_portfolio"],
+    "heatmap": [],
 }
 
 _INTENT_TYPES: dict[str, str] = {
@@ -450,6 +460,11 @@ _INTENT_TYPES: dict[str, str] = {
     "chart": "price-chart",
     "health": "broker-health",
     "notes": "notes-block",
+    "option_chain": "option-chain",
+    "greeks": "greeks-panel",
+    "margin": "margin-scenario",
+    "pnl": "pnl-exposure-strip",
+    "heatmap": "market-heatmap",
 }
 
 _FEED_PRODUCTS = {

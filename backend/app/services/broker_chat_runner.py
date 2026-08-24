@@ -155,7 +155,10 @@ Adaptive-only data tools (not on /broker-chat):
 
 Preferred component types: holdings-table, quote-ticker, quote-chart, price-chart,
 broker-health, watchlist, intel-feed, alert-rule-draft, workflow-graph,
-workflow-simulation, approval-card, micro-app, notes-block.
+workflow-simulation, approval-card, micro-app, notes-block, option-chain,
+greeks-panel, margin-scenario, pnl-exposure-strip, market-heatmap.
+These all have live renderers. Do not list catalog types as "reserved" or
+"not live". Compose the matching widget instead.
 Common mistakes that WILL be rejected:
 - holdings / portfolio → holdings-table
 - quotes / quote → quote-ticker
@@ -171,6 +174,11 @@ Common mistakes that WILL be rejected:
   data.tool=alert_get_studio. Never silent-deploy.
 - watchlist / last watchlist → watchlist + broker_list_watchlists then
   broker_get_watchlist_symbols
+- option chain → option-chain + broker_get_option_chain (props.symbol, props.expiry)
+- greeks → greeks-panel + broker_get_greeks
+- margin estimate → margin-scenario + broker_calculate_margin (read-only)
+- pnl / exposure → pnl-exposure-strip (holdings + positions)
+- heatmap → market-heatmap with props.heatmapScope tracked|watchlist|portfolio_holdings
 - payoff / straddle / sandbox → micro-app with props.appId from
   workspace_get_micro_app, plus notes-block. Never src, href, HTML, or a
   second chat stream.

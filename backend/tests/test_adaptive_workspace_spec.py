@@ -128,6 +128,12 @@ def test_authoring_docs_list_catalog_and_example_spec():
     assert "watchlist" in docs["preferred_component_types"]
     assert "quote-chart" in docs["component_types"]
     assert "quote-chart" in docs["preferred_component_types"]
+    assert "option-chain" in docs["live_component_types"]
+    assert "market-heatmap" in docs["live_component_types"]
+    assert "agent-timeline" not in docs["live_component_types"]
+    assert component_type_for_tool("broker_get_option_chain") == "option-chain"
+    assert component_type_for_tool("broker_get_greeks") == "greeks-panel"
+    assert component_type_for_tool("broker_calculate_margin") == "margin-scenario"
 
 
 def test_evaluate_request_covers_watchlist_news_quotes_and_alerts():
@@ -346,3 +352,19 @@ def test_notes_block_accepts_long_research_text():
         }
     )
     assert spec.components[0].props["text"] == "x" * 16000
+
+
+def test_evaluate_request_covers_live_derivative_and_heatmap_types():
+    from app.services.adaptive_workspace import evaluate_request
+
+    planned = evaluate_request("Show the RELIANCE option chain, greeks, a heatmap, and my P&L exposure")
+    assert "option_chain" in planned["intents"]
+    assert "greeks" in planned["intents"]
+    assert "heatmap" in planned["intents"]
+    assert "pnl" in planned["intents"]
+    assert "option-chain" in planned["recommended_types"]
+    assert "greeks-panel" in planned["recommended_types"]
+    assert "market-heatmap" in planned["recommended_types"]
+    assert "pnl-exposure-strip" in planned["recommended_types"]
+    assert "broker_get_option_chain" in planned["recommended_tools"]
+    assert "broker_get_greeks" in planned["recommended_tools"]
