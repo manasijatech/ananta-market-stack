@@ -1,8 +1,7 @@
 "use client";
 
 import type { CustomToolRendererProps } from "@/components/agent-elements/types";
-import { PinButton, ToolCardShell } from "@/components/adaptive-workspace/tool-card-shell";
-import { useAdaptiveWorkspacePins } from "@/components/adaptive-workspace/workspace-provider";
+import { ToolCardShell } from "@/components/adaptive-workspace/tool-card-shell";
 import { quoteMoveFromRecord } from "@/lib/adaptive-workspace/quote-fields";
 import {
     asToolEnvelope,
@@ -29,7 +28,6 @@ function quoteRows(envelope: Record<string, unknown> | null) {
 }
 
 export function QuoteTickerCard({ input, name, output, status }: CustomToolRendererProps) {
-    const { pin } = useAdaptiveWorkspacePins();
     const pending = status === "pending" || status === "streaming";
     const envelope = pending ? null : asToolEnvelope(output);
     const ok = toolEnvelopeOk(envelope);
@@ -38,12 +36,6 @@ export function QuoteTickerCard({ input, name, output, status }: CustomToolRende
 
     return (
         <ToolCardShell
-            actions={
-                <PinButton
-                    disabled={pending || !ok}
-                    onClick={() => pin({ input, output, toolName: name })}
-                />
-            }
             error={pending || ok ? null : toolEnvelopeMessage(envelope)}
             pending={pending}
             pendingLabel="Fetching quotes"

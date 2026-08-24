@@ -60,13 +60,12 @@ No database tables yet. No `compose_surface` agent tool yet.
 
 ### Phase 1 — Rich responses on the preview page
 
-- [x] New `/adaptive-workspace` chrome: sessions | transcript | pin tray.
+- [x] New `/adaptive-workspace` chrome: sessions | transcript | canvas.
 - [x] Map `broker_get_quotes` / `broker_get_cached_quotes` → `quote-ticker`.
 - [x] Map `broker_get_portfolio` → `holdings-table` (holdings, positions, funds when present).
 - [x] Map `broker_get_session_status` → `broker-health`.
 - [x] Map `broker_get_historical` → `price-chart`.
 - [x] Stream skeleton → data → error states.
-- [x] **Pin to canvas** into a session-local tray (not persisted).
 - [x] Always show mapped tool cards even when Broker Chat’s “Tools” toggle would hide raw JSON.
 
 Success: a holdings or quote question on `/adaptive-workspace` is useful as cards. `/broker-chat` still shows the current transcript/tool-row UI.
@@ -171,6 +170,5 @@ Grid: 12 columns. `x + w <= 12`. Unique component ids. Unknown `type` or `data.t
 ## Success signals (measure after Phase 1)
 
 - Time from prompt to first useful component on `/adaptive-workspace`.
-- Pin rate of generated cards.
 - Follow-up prompts that are formatting requests (should fall).
 - `/broker-chat` usage still works with no visual regressions.

@@ -4,8 +4,7 @@ import { ColorType, LineSeries, createChart, type IChartApi, type UTCTimestamp }
 import { useEffect, useMemo, useRef } from "react";
 import { useTheme } from "next-themes";
 import type { CustomToolRendererProps } from "@/components/agent-elements/types";
-import { PinButton, ToolCardShell } from "@/components/adaptive-workspace/tool-card-shell";
-import { useAdaptiveWorkspacePins } from "@/components/adaptive-workspace/workspace-provider";
+import { ToolCardShell } from "@/components/adaptive-workspace/tool-card-shell";
 import {
     asToolEnvelope,
     isRecord,
@@ -77,7 +76,6 @@ function extractCloses(envelope: Record<string, unknown> | null): CandlePoint[] 
 }
 
 export function PriceChartCard({ input, name, output, status }: CustomToolRendererProps) {
-    const { pin } = useAdaptiveWorkspacePins();
     const { resolvedTheme } = useTheme();
     const pending = status === "pending" || status === "streaming";
     const envelope = pending ? null : asToolEnvelope(output);
@@ -117,7 +115,6 @@ export function PriceChartCard({ input, name, output, status }: CustomToolRender
 
     return (
         <ToolCardShell
-            actions={<PinButton disabled={pending || !ok} onClick={() => pin({ input, output, toolName: name })} />}
             error={pending || ok ? null : toolEnvelopeMessage(envelope)}
             pending={pending}
             pendingLabel="Loading historical candles"

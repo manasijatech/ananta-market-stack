@@ -1,8 +1,7 @@
 "use client";
 
 import type { CustomToolRendererProps } from "@/components/agent-elements/types";
-import { PinButton, ToolCardShell } from "@/components/adaptive-workspace/tool-card-shell";
-import { useAdaptiveWorkspacePins } from "@/components/adaptive-workspace/workspace-provider";
+import { ToolCardShell } from "@/components/adaptive-workspace/tool-card-shell";
 import { Badge } from "@/components/ui/badge";
 import {
     asToolEnvelope,
@@ -14,7 +13,6 @@ import {
 } from "@/lib/adaptive-workspace/tool-envelope";
 
 export function SessionStatusCard({ input, name, output, status }: CustomToolRendererProps) {
-    const { pin } = useAdaptiveWorkspacePins();
     const pending = status === "pending" || status === "streaming";
     const envelope = pending ? null : asToolEnvelope(output);
     const ok = toolEnvelopeOk(envelope);
@@ -26,7 +24,6 @@ export function SessionStatusCard({ input, name, output, status }: CustomToolRen
 
     return (
         <ToolCardShell
-            actions={<PinButton disabled={pending || !ok} onClick={() => pin({ input, output, toolName: name })} />}
             error={pending || ok ? null : toolEnvelopeMessage(envelope)}
             pending={pending}
             pendingLabel="Checking broker session"

@@ -2,7 +2,6 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardPanel } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatIstDateTime } from "@/lib/datetime";
@@ -77,15 +76,5 @@ export function ToolCardShell({
             </CardHeader>
             <CardPanel className="px-3 py-3">{body}</CardPanel>
         </Card>
-    );
-}
-
-export function PinButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
-    const pinEnabled = useContext(PinEnabledContext);
-    if (!pinEnabled) return null;
-    return (
-        <Button disabled={disabled} onClick={onClick} size="xs" type="button" variant="outline">
-            Pin
-        </Button>
     );
 }

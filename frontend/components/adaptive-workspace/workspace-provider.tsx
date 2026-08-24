@@ -10,7 +10,6 @@ import {
     useState,
     type ReactNode
 } from "react";
-import { componentTypeForTool, defaultSizeForType, pinTitleForTool } from "@/lib/adaptive-workspace/catalog";
 import { outputsForSpec, toolOutputsFromMessages } from "@/lib/adaptive-workspace/bind-outputs";
 import { clampPosition, placeWithoutOverlap } from "@/lib/adaptive-workspace/layout";
 import {
@@ -24,18 +23,10 @@ import {
 import { createAdaptiveWorkspaceSnapshot, getAdaptiveWorkspaceCurrent } from "@/service/actions/adaptive-workspace";
 import { uniqueCashSymbols } from "@/hooks/use-desk-data";
 import type {
-    PinnedWorkspaceItem,
-    WorkspaceComponent,
     WorkspacePosition,
     WorkspaceSpec,
     WorkspaceWidgetOutput
 } from "@/service/types/adaptive-workspace";
-
-type PinInput = {
-    input: Record<string, unknown>;
-    output: unknown;
-    toolName: string;
-};
 
 type ApplySource = "agent" | "restore" | "user";
 
@@ -47,9 +38,6 @@ type AdaptiveWorkspaceContextValue = {
     ingestMessageOutputs: (messages: Array<{ parts?: unknown[]; role?: string }>) => void;
     loading: boolean;
     outputs: Record<string, WorkspaceWidgetOutput>;
-    pin: (item: PinInput) => void;
-    pinEnabled: boolean;
-    pins: PinnedWorkspaceItem[];
     patchComponent: (
         id: string,
         patch: { position?: WorkspacePosition; props?: Record<string, unknown> },
@@ -62,30 +50,12 @@ type AdaptiveWorkspaceContextValue = {
     sessionId: string | null;
     spec: WorkspaceSpec;
     undo: () => void;
-    unpin: (id: string) => void;
     updatePosition: (id: string, position: WorkspacePosition) => void;
 };
 
 const AdaptiveWorkspaceContext = createContext<AdaptiveWorkspaceContextValue | null>(null);
 const HISTORY_LIMIT = 20;
 const PERSIST_MS = 700;
-
-function componentFromPin(spec: WorkspaceSpec, item: PinInput): WorkspaceComponent | null {
-    const type = componentTypeForTool(item.toolName);
-    if (!type) return null;
-    const size = defaultSizeForType(type);
-    const position = nextGridPosition(spec, size.w, size.h);
-    return {
-        actions: ["select", "refresh", "remove", "duplicate"],
-        data: { params: item.input, tool: item.toolName },
-        id: nextComponentId(
-            spec.components.map((entry) => entry.id),
-            type
-        ),
-        position,
-        type
-    };
-}
 
 export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode }) {
     const [spec, setSpec] = useState<WorkspaceSpec>(emptyWorkspaceSpec());
@@ -191,34 +161,6 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
         []
     );
 
-    const pin = useCallback(
-        (item: PinInput) => {
-            setSpec((current) => {
-                const duplicateOutput = current.components.some((entry) => {
-                    const cached = outputs[entry.id];
-                    return cached && cached.toolName === item.toolName && JSON.stringify(cached.output) === JSON.stringify(item.output);
-                });
-                if (duplicateOutput) return current;
-                const component = componentFromPin(current, item);
-                if (!component) return current;
-                const next = cloneWorkspaceSpec(current);
-                next.components = [...next.components, component];
-                if (!next.title || next.title === "Untitled desk") {
-                    next.title = pinTitleForTool(item.toolName, next.title);
-                }
-                setHistory((historyItems) => [cloneWorkspaceSpec(current), ...historyItems].slice(0, HISTORY_LIMIT));
-                setOutputs((currentOutputs) => ({
-                    ...currentOutputs,
-                    [component.id]: { input: item.input, output: item.output, toolName: item.toolName }
-                }));
-                setSelectedId(component.id);
-                persist(next, "Pin to canvas");
-                return next;
-            });
-        },
-        [outputs, persist]
-    );
-
     const remove = useCallback(
         (id: string) => {
             setSpec((current) => {
@@ -238,8 +180,6 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
         },
         [persist]
     );
-
-    const unpin = remove;
 
     const duplicate = useCallback(
         (id: string) => {
@@ -345,20 +285,6 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
         setSelectedId(id);
     }, []);
 
-    const pins = useMemo<PinnedWorkspaceItem[]>(
-        () =>
-            spec.components.map((item) => ({
-                id: item.id,
-                input: outputs[item.id]?.input ?? item.data?.params ?? {},
-                output: outputs[item.id]?.output,
-                pinnedAt: new Date().toISOString(),
-                title: pinTitleForTool(item.data?.tool ?? item.type, item.type),
-                toolName: outputs[item.id]?.toolName ?? item.data?.tool ?? item.type,
-                type: (componentTypeForTool(item.data?.tool ?? "") ?? item.type) as PinnedWorkspaceItem["type"]
-            })),
-        [outputs, spec.components]
-    );
-
     const value = useMemo(
         () => ({
             applySpec,
@@ -368,9 +294,6 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             ingestMessageOutputs,
             loading,
             outputs,
-            pin,
-            pinEnabled: true,
-            pins,
             patchComponent,
             patchUniverse,
             remove,
@@ -379,7 +302,6 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             sessionId,
             spec,
             undo,
-            unpin,
             updatePosition
         }),
         [
@@ -390,8 +312,6 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             ingestMessageOutputs,
             loading,
             outputs,
-            pin,
-            pins,
             patchComponent,
             patchUniverse,
             remove,
@@ -400,7 +320,6 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             sessionId,
             spec,
             undo,
-            unpin,
             updatePosition
         ]
     );
@@ -414,8 +333,4 @@ export function useAdaptiveWorkspace() {
         throw new Error("useAdaptiveWorkspace must be used inside AdaptiveWorkspaceProvider");
     }
     return value;
-}
-
-export function useAdaptiveWorkspacePins() {
-    return useAdaptiveWorkspace();
 }

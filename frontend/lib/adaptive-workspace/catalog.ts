@@ -74,10 +74,6 @@ export function titleForComponentType(type: string, fallback = "Widget"): string
     }
 }
 
-export function pinTitleForTool(toolName: string, fallback = "Pinned component"): string {
-    return titleForComponentType(componentTypeForTool(toolName) ?? "", fallback);
-}
-
 export function defaultSizeForType(type: string): WorkspacePosition {
     switch (type) {
         case "holdings-table":
