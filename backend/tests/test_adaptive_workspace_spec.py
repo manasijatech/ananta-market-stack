@@ -327,3 +327,22 @@ def test_evaluate_request_flags_empty_quotes_as_not_complementing():
     )
     assert result["complements_query"] is False
     assert any("Quotes intent is unmet" in note for note in result["notes"])
+
+
+def test_notes_block_accepts_long_research_text():
+    spec = parse_workspace_spec(
+        {
+            "version": "1",
+            "title": "Notes",
+            "layout": {"mode": "grid", "columns": 12},
+            "components": [
+                {
+                    "id": "notes",
+                    "type": "notes-block",
+                    "position": {"x": 0, "y": 0, "w": 4, "h": 4},
+                    "props": {"text": "x" * 16000},
+                }
+            ],
+        }
+    )
+    assert spec.components[0].props["text"] == "x" * 16000

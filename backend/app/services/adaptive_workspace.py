@@ -573,7 +573,7 @@ def evaluate_request(
     if "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")
     if "notes" in intents and "sandbox" not in intents:
-        plan.append("Compose a notes-block for desk research text. Plain text only.")
+        plan.append("Compose a notes-block for desk research text. The user can edit and autosave it; chat may set or update props.text.")
     if "chart" in intents or longer_horizon:
         plan.append("Call broker_get_historical / chart data on the bound symbols. Cash equities fall back NSE→BSE when candles are empty.")
         if "price-chart" not in recommended_types:

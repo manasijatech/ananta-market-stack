@@ -39,6 +39,7 @@ ALLOWED_COMPONENT_TYPES: frozenset[str] = frozenset(WorkspaceComponentType.__arg
 MICRO_APP_IDS: frozenset[str] = frozenset({"payoff-diagram", "notes-scratch"})
 MICRO_APP_KINDS: frozenset[str] = frozenset({"call", "put", "straddle"})
 NOTES_TEXT_MAX = 4000
+NOTES_BLOCK_TEXT_MAX = 16000
 INTEL_FEED_PRODUCTS: frozenset[str] = frozenset({"news", "announcements", "earnings", "concalls", "alerts"})
 A2UI_VERSION = "v0.9"
 A2UI_CATALOG_ID = "ananta-workspace-v1"
@@ -224,8 +225,8 @@ class WorkspaceComponent(BaseModel):
                 raise ValueError("micro-app text must be a short string")
         if self.type == "notes-block":
             text = props.get("text")
-            if text is not None and (not isinstance(text, str) or len(text) > NOTES_TEXT_MAX):
-                raise ValueError("notes-block text must be a short string")
+            if text is not None and (not isinstance(text, str) or len(text) > NOTES_BLOCK_TEXT_MAX):
+                raise ValueError("notes-block text must be a string up to 16000 characters")
         if self.type == "intel-feed":
             products = props.get("products")
             if products is not None:
@@ -424,7 +425,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Repeated requests may be suggested as a template/skill. Never auto-apply.",
             "Alert studio: alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
             "micro-app requires props.appId from the curated registry (payoff-diagram, notes-scratch). Never emit src, href, or script.",
-            "notes-block is plain text only.",
+            "notes-block is user-editable plain text (autosaved on the desk). Chat may set or replace props.text; keep it a string, no HTML.",
             "Symbol desks: set props.scope=symbol and props.symbol. Named-company desks: set universe.symbols and props.scope=desk on quote-chart / intel-feed / quote-ticker. User watchlists only when asked: props.scope=watchlist and props.watchlistId.",
             "When the user wants both live quotes and a chart for the same names, prefer one quote-chart (props.symbols, optional hiddenSymbols) instead of a separate quote-ticker plus price-chart.",
             "When the user asks about several companies' news/announcements/concalls, prefer one intel-feed with props.products=['news','announcements','concalls'] instead of one widget per product or per company.",

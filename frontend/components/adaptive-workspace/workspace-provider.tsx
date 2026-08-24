@@ -50,7 +50,11 @@ type AdaptiveWorkspaceContextValue = {
     pin: (item: PinInput) => void;
     pinEnabled: boolean;
     pins: PinnedWorkspaceItem[];
-    patchComponent: (id: string, patch: { position?: WorkspacePosition; props?: Record<string, unknown> }) => void;
+    patchComponent: (
+        id: string,
+        patch: { position?: WorkspacePosition; props?: Record<string, unknown> },
+        options?: { history?: boolean }
+    ) => void;
     patchUniverse: (symbols: string[]) => void;
     remove: (id: string) => void;
     select: (id: string | null) => void;
@@ -285,7 +289,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
     );
 
     const patchComponent = useCallback(
-        (id: string, patch: { position?: WorkspacePosition; props?: Record<string, unknown> }) => {
+        (id: string, patch: { position?: WorkspacePosition; props?: Record<string, unknown> }, options?: { history?: boolean }) => {
             setSpec((current) => {
                 const index = current.components.findIndex((item) => item.id === id);
                 if (index < 0) return current;
@@ -302,7 +306,9 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
                     });
                 }
                 if (workspaceSpecsEqual(current, next)) return current;
-                setHistory((historyItems) => [cloneWorkspaceSpec(current), ...historyItems].slice(0, HISTORY_LIMIT));
+                if (options?.history !== false) {
+                    setHistory((historyItems) => [cloneWorkspaceSpec(current), ...historyItems].slice(0, HISTORY_LIMIT));
+                }
                 persist(next, "Update widget");
                 return next;
             });

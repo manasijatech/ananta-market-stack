@@ -62,7 +62,7 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
         case "micro-app":
             return <LiveMicroAppWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "notes-block":
-            return <LiveNotesWidget component={component} />;
+            return <LiveNotesWidget component={component} onPatch={onPatch} />;
         case "agent-timeline":
             return <LiveAgentTimelineWidget />;
         default:

@@ -170,7 +170,13 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <LiveCanvasBody
                     component={component}
-                    onPatch={(props) => patchComponent(component.id, { props })}
+                    onPatch={(props) =>
+                        patchComponent(
+                            component.id,
+                            { props },
+                            component.type === "notes-block" ? { history: false } : undefined
+                        )
+                    }
                     refreshNonce={refreshNonce}
                 />
             </div>
