@@ -29,7 +29,38 @@ function isDeskSearchRow(row: InstrumentSearchRow): boolean {
     return Boolean(cashEquitySymbol(row.symbol || row.trading_symbol || ""));
 }
 
+function DeskSymbolChips({ symbols }: { symbols: string[] }) {
+    return (
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+            {symbols.length ? (
+                symbols.map((symbol) => (
+                    <Badge key={symbol} size="sm" variant="outline">
+                        {symbol}
+                    </Badge>
+                ))
+            ) : (
+                <span className="text-[11px] text-muted-foreground">Desk list empty</span>
+            )}
+        </div>
+    );
+}
+
 export function DeskSymbolEditor({
+    onChange,
+    readOnly = false,
+    symbols
+}: {
+    onChange: (symbols: string[]) => void;
+    readOnly?: boolean;
+    symbols: string[];
+}) {
+    if (readOnly) {
+        return <DeskSymbolChips symbols={symbols} />;
+    }
+    return <DeskSymbolEditorInteractive onChange={onChange} symbols={symbols} />;
+}
+
+function DeskSymbolEditorInteractive({
     onChange,
     symbols
 }: {

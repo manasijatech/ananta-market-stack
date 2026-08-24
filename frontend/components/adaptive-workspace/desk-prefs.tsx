@@ -1,10 +1,11 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { listAdaptiveWorkspacePreferences } from "@/service/actions/adaptive-workspace";
+import { listAdaptiveWorkspacePreferences, putAdaptiveWorkspacePreference } from "@/service/actions/adaptive-workspace";
 import type { AdaptiveWorkspacePreference } from "@/service/types/adaptive-workspace";
 
 type DeskPrefsContextValue = {
+    canvasLocked: boolean;
     defaultAccountId: string;
     defaultWatchlistId: string;
     defaultWorkflowId: string;
@@ -12,6 +13,7 @@ type DeskPrefsContextValue = {
     intelProduct: string;
     items: AdaptiveWorkspacePreference[];
     reload: () => Promise<void>;
+    setCanvasLocked: (locked: boolean) => Promise<void>;
 };
 
 const DeskPrefsContext = createContext<DeskPrefsContextValue | null>(null);
@@ -36,18 +38,33 @@ export function AdaptiveDeskPrefsProvider({ children }: { children: ReactNode })
         void reload();
     }, [reload]);
 
+    const setCanvasLocked = useCallback(async (locked: boolean) => {
+        const value = locked ? "locked" : "unlocked";
+        setItems((current) => {
+            const rest = current.filter((item) => item.key !== "canvas_locked");
+            return [...rest, { deletable: true, key: "canvas_locked", updated_at: "", value }];
+        });
+        try {
+            await putAdaptiveWorkspacePreference("canvas_locked", value);
+        } catch {
+            await reload();
+        }
+    }, [reload]);
+
     const value = useMemo<DeskPrefsContextValue>(() => {
         const density = stringPref(items, "density") === "compact" ? "compact" : "comfortable";
         return {
+            canvasLocked: stringPref(items, "canvas_locked") !== "unlocked",
             defaultAccountId: stringPref(items, "default_account_id"),
             defaultWatchlistId: stringPref(items, "default_watchlist_id"),
             defaultWorkflowId: stringPref(items, "default_workflow_id"),
             density,
             intelProduct: stringPref(items, "intel_product"),
             items: items.filter((item) => item.key !== "request_intent_counts"),
-            reload
+            reload,
+            setCanvasLocked
         };
-    }, [items, reload]);
+    }, [items, reload, setCanvasLocked]);
 
     return <DeskPrefsContext.Provider value={value}>{children}</DeskPrefsContext.Provider>;
 }

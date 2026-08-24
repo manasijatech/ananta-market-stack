@@ -10,6 +10,7 @@ import {
     IconTrash
 } from "@tabler/icons-react";
 import { LiveCanvasBody } from "@/components/adaptive-workspace/live-canvas-body";
+import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { Button } from "@/components/ui/button";
 import { defaultSizeForType, titleForComponentType } from "@/lib/adaptive-workspace/catalog";
@@ -25,7 +26,9 @@ type Props = {
 
 export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
     const { duplicate, patchComponent, remove, select, selectedId, updatePosition } = useAdaptiveWorkspace();
-    const selected = selectedId === component.id;
+    const prefs = useOptionalAdaptiveDeskPrefs();
+    const locked = prefs?.canvasLocked !== false;
+    const selected = !locked && selectedId === component.id;
     const [draft, setDraft] = useState<WorkspacePosition | null>(null);
     const [refreshNonce, setRefreshNonce] = useState(0);
     const dragRef = useRef<{ kind: "move" | "resize"; startX: number; startY: number; origin: WorkspacePosition } | null>(null);
@@ -33,6 +36,7 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
     const expanded = component.props?.expanded === true;
 
     function beginDrag(kind: "move" | "resize", event: PointerEvent<HTMLElement>) {
+        if (locked) return;
         event.preventDefault();
         event.stopPropagation();
         select(component.id);
@@ -104,56 +108,64 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                 "group relative z-0 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border/40 bg-card/70",
                 selected ? "z-10 border-primary/70" : ""
             )}
-            onClick={() => select(component.id)}
+            onClick={() => {
+                if (!locked) select(component.id);
+            }}
             style={{
                 gridColumn: `${position.x + 1} / span ${position.w}`,
                 gridRow: `${position.y + 1} / span ${position.h}`
             }}
         >
             <header className="flex items-center gap-1 border-b border-border/40 px-2 py-1">
-                <button
-                    aria-label="Drag widget"
-                    className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary"
-                    onPointerDown={(event) => beginDrag("move", event)}
-                    onPointerMove={onPointerMove}
-                    onPointerUp={onPointerUp}
-                    type="button"
-                >
-                    <IconGripVertical className="size-4" stroke={1.8} />
-                </button>
+                {locked ? null : (
+                    <button
+                        aria-label="Drag widget"
+                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary"
+                        onPointerDown={(event) => beginDrag("move", event)}
+                        onPointerMove={onPointerMove}
+                        onPointerUp={onPointerUp}
+                        type="button"
+                    >
+                        <IconGripVertical className="size-4" stroke={1.8} />
+                    </button>
+                )}
                 <p className="min-w-0 flex-1 truncate text-xs font-semibold">
                     {titleForComponentType(component.type, component.type)}
                 </p>
-                <Button
-                    aria-label="Refresh widget data"
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        setRefreshNonce((value) => value + 1);
-                    }}
-                    size="xs"
-                    type="button"
-                    variant="ghost"
-                >
-                    <IconRefresh className="size-3.5" stroke={1.8} />
-                </Button>
-                <Button
-                    aria-label={expanded ? "Collapse widget" : "Expand widget"}
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        toggleExpanded();
-                    }}
-                    size="xs"
-                    type="button"
-                    variant="ghost"
-                >
-                    {expanded ? <IconArrowsMinimize className="size-3.5" stroke={1.8} /> : <IconArrowsMaximize className="size-3.5" stroke={1.8} />}
-                </Button>
-                <Button onClick={() => duplicate(component.id)} size="xs" type="button" variant="ghost">
-                    <IconCopy className="size-3.5" stroke={1.8} />
-                </Button>
-                <Button onClick={() => remove(component.id)} size="xs" type="button" variant="ghost">
-                    <IconTrash className="size-3.5" stroke={1.8} />
-                </Button>
+                {locked ? null : (
+                    <>
+                        <Button
+                            aria-label="Refresh widget data"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                setRefreshNonce((value) => value + 1);
+                            }}
+                            size="xs"
+                            type="button"
+                            variant="ghost"
+                        >
+                            <IconRefresh className="size-3.5" stroke={1.8} />
+                        </Button>
+                        <Button
+                            aria-label={expanded ? "Collapse widget" : "Expand widget"}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                toggleExpanded();
+                            }}
+                            size="xs"
+                            type="button"
+                            variant="ghost"
+                        >
+                            {expanded ? <IconArrowsMinimize className="size-3.5" stroke={1.8} /> : <IconArrowsMaximize className="size-3.5" stroke={1.8} />}
+                        </Button>
+                        <Button onClick={() => duplicate(component.id)} size="xs" type="button" variant="ghost">
+                            <IconCopy className="size-3.5" stroke={1.8} />
+                        </Button>
+                        <Button onClick={() => remove(component.id)} size="xs" type="button" variant="ghost">
+                            <IconTrash className="size-3.5" stroke={1.8} />
+                        </Button>
+                    </>
+                )}
             </header>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <LiveCanvasBody
@@ -162,14 +174,16 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                     refreshNonce={refreshNonce}
                 />
             </div>
-            <button
-                aria-label="Resize widget"
-                className="absolute bottom-1 right-1 size-4 cursor-se-resize rounded-sm border border-border bg-background"
-                onPointerDown={(event) => beginDrag("resize", event)}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                type="button"
-            />
+            {locked ? null : (
+                <button
+                    aria-label="Resize widget"
+                    className="absolute bottom-1 right-1 size-4 cursor-se-resize rounded-sm border border-border bg-background"
+                    onPointerDown={(event) => beginDrag("resize", event)}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    type="button"
+                />
+            )}
         </article>
     );
 }

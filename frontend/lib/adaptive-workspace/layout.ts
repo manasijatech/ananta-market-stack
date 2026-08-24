@@ -1,7 +1,7 @@
 import { GRID_COLUMNS, type WorkspacePosition } from "@/service/types/adaptive-workspace";
 
 export const CANVAS_ROW_HEIGHT = 72;
-export const CANVAS_GAP = 8;
+export const CANVAS_GAP = 4;
 export const CANVAS_MIN_W = 3;
 export const CANVAS_MIN_H = 2;
 

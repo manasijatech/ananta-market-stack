@@ -177,10 +177,16 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
                         tone={live.state === "connected" || hasPoints ? "live" : live.state === "error" ? "error" : "cached"}
                     />
                 </div>
-                <p className="px-3 pt-1 text-[11px] text-muted-foreground">
-                    {scopeHint(component, watchlist?.name, deskSymbols.length)}
-                    {percent ? " · indexed to first close" : ""}
-                </p>
+                {prefs?.canvasLocked !== false ? (
+                    percent ? (
+                        <p className="px-3 pt-1 text-[11px] text-muted-foreground">Indexed to first close</p>
+                    ) : null
+                ) : (
+                    <p className="px-3 pt-1 text-[11px] text-muted-foreground">
+                        {scopeHint(component, watchlist?.name, deskSymbols.length)}
+                        {percent ? " · indexed to first close" : ""}
+                    </p>
+                )}
                 {showChart ? (
                     <div className="flex min-h-0 flex-col" style={{ flex: showQuotes ? `${ratio} 1 0` : "1 1 0" }}>
                         <ChartSeriesLegend hidden={hidden} items={legendItems} onToggle={toggleHidden} />
@@ -200,7 +206,7 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
                         ) : null}
                     </div>
                 ) : null}
-                {showChart && showQuotes ? (
+                {showChart && showQuotes && prefs?.canvasLocked === false ? (
                     <button
                         aria-label="Resize chart and quotes"
                         className="h-2 shrink-0 cursor-row-resize border-y border-border/50 bg-border/30 hover:bg-primary/40"
@@ -215,11 +221,14 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
                         }}
                         type="button"
                     />
+                ) : showChart && showQuotes ? (
+                    <div className="h-px shrink-0 bg-border/50" />
                 ) : null}
                 {showQuotes ? (
                     <div className="min-h-0 overflow-auto" style={{ flex: showChart ? `${1 - ratio} 1 0` : "1 1 0" }}>
                         <QuotesMoveTable
                             emptyLabel="No symbols on this desk list yet. Add one above."
+                            layoutLocked={prefs?.canvasLocked !== false}
                             onRemove={
                                 componentScope(component) === "desk"
                                     ? (symbol) => patchUniverse(deskSymbols.filter((item) => item !== symbol))

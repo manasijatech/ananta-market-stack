@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { IconArrowBackUp } from "@tabler/icons-react";
+import { IconArrowBackUp, IconLock, IconLockOpen } from "@tabler/icons-react";
 import { AdaptiveCanvasWidget } from "@/components/adaptive-workspace/canvas-widget";
 import { AdaptiveDeskPersonalization } from "@/components/adaptive-workspace/desk-personalization";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
@@ -20,6 +20,7 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
     const prefs = useOptionalAdaptiveDeskPrefs();
     const boardRef = useRef<HTMLDivElement>(null);
     const [containerWidth, setContainerWidth] = useState(960);
+    const locked = prefs?.canvasLocked !== false;
 
     useEffect(() => {
         const node = boardRef.current;
@@ -40,20 +41,44 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                <div className="min-w-0">
-                    <p className="font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">Canvas</p>
-                    <h2 className="truncate text-lg font-heading font-semibold tracking-tight">{spec.title}</h2>
+            <div className={cn("flex items-center justify-between gap-3 border-b border-border", locked ? "px-3 py-2" : "px-4 py-3")}>
+                <div className="flex min-w-0 items-center gap-2">
+                    <div className="min-w-0">
+                        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">Canvas</p>
+                        <h2 className="truncate text-lg font-heading font-semibold tracking-tight">{spec.title}</h2>
+                    </div>
+                    {prefs ? (
+                        <Button
+                            aria-label={locked ? "Unlock canvas layout" : "Lock canvas layout"}
+                            className="shrink-0"
+                            onClick={() => void prefs.setCanvasLocked(!locked)}
+                            size="sm"
+                            type="button"
+                            variant={locked ? "outline" : "secondary"}
+                        >
+                            {locked ? <IconLock className="size-4" stroke={1.8} /> : <IconLockOpen className="size-4" stroke={1.8} />}
+                            {locked ? "Unlock" : "Lock"}
+                        </Button>
+                    ) : null}
                 </div>
-                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                    <AdaptiveDeskPersonalization />
-                    <Button disabled={!canUndo} onClick={undo} size="sm" type="button" variant="outline">
-                        <IconArrowBackUp className="size-4" stroke={1.8} />
-                        Undo
-                    </Button>
-                </div>
+                {locked ? null : (
+                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                        <AdaptiveDeskPersonalization />
+                        <Button disabled={!canUndo} onClick={undo} size="sm" type="button" variant="outline">
+                            <IconArrowBackUp className="size-4" stroke={1.8} />
+                            Undo
+                        </Button>
+                    </div>
+                )}
             </div>
-            <div className={cn("min-h-0 flex-1 overflow-auto bg-background/40 p-3", prefs?.density === "compact" && "[&_td]:py-1 [&_th]:py-1")} ref={boardRef}>
+            <div
+                className={cn(
+                    "min-h-0 flex-1 overflow-auto bg-background/40",
+                    locked ? "p-1.5" : "p-3",
+                    prefs?.density === "compact" && "[&_td]:py-1 [&_th]:py-1"
+                )}
+                ref={boardRef}
+            >
                 {loading ? (
                     <p className="text-sm text-muted-foreground">Restoring saved desk…</p>
                 ) : !spec.components.length ? (

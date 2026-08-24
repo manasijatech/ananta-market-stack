@@ -425,10 +425,10 @@ export function AdaptiveDeskPersonalization() {
                                 value={prefs.intelProduct || "news"}
                             />
                         </div>
-                        {prefs.items.length ? (
+                        {prefs.items.filter((item) => item.key !== "canvas_locked").length ? (
                             <div className="grid gap-1">
                                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Saved keys</p>
-                                {prefs.items.map((item) => (
+                                {prefs.items.filter((item) => item.key !== "canvas_locked").map((item) => (
                                     <div className="flex min-w-0 items-start justify-between gap-2 rounded-md border border-border px-2 py-1.5" key={item.key}>
                                         <span className="min-w-0 text-sm">
                                             <span className="font-semibold">{item.key}</span>

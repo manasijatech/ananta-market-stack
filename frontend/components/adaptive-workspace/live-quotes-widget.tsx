@@ -117,12 +117,14 @@ export function buildQuoteMoveRows(
 
 export function QuotesMoveTable({
     emptyLabel = "No symbols bound to this quotes widget yet.",
+    layoutLocked = false,
     onRemove,
     onToggleHidden,
     rows,
     showExchangeBadge = false
 }: {
     emptyLabel?: string;
+    layoutLocked?: boolean;
     onRemove?: (symbol: string) => void;
     onToggleHidden: (symbol: string) => void;
     rows: QuoteMoveRow[];
@@ -139,7 +141,7 @@ export function QuotesMoveTable({
                     <TableHead className="h-8 py-1 text-right">LTP</TableHead>
                     <TableHead className="h-8 py-1 text-right">Change</TableHead>
                     <TableHead className="h-8 py-1 text-right">Change %</TableHead>
-                    <TableHead className="h-8 w-24 py-1 text-right"> </TableHead>
+                    {layoutLocked ? null : <TableHead className="h-8 w-24 py-1 text-right"> </TableHead>}
                 </TableRow>
             </TableHeader>
             <TableBody>
@@ -164,22 +166,24 @@ export function QuotesMoveTable({
                         <TableCell className={cn("text-right", row.hidden && "opacity-60")}>
                             <MoveCell suffix="%" value={row.changePercent} />
                         </TableCell>
-                        <TableCell className="text-right">
-                            <span className="inline-flex items-center justify-end gap-0.5">
-                                <HideSymbolButton hidden={row.hidden} onToggle={() => onToggleHidden(row.symbol)} />
-                                {onRemove ? (
-                                    <Button
-                                        aria-label={`Remove ${row.symbol} from desk list`}
-                                        onClick={() => onRemove(row.symbol)}
-                                        size="xs"
-                                        type="button"
-                                        variant="ghost"
-                                    >
-                                        Remove
-                                    </Button>
-                                ) : null}
-                            </span>
-                        </TableCell>
+                        {layoutLocked ? null : (
+                            <TableCell className="text-right">
+                                <span className="inline-flex items-center justify-end gap-0.5">
+                                    <HideSymbolButton hidden={row.hidden} onToggle={() => onToggleHidden(row.symbol)} />
+                                    {onRemove ? (
+                                        <Button
+                                            aria-label={`Remove ${row.symbol} from desk list`}
+                                            onClick={() => onRemove(row.symbol)}
+                                            size="xs"
+                                            type="button"
+                                            variant="ghost"
+                                        >
+                                            Remove
+                                        </Button>
+                                    ) : null}
+                                </span>
+                            </TableCell>
+                        )}
                     </TableRow>
                 ))}
             </TableBody>
@@ -245,9 +249,12 @@ export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
                     tone={live.state === "connected" ? "live" : live.state === "error" ? "error" : "cached"}
                 />
             </div>
-            <p className="px-3 pt-1 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name, deskSymbols.length)}</p>
+            {prefs?.canvasLocked !== false ? null : (
+                <p className="px-3 pt-1 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name, deskSymbols.length)}</p>
+            )}
             <div className="min-h-0 flex-1 overflow-auto">
             <QuotesMoveTable
+                layoutLocked={prefs?.canvasLocked !== false}
                 onRemove={
                     componentScope(component) === "desk"
                         ? (symbol) => patchUniverse(deskSymbols.filter((item) => item !== symbol))

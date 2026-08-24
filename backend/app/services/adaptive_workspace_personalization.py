@@ -22,6 +22,7 @@ ALLOWED_PREFERENCE_KEYS = frozenset(
         "intel_product",
         "default_account_id",
         "default_workflow_id",
+        "canvas_locked",
     }
 )
 INTERNAL_INTENT_COUNTS_KEY = "request_intent_counts"
@@ -30,6 +31,7 @@ SUGGESTION_THRESHOLD = 3
 _PREF_VALUE_LIMITS = {
     "density": frozenset({"comfortable", "compact"}),
     "intel_product": frozenset({"news", "announcements", "earnings", "concalls", "alerts"}),
+    "canvas_locked": frozenset({"locked", "unlocked"}),
 }
 
 

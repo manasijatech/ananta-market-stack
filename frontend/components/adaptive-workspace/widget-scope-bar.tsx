@@ -2,6 +2,7 @@
 
 import { IconChevronDown } from "@tabler/icons-react";
 import { DeskSymbolEditor } from "@/components/adaptive-workspace/desk-symbol-editor";
+import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import {
     DropdownMenu,
@@ -79,6 +80,7 @@ export function WidgetScopeBar({
     watchlists
 }: Props) {
     const { patchUniverse, spec } = useAdaptiveWorkspace();
+    const locked = useOptionalAdaptiveDeskPrefs()?.canvasLocked !== false;
     const deskSymbols = uniqueCashSymbols(extraSymbols.length ? extraSymbols : universeSymbols(spec));
     const scope = componentScope(component);
     const effectiveScope = !allowWatchlist && scope === "watchlist" ? "symbol" : scope;
@@ -115,6 +117,22 @@ export function WidgetScopeBar({
             symbol: unique[0] ?? "",
             symbols: unique
         });
+    }
+
+    if (locked) {
+        const label =
+            effectiveScope === "desk"
+                ? deskSymbols.length
+                    ? `Desk · ${deskSymbols.slice(0, 6).join(" · ")}${deskSymbols.length > 6 ? ` +${deskSymbols.length - 6}` : ""}`
+                    : "Desk list"
+                : effectiveScope === "watchlist"
+                  ? selectedWatchlist?.name || "Watchlist"
+                  : multiLabel === "Symbols"
+                    ? current || "Symbol"
+                    : multiLabel;
+        return (
+            <div className="min-w-0 flex-1 truncate text-[11px] font-semibold text-muted-foreground">{label}</div>
+        );
     }
 
     return (
@@ -169,7 +187,7 @@ export function WidgetScopeBar({
                     value={selectedWatchlist?.id ?? ""}
                 />
             ) : effectiveScope === "desk" ? (
-                <DeskSymbolEditor onChange={patchUniverse} symbols={deskSymbols} />
+                <DeskSymbolEditor onChange={patchUniverse} readOnly={locked} symbols={deskSymbols} />
             ) : allowMultiSymbol ? (
                 <DropdownMenu>
                     <DropdownMenuTrigger

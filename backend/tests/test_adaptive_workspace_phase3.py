@@ -56,10 +56,14 @@ def test_named_desks_and_deletable_preferences():
     pref = personalization.upsert_preference(db, "desk-user", "density", "compact")
     assert pref["key"] == "density"
     assert pref["value"] == "compact"
+    lock = personalization.upsert_preference(db, "desk-user", "canvas_locked", "unlocked")
+    assert lock["key"] == "canvas_locked"
+    assert lock["value"] == "unlocked"
     assert pref["deletable"] is True
     keys = {item["key"] for item in personalization.list_preferences(db, "desk-user")}
-    assert "density" in keys
+    assert keys == {"density", "canvas_locked"}
     personalization.delete_preference(db, "desk-user", "density")
+    personalization.delete_preference(db, "desk-user", "canvas_locked")
     assert personalization.list_preferences(db, "desk-user") == []
 
     personalization.record_request_intents(db, "desk-user", ["watchlist"])

@@ -309,7 +309,11 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
     return (
         <WidgetState error={error} loading={loading || listsLoading} loadingLabel="Loading market intelligence">
             <div className="flex items-center gap-2 border-b border-border/70 px-2 py-2">
-                {combined ? null : (
+                {combined ? null : prefs?.canvasLocked !== false ? (
+                    <Badge size="sm" variant="outline">
+                        {productLabel(product)}
+                    </Badge>
+                ) : (
                     <SimpleSelect
                         aria-label="Intelligence product"
                         className="h-7 w-[9.5rem]"
@@ -356,7 +360,9 @@ export function LiveIntelWidget({ component, onPatch, refreshNonce }: Props) {
                     })}
                 </div>
             ) : null}
-            <p className="px-3 pt-1 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name, deskSymbols.length)}</p>
+            {prefs?.canvasLocked !== false ? null : (
+                <p className="px-3 pt-1 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name, deskSymbols.length)}</p>
+            )}
             <div className="min-h-0 flex-1 overflow-auto">
             {rows.length ? (
                 <ul className="grid gap-2 p-2">
