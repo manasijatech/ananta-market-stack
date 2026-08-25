@@ -19,6 +19,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
 import {
     CompanyMetaLine,
     ExpandableBody,
@@ -53,6 +54,8 @@ import type { AlphaSection } from "@/components/market-intelligence/market-intel
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardPanel } from "@/components/ui/card";
+import { EarningsExtractedTable } from "@/components/market-intelligence/earnings-extracted-table";
+import { Separator } from "@/components/ui/separator";
 import {
     Empty,
     EmptyDescription,
@@ -61,6 +64,15 @@ import {
     EmptyTitle
 } from "@/components/ui/empty";
 import { LiveWaveform } from "@/components/ui/live-waveform";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogPanel,
+    DialogTitle,
+    DialogTrigger
+} from "@/components/ui/dialog";
 import type { AlphaAlert } from "@/service/types/alpha/alerts";
 import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/types/alpha/announcements";
 import type { AlphaConcall } from "@/service/types/alpha/concalls";
@@ -71,6 +83,7 @@ import { cn } from "@/lib/utils";
 
 const SAVED_NEWS_KEY = "mi-saved-news";
 const READ_ALERTS_KEY = "mi-read-alerts";
+const CONCALL_AUDIO_TOAST_ID = "concall-audio-player";
 
 const sectionVisuals = {
     news: { icon: Newspaper, title: "No News Found", description: "No news matched your filters." },
@@ -370,7 +383,9 @@ function AnnouncementCard({
     const typeLabel = announcementTypeLabel(typeKind);
     const rawTitle = primary.headline ?? primary.title ?? "Untitled announcement";
     const { headline, original } = announcementDisplayTitle(rawTitle, typeLabel, metadata?.company_name);
-    const body = primary.summary ?? "No summary provided.";
+    const summary = primary.summary?.trim() ?? "";
+    const detailedSummary = primary.long_summary?.trim() || summary;
+    const attachmentUrl = primary.attachment_url?.trim() ?? "";
 
     return (
         <FeedCard
@@ -378,7 +393,17 @@ function AnnouncementCard({
             body={
                 <>
                     {original ? <p className="mb-1 text-[11px] text-muted-foreground">{original}</p> : null}
-                    <ExpandableBody text={body} />
+                    <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                            <FileText aria-hidden="true" className="size-3" />
+                            Summary
+                        </div>
+                        {summary ? (
+                            <ExpandableBody text={summary} />
+                        ) : (
+                            <p className="text-[13px] leading-5 text-muted-foreground">No summary provided.</p>
+                        )}
+                    </div>
                     {group.length > 1 && !expanded ? (
                         <button
                             className="mt-1 text-xs font-medium text-primary hover:underline"
@@ -410,7 +435,102 @@ function AnnouncementCard({
             metaLeading={<TickerChipRow onTickerClick={onTickerClick} symbol={symbol} />}
             metaTrailing={<CompanyMetaLine metadata={metadata} />}
             timestamp={primary.date}
+            showActions={Boolean(detailedSummary || attachmentUrl)}
+            actions={
+                detailedSummary || attachmentUrl ? (
+                    <>
+                        {detailedSummary ? (
+                            <AnnouncementSummaryDialog
+                                attachmentUrl={attachmentUrl}
+                                headline={headline}
+                                summary={detailedSummary}
+                            />
+                        ) : null}
+                        {attachmentUrl ? (
+                            <FeedCardAction onClick={() => openAnnouncementAttachment(attachmentUrl)}>
+                                <ExternalLink aria-hidden="true" data-icon="inline-start" />
+                                View attachment
+                            </FeedCardAction>
+                        ) : null}
+                    </>
+                ) : undefined
+            }
         />
+    );
+}
+
+function openAnnouncementAttachment(url: string) {
+    window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function AnnouncementSummaryDialog({
+    attachmentUrl,
+    headline,
+    summary
+}: {
+    attachmentUrl: string;
+    headline: string;
+    summary: string;
+}) {
+    return (
+        <Dialog>
+            <DialogTrigger
+                render={<Button size="sm" type="button" variant="outline" />}
+                onClick={(event) => event.stopPropagation()}
+            >
+                <FileText aria-hidden="true" data-icon="inline-start" />
+                Summary
+            </DialogTrigger>
+            <DialogContent
+                className="max-h-[90vh] sm:max-w-4xl bg-card flex flex-col overflow-hidden p-0"
+                onClick={(event) => event.stopPropagation()}
+            >
+                <DialogHeader className="space-y-3 border-b border-border px-6 py-5">
+                    <DialogTitle className="text-lg font-bold leading-tight text-foreground">{headline}</DialogTitle>
+                    <DialogDescription>Announcement summary</DialogDescription>
+                </DialogHeader>
+                <DialogPanel className="flex-1 overflow-y-auto px-6 py-6 [scrollbar-width:thin]">
+                    <AnnouncementMarkdown content={summary} />
+                </DialogPanel>
+                {attachmentUrl ? (
+                    <div className="border-t border-border bg-muted/30 px-6 py-4">
+                        <div className="flex justify-end">
+                            <Button
+                                className="h-8 gap-2"
+                                onClick={() => openAnnouncementAttachment(attachmentUrl)}
+                                size="sm"
+                                type="button"
+                            >
+                                <FileText aria-hidden="true" data-icon="inline-start" />
+                                View Attachment
+                                <ExternalLink aria-hidden="true" data-icon="inline-end" />
+                            </Button>
+                        </div>
+                    </div>
+                ) : null}
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function AnnouncementMarkdown({ content }: { content: string }) {
+    const cleanContent = content.replace(/```/g, "").trim();
+
+    return (
+        <div className="max-w-none break-words text-sm leading-7 text-foreground [&_a]:text-primary [&_a]:underline [&_blockquote]:my-4 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.9em] [&_h1]:mb-4 [&_h1]:mt-0 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-bold [&_h3]:mb-3 [&_h3]:mt-6 [&_h3]:text-lg [&_h3]:font-bold [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-4 [&_p:first-child]:mt-0 [&_pre]:my-4 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border [&_pre]:bg-muted [&_pre]:p-4 [&_strong]:font-semibold [&_table]:my-4 [&_table]:min-w-full [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6">
+            <ReactMarkdown
+                components={{
+                    table: ({ children }) => (
+                        <div className="overflow-x-auto">
+                            <table>{children}</table>
+                        </div>
+                    )
+                }}
+                remarkPlugins={[remarkGfm]}
+            >
+                {cleanContent || "No summary provided."}
+            </ReactMarkdown>
+        </div>
     );
 }
 
@@ -434,6 +554,7 @@ export function EarningsTab({
                 const symbol = item.symbol ?? "";
                 const metadata = symbolMetadata[symbol.trim().toUpperCase()];
                 const summary = item.summary ?? "";
+                const earningsTable = item.earnings_table ?? item.earnings_table_extraction ?? null;
                 const quarter = item.quarter?.trim() || "Quarter";
                 const titleFromData = (item as { headline?: string; title?: string }).headline
                     ?? (item as { headline?: string; title?: string }).title;
@@ -484,6 +605,16 @@ export function EarningsTab({
                                     </div>
                                 ) : null}
                                 {summary ? <ExpandableBody className="mt-2" text={summary} /> : null}
+                                {earningsTable ? (
+                                    <div className="mt-3 flex min-w-0 flex-col gap-2">
+                                        <Separator />
+                                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                                            <IndianRupee aria-hidden="true" className="size-3" />
+                                            Results
+                                        </div>
+                                        <EarningsExtractedTable extraction={earningsTable} />
+                                    </div>
+                                ) : null}
                             </>
                         }
                         headline={headline}
@@ -513,12 +644,49 @@ export function ConcallsTab({
         symbol: string;
         quarter: string;
     } | null>(null);
-    const audioRef = useRef<HTMLAudioElement | null>(null);
-    const [playing, setPlaying] = useState(false);
 
     const filtered = useMemo(
         () => items.filter((item) => itemMatchesFeedSearch(item, feedSearch)),
         [feedSearch, items]
+    );
+
+    useEffect(() => {
+        if (!activeAudio) {
+            toast.dismiss(CONCALL_AUDIO_TOAST_ID);
+            return;
+        }
+
+        toast.custom(
+            (toastId) => (
+                <ConcallAudioToast
+                    onClose={() => {
+                        toast.dismiss(toastId);
+                        setActiveAudio(null);
+                    }}
+                    quarter={activeAudio.quarter}
+                    src={activeAudio.src}
+                    symbol={activeAudio.symbol}
+                />
+            ),
+            {
+                dismissible: true,
+                duration: Infinity,
+                id: CONCALL_AUDIO_TOAST_ID,
+                onDismiss: () =>
+                    setActiveAudio((current) =>
+                        current?.itemKey === activeAudio.itemKey ? null : current
+                    ),
+                position: "top-right",
+                toasterId: "concall-audio"
+            }
+        );
+    }, [activeAudio]);
+
+    useEffect(
+        () => () => {
+            toast.dismiss(CONCALL_AUDIO_TOAST_ID);
+        },
+        []
     );
 
     if (!items.length) return <EmptyFeed section="concalls" />;
@@ -533,9 +701,7 @@ export function ConcallsTab({
                 return (
                     <ConcallCard
                         key={key}
-                        audioRef={audioRef}
                         item={item}
-                        onCloseAudio={() => setActiveAudio(null)}
                         onPlayAudio={(src) =>
                             setActiveAudio({
                                 itemKey: key,
@@ -544,9 +710,7 @@ export function ConcallsTab({
                                 quarter: item.quarter ?? ""
                             })
                         }
-                        onPlayingChange={setPlaying}
                         onTickerClick={onTickerClick}
-                        playing={playing}
                         showAudioPlayer={isActiveAudio}
                         symbolMetadata={symbolMetadata}
                     />
@@ -557,23 +721,15 @@ export function ConcallsTab({
 }
 
 function ConcallCard({
-    audioRef,
     item,
-    onCloseAudio,
     onPlayAudio,
-    onPlayingChange,
     onTickerClick,
-    playing,
     showAudioPlayer,
     symbolMetadata
 }: {
-    audioRef: RefObject<HTMLAudioElement | null>;
     item: AlphaConcall;
-    onCloseAudio: () => void;
     onPlayAudio: (src: string) => void;
-    onPlayingChange: (playing: boolean) => void;
     onTickerClick?: (symbol: string) => void;
-    playing: boolean;
     showAudioPlayer: boolean;
     symbolMetadata: Record<string, AlphaSymbolMetadata>;
 }) {
@@ -640,44 +796,6 @@ function ConcallCard({
                         ) : null}
                     </div>
                 </div>
-
-                {showAudioPlayer && item.audio_url ? (
-                    <div className="mt-3 flex items-center gap-3 rounded-lg border border-border/70 bg-muted/40 p-3">
-                        <div className="min-w-0 flex-1">
-                            <p className="truncate font-mono text-sm font-medium text-foreground">
-                                {symbol}
-                                {item.quarter ? ` — ${item.quarter}` : ""}
-                            </p>
-                            <ConcallAudioControls
-                                audioRef={audioRef}
-                                onPlayingChange={onPlayingChange}
-                                src={item.audio_url}
-                            />
-                        </div>
-                        <div className="hidden w-24 min-[540px]:block">
-                            <LiveWaveform
-                                active={playing}
-                                barGap={1}
-                                barRadius={4}
-                                barWidth={2}
-                                className="h-8 w-full text-primary"
-                                height={32}
-                                mediaElementRef={audioRef}
-                                mode="static"
-                            />
-                        </div>
-                        <Button
-                            aria-label="Close audio player"
-                            className="size-8 shrink-0"
-                            onClick={onCloseAudio}
-                            size="icon"
-                            type="button"
-                            variant="ghost"
-                        >
-                            <X aria-hidden="true" />
-                        </Button>
-                    </div>
-                ) : null}
 
                 {!expanded ? (
                     <div className="mt-3 flex flex-col gap-3 pl-9">
@@ -792,6 +910,56 @@ function ConcallMarkdown({ children }: { children: string }) {
     );
 }
 
+function ConcallAudioToast({
+    onClose,
+    quarter,
+    src,
+    symbol
+}: {
+    onClose: () => void;
+    quarter: string;
+    src: string;
+    symbol: string;
+}) {
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const [playing, setPlaying] = useState(false);
+
+    return (
+        <div className="flex w-[min(20rem,calc(100vw-3rem))] min-w-0 flex-col gap-2">
+            <div className="grid min-w-0 grid-cols-[auto_minmax(5rem,1fr)_auto] items-center gap-3">
+                <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Concall audio</p>
+                    <p className="truncate font-mono text-sm font-medium text-foreground">
+                        {symbol}
+                        {quarter ? ` — ${quarter}` : ""}
+                    </p>
+                </div>
+                <LiveWaveform
+                    active={playing}
+                    barGap={1}
+                    barRadius={4}
+                    barWidth={2}
+                    className="h-8 w-full text-primary"
+                    height={32}
+                    mediaElementRef={audioRef}
+                    mode="static"
+                />
+                <Button
+                    aria-label="Close audio player"
+                    className="size-7 shrink-0"
+                    onClick={onClose}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                >
+                    <X aria-hidden="true" />
+                </Button>
+            </div>
+            <ConcallAudioControls audioRef={audioRef} onPlayingChange={setPlaying} src={src} />
+        </div>
+    );
+}
+
 function ConcallAudioControls({
     audioRef,
     onPlayingChange,
@@ -822,11 +990,19 @@ function ConcallAudioControls({
     }
 
     return (
-        <div className="mt-1 flex items-center gap-2">
-            <Button className="size-7" onClick={toggle} size="icon" type="button" variant="outline">
-                {isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+        <div className="flex items-center gap-2">
+            <Button
+                aria-label={isPlaying ? "Pause audio" : "Play audio"}
+                className="size-7"
+                onClick={toggle}
+                size="icon"
+                type="button"
+                variant="outline"
+            >
+                {isPlaying ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
             </Button>
             <Button
+                aria-label="Restart audio"
                 className="size-7"
                 onClick={() => {
                     if (audioRef.current) audioRef.current.currentTime = 0;
@@ -835,7 +1011,7 @@ function ConcallAudioControls({
                 type="button"
                 variant="ghost"
             >
-                <RotateCcw className="size-3.5" />
+                <RotateCcw aria-hidden="true" />
             </Button>
             <div className="relative min-w-0 flex-1">
                 <div className="h-1 rounded-full bg-border">

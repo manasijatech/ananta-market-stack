@@ -49,6 +49,13 @@ export function Providers({ children }: { children: ReactNode }) {
             >
                 {children}
                 <Toaster />
+                <Toaster
+                    id="concall-audio"
+                    mobileOffset={{ top: 76, right: 12, left: 12 }}
+                    offset={{ top: 76, right: 16 }}
+                    position="top-right"
+                    visibleToasts={1}
+                />
             </AuthProvider>
         </QueryClientProvider>
     );

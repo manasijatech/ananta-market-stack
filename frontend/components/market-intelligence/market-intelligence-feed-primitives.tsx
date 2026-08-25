@@ -273,7 +273,8 @@ export function FeedCard({
     actions,
     borderAccent,
     className,
-    dimmed = false
+    dimmed = false,
+    showActions = false
 }: {
     avatar: ReactNode;
     metaLeading?: ReactNode;
@@ -286,6 +287,7 @@ export function FeedCard({
     borderAccent?: "danger" | "warning" | "muted" | "none";
     className?: string;
     dimmed?: boolean;
+    showActions?: boolean;
 }) {
     const borderClass =
         borderAccent === "danger"
@@ -316,7 +318,13 @@ export function FeedCard({
                     <h3 className="mt-1.5 text-[15px] font-medium leading-snug text-foreground">{headline}</h3>
                     {body ? <div className="mt-1.5">{body}</div> : null}
                     {actions ? (
-                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                        <div
+                            className={cn(
+                                "mt-2.5 flex flex-wrap items-center gap-1.5",
+                                !showActions &&
+                                    "sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                            )}
+                        >
                             {actions}
                         </div>
                     ) : null}

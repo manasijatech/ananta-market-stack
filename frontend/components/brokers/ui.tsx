@@ -229,16 +229,30 @@ export function PageHeader({
 	title,
 	description,
 	action,
+	compact = false,
 }: {
 	title: string;
 	description: string;
 	action?: React.ReactNode;
+	compact?: boolean;
 }) {
 	return (
-		<header className="mb-6 py-5 flex min-w-0 flex-col justify-between gap-4 border-b border-border min-[860px]:flex-row min-[860px]:items-end min-[860px]:gap-5">
-			<div className="min-w-0">
+		<header
+			className={cn(
+				"flex min-w-0 flex-col justify-between border-b border-border min-[860px]:flex-row",
+				compact
+					? "mb-3 gap-2 py-2 min-[860px]:items-center min-[860px]:gap-4"
+					: "mb-6 gap-4 py-5 min-[860px]:items-end min-[860px]:gap-5",
+			)}
+		>
+			<div
+				className={cn(
+					"min-w-0",
+					compact && "flex flex-wrap items-baseline gap-x-3 gap-y-1",
+				)}
+			>
 				<h1 className={cn(typography.pageTitle, "break-words")}>{title}</h1>
-				<p className={typography.pageLead}>{description}</p>
+				<p className={cn(typography.pageLead, compact && "mt-0")}>{description}</p>
 			</div>
 			{action ? (
 				<div className="flex w-full shrink-0 flex-col items-start min-[520px]:w-auto min-[860px]:items-end">

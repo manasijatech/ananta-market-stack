@@ -5,6 +5,7 @@ import {
     AlertTriangle,
     CandlestickChart,
     Check,
+    ChevronUp,
     Loader2,
     Minus,
     Pencil,
@@ -348,6 +349,8 @@ function WatchlistTableColGroup({ hasActions }: { hasActions: boolean }) {
     );
 }
 
+type MarketCapSortDirection = "ascending" | "descending";
+
 const PRESET_PAGE_SIZE = 24;
 const WATCHLIST_EXCHANGES = ["NSE", "BSE"] as const;
 type WatchlistExchange = (typeof WATCHLIST_EXCHANGES)[number];
@@ -435,6 +438,7 @@ export function WatchlistsManager({
     const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
     const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
     const [watchlistMetadata, setWatchlistMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
+    const [marketCapSortDirection, setMarketCapSortDirection] = useState<MarketCapSortDirection>();
     const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
     const [searchLoading, setSearchLoading] = useState(false);
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -539,6 +543,36 @@ export function WatchlistsManager({
     const createNameMissing = !createName.trim();
     const createCanSubmit = !isPending && !createNameMissing;
     const canEditSelected = Boolean(selected?.is_editable);
+    const sortedSelectedItems = useMemo(() => {
+        if (!selected || !marketCapSortDirection) return selected?.items ?? [];
+
+        return selected.items
+            .map((item, index) => ({ item, index }))
+            .sort((first, second) => {
+                const firstMarketCap = toNumber(
+                    watchlistMetadata[first.item.symbol.trim().toUpperCase()]?.market_cap
+                );
+                const secondMarketCap = toNumber(
+                    watchlistMetadata[second.item.symbol.trim().toUpperCase()]?.market_cap
+                );
+
+                if (firstMarketCap === null && secondMarketCap === null) return first.index - second.index;
+                if (firstMarketCap === null) return 1;
+                if (secondMarketCap === null) return -1;
+
+                const comparison = firstMarketCap - secondMarketCap;
+                if (comparison === 0) return first.index - second.index;
+                return marketCapSortDirection === "ascending" ? comparison : -comparison;
+            })
+            .map(({ item }) => item);
+    }, [marketCapSortDirection, selected, watchlistMetadata]);
+
+    function toggleMarketCapSort() {
+        setMarketCapSortDirection((current) => {
+            if (!current) return "descending";
+            return current === "descending" ? "ascending" : undefined;
+        });
+    }
 
     useEffect(() => {
         if (!selected && watchlists[0]) {
@@ -2354,7 +2388,35 @@ export function WatchlistsManager({
                                                             <TableHead className="text-right">Price</TableHead>
                                                             <TableHead className="text-right">Change</TableHead>
                                                             <TableHead>Sector</TableHead>
-                                                            <TableHead className="text-right">Mkt cap</TableHead>
+                                                            <TableHead
+                                                                aria-sort={marketCapSortDirection ?? "none"}
+                                                                className="text-right"
+                                                            >
+                                                                <button
+                                                                    aria-label={
+                                                                        marketCapSortDirection === "descending"
+                                                                            ? "Sort market cap smallest first"
+                                                                            : marketCapSortDirection === "ascending"
+                                                                              ? "Clear market cap sort"
+                                                                              : "Sort market cap largest first"
+                                                                    }
+                                                                    className="flex w-full items-center justify-end gap-1.5 font-medium"
+                                                                    onClick={toggleMarketCapSort}
+                                                                    type="button"
+                                                                >
+                                                                    Mkt cap
+                                                                    {marketCapSortDirection ? (
+                                                                        <ChevronUp
+                                                                            aria-hidden="true"
+                                                                            className={cn(
+                                                                                "size-3 transition-transform duration-100 ease-out",
+                                                                                marketCapSortDirection === "descending" &&
+                                                                                    "rotate-180"
+                                                                            )}
+                                                                        />
+                                                                    ) : null}
+                                                                </button>
+                                                            </TableHead>
                                                             {canEditSelected ? (
                                                                 <TableHead className="text-right">
                                                                     <span className="sr-only">Actions</span>
@@ -2368,7 +2430,7 @@ export function WatchlistsManager({
                                                 <Table className="table-fixed" variant="card">
                                                     <WatchlistTableColGroup hasActions={canEditSelected} />
                                                     <TableBody>
-                                                        {selected.items.map((item) => {
+                                                        {sortedSelectedItems.map((item) => {
                                                             const metadata =
                                                                 watchlistMetadata[item.symbol.trim().toUpperCase()];
                                                             const price =
@@ -2529,7 +2591,7 @@ export function WatchlistsManager({
                             )}
 
                             <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto min-[760px]:hidden">
-                                {selected.items.map((item) => {
+                                {sortedSelectedItems.map((item) => {
                                     const metadata = watchlistMetadata[item.symbol.trim().toUpperCase()];
                                     const company = metadata?.company_name ?? "—";
                                     const price = livePrices[livePriceKey({ symbol: item.symbol })];
