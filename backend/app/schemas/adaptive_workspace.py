@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.services.adaptive_canvas_kit import normalize_kind, prepare_canvas_html
+
 WORKSPACE_SPEC_VERSION = "1"
 GRID_COLUMNS = 12
 
@@ -165,7 +167,7 @@ def html_artifact_document_errors(document: str) -> list[str]:
 
 
 def sanitize_html_artifact_document(document: str) -> str:
-    """Strip forbidden patterns, wrap in a dark-friendly host shell, and enforce length."""
+    """Strip forbidden patterns, apply the Ananta canvas kit shell, and enforce length."""
 
     raw = str(document or "").strip()
     errors = html_artifact_document_errors(raw)
@@ -179,20 +181,8 @@ def sanitize_html_artifact_document(document: str) -> str:
     cleaned = _HTML_ARTIFACT_JS_URL_RE.sub("", cleaned)
     cleaned = cleaned.strip()
     if not cleaned:
-        raise ValueError("document is empty after sanitization")
-    if re.search(r"<html\b", cleaned, re.I):
-        wrapped = cleaned
-    else:
-        wrapped = (
-            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/>"
-            "<meta name=\"color-scheme\" content=\"dark light\"/>"
-            "<style>"
-            "html,body{margin:0;padding:12px;font:12px/1.45 ui-sans-serif,system-ui,sans-serif;"
-            "background:transparent;color:#e7e5e4}"
-            "</style></head><body>"
-            f"{cleaned}"
-            "</body></html>"
-        )
+        raise ValueError("Canvas document is empty after sanitization")
+    wrapped = prepare_canvas_html(cleaned)
     if len(wrapped) > HTML_ARTIFACT_DOCUMENT_MAX:
         raise ValueError(f"document must be at most {HTML_ARTIFACT_DOCUMENT_MAX} characters after wrapping")
     return wrapped
@@ -299,18 +289,23 @@ class WorkspaceComponent(BaseModel):
                     raise ValueError(f"micro-app {key} must be a number")
         if self.type == "html-artifact":
             if self.data is None:
-                raise ValueError("html-artifact requires data with params.document")
+                raise ValueError("Canvas requires data with params.document")
             if self.data.tool != "workspace_publish_html_artifact":
-                raise ValueError("html-artifact data.tool must be workspace_publish_html_artifact")
+                raise ValueError("Canvas data.tool must be workspace_publish_html_artifact")
             document = self.data.params.get("document")
             if not isinstance(document, str) or not document.strip():
-                raise ValueError("html-artifact requires data.params.document")
+                raise ValueError("Canvas requires data.params.document")
             doc_errors = html_artifact_document_errors(document)
             if doc_errors:
                 raise ValueError(doc_errors[0])
+            try:
+                self.data.params["document"] = sanitize_html_artifact_document(document)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
             title = props.get("title")
             if title is not None and (not isinstance(title, str) or not title.strip() or len(title) > HTML_ARTIFACT_TITLE_MAX):
-                raise ValueError("html-artifact title must be a non-empty string up to 120 characters")
+                raise ValueError("Canvas title must be a non-empty string up to 120 characters")
+            props["kind"] = normalize_kind(str(props.get("kind") or ""))
         if self.type != "html-artifact" and self.data is not None and "document" in self.data.params:
             raise ValueError("data.params.document is only allowed on html-artifact widgets")
         if self.type == "notes-block":
@@ -603,7 +598,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Repeated requests may be suggested as a template/skill. Never auto-apply.",
             "Alert studio: alert_create_draft makes a draft (not live). alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
             "micro-app requires props.appId from the curated registry (payoff-diagram). Notes use notes-block, not a micro-app. Never emit src, href, or script.",
-            "html-artifact: call workspace_publish_html_artifact after broker/intel tools return data. Put the sanitized document in data.params.document and an optional props.title. Inline script/SVG/CSS only; no iframe, javascript: URLs, remote script/link/img, or meta http-equiv.",
+            "html-artifact (Canvas): after broker/intel/MCP data, call workspace_publish_html_artifact with kit-class HTML only (aw-*). Host injects CSS. Set props.title and props.kind. Use workspace_update_html_artifact(component_id) to evolve an existing canvas. No custom CSS, iframe, javascript: URLs, or remote script/link/img.",
             "notes-block is user-editable plain text (autosaved on the desk). Chat may set or replace props.text; keep it a string, no HTML.",
             "Do not answer by listing catalog types. Fetch data, compose live widgets, and brief in chat. MCP and local broker tools still run on this desk. Broker Chat is not deprecated.",
             "Symbol desks: set props.scope=symbol and props.symbol. Named-company desks: set universe.symbols and props.scope=desk on quote-chart / intel-feed / quote-ticker. User watchlists only when asked: props.scope=watchlist and props.watchlistId.",

@@ -47,6 +47,7 @@ const ACTIVE_VERBS: Record<string, string> = {
   Set: "Setting",
   Check: "Checking",
   Find: "Finding",
+  Publish: "Publishing",
 };
 
 const COMPLETED_VERBS: Record<string, string> = {
@@ -70,6 +71,7 @@ const COMPLETED_VERBS: Record<string, string> = {
   Set: "Set",
   Check: "Checked",
   Find: "Found",
+  Publish: "Published",
 };
 
 function labelMcpTool(info: McpToolInfo): string {

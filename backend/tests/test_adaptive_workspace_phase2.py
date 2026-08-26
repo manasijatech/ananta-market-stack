@@ -49,6 +49,7 @@ def test_workspace_tools_are_not_on_broker_chat_by_default():
         "workspace_get_current",
         "workspace_get_micro_app",
         "workspace_publish_html_artifact",
+        "workspace_update_html_artifact",
         "workspace_list_preferences",
         "workspace_list_saved_desks",
         "workspace_list_skills",

@@ -116,8 +116,19 @@ export const WORKSPACE_HELPER_TOOLS = [
     "workspace_list_saved_desks",
     "workspace_list_preferences",
     "workspace_get_micro_app",
-    "workspace_publish_html_artifact"
+    "workspace_publish_html_artifact",
+    "workspace_update_html_artifact"
 ] as const;
+
+export const CANVAS_KINDS = [
+    "briefing",
+    "timeline",
+    "snapshot",
+    "comparison",
+    "movers",
+    "notes"
+] as const;
+export type CanvasKind = (typeof CANVAS_KINDS)[number];
 
 export const MICRO_APP_IDS = ["payoff-diagram"] as const;
 export type MicroAppId = (typeof MICRO_APP_IDS)[number];

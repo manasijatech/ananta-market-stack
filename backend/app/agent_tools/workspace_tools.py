@@ -23,6 +23,7 @@ from app.schemas.adaptive_workspace import (
 from app.services import adaptive_workspace as workspace_svc
 from app.services import adaptive_workspace_personalization as personalization
 from app.services import adaptive_workspace_interop as interop
+from app.services.adaptive_canvas_kit import canvas_inventory, normalize_kind
 from db.session import SessionLocal
 
 PatchOperation = Literal["replace", "add", "remove", "move", "update", "duplicate", "set_title"]
@@ -86,6 +87,100 @@ def _current_spec(context: BrokerAgentContext) -> dict[str, Any] | None:
     return None
 
 
+def _find_html_artifact(spec: dict[str, Any] | None, component_id: str) -> dict[str, Any] | None:
+    if not isinstance(spec, dict):
+        return None
+    for item in spec.get("components") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("id") == component_id and item.get("type") == "html-artifact":
+            return item
+    return None
+
+
+def _html_artifact_bind(*, document: str, title: str, kind: str | None = None) -> dict[str, Any]:
+    sanitized = sanitize_html_artifact_document(document)
+    return {
+        "component_type": "html-artifact",
+        "data": {
+            "tool": "workspace_publish_html_artifact",
+            "params": {"document": sanitized},
+        },
+        "props": {
+            "title": title,
+            "kind": normalize_kind(kind),
+        },
+    }
+
+
+def _apply_html_artifact_update(
+    context: BrokerAgentContext,
+    *,
+    component_id: str,
+    document: str,
+    title: str | None = None,
+    kind: str | None = None,
+) -> dict[str, Any]:
+    spec = _current_spec(context)
+    inventory = canvas_inventory(spec)
+    existing = _find_html_artifact(spec, component_id)
+    if existing is None:
+        return _error(
+            f"Canvas component {component_id!r} was not found on the desk",
+            code="missing_component",
+            canvas_inventory=inventory,
+        )
+    if not isinstance(document, str) or not document.strip():
+        return _error("document must be a non-empty HTML string", code="missing_document")
+    if title is not None:
+        label = title.strip()
+        if not label or len(label) > HTML_ARTIFACT_TITLE_MAX:
+            return _error(
+                f"title must be a non-empty string up to {HTML_ARTIFACT_TITLE_MAX} characters",
+                code="invalid_title",
+            )
+    try:
+        sanitized = sanitize_html_artifact_document(document)
+    except ValueError as exc:
+        return _error(str(exc), code="invalid_document")
+    existing_props = existing.get("props") if isinstance(existing.get("props"), dict) else {}
+    props = dict(existing_props)
+    if title is not None:
+        props["title"] = title.strip()
+    props["kind"] = normalize_kind(kind if kind is not None else str(props.get("kind") or ""))
+    patch = {
+        "data": {
+            "tool": "workspace_publish_html_artifact",
+            "params": {"document": sanitized},
+        },
+        "props": props,
+    }
+    parsed, validation = workspace_svc.patch_workspace_spec_or_error(
+        spec,
+        operation="update",
+        component_id=component_id,
+        component=patch,
+    )
+    if parsed is None:
+        return _rejected(validation, spec=spec, canvas_inventory=inventory)
+    dumped = workspace_svc.workspace_spec_dump(parsed)
+    context.workspace_spec = dumped
+    _maybe_persist(context, parsed, label="workspace_update_html_artifact")
+    bind = _html_artifact_bind(
+        document=document,
+        title=str(props.get("title") or "Canvas"),
+        kind=str(props.get("kind") or ""),
+    )
+    return _ok(
+        applied=True,
+        applied_to=component_id,
+        bind=bind,
+        spec=dumped,
+        canvas_inventory=canvas_inventory(dumped),
+        validation=validation,
+    )
+
+
 def _require_adaptive(context: BrokerAgentContext, tool_name: str) -> dict[str, Any] | None:
     if context.adaptive_workspace:
         return None
@@ -121,11 +216,18 @@ def workspace_get_current(ctx: RunContextWrapper[BrokerAgentContext]) -> dict[st
         spec = _current_spec(context)
         if spec is None:
             empty = workspace_svc.workspace_spec_dump(workspace_svc.empty_spec())
-            return _ok(spec=empty, empty=True)
+            return _ok(spec=empty, empty=True, canvas_inventory=[])
         parsed, validation = workspace_svc.parse_spec_or_error(spec)
+        inventory = canvas_inventory(spec)
         if parsed is None:
-            return _ok(spec=spec, empty=False, valid=False, validation=validation)
-        return _ok(spec=workspace_svc.workspace_spec_dump(parsed), empty=False, valid=True, validation=validation)
+            return _ok(spec=spec, empty=False, valid=False, validation=validation, canvas_inventory=inventory)
+        return _ok(
+            spec=workspace_svc.workspace_spec_dump(parsed),
+            empty=False,
+            valid=True,
+            validation=validation,
+            canvas_inventory=canvas_inventory(workspace_svc.workspace_spec_dump(parsed)),
+        )
 
     return _tool_call(call)
 
@@ -457,40 +559,77 @@ def workspace_publish_html_artifact(
     ctx: RunContextWrapper[BrokerAgentContext],
     document: str,
     title: str | None = None,
+    kind: str | None = None,
+    component_id: str | None = None,
 ) -> dict[str, Any]:
-    """Publish a sandboxed HTML artifact for custom visualization of fetched data.
+    """Publish a themed Canvas for custom visualization of fetched data.
 
-    Call broker/intel tools first, then author inline HTML/SVG/CSS (and inline
-    script only) from that data. Returns a bind payload for html-artifact with
-    data.params.document and optional props.title. Never pass src, href, iframe,
-    remote script/link/img URLs, javascript: URLs, or credentials.
+    Call broker/intel tools first, then author semantic HTML using only kit
+    classes from workspace_get_authoring_docs().canvas_kit (aw-*, no custom CSS).
+    Returns a bind payload for html-artifact with data.params.document,
+    props.title, and props.kind. Pass component_id to update an existing canvas
+    in place instead of adding another widget.
     """
 
     def call() -> dict[str, Any]:
-        refused = _require_adaptive(_context(ctx), "workspace_publish_html_artifact")
+        context = _context(ctx)
+        refused = _require_adaptive(context, "workspace_publish_html_artifact")
         if refused:
             return refused
+        if component_id and _find_html_artifact(_current_spec(context), component_id):
+            return _apply_html_artifact_update(
+                context,
+                component_id=component_id,
+                document=document,
+                title=title,
+                kind=kind,
+            )
         if not isinstance(document, str) or not document.strip():
             return _error("document must be a non-empty HTML string", code="missing_document")
-        label = (title or "Custom view").strip()
+        label = (title or "Canvas").strip()
         if not label or len(label) > HTML_ARTIFACT_TITLE_MAX:
             return _error(
                 f"title must be a non-empty string up to {HTML_ARTIFACT_TITLE_MAX} characters",
                 code="invalid_title",
             )
         try:
-            sanitized = sanitize_html_artifact_document(document)
+            bind = _html_artifact_bind(document=document, title=label, kind=kind)
         except ValueError as exc:
             return _error(str(exc), code="invalid_document")
-        bind = {
-            "component_type": "html-artifact",
-            "data": {
-                "tool": "workspace_publish_html_artifact",
-                "params": {"document": sanitized},
-            },
-            "props": {"title": label},
-        }
         return _ok(bind=bind, component_type="html-artifact")
+
+    return _tool_call(call)
+
+
+@function_tool(strict_mode=False)
+def workspace_update_html_artifact(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    component_id: str,
+    document: str,
+    title: str | None = None,
+    kind: str | None = None,
+) -> dict[str, Any]:
+    """Update an existing Canvas widget on the desk without replacing other widgets.
+
+    Call workspace_get_current first to read canvas_inventory ids. Author only
+    kit classes (aw-*) from workspace_get_authoring_docs().canvas_kit — no
+    custom CSS, style tags, or hex colors.
+    """
+
+    def call() -> dict[str, Any]:
+        context = _context(ctx)
+        refused = _require_adaptive(context, "workspace_update_html_artifact")
+        if refused:
+            return refused
+        if not component_id or not str(component_id).strip():
+            return _error("component_id is required", code="missing_component_id")
+        return _apply_html_artifact_update(
+            context,
+            component_id=str(component_id).strip(),
+            document=document,
+            title=title,
+            kind=kind,
+        )
 
     return _tool_call(call)
 
@@ -506,6 +645,7 @@ WORKSPACE_TOOLS = [
     workspace_list_preferences,
     workspace_get_micro_app,
     workspace_publish_html_artifact,
+    workspace_update_html_artifact,
     compose_surface,
     patch_surface,
 ]

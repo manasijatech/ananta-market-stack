@@ -2,6 +2,7 @@ import {
     ADAPTIVE_COMPONENT_TYPES,
     ALLOWED_ACTIONS,
     ALLOWED_DATA_TOOLS,
+    CANVAS_KINDS,
     GRID_COLUMNS,
     MICRO_APP_IDS,
     type WorkspaceSpec,
@@ -151,6 +152,15 @@ export function validateWorkspaceSpec(payload: unknown): WorkspaceSpecIssue[] {
             const title = props.title;
             if (title != null && (typeof title !== "string" || !title.trim() || title.length > 120)) {
                 issues.push(issue(`${path}.props.title`, "title must be a non-empty string up to 120 characters"));
+            }
+            const kind = props.kind;
+            if (kind != null && (typeof kind !== "string" || !CANVAS_KINDS.includes(kind as (typeof CANVAS_KINDS)[number]))) {
+                issues.push(
+                    issue(
+                        `${path}.props.kind`,
+                        "kind must be briefing, timeline, snapshot, comparison, movers, or notes"
+                    )
+                );
             }
         }
         if (item.type !== "html-artifact" && item.data != null && isRecord(item.data) && isRecord(item.data.params) && "document" in item.data.params) {

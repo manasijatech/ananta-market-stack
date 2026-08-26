@@ -2,7 +2,7 @@
 
 import { LiveStatusBadge } from "@/components/adaptive-workspace/widget-kit";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
-import { titleForComponentType } from "@/lib/adaptive-workspace/catalog";
+import { titleForComponent } from "@/lib/adaptive-workspace/catalog";
 import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
 
 export function LiveAgentTimelineWidget() {
@@ -17,7 +17,7 @@ export function LiveAgentTimelineWidget() {
             id: item.id,
             label: hasOutput ? (ok ? "Bound" : "Error") : "Live",
             ok,
-            title: titleForComponentType(item.type, item.type),
+            title: titleForComponent(item.type, item.props, item.type),
             tool: bound?.toolName || item.data?.tool || item.type
         };
     });

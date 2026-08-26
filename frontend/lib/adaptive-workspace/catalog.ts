@@ -27,6 +27,27 @@ export function componentTypeForTool(toolName: string): AdaptiveComponentType | 
     return TOOL_COMPONENT_MAP[toolName] ?? null;
 }
 
+export const CANVAS_KIND_LABELS: Record<string, string> = {
+    briefing: "Briefing",
+    timeline: "Timeline",
+    snapshot: "Snapshot",
+    comparison: "Compare",
+    movers: "Movers",
+    notes: "Notes"
+};
+
+export function titleForComponent(
+    type: string,
+    props?: Record<string, unknown> | null,
+    fallback = "Widget"
+): string {
+    if (type === "html-artifact") {
+        const title = typeof props?.title === "string" ? props.title.trim() : "";
+        if (title) return title;
+    }
+    return titleForComponentType(type, fallback);
+}
+
 export function titleForComponentType(type: string, fallback = "Widget"): string {
     switch (type) {
         case "quote-ticker":
@@ -54,7 +75,7 @@ export function titleForComponentType(type: string, fallback = "Widget"): string
         case "micro-app":
             return "Sandbox";
         case "html-artifact":
-            return "HTML artifact";
+            return "Canvas";
         case "agent-timeline":
             return "Agent timeline";
         case "notes-block":

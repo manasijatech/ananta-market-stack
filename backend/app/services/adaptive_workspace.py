@@ -20,6 +20,7 @@ from app.schemas.adaptive_workspace import (
     workspace_spec_dump,
 )
 from app.schemas.adaptive_workspace_api import AdaptiveWorkspaceSnapshotOut
+from app.services.adaptive_canvas_kit import authoring_canvas_docs, canvas_inventory
 from app.services import broker_chat
 from common.datetime_compat import UTC
 from db.models import AdaptiveWorkspaceSnapshot, BrokerChatSession
@@ -62,7 +63,9 @@ def parse_spec_or_error(payload: Any) -> tuple[WorkspaceSpec | None, dict[str, A
 
 
 def authoring_docs() -> dict[str, Any]:
-    return workspace_authoring_docs()
+    docs = workspace_authoring_docs()
+    docs["canvas_kit"] = authoring_canvas_docs()
+    return docs
 
 
 def _validation_from_value_error(exc: ValueError) -> dict[str, Any]:
@@ -620,7 +623,11 @@ def evaluate_request(
         )
     if "visualization" in intents:
         plan.append(
-            "Fetch broker/intel data first, then call workspace_publish_html_artifact with inline HTML/SVG/CSS from that data. Compose html-artifact using the returned bind payload (data.params.document, props.title). Prefer first-party widgets for live broker feeds; html-artifact is for custom viz of already-fetched data."
+            "Fetch broker/intel data first, then publish or update a Canvas using only kit classes from "
+            "workspace_get_authoring_docs().canvas_kit. Use multiple html-artifact widgets when purposes differ "
+            "(e.g. timeline + earnings snapshot). Before adding, call workspace_get_current and update an "
+            "existing canvas id from canvas_inventory when the kind/title/symbol matches. Never author custom CSS; "
+            "live quotes and feeds stay on first-party widgets."
         )
     if "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")
@@ -679,6 +686,8 @@ def evaluate_request(
             notes.append("Alert coverage should list matching workflows/notifications, not invent a new rule.")
     if "sandbox" in intents:
         notes.append("Sandbox coverage is a curated micro-app plus notes and an agent timeline. Do not load arbitrary URLs.")
+    if "visualization" in intents:
+        notes.append("Canvases use kit classes only. Update an existing id from canvas_inventory when the purpose matches.")
     if spec is None:
         notes.append("No spec yet. Fetch data first, then evaluate coverage, then compose once.")
     elif missing_types:
@@ -702,6 +711,7 @@ def evaluate_request(
         "spec_tools": spec_tools,
         "missing_from_spec": missing_types,
         "missing_tools_on_spec": missing_tools,
+        "canvas_inventory": canvas_inventory(spec if isinstance(spec, dict) else None),
         "complements_query": complements,
         "notes": notes,
         "backtest_lite": {

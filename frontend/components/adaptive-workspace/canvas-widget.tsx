@@ -13,7 +13,7 @@ import { LiveCanvasBody } from "@/components/adaptive-workspace/live-canvas-body
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { Button } from "@/components/ui/button";
-import { defaultSizeForType, titleForComponentType } from "@/lib/adaptive-workspace/catalog";
+import { CANVAS_KIND_LABELS, defaultSizeForType, titleForComponent } from "@/lib/adaptive-workspace/catalog";
 import { CANVAS_MIN_H, CANVAS_MIN_W, expandedSizeForType, pointerDeltaToGrid } from "@/lib/adaptive-workspace/layout";
 import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
 import { cn } from "@/lib/utils";
@@ -34,6 +34,8 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
     const dragRef = useRef<{ kind: "move" | "resize"; startX: number; startY: number; origin: WorkspacePosition } | null>(null);
     const position = draft ?? component.position;
     const expanded = component.props?.expanded === true;
+    const kindRaw = typeof component.props?.kind === "string" ? component.props.kind.trim().toLowerCase() : "";
+    const kindLabel = component.type === "html-artifact" ? CANVAS_KIND_LABELS[kindRaw] : undefined;
 
     function beginDrag(kind: "move" | "resize", event: PointerEvent<HTMLElement>) {
         if (locked) return;
@@ -130,8 +132,13 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                     </button>
                 )}
                 <p className="min-w-[4.5rem] flex-1 truncate text-xs font-semibold">
-                    {titleForComponentType(component.type, component.type)}
+                    {titleForComponent(component.type, component.props, component.type)}
                 </p>
+                {kindLabel ? (
+                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {kindLabel}
+                    </span>
+                ) : null}
                 {locked ? null : (
                     <div className="flex shrink-0 items-center gap-0.5">
                         <Button
