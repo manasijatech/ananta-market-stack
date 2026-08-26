@@ -17,7 +17,7 @@ from app.schemas.broker_chat import (
     BrokerChatSessionOut,
     BrokerChatSubmitIn,
 )
-from app.services import llm_config, rbac
+from app.services import llm_config, mcp_config, rbac
 from app.services.broker_chat_queue import (
     cancel_broker_chat_job,
     broker_chat_job_status,
@@ -85,7 +85,8 @@ def get_or_create_preference(db: Session, user_id: str) -> UserBrokerChatPrefere
     return pref
 
 
-def preference_to_schema(pref: UserBrokerChatPreference) -> BrokerChatPreferenceOut:
+def preference_to_schema(db: Session, pref: UserBrokerChatPreference) -> BrokerChatPreferenceOut:
+    resolved_ids, _dropped = mcp_config.resolve_mcp_server_ids(db, pref.user_id, json_loads(pref.mcp_server_ids_json, []))
     return BrokerChatPreferenceOut(
         default_provider=pref.default_provider or None,
         default_model=pref.default_model or None,
@@ -93,12 +94,12 @@ def preference_to_schema(pref: UserBrokerChatPreference) -> BrokerChatPreference
         include_tool_outputs=bool(pref.include_tool_outputs),
         include_reasoning=bool(pref.include_reasoning),
         use_mcp=bool(pref.use_mcp),
-        mcp_server_ids=json_loads(pref.mcp_server_ids_json, []),
+        mcp_server_ids=resolved_ids,
     )
 
 
 def get_preference(db: Session, user_id: str) -> BrokerChatPreferenceOut:
-    return preference_to_schema(get_or_create_preference(db, user_id))
+    return preference_to_schema(db, get_or_create_preference(db, user_id))
 
 
 def update_preference(
@@ -118,11 +119,12 @@ def update_preference(
         db, user_id, rbac.SETTINGS_MANAGE_MCP
     )
     pref.use_mcp = bool(payload.use_mcp and mcp_allowed)
-    pref.mcp_server_ids_json = json_dumps(payload.mcp_server_ids if mcp_allowed else [])
+    resolved_ids, _dropped = mcp_config.resolve_mcp_server_ids(db, user_id, payload.mcp_server_ids if mcp_allowed else [])
+    pref.mcp_server_ids_json = json_dumps(resolved_ids if mcp_allowed else [])
     db.add(pref)
     db.commit()
     db.refresh(pref)
-    return preference_to_schema(pref)
+    return preference_to_schema(db, pref)
 
 
 def _default_title(message: str) -> str:
@@ -264,7 +266,9 @@ def create_run(
     requested_use_mcp = pref.use_mcp if payload.use_mcp is None else payload.use_mcp
     use_mcp = bool(requested_use_mcp and mcp_allowed)
     requested_server_ids = payload.mcp_server_ids if payload.mcp_server_ids is not None else json_loads(pref.mcp_server_ids_json, [])
-    mcp_server_ids = requested_server_ids if mcp_allowed else []
+    mcp_server_ids = (
+        mcp_config.resolve_mcp_server_ids(db, user_id, requested_server_ids)[0] if mcp_allowed else []
+    )
     run = BrokerChatRun(
         id=str(uuid.uuid4()),
         session_id=session.id,

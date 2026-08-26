@@ -78,6 +78,16 @@ export function useAdaptiveWorkspaceChat({
         const defaults = availableMcpServers.filter((server) => server.use_by_default).map((server) => server.id as string);
         return defaults.length ? defaults : availableMcpServers.map((server) => server.id as string);
     });
+
+    useEffect(() => {
+        const known = new Set(availableMcpServers.map((server) => server.id as string));
+        if (!known.size) return;
+        const valid = selectedMcpServerIds.filter((id) => known.has(id));
+        if (!valid.length || valid.length !== selectedMcpServerIds.length) {
+            const defaults = availableMcpServers.filter((server) => server.use_by_default).map((server) => server.id as string);
+            setSelectedMcpServerIds(valid.length ? valid : defaults.length ? defaults : [...known]);
+        }
+    }, [availableMcpServers, selectedMcpServerIds]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCreatingSession, setIsCreatingSession] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -202,6 +212,7 @@ export function useAdaptiveWorkspaceChat({
                                 );
                             }
                             if (parsed.event === "run_completed" || parsed.event === "run_failed" || parsed.event === "run_cancelled") {
+                                setStreamingIds((current) => current.filter((id) => id !== runId));
                                 setRuns((current) =>
                                     current.map((run) =>
                                         run.id === runId

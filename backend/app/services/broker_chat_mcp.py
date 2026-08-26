@@ -173,6 +173,19 @@ async def connect_broker_chat_mcp(
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=False)
 
     selected_server_ids = _selected_server_ids(metadata)
+    resolved_ids, dropped_ids = mcp_config.resolve_mcp_server_ids(db, run.user_id, selected_server_ids)
+    if dropped_ids:
+        broker_chat.append_event(
+            db,
+            run,
+            event_type="mcp_unavailable",
+            public_payload={
+                "status": "stale_selection",
+                "message": "A saved MCP server id was out of date. Connecting the currently enabled MCP server instead.",
+            },
+            full_payload={"status": "stale_selection", "dropped_server_ids": dropped_ids, "resolved_server_ids": resolved_ids},
+        )
+    selected_server_ids = resolved_ids
     for server_id in mcp_config.stale_mcp_server_ids(db, run.user_id, selected_server_ids):
         try:
             mcp_schema = await mcp_config.refresh_mcp_inventory(db, run.user_id, server_id)
@@ -230,7 +243,7 @@ async def connect_broker_chat_mcp(
             db,
             run,
             event_type="mcp_unavailable",
-            public_payload={"status": "disabled", "message": "MCP is not enabled in System Config."},
+            public_payload={"status": "disabled", "message": "No enabled MCP server is configured in Settings."},
         )
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=True)
 

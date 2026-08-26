@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
+import { assistantText, brokerChatToolPartType } from "@/lib/adaptive-workspace/chat-events";
 import { cn } from "@/lib/utils";
 import {
     cancelBrokerChatRun,
@@ -247,26 +248,6 @@ function normalizeAssistantMarkdown(value: string) {
     return output.join("\n");
 }
 
-function assistantText(events: BrokerChatEvent[], run: BrokerChatRun) {
-    const finalMessage = [...events]
-        .reverse()
-        .find((event) => event.event_type === "message_output" && textPayload(event.payload, "content"));
-    if (finalMessage) {
-        return textPayload(finalMessage.payload, "content");
-    }
-    const completed = [...events]
-        .reverse()
-        .find((event) => event.event_type === "run_completed" && textPayload(event.payload, "response_text"));
-    if (completed) {
-        return textPayload(completed.payload, "response_text");
-    }
-    const tokens = events
-        .filter((event) => event.event_type === "token")
-        .map((event) => textPayload(event.payload, "text"))
-        .join("");
-    return tokens || run.response_text || "";
-}
-
 function parseSseBlock(block: string): ParsedSseEvent | null {
     const event: ParsedSseEvent = {};
     const data: string[] = [];
@@ -390,11 +371,29 @@ function safeToolName(name: string) {
     return name.replace(/[^A-Za-z0-9_]/g, "_") || "broker_tool";
 }
 
+function mcpStatusParts(events: BrokerChatEvent[]) {
+    return events
+        .filter((event) => event.event_type.startsWith("mcp_"))
+        .map((event) => {
+            const status = textPayload(event.payload, "status") || event.event_type;
+            const message = textPayload(event.payload, "message");
+            const names = event.payload?.server_names;
+            const serverLabel = Array.isArray(names) ? names.filter((item) => typeof item === "string").join(", ") : "";
+            return {
+                input: { status, servers: serverLabel },
+                output: message || status,
+                state: "output-available",
+                toolCallId: event.id,
+                type: `tool-mcp__status__${event.event_type}`
+            };
+        });
+}
+
 function brokerToolPart(item: Extract<BrokerTraceItem, { kind: "tool" }>, isRunActive: boolean) {
     const startPayload = item.start?.payload;
     const outputPayload = item.output?.payload;
     return {
-        type: `tool-mcp__broker__${safeToolName(item.toolName)}`,
+        type: brokerChatToolPartType(item.toolName),
         toolCallId: item.callId || item.key,
         state: item.output ? "output-available" : isRunActive ? "input-available" : "output-error",
         input: payloadValue(startPayload, "arguments") ?? {},
@@ -417,10 +416,10 @@ function buildBrokerMessages({
 }): UIMessage[] {
     return runs.flatMap((run) => {
         const events = eventsByRun[run.id] ?? [];
-        const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
+        const running = liveStatuses.has(run.status);
         const traceItems = buildBrokerTraceItems(events);
         const text = assistantText(events, run);
-        const assistantParts: unknown[] = [];
+        const assistantParts: unknown[] = mcpStatusParts(events);
 
         for (const item of traceItems) {
             if (item.kind === "reasoning") {
@@ -524,6 +523,18 @@ export function BrokerChatWorkspace({
     const [selectedMcpServerIds, setSelectedMcpServerIds] = useState(
         initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds
     );
+
+    useEffect(() => {
+        const known = new Set(availableMcpServers.map((server) => server.id as string));
+        if (!known.size) {
+            if (selectedMcpServerIds.length) setSelectedMcpServerIds([]);
+            return;
+        }
+        const valid = selectedMcpServerIds.filter((id) => known.has(id));
+        if (!valid.length || valid.length !== selectedMcpServerIds.length) {
+            setSelectedMcpServerIds(valid.length ? valid : defaultMcpServerIds);
+        }
+    }, [availableMcpServers, defaultMcpServerIds, selectedMcpServerIds]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCreatingSession, setIsCreatingSession] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -749,6 +760,7 @@ export function BrokerChatWorkspace({
                                 parsed.event === "run_failed" ||
                                 parsed.event === "run_cancelled"
                             ) {
+                                setStreamingIds((current) => current.filter((id) => id !== runId));
                                 setRuns((current) =>
                                     current.map((run) =>
                                         run.id === runId

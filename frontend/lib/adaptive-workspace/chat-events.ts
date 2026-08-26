@@ -69,24 +69,70 @@ export function parseSseBlock(block: string): { data?: string; event?: string; i
     return event;
 }
 
-function assistantText(events: BrokerChatEvent[], run: BrokerChatRun) {
-    const finalMessage = [...events]
-        .reverse()
-        .find((event) => event.event_type === "message_output" && textPayload(event.payload, "content"));
-    if (finalMessage) {
-        return textPayload(finalMessage.payload, "content");
-    }
-    const completed = [...events]
+export function assistantText(events: BrokerChatEvent[], run: BrokerChatRun) {
+    const completed =
+        run.status === "completed" || run.status === "failed" || run.status === "cancelled";
+    const completedEvent = [...events]
         .reverse()
         .find((event) => event.event_type === "run_completed" && textPayload(event.payload, "response_text"));
     if (completed) {
-        return textPayload(completed.payload, "response_text");
+        return (
+            (completedEvent ? textPayload(completedEvent.payload, "response_text") : "") ||
+            run.response_text ||
+            lastMessageOutput(events) ||
+            tokenText(events)
+        );
     }
-    const tokens = events
+    const lastOutput = lastMessageOutput(events);
+    const lastOutputEvent = [...events]
+        .reverse()
+        .find((event) => event.event_type === "message_output" && textPayload(event.payload, "content"));
+    const laterTokens = events
+        .filter(
+            (event) =>
+                event.event_type === "token" &&
+                (!lastOutputEvent || event.sequence > lastOutputEvent.sequence)
+        )
+        .map((event) => textPayload(event.payload, "text"))
+        .join("");
+    if (laterTokens) {
+        return `${lastOutput}${laterTokens}`;
+    }
+    return lastOutput || tokenText(events) || run.response_text || "";
+}
+
+function lastMessageOutput(events: BrokerChatEvent[]) {
+    const finalMessage = [...events]
+        .reverse()
+        .find((event) => event.event_type === "message_output" && textPayload(event.payload, "content"));
+    return finalMessage ? textPayload(finalMessage.payload, "content") : "";
+}
+
+function tokenText(events: BrokerChatEvent[]) {
+    return events
         .filter((event) => event.event_type === "token")
         .map((event) => textPayload(event.payload, "text"))
         .join("");
-    return tokens || run.response_text || "";
+}
+
+export function brokerChatToolPartType(toolName: string) {
+    const name = toolName || "tool";
+    const safe = name.replace(/[^A-Za-z0-9_]/g, "_") || "tool";
+    if (name.startsWith("intel_")) {
+        return `tool-mcp__ananta_intel__${safe}`;
+    }
+    if (name.startsWith("broker_")) {
+        return `tool-mcp__ananta_broker__${safe}`;
+    }
+    if (
+        name.startsWith("workspace_") ||
+        name.startsWith("alert_") ||
+        name.startsWith("compose_") ||
+        name.startsWith("patch_")
+    ) {
+        return `tool-mcp__ananta__${safe}`;
+    }
+    return `tool-mcp__mcp__${safe}`;
 }
 
 function safeToolName(name: string) {
@@ -198,7 +244,7 @@ function brokerToolPart(item: Extract<BrokerTraceItem, { kind: "tool" }>, isRunA
         output: payloadValue(outputPayload, "output"),
         state: item.output ? "output-available" : isRunActive ? "input-available" : "output-error",
         toolCallId: item.callId || item.key,
-        type: `tool-mcp__broker__${safeToolName(item.toolName)}`
+        type: brokerChatToolPartType(item.toolName),
     };
 }
 
@@ -219,10 +265,23 @@ export function buildAdaptiveWorkspaceMessages({
         .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
         .flatMap((run) => {
             const events = eventsByRun[run.id] ?? [];
-            const running = LIVE_BROKER_CHAT_STATUSES.has(run.status) || streamingIds.includes(run.id);
+            const running = LIVE_BROKER_CHAT_STATUSES.has(run.status);
             const traceItems = buildBrokerTraceItems(events);
             const text = assistantText(events, run);
-            const assistantParts: unknown[] = [];
+            const assistantParts: unknown[] = events
+                .filter((event) => event.event_type.startsWith("mcp_"))
+                .map((event) => ({
+                    input: {
+                        status: textPayload(event.payload, "status") || event.event_type,
+                        servers: Array.isArray(event.payload?.server_names)
+                            ? event.payload.server_names.filter((item): item is string => typeof item === "string").join(", ")
+                            : ""
+                    },
+                    output: textPayload(event.payload, "message") || textPayload(event.payload, "status") || event.event_type,
+                    state: "output-available",
+                    toolCallId: event.id,
+                    type: `tool-mcp__status__${event.event_type}`
+                }));
 
             for (const item of traceItems) {
                 if (item.kind === "reasoning") {
