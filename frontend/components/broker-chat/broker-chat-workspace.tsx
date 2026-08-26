@@ -24,6 +24,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
+import {
+    providerSupportsReasoningEffort,
+    reasoningEffortSelectOptions
+} from "@/lib/llm-reasoning-effort";
 import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
 import { assistantText, brokerChatToolPartType } from "@/lib/adaptive-workspace/chat-events";
 import { cn } from "@/lib/utils";
@@ -90,6 +94,7 @@ type BrokerChatConfigPayload = {
     event_visibility: BrokerChatVisibility;
     include_tool_outputs: boolean;
     include_reasoning: boolean;
+    reasoning_effort: string | null;
     use_mcp: boolean;
     mcp_server_ids: string[];
 };
@@ -511,6 +516,7 @@ export function BrokerChatWorkspace({
     const [model, setModel] = useState(initialConfig.default_model ?? "");
     const [includeToolOutputs, setIncludeToolOutputs] = useState(initialConfig.include_tool_outputs);
     const [includeReasoning, setIncludeReasoning] = useState(initialConfig.include_reasoning);
+    const [reasoningEffort, setReasoningEffort] = useState(initialConfig.reasoning_effort ?? "");
     const availableMcpServers = useMemo(
         () => (mcpServers.length ? mcpServers : [mcpServer]).filter((server) => server.id && server.is_enabled),
         [mcpServer, mcpServers]
@@ -554,6 +560,7 @@ export function BrokerChatWorkspace({
             event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
             include_tool_outputs: initialConfig.include_tool_outputs,
             include_reasoning: initialConfig.include_reasoning,
+            reasoning_effort: initialConfig.reasoning_effort ?? null,
             use_mcp: initialConfig.use_mcp && availableMcpServers.length > 0,
             mcp_server_ids: initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds
         })
@@ -645,10 +652,11 @@ export function BrokerChatWorkspace({
             event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
             include_tool_outputs: includeToolOutputs,
             include_reasoning: includeReasoning,
+            reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
             use_mcp: useMcp,
             mcp_server_ids: selectedMcpServerIds
         };
-    }, [includeReasoning, includeToolOutputs, model, provider, selectedMcpServerIds, useMcp]);
+    }, [includeReasoning, includeToolOutputs, model, provider, reasoningEffort, selectedMcpServerIds, useMcp]);
 
     useEffect(() => {
         const requestId = ++configSaveRequestRef.current;
@@ -1018,6 +1026,7 @@ export function BrokerChatWorkspace({
                 event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
                 include_tool_outputs: includeToolOutputs,
                 include_reasoning: includeReasoning,
+                reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
                 use_mcp: useMcp,
                 mcp_server_ids: selectedMcpServerIds
             });
@@ -1269,6 +1278,19 @@ export function BrokerChatWorkspace({
                                             size="sm"
                                             value={model}
                                         />
+                                        {providerSupportsReasoningEffort(provider) ? (
+                                            <SimpleSelect
+                                                aria-label="Reasoning effort"
+                                                className="h-7 w-[128px] bg-background px-2 text-xs"
+                                                onValueChange={setReasoningEffort}
+                                                options={reasoningEffortSelectOptions(
+                                                    selectedModels.find((item) => item.model_id === model)?.reasoning_effort
+                                                )}
+                                                placeholder="Effort"
+                                                size="sm"
+                                                value={reasoningEffort}
+                                            />
+                                        ) : null}
                                     </div>
                                 }
                                 onChange={setMessage}

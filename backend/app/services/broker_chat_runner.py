@@ -13,6 +13,7 @@ from agents.items import ItemHelpers
 from agents.models.chatcmpl_converter import Converter
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
+from openai.types.shared.reasoning import Reasoning
 
 from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
@@ -657,6 +658,23 @@ def _build_model(db, run) -> OpenAIChatCompletionsModel:
     )
 
 
+def _model_settings_for_run(run) -> ModelSettings:
+    metadata = broker_chat.json_loads(run.metadata_json, {})
+    try:
+        effort = llm_config.normalize_reasoning_effort(metadata.get("reasoning_effort"))
+    except ValueError:
+        effort = None
+    extra_body = {"reasoning": {"effort": effort}} if effort and run.provider == "openrouter" else None
+    reasoning = Reasoning(effort=effort) if effort else None
+    return ModelSettings(
+        temperature=0.3,
+        max_tokens=8000,
+        include_usage=True,
+        extra_body=extra_body,
+        reasoning=reasoning,
+    )
+
+
 async def _run_broker_chat(run_id: str) -> None:
     db = SessionLocal()
     mcp_handle = broker_chat_mcp.BrokerChatMcpHandle(manager=None, active_servers=[], enabled=False)
@@ -723,11 +741,7 @@ async def _run_broker_chat(run_id: str) -> None:
                 selected_component_id=selected_component_id,
             ),
             model=_build_model(db, run),
-            model_settings=ModelSettings(
-                temperature=0.3,
-                max_tokens=8000,
-                include_usage=True,
-            ),
+            model_settings=_model_settings_for_run(run),
             tools=tools,
             mcp_servers=mcp_handle.active_servers,
             mcp_config=broker_chat_mcp.broker_chat_mcp_config(),

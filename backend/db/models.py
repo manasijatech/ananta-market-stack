@@ -378,6 +378,7 @@ class UserBrokerChatPreference(Base):
     event_visibility: Mapped[str] = mapped_column(String(32), default="minimal")
     include_tool_outputs: Mapped[bool] = mapped_column(Boolean, default=False)
     include_reasoning: Mapped[bool] = mapped_column(Boolean, default=False)
+    reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     use_mcp: Mapped[bool] = mapped_column(Boolean, default=False)
     mcp_server_ids_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -729,6 +730,7 @@ class UserLlmModel(Base):
     provider: Mapped[str] = mapped_column(String(32), index=True)
     model_id: Mapped[str] = mapped_column(String(256), index=True)
     label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(

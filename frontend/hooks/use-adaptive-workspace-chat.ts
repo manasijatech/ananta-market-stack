@@ -13,6 +13,7 @@ import {
     textPayload
 } from "@/lib/adaptive-workspace/chat-events";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
+import { providerSupportsReasoningEffort } from "@/lib/llm-reasoning-effort";
 import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
 import {
     cancelBrokerChatRun,
@@ -68,6 +69,7 @@ export function useAdaptiveWorkspaceChat({
     const loadedSessionIdRef = useRef<string | null>(null);
     const [provider, setProvider] = useState<LlmProvider | "">(preference.default_provider ?? "");
     const [model, setModel] = useState(preference.default_model ?? "");
+    const [reasoningEffort, setReasoningEffort] = useState(preference.reasoning_effort ?? "");
     const availableMcpServers = useMemo(
         () => (mcpServers.length ? mcpServers : [mcpServer]).filter((server) => server.id && server.is_enabled),
         [mcpServer, mcpServers]
@@ -461,6 +463,7 @@ export function useAdaptiveWorkspaceChat({
                 },
                 model,
                 provider,
+                reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
                 session_id: activeSessionId || null,
                 session_title: activeSessionId ? null : "Adaptive workspace",
                 use_mcp: useMcp,
@@ -499,6 +502,7 @@ export function useAdaptiveWorkspaceChat({
         model,
         provider,
         queueHealth,
+        reasoningEffort,
         selectedMcpServerIds,
         selectedModels,
         selectedProvider,
@@ -508,6 +512,7 @@ export function useAdaptiveWorkspaceChat({
         setMessage,
         setModel,
         setProvider,
+        setReasoningEffort,
         setSelectedMcpServerIds,
         setUseMcp,
         stopActiveRun,

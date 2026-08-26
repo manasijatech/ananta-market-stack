@@ -11,6 +11,7 @@ export interface BrokerChatPreference {
     event_visibility: BrokerChatVisibility;
     include_tool_outputs: boolean;
     include_reasoning: boolean;
+    reasoning_effort?: string | null;
     use_mcp: boolean;
     mcp_server_ids: string[];
 }
@@ -21,6 +22,7 @@ export interface BrokerChatPreferenceUpdate {
     event_visibility: BrokerChatVisibility;
     include_tool_outputs: boolean;
     include_reasoning: boolean;
+    reasoning_effort?: string | null;
     use_mcp: boolean;
     mcp_server_ids: string[];
 }
@@ -67,6 +69,7 @@ export interface BrokerChatSubmitRequest {
     event_visibility?: BrokerChatVisibility | null;
     include_tool_outputs?: boolean | null;
     include_reasoning?: boolean | null;
+    reasoning_effort?: string | null;
     use_mcp?: boolean | null;
     mcp_server_ids?: string[] | null;
     default_account_id?: string | null;

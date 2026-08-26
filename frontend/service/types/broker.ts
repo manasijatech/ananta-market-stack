@@ -437,6 +437,7 @@ export interface LlmModelConfig {
     provider: LlmProvider;
     model_id: string;
     label?: string | null;
+    reasoning_effort?: string | null;
     is_enabled: boolean;
     created_at: string;
     updated_at: string;

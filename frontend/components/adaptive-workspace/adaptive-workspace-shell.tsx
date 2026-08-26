@@ -21,6 +21,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { useAdaptiveWorkspaceChat } from "@/hooks/use-adaptive-workspace-chat";
+import { providerSupportsReasoningEffort, reasoningEffortSelectOptions } from "@/lib/llm-reasoning-effort";
 import { useAdaptiveWorkspaceLayout } from "@/hooks/use-adaptive-workspace-layout";
 import { useDeskAccounts } from "@/hooks/use-desk-data";
 import { latestSurfaceSpecFromMessages } from "@/lib/adaptive-workspace/spec";
@@ -248,6 +249,20 @@ function AdaptiveWorkspaceShellInner({
                                                     size="sm"
                                                     value={chat.model}
                                                 />
+                                                {providerSupportsReasoningEffort(chat.provider) ? (
+                                                    <SimpleSelect
+                                                        aria-label="Reasoning effort"
+                                                        className="h-7 w-[128px] bg-background px-2 text-xs"
+                                                        onValueChange={chat.setReasoningEffort}
+                                                        options={reasoningEffortSelectOptions(
+                                                            chat.selectedModels.find((item) => item.model_id === chat.model)
+                                                                ?.reasoning_effort
+                                                        )}
+                                                        placeholder="Effort"
+                                                        size="sm"
+                                                        value={chat.reasoningEffort}
+                                                    />
+                                                ) : null}
                                             </div>
                                         }
                                         onChange={chat.setMessage}

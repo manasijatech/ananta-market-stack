@@ -17,6 +17,7 @@ class BrokerChatPreferenceOut(BaseModel):
     event_visibility: BrokerChatVisibility = "minimal"
     include_tool_outputs: bool = False
     include_reasoning: bool = False
+    reasoning_effort: str | None = None
     use_mcp: bool = False
     mcp_server_ids: list[str] = Field(default_factory=list)
 
@@ -27,6 +28,7 @@ class BrokerChatPreferenceUpdateIn(BaseModel):
     event_visibility: BrokerChatVisibility = "minimal"
     include_tool_outputs: bool = False
     include_reasoning: bool = False
+    reasoning_effort: str | None = None
     use_mcp: bool = False
     mcp_server_ids: list[str] = Field(default_factory=list)
 
@@ -59,6 +61,7 @@ class BrokerChatSubmitIn(BaseModel):
     event_visibility: BrokerChatVisibility | None = None
     include_tool_outputs: bool | None = None
     include_reasoning: bool | None = None
+    reasoning_effort: str | None = None
     use_mcp: bool | None = None
     mcp_server_ids: list[str] | None = None
     default_account_id: str | None = None

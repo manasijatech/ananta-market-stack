@@ -45,6 +45,13 @@ ADAPTIVE_WORKSPACE_SURFACE = "adaptive_workspace"
 VALID_SESSION_SURFACES = {BROKER_CHAT_SURFACE, ADAPTIVE_WORKSPACE_SURFACE}
 
 
+def _safe_reasoning_effort(value: Any) -> str | None:
+    try:
+        return llm_config.normalize_reasoning_effort(value)
+    except ValueError:
+        return None
+
+
 def utc_now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
 
@@ -93,6 +100,7 @@ def preference_to_schema(db: Session, pref: UserBrokerChatPreference) -> BrokerC
         event_visibility=pref.event_visibility or "minimal",
         include_tool_outputs=bool(pref.include_tool_outputs),
         include_reasoning=bool(pref.include_reasoning),
+        reasoning_effort=_safe_reasoning_effort(getattr(pref, "reasoning_effort", None)),
         use_mcp=bool(pref.use_mcp),
         mcp_server_ids=resolved_ids,
     )
@@ -115,6 +123,7 @@ def update_preference(
     pref.event_visibility = payload.event_visibility
     pref.include_tool_outputs = payload.include_tool_outputs
     pref.include_reasoning = payload.include_reasoning
+    pref.reasoning_effort = _safe_reasoning_effort(payload.reasoning_effort)
     mcp_allowed = rbac.user_has_workspace_permission(db, user_id, rbac.SETTINGS_USE_MCP) or rbac.user_has_workspace_permission(
         db, user_id, rbac.SETTINGS_MANAGE_MCP
     )
@@ -269,6 +278,13 @@ def create_run(
     mcp_server_ids = (
         mcp_config.resolve_mcp_server_ids(db, user_id, requested_server_ids)[0] if mcp_allowed else []
     )
+    override_effort = payload.reasoning_effort if payload.reasoning_effort is not None else pref.reasoning_effort
+    try:
+        reasoning_effort = llm_config.normalize_reasoning_effort(override_effort) or llm_config.get_model_reasoning_effort(
+            db, user_id, provider, model
+        )
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     run = BrokerChatRun(
         id=str(uuid.uuid4()),
         session_id=session.id,
@@ -289,6 +305,7 @@ def create_run(
                 "search_account_id": payload.search_account_id,
                 "use_mcp": bool(use_mcp),
                 "mcp_server_ids": mcp_server_ids,
+                "reasoning_effort": reasoning_effort,
             }
         ),
         queued_at=now,

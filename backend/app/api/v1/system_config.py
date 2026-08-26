@@ -21,6 +21,7 @@ from app.schemas.system_config import (
     FeatureFlagsOut,
     LlmModelCreateIn,
     LlmModelPricingOut,
+    LlmModelUpdateIn,
     LlmModelPricingUpsertIn,
     LlmProvider,
     LlmProviderConfigOut,
@@ -250,6 +251,20 @@ def add_llm_model(
     rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
     try:
         return llm_config.add_provider_model(db, principal.user.id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/llm/models/{model_row_id}", response_model=list[LlmProviderConfigOut])
+def update_llm_model(
+    model_row_id: str,
+    body: LlmModelUpdateIn,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+) -> list[LlmProviderConfigOut]:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
+    try:
+        return llm_config.update_provider_model(db, principal.user.id, model_row_id, body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

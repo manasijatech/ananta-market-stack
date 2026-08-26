@@ -646,6 +646,7 @@ export async function addLlmProviderModel(payload: {
     provider: LlmProvider;
     model_id: string;
     label?: string | null;
+    reasoning_effort?: string | null;
     is_enabled?: boolean;
 }): Promise<LlmProviderConfig[]> {
     const result = await request<LlmProviderConfig[]>("/system-config/llm/models", {
@@ -654,10 +655,24 @@ export async function addLlmProviderModel(payload: {
             provider: payload.provider,
             model_id: payload.model_id,
             label: payload.label ?? null,
+            reasoning_effort: payload.reasoning_effort ?? null,
             is_enabled: payload.is_enabled ?? true
         })
     });
     revalidatePath("/settings");
+    return result;
+}
+
+export async function updateLlmProviderModel(
+    modelRowId: string,
+    payload: { label?: string | null; reasoning_effort?: string | null; is_enabled?: boolean }
+): Promise<LlmProviderConfig[]> {
+    const result = await request<LlmProviderConfig[]>(`/system-config/llm/models/${modelRowId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+    });
+    revalidatePath("/settings");
+    revalidatePath("/broker-chat");
     return result;
 }
 

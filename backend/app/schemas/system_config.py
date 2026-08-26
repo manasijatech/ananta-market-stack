@@ -19,6 +19,7 @@ class LlmModelOut(BaseModel):
     provider: LlmProvider
     model_id: str
     label: str | None = None
+    reasoning_effort: str | None = None
     is_enabled: bool = True
     created_at: datetime
     updated_at: datetime
@@ -45,7 +46,14 @@ class LlmModelCreateIn(BaseModel):
     provider: LlmProvider
     model_id: str = Field(..., min_length=1, max_length=256)
     label: str | None = Field(default=None, max_length=128)
+    reasoning_effort: str | None = Field(default=None, max_length=16)
     is_enabled: bool = True
+
+
+class LlmModelUpdateIn(BaseModel):
+    label: str | None = Field(default=None, max_length=128)
+    reasoning_effort: str | None = Field(default=None, max_length=16)
+    is_enabled: bool | None = None
 
 
 class LlmModelPricingOut(BaseModel):
