@@ -60,7 +60,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         items: [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
             { href: "/heatmap", label: "Heatmap", icon: IconLayoutGrid },
-            { href: "/broker-chat", label: "Broker Chat", icon: IconMessageCircle },
+            { href: "/broker-chat", label: "Chat", icon: IconMessageCircle },
             { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
         ]
     },

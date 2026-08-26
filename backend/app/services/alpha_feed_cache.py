@@ -364,9 +364,16 @@ def _refresh_from_date_for_batch(
     user_id: str,
     product: str,
     batch: list[str],
+    from_date: str | None,
+    historical: bool,
     force_refresh: bool,
 ) -> str | None:
-    """Narrow Drishti REST `from` to the sync gap instead of the UI's 30-day window."""
+    """Choose the REST backfill start, including explicit historical ranges."""
+    if historical and from_date:
+        try:
+            return datetime.strptime(from_date[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            pass
     if force_refresh:
         cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
         return cutoff.strftime("%Y-%m-%d")
@@ -494,6 +501,7 @@ def refresh_feed_cache_for_symbols(
     *,
     from_date: str | None = None,
     to_date: str | None = None,
+    historical: bool = False,
     force_refresh: bool = False,
     max_batches: int | None = _FEED_MAX_REFRESH_BATCHES,
 ) -> dict[str, Any]:
@@ -504,7 +512,7 @@ def refresh_feed_cache_for_symbols(
         return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
 
     # Single-symbol focus: if nothing is cached yet (REST or prior WS), always hit Drishti.
-    effective_force = force_refresh
+    effective_force = force_refresh or historical
     if len(normalized) == 1 and not force_refresh:
         symbol = normalized[0]
         if not _symbol_has_cached_items(db, user_id=user_id, product=product, symbol=symbol):
@@ -538,6 +546,8 @@ def refresh_feed_cache_for_symbols(
             user_id=user_id,
             product=product,
             batch=batch,
+            from_date=from_date,
+            historical=historical,
             force_refresh=force_refresh,
         )
         try:
@@ -693,6 +703,7 @@ def list_cached_feed_items(
     *,
     from_date: str | None = None,
     to_date: str | None = None,
+    historical: bool = False,
     page: int = 1,
     limit: int = 20,
     force_refresh: bool = False,
@@ -737,6 +748,7 @@ def list_cached_feed_items(
                 normalized,
                 from_date=from_date,
                 to_date=to_date,
+                historical=historical,
                 force_refresh=force_refresh,
             )
             if refresh_stats.get("upserted"):

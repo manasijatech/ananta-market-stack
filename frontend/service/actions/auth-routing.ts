@@ -17,7 +17,10 @@ function delay(ms: number): Promise<void> {
  * Resolves the sign-in entry route before any admin exists.
  */
 export async function getUnauthenticatedAuthRoute(): Promise<"/auth/onboarding" | "/auth/sign-in"> {
-    const signupStatus = await getSignupStatus().catch(() => ({ has_admin: false }));
+    // Fail closed when the backend is unavailable. Treating an API failure as a
+    // fresh install sends existing users to first-admin onboarding and invites a
+    // duplicate signup that cannot be completed while the backend is offline.
+    const signupStatus = await getSignupStatus().catch(() => ({ has_admin: true }));
     return signupStatus.has_admin ? "/auth/sign-in" : "/auth/onboarding";
 }
 

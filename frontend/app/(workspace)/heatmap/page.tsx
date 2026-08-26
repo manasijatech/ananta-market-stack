@@ -386,14 +386,16 @@ function BreadthCell({
     total: number;
 }) {
     return (
-        <div className="min-w-0 px-3 py-2">
+        <div className="min-w-0 px-2.5 py-1.5">
             <p className={cn("flex items-center gap-1.5 font-semibold", tone)}>
                 <Icon className="size-3.5" aria-hidden="true" />
                 <span className="truncate">
                     {count} {label}
                 </span>
+                <span className="font-mono text-[10px] font-normal text-muted-foreground">
+                    {breadthPercent(count, total)}
+                </span>
             </p>
-            <p className="mt-1 font-mono text-[10px] text-muted-foreground">{breadthPercent(count, total)}</p>
         </div>
     );
 }
@@ -484,6 +486,11 @@ export default async function HeatmapPage({
     const selectedBrokerCode =
         heatmap?.broker_code || accounts.find((account) => account.id === (heatmap?.account_id || effectiveAccountId))?.broker_code || null;
     const selectedBrokerName = brokerDisplayName(selectedBrokerCode);
+    const selectedAccount = accounts.find((account) => account.id === (heatmap?.account_id || effectiveAccountId)) ?? null;
+    const hasNoHoldings = Boolean(
+        heatmap && scope === "portfolio_holdings" && heatmap.tracked_symbol_count === 0
+    );
+    const holdingsAccountLabel = selectedAccount?.label || "This account";
     const hasConnectedBroker = accounts.some((account) => account.is_active);
     const retryParams = new URLSearchParams({
         days: String(days),
@@ -499,16 +506,19 @@ export default async function HeatmapPage({
         <>
             <div className="flex min-h-[calc(100dvh-8.25rem)] min-w-0 flex-1 flex-col overflow-hidden">
                 <PageHeader
+                    compact
                     description="Scan live movers across tracked symbols, watchlists, or broker holdings."
                     title="Heatmap"
                 />
 
-                <CardFrame className="mb-4 shrink-0">
-                    <CardFrameHeader>
-                        <CardFrameTitle>Heatmap setup</CardFrameTitle>
-                        <CardFrameDescription>
-                            Choose the universe and broker source for live quote coverage.
-                        </CardFrameDescription>
+                <CardFrame className="mb-2 shrink-0">
+                    <CardFrameHeader className="flex flex-row items-center justify-between gap-3 px-3 py-2">
+                        <div className="flex min-w-0 items-baseline gap-2">
+                            <CardFrameTitle className="shrink-0">Heatmap setup</CardFrameTitle>
+                            <CardFrameDescription className="hidden truncate min-[900px]:block">
+                                Choose the universe and broker source for live quote coverage.
+                            </CardFrameDescription>
+                        </div>
                         {heatmap ? (
                             <CardFrameAction>
                                 <Badge variant="outline">
@@ -519,34 +529,38 @@ export default async function HeatmapPage({
                         ) : null}
                     </CardFrameHeader>
                     <Card>
-                        <CardPanel className="grid min-w-0 gap-3 p-3">
-                            <HeatmapFilters
-                                accounts={accounts}
-                                currentAccountId={effectiveAccountId}
-                                currentScope={scope}
-                                currentWatchlistId={effectiveWatchlistId}
-                                watchlists={watchlists}
-                            />
-                            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-2.5">
-                                <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                                    <span className="min-w-0">Default broker</span>
-                                    <Badge className="max-w-44 truncate" variant="outline">
-                                        {selectedBrokerName}
-                                    </Badge>
-                                    <Button asChild className="h-6 px-2 text-xs" size="xs" variant="ghost">
-                                        <Link href="/settings">Change in Settings</Link>
-                                    </Button>
-                                </div>
-                                {heatmap ? (
-                                    <div className="text-xs text-muted-foreground">
-                                        <span className="font-semibold text-foreground">{heatmap.scope_label}</span>
-                                        {" · "}
-                                        {heatmap.returned_count}/{heatmap.tracked_symbol_count} live
+                        <CardPanel className="grid min-w-0 gap-2 p-2">
+                            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                                <HeatmapFilters
+                                    accounts={accounts}
+                                    currentAccountId={effectiveAccountId}
+                                    currentScope={scope}
+                                    currentWatchlistId={effectiveWatchlistId}
+                                    watchlists={watchlists}
+                                />
+                                <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                        <span className="min-w-0">Default broker</span>
+                                        <Badge className="max-w-44 truncate" variant="outline">
+                                            {selectedBrokerName}
+                                        </Badge>
+                                        <Button asChild className="h-6 px-2 text-xs" size="xs" variant="ghost">
+                                            <Link href="/settings">Change in Settings</Link>
+                                        </Button>
                                     </div>
-                                ) : null}
+                                    {heatmap ? (
+                                        <div className="text-xs text-muted-foreground">
+                                            <span className="font-semibold text-foreground">{heatmap.scope_label}</span>
+                                            {" · "}
+                                            {hasNoHoldings
+                                                ? "No holdings"
+                                                : `${heatmap.returned_count}/${heatmap.tracked_symbol_count} live`}
+                                        </div>
+                                    ) : null}
+                                </div>
                             </div>
-                            {heatmap ? (
-                                <div className="grid overflow-hidden rounded-lg border border-border/70 text-xs min-[700px]:grid-cols-3">
+                            {heatmap && !hasNoHoldings ? (
+                                <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border/70 text-xs">
                                     <BreadthCell
                                         count={advancingCount}
                                         icon={TrendingUp}
@@ -563,12 +577,14 @@ export default async function HeatmapPage({
                                             total={cards.length}
                                         />
                                     </div>
-                                    <div className="min-w-0 px-3 py-2">
+                                    <div className="min-w-0 px-2.5 py-1.5">
                                         <p className="flex items-center gap-1.5 font-semibold text-muted-foreground">
                                             <Minus className="size-3.5" aria-hidden="true" />
                                             <span className="truncate">{neutralCount} flat</span>
+                                            <span className="truncate font-mono text-[10px] font-normal">
+                                                max {formatPercent(strongestMove)}
+                                            </span>
                                         </p>
-                                        <p className="mt-1 font-mono text-[10px] text-muted-foreground">max {formatPercent(strongestMove)}</p>
                                     </div>
                                 </div>
                             ) : null}
@@ -635,20 +651,31 @@ export default async function HeatmapPage({
                                         <EmptyMedia variant="icon">
                                             <Grid2X2 aria-hidden="true" />
                                         </EmptyMedia>
-                                        <EmptyTitle>{noQuotableSymbolsTitle(scope, heatmap.scope_label)}</EmptyTitle>
+                                        <EmptyTitle>
+                                            {hasNoHoldings
+                                                ? `No holdings in ${holdingsAccountLabel}`
+                                                : noQuotableSymbolsTitle(scope, heatmap.scope_label)}
+                                        </EmptyTitle>
                                         <EmptyDescription className="leading-6">
-                                            {hasConnectedBroker
-                                                ? `${selectedBrokerName} is connected, but it did not return live prices for this heatmap selection. This usually means the instruments are not available through the current default broker plan, the market-data entitlement is limited, or this broker does not support these symbols for live heatmap data. Upgrade the broker data plan or try a different connected broker.`
-                                                : "Connect an active broker account with live market-data access, then try loading the heatmap again."}
+                                            {hasNoHoldings
+                                                ? `${holdingsAccountLabel} is connected, but this account does not currently contain any holdings. Add or transfer investments to this account, refresh its broker data, or choose another connected account above.`
+                                                : hasConnectedBroker
+                                                  ? `${selectedBrokerName} is connected, but it did not return live prices for this heatmap selection. This usually means the instruments are not available through the current default broker plan, the market-data entitlement is limited, or this broker does not support these symbols for live heatmap data. Upgrade the broker data plan or try a different connected broker.`
+                                                  : "Connect an active broker account with live market-data access, then try loading the heatmap again."}
                                         </EmptyDescription>
                                     </EmptyHeader>
                                     <EmptyContent className="flex-row flex-wrap justify-center">
                                         <Button asChild variant="outline">
-                                            <Link href="/broker-connections">
-                                                Try another broker
+                                            <Link href={selectedAccount ? `/broker-connections/${selectedAccount.id}` : "/broker-connections"}>
+                                                {hasNoHoldings ? "Review account" : "Try another broker"}
                                                 <ArrowRight className="size-4" aria-hidden="true" />
                                             </Link>
                                         </Button>
+                                        {hasNoHoldings ? (
+                                            <Button asChild variant="ghost">
+                                                <Link href="/heatmap?scope=tracked">View tracked symbols</Link>
+                                            </Button>
+                                        ) : null}
                                         {scope === "watchlist" ? (
                                             <Button asChild variant="ghost">
                                                 <Link href="/watchlists">Review watchlist</Link>

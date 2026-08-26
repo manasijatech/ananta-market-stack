@@ -71,6 +71,12 @@ def upsert_alpha_api_credential(
     row.account_checked_at = datetime.now(tz=UTC).replace(tzinfo=None)
     row.account_error = None
     db.add(row)
+    # A rejected/expired key may have populated the shared symbol cache with
+    # negative entries. Once this credential has been verified, discard those
+    # entries so the next metadata read can immediately refill them.
+    from app.services import alpha_symbols
+
+    alpha_symbols.invalidate_unavailable_metadata_cache(db)
     db.commit()
     return get_alpha_api_config(db, owner_user_id)
 
