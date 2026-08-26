@@ -71,11 +71,14 @@ def init_db() -> None:
         if _requires_sqlite_legacy_bootstrap():
             logger.info("Applying legacy SQLite bootstrap for ananta-market-stack database")
             Base.metadata.create_all(bind=engine)
-            _apply_sqlite_legacy_patches_if_needed()
+            _apply_sqlite_schema_patches()
             _stamp_database_at_head()
             _repair_installation_access_after_migration()
             return
         _upgrade_database_to_head()
+        # Additive SQLite column ensures stay idempotent and cover fields that are
+        # modeled in SQLAlchemy before a dedicated Alembic revision lands.
+        _apply_sqlite_schema_patches()
         _repair_installation_access_after_migration()
 
 
@@ -144,14 +147,12 @@ def _stamp_database_at_head() -> None:
         raise
 
 
-def _apply_sqlite_legacy_patches_if_needed() -> None:
+def _apply_sqlite_schema_patches() -> None:
     if not _settings.database_url.startswith("sqlite:///"):
         return
     db_path = _settings.database_url.replace("sqlite:///", "", 1)
     conn = sqlite3.connect(db_path)
     try:
-        if _has_alembic_version_table(conn):
-            return
         _ensure_table_columns(
             conn,
             "users",

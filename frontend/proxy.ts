@@ -6,7 +6,9 @@ const SESSION_COOKIE_NAMES = [
     "ananta-market-stack.session_token",
     "__Secure-ananta-market-stack.session_token",
     "ananta-market-stack-session_token",
-    "__Secure-ananta-market-stack-session_token"
+    "__Secure-ananta-market-stack-session_token",
+    "ananta-market-stack.session_data",
+    "__Secure-ananta-market-stack.session_data"
 ] as const;
 
 /** Routes that require a session cookie before the request reaches the app. */
@@ -30,7 +32,13 @@ const PROTECTED_PREFIXES = [
 const AUTH_ROUTES = ["/auth/sign-in", "/auth/sign-up", "/auth/onboarding"] as const;
 
 function hasSessionCookie(request: NextRequest): boolean {
-    return SESSION_COOKIE_NAMES.some((name) => Boolean(request.cookies.get(name)?.value));
+    return SESSION_COOKIE_NAMES.some((name) => Boolean(request.cookies.get(name)?.value)) ||
+        [...request.cookies.getAll()].some((cookie) =>
+            cookie.name.startsWith("ananta-market-stack.session_token.") ||
+            cookie.name.startsWith("__Secure-ananta-market-stack.session_token.") ||
+            cookie.name.startsWith("ananta-market-stack.session_data.") ||
+            cookie.name.startsWith("__Secure-ananta-market-stack.session_data.")
+        );
 }
 
 function isProtectedRoute(pathname: string): boolean {
@@ -60,8 +68,8 @@ export function proxy(request: NextRequest): NextResponse {
         return redirectTo(request, "/auth/sign-in");
     }
 
-    if (hasSession && pathname === "/pending-approval") {
-        return NextResponse.next();
+    if (pathname === "/pending-approval") {
+        return hasSession ? NextResponse.next() : redirectTo(request, "/auth/sign-in");
     }
 
     if (hasSession && AUTH_ROUTES.includes(pathname as (typeof AUTH_ROUTES)[number])) {
