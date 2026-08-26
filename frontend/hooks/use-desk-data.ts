@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { getBrokerAccounts } from "@/service/actions/broker";
 import { getWatchlists } from "@/service/actions/watchlist";
 import type { BrokerAccount } from "@/service/types/broker";
@@ -58,9 +59,16 @@ export function uniqueCashSymbols(values: string[]): string[] {
     return out;
 }
 
+function isReadySession(status?: string | null) {
+    const value = (status ?? "").toLowerCase();
+    return value === "active" || value === "connected" || value === "automation_ready";
+}
+
 export function useDeskAccounts() {
+    const prefs = useOptionalAdaptiveDeskPrefs();
     const [accounts, setAccounts] = useState<BrokerAccount[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
 
     const reload = useCallback(async () => {
         try {
@@ -69,6 +77,8 @@ export function useDeskAccounts() {
             setError(null);
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : "Could not load broker accounts.");
+        } finally {
+            setLoading(false);
         }
     }, []);
 
@@ -76,12 +86,14 @@ export function useDeskAccounts() {
         void reload();
     }, [reload]);
 
-    const account =
-        accounts.find((item) => item.session_status === "active" || item.session_status === "connected") ??
-        accounts[0] ??
-        null;
+    const defaultAccountId = prefs?.defaultAccountId ?? "";
+    const account = useMemo(() => {
+        const preferred = defaultAccountId ? accounts.find((item) => item.id === defaultAccountId) : undefined;
+        if (preferred) return preferred;
+        return accounts.find((item) => isReadySession(item.session_status)) ?? accounts[0] ?? null;
+    }, [accounts, defaultAccountId]);
 
-    return { account, accounts, error, reload };
+    return { account, accounts, error, loading, reload };
 }
 
 export function useDeskWatchlists() {

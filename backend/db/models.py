@@ -436,6 +436,7 @@ class BrokerChatSession(Base):
         String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     title: Mapped[str] = mapped_column(String(256), default="Broker chat")
+    surface: Mapped[str] = mapped_column(String(32), default="broker_chat", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True

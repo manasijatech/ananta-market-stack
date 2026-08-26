@@ -25,10 +25,13 @@ export interface BrokerChatPreferenceUpdate {
     mcp_server_ids: string[];
 }
 
+export type BrokerChatSurface = "broker_chat" | "adaptive_workspace";
+
 export interface BrokerChatSession {
     id: string;
     user_id: string;
     title: string;
+    surface?: BrokerChatSurface;
     created_at: string;
     updated_at: string;
 }

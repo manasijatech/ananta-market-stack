@@ -574,6 +574,9 @@ export interface SystemConfig {
     mcp_server: McpServerConfig;
     mcp_servers: McpServerConfig[];
     mcp_connector_readiness: Array<{ id: string; is_ready: boolean; reason?: string | null }>;
+    features?: {
+        adaptive_workspace: boolean;
+    };
 }
 
 export interface Notification {

@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useAlertStudio } from "@/hooks/use-alert-studio";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 
@@ -42,9 +44,14 @@ export function LiveWorkflowGraphWidget({ component, refreshNonce }: Props) {
                     ))}
                 </ol>
             ) : (
-                <p className="p-3 text-sm text-muted-foreground">
-                    No graph nodes yet. Refresh a snapshot after editing the workflow in Alerts Workspace.
-                </p>
+                <div className="grid gap-2 p-3">
+                    <p className="text-sm text-muted-foreground">
+                        The graph fills after a draft exists on this desk. Create one in the draft widget, then prepare a snapshot.
+                    </p>
+                    <Button render={<Link href="/alerts-workspace" />} size="xs" variant="outline">
+                        Open full authoring
+                    </Button>
+                </div>
             )}
         </WidgetState>
     );

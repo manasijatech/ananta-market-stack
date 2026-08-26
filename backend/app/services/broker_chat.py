@@ -40,6 +40,9 @@ from db.models import (
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_STATUSES = {"queued", "running"}
+BROKER_CHAT_SURFACE = "broker_chat"
+ADAPTIVE_WORKSPACE_SURFACE = "adaptive_workspace"
+VALID_SESSION_SURFACES = {BROKER_CHAT_SURFACE, ADAPTIVE_WORKSPACE_SURFACE}
 
 
 def utc_now() -> datetime:
@@ -129,13 +132,40 @@ def _default_title(message: str) -> str:
     return cleaned[:80]
 
 
-def create_session(db: Session, user_id: str, title: str | None = None) -> BrokerChatSession:
+def _normalize_surface(surface: str | None, *, default: str = BROKER_CHAT_SURFACE) -> str:
+    if surface is None or not str(surface).strip():
+        return default
+    normalized = str(surface).strip()
+    if normalized not in VALID_SESSION_SURFACES:
+        raise ValueError(f"unsupported broker chat surface: {normalized}")
+    return normalized
+
+
+def _run_is_adaptive(payload: BrokerChatSubmitIn) -> bool:
+    return bool(payload.metadata.get("adaptive_workspace"))
+
+
+def _assert_session_surface_allows_run(session: BrokerChatSession, *, adaptive: bool) -> None:
+    session_surface = getattr(session, "surface", None) or BROKER_CHAT_SURFACE
+    if adaptive and session_surface == BROKER_CHAT_SURFACE:
+        raise ValueError("this session belongs to Broker Chat")
+    if not adaptive and session_surface == ADAPTIVE_WORKSPACE_SURFACE:
+        raise ValueError("this session belongs to Adaptive Workspace")
+
+
+def create_session(
+    db: Session,
+    user_id: str,
+    title: str | None = None,
+    surface: str | None = None,
+) -> BrokerChatSession:
     ensure_user(db, user_id)
     now = utc_now()
     row = BrokerChatSession(
         id=str(uuid.uuid4()),
         user_id=user_id,
         title=(title or "Broker chat").strip()[:256] or "Broker chat",
+        surface=_normalize_surface(surface),
         created_at=now,
         updated_at=now,
     )
@@ -152,13 +182,21 @@ def get_owned_session(db: Session, user_id: str, session_id: str) -> BrokerChatS
     return row
 
 
-def list_sessions(db: Session, user_id: str, *, limit: int = 50) -> list[BrokerChatSessionOut]:
+def list_sessions(
+    db: Session,
+    user_id: str,
+    *,
+    limit: int = 50,
+    surface: str | None = BROKER_CHAT_SURFACE,
+) -> list[BrokerChatSessionOut]:
+    stmt = select(BrokerChatSession).where(BrokerChatSession.user_id == user_id)
+    if surface is not None:
+        stmt = stmt.where(BrokerChatSession.surface == _normalize_surface(surface))
     rows = list(
         db.scalars(
-            select(BrokerChatSession)
-            .where(BrokerChatSession.user_id == user_id)
-            .order_by(BrokerChatSession.updated_at.desc(), BrokerChatSession.id.desc())
-            .limit(max(1, min(limit, 200)))
+            stmt.order_by(BrokerChatSession.updated_at.desc(), BrokerChatSession.id.desc()).limit(
+                max(1, min(limit, 200))
+            )
         ).all()
     )
     return [BrokerChatSessionOut.model_validate(row) for row in rows]
@@ -195,10 +233,17 @@ def create_run(
 ) -> BrokerChatRun:
     ensure_user(db, user_id)
     pref = get_or_create_preference(db, user_id)
+    adaptive = _run_is_adaptive(payload)
     if payload.session_id:
         session = get_owned_session(db, user_id, payload.session_id)
+        _assert_session_surface_allows_run(session, adaptive=adaptive)
     else:
-        session = create_session(db, user_id, payload.session_title or _default_title(payload.message))
+        session = create_session(
+            db,
+            user_id,
+            payload.session_title or _default_title(payload.message),
+            surface=ADAPTIVE_WORKSPACE_SURFACE if adaptive else BROKER_CHAT_SURFACE,
+        )
     active_run = db.scalars(
         select(BrokerChatRun)
         .where(
@@ -347,11 +392,16 @@ def list_runs(
     user_id: str,
     *,
     session_id: str | None = None,
+    surface: str | None = None,
     limit: int = 50,
 ) -> list[BrokerChatRunOut]:
     stmt = select(BrokerChatRun).where(BrokerChatRun.user_id == user_id)
     if session_id:
         stmt = stmt.where(BrokerChatRun.session_id == session_id)
+    if surface is not None:
+        stmt = stmt.join(BrokerChatSession, BrokerChatRun.session_id == BrokerChatSession.id).where(
+            BrokerChatSession.surface == _normalize_surface(surface)
+        )
     rows = list(
         db.scalars(
             stmt.order_by(BrokerChatRun.created_at.desc(), BrokerChatRun.id.desc()).limit(max(1, min(limit, 200)))

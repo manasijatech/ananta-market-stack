@@ -317,6 +317,18 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
         )
         _ensure_table_columns(
             conn,
+            "broker_chat_sessions",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "title": "VARCHAR(256) DEFAULT 'Broker chat'",
+                "surface": "VARCHAR(32) DEFAULT 'broker_chat'",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "user_alert_workflow_chat_preferences",
             {
                 "user_id": "VARCHAR(36)",

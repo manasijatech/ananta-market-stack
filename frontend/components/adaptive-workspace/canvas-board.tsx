@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { IconArrowBackUp, IconLock, IconLockOpen } from "@tabler/icons-react";
 import { AdaptiveCanvasWidget } from "@/components/adaptive-workspace/canvas-widget";
+import { DeskStarterCatalog } from "@/components/adaptive-workspace/desk-catalog";
 import { AdaptiveDeskPersonalization } from "@/components/adaptive-workspace/desk-personalization";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { Button } from "@/components/ui/button";
+import { SimpleSelect } from "@/components/ui/simple-select";
+import { useDeskAccounts } from "@/hooks/use-desk-data";
 import { CANVAS_GAP, CANVAS_ROW_HEIGHT } from "@/lib/adaptive-workspace/layout";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +18,38 @@ type Props = {
     onPrompt: (prompt: string) => void;
     starterPrompts: string[];
 };
+
+function DeskAccountPicker() {
+    const prefs = useOptionalAdaptiveDeskPrefs();
+    const { account, accounts } = useDeskAccounts();
+    if (!prefs) return null;
+    if (!accounts.length) {
+        return (
+            <Button render={<Link href="/broker-connections" />} size="xs" variant="outline">
+                Connect broker
+            </Button>
+        );
+    }
+    return (
+        <div className="flex min-w-0 items-center gap-1.5">
+            <span className="hidden text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground min-[720px]:inline">
+                Account
+            </span>
+            <SimpleSelect
+                aria-label="Desk account"
+                className="h-7 w-[min(11.5rem,42vw)] bg-background px-2 text-xs"
+                onValueChange={(id) => void prefs.setDefaultAccountId(id)}
+                options={accounts.map((item) => ({
+                    label: item.session_status ? `${item.label} · ${item.session_status}` : item.label,
+                    value: item.id
+                }))}
+                placeholder="Desk account"
+                size="sm"
+                value={account?.id ?? prefs.defaultAccountId}
+            />
+        </div>
+    );
+}
 
 export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
     const { canUndo, loading, spec, undo } = useAdaptiveWorkspace();
@@ -61,15 +97,18 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
                         </Button>
                     ) : null}
                 </div>
-                {locked ? null : (
-                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                        <AdaptiveDeskPersonalization />
-                        <Button disabled={!canUndo} onClick={undo} size="sm" type="button" variant="outline">
-                            <IconArrowBackUp className="size-4" stroke={1.8} />
-                            Undo
-                        </Button>
-                    </div>
-                )}
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                    <DeskAccountPicker />
+                    {locked ? null : (
+                        <>
+                            <AdaptiveDeskPersonalization />
+                            <Button disabled={!canUndo} onClick={undo} size="sm" type="button" variant="outline">
+                                <IconArrowBackUp className="size-4" stroke={1.8} />
+                                Undo
+                            </Button>
+                        </>
+                    )}
+                </div>
             </div>
             <div
                 className={cn(
@@ -100,6 +139,7 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
                                     </button>
                                 ))}
                             </div>
+                            <DeskStarterCatalog />
                         </div>
                     </div>
                 ) : (

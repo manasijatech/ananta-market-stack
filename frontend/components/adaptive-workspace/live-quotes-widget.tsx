@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { LiveStatusBadge, MoveCell, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { DeskAccountState, LiveStatusBadge, MoveCell, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import {
     WidgetScopeBar,
     readHiddenSymbols,
@@ -194,7 +194,7 @@ export function QuotesMoveTable({
 export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
     const { patchUniverse, spec } = useAdaptiveWorkspace();
     const deskSymbols = universeSymbols(spec);
-    const { account, error: accountError } = useDeskAccounts();
+    const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
@@ -232,7 +232,7 @@ export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
     const tableRows = buildQuoteMoveRows(instruments, rows, live, account, hidden);
 
     return (
-        <WidgetState error={error || accountError} loading={listsLoading && !instruments.length} loadingLabel="Loading live quotes">
+        <WidgetState error={error || accountError} loading={accountsLoading || (listsLoading && !instruments.length)} loadingLabel="Loading live quotes">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border/50 px-2 py-1.5">
                 <WidgetScopeBar
                     allowDesk
@@ -253,6 +253,7 @@ export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
                 <p className="px-3 pt-1 text-[11px] text-muted-foreground">{scopeHint(component, watchlist?.name, deskSymbols.length)}</p>
             )}
             <div className="min-h-0 flex-1 overflow-auto">
+            <DeskAccountState account={account} accounts={accounts}>
             <QuotesMoveTable
                 layoutLocked={prefs?.canvasLocked !== false}
                 onRemove={
@@ -264,6 +265,7 @@ export function LiveQuotesWidget({ component, onPatch, refreshNonce }: Props) {
                 rows={tableRows}
                 showExchangeBadge
             />
+            </DeskAccountState>
             </div>
         </WidgetState>
     );

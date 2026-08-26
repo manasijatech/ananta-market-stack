@@ -13,7 +13,7 @@ from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
 from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
-from app.services import broker_chat, broker_chat_mcp, llm_config
+from app.services import broker_chat, broker_chat_mcp, feature_flags, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.broker_chat_queue import broker_chat_cancel_requested
@@ -271,6 +271,8 @@ def _truncate_json(value: Any, limit: int = 8000) -> str:
 
 
 def _adaptive_workspace_enabled(metadata: dict[str, Any]) -> bool:
+    if not feature_flags.adaptive_workspace_enabled():
+        return False
     return bool(metadata.get("adaptive_workspace"))
 
 

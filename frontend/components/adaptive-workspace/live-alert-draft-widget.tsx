@@ -39,6 +39,7 @@ export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props
     const [symbol, setSymbol] = useState("");
     const [operator, setOperator] = useState("gte");
     const [threshold, setThreshold] = useState("");
+    const [createdHint, setCreatedHint] = useState(false);
 
     return (
         <WidgetState error={error} loading={loading} loadingLabel="Loading alert draft">
@@ -95,6 +96,7 @@ export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props
                         if (next.workflow_id) onPatch({ workflowId: next.workflow_id });
                         setSymbol("");
                         setThreshold("");
+                        setCreatedHint(true);
                     });
                 }}
             >
@@ -134,6 +136,11 @@ export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props
                     </Button>
                 </div>
                 <p className="text-[11px] text-muted-foreground">Saves as draft only. Deploy stays on the approval card after you confirm.</p>
+                {createdHint ? (
+                    <p className="text-[11px] text-primary">
+                        Use the approval card: prepare snapshot, then confirm deploy.
+                    </p>
+                ) : null}
             </form>
         </WidgetState>
     );

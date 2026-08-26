@@ -7,6 +7,7 @@ Local API docs are available after starting the backend:
 - Swagger UI: `http://127.0.0.1:8000/docs`
 - Health: `http://127.0.0.1:8000/health`
 - Versioned health: `http://127.0.0.1:8000/api/v1/health`
+- Runtime feature flags: `http://127.0.0.1:8000/api/v1/features`
 
 Hosted developer documentation is available at [developers.manasija.in/docs](https://developers.manasija.in/docs).
 
@@ -14,6 +15,7 @@ Hosted developer documentation is available at [developers.manasija.in/docs](htt
 
 - `GET /health`
 - `GET /health/redis`
+- `GET /features` — public runtime flags (`adaptive_workspace`, default `false`; gated by `ENABLE_ADAPTIVE_WORKSPACE`)
 - `GET /brokers/supported`
 - `GET /users/me`
 - `POST /users`
@@ -105,7 +107,7 @@ Broker chat provides a durable asynchronous chat surface for broker-data tools. 
 - [Broker chat backend](../backend/docs/broker_chat.md)
 - [Broker agent tools](../backend/docs/broker_agent_tools.md)
 - [LLM provider config](../backend/docs/llm_provider_config.md)
-- [Adaptive Workspace preview](adaptive-workspace.md) (`/adaptive-workspace`; does not replace `/broker-chat` yet)
+- [Adaptive Workspace preview](adaptive-workspace.md) (`/adaptive-workspace`; does not replace `/broker-chat` yet). Off unless `ENABLE_ADAPTIVE_WORKSPACE=true`. Routes return `404` when the flag is off.
 
 Adaptive Workspace snapshot API (preview page only):
 

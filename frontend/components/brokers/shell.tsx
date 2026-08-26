@@ -15,5 +15,12 @@ export async function Shell({ children }: { children: React.ReactNode }) {
         redirect(onboardingStepPath(firstIncompleteRequiredStep(readiness)));
     }
 
-    return <WorkspaceShell principal={principal}>{children}</WorkspaceShell>;
+    return (
+        <WorkspaceShell
+            enableAdaptiveWorkspace={Boolean(onboardingData.systemConfig?.features?.adaptive_workspace)}
+            principal={principal}
+        >
+            {children}
+        </WorkspaceShell>
+    );
 }

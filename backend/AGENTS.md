@@ -11,7 +11,7 @@ See `docs/broker_auth_flows.md` for broker session/auth behavior and `docs/migra
 See `docs/windows_runtime_compat.md` for Python 3.10 / Windows-safe runtime conventions.
 See `docs/broker_agent_tools.md` for the OpenAI Agents SDK broker-data tool surface.
 See `docs/broker_chat.md` for the asynchronous broker chat API, RQ worker, and SSE stream behavior.
-See `docs/adaptive-workspace.md` for the Adaptive Workspace preview (`/adaptive-workspace`). Broker Chat at `/broker-chat` stays unchanged until that preview is ready to become the default.
+See `docs/adaptive-workspace.md` for the Adaptive Workspace preview (`/adaptive-workspace`). It is gated by `ENABLE_ADAPTIVE_WORKSPACE` (default off). Broker Chat at `/broker-chat` stays unchanged until that preview is ready to become the default.
 
 ## Current phase (roadmap)
 
@@ -102,6 +102,7 @@ When you touch broker behavior:
 | `ALLOW_INSECURE_DEV_CREDENTIALS` | If `true`, uses a **derived dev-only** Fernet key (never in production) |
 | `APP_DEBUG` | App debug flag (avoids clashing with generic `DEBUG`) |
 | `ENABLE_ORDER_MUTATIONS` | Defaults to `false`. When `false`, order placement/modification/cancel endpoints return `403` and stay hidden from OpenAPI. |
+| `ENABLE_ADAPTIVE_WORKSPACE` | Defaults to `false`. When `false`, Adaptive Workspace HTTP routes return `404`, the preview nav/page stay hidden, and broker-chat runs never attach compose/intel/alert-studio tools. Published Docker images stay off. |
 | `REDIS_*` | Required for production alert fanout, live tick cache, and workflow evaluation coordination. |
 
 See `.env.example`.
@@ -132,6 +133,7 @@ Base prefix: `/api/v1`.
 |--------|------|-------------|
 | GET | `/health` | Liveness |
 | GET | `/health/redis` | Redis ping |
+| GET | `/features` | Public runtime flags (`adaptive_workspace`, default off) |
 | GET | `/brokers/supported` | Supported broker codes |
 | GET | `/users/me` | Current user (from `X-User-Id`) |
 | POST | `/users` | Create user (explicit UUID id) |

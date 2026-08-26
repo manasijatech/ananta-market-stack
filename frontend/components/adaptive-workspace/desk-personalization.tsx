@@ -31,11 +31,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
+import {
+    applyDeskCatalogItem,
+    DeskCatalogConfirmDialog,
+    deskCatalogConfirm,
+    pendingCatalogApply,
+    type PendingDeskCatalogApply
+} from "@/components/adaptive-workspace/desk-catalog";
 import { useDeskWatchlists } from "@/hooks/use-desk-data";
 import {
-    applyAdaptiveWorkspaceDesk,
-    applyAdaptiveWorkspaceSkill,
-    applyAdaptiveWorkspaceTemplate,
     deleteAdaptiveWorkspaceDesk,
     deleteAdaptiveWorkspacePreference,
     listAdaptiveWorkspaceDesks,
@@ -53,12 +57,7 @@ import type {
 } from "@/service/types/adaptive-workspace";
 import type { AlertWorkflow } from "@/service/types/alerts";
 
-type PendingApply = {
-    confirm: string;
-    kind: "desk" | "skill" | "template";
-    id: string;
-    title: string;
-};
+type PendingApply = PendingDeskCatalogApply;
 
 function suggestionLabel(
     item: AdaptiveWorkspaceSuggestion,
@@ -114,12 +113,7 @@ export function AdaptiveDeskPersonalization() {
         setBusy(true);
         setError(null);
         try {
-            const current =
-                kind === "template"
-                    ? await applyAdaptiveWorkspaceTemplate(id, sessionId)
-                    : kind === "skill"
-                      ? await applyAdaptiveWorkspaceSkill(id, sessionId)
-                      : await applyAdaptiveWorkspaceDesk(id, sessionId);
+            const current = await applyDeskCatalogItem(kind, id, sessionId);
             if (canvas.sessionId !== sessionId) {
                 setPending(null);
                 return;
@@ -206,14 +200,7 @@ export function AdaptiveDeskPersonalization() {
                         templates.map((item) => (
                             <DropdownMenuItem
                                 key={item.id}
-                                onSelect={() =>
-                                    setPending({
-                                        confirm: `Replace this canvas with the ${item.label} template? This does not happen automatically.`,
-                                        id: item.id,
-                                        kind: "template",
-                                        title: item.label
-                                    })
-                                }
+                                onSelect={() => setPending(pendingCatalogApply("template", item))}
                             >
                                 <span className="min-w-0">
                                     <span className="block font-semibold">{item.label}</span>
@@ -230,14 +217,7 @@ export function AdaptiveDeskPersonalization() {
                         skills.map((item) => (
                             <DropdownMenuItem
                                 key={item.id}
-                                onSelect={() =>
-                                    setPending({
-                                        confirm: `Apply the ${item.label} skill to this canvas?`,
-                                        id: item.id,
-                                        kind: "skill",
-                                        title: item.label
-                                    })
-                                }
+                                onSelect={() => setPending(pendingCatalogApply("skill", item))}
                             >
                                 <IconWand className="size-4" stroke={1.8} />
                                 <span className="min-w-0">
@@ -276,7 +256,7 @@ export function AdaptiveDeskPersonalization() {
                                     className="min-w-0 flex-1"
                                     onSelect={() =>
                                         setPending({
-                                            confirm: `Load “${desk.name}” onto this canvas?`,
+                                            confirm: deskCatalogConfirm("desk", desk.name),
                                             id: desk.id,
                                             kind: "desk",
                                             title: desk.name
@@ -333,26 +313,12 @@ export function AdaptiveDeskPersonalization() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog onOpenChange={(open) => !open && setPending(null)} open={Boolean(pending)}>
-                <DialogContent className="h-fit max-h-[min(24rem,calc(100dvh-2rem))] overflow-hidden">
-                    <DialogHeader>
-                        <DialogTitle>{pending?.title ?? "Apply layout"}</DialogTitle>
-                        <DialogDescription>{pending?.confirm}</DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                        <Button onClick={() => setPending(null)} type="button" variant="outline">
-                            Keep current
-                        </Button>
-                        <Button
-                            disabled={busy || !pending}
-                            onClick={() => pending && void applyCurrent(pending.kind, pending.id)}
-                            type="button"
-                        >
-                            Apply
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <DeskCatalogConfirmDialog
+                busy={busy}
+                onApply={() => pending && void applyCurrent(pending.kind, pending.id)}
+                onCancel={() => setPending(null)}
+                pending={pending}
+            />
 
             <Dialog onOpenChange={setPrefsOpen} open={prefsOpen}>
                 <DialogContent className="flex h-fit max-h-[min(36rem,calc(100dvh-2rem))] flex-col overflow-hidden">

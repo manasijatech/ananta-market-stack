@@ -14,6 +14,7 @@ type DeskPrefsContextValue = {
     items: AdaptiveWorkspacePreference[];
     reload: () => Promise<void>;
     setCanvasLocked: (locked: boolean) => Promise<void>;
+    setDefaultAccountId: (accountId: string) => Promise<void>;
 };
 
 const DeskPrefsContext = createContext<DeskPrefsContextValue | null>(null);
@@ -51,6 +52,18 @@ export function AdaptiveDeskPrefsProvider({ children }: { children: ReactNode })
         }
     }, [reload]);
 
+    const setDefaultAccountId = useCallback(async (accountId: string) => {
+        setItems((current) => {
+            const rest = current.filter((item) => item.key !== "default_account_id");
+            return [...rest, { deletable: true, key: "default_account_id", updated_at: "", value: accountId }];
+        });
+        try {
+            await putAdaptiveWorkspacePreference("default_account_id", accountId);
+        } catch {
+            await reload();
+        }
+    }, [reload]);
+
     const value = useMemo<DeskPrefsContextValue>(() => {
         const density = stringPref(items, "density") === "compact" ? "compact" : "comfortable";
         return {
@@ -62,9 +75,10 @@ export function AdaptiveDeskPrefsProvider({ children }: { children: ReactNode })
             intelProduct: stringPref(items, "intel_product"),
             items: items.filter((item) => item.key !== "request_intent_counts"),
             reload,
-            setCanvasLocked
+            setCanvasLocked,
+            setDefaultAccountId
         };
-    }, [items, reload, setCanvasLocked]);
+    }, [items, reload, setCanvasLocked, setDefaultAccountId]);
 
     return <DeskPrefsContext.Provider value={value}>{children}</DeskPrefsContext.Provider>;
 }

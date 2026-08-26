@@ -31,8 +31,12 @@ class BrokerChatPreferenceUpdateIn(BaseModel):
     mcp_server_ids: list[str] = Field(default_factory=list)
 
 
+BrokerChatSurface = Literal["broker_chat", "adaptive_workspace"]
+
+
 class BrokerChatSessionCreateIn(BaseModel):
     title: str | None = Field(default=None, max_length=256)
+    surface: BrokerChatSurface | None = None
 
 
 class BrokerChatSessionOut(BaseModel):
@@ -41,6 +45,7 @@ class BrokerChatSessionOut(BaseModel):
     id: str
     user_id: str
     title: str
+    surface: BrokerChatSurface | str = "broker_chat"
     created_at: datetime
     updated_at: datetime
 

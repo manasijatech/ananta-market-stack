@@ -15,7 +15,7 @@ import {
     buildQuoteMoveRows,
     instrumentsForComponent
 } from "@/components/adaptive-workspace/live-quotes-widget";
-import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { DeskAccountState, LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import {
     WidgetScopeBar,
     readHiddenSymbols,
@@ -61,7 +61,7 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
     const { resolvedTheme } = useTheme();
     const { patchUniverse, spec } = useAdaptiveWorkspace();
     const deskSymbols = universeSymbols(spec);
-    const { account, error: accountError } = useDeskAccounts();
+    const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
@@ -155,7 +155,7 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
     return (
         <WidgetState
             error={quoteError || accountError}
-            loading={listsLoading && !instruments.length && !boundSymbols.length}
+            loading={accountsLoading || (listsLoading && !instruments.length && !boundSymbols.length)}
             loadingLabel="Loading quotes and chart"
         >
             <div className="flex h-full min-h-0 flex-col">
@@ -187,6 +187,7 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
                         {percent ? " · indexed to first close" : ""}
                     </p>
                 )}
+                <DeskAccountState account={account} accounts={accounts}>
                 {showChart ? (
                     <div className="flex min-h-0 flex-col" style={{ flex: showQuotes ? `${ratio} 1 0` : "1 1 0" }}>
                         <ChartSeriesLegend hidden={hidden} items={legendItems} onToggle={toggleHidden} />
@@ -240,6 +241,7 @@ export function LiveQuoteChartWidget({ component, onPatch, refreshNonce }: Props
                         />
                     </div>
                 ) : null}
+                </DeskAccountState>
             </div>
         </WidgetState>
     );

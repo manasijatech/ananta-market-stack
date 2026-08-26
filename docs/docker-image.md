@@ -12,6 +12,8 @@ The image runs:
 
 No production secrets are baked into the image.
 
+Adaptive Workspace is behind the runtime flag `ENABLE_ADAPTIVE_WORKSPACE` (default off). Published images stay off until a dedicated release. Do not set this variable to `true` in the image or entrypoint.
+
 The container itself is disposable. Persistent state lives in the `/data` mount, including SQLite, generated auth/encryption secrets, and bundled Redis data. Normal updates replace the container but reuse the same `/data` volume.
 
 ## Run Locally Or On A VPS

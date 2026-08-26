@@ -88,9 +88,23 @@ database.exec(`
   CREATE INDEX IF NOT EXISTS "verification_identifier_idx" ON "verification" ("identifier");
 `);
 
-const authBaseURL = process.env.BETTER_AUTH_URL ?? getPublicAppUrl();
+function envValue(name: string): string {
+    return (process.env[name] ?? "").trim();
+}
 
-if (!process.env.BETTER_AUTH_SECRET && process.env.NODE_ENV === "production") {
+function originFromUrl(value: string): string | null {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+        return new URL(trimmed).origin;
+    } catch {
+        return trimmed.replace(/\/+$/, "") || null;
+    }
+}
+
+const authBaseURL = envValue("BETTER_AUTH_URL") || getPublicAppUrl();
+
+if (!envValue("BETTER_AUTH_SECRET") && process.env.NODE_ENV === "production") {
     throw new Error("BETTER_AUTH_SECRET is required in production.");
 }
 
@@ -132,6 +146,8 @@ async function sendResetPasswordLink(data: {
     storeDevPasswordResetLink(data.user.email, data.url);
 }
 
+const listenPort = envValue("PORT") || "3000";
+const localListenOrigins = [`http://127.0.0.1:${listenPort}`, `http://localhost:${listenPort}`];
 const localDevOrigins =
     process.env.NODE_ENV === "production"
         ? []
@@ -140,14 +156,18 @@ const localDevOrigins =
               `http://localhost:${port}`
           ]);
 const trustedOrigins = Array.from(
-    new Set([
-        authBaseURL,
-        ...localDevOrigins,
-        ...String(process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
-            .split(",")
-            .map((origin) => origin.trim())
-            .filter(Boolean)
-    ])
+    new Set(
+        [
+            originFromUrl(authBaseURL),
+            originFromUrl(envValue("NEXT_PUBLIC_APP_URL")),
+            originFromUrl(envValue("MARKET_STACK_PUBLIC_APP_URL")),
+            ...localListenOrigins,
+            ...localDevOrigins,
+            ...envValue("BETTER_AUTH_TRUSTED_ORIGINS")
+                .split(",")
+                .map((origin) => originFromUrl(origin))
+        ].filter((origin): origin is string => Boolean(origin))
+    )
 );
 
 /** Shared Better Auth instance for API routes and server session lookups. */

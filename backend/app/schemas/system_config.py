@@ -215,6 +215,10 @@ class McpInventoryRefreshOut(BaseModel):
     refreshed: bool = True
 
 
+class FeatureFlagsOut(BaseModel):
+    adaptive_workspace: bool = False
+
+
 class SystemConfigOut(BaseModel):
     broker_data_default: BrokerDataDefaultConfigOut
     broker_data_search: BrokerDataSearchConfigOut
@@ -225,3 +229,4 @@ class SystemConfigOut(BaseModel):
     mcp_server: McpServerConfigOut
     mcp_servers: list[McpServerConfigOut] = Field(default_factory=list)
     mcp_connector_readiness: list[McpConnectorReadinessOut] = Field(default_factory=list)
+    features: FeatureFlagsOut = Field(default_factory=FeatureFlagsOut)

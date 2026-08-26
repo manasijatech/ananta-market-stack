@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LiveStatusBadge, MoveCell, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { DeskAccountState, LiveStatusBadge, MoveCell, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import { normalizeHoldings, normalizePositions } from "@/components/brokers/normalizers";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDeskAccounts } from "@/hooks/use-desk-data";
@@ -26,7 +26,7 @@ function money(value: number) {
 }
 
 export function LivePnlWidget({ refreshNonce }: Props) {
-    const { account, error: accountError } = useDeskAccounts();
+    const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const [holdingsPayload, setHoldingsPayload] = useState<JsonObject | null>(null);
     const [positionsPayload, setPositionsPayload] = useState<JsonObject | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export function LivePnlWidget({ refreshNonce }: Props) {
 
     useEffect(() => {
         if (!account) {
-            setLoading(false);
+            if (!accountsLoading) setLoading(false);
             return;
         }
         let cancelled = false;
@@ -55,7 +55,7 @@ export function LivePnlWidget({ refreshNonce }: Props) {
         return () => {
             cancelled = true;
         };
-    }, [account, refreshNonce]);
+    }, [account, accountsLoading, refreshNonce]);
 
     const rows = useMemo<ExposureRow[]>(() => {
         const holdings = holdingsPayload ? normalizeHoldings(holdingsPayload) : [];
@@ -84,7 +84,8 @@ export function LivePnlWidget({ refreshNonce }: Props) {
     const losers = rows.filter((row) => row.pnl < 0).length;
 
     return (
-        <WidgetState error={error || accountError} loading={loading} loadingLabel="Loading P&L exposure">
+        <WidgetState error={error || accountError} loading={accountsLoading || loading} loadingLabel="Loading P&L exposure">
+            <DeskAccountState account={account} accounts={accounts}>
             <div className="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5">
                 <div>
                     <p className="text-[11px] text-muted-foreground">Net P&L</p>
@@ -126,6 +127,7 @@ export function LivePnlWidget({ refreshNonce }: Props) {
                     </Table>
                 </div>
             )}
+            </DeskAccountState>
         </WidgetState>
     );
 }

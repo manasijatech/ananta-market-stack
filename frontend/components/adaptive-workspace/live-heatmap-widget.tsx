@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
+import { DeskAccountEmpty, deskAccountIssue, LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { resolveWatchlist, useDeskAccounts, useDeskWatchlists, widgetProp } from "@/hooks/use-desk-data";
@@ -54,7 +54,7 @@ function CompactTile({ item }: { item: HeatmapSymbol }) {
 }
 
 export function LiveHeatmapWidget({ component, onPatch, refreshNonce }: Props) {
-    const { account, error: accountError } = useDeskAccounts();
+    const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const { watchlists } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
@@ -110,8 +110,12 @@ export function LiveHeatmapWidget({ component, onPatch, refreshNonce }: Props) {
         heatmap?.scope_label ||
         (scope === "watchlist" ? watchlist?.name || "Watchlist" : scope === "portfolio_holdings" ? "Holdings" : "Tracked");
 
+    const accountIssue = deskAccountIssue(account, accounts);
+    const showAccountEmpty =
+        Boolean(accountIssue) && (accountIssue === "none" || scope === "portfolio_holdings");
+
     return (
-        <WidgetState error={error || accountError} loading={loading} loadingLabel="Loading heatmap">
+        <WidgetState error={error || accountError} loading={accountsLoading || loading} loadingLabel="Loading heatmap">
             <WidgetToolbar>
                 {locked ? (
                     <p className="min-w-0 flex-1 truncate text-[11px] font-semibold text-muted-foreground">{scopeLabel}</p>
@@ -147,7 +151,9 @@ export function LiveHeatmapWidget({ component, onPatch, refreshNonce }: Props) {
                 </p>
                 {locked ? null : <LiveStatusBadge label={scopeLabel} tone={cards.length ? "live" : "idle"} />}
             </WidgetToolbar>
-            {!cards.length ? (
+            {showAccountEmpty && accountIssue ? (
+                <DeskAccountEmpty issue={accountIssue} />
+            ) : !cards.length ? (
                 <p className="p-3 text-sm text-muted-foreground">
                     {heatmap?.scope_label
                         ? `No live quotes for ${heatmap.scope_label} on this broker yet.`

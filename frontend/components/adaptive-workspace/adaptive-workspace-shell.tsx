@@ -9,7 +9,7 @@ import {
     IconPlugConnected
 } from "@tabler/icons-react";
 import { AdaptiveCanvasBoard } from "@/components/adaptive-workspace/canvas-board";
-import { AdaptiveDeskPrefsProvider } from "@/components/adaptive-workspace/desk-prefs";
+import { AdaptiveDeskPrefsProvider, useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { adaptiveBrokerToolRenderers } from "@/components/adaptive-workspace/broker-tool-renderers";
 import { AdaptiveDeskSwitcher } from "@/components/adaptive-workspace/desk-switcher";
 import { AdaptiveWorkspaceProvider, useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { useAdaptiveWorkspaceChat } from "@/hooks/use-adaptive-workspace-chat";
 import { useAdaptiveWorkspaceLayout } from "@/hooks/use-adaptive-workspace-layout";
+import { useDeskAccounts } from "@/hooks/use-desk-data";
 import { latestSurfaceSpecFromMessages } from "@/lib/adaptive-workspace/spec";
 import { cn } from "@/lib/utils";
 import type { OpenRouterModel } from "@/service/actions/llm-models";
@@ -43,7 +44,7 @@ const STARTER_PROMPTS = [
     "Latest news on RELIANCE with quotes on this desk",
     "Open an alert workflow studio on this canvas",
     "Show a live heatmap and my P&L exposure",
-    "Apply the research sandbox skill",
+    "Apply the Research sandbox skill",
     "Compose a desk with my holdings and broker health"
 ];
 
@@ -58,12 +59,16 @@ function AdaptiveWorkspaceShellInner({
     const canvas = useAdaptiveWorkspace();
     const { applySpec, bindSession, ingestMessageOutputs } = canvas;
     const layout = useAdaptiveWorkspaceLayout();
+    const prefs = useOptionalAdaptiveDeskPrefs();
+    const { account } = useDeskAccounts();
+    const defaultAccountId = account?.id || prefs?.defaultAccountId || null;
     const getRunMetadata = useCallback(
         () => ({
+            default_account_id: defaultAccountId,
             selected_component_id: canvas.selectedId,
             workspace_spec: canvas.spec
         }),
-        [canvas.selectedId, canvas.spec]
+        [canvas.selectedId, canvas.spec, defaultAccountId]
     );
     const chat = useAdaptiveWorkspaceChat({
         getRunMetadata,

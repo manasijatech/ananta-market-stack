@@ -118,11 +118,14 @@ function initials(name?: string | null, email?: string | null) {
         .join("");
 }
 
-function visibleNavGroups(principal: RbacPrincipal | null | undefined) {
+function visibleNavGroups(principal: RbacPrincipal | null | undefined, enableAdaptiveWorkspace: boolean) {
     return navGroups
         .map((group) => ({
             ...group,
             items: group.items.filter((item) => {
+                if (item.href === "/adaptive-workspace" && !enableAdaptiveWorkspace) {
+                    return false;
+                }
                 if (!item.requiredPermission) {
                     return true;
                 }
@@ -157,14 +160,16 @@ function NavigationGroups({
     compact = false,
     pathname,
     principal,
+    enableAdaptiveWorkspace,
     closeOnSelect = false
 }: {
     compact?: boolean;
     pathname: string;
     principal?: RbacPrincipal | null;
+    enableAdaptiveWorkspace: boolean;
     closeOnSelect?: boolean;
 }) {
-    const groups = visibleNavGroups(principal);
+    const groups = visibleNavGroups(principal, enableAdaptiveWorkspace);
     const [heatmapHref, setHeatmapHref] = useState("/heatmap");
 
     useEffect(() => {
@@ -230,10 +235,12 @@ function isFullHeightPath(pathname: string) {
 
 export function WorkspaceShell({
     children,
-    principal = null
+    principal = null,
+    enableAdaptiveWorkspace = false
 }: {
     children: React.ReactNode;
     principal?: RbacPrincipal | null;
+    enableAdaptiveWorkspace?: boolean;
 }) {
     const pathname = usePathname();
     const router = useRouter();
@@ -314,7 +321,7 @@ export function WorkspaceShell({
                                     <BrandLogo imageClassName="max-w-full text-[1.5rem]" />
                                 </DialogHeader>
                                 <div className="min-h-0 overflow-y-auto px-3 py-4">
-                                    <NavigationGroups closeOnSelect pathname={pathname} principal={principal} />
+                                    <NavigationGroups closeOnSelect enableAdaptiveWorkspace={enableAdaptiveWorkspace} pathname={pathname} principal={principal} />
                                 </div>
                                 <div className="border-t border-border p-2">
                                     <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
@@ -373,7 +380,7 @@ export function WorkspaceShell({
                         </Button>
                     </div>
                     <div className={cn("min-h-0 flex-1 overflow-y-auto pb-4", navCollapsed ? "px-1" : "px-2")}>
-                        <NavigationGroups compact={navCollapsed} pathname={pathname} principal={principal} />
+                        <NavigationGroups compact={navCollapsed} enableAdaptiveWorkspace={enableAdaptiveWorkspace} pathname={pathname} principal={principal} />
                     </div>
                     <div className="mt-auto border-t border-border p-2">
                         <div className={cn("flex items-center rounded-lg py-2", navCollapsed ? "justify-center px-0" : "gap-2.5 px-2")}>

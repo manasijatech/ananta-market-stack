@@ -8,19 +8,37 @@ This document is the implementation plan for branch `feat/adaptive-workspace`.
 
 **Do not replace Broker Chat while this is incomplete.**
 
-| Surface | Route | Status |
-|---|---|---|
-| Existing Broker Chat | `/broker-chat` | Unchanged. Keep look, behavior, and session UI as they are. |
-| Adaptive Workspace preview | `/adaptive-workspace` | New page. Build the desk here until it is ready to become the default. |
+Sessions are partitioned by `surface` (`broker_chat` | `adaptive_workspace`). The Broker Chat session list defaults to `broker_chat`. Adaptive Workspace lists and creates `adaptive_workspace` sessions. The two surfaces share SSE/run machinery but never share history.
 
-The preview page may reuse the existing broker-chat **backend** (sessions, runs, SSE, broker tools). It must not change the existing `/broker-chat` frontend. Shared preference writes (`PUT /broker-chat/config`) stay owned by Broker Chat so preview toggles cannot rewrite that page’s settings.
+| Surface | Route | Session `surface` | Status |
+|---|---|---|---|
+| Existing Broker Chat | `/broker-chat` | `broker_chat` (API default) | Unchanged. Keep look, behavior, and session UI as they are. |
+| Adaptive Workspace preview | `/adaptive-workspace` | `adaptive_workspace` | New page. Build the desk here until it is ready to become the default. |
+
+The preview page may reuse the existing broker-chat **backend** (sessions, runs, SSE, broker tools). It must not change the existing `/broker-chat` frontend. Shared preference writes (`PUT /broker-chat/config`) stay owned by Broker Chat so preview toggles cannot rewrite that page’s settings. Submitting an adaptive run onto a Broker Chat session (or the inverse) is rejected.
+
+## Feature flag
+
+Adaptive Workspace is **off by default**. Published Docker images must not ship it until a dedicated release.
+
+| Variable | Default | Effect when off |
+|---|---|---|
+| `ENABLE_ADAPTIVE_WORKSPACE` | `false` | `/adaptive-workspace` HTTP API returns `404`. Frontend nav and page stay hidden. Broker Chat never gets compose/intel/alert-studio tools, even if run metadata claims `adaptive_workspace: true`. |
+
+Enable locally:
+
+```env
+ENABLE_ADAPTIVE_WORKSPACE=true
+```
+
+Set it in `backend/.env` (or Compose env) and restart the backend. Do not use a `NEXT_PUBLIC_*` bake; the frontend reads the flag at runtime from `GET /api/v1/features` and authenticated `GET /api/v1/system-config`.
 
 When the preview is complete, a later change can:
 
 1. Make `/adaptive-workspace` the Intelligence default.
 2. Redirect `/broker-chat` to it, or keep Broker Chat as a legacy transcript view.
 
-Until then, both routes stay in the sidebar.
+Until then, `/broker-chat` stays in the sidebar. Adaptive Workspace appears only when `ENABLE_ADAPTIVE_WORKSPACE=true`.
 
 ## Product contract
 
@@ -144,7 +162,7 @@ Phase 4 activates studio types (`alert-rule-draft` as a draft summary when `data
 
 Phase 5 adds AG-UI/A2UI adapters and a curated `micro-app` registry on this same contract. SSE and `WorkspaceSpec` stay authoritative. Those adapters are not a user copy/export surface. Cut-over of the Intelligence default is deferred.
 
-`compose_surface`, `patch_surface`, and helper tools (`workspace_get_authoring_docs`, `workspace_get_current`, `workspace_validate_spec`) are attached only when a broker-chat run’s metadata includes `adaptive_workspace: true`. Invalid compose/patch returns `ok: true` with `applied: false` and `validation.errors` so the model can self-correct without a retry loop. The preview page sends that flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
+`compose_surface`, `patch_surface`, and helper tools (`workspace_get_authoring_docs`, `workspace_get_current`, `workspace_validate_spec`) are attached only when **both** the instance flag `ENABLE_ADAPTIVE_WORKSPACE` is on **and** a broker-chat run’s metadata includes `adaptive_workspace: true`. Invalid compose/patch returns `ok: true` with `applied: false` and `validation.errors` so the model can self-correct without a retry loop. The preview page sends that metadata flag. `/broker-chat` does not, so Broker Chat never sees the canvas tools.
 
 Snapshots live in `adaptive_workspace_snapshots` (`workspace_payload_json`), keyed by the existing broker-chat session. Canvas restore uses the latest applied snapshot, not chat history.
 

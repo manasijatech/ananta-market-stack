@@ -36,15 +36,19 @@ export function LiveApprovalCardWidget({ component, refreshNonce }: Props) {
     const { busy, deploy, error, loading, refresh, studio } = useAlertStudio(component, refreshNonce);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const errors = errorList(studio?.validation ?? {});
-    const canDeploy = Boolean(studio?.snapshot_id) && studio?.valid === true;
+    const hasSnapshot = Boolean(studio?.snapshot_id);
+    const canDeploy = hasSnapshot && studio?.valid === true;
+    const canPrepare = Boolean(studio?.workflow_id);
 
     return (
         <WidgetState error={error} loading={loading} loadingLabel="Loading approval">
             <div className="flex items-center justify-between gap-2 px-3 pt-2">
-                <p className="text-xs text-muted-foreground">{studio?.valid ? "Valid snapshot" : "Not ready to deploy"}</p>
+                <p className="text-xs text-muted-foreground">
+                    {canDeploy ? "Valid snapshot" : hasSnapshot ? "Not ready to deploy" : "Snapshot not prepared"}
+                </p>
                 <LiveStatusBadge
-                    label={studio?.valid ? "Valid" : "Blocked"}
-                    tone={studio?.valid ? "live" : "error"}
+                    label={canDeploy ? "Valid" : hasSnapshot ? "Blocked" : "Draft"}
+                    tone={canDeploy ? "live" : hasSnapshot ? "error" : "idle"}
                 />
             </div>
             <div className="grid gap-2 p-3">
@@ -60,9 +64,18 @@ export function LiveApprovalCardWidget({ component, refreshNonce }: Props) {
                 {isRecord(studio?.explanation) && typeof studio.explanation.summary === "string" ? (
                     <p className="text-xs text-muted-foreground">{studio.explanation.summary}</p>
                 ) : null}
+                {!hasSnapshot ? (
+                    <p className="text-xs text-muted-foreground">Validate this draft, then confirm deploy.</p>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
-                    <Button disabled={busy || !studio?.workflow_id} onClick={() => void refresh()} size="sm" type="button" variant="outline">
-                        Refresh snapshot
+                    <Button
+                        disabled={busy || !canPrepare}
+                        onClick={() => void refresh()}
+                        size="sm"
+                        type="button"
+                        variant={hasSnapshot ? "outline" : "default"}
+                    >
+                        {hasSnapshot ? "Refresh snapshot" : "Prepare snapshot"}
                     </Button>
                     <Button disabled={busy || !canDeploy} onClick={() => setConfirmOpen(true)} size="sm" type="button">
                         Deploy

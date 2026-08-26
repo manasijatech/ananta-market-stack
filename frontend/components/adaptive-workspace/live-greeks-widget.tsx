@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
+import { DeskAccountState, LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
 import { WidgetScopeBar } from "@/components/adaptive-workspace/widget-scope-bar";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -35,7 +35,7 @@ function num(value: number | null) {
 export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
     const { spec } = useAdaptiveWorkspace();
     const deskSymbols = universeSymbols(spec);
-    const { account, error: accountError } = useDeskAccounts();
+    const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const { watchlists } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
@@ -53,8 +53,10 @@ export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
 
     useEffect(() => {
         if (!account || !symbol) {
-            setLoading(false);
-            setPayload(null);
+            if (!accountsLoading) {
+                setLoading(false);
+                setPayload(null);
+            }
             return;
         }
         let cancelled = false;
@@ -80,13 +82,14 @@ export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
         return () => {
             cancelled = true;
         };
-    }, [account, expiry, optionType, refreshNonce, strike, symbol]);
+    }, [account, accountsLoading, expiry, optionType, refreshNonce, strike, symbol]);
 
     const view = useMemo(() => normalizeGreeks(payload), [payload]);
     const rows = view.rows.slice(0, 24);
 
     return (
-        <WidgetState error={error || accountError} loading={loading} loadingLabel="Loading greeks">
+        <WidgetState error={error || accountError} loading={accountsLoading || loading} loadingLabel="Loading greeks">
+            <DeskAccountState account={account} accounts={accounts}>
             <WidgetToolbar>
                 <div className="flex min-w-0 w-full items-center gap-1.5">
                     <WidgetScopeBar
@@ -156,6 +159,7 @@ export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
                     </Table>
                 </div>
             )}
+            </DeskAccountState>
         </WidgetState>
     );
 }

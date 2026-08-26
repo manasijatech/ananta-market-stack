@@ -3,7 +3,7 @@
 import { ColorType, LineSeries, createChart, type UTCTimestamp } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
-import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { DeskAccountState, LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import {
     WidgetScopeBar,
     readHiddenSymbols,
@@ -283,7 +283,7 @@ export function LiveChartWidget({ component, onPatch, refreshNonce }: Props) {
     const { resolvedTheme } = useTheme();
     const { spec } = useAdaptiveWorkspace();
     const deskSymbols = universeSymbols(spec);
-    const { account, error: accountError } = useDeskAccounts();
+    const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const { watchlists, loading: listsLoading } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
@@ -330,7 +330,7 @@ export function LiveChartWidget({ component, onPatch, refreshNonce }: Props) {
     });
 
     return (
-        <WidgetState error={accountError} loading={listsLoading && !watchlists.length} loadingLabel="Loading chart">
+        <WidgetState error={accountError} loading={accountsLoading || (listsLoading && !watchlists.length)} loadingLabel="Loading chart">
             <div className="flex h-full min-h-0 flex-col">
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border/50 px-2 py-1.5">
                     <WidgetScopeBar
@@ -361,6 +361,7 @@ export function LiveChartWidget({ component, onPatch, refreshNonce }: Props) {
                     onToggle={(next) => onPatch({ hiddenSymbols: toggleHiddenSymbol(hiddenList, next) })}
                 />
                 {error ? <p className="p-3 text-sm text-destructive">{error}</p> : null}
+                <DeskAccountState account={account} accounts={accounts}>
                 {!error && hasPoints ? (
                     <OverlayLineChart className="px-2 pb-2" dark={dark} percent={percent} series={series} />
                 ) : !error ? (
@@ -374,6 +375,7 @@ export function LiveChartWidget({ component, onPatch, refreshNonce }: Props) {
                                 : "Pick a symbol to load a price chart."}
                     </p>
                 ) : null}
+                </DeskAccountState>
             </div>
         </WidgetState>
     );

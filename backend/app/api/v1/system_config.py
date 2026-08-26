@@ -18,6 +18,7 @@ from app.schemas.system_config import (
     AlphaApiKeyOut,
     AlphaWebSocketConfigOut,
     AlphaWebSocketConfigUpdateIn,
+    FeatureFlagsOut,
     LlmModelCreateIn,
     LlmModelPricingOut,
     LlmModelPricingUpsertIn,
@@ -35,6 +36,7 @@ from app.schemas.system_config import (
 from app.services import alpha_config
 from app.services import alpha_websocket
 from app.services import broker_data_preferences
+from app.services import feature_flags
 from app.services import llm_config
 from app.services import mcp_config
 from app.services import rbac
@@ -73,6 +75,7 @@ def get_system_config(
         mcp_server=mcp_server,
         mcp_servers=mcp_servers,
         mcp_connector_readiness=mcp_connector_readiness,
+        features=FeatureFlagsOut(adaptive_workspace=feature_flags.adaptive_workspace_enabled()),
     )
 
 

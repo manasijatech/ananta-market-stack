@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { DeskAccountState, LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
 import { WidgetScopeBar } from "@/components/adaptive-workspace/widget-scope-bar";
 import { Input } from "@/components/ui/input";
 import { SimpleSelect } from "@/components/ui/simple-select";
@@ -31,7 +31,7 @@ type Props = {
 export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
     const { spec } = useAdaptiveWorkspace();
     const deskSymbols = universeSymbols(spec);
-    const { account, error: accountError } = useDeskAccounts();
+    const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const { watchlists } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
@@ -46,8 +46,10 @@ export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
 
     useEffect(() => {
         if (!account || !symbol) {
-            setLoading(false);
-            setPayload(null);
+            if (!accountsLoading) {
+                setLoading(false);
+                setPayload(null);
+            }
             return;
         }
         let cancelled = false;
@@ -79,7 +81,7 @@ export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
         return () => {
             cancelled = true;
         };
-    }, [account, action, product, quantity, refreshNonce, symbol]);
+    }, [account, accountsLoading, action, product, quantity, refreshNonce, symbol]);
 
     const status = isRecord(payload) ? String(payload.status ?? "").toLowerCase() : "";
     const unsupported = status === "unsupported";
@@ -88,7 +90,8 @@ export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
     const rows = useMemo(() => flattenMetricRows(payload), [payload]);
 
     return (
-        <WidgetState error={error || accountError} loading={loading} loadingLabel="Estimating margin">
+        <WidgetState error={error || accountError} loading={accountsLoading || loading} loadingLabel="Estimating margin">
+            <DeskAccountState account={account} accounts={accounts}>
             <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-2 py-1.5">
                 <WidgetScopeBar
                     allowDesk={false}
@@ -155,6 +158,7 @@ export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
                     ))}
                 </dl>
             )}
+            </DeskAccountState>
         </WidgetState>
     );
 }

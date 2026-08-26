@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -66,16 +66,22 @@ def create_broker_chat_session(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> BrokerChatSessionOut:
-    return BrokerChatSessionOut.model_validate(chat_svc.create_session(db, user.id, payload.title))
+    try:
+        return BrokerChatSessionOut.model_validate(
+            chat_svc.create_session(db, user.id, payload.title, surface=payload.surface)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/sessions", response_model=list[BrokerChatSessionOut])
 def list_broker_chat_sessions(
     limit: int = Query(default=50, ge=1, le=200),
+    surface: Literal["broker_chat", "adaptive_workspace"] = Query(default="broker_chat"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[BrokerChatSessionOut]:
-    return chat_svc.list_sessions(db, user.id, limit=limit)
+    return chat_svc.list_sessions(db, user.id, limit=limit, surface=surface)
 
 
 @router.get("/sessions/{session_id}", response_model=BrokerChatSessionOut)
@@ -139,10 +145,11 @@ def submit_broker_chat_run(
 @router.get("/runs", response_model=list[BrokerChatRunOut])
 def list_broker_chat_runs(
     limit: int = Query(default=50, ge=1, le=200),
+    surface: Literal["broker_chat", "adaptive_workspace"] = Query(default="broker_chat"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[BrokerChatRunOut]:
-    return chat_svc.list_runs(db, user.id, limit=limit)
+    return chat_svc.list_runs(db, user.id, limit=limit, surface=surface)
 
 
 @router.get("/runs/{run_id}", response_model=BrokerChatRunOut)

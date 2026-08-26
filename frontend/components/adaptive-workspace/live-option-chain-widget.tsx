@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
+import { DeskAccountState, LiveStatusBadge, WidgetState, WidgetToolbar } from "@/components/adaptive-workspace/widget-kit";
 import { WidgetScopeBar } from "@/components/adaptive-workspace/widget-scope-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +36,7 @@ function money(value: number | null) {
 export function LiveOptionChainWidget({ component, onPatch, refreshNonce }: Props) {
     const { spec } = useAdaptiveWorkspace();
     const deskSymbols = universeSymbols(spec);
-    const { account, error: accountError } = useDeskAccounts();
+    const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const { watchlists } = useDeskWatchlists();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const watchlist = resolveWatchlist(watchlists, component, prefs?.defaultWatchlistId);
@@ -54,8 +54,10 @@ export function LiveOptionChainWidget({ component, onPatch, refreshNonce }: Prop
 
     useEffect(() => {
         if (!account || !symbol) {
-            setLoading(false);
-            setPayload(null);
+            if (!accountsLoading) {
+                setLoading(false);
+                setPayload(null);
+            }
             return;
         }
         let cancelled = false;
@@ -75,14 +77,15 @@ export function LiveOptionChainWidget({ component, onPatch, refreshNonce }: Prop
         return () => {
             cancelled = true;
         };
-    }, [account, expiry, refreshNonce, symbol]);
+    }, [account, accountsLoading, expiry, refreshNonce, symbol]);
 
     const view = useMemo(() => normalizeOptionChain(payload), [payload]);
     const rows = view.rows.slice(0, 40);
     const activeExpiry = expiry || view.expiries[0] || "";
 
     return (
-        <WidgetState error={error || accountError} loading={loading} loadingLabel="Loading option chain">
+        <WidgetState error={error || accountError} loading={accountsLoading || loading} loadingLabel="Loading option chain">
+            <DeskAccountState account={account} accounts={accounts}>
             <WidgetToolbar>
                 <div className="flex min-w-0 w-full items-center gap-1.5">
                     <WidgetScopeBar
@@ -172,6 +175,7 @@ export function LiveOptionChainWidget({ component, onPatch, refreshNonce }: Prop
                     </Table>
                 </div>
             )}
+            </DeskAccountState>
         </WidgetState>
     );
 }

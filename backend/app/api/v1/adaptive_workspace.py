@@ -28,10 +28,20 @@ from app.services import adaptive_workspace_alert_studio as alert_studio
 from app.services import adaptive_workspace_interop as interop
 from app.services import adaptive_workspace_personalization as personalization
 from app.services import broker_chat as chat_svc
+from app.services import feature_flags
 from db.models import AdaptiveWorkspaceSnapshot, User
 from db.session import get_db
 
-router = APIRouter()
+
+def require_adaptive_workspace_enabled() -> None:
+    if not feature_flags.adaptive_workspace_enabled():
+        raise HTTPException(
+            status_code=404,
+            detail="Adaptive Workspace is not enabled on this instance.",
+        )
+
+
+router = APIRouter(dependencies=[Depends(require_adaptive_workspace_enabled)])
 
 
 def _http_error(exc: ValueError) -> HTTPException:

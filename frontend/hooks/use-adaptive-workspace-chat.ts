@@ -33,6 +33,8 @@ import type {
     BrokerChatSession
 } from "@/service/types/broker-chat";
 
+const ADAPTIVE_SESSION_QUERY = { surface: "adaptive_workspace" as const };
+
 type Args = {
     getRunMetadata?: () => Record<string, unknown>;
     initialRuns: BrokerChatRun[];
@@ -82,6 +84,7 @@ export function useAdaptiveWorkspaceChat({
     const [queueHealth, setQueueHealth] = useState<BrokerChatQueueHealth | null>(null);
     const streamControllersRef = useRef<Record<string, AbortController>>({});
     const previousProviderRef = useRef<LlmProvider | "">(preference.default_provider ?? "");
+    const bootstrappedEmptyDeskRef = useRef(initialSessions.length > 0);
     const runsRef = useRef(runs);
     const eventsByRunRef = useRef(eventsByRun);
 
@@ -350,6 +353,24 @@ export function useAdaptiveWorkspaceChat({
             .catch(() => setQueueHealth(null));
     }, []);
 
+    useEffect(() => {
+        if (bootstrappedEmptyDeskRef.current || isCreatingSession) return;
+        if (sessions.length > 0) {
+            bootstrappedEmptyDeskRef.current = true;
+            return;
+        }
+        bootstrappedEmptyDeskRef.current = true;
+        setIsCreatingSession(true);
+        void createBrokerChatSession("Adaptive workspace", ADAPTIVE_SESSION_QUERY)
+            .then((session) => {
+                setSessions((current) => sortBrokerChatSessions([session, ...current]));
+                setActiveSessionId(session.id);
+                loadedSessionIdRef.current = session.id;
+            })
+            .catch((err) => setError((err as Error).message))
+            .finally(() => setIsCreatingSession(false));
+    }, [isCreatingSession, sessions.length]);
+
     async function stopActiveRun() {
         if (!activeRun) return;
         setError(null);
@@ -369,11 +390,15 @@ export function useAdaptiveWorkspaceChat({
         try {
             runs.filter((run) => run.session_id === sessionId).forEach((run) => streamControllersRef.current[run.id]?.abort());
             await deleteBrokerChatSession(sessionId);
-            const [nextSessions, nextRuns] = await Promise.all([getBrokerChatSessions(80), getBrokerChatRuns({ limit: 160 })]);
+            const nextSessions = await getBrokerChatSessions(80, ADAPTIVE_SESSION_QUERY);
+            const nextActiveId = sessionId === activeSessionId ? (nextSessions[0]?.id ?? "") : activeSessionId;
+            const nextRuns = nextActiveId
+                ? await getBrokerChatRuns({ sessionId: nextActiveId, limit: 80 }).catch(() => [])
+                : [];
             setSessions(sortBrokerChatSessions(nextSessions));
             setRuns(mergeBrokerChatRuns([], nextRuns));
             if (sessionId === activeSessionId) {
-                setActiveSessionId(nextSessions[0]?.id ?? "");
+                setActiveSessionId(nextActiveId);
                 loadedSessionIdRef.current = null;
             }
         } catch (err) {
@@ -385,7 +410,7 @@ export function useAdaptiveWorkspaceChat({
         setIsCreatingSession(true);
         setError(null);
         try {
-            const session = await createBrokerChatSession("Adaptive workspace");
+            const session = await createBrokerChatSession("Adaptive workspace", ADAPTIVE_SESSION_QUERY);
             setSessions((current) => sortBrokerChatSessions([session, ...current]));
             setActiveSessionId(session.id);
             loadedSessionIdRef.current = session.id;
@@ -403,14 +428,20 @@ export function useAdaptiveWorkspaceChat({
         setIsSubmitting(true);
         setError(null);
         try {
+            const runMetadata = getRunMetadata?.() ?? {};
+            const defaultAccountId =
+                typeof runMetadata.default_account_id === "string" && runMetadata.default_account_id
+                    ? runMetadata.default_account_id
+                    : null;
             const result = await submitBrokerChatRun({
+                default_account_id: defaultAccountId,
                 include_reasoning: false,
                 include_tool_outputs: true,
                 mcp_server_ids: selectedMcpServerIds,
                 message: trimmed,
                 metadata: {
                     adaptive_workspace: true,
-                    ...(getRunMetadata?.() ?? {})
+                    ...runMetadata
                 },
                 model,
                 provider,
@@ -425,7 +456,7 @@ export function useAdaptiveWorkspaceChat({
                 setActiveSessionId(result.run.session_id);
             }
             void streamRun(result.run.id, 0);
-            const nextSessions = await getBrokerChatSessions(80).catch(() => sessions);
+            const nextSessions = await getBrokerChatSessions(80, ADAPTIVE_SESSION_QUERY).catch(() => sessions);
             setSessions(sortBrokerChatSessions(nextSessions));
         } catch (err) {
             setError((err as Error).message);
