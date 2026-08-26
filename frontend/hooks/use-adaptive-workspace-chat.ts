@@ -13,6 +13,7 @@ import {
     textPayload
 } from "@/lib/adaptive-workspace/chat-events";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
+import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
 import {
     cancelBrokerChatRun,
     createBrokerChatSession,
@@ -164,6 +165,7 @@ export function useAdaptiveWorkspaceChat({
                 if (!response.ok || !response.body) {
                     throw new Error("Could not open adaptive workspace stream.");
                 }
+                setError(null);
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = "";
@@ -230,11 +232,13 @@ export function useAdaptiveWorkspaceChat({
                 }
             } catch (err) {
                 if ((err as Error).name !== "AbortError") {
-                    setError((err as Error).message || "Adaptive workspace stream stopped.");
                     const freshRun = await getBrokerChatRun(runId).catch(() => null);
                     if (freshRun) {
                         setRuns((current) => mergeBrokerChatRuns(current, [freshRun]));
                         reconnectAfterClose = LIVE_BROKER_CHAT_STATUSES.has(freshRun.status);
+                    }
+                    if (!reconnectAfterClose && !isTransientChatStreamError(err)) {
+                        setError((err as Error).message || "Adaptive workspace stream stopped.");
                     }
                 }
             } finally {
@@ -275,6 +279,7 @@ export function useAdaptiveWorkspaceChat({
     useEffect(() => {
         if (!activeSessionId || loadedSessionIdRef.current === activeSessionId) return;
         loadedSessionIdRef.current = activeSessionId;
+        setError(null);
         let cancelled = false;
         async function loadSession() {
             try {
@@ -283,7 +288,7 @@ export function useAdaptiveWorkspaceChat({
                 setRuns((current) => mergeBrokerChatRuns(current, sessionRuns));
                 await Promise.all(sessionRuns.map((run) => loadRunEvents(run.id)));
             } catch (err) {
-                if (!cancelled) setError((err as Error).message);
+                if (!cancelled && !isTransientChatStreamError(err)) setError((err as Error).message);
             }
         }
         void loadSession();

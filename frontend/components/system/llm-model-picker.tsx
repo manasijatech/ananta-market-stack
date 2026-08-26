@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     Combobox,
     ComboboxContent,
@@ -10,6 +10,7 @@ import {
     ComboboxList
 } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { OpenRouterModel } from "@/service/actions/llm-models";
@@ -56,6 +57,20 @@ function formatMeta(model: OpenRouterModel): string {
     return [ctx, price].filter(Boolean).join(" · ");
 }
 
+/** True when the typed string is plausibly a custom model id for this provider. */
+function looksLikeCustomModelId(provider: LlmProvider, raw: string): boolean {
+    const query = raw.trim();
+    if (!query) {
+        return false;
+    }
+    if (provider === "openrouter") {
+        // OpenRouter slugs are vendor/model or vendor/model:variant.
+        return query.includes("/");
+    }
+    // Direct providers: bare ids like gpt-4o or claude-3-5-sonnet-20241022.
+    return /^[a-zA-Z0-9][a-zA-Z0-9._:-]{2,}$/.test(query);
+}
+
 export function LlmModelPicker({
     provider,
     models,
@@ -72,7 +87,10 @@ export function LlmModelPicker({
     onSelect: (modelId: string, modelName: string) => void;
 }) {
     const [customMode, setCustomMode] = useState(false);
+    const [query, setQuery] = useState("");
     const restricted = allowedModels !== undefined;
+    const allowCustom = !restricted;
+
     const allowedOptions = useMemo(() => {
         const values = new Set<string>();
         const labels = new Map<string, string>();
@@ -108,27 +126,56 @@ export function LlmModelPicker({
         return result;
     }, [allowedOptions, provider, models, restricted]);
 
+    const pendingCustomId = useMemo(() => {
+        if (!allowCustom || customMode) {
+            return "";
+        }
+        const candidate = query.trim();
+        if (!looksLikeCustomModelId(provider, candidate)) {
+            return "";
+        }
+        if (catalogOptions.some((option) => option.value === candidate)) {
+            return "";
+        }
+        return candidate;
+    }, [allowCustom, catalogOptions, customMode, provider, query]);
+
     // Keep a previously-saved/custom/variant'd model selectable & visible even if
     // it isn't in the live catalog (renamed, legacy, or a `model:variant` slug).
     const options = useMemo<ModelOption[]>(() => {
+        const extras: ModelOption[] = [];
         if (restricted) {
             const catalogValues = new Set(catalogOptions.map((option) => option.value));
-            const missingAllowedOptions = [...allowedOptions.values]
-                .filter((modelId) => !catalogValues.has(modelId))
-                .map((modelId) => ({
-                    value: modelId,
-                    label: allowedOptions.labels.get(modelId) ?? modelId,
-                    meta: "Enabled model · not in catalog"
-                }));
-            return [...catalogOptions, ...missingAllowedOptions];
+            for (const modelId of allowedOptions.values) {
+                if (!catalogValues.has(modelId)) {
+                    extras.push({
+                        value: modelId,
+                        label: allowedOptions.labels.get(modelId) ?? modelId,
+                        meta: "Enabled model · not in catalog"
+                    });
+                }
+            }
+        } else {
+            const known = new Set(catalogOptions.map((option) => option.value));
+            if (value && !known.has(value)) {
+                extras.push({ value, label: value, meta: "Custom model · not in catalog" });
+            }
+            if (pendingCustomId && pendingCustomId !== value) {
+                extras.push({
+                    value: pendingCustomId,
+                    label: pendingCustomId,
+                    meta: "Custom model · not in catalog"
+                });
+            }
         }
-        if (value && !catalogOptions.some((option) => option.value === value)) {
-            return [{ value, label: value, meta: "Custom model · not in catalog" }, ...catalogOptions];
-        }
-        return catalogOptions;
-    }, [allowedOptions, catalogOptions, restricted, value]);
+        return extras.length ? [...extras, ...catalogOptions] : catalogOptions;
+    }, [allowedOptions, catalogOptions, pendingCustomId, restricted, value]);
 
-    const selected = options.find((option) => option.value === value) ?? null;
+    const selected =
+        options.find((option) => option.value === value) ??
+        (pendingCustomId
+            ? { value: pendingCustomId, label: pendingCustomId, meta: "Custom model · not in catalog" }
+            : null);
 
     // OpenRouter variant suffix handling (e.g. "vendor/model:nitro").
     const supportsVariants = provider === "openrouter" && !restricted;
@@ -144,9 +191,49 @@ export function LlmModelPicker({
         onSelect(activeVariant === variantId ? baseModel : `${baseModel}:${variantId}`, baseModel);
     }
 
+    function setCustomModeEnabled(next: boolean) {
+        setCustomMode(next);
+        if (!next) {
+            setQuery("");
+        }
+    }
+
+    function handleQueryChange(inputValue: string) {
+        setQuery(inputValue);
+        if (!allowCustom || customMode) {
+            return;
+        }
+        const candidate = inputValue.trim();
+        if (looksLikeCustomModelId(provider, candidate)) {
+            onSelect(candidate, candidate);
+        }
+    }
+
+    // When switching providers, reset search state so stale slugs don't linger.
+    useEffect(() => {
+        setQuery("");
+        setCustomMode(false);
+    }, [provider]);
+
     return (
         <div className="grid min-w-0 gap-2">
             <div className="flex min-w-0 items-center gap-1.5">
+                {allowCustom ? (
+                    <label
+                        className={cn(
+                            "flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground",
+                            disabled && "cursor-not-allowed opacity-64"
+                        )}
+                        title="Enter any model id, even if it is not in the catalog"
+                    >
+                        <Checkbox
+                            checked={customMode}
+                            disabled={disabled}
+                            onCheckedChange={(checked) => setCustomModeEnabled(checked === true)}
+                        />
+                        Custom
+                    </label>
+                ) : null}
                 {customMode ? (
                     <Input
                         className="h-9 min-w-0 flex-1 text-sm"
@@ -158,12 +245,14 @@ export function LlmModelPicker({
                 ) : (
                     <div className="min-w-0 flex-1">
                         <Combobox<ModelOption>
-                            disabled={disabled || options.length === 0}
+                            disabled={disabled || (restricted && options.length === 0)}
                             isItemEqualToValue={(item, candidate) => item.value === candidate.value}
                             items={options}
                             itemToStringLabel={(option) => option.label}
+                            onInputValueChange={handleQueryChange}
                             onValueChange={(option) => {
                                 if (option) {
+                                    setQuery("");
                                     onSelect(option.value, option.label);
                                 }
                             }}
@@ -171,10 +260,22 @@ export function LlmModelPicker({
                         >
                             <ComboboxInput
                                 className="h-9 text-sm"
-                                placeholder={options.length ? "Search models…" : restricted ? "No enabled models" : "No catalog — use Custom"}
+                                placeholder={
+                                    options.length
+                                        ? "Search models…"
+                                        : restricted
+                                          ? "No enabled models"
+                                          : "Search or type vendor/model"
+                                }
                             />
                             <ComboboxContent>
-                                <ComboboxEmpty>No models found.</ComboboxEmpty>
+                                <ComboboxEmpty>
+                                    {pendingCustomId
+                                        ? `Use "${pendingCustomId}" as a custom model`
+                                        : allowCustom
+                                          ? "No matches — type vendor/model for a custom id"
+                                          : "No models found."}
+                                </ComboboxEmpty>
                                 <ComboboxList>
                                     {(option: ModelOption) => (
                                         <ComboboxItem key={option.value} value={option}>
@@ -191,18 +292,18 @@ export function LlmModelPicker({
                         </Combobox>
                     </div>
                 )}
-                {restricted ? null : (
+                {allowCustom ? (
                     <Button
                         className="h-9 shrink-0 px-2 text-xs"
                         disabled={disabled}
-                        onClick={() => setCustomMode((mode) => !mode)}
+                        onClick={() => setCustomModeEnabled(!customMode)}
                         title={customMode ? "Browse the model catalog" : "Enter a custom model id"}
                         type="button"
                         variant="ghost"
                     >
                         {customMode ? "Catalog" : "Custom"}
                     </Button>
-                )}
+                ) : null}
             </div>
 
             {supportsVariants && baseModel ? (

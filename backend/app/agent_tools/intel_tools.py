@@ -1,8 +1,8 @@
-"""Market intelligence and alert-read tools for Adaptive Workspace.
+"""Market intelligence and alert-read tools.
 
-Attached only when a broker-chat run has ``adaptive_workspace: true``.
-These wrap existing Alpha feed cache and alert APIs. They never accept secrets
-and they do not deploy or mutate workflows.
+``intel_get_feed`` is attached to Broker Chat and Adaptive Workspace.
+Alert-list tools stay Adaptive-only. These wrap Alpha feed cache and alert APIs
+and never accept secrets.
 """
 
 from __future__ import annotations
@@ -102,8 +102,6 @@ def intel_get_feed(
     """
 
     def call() -> dict[str, Any]:
-        if not _is_adaptive(ctx):
-            return _error("intel_get_feed is only available on Adaptive Workspace runs")
         cleaned = [str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()][:40]
         if product not in ALPHA_FEED_PRODUCTS:
             return _error(f"Unknown feed product {product!r}", code="invalid_product")
@@ -216,4 +214,5 @@ def intel_list_alert_notifications(
     return _tool_call(call)
 
 
-INTEL_TOOLS = [intel_get_feed, intel_list_alert_workflows, intel_list_alert_notifications]
+INTEL_FEED_TOOLS = [intel_get_feed]
+INTEL_TOOLS = [*INTEL_FEED_TOOLS, intel_list_alert_workflows, intel_list_alert_notifications]

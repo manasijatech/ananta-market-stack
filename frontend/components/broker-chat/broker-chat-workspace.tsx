@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
+import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
 import { cn } from "@/lib/utils";
 import {
     cancelBrokerChatRun,
@@ -702,6 +703,7 @@ export function BrokerChatWorkspace({
                 if (!response.ok || !response.body) {
                     throw new Error("Could not open broker chat stream.");
                 }
+                setError(null);
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = "";
@@ -777,11 +779,13 @@ export function BrokerChatWorkspace({
                 }
             } catch (err) {
                 if ((err as Error).name !== "AbortError") {
-                    setError((err as Error).message || "Broker chat stream stopped.");
                     const freshRun = await getBrokerChatRun(runId).catch(() => null);
                     if (freshRun) {
                         setRuns((current) => mergeRuns(current, [freshRun]));
                         reconnectAfterClose = liveStatuses.has(freshRun.status);
+                    }
+                    if (!reconnectAfterClose && !isTransientChatStreamError(err)) {
+                        setError((err as Error).message || "Broker chat stream stopped.");
                     }
                 }
             } finally {
@@ -828,6 +832,7 @@ export function BrokerChatWorkspace({
             return;
         }
         loadedSessionIdRef.current = activeSessionId;
+        setError(null);
         let cancelled = false;
         async function loadSession() {
             try {
@@ -836,7 +841,9 @@ export function BrokerChatWorkspace({
                 setRuns((current) => mergeRuns(current, sessionRuns));
                 await Promise.all(sessionRuns.map((run) => loadRunEvents(run.id)));
             } catch (err) {
-                if (!cancelled) setError((err as Error).message);
+                if (!cancelled && !isTransientChatStreamError(err)) {
+                    setError((err as Error).message);
+                }
             }
         }
         void loadSession();

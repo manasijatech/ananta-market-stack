@@ -74,10 +74,18 @@ def mcp_context_instructions(handle: BrokerChatMcpHandle) -> str:
         return ""
     inventory = handle.inventory or {}
     sections = [
-        "MCP is connected for this run. Treat connected MCP servers as additional tool and context providers. "
-        "Use their advertised tools, prompts, and resources according to the server-provided names, descriptions, schemas, and the user's request. "
-        "For the user's connected broker account and portfolio state, local broker tools remain the authoritative source."
+        "MCP is connected for this run. You MUST use advertised MCP tools when they "
+        "can answer market news, daily/morning summaries, events, research, filings, "
+        "or when the user asked to use MCP. Do not skip MCP in favor of instrument-cache "
+        "search loops. Local broker tools remain authoritative for connected-account "
+        "portfolio state and live quotes."
     ]
+    tool_names = _inventory_tool_names(inventory)
+    if tool_names:
+        sections.append(
+            "Connected MCP tool names (call these by their MCP names, not by guessing broker tools): "
+            + ", ".join(tool_names[:80])
+        )
     inventory_sections: list[str] = []
     servers = inventory.get("servers")
     if isinstance(servers, list) and servers:
@@ -97,6 +105,33 @@ def mcp_context_instructions(handle: BrokerChatMcpHandle) -> str:
     return "\n\n".join(sections)
 
 
+def _inventory_tool_names(inventory: dict[str, Any]) -> list[str]:
+    tools = inventory.get("tools")
+    if not isinstance(tools, list):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in tools:
+        candidates: list[str] = []
+        if isinstance(item, str):
+            candidates.append(item)
+        elif isinstance(item, dict):
+            for key in ("name", "tool", "id"):
+                value = item.get(key)
+                if isinstance(value, str):
+                    candidates.append(value)
+            nested = item.get("function")
+            if isinstance(nested, dict) and isinstance(nested.get("name"), str):
+                candidates.append(nested["name"])
+        for raw in candidates:
+            name = str(raw).strip()
+            if not name or name in seen or name.startswith("{"):
+                continue
+            seen.add(name)
+            names.append(name)
+    return names
+
+
 def _inventory_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
@@ -109,7 +144,7 @@ def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
         "sse_read_timeout": float(max(connection.timeout_seconds, 30)),
     }
     kwargs = {
-        "cache_tools_list": True,
+        "cache_tools_list": False,
         "name": connection.name or f"MCP server {connection.id}",
         "client_session_timeout_seconds": float(connection.timeout_seconds),
         "max_retry_attempts": 2,

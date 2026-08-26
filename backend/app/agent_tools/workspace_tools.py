@@ -16,6 +16,10 @@ from typing import Any, Literal
 from agents import RunContextWrapper, function_tool
 
 from app.agent_tools.broker_tools import BrokerAgentContext
+from app.schemas.adaptive_workspace import (
+    HTML_ARTIFACT_TITLE_MAX,
+    sanitize_html_artifact_document,
+)
 from app.services import adaptive_workspace as workspace_svc
 from app.services import adaptive_workspace_personalization as personalization
 from app.services import adaptive_workspace_interop as interop
@@ -448,6 +452,49 @@ def workspace_get_micro_app(
     return _tool_call(call)
 
 
+@function_tool(strict_mode=False)
+def workspace_publish_html_artifact(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    document: str,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Publish a sandboxed HTML artifact for custom visualization of fetched data.
+
+    Call broker/intel tools first, then author inline HTML/SVG/CSS (and inline
+    script only) from that data. Returns a bind payload for html-artifact with
+    data.params.document and optional props.title. Never pass src, href, iframe,
+    remote script/link/img URLs, javascript: URLs, or credentials.
+    """
+
+    def call() -> dict[str, Any]:
+        refused = _require_adaptive(_context(ctx), "workspace_publish_html_artifact")
+        if refused:
+            return refused
+        if not isinstance(document, str) or not document.strip():
+            return _error("document must be a non-empty HTML string", code="missing_document")
+        label = (title or "Custom view").strip()
+        if not label or len(label) > HTML_ARTIFACT_TITLE_MAX:
+            return _error(
+                f"title must be a non-empty string up to {HTML_ARTIFACT_TITLE_MAX} characters",
+                code="invalid_title",
+            )
+        try:
+            sanitized = sanitize_html_artifact_document(document)
+        except ValueError as exc:
+            return _error(str(exc), code="invalid_document")
+        bind = {
+            "component_type": "html-artifact",
+            "data": {
+                "tool": "workspace_publish_html_artifact",
+                "params": {"document": sanitized},
+            },
+            "props": {"title": label},
+        }
+        return _ok(bind=bind, component_type="html-artifact")
+
+    return _tool_call(call)
+
+
 WORKSPACE_TOOLS = [
     workspace_get_authoring_docs,
     workspace_get_current,
@@ -458,6 +505,7 @@ WORKSPACE_TOOLS = [
     workspace_list_saved_desks,
     workspace_list_preferences,
     workspace_get_micro_app,
+    workspace_publish_html_artifact,
     compose_surface,
     patch_surface,
 ]

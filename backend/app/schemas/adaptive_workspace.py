@@ -4,6 +4,7 @@ The agent may emit this document. The frontend maps component types to the
 Ananta registry. Arbitrary React, HTML, CSS, or script is rejected.
 """
 
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -32,6 +33,7 @@ WorkspaceComponentType = Literal[
     "approval-card",
     "notes-block",
     "micro-app",
+    "html-artifact",
 ]
 
 ALLOWED_COMPONENT_TYPES: frozenset[str] = frozenset(WorkspaceComponentType.__args__)
@@ -39,6 +41,24 @@ ALLOWED_COMPONENT_TYPES: frozenset[str] = frozenset(WorkspaceComponentType.__arg
 MICRO_APP_IDS: frozenset[str] = frozenset({"payoff-diagram"})
 MICRO_APP_KINDS: frozenset[str] = frozenset({"call", "put", "straddle"})
 NOTES_BLOCK_TEXT_MAX = 16000
+HTML_ARTIFACT_DOCUMENT_MAX = 60000
+HTML_ARTIFACT_TITLE_MAX = 120
+
+_HTML_ARTIFACT_IFRAME_RE = re.compile(r"<iframe\b[^>]*>.*?</iframe>|<iframe\b[^>]*/?>", re.I | re.S)
+_HTML_ARTIFACT_JS_URL_RE = re.compile(r"javascript\s*:", re.I)
+_HTML_ARTIFACT_META_HTTP_EQUIV_RE = re.compile(r"<meta\b[^>]*\bhttp-equiv\b[^>]*/?>", re.I | re.S)
+_HTML_ARTIFACT_REMOTE_SCRIPT_RE = re.compile(
+    r"<script\b[^>]*\bsrc\s*=\s*['\"]?\s*https?://",
+    re.I | re.S,
+)
+_HTML_ARTIFACT_REMOTE_LINK_RE = re.compile(
+    r"<link\b[^>]*\bhref\s*=\s*['\"]?\s*https?://",
+    re.I | re.S,
+)
+_HTML_ARTIFACT_REMOTE_IMG_RE = re.compile(
+    r"<img\b[^>]*\bsrc\s*=\s*['\"]?\s*https?://",
+    re.I | re.S,
+)
 INTEL_FEED_PRODUCTS: frozenset[str] = frozenset({"news", "announcements", "earnings", "concalls", "alerts"})
 A2UI_VERSION = "v0.9"
 A2UI_CATALOG_ID = "ananta-workspace-v1"
@@ -64,6 +84,7 @@ ALLOWED_DATA_TOOLS: frozenset[str] = frozenset(
         "intel_list_alert_notifications",
         "alert_get_studio",
         "workspace_get_micro_app",
+        "workspace_publish_html_artifact",
     }
 )
 
@@ -117,7 +138,64 @@ TOOL_COMPONENT_MAP: dict[str, str] = {
     "intel_list_alert_notifications": "alert-rule-draft",
     "alert_get_studio": "alert-rule-draft",
     "workspace_get_micro_app": "micro-app",
+    "workspace_publish_html_artifact": "html-artifact",
 }
+
+
+def html_artifact_document_errors(document: str) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(document, str) or not document.strip():
+        errors.append("document must be a non-empty string")
+        return errors
+    if len(document) > HTML_ARTIFACT_DOCUMENT_MAX:
+        errors.append(f"document must be at most {HTML_ARTIFACT_DOCUMENT_MAX} characters")
+    if _HTML_ARTIFACT_IFRAME_RE.search(document):
+        errors.append("document must not include iframe elements")
+    if _HTML_ARTIFACT_JS_URL_RE.search(document):
+        errors.append("document must not include javascript: URLs")
+    if _HTML_ARTIFACT_META_HTTP_EQUIV_RE.search(document):
+        errors.append("document must not include meta http-equiv tags")
+    if _HTML_ARTIFACT_REMOTE_SCRIPT_RE.search(document):
+        errors.append("document must not include remote script src URLs")
+    if _HTML_ARTIFACT_REMOTE_LINK_RE.search(document):
+        errors.append("document must not include remote link href URLs")
+    if _HTML_ARTIFACT_REMOTE_IMG_RE.search(document):
+        errors.append("document must not include remote img src URLs")
+    return errors
+
+
+def sanitize_html_artifact_document(document: str) -> str:
+    """Strip forbidden patterns, wrap in a dark-friendly host shell, and enforce length."""
+
+    raw = str(document or "").strip()
+    errors = html_artifact_document_errors(raw)
+    if errors:
+        raise ValueError(errors[0])
+    cleaned = _HTML_ARTIFACT_IFRAME_RE.sub("", raw)
+    cleaned = _HTML_ARTIFACT_META_HTTP_EQUIV_RE.sub("", cleaned)
+    cleaned = _HTML_ARTIFACT_REMOTE_SCRIPT_RE.sub("", cleaned)
+    cleaned = _HTML_ARTIFACT_REMOTE_LINK_RE.sub("", cleaned)
+    cleaned = _HTML_ARTIFACT_REMOTE_IMG_RE.sub("", cleaned)
+    cleaned = _HTML_ARTIFACT_JS_URL_RE.sub("", cleaned)
+    cleaned = cleaned.strip()
+    if not cleaned:
+        raise ValueError("document is empty after sanitization")
+    if re.search(r"<html\b", cleaned, re.I):
+        wrapped = cleaned
+    else:
+        wrapped = (
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/>"
+            "<meta name=\"color-scheme\" content=\"dark light\"/>"
+            "<style>"
+            "html,body{margin:0;padding:12px;font:12px/1.45 ui-sans-serif,system-ui,sans-serif;"
+            "background:transparent;color:#e7e5e4}"
+            "</style></head><body>"
+            f"{cleaned}"
+            "</body></html>"
+        )
+    if len(wrapped) > HTML_ARTIFACT_DOCUMENT_MAX:
+        raise ValueError(f"document must be at most {HTML_ARTIFACT_DOCUMENT_MAX} characters after wrapping")
+    return wrapped
 
 
 class WorkspaceLayout(BaseModel):
@@ -219,6 +297,22 @@ class WorkspaceComponent(BaseModel):
                 value = props[key]
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     raise ValueError(f"micro-app {key} must be a number")
+        if self.type == "html-artifact":
+            if self.data is None:
+                raise ValueError("html-artifact requires data with params.document")
+            if self.data.tool != "workspace_publish_html_artifact":
+                raise ValueError("html-artifact data.tool must be workspace_publish_html_artifact")
+            document = self.data.params.get("document")
+            if not isinstance(document, str) or not document.strip():
+                raise ValueError("html-artifact requires data.params.document")
+            doc_errors = html_artifact_document_errors(document)
+            if doc_errors:
+                raise ValueError(doc_errors[0])
+            title = props.get("title")
+            if title is not None and (not isinstance(title, str) or not title.strip() or len(title) > HTML_ARTIFACT_TITLE_MAX):
+                raise ValueError("html-artifact title must be a non-empty string up to 120 characters")
+        if self.type != "html-artifact" and self.data is not None and "document" in self.data.params:
+            raise ValueError("data.params.document is only allowed on html-artifact widgets")
         if self.type == "notes-block":
             text = props.get("text")
             if text is not None and (not isinstance(text, str) or len(text) > NOTES_BLOCK_TEXT_MAX):
@@ -385,6 +479,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
                 "workflow-simulation": {"w": 6, "h": 4},
                 "approval-card": {"w": 6, "h": 4},
                 "micro-app": {"w": 6, "h": 5},
+                "html-artifact": {"w": 12, "h": 8},
                 "agent-timeline": {"w": 12, "h": 4},
                 "notes-block": {"w": 4, "h": 4},
                 "option-chain": {"w": 8, "h": 6},
@@ -406,6 +501,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "margin-scenario",
             "market-heatmap",
             "micro-app",
+            "html-artifact",
             "notes-block",
             "option-chain",
             "pnl-exposure-strip",
@@ -464,6 +560,13 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "margin": "margin-scenario",
             "pnl": "pnl-exposure-strip",
             "heatmap": "market-heatmap",
+            "html": "html-artifact",
+            "canvas": "html-artifact",
+            "artifact": "html-artifact",
+            "visualize": "html-artifact",
+            "visualization": "html-artifact",
+            "custom-table": "html-artifact",
+            "custom-chart": "html-artifact",
         },
         "example_spec": {
             "version": "1",
@@ -490,8 +593,8 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "version must be the string '1'.",
             "layout.mode must be grid and layout.columns must be 12.",
             "Use only catalog component types. Unknown types are rejected.",
-            "data.tool must be an allowlisted data tool (broker_*, intel_*, alert_get_studio, or workspace_get_micro_app). Never include secrets.",
-            "Never emit React, HTML, CSS, className, style, href, src, or script.",
+            "data.tool must be an allowlisted data tool (broker_*, intel_*, alert_get_studio, workspace_get_micro_app, or workspace_publish_html_artifact). Never include secrets.",
+            "Never emit React, HTML, CSS, className, style, href, or src on props. html-artifact stores sanitized HTML only in data.params.document via workspace_publish_html_artifact.",
             "Component ids must be unique and match ^[a-z][a-z0-9-]*$. Positions must not overlap; the server packs colliding widgets downward before the turn is stored.",
             "Do not add extra keys on spec, component, position, layout, or data besides universe.",
             "universe.symbols is this desk's private symbol list (max 40). It is NOT a user Watchlists setting. Prefer it for multi-name research. Only use props.scope=watchlist plus watchlistId when the user named an existing watchlist.",
@@ -500,6 +603,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "Repeated requests may be suggested as a template/skill. Never auto-apply.",
             "Alert studio: alert_create_draft makes a draft (not live). alert_get_studio feeds alert-rule-draft, workflow-graph, workflow-simulation, and approval-card. Reuse alert_workflow_chat_snapshots. Never deploy without confirm=true.",
             "micro-app requires props.appId from the curated registry (payoff-diagram). Notes use notes-block, not a micro-app. Never emit src, href, or script.",
+            "html-artifact: call workspace_publish_html_artifact after broker/intel tools return data. Put the sanitized document in data.params.document and an optional props.title. Inline script/SVG/CSS only; no iframe, javascript: URLs, remote script/link/img, or meta http-equiv.",
             "notes-block is user-editable plain text (autosaved on the desk). Chat may set or replace props.text; keep it a string, no HTML.",
             "Do not answer by listing catalog types. Fetch data, compose live widgets, and brief in chat. MCP and local broker tools still run on this desk. Broker Chat is not deprecated.",
             "Symbol desks: set props.scope=symbol and props.symbol. Named-company desks: set universe.symbols and props.scope=desk on quote-chart / intel-feed / quote-ticker. User watchlists only when asked: props.scope=watchlist and props.watchlistId.",

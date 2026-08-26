@@ -25,6 +25,44 @@ const FORBIDDEN_PROP_KEYS = new Set([
     "onclick"
 ]);
 
+const HTML_ARTIFACT_DOCUMENT_MAX = 60000;
+const HTML_ARTIFACT_IFRAME_RE = /<iframe\b/i;
+const HTML_ARTIFACT_JS_URL_RE = /javascript\s*:/i;
+const HTML_ARTIFACT_META_HTTP_EQUIV_RE = /<meta\b[^>]*\bhttp-equiv\b/i;
+const HTML_ARTIFACT_REMOTE_SCRIPT_RE = /<script\b[^>]*\bsrc\s*=\s*['"]?\s*https?:\/\//i;
+const HTML_ARTIFACT_REMOTE_LINK_RE = /<link\b[^>]*\bhref\s*=\s*['"]?\s*https?:\/\//i;
+const HTML_ARTIFACT_REMOTE_IMG_RE = /<img\b[^>]*\bsrc\s*=\s*['"]?\s*https?:\/\//i;
+
+function htmlArtifactDocumentIssues(document: string): string[] {
+    const issues: string[] = [];
+    if (!document.trim()) {
+        issues.push("document must be a non-empty string");
+        return issues;
+    }
+    if (document.length > HTML_ARTIFACT_DOCUMENT_MAX) {
+        issues.push(`document must be at most ${HTML_ARTIFACT_DOCUMENT_MAX} characters`);
+    }
+    if (HTML_ARTIFACT_IFRAME_RE.test(document)) {
+        issues.push("document must not include iframe elements");
+    }
+    if (HTML_ARTIFACT_JS_URL_RE.test(document)) {
+        issues.push("document must not include javascript: URLs");
+    }
+    if (HTML_ARTIFACT_META_HTTP_EQUIV_RE.test(document)) {
+        issues.push("document must not include meta http-equiv tags");
+    }
+    if (HTML_ARTIFACT_REMOTE_SCRIPT_RE.test(document)) {
+        issues.push("document must not include remote script src URLs");
+    }
+    if (HTML_ARTIFACT_REMOTE_LINK_RE.test(document)) {
+        issues.push("document must not include remote link href URLs");
+    }
+    if (HTML_ARTIFACT_REMOTE_IMG_RE.test(document)) {
+        issues.push("document must not include remote img src URLs");
+    }
+    return issues;
+}
+
 const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const SECRET_PARAM_KEYS = new Set(["api_key", "password", "pin", "totp", "secret", "token", "access_token"]);
 
@@ -94,6 +132,29 @@ export function validateWorkspaceSpec(payload: unknown): WorkspaceSpecIssue[] {
             if (blocked.length) {
                 issues.push(issue(`${path}.data.params`, `data params must not include ${blocked.join(", ")}`));
             }
+        }
+        if (item.type === "html-artifact") {
+            if (item.data == null || !isRecord(item.data)) {
+                issues.push(issue(`${path}.data`, "html-artifact requires data with params.document"));
+            } else {
+                if (item.data.tool !== "workspace_publish_html_artifact") {
+                    issues.push(issue(`${path}.data.tool`, "html-artifact data.tool must be workspace_publish_html_artifact"));
+                }
+                const params = isRecord(item.data.params) ? item.data.params : {};
+                const document = typeof params.document === "string" ? params.document : "";
+                const docIssues = htmlArtifactDocumentIssues(document);
+                for (const message of docIssues) {
+                    issues.push(issue(`${path}.data.params.document`, message));
+                }
+            }
+            const props = isRecord(item.props) ? item.props : {};
+            const title = props.title;
+            if (title != null && (typeof title !== "string" || !title.trim() || title.length > 120)) {
+                issues.push(issue(`${path}.props.title`, "title must be a non-empty string up to 120 characters"));
+            }
+        }
+        if (item.type !== "html-artifact" && item.data != null && isRecord(item.data) && isRecord(item.data.params) && "document" in item.data.params) {
+            issues.push(issue(`${path}.data.params.document`, "document is only allowed on html-artifact widgets"));
         }
         if (item.type === "micro-app") {
             const props = isRecord(item.props) ? item.props : {};

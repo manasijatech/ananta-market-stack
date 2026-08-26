@@ -7,6 +7,7 @@ import { LiveApprovalCardWidget } from "@/components/adaptive-workspace/live-app
 import { LiveChartWidget } from "@/components/adaptive-workspace/live-chart-widget";
 import { LiveGreeksWidget } from "@/components/adaptive-workspace/live-greeks-widget";
 import { LiveHeatmapWidget } from "@/components/adaptive-workspace/live-heatmap-widget";
+import { LiveHtmlArtifactWidget } from "@/components/adaptive-workspace/live-html-artifact-widget";
 import { LiveIntelWidget } from "@/components/adaptive-workspace/live-intel-widget";
 import { LiveMarginWidget } from "@/components/adaptive-workspace/live-margin-widget";
 import { LiveMicroAppWidget } from "@/components/adaptive-workspace/live-micro-app-widget";
@@ -80,6 +81,8 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
             return <LiveChartWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
         case "micro-app":
             return <LiveMicroAppWidget component={component} onPatch={onPatch} refreshNonce={refreshNonce} />;
+        case "html-artifact":
+            return <LiveHtmlArtifactWidget component={component} />;
         case "notes-block":
             return <LiveNotesWidget component={component} onPatch={onPatch} />;
         case "agent-timeline":

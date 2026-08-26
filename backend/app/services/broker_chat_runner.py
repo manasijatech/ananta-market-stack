@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from agents import Agent, ModelSettings, RunConfig, Runner
+from agents.exceptions import MaxTurnsExceeded
 from agents.items import ItemHelpers
 from agents.models.chatcmpl_converter import Converter
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 
 from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
+from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
 from app.services import broker_chat, broker_chat_mcp, feature_flags, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
@@ -22,6 +25,24 @@ from db.models import BrokerChatRun
 from db.session import SessionLocal
 
 MAX_REASONING_EVENTS_PER_RUN = 25
+MAX_RUN_CONTINUATIONS = 3
+BROKER_CHAT_MAX_TURNS = 36
+ADAPTIVE_WORKSPACE_MAX_TURNS = 32
+
+CONTINUE_USER_MESSAGE = (
+    "Continue this task. The previous turn stopped before a complete user-facing answer. "
+    "Use tool results already gathered. Do not repeat successful identical tool calls. "
+    "If MCP is connected and the user asked for market news, daily summary, events, research, "
+    "or to use MCP, call those MCP tools now if you have not already. "
+    "Then write the full answer. Do not stop after a planning sentence. "
+    "Do not mark the work complete until the user has a real answer. The user did not cancel."
+)
+
+_INCOMPLETE_LAST_LINE = re.compile(
+    r"(let me|i'll|i will|i am going to|checking|fetching|searching|hold on|one moment|"
+    r"next i(?:'ll| will)|found it|pull(?:ing)? live|quickly check)\b",
+    re.IGNORECASE,
+)
 
 BROKER_CHAT_INSTRUCTIONS_TEMPLATE = """
 You are Ananta Market Stack's broker data assistant.
@@ -36,17 +57,29 @@ Use the broker tools whenever the user asks about connected broker accounts,
 portfolio state, positions, holdings, funds, live quotes, OHLC, historical data,
 option chains, greeks, margin estimates, stream status, or broker sessions.
 When MCP is enabled for this run and the configured hosted MCP server connects,
-you may also use MCP tools for any capability advertised by that server when it
-is relevant to the user's request.
+you MUST use those MCP tools whenever they can answer the request. Do not ignore
+them in favor of instrument-cache loops.
 
 Important operating rules:
+- Finish the user's question. Never end on a planning sentence such as "let me
+  fetch" or "found it — next I will". After tools return, write the answer.
+- If you hit a missing index ticker (NIFTY/SENSEX not in the cash instrument
+  cache), stop looping search/sync. Use Nifty 50 constituent quotes plus MCP
+  daily summary / news / events / top movers instead.
 - Treat all broker data as user-owned private data.
 - Never ask for broker API keys, tokens, PINs, passwords, or TOTP secrets in chat.
 - Never ask for the MCP API key in chat. The backend attaches it from the user's
   encrypted MCP configuration when MCP is enabled.
-- Prefer local broker tools for connected-account data and private portfolio
-  state. Use MCP tools for server-advertised capabilities that can answer or
-  enrich the user's request.
+- Prefer local broker tools for connected-account data, live quotes, option
+  chains, and private portfolio state. Prefer live broker_get_quotes over
+  broker_get_cached_quotes unless the live call failed.
+- Prefer MCP tools for market news, morning/daily briefing, events, research,
+  filings, and any capability listed in the connected MCP inventory. When the
+  user says "use MCP" or MCP is connected, call those tools in the same turn
+  instead of answering from cache or from a catalog dump.
+- intel_get_feed is available for Ananta/Drishti news, announcements, earnings,
+  and concalls. Use it with force_refresh=true when MCP is unavailable or as a
+  complement, not as a substitute for MCP when MCP is connected and relevant.
 - If a tool returns action_required, explain the session/account action needed
   and do not invent market data.
 - Prefer instrument search before quote, OHLC, or historical requests when the
@@ -126,7 +159,20 @@ Answer quality:
 """
 
 ADAPTIVE_WORKSPACE_INSTRUCTIONS = """
-This run is an Adaptive Workspace desk session. Chat authors the canvas.
+This run is an Adaptive Workspace desk session. Chat answers first, then the
+canvas visualizes. Do not treat compose_surface as a substitute for answering.
+
+Priority for a market / news / research question (same as Broker Chat):
+1. Call connected MCP tools (daily summary, news, events, movers, research).
+2. Call local broker tools for live quotes, holdings, chains, health.
+3. Call intel_get_feed(force_refresh=true) for Ananta/Drishti headlines.
+4. Write a complete briefing in chat with numbers, headlines, and sources.
+5. Then compose or patch the canvas so the same facts are visible. First-party
+   widgets for live broker data; html-artifact for a custom table/chart/viz of
+   data you already fetched (sandboxed HTML, like a Claude artifact).
+Do not spend the whole turn on workspace_evaluate_request / authoring docs
+unless the user asked to rebuild the desk. Skip evaluate_request when the
+query is a market briefing and go straight to MCP + broker + intel tools.
 
 Workspace tools:
 - workspace_evaluate_request: plan intents, recommended tools/types, and whether
@@ -143,13 +189,15 @@ Workspace tools:
   Never rearrange because a request was repeated. Suggest only.
 - workspace_get_micro_app: curated sandbox apps (payoff-diagram only).
   Research notes go on notes-block, not a micro-app.
+- workspace_publish_html_artifact: sandboxed HTML document for a custom view
+  of data you already have (tables, charts, briefing cards). No remote scripts.
 
-Adaptive-only data tools (not on /broker-chat):
+Data tools also on this desk:
 - intel_get_feed(product, symbols, force_refresh=true): news, announcements,
   earnings, concalls, or alpha alerts. Always pass force_refresh=true on the
-  first pull for a desk so Drishti is queried and the DB cache is updated.
-  Cached rows are still served after that pull.
-- intel_list_alert_workflows / intel_list_alert_notifications: read-only alerts inbox.
+  first pull so Drishti is queried. Prefer MCP first when it is connected.
+- intel_list_alert_workflows / intel_list_alert_notifications: Adaptive-only
+  read-only alerts inbox.
 - alert_get_studio / alert_refresh_studio / alert_create_draft / alert_deploy_snapshot:
   workflow studio on this canvas. alert_create_draft writes a draft + snapshot
   (not live). alert_get_studio reuses alert_workflow_chat_snapshots.
@@ -157,8 +205,8 @@ Adaptive-only data tools (not on /broker-chat):
 
 Preferred component types: holdings-table, quote-ticker, quote-chart, price-chart,
 broker-health, watchlist, intel-feed, alert-rule-draft, workflow-graph,
-workflow-simulation, approval-card, micro-app, notes-block, option-chain,
-greeks-panel, margin-scenario, pnl-exposure-strip, market-heatmap.
+workflow-simulation, approval-card, micro-app, html-artifact, notes-block,
+option-chain, greeks-panel, margin-scenario, pnl-exposure-strip, market-heatmap.
 These all have live renderers. Do not list catalog types as "reserved" or
 "not live". Compose the matching widget instead.
 Common mistakes that WILL be rejected:
@@ -187,14 +235,17 @@ Common mistakes that WILL be rejected:
 - pnl / exposure → pnl-exposure-strip (holdings + positions)
 - heatmap → market-heatmap with props.heatmapScope tracked|watchlist|portfolio_holdings
 - payoff / straddle / sandbox → micro-app with props.appId from
-  workspace_get_micro_app, plus notes-block. Never src, href, HTML, or a
-  second chat stream.
+  workspace_get_micro_app, plus notes-block. Never src or href on that widget.
+- custom viz / artifact / HTML briefing of fetched data → html-artifact via
+  workspace_publish_html_artifact, then compose with data.params.document.
 
 WorkspaceSpec rules:
 - version must be the string "1". layout.mode must be "grid" and columns 12.
 - ids match ^[a-z][a-z0-9-]*$ and must be unique.
 - data.tool must be allowlisted. Never include secrets.
-- Never emit React, HTML, CSS, className, style, href, src, extra keys, or script.
+- Never emit React, CSS className, style, href, src, extra keys, or script on
+  first-party widgets. Custom HTML belongs only on html-artifact via
+  workspace_publish_html_artifact (document in data.params, not props.src).
 - Prefer readable sizes: quotes 6x3, quote-chart 12x7, holdings 12x5, charts 8x4,
   health 4x3, watchlist 4x4, intel-feed 6x5, alerts 6x4, graph 6x5, simulation 6x4,
   approval 6x4, micro-app 6x5, notes 4x4.
@@ -209,9 +260,10 @@ WorkspaceSpec rules:
   chart series. Do not drop the symbol from the binding.
 
 Operating rules:
-- Call workspace_evaluate_request on the user query first.
-- Never answer by listing the catalog. Fetch real data, then compose the matching
-  live widgets. A catalog dump is not a desk.
+- Call workspace_evaluate_request only when composing or rearranging a desk,
+  not before answering a briefing/research question.
+- Never answer by listing the catalog. Fetch real data, answer in chat, then
+  compose matching live widgets. A catalog dump is not a desk or an answer.
 - Fetch real data before compose: watchlist symbols, then quotes for those
   symbols (cap 20; NSE then BSE cash fallback is automatic), then intel_get_feed
   with force_refresh=true for each needed product (or one call per product).
@@ -290,6 +342,39 @@ def _selected_component_id(metadata: dict[str, Any]) -> str | None:
 
 class BrokerChatCancelled(Exception):
     pass
+
+
+def response_looks_incomplete(text: str, *, tool_calls: int, had_message: bool) -> bool:
+    """True when the model stopped after tools/planning without a usable answer."""
+
+    stripped = (text or "").strip()
+    if tool_calls and not had_message:
+        return True
+    if not stripped:
+        return True
+    last_line = stripped.splitlines()[-1].strip()
+    if last_line.endswith((":", "—", "–", "...")):
+        return True
+    if _INCOMPLETE_LAST_LINE.search(last_line) and len(stripped) < 1600:
+        return True
+    return False
+
+
+def _continuation_input(previous_input: list[Any], stream: Any, final_text: str) -> list[Any]:
+    to_list = getattr(stream, "to_input_list", None)
+    if callable(to_list):
+        try:
+            items = list(to_list())
+            if items:
+                items.append({"role": "user", "content": CONTINUE_USER_MESSAGE})
+                return items
+        except Exception:
+            pass
+    next_input = list(previous_input)
+    if final_text.strip():
+        next_input.append({"role": "assistant", "content": final_text})
+    next_input.append({"role": "user", "content": CONTINUE_USER_MESSAGE})
+    return next_input
 
 
 def _usage_response_from_raw_event(data: Any) -> Any:
@@ -618,7 +703,11 @@ async def _run_broker_chat(run_id: str) -> None:
         )
         mcp_handle = await broker_chat_mcp.connect_broker_chat_mcp(db, run, metadata)
         mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle)
-        tools = [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS] if adaptive_workspace else BROKER_DATA_TOOLS
+        tools = (
+            [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS]
+            if adaptive_workspace
+            else [*BROKER_DATA_TOOLS, *INTEL_FEED_TOOLS]
+        )
         agent = Agent[BrokerAgentContext](
             name="Ananta Market Stack Broker Data Agent",
             instructions=_broker_chat_instructions(
@@ -630,7 +719,7 @@ async def _run_broker_chat(run_id: str) -> None:
             model=_build_model(db, run),
             model_settings=ModelSettings(
                 temperature=0.3,
-                max_tokens=5000,
+                max_tokens=8000,
                 include_usage=True,
             ),
             tools=tools,
@@ -639,152 +728,188 @@ async def _run_broker_chat(run_id: str) -> None:
         )
         messages = broker_chat.conversation_history_for_run(db, run)
         messages.append({"role": "user", "content": run.message})
-        stream = Runner.run_streamed(
-            starting_agent=agent,
-            input=messages,
-            context=context,
-            max_turns=20 if adaptive_workspace else 28,
-            run_config=RunConfig(
-                tracing_disabled=run.provider != "openai",
-                workflow_name="Ananta Market Stack broker chat",
-            ),
-        )
+        max_turns = ADAPTIVE_WORKSPACE_MAX_TURNS if adaptive_workspace else BROKER_CHAT_MAX_TURNS
+        tool_calls = 0
+        had_message = False
+        stream = None
 
-        async for event in stream.stream_events():
-            db.refresh(run)
-            if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
-                raise BrokerChatCancelled()
-            event_type = getattr(event, "type", "")
-            if event_type == "raw_response_event":
-                data = getattr(event, "data", None)
-                raw_type = getattr(data, "type", "")
-                if raw_type == "response.output_text.delta":
-                    delta = getattr(data, "delta", "")
-                    if delta:
-                        final_text += delta
+        async def consume_stream(active_stream: Any) -> None:
+            nonlocal final_text, response_started_at, usage_events_recorded
+            nonlocal reasoning_events_emitted, tool_calls, had_message
+            async for event in active_stream.stream_events():
+                db.refresh(run)
+                if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
+                    raise BrokerChatCancelled()
+                event_type = getattr(event, "type", "")
+                if event_type == "raw_response_event":
+                    data = getattr(event, "data", None)
+                    raw_type = getattr(data, "type", "")
+                    if raw_type == "response.output_text.delta":
+                        delta = getattr(data, "delta", "")
+                        if delta:
+                            final_text += delta
+                            broker_chat.append_event(
+                                db,
+                                run,
+                                event_type="token",
+                                public_payload={"text": delta},
+                                full_payload={"text": delta, "raw_type": raw_type, "raw": _safe_data(data)},
+                            )
+                    elif raw_type == "response.created":
+                        response_started_at = datetime.now(tz=UTC).replace(tzinfo=None)
                         broker_chat.append_event(
                             db,
                             run,
-                            event_type="token",
-                            public_payload={"text": delta},
-                            full_payload={"text": delta, "raw_type": raw_type, "raw": _safe_data(data)},
+                            event_type="response_started",
+                            public_payload={"response_id": getattr(data, "response_id", None)},
+                            full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
                         )
-                elif raw_type == "response.created":
-                    response_started_at = datetime.now(tz=UTC).replace(tzinfo=None)
-                    broker_chat.append_event(
-                        db,
-                        run,
-                        event_type="response_started",
-                        public_payload={"response_id": getattr(data, "response_id", None)},
-                        full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
-                    )
-                elif raw_type == "response.completed":
-                    completed_at = datetime.now(tz=UTC).replace(tzinfo=None)
-                    _record_broker_chat_usage(
-                        run,
-                        response=_usage_response_from_raw_event(data),
-                        started_at=response_started_at,
-                        completed_at=completed_at,
-                    )
-                    usage_events_recorded += 1
-                    broker_chat.append_event(
-                        db,
-                        run,
-                        event_type="response_completed",
-                        public_payload={"response_id": getattr(data, "response_id", None)},
-                        full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
-                    )
-                elif "reasoning" in str(raw_type):
-                    if not run.include_reasoning or reasoning_events_emitted >= MAX_REASONING_EVENTS_PER_RUN:
-                        continue
-                    reasoning_payload = _reasoning_event_payload(data)
-                    if reasoning_payload is None:
-                        continue
-                    public_payload, full_payload = reasoning_payload
-                    broker_chat.append_event(
-                        db,
-                        run,
-                        event_type="reasoning",
-                        public_payload=public_payload,
-                        full_payload=full_payload,
-                    )
-                    reasoning_events_emitted += 1
-                continue
+                    elif raw_type == "response.completed":
+                        completed_at = datetime.now(tz=UTC).replace(tzinfo=None)
+                        _record_broker_chat_usage(
+                            run,
+                            response=_usage_response_from_raw_event(data),
+                            started_at=response_started_at,
+                            completed_at=completed_at,
+                        )
+                        usage_events_recorded += 1
+                        broker_chat.append_event(
+                            db,
+                            run,
+                            event_type="response_completed",
+                            public_payload={"response_id": getattr(data, "response_id", None)},
+                            full_payload={"raw_type": raw_type, "raw": _safe_data(data)},
+                        )
+                    elif "reasoning" in str(raw_type):
+                        if not run.include_reasoning or reasoning_events_emitted >= MAX_REASONING_EVENTS_PER_RUN:
+                            continue
+                        reasoning_payload = _reasoning_event_payload(data)
+                        if reasoning_payload is None:
+                            continue
+                        public_payload, full_payload = reasoning_payload
+                        broker_chat.append_event(
+                            db,
+                            run,
+                            event_type="reasoning",
+                            public_payload=public_payload,
+                            full_payload=full_payload,
+                        )
+                        reasoning_events_emitted += 1
+                    continue
 
-            if event_type == "run_item_stream_event":
-                item = getattr(event, "item", None)
-                item_type = getattr(item, "type", "")
-                if item_type == "tool_call_item":
-                    tool_name, arguments, call_id = _extract_tool_call_start(item)
-                    if call_id:
-                        tool_names_by_call_id[call_id] = tool_name
-                    pending_tool_names.append(tool_name)
-                    broker_chat.append_event(
-                        db,
-                        run,
-                        event_type="tool_call_started",
-                        public_payload={
-                            "tool_name": tool_name,
-                            "tool_call_id": call_id,
-                            "arguments": arguments,
-                        },
-                        full_payload={
-                            "tool_name": tool_name,
-                            "tool_call_id": call_id,
-                            "arguments": arguments,
-                            "raw_item": _safe_data(item),
-                        },
-                    )
-                elif item_type == "tool_call_output_item":
-                    call_id, output = _extract_tool_call_output(item)
-                    tool_name = tool_names_by_call_id.get(call_id or "", "unknown")
-                    if tool_name == "unknown" and pending_tool_names:
-                        tool_name = pending_tool_names.pop(0)
-                    broker_chat.append_event(
-                        db,
-                        run,
-                        event_type="tool_call_completed",
-                        public_payload={
-                            "tool_name": tool_name,
-                            "tool_call_id": call_id,
-                            "output_metadata": _output_preview(output),
-                        },
-                        full_payload={
-                            "tool_name": tool_name,
-                            "tool_call_id": call_id,
-                            "output": output,
-                            "output_metadata": _output_preview(output),
-                            "raw_item": _safe_data(item),
-                        },
-                    )
-                elif item_type == "message_output_item":
-                    text = ItemHelpers.text_message_output(item)
-                    if text:
-                        final_text = text
-                    broker_chat.append_event(
-                        db,
-                        run,
-                        event_type="message_output",
-                        public_payload={"content": text or final_text, "is_final": True},
-                        full_payload={"content": text or final_text, "raw_item": _safe_data(item), "is_final": True},
-                    )
-                continue
+                if event_type == "run_item_stream_event":
+                    item = getattr(event, "item", None)
+                    item_type = getattr(item, "type", "")
+                    if item_type == "tool_call_item":
+                        tool_name, arguments, call_id = _extract_tool_call_start(item)
+                        tool_calls += 1
+                        if call_id:
+                            tool_names_by_call_id[call_id] = tool_name
+                        pending_tool_names.append(tool_name)
+                        broker_chat.append_event(
+                            db,
+                            run,
+                            event_type="tool_call_started",
+                            public_payload={
+                                "tool_name": tool_name,
+                                "tool_call_id": call_id,
+                                "arguments": arguments,
+                            },
+                            full_payload={
+                                "tool_name": tool_name,
+                                "tool_call_id": call_id,
+                                "arguments": arguments,
+                                "raw_item": _safe_data(item),
+                            },
+                        )
+                    elif item_type == "tool_call_output_item":
+                        call_id, output = _extract_tool_call_output(item)
+                        tool_name = tool_names_by_call_id.get(call_id or "", "unknown")
+                        if tool_name == "unknown" and pending_tool_names:
+                            tool_name = pending_tool_names.pop(0)
+                        broker_chat.append_event(
+                            db,
+                            run,
+                            event_type="tool_call_completed",
+                            public_payload={
+                                "tool_name": tool_name,
+                                "tool_call_id": call_id,
+                                "output_metadata": _output_preview(output),
+                            },
+                            full_payload={
+                                "tool_name": tool_name,
+                                "tool_call_id": call_id,
+                                "output": output,
+                                "output_metadata": _output_preview(output),
+                                "raw_item": _safe_data(item),
+                            },
+                        )
+                    elif item_type == "message_output_item":
+                        text = ItemHelpers.text_message_output(item)
+                        had_message = True
+                        if text:
+                            final_text = text
+                        broker_chat.append_event(
+                            db,
+                            run,
+                            event_type="message_output",
+                            public_payload={"content": text or final_text, "is_final": True},
+                            full_payload={"content": text or final_text, "raw_item": _safe_data(item), "is_final": True},
+                        )
+                    continue
 
-            if event_type == "agent_updated_stream_event":
-                agent_name = getattr(getattr(event, "new_agent", None), "name", None)
-                broker_chat.append_event(
-                    db,
-                    run,
-                    event_type="agent_updated",
-                    public_payload={"agent": agent_name},
-                    full_payload={"agent": agent_name},
-                )
+                if event_type == "agent_updated_stream_event":
+                    agent_name = getattr(getattr(event, "new_agent", None), "name", None)
+                    broker_chat.append_event(
+                        db,
+                        run,
+                        event_type="agent_updated",
+                        public_payload={"agent": agent_name},
+                        full_payload={"agent": agent_name},
+                    )
 
-        if not final_text and getattr(stream, "final_output", None):
-            final_text = str(stream.final_output)
-        db.refresh(run)
-        if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
-            raise BrokerChatCancelled()
+        for attempt in range(MAX_RUN_CONTINUATIONS + 1):
+            db.refresh(run)
+            if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
+                raise BrokerChatCancelled()
+            stream = Runner.run_streamed(
+                starting_agent=agent,
+                input=messages,
+                context=context,
+                max_turns=max_turns,
+                run_config=RunConfig(
+                    tracing_disabled=run.provider != "openai",
+                    workflow_name="Ananta Market Stack broker chat",
+                ),
+            )
+            hit_max_turns = False
+            try:
+                await consume_stream(stream)
+            except MaxTurnsExceeded:
+                hit_max_turns = True
+            if not final_text and getattr(stream, "final_output", None):
+                final_text = str(stream.final_output)
+            db.refresh(run)
+            if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
+                raise BrokerChatCancelled()
+            incomplete = hit_max_turns or response_looks_incomplete(
+                final_text, tool_calls=tool_calls, had_message=had_message
+            )
+            if not incomplete or attempt >= MAX_RUN_CONTINUATIONS:
+                break
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="run_continued",
+                public_payload={
+                    "status": "running",
+                    "attempt": attempt + 1,
+                    "reason": "max_turns" if hit_max_turns else "incomplete_answer",
+                },
+            )
+            messages = _continuation_input(messages, stream, final_text)
+            had_message = False
+
         broker_chat.mark_run_terminal(db, run, status="completed", response_text=final_text)
         db.refresh(run)
         broker_chat.append_event(

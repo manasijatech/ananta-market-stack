@@ -53,6 +53,8 @@ export function titleForComponentType(type: string, fallback = "Widget"): string
             return "Deploy";
         case "micro-app":
             return "Sandbox";
+        case "html-artifact":
+            return "HTML artifact";
         case "agent-timeline":
             return "Agent timeline";
         case "notes-block":
@@ -100,6 +102,8 @@ export function defaultSizeForType(type: string): WorkspacePosition {
             return { h: 4, w: 6, x: 0, y: 0 };
         case "micro-app":
             return { h: 5, w: 6, x: 0, y: 0 };
+        case "html-artifact":
+            return { h: 8, w: 12, x: 0, y: 0 };
         case "agent-timeline":
             return { h: 4, w: 12, x: 0, y: 0 };
         case "notes-block":

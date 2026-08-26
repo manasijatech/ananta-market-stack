@@ -1636,30 +1636,18 @@ export function SystemConfigPanel({
 
                         {provider.has_api_key ? (
                             <div className="mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_minmax(140px,0.6fr)_auto]">
-                                {openRouterModels.length ? (
-                                    <LlmModelPicker
-                                        disabled={llmReadOnly}
-                                        models={openRouterModels}
-                                        onSelect={(modelId, modelName) =>
-                                            updateDraft(provider.provider, {
-                                                modelId,
-                                                label: drafts[providerKey(provider.provider)]?.label || modelName
-                                            })
-                                        }
-                                        provider={provider.provider}
-                                        value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
-                                    />
-                                ) : (
-                                    <Input
-                                        className="h-9 text-sm"
-                                        disabled={llmReadOnly}
-                                        onChange={(event) =>
-                                            updateDraft(provider.provider, { modelId: event.target.value })
-                                        }
-                                        placeholder="Model id"
-                                        value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
-                                    />
-                                )}
+                                <LlmModelPicker
+                                    disabled={llmReadOnly}
+                                    models={openRouterModels}
+                                    onSelect={(modelId, modelName) =>
+                                        updateDraft(provider.provider, {
+                                            modelId,
+                                            label: drafts[providerKey(provider.provider)]?.label || modelName
+                                        })
+                                    }
+                                    provider={provider.provider}
+                                    value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
+                                />
                                 <Input
                                     className="h-9 text-sm"
                                     disabled={llmReadOnly}

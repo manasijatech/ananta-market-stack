@@ -21,7 +21,8 @@ export const ADAPTIVE_COMPONENT_TYPES = [
     "agent-timeline",
     "approval-card",
     "notes-block",
-    "micro-app"
+    "micro-app",
+    "html-artifact"
 ] as const;
 
 export type AdaptiveComponentType = (typeof ADAPTIVE_COMPONENT_TYPES)[number];
@@ -45,10 +46,9 @@ export const ALLOWED_DATA_TOOLS = [
     "intel_list_alert_workflows",
     "intel_list_alert_notifications",
     "alert_get_studio",
-    "workspace_get_micro_app"
+    "workspace_get_micro_app",
+    "workspace_publish_html_artifact"
 ] as const;
-
-export type AdaptiveDataTool = (typeof ALLOWED_DATA_TOOLS)[number];
 
 export const ALLOWED_ACTIONS = [
     "pin",
@@ -81,7 +81,8 @@ export const TOOL_COMPONENT_MAP: Record<string, AdaptiveComponentType> = {
     intel_list_alert_workflows: "alert-rule-draft",
     intel_list_alert_notifications: "alert-rule-draft",
     alert_get_studio: "alert-rule-draft",
-    workspace_get_micro_app: "micro-app"
+    workspace_get_micro_app: "micro-app",
+    workspace_publish_html_artifact: "html-artifact"
 };
 
 export const PHASE1_RENDER_TOOLS = [
@@ -114,7 +115,8 @@ export const WORKSPACE_HELPER_TOOLS = [
     "workspace_list_skills",
     "workspace_list_saved_desks",
     "workspace_list_preferences",
-    "workspace_get_micro_app"
+    "workspace_get_micro_app",
+    "workspace_publish_html_artifact"
 ] as const;
 
 export const MICRO_APP_IDS = ["payoff-diagram"] as const;

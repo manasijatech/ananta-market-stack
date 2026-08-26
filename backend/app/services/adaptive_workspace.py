@@ -425,6 +425,21 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("margin", ("margin scenario", "calculate margin", "span margin")),
     ("pnl", ("pnl", "p&l", "profit and loss", "exposure strip")),
     ("heatmap", ("heatmap", "heat map", "market heatmap")),
+    (
+        "visualization",
+        (
+            "visualize",
+            "visualization",
+            "custom table",
+            "custom chart",
+            "html artifact",
+            "html-artifact",
+            "canvas widget",
+            "chart from response",
+            "table from response",
+            "artifact",
+        ),
+    ),
 )
 
 _INTENT_TOOLS: dict[str, list[str]] = {
@@ -446,6 +461,7 @@ _INTENT_TOOLS: dict[str, list[str]] = {
     "margin": ["broker_calculate_margin"],
     "pnl": ["broker_get_portfolio"],
     "heatmap": [],
+    "visualization": ["workspace_publish_html_artifact"],
 }
 
 _INTENT_TYPES: dict[str, str] = {
@@ -467,6 +483,7 @@ _INTENT_TYPES: dict[str, str] = {
     "margin": "margin-scenario",
     "pnl": "pnl-exposure-strip",
     "heatmap": "market-heatmap",
+    "visualization": "html-artifact",
 }
 
 _FEED_PRODUCTS = {
@@ -552,6 +569,18 @@ def evaluate_request(
             if component_type not in recommended_types:
                 recommended_types.append(component_type)
 
+    if "visualization" in intents:
+        if "html-artifact" not in recommended_types:
+            recommended_types.append("html-artifact")
+        if "workspace_publish_html_artifact" not in recommended_tools:
+            recommended_tools.append("workspace_publish_html_artifact")
+        recommended_tools[:] = [
+            tool
+            for tool in recommended_tools
+            if tool not in {"workspace_get_micro_app"}
+        ]
+        recommended_types[:] = [item for item in recommended_types if item != "micro-app"]
+
     if "watchlist" in intents:
         desk_private = any(
             token in text
@@ -588,6 +617,10 @@ def evaluate_request(
     if "sandbox" in intents:
         plan.append(
             "Call workspace_get_micro_app. Compose micro-app with props.appId from the registry, plus notes-block. Never emit src, href, or script."
+        )
+    if "visualization" in intents:
+        plan.append(
+            "Fetch broker/intel data first, then call workspace_publish_html_artifact with inline HTML/SVG/CSS from that data. Compose html-artifact using the returned bind payload (data.params.document, props.title). Prefer first-party widgets for live broker feeds; html-artifact is for custom viz of already-fetched data."
         )
     if "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")
