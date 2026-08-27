@@ -8,8 +8,8 @@ import { normalizeHoldings } from "@/components/brokers/normalizers";
 import { useDeskAccounts } from "@/hooks/use-desk-data";
 import { numberFrom } from "@/lib/adaptive-workspace/tool-envelope";
 import { cn } from "@/lib/utils";
-import { getHoldings, getPortfolioFunds, getQuotes, getSessionStatus } from "@/service/actions/broker";
-import type { BrokerCode, JsonObject, QuoteResponse, SessionStatus } from "@/service/types/broker";
+import { getHoldings, getPortfolioFunds, getQuotes, getSessionStatus, searchBrokerInstruments } from "@/service/actions/broker";
+import type { BrokerCode, InstrumentRef, InstrumentSearchRow, JsonObject, QuoteResponse, SessionStatus } from "@/service/types/broker";
 
 type Props = {
     refreshNonce: number;
@@ -69,13 +69,45 @@ function holdingsSessionPct(data: JsonObject): number | null {
     return weight ? weighted / weight : null;
 }
 
+function isCashIndexRow(row: InstrumentSearchRow) {
+    const type = `${row.instrument_type || ""} ${row.segment || ""}`.toUpperCase();
+    if (/\b(CE|PE|FUT|FUTURE|OPT)\b/.test(type)) return false;
+    const blob = `${row.symbol} ${row.trading_symbol || ""} ${row.name || ""}`.toUpperCase();
+    return blob.includes("NIFTY 50") || blob.includes("NIFTY50") || blob.split(/\s+/).includes("NIFTY");
+}
+
+function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
+    const ids = row.identifiers ?? {};
+    const text = (key: string) => {
+        const value = ids[key];
+        return typeof value === "string" && value.trim() ? value.trim() : undefined;
+    };
+    return {
+        exchange: row.exchange || "NSE",
+        indmoney_scrip_code: text("indmoney_scrip_code"),
+        arrow_token: text("arrow_token"),
+        dhan_security_id: text("dhan_security_id"),
+        dhan_exchange_segment: text("dhan_exchange_segment"),
+        groww_trading_symbol: text("groww_trading_symbol") || row.trading_symbol,
+        symbol: row.trading_symbol || row.symbol,
+        upstox_instrument_key: text("upstox_instrument_key")
+    };
+}
+
 async function loadIndexQuote(accountId: string): Promise<{ label: string; quote: QuoteResponse } | null> {
-    for (const instrument of INDEX_INSTRUMENTS) {
+    const searched = await searchBrokerInstruments(accountId, { exchange: "NSE", limit: 20, q: "NIFTY 50" }).catch(
+        () => [] as InstrumentSearchRow[]
+    );
+    const candidates: InstrumentRef[] = [
+        ...searched.filter(isCashIndexRow).slice(0, 4).map(instrumentFromSearch),
+        ...INDEX_INSTRUMENTS
+    ];
+    for (const instrument of candidates) {
         try {
             const rows = await getQuotes(accountId, { instruments: [instrument] });
-            const quote = rows.find((item) => item.ltp != null) ?? rows[0];
+            const quote = rows.find((item) => item.ltp != null && item.ltp !== 0) ?? rows[0];
             if (quote?.ltp) {
-                return { label: instrument.symbol, quote };
+                return { label: instrument.symbol || "NIFTY 50", quote };
             }
         } catch {
             continue;

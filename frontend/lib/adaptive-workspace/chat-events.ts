@@ -296,6 +296,14 @@ export function buildAdaptiveWorkspaceMessages({
                     continue;
                 }
                 const mapped = isAdaptiveRenderTool(item.toolName);
+                if (
+                    item.toolName === "workspace_get_authoring_docs" ||
+                    item.toolName === "workspace_evaluate_request" ||
+                    item.toolName === "workspace_validate_spec" ||
+                    item.toolName === "workspace_get_current"
+                ) {
+                    continue;
+                }
                 if (mapped || includeUnmappedTools || running || !item.output) {
                     assistantParts.push(brokerToolPart(item, running));
                 }

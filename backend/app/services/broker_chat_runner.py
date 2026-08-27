@@ -293,7 +293,8 @@ WorkspaceSpec rules:
 Operating rules:
 - Call workspace_evaluate_request only when composing or rearranging a desk,
   not before answering a briefing/research question.
-- Never answer by listing the catalog. Fetch real data, answer in chat, then
+- Never answer by listing the catalog. Do not call workspace_get_authoring_docs
+  unless compose/validate already failed. Fetch real data, answer in chat, then
   compose matching live widgets. A catalog dump is not a desk or an answer.
 - For research, headlines, or "look into X": use connected MCP tools first,
   then intel_get_feed(force_refresh=true). Answer in chat, then publish or

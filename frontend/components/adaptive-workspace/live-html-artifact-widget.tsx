@@ -19,7 +19,7 @@ export function LiveHtmlArtifactWidget({ component }: Props) {
         typeof component.props?.title === "string" && component.props.title.trim()
             ? component.props.title.trim()
             : "Canvas";
-    const srcDoc = document ? ensureCanvasKitDocument(document) : "";
+    const srcDoc = document ? ensureCanvasKitDocument(document, theme) : "";
 
     const postTheme = useCallback(() => {
         iframeRef.current?.contentWindow?.postMessage({ theme, type: "aw-theme" }, "*");

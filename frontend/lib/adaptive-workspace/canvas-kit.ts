@@ -8,7 +8,7 @@ export const CANVAS_THEME_SCRIPT =
     "document.documentElement.classList.add(m);" +
     "document.documentElement.setAttribute('data-theme',m);" +
     "document.documentElement.style.colorScheme=m;}" +
-    "apply('dark');" +
+    "apply(document.documentElement.getAttribute('data-theme')||'dark');" +
     "window.addEventListener('message',function(e){" +
     "if(!e.data||e.data.type!=='aw-theme')return;apply(e.data.theme);});})();";
 
@@ -209,22 +209,23 @@ html, body {
 
 const BODY_INNER_RE = /<body\b[^>]*>([\s\S]*)<\/body>/i;
 
-export function wrapCanvasDocument(bodyHtml: string): string {
+export function wrapCanvasDocument(bodyHtml: string, theme: "light" | "dark" = "dark"): string {
     let inner = bodyHtml.trim();
     if (!/\bclass=['"][^'"]*\baw\b/.test(inner)) {
         inner = `<div class="aw">${inner}</div>`;
     }
+    const mode = theme === "light" ? "light" : "dark";
     const css = CANVAS_KIT_CSS.replace(/<\//g, "<\\/");
     const script = CANVAS_THEME_SCRIPT.replace(/<\//g, "<\\/");
-    return `<!DOCTYPE html><html class="dark" data-theme="dark"><head><meta charset="utf-8"/><meta name="color-scheme" content="light dark"/><style>${css}</style><script>${script}</script></head><body>${inner}</body></html>`;
+    return `<!DOCTYPE html><html class="${mode}" data-theme="${mode}"><head><meta charset="utf-8"/><meta name="color-scheme" content="light dark"/><style>${css}</style><script>${script}</script></head><body>${inner}</body></html>`;
 }
 
-export function ensureCanvasKitDocument(document: string): string {
+export function ensureCanvasKitDocument(document: string, theme: "light" | "dark" = "dark"): string {
     const raw = document.trim();
     if (!raw) return raw;
     const bodyMatch = BODY_INNER_RE.exec(raw);
     let inner = (bodyMatch ? bodyMatch[1] : raw).trim();
     inner = inner.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "").trim();
     inner = inner.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").trim();
-    return wrapCanvasDocument(inner);
+    return wrapCanvasDocument(inner, theme);
 }

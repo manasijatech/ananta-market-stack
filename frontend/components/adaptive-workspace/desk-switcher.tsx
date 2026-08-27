@@ -40,8 +40,7 @@ export function AdaptiveDeskSwitcher({ creating, onCreate, onDelete, onDuplicate
                 <DropdownMenuLabel>Desks</DropdownMenuLabel>
                 <DropdownMenuItem
                     disabled={creating}
-                    onSelect={(event) => {
-                        event.preventDefault();
+                    onSelect={() => {
                         onCreate();
                     }}
                 >
@@ -51,8 +50,7 @@ export function AdaptiveDeskSwitcher({ creating, onCreate, onDelete, onDuplicate
                 {onDuplicate ? (
                     <DropdownMenuItem
                         disabled={creating}
-                        onSelect={(event) => {
-                            event.preventDefault();
+                        onSelect={() => {
                             onDuplicate();
                         }}
                     >

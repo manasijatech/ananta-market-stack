@@ -66,7 +66,7 @@ CANVAS_THEME_SCRIPT = (
     "document.documentElement.classList.add(m);"
     "document.documentElement.setAttribute('data-theme',m);"
     "document.documentElement.style.colorScheme=m;}"
-    "apply('dark');"
+    "apply(document.documentElement.getAttribute('data-theme')||'dark');"
     "window.addEventListener('message',function(e){"
     "if(!e.data||e.data.type!=='aw-theme')return;apply(e.data.theme);});})();"
 )
