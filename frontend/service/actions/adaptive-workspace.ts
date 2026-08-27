@@ -131,14 +131,27 @@ export async function deleteAdaptiveWorkspaceDesk(deskId: string): Promise<void>
 }
 
 export async function listAdaptiveWorkspacePreferences(): Promise<AdaptiveWorkspacePreference[]> {
-    return request<AdaptiveWorkspacePreference[]>("/adaptive-workspace/preferences");
+    try {
+        return await request<AdaptiveWorkspacePreference[]>("/adaptive-workspace/preferences");
+    } catch {
+        return [];
+    }
 }
 
 export async function putAdaptiveWorkspacePreference(key: string, value: unknown): Promise<AdaptiveWorkspacePreference> {
-    return request<AdaptiveWorkspacePreference>("/adaptive-workspace/preferences", {
-        body: JSON.stringify({ key, value }),
-        method: "PUT"
-    });
+    try {
+        return await request<AdaptiveWorkspacePreference>("/adaptive-workspace/preferences", {
+            body: JSON.stringify({ key, value }),
+            method: "PUT"
+        });
+    } catch {
+        return {
+            deletable: true,
+            key,
+            updated_at: new Date().toISOString(),
+            value
+        } as AdaptiveWorkspacePreference;
+    }
 }
 
 export async function deleteAdaptiveWorkspacePreference(key: string): Promise<void> {

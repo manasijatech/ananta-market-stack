@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
-import { getBrokerAccounts, getBrokerDataDefaultConfig } from "@/service/actions/broker";
-import { getWatchlists } from "@/service/actions/watchlist";
+import { getBrokerAccountsResult, getBrokerDataDefaultConfigResult } from "@/service/actions/broker";
+import { getWatchlistsResult } from "@/service/actions/watchlist";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
 import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
@@ -72,15 +72,15 @@ export function useDeskAccounts() {
     const [settingsDefaultId, setSettingsDefaultId] = useState("");
 
     const reload = useCallback(async () => {
-        try {
-            const rows = await getBrokerAccounts();
-            setAccounts(rows.filter((item) => item.is_active));
+        const result = await getBrokerAccountsResult();
+        if (result.ok) {
+            setAccounts((result.data ?? []).filter((item) => item.is_active));
             setError(null);
-        } catch (caught) {
-            setError(caught instanceof Error ? caught.message : "Could not load broker accounts.");
-        } finally {
-            setLoading(false);
+        } else {
+            setAccounts([]);
+            setError(result.error || "Could not load broker accounts.");
         }
+        setLoading(false);
     }, []);
 
     useEffect(() => {
@@ -88,11 +88,11 @@ export function useDeskAccounts() {
     }, [reload]);
 
     useEffect(() => {
-        void getBrokerDataDefaultConfig()
-            .then((config) => {
-                setSettingsDefaultId(config.effective_default_account_id || config.preferred_default_account_id || "");
-            })
-            .catch(() => undefined);
+        void getBrokerDataDefaultConfigResult().then((result) => {
+            const config = result.data;
+            if (!config) return;
+            setSettingsDefaultId(config.effective_default_account_id || config.preferred_default_account_id || "");
+        });
     }, []);
 
     const defaultAccountId = prefs?.defaultAccountId || settingsDefaultId;
@@ -112,15 +112,15 @@ export function useDeskWatchlists() {
 
     const reload = useCallback(async () => {
         setLoading(true);
-        try {
-            const rows = await getWatchlists();
-            setWatchlists(rows);
+        const result = await getWatchlistsResult();
+        if (result.ok) {
+            setWatchlists(result.data);
             setError(null);
-        } catch (caught) {
-            setError(caught instanceof Error ? caught.message : "Could not load watchlists.");
-        } finally {
-            setLoading(false);
+        } else {
+            setWatchlists([]);
+            setError(result.error || "Could not load watchlists.");
         }
+        setLoading(false);
     }, []);
 
     useEffect(() => {

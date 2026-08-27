@@ -99,7 +99,6 @@ export async function updateBrokerChatConfig(payload: BrokerChatPreferenceUpdate
         body: JSON.stringify(payload)
     });
     revalidatePath("/broker-chat");
-    revalidatePath("/chat");
     return result;
 }
 
@@ -126,7 +125,6 @@ export async function createBrokerChatSession(
         })
     });
     revalidatePath("/broker-chat");
-    revalidatePath("/chat");
     return result;
 }
 
@@ -135,7 +133,6 @@ export async function deleteBrokerChatSession(sessionId: string): Promise<void> 
         method: "DELETE"
     });
     revalidatePath("/broker-chat");
-    revalidatePath("/chat");
 }
 
 export async function getBrokerChatRuns(params: {
@@ -155,7 +152,6 @@ export async function submitBrokerChatRun(payload: BrokerChatSubmitRequest): Pro
         body: JSON.stringify(payload)
     });
     revalidatePath("/broker-chat");
-    revalidatePath("/chat");
     return result;
 }
 
@@ -195,7 +191,6 @@ export async function cancelBrokerChatRun(runId: string): Promise<BrokerChatRun>
         method: "POST"
     });
     revalidatePath("/broker-chat");
-    revalidatePath("/chat");
     return result;
 }
 

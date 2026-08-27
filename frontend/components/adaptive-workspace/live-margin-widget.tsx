@@ -18,7 +18,8 @@ import {
 } from "@/hooks/use-desk-data";
 import { flattenMetricRows } from "@/lib/adaptive-workspace/derivatives";
 import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
-import { calculateMargin } from "@/service/actions/broker";
+import { brokerReconnectCopy } from "@/lib/broker-auth-error";
+import { calculateMarginResult } from "@/service/actions/broker";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 import type { JsonObject } from "@/service/types/broker";
 
@@ -54,7 +55,7 @@ export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
         }
         let cancelled = false;
         setLoading(true);
-        void calculateMargin(account.id, {
+        void calculateMarginResult(account.id, {
             include_positions: true,
             positions: [
                 {
@@ -69,11 +70,17 @@ export function LiveMarginWidget({ component, onPatch, refreshNonce }: Props) {
         })
             .then((next) => {
                 if (cancelled) return;
-                setPayload(next);
-                setError(null);
-            })
-            .catch((caught) => {
-                if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not calculate margin.");
+                if (next.ok) {
+                    setPayload(next.data);
+                    setError(null);
+                } else {
+                    setPayload(null);
+                    setError(
+                        next.authFailed
+                            ? brokerReconnectCopy(next.error || "")
+                            : next.error || "Could not calculate margin."
+                    );
+                }
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getDataQuotes } from "@/service/actions/broker";
+import { brokerReconnectCopy } from "@/lib/broker-auth-error";
+import { getDataQuotesResult } from "@/service/actions/broker";
 import type { InstrumentRef, QuoteResponse } from "@/service/types/broker";
 
 export function useQuoteSnapshots(
@@ -11,6 +12,7 @@ export function useQuoteSnapshots(
 ) {
     const [rows, setRows] = useState<QuoteResponse[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [authFailed, setAuthFailed] = useState(false);
     const [loading, setLoading] = useState(true);
     const instrumentKey = instruments
         .map((item) => `${item.symbol ?? ""}:${item.exchange ?? ""}:${item.upstox_instrument_key ?? item.zerodha_instrument_token ?? item.angel_token ?? ""}`)
@@ -19,37 +21,46 @@ export function useQuoteSnapshots(
     useEffect(() => {
         if (!accountId || !instrumentKey) {
             setRows([]);
+            setError(null);
+            setAuthFailed(false);
             setLoading(false);
             return;
         }
         let cancelled = false;
+        let poll: number | undefined;
         setLoading(true);
         const payload = instruments.slice(0, 40);
-        void getDataQuotes(accountId, { instruments: payload })
+
+        async function load() {
+            const result = await getDataQuotesResult(accountId!, { instruments: payload });
+            if (cancelled) return result;
+            setRows(result.data ?? []);
+            if (result.ok) {
+                setError(null);
+                setAuthFailed(false);
+            } else {
+                setAuthFailed(result.authFailed);
+                setError(result.authFailed ? brokerReconnectCopy(result.error || "") : result.error);
+            }
+            return result;
+        }
+
+        void load()
             .then((result) => {
-                if (!cancelled) {
-                    setRows(result);
-                    setError(null);
-                }
-            })
-            .catch((caught) => {
-                if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load quotes.");
+                if (cancelled || (result && !result.ok && result.authFailed)) return;
+                poll = window.setInterval(() => {
+                    void load();
+                }, 20_000);
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
             });
-        const poll = window.setInterval(() => {
-            void getDataQuotes(accountId, { instruments: payload })
-                .then((result) => {
-                    if (!cancelled) setRows(result);
-                })
-                .catch(() => undefined);
-        }, 20_000);
+
         return () => {
             cancelled = true;
-            window.clearInterval(poll);
+            if (poll) window.clearInterval(poll);
         };
     }, [accountId, instrumentKey, refreshNonce]);
 
-    return { error, loading, rows };
+    return { authFailed, error, loading, rows };
 }

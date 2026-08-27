@@ -6,7 +6,8 @@ import { normalizeHoldings, normalizePositions } from "@/components/brokers/norm
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDeskAccounts } from "@/hooks/use-desk-data";
 import { cn } from "@/lib/utils";
-import { getHoldings, getPositions } from "@/service/actions/broker";
+import { brokerReconnectCopy } from "@/lib/broker-auth-error";
+import { getHoldingsResult, getPositionsResult } from "@/service/actions/broker";
 import type { JsonObject } from "@/service/types/broker";
 
 type Props = {
@@ -39,19 +40,27 @@ export function LivePnlWidget({ refreshNonce }: Props) {
         }
         let cancelled = false;
         setLoading(true);
-        Promise.all([getHoldings(account.id), getPositions(account.id).catch(() => ({}))])
-            .then(([holdings, positions]) => {
-                if (cancelled) return;
-                setHoldingsPayload(holdings);
-                setPositionsPayload(positions);
+        void (async () => {
+            const [holdingsResult, positionsResult] = await Promise.all([
+                getHoldingsResult(account.id),
+                getPositionsResult(account.id)
+            ]);
+            if (cancelled) return;
+            if (!holdingsResult.ok) {
+                setHoldingsPayload(null);
+                setPositionsPayload(null);
+                setError(
+                    holdingsResult.authFailed
+                        ? brokerReconnectCopy(holdingsResult.error || "")
+                        : holdingsResult.error || "Could not load P&L."
+                );
+            } else {
+                setHoldingsPayload(holdingsResult.data);
+                setPositionsPayload(positionsResult.ok ? positionsResult.data : {});
                 setError(null);
-            })
-            .catch((caught) => {
-                if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load P&L.");
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
+            }
+            setLoading(false);
+        })();
         return () => {
             cancelled = true;
         };

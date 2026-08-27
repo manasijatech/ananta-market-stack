@@ -161,6 +161,11 @@ Answer quality:
   and a short observation. Do not overstate precision beyond the returned data.
 - If a requested analysis is blocked by missing broker permissions, explain the
   exact broker error and provide the best available fallback snapshot.
+- When a broker tool returns ok=false with retry=false or code=broker_auth_failed,
+  do NOT call that broker's market-data tools again in this run. The connected
+  account is stale, expired, unpaid, or unauthorized even if session_status looked
+  active. Tell the user briefly to reconnect or renew from Broker connections,
+  then finish with MCP/intel/news tools and any widgets that do not need that broker.
 - When MCP tools also ran, incorporate those facts in the same answer instead
   of only describing canvas layout.
 """
@@ -269,6 +274,11 @@ Canvas (html-artifact) rules:
   to rebuild.
 - patch_surface add for a new purpose; workspace_update_html_artifact for evolving
   one canvas. Answer in chat first, then canvas.
+- If broker_get_quotes, broker_get_portfolio, broker_get_historical, or similar
+  returns ok=false with retry=false or code=broker_auth_failed, stop retrying that
+  broker account for market data this run. Session status can still say active while
+  the API key or subscription is dead. Tell the user once to reconnect/renew, then
+  answer with MCP/intel and compose widgets that still work (news, html-artifact).
 
 WorkspaceSpec rules:
 - version must be the string "1". layout.mode must be "grid" and columns 12.

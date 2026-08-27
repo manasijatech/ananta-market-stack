@@ -5,6 +5,7 @@ import {
     IconAlertTriangle,
     IconChevronRight,
     IconLayoutDashboard,
+    IconLayoutSidebarRightCollapse,
     IconLoader2,
     IconPlugConnected
 } from "@tabler/icons-react";
@@ -140,9 +141,9 @@ function AdaptiveWorkspaceShellInner({
                         className="grid min-h-0 h-[min(42vh,28rem)] w-full shrink-0 overflow-hidden grid-rows-[auto_minmax(0,1fr)_auto] min-[980px]:h-full min-[980px]:w-[var(--adaptive-inspector-width)] [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px] [--an-max-width:760px] [--an-tool-border-radius:8px]"
                         style={{ ["--adaptive-inspector-width" as string]: `${layout.inspectorWidth}px` }}
                     >
-                        <CardHeader className="border-b border-border p-3">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
+                        <CardHeader className="shrink-0 border-b border-border p-3">
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
                                     <p className="font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
                                         Inspector
                                     </p>
@@ -162,14 +163,21 @@ function AdaptiveWorkspaceShellInner({
                                         Chat authors the canvas. New desk is blank; duplicate this desk to keep the current layout.
                                     </p>
                                 </div>
-                                <div className="flex shrink-0 items-center gap-1">
+                                <div className="flex shrink-0 items-center gap-0.5 self-start">
                                     {chat.isCreatingSession ? (
                                         <IconLoader2 className="size-4 animate-spin text-muted-foreground" stroke={1.8} />
                                     ) : (
-                                        <IconLayoutDashboard className="size-5 text-muted-foreground" stroke={1.8} />
+                                        <IconLayoutDashboard className="size-4 text-muted-foreground" stroke={1.8} />
                                     )}
-                                    <Button onClick={() => layout.setInspectorOpen(false)} size="xs" type="button" variant="ghost">
-                                        Hide
+                                    <Button
+                                        aria-label="Hide inspector"
+                                        className="size-8 shrink-0"
+                                        onClick={() => layout.setInspectorOpen(false)}
+                                        size="icon-xs"
+                                        type="button"
+                                        variant="ghost"
+                                    >
+                                        <IconLayoutSidebarRightCollapse className="size-4" stroke={1.8} />
                                     </Button>
                                 </div>
                             </div>

@@ -10,6 +10,7 @@ import {
     IconTrash
 } from "@tabler/icons-react";
 import { LiveCanvasBody } from "@/components/adaptive-workspace/live-canvas-body";
+import { WidgetErrorBoundary } from "@/components/adaptive-workspace/widget-error-boundary";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { Button } from "@/components/ui/button";
@@ -175,17 +176,19 @@ export function AdaptiveCanvasWidget({ component, containerWidth }: Props) {
                 )}
             </header>
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <LiveCanvasBody
-                    component={component}
-                    onPatch={(props) =>
-                        patchComponent(
-                            component.id,
-                            { props },
-                            component.type === "notes-block" ? { history: false } : undefined
-                        )
-                    }
-                    refreshNonce={refreshNonce}
-                />
+                <WidgetErrorBoundary label={titleForComponent(component.type, component.props, component.type)}>
+                    <LiveCanvasBody
+                        component={component}
+                        onPatch={(props) =>
+                            patchComponent(
+                                component.id,
+                                { props },
+                                component.type === "notes-block" ? { history: false } : undefined
+                            )
+                        }
+                        refreshNonce={refreshNonce}
+                    />
+                </WidgetErrorBoundary>
             </div>
             {locked ? null : (
                 <button

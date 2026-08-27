@@ -24,7 +24,8 @@ import {
     useDeskWatchlists,
     widgetProp
 } from "@/hooks/use-desk-data";
-import { getMarketChartData } from "@/service/actions/broker";
+import { getMarketChartDataResult } from "@/service/actions/broker";
+import { brokerReconnectCopy } from "@/lib/broker-auth-error";
 import { cn } from "@/lib/utils";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 import type { InstrumentRef, MarketChartCandle } from "@/service/types/broker";
@@ -128,27 +129,30 @@ export function useMarketCandles(
         const payload = requestsRef.current;
         void Promise.all(
             payload.map(async (item) => {
-                try {
-                    const result = await getMarketChartData(accountId, {
-                        daily_interval: "day",
-                        history_days: historyDays,
-                        include_live_quote: false,
-                        instrument: { ...item.instrument, symbol: item.symbol }
-                    });
+                const result = await getMarketChartDataResult(accountId, {
+                    daily_interval: "day",
+                    history_days: historyDays,
+                    include_live_quote: false,
+                    instrument: { ...item.instrument, symbol: item.symbol }
+                });
+                if (result.ok && result.data) {
                     return {
-                        candles: Array.isArray(result.candles) ? result.candles : [],
+                        authFailed: false,
+                        candles: Array.isArray(result.data.candles) ? result.data.candles : [],
                         error: null as string | null,
-                        exchange: result.exchange ?? item.instrument.exchange ?? null,
-                        symbol: item.symbol
-                    };
-                } catch (caught) {
-                    return {
-                        candles: [] as MarketChartCandle[],
-                        error: caught instanceof Error ? caught.message : "Could not load chart.",
-                        exchange: item.instrument.exchange ?? null,
+                        exchange: result.data.exchange ?? item.instrument.exchange ?? null,
                         symbol: item.symbol
                     };
                 }
+                return {
+                    authFailed: result.authFailed,
+                    candles: [] as MarketChartCandle[],
+                    error: result.authFailed
+                        ? brokerReconnectCopy(result.error || "")
+                        : result.error || "Could not load chart.",
+                    exchange: item.instrument.exchange ?? null,
+                    symbol: item.symbol
+                };
             })
         )
             .then((results) => {

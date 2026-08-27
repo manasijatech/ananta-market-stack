@@ -55,6 +55,18 @@ export async function getWatchlists(): Promise<Watchlist[]> {
     return request<Watchlist[]>("/watchlists");
 }
 
+export async function getWatchlistsResult(): Promise<{ ok: boolean; data: Watchlist[]; error: string | null }> {
+    try {
+        return { ok: true, data: await request<Watchlist[]>("/watchlists"), error: null };
+    } catch (error) {
+        return {
+            ok: false,
+            data: [],
+            error: error instanceof Error ? error.message : "Could not load watchlists."
+        };
+    }
+}
+
 export async function searchWatchlistPresets(
     query = "",
     limit = 30,

@@ -168,3 +168,23 @@ def test_broker_chat_lists_and_resolves_workspace_dhan_account(monkeypatch):
         assert resolved.broker_code == "dhan"
     finally:
         db.close()
+
+
+def test_broker_tool_call_maps_auth_failures_without_retry():
+    from fastapi import HTTPException
+
+    from app.agent_tools import broker_tools
+
+    http_401 = broker_tools._tool_call(lambda: (_ for _ in ()).throw(HTTPException(status_code=401, detail="Dhan HTTP 401")))
+    assert http_401["ok"] is False
+    assert http_401["code"] == "broker_auth_failed"
+    assert http_401["retry"] is False
+    assert http_401["user_action"] == "reconnect_broker"
+
+    value_error = broker_tools._tool_call(lambda: (_ for _ in ()).throw(ValueError("Dhan HTTP 401")))
+    assert value_error["code"] == "broker_auth_failed"
+    assert value_error["retry"] is False
+
+    server_error = broker_tools._tool_call(lambda: (_ for _ in ()).throw(HTTPException(status_code=503, detail="upstream unavailable")))
+    assert server_error["code"] == "http_503"
+    assert server_error["retry"] is True

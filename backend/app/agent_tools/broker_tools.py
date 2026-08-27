@@ -148,18 +148,59 @@ def _error(message: str, *, code: str = "broker_tool_error", **payload: Any) -> 
     return {"ok": False, "code": code, "message": message, **_serialize(payload)}
 
 
+_AUTH_FAILURE_TOKENS = (
+    "401",
+    "403",
+    "unauthorized",
+    "token expired",
+    "invalid token",
+    "access token",
+    "subscription expired",
+    "not subscribed",
+    "forbidden",
+    "http 401",
+    "http 403",
+)
+
+
+def _broker_auth_failure(message: str, status: int | None = None) -> bool:
+    if status in {401, 403}:
+        return True
+    blob = message.lower()
+    return any(token in blob for token in _AUTH_FAILURE_TOKENS)
+
+
+def _auth_tool_error(message: str, *, status: int | None = None) -> dict[str, Any]:
+    return _error(
+        message,
+        code="broker_auth_failed",
+        retry=False,
+        user_action="reconnect_broker",
+        http_status=status,
+    )
+
+
 def _tool_call(fn):
     try:
         return fn()
     except BrokerToolActionRequired as exc:
-        return _error(str(exc), code="action_required", **exc.detail)
+        return _error(str(exc), code="action_required", retry=False, **exc.detail)
     except HTTPException as exc:
         message = str(exc.detail) if exc.detail else "Request failed."
-        return _error(message, code=f"http_{exc.status_code}")
+        status = int(exc.status_code)
+        if _broker_auth_failure(message, status):
+            return _auth_tool_error(message, status=status)
+        return _error(message, code=f"http_{status}", retry=status >= 500, http_status=status)
     except ValueError as exc:
-        return _error(str(exc), code="invalid_request")
+        message = str(exc)
+        if _broker_auth_failure(message):
+            return _auth_tool_error(message)
+        return _error(message, code="invalid_request", retry=False)
     except Exception as exc:
-        return _error(str(exc), code=exc.__class__.__name__)
+        message = str(exc)
+        if _broker_auth_failure(message):
+            return _auth_tool_error(message)
+        return _error(message, code=exc.__class__.__name__, retry=False)
 
 
 def _account_summary(acc: BrokerAccount) -> dict[str, Any]:

@@ -34,6 +34,21 @@ export function WidgetToolbar({ children, className }: { children?: ReactNode; c
     );
 }
 
+function WidgetErrorPanel({ error }: { error: string }) {
+    const showReconnect =
+        /broker connections|reconnect|renew|401|403|unauthorized|expired/i.test(error);
+    return (
+        <div className="grid gap-2 p-3">
+            <p className="text-sm text-destructive">{error}</p>
+            {showReconnect ? (
+                <Button render={<Link href="/broker-connections" />} size="xs" variant="outline">
+                    Open broker connections
+                </Button>
+            ) : null}
+        </div>
+    );
+}
+
 export function WidgetState({
     children,
     empty,
@@ -61,7 +76,7 @@ export function WidgetState({
         );
     }
     if (error) {
-        return <p className="p-3 text-sm text-destructive">{error}</p>;
+        return <WidgetErrorPanel error={error} />;
     }
     if (empty) {
         return (

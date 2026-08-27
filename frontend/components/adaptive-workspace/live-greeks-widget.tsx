@@ -17,7 +17,8 @@ import {
     widgetProp
 } from "@/hooks/use-desk-data";
 import { normalizeGreeks } from "@/lib/adaptive-workspace/derivatives";
-import { getGreeksData } from "@/service/actions/broker";
+import { brokerReconnectCopy } from "@/lib/broker-auth-error";
+import { getGreeksDataResult } from "@/service/actions/broker";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 import type { JsonObject } from "@/service/types/broker";
 
@@ -61,7 +62,7 @@ export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
         }
         let cancelled = false;
         setLoading(true);
-        void getGreeksData(account.id, {
+        void getGreeksDataResult(account.id, {
             symbol,
             exchange: "NSE",
             expiry: expiry || null,
@@ -70,11 +71,17 @@ export function LiveGreeksWidget({ component, onPatch, refreshNonce }: Props) {
         })
             .then((next) => {
                 if (cancelled) return;
-                setPayload(next);
-                setError(null);
-            })
-            .catch((caught) => {
-                if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load greeks.");
+                if (next.ok) {
+                    setPayload(next.data);
+                    setError(null);
+                } else {
+                    setPayload(null);
+                    setError(
+                        next.authFailed
+                            ? brokerReconnectCopy(next.error || "")
+                            : next.error || "Could not load greeks."
+                    );
+                }
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);

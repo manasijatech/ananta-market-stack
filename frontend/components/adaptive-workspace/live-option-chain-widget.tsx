@@ -18,7 +18,8 @@ import {
     widgetProp
 } from "@/hooks/use-desk-data";
 import { normalizeOptionChain } from "@/lib/adaptive-workspace/derivatives";
-import { getOptionChainData } from "@/service/actions/broker";
+import { brokerReconnectCopy } from "@/lib/broker-auth-error";
+import { getOptionChainDataResult } from "@/service/actions/broker";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
 import type { JsonObject } from "@/service/types/broker";
 
@@ -62,14 +63,20 @@ export function LiveOptionChainWidget({ component, onPatch, refreshNonce }: Prop
         }
         let cancelled = false;
         setLoading(true);
-        void getOptionChainData(account.id, { symbol, exchange: "NSE", expiry: expiry || null })
+        void getOptionChainDataResult(account.id, { symbol, exchange: "NSE", expiry: expiry || null })
             .then((next) => {
                 if (cancelled) return;
-                setPayload(next);
-                setError(null);
-            })
-            .catch((caught) => {
-                if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load option chain.");
+                if (next.ok) {
+                    setPayload(next.data);
+                    setError(null);
+                } else {
+                    setPayload(null);
+                    setError(
+                        next.authFailed
+                            ? brokerReconnectCopy(next.error || "")
+                            : next.error || "Could not load option chain."
+                    );
+                }
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);

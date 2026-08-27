@@ -8,7 +8,14 @@ import { normalizeHoldings } from "@/components/brokers/normalizers";
 import { useDeskAccounts } from "@/hooks/use-desk-data";
 import { numberFrom } from "@/lib/adaptive-workspace/tool-envelope";
 import { cn } from "@/lib/utils";
-import { getHoldings, getPortfolioFunds, getQuotes, getSessionStatus, searchBrokerInstruments } from "@/service/actions/broker";
+import { brokerReconnectCopy } from "@/lib/broker-auth-error";
+import {
+    getHoldingsResult,
+    getPortfolioFundsResult,
+    getQuotesResult,
+    getSessionStatusResult,
+    searchBrokerInstrumentsResult
+} from "@/service/actions/broker";
 import type { BrokerCode, InstrumentRef, InstrumentSearchRow, JsonObject, QuoteResponse, SessionStatus } from "@/service/types/broker";
 
 type Props = {
@@ -98,22 +105,18 @@ function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
 }
 
 async function loadIndexQuote(accountId: string): Promise<{ label: string; quote: QuoteResponse } | null> {
-    const searched = await searchBrokerInstruments(accountId, { exchange: "NSE", limit: 20, q: "NIFTY 50" }).catch(
-        () => [] as InstrumentSearchRow[]
-    );
+    const searched = await searchBrokerInstrumentsResult(accountId, { exchange: "NSE", limit: 20, q: "NIFTY 50" });
+    const searchRows = searched.ok ? searched.data ?? [] : [];
     const candidates: InstrumentRef[] = [
-        ...searched.filter(isCashIndexRow).slice(0, 4).map(instrumentFromSearch),
+        ...searchRows.filter(isCashIndexRow).slice(0, 4).map(instrumentFromSearch),
         ...INDEX_INSTRUMENTS
     ];
     for (const instrument of candidates) {
-        try {
-            const rows = await getQuotes(accountId, { instruments: [instrument] });
-            const quote = rows.find((item) => item.ltp != null && item.ltp !== 0) ?? rows[0];
-            if (quote?.ltp) {
-                return { label: instrument.symbol || "NIFTY 50", quote };
-            }
-        } catch {
-            continue;
+        const rows = await getQuotesResult(accountId, { instruments: [instrument] });
+        if (!rows.ok || rows.authFailed) continue;
+        const quote = (rows.data ?? []).find((item) => item.ltp != null && item.ltp !== 0) ?? rows.data?.[0];
+        if (quote?.ltp) {
+            return { label: instrument.symbol || "NIFTY 50", quote };
         }
     }
     return null;
@@ -177,27 +180,32 @@ export function LiveHoldingsWidget({ refreshNonce, vsIndex = false }: HoldingsPr
         }
         let cancelled = false;
         setLoading(true);
-        Promise.all([
-            getHoldings(account.id),
-            getPortfolioFunds(account.id).catch(() => ({})),
-            loadIndexQuote(account.id).catch(() => null)
-        ])
-            .then(([holdings, funds, nextIndex]) => {
-                if (cancelled) return;
-                setOutput({
-                    account: { account_id: account.id, broker_code: account.broker_code, label: account.label },
-                    data: { ...(holdings as JsonObject), ...(funds as JsonObject) },
-                    ok: true
-                });
-                setIndex(nextIndex);
-                setError(null);
-            })
-            .catch((caught) => {
-                if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load holdings.");
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
+        void (async () => {
+            const holdingsResult = await getHoldingsResult(account.id);
+            if (cancelled) return;
+            if (!holdingsResult.ok) {
+                setOutput(null);
+                setIndex(null);
+                setError(
+                    holdingsResult.authFailed
+                        ? brokerReconnectCopy(holdingsResult.error || "")
+                        : holdingsResult.error || "Could not load holdings."
+                );
+                setLoading(false);
+                return;
+            }
+            const fundsResult = await getPortfolioFundsResult(account.id);
+            const nextIndex = await loadIndexQuote(account.id);
+            if (cancelled) return;
+            setOutput({
+                account: { account_id: account.id, broker_code: account.broker_code, label: account.label },
+                data: { ...(holdingsResult.data as JsonObject), ...(fundsResult.data ?? {}) },
+                ok: true
             });
+            setIndex(nextIndex);
+            setError(null);
+            setLoading(false);
+        })();
         return () => {
             cancelled = true;
         };
@@ -241,14 +249,20 @@ export function LiveHealthWidget({ refreshNonce }: Props) {
         }
         let cancelled = false;
         setLoading(true);
-        void getSessionStatus(account.id, account.broker_code as BrokerCode)
+        void getSessionStatusResult(account.id, account.broker_code as BrokerCode)
             .then((next) => {
                 if (cancelled) return;
-                setStatus(next);
-                setError(null);
-            })
-            .catch((caught) => {
-                if (!cancelled) setError(caught instanceof Error ? caught.message : "Could not load broker health.");
+                if (next.ok) {
+                    setStatus(next.data);
+                    setError(null);
+                } else {
+                    setStatus(null);
+                    setError(
+                        next.authFailed
+                            ? brokerReconnectCopy(next.error || "")
+                            : next.error || "Could not load broker health."
+                    );
+                }
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);

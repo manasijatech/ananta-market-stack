@@ -77,24 +77,60 @@ export function AdaptiveCanvasBoard({ onPrompt, starterPrompts }: Props) {
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <div className={cn("flex items-center justify-between gap-3 border-b border-border", locked ? "px-3 py-2" : "px-4 py-3")}>
-                <div className="flex min-w-0 items-center gap-2">
+            <div
+                className={cn(
+                    "flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-border",
+                    locked ? "px-3 py-2" : "px-4 py-2.5"
+                )}
+            >
+                <div className="flex min-w-0 flex-1 items-center gap-3">
                     <div className="min-w-0">
-                        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">Canvas</p>
-                        <h2 className="truncate text-lg font-heading font-semibold tracking-tight">{spec.title}</h2>
+                        <p className="font-mono text-[11px] font-bold uppercase leading-none tracking-[0.16em] text-primary">
+                            Canvas
+                        </p>
+                        <h2 className="mt-1 truncate text-lg font-heading font-semibold leading-tight tracking-tight">
+                            {spec.title}
+                        </h2>
                     </div>
                     {prefs ? (
-                        <Button
-                            aria-label={locked ? "Unlock canvas layout" : "Lock canvas layout"}
-                            className="shrink-0"
-                            onClick={() => void prefs.setCanvasLocked(!locked)}
-                            size="sm"
-                            type="button"
-                            variant={locked ? "outline" : "secondary"}
+                        <div
+                            className="flex shrink-0 items-center rounded-lg border border-border bg-muted/50 p-0.5"
+                            role="group"
+                            aria-label="Canvas layout mode"
                         >
-                            {locked ? <IconLock className="size-4" stroke={1.8} /> : <IconLockOpen className="size-4" stroke={1.8} />}
-                            {locked ? "Unlock" : "Lock"}
-                        </Button>
+                            <button
+                                aria-pressed={locked}
+                                className={cn(
+                                    "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-semibold transition",
+                                    locked
+                                        ? "bg-background text-foreground shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground"
+                                )}
+                                onClick={() => {
+                                    if (!locked) void prefs.setCanvasLocked(true);
+                                }}
+                                type="button"
+                            >
+                                <IconLock className="size-3.5" stroke={1.8} />
+                                Locked
+                            </button>
+                            <button
+                                aria-pressed={!locked}
+                                className={cn(
+                                    "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-semibold transition",
+                                    !locked
+                                        ? "bg-background text-foreground shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground"
+                                )}
+                                onClick={() => {
+                                    if (locked) void prefs.setCanvasLocked(false);
+                                }}
+                                type="button"
+                            >
+                                <IconLockOpen className="size-3.5" stroke={1.8} />
+                                Edit
+                            </button>
+                        </div>
                     ) : null}
                 </div>
                 <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
