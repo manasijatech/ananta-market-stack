@@ -73,7 +73,10 @@ function isCashIndexRow(row: InstrumentSearchRow) {
     const type = `${row.instrument_type || ""} ${row.segment || ""}`.toUpperCase();
     if (/\b(CE|PE|FUT|FUTURE|OPT)\b/.test(type)) return false;
     const blob = `${row.symbol} ${row.trading_symbol || ""} ${row.name || ""}`.toUpperCase();
-    return blob.includes("NIFTY 50") || blob.includes("NIFTY50") || blob.split(/\s+/).includes("NIFTY");
+    if (blob.includes("QNIFTY") || blob.includes("GIFT NIFTY") || blob.includes("NIFTYIT") || blob.includes("BANKNIFTY")) {
+        return false;
+    }
+    return /\bNIFTY\s*50\b/.test(blob) || blob.includes("NIFTY50");
 }
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
