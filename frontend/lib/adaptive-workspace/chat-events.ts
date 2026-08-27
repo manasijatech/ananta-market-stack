@@ -135,10 +135,6 @@ export function brokerChatToolPartType(toolName: string) {
     return `tool-mcp__mcp__${safe}`;
 }
 
-function safeToolName(name: string) {
-    return name.replace(/[^A-Za-z0-9_]/g, "_") || "broker_tool";
-}
-
 function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
     const items: BrokerTraceItem[] = [];
     const toolIndexes = new Map<string, number>();
@@ -253,7 +249,7 @@ export function buildAdaptiveWorkspaceMessages({
     includeReasoning = false,
     includeUnmappedTools = false,
     runs,
-    streamingIds
+    streamingIds: _streamingIds
 }: {
     eventsByRun: Record<string, BrokerChatEvent[]>;
     includeReasoning?: boolean;

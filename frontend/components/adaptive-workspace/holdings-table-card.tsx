@@ -18,7 +18,7 @@ function money(value?: number | null) {
     return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
 }
 
-export function HoldingsTableCard({ input, name, output, status }: CustomToolRendererProps) {
+export function HoldingsTableCard({ input: _input, name, output, status }: CustomToolRendererProps) {
     const pending = status === "pending" || status === "streaming";
     const envelope = pending ? null : asToolEnvelope(output);
     const ok = toolEnvelopeOk(envelope);

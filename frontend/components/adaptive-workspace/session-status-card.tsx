@@ -12,7 +12,7 @@ import {
     toolEnvelopeOk
 } from "@/lib/adaptive-workspace/tool-envelope";
 
-export function SessionStatusCard({ input, name, output, status }: CustomToolRendererProps) {
+export function SessionStatusCard({ input: _input, name, output, status }: CustomToolRendererProps) {
     const pending = status === "pending" || status === "streaming";
     const envelope = pending ? null : asToolEnvelope(output);
     const ok = toolEnvelopeOk(envelope);
