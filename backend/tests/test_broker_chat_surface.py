@@ -88,6 +88,7 @@ def test_submit_adaptive_metadata_creates_adaptive_session(monkeypatch):
 
     assert session is not None
     assert session.surface == "adaptive_workspace"
+    assert session.title == "Show holdings"
     listed = chat_svc.list_sessions(db, "user-1")
     assert listed == []
 
@@ -143,6 +144,61 @@ def test_get_sessions_without_query_returns_only_broker_chat():
     bodies = response.json()
     assert [item["id"] for item in bodies] == [broker.id]
     assert all(item["surface"] == "broker_chat" for item in bodies)
+
+
+def test_first_run_retitles_placeholder_broker_chat_session(monkeypatch):
+    db = _db()
+    monkeypatch.setattr(chat_svc, "enqueue_broker_chat_run", lambda run_id: "job-1")
+    session = chat_svc.create_session(db, "user-1", "Broker chat")
+
+    run = chat_svc.create_run(db, "user-1", _submit("Show my IndMoney holdings", session_id=session.id))
+    db.refresh(session)
+
+    assert run.session_id == session.id
+    assert session.title == "Show my IndMoney holdings"
+
+
+def test_first_run_retitles_placeholder_adaptive_workspace_session(monkeypatch):
+    db = _db()
+    monkeypatch.setattr(chat_svc, "enqueue_broker_chat_run", lambda run_id: "job-1")
+    session = chat_svc.create_session(db, "user-1", "Adaptive workspace", surface="adaptive_workspace")
+
+    chat_svc.create_run(
+        db,
+        "user-1",
+        _submit("Compare holdings versus Nifty 50", session_id=session.id, adaptive=True),
+    )
+    db.refresh(session)
+
+    assert session.title == "Compare holdings versus Nifty 50"
+
+
+def test_custom_session_title_is_not_replaced_on_first_run(monkeypatch):
+    db = _db()
+    monkeypatch.setattr(chat_svc, "enqueue_broker_chat_run", lambda run_id: "job-1")
+    session = chat_svc.create_session(db, "user-1", "TCS research desk", surface="adaptive_workspace")
+
+    chat_svc.create_run(db, "user-1", _submit("Latest news on TCS", session_id=session.id, adaptive=True))
+    db.refresh(session)
+
+    assert session.title == "TCS research desk"
+
+
+def test_second_run_does_not_retitle_session(monkeypatch):
+    db = _db()
+    monkeypatch.setattr(chat_svc, "enqueue_broker_chat_run", lambda run_id: "job-1")
+    session = chat_svc.create_session(db, "user-1", "Broker chat")
+    first_run = chat_svc.create_run(db, "user-1", _submit("Show holdings", session_id=session.id))
+    first_run.status = "completed"
+    db.add(first_run)
+    db.commit()
+    db.refresh(session)
+    first_title = session.title
+    chat_svc.create_run(db, "user-1", _submit("Now show orders", session_id=session.id))
+    db.refresh(session)
+
+    assert first_title == "Show holdings"
+    assert session.title == "Show holdings"
 
 
 def test_sessions_list_openapi_defaults_surface_to_broker_chat():

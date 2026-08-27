@@ -136,11 +136,33 @@ def update_preference(
     return preference_to_schema(db, pref)
 
 
+PLACEHOLDER_SESSION_TITLES = frozenset(
+    {
+        "broker chat",
+        "adaptive workspace",
+        "new broker chat",
+    }
+)
+
+
 def _default_title(message: str) -> str:
     cleaned = " ".join(message.strip().split())
     if not cleaned:
         return "Broker chat"
     return cleaned[:80]
+
+
+def _is_placeholder_session_title(title: str | None) -> bool:
+    return (title or "").strip().lower() in PLACEHOLDER_SESSION_TITLES
+
+
+def _maybe_retitle_session(session: BrokerChatSession, message: str) -> None:
+    if not _is_placeholder_session_title(session.title):
+        return
+    next_title = _default_title(message)
+    if _is_placeholder_session_title(next_title):
+        return
+    session.title = next_title
 
 
 def _normalize_surface(surface: str | None, *, default: str = BROKER_CHAT_SURFACE) -> str:
@@ -267,6 +289,11 @@ def create_run(
     ).first()
     if active_run is not None:
         raise ValueError("A broker chat run is already active in this session. Stop it or wait for it to finish.")
+    existing_run_count = db.scalar(
+        select(func.count())
+        .select_from(BrokerChatRun)
+        .where(BrokerChatRun.session_id == session.id)
+    ) or 0
     provider, model = _resolve_provider_model(db, user_id, payload, pref)
     now = utc_now()
     mcp_allowed = rbac.user_has_workspace_permission(db, user_id, rbac.SETTINGS_USE_MCP) or rbac.user_has_workspace_permission(
@@ -314,6 +341,8 @@ def create_run(
     )
     db.add(run)
     session.updated_at = now
+    if existing_run_count == 0:
+        _maybe_retitle_session(session, payload.message)
     db.add(session)
     db.commit()
     db.refresh(run)
