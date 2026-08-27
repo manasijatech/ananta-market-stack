@@ -7,7 +7,7 @@ import { getOpenRouterModels } from "@/service/actions/llm-models";
 
 export default async function AdaptiveWorkspacePage() {
     const systemConfig = await getSystemConfig().catch(() => null);
-    if (!isAdaptiveWorkspaceEnabled(systemConfig)) {
+    if (!systemConfig || !isAdaptiveWorkspaceEnabled(systemConfig)) {
         notFound();
     }
 
