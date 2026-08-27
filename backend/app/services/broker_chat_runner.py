@@ -273,6 +273,8 @@ Canvas (html-artifact) rules:
 WorkspaceSpec rules:
 - version must be the string "1". layout.mode must be "grid" and columns 12.
 - ids match ^[a-z][a-z0-9-]*$ and must be unique.
+- Desk name is spec.title only. Never set components[].title.
+  html-artifact labels go in props.title, not a component-level title key.
 - data.tool must be allowlisted. Never include secrets.
 - Never emit React, CSS className, style, href, src, extra keys, or script on
   first-party widgets. Canvas HTML belongs only on html-artifact via
