@@ -1,3 +1,10 @@
+/**
+ * Classic Broker Chat. Purposely hidden from the workspace nav.
+ *
+ * Chat at `/chat` is the default Intelligence surface (Adaptive Workspace
+ * canvas + conversation). Keep this page so the old transcript UI still
+ * loads at `/broker-chat` for maintainers; do not link it in the sidebar.
+ */
 import { parseActionError } from "@/components/brokers/action-error";
 import { BrokerChatWorkspace } from "@/components/broker-chat/broker-chat-workspace";
 import { Alert, AlertDescription } from "@/components/ui/alert";

@@ -9,7 +9,6 @@ import {
     IconChevronRight,
     IconExternalLink,
     IconBrain,
-    IconLayoutDashboard,
     IconLayoutGrid,
     IconListCheck,
     IconLogout,
@@ -63,8 +62,9 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         items: [
             { href: "/market-intelligence", label: "Market Intelligence", icon: IconNews },
             { href: "/heatmap", label: "Heatmap", icon: IconLayoutGrid },
-            { href: "/broker-chat", label: "Chat", icon: IconMessageCircle },
-            { href: "/adaptive-workspace", label: "Adaptive Workspace", icon: IconLayoutDashboard },
+            { href: "/chat", label: "Chat", icon: IconMessageCircle },
+            // Classic Broker Chat (`/broker-chat`) is purposely hidden. Chat is
+            // the Adaptive Workspace canvas+conversation surface going forward.
             { href: "/alerts-workspace", label: "Alerts Workspace", icon: IconBellRinging }
         ]
     },
@@ -123,7 +123,7 @@ function visibleNavGroups(principal: RbacPrincipal | null | undefined, enableAda
         .map((group) => ({
             ...group,
             items: group.items.filter((item) => {
-                if (item.href === "/adaptive-workspace" && !enableAdaptiveWorkspace) {
+                if (item.href === "/chat" && !enableAdaptiveWorkspace) {
                     return false;
                 }
                 if (!item.requiredPermission) {
@@ -228,6 +228,7 @@ function isFullHeightPath(pathname: string) {
         pathname === "/watchlists" ||
         pathname === "/heatmap" ||
         pathname === "/settings" ||
+        pathname.startsWith("/chat") ||
         pathname.startsWith("/broker-chat") ||
         pathname.startsWith("/adaptive-workspace")
     );
@@ -248,7 +249,8 @@ export function WorkspaceShell({
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [navCollapsed, setNavCollapsed] = useState(false);
     const fullHeight = isFullHeightPath(pathname);
-    const adaptive = pathname.startsWith("/adaptive-workspace");
+    const adaptive =
+        pathname.startsWith("/chat") || pathname.startsWith("/adaptive-workspace");
 
     useEffect(() => {
         try {
@@ -440,7 +442,8 @@ export function WorkspaceShell({
                         <PageContainer
                             className={cn(
                                 fullHeight && "flex min-h-0 flex-1 flex-col",
-                                pathname.startsWith("/adaptive-workspace") && "max-w-none"
+                                (pathname.startsWith("/chat") || pathname.startsWith("/adaptive-workspace")) &&
+                                    "max-w-none"
                             )}
                         >
                             {children}

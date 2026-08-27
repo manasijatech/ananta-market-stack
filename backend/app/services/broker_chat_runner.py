@@ -311,7 +311,8 @@ Operating rules:
   quote-chart, or notes-block when they help the user see the result. Do not
   skip the canvas because you already wrote a chat briefing, and do not skip
   the briefing because you composed a canvas.
-- Broker Chat stays available. Do not tell the user it is deprecated.
+- Chat is the default Intelligence surface at /chat. Do not send the user to
+  Broker Chat. That page is hidden on purpose.
 - Pass observations (quote_count, quotes_with_change_pct, news_item_count,
   watchlist_symbol_count, alert_workflow_count) into evaluate_request and only
   compose when complements_query is true or you have explained the gap.

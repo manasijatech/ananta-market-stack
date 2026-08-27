@@ -475,6 +475,7 @@ export async function updateMcpServerConfig(payload: {
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -498,6 +499,7 @@ export async function createMcpServerConfig(payload: Parameters<typeof updateMcp
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -519,6 +521,7 @@ export async function completeMcpOAuth(payload: { code: string; state: string })
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -529,6 +532,7 @@ export async function deleteMcpServerConfig(): Promise<SystemConfig["mcp_server"
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -539,6 +543,7 @@ export async function deleteMcpServerConfigById(serverId: string): Promise<Syste
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -549,6 +554,7 @@ export async function clearMcpOAuth(): Promise<SystemConfig["mcp_server"]> {
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -559,6 +565,7 @@ export async function clearMcpOAuthById(serverId: string): Promise<SystemConfig[
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -572,6 +579,7 @@ export async function refreshMcpInventory(): Promise<SystemConfig["mcp_server"]>
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result.config;
 }
 
@@ -585,6 +593,7 @@ export async function refreshMcpInventoryById(serverId: string): Promise<SystemC
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result.config;
 }
 
@@ -595,6 +604,7 @@ export async function clearMcpServerApiKey(): Promise<SystemConfig["mcp_server"]
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -605,6 +615,7 @@ export async function clearMcpServerApiKeyById(serverId: string): Promise<System
     revalidatePath("/broker-connections");
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 
@@ -673,6 +684,7 @@ export async function updateLlmProviderModel(
     });
     revalidatePath("/settings");
     revalidatePath("/broker-chat");
+    revalidatePath("/chat");
     return result;
 }
 

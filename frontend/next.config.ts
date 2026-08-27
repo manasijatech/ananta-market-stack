@@ -76,6 +76,16 @@ const nextConfig: NextConfig = {
                 source: "/alert-channels",
                 destination: "/settings",
                 permanent: false
+            },
+            {
+                source: "/adaptive-workspace",
+                destination: "/chat",
+                permanent: false
+            },
+            {
+                source: "/adaptive-workspace/:path*",
+                destination: "/chat",
+                permanent: false
             }
         ];
     }

@@ -459,7 +459,7 @@ export function useAdaptiveWorkspaceChat({
         }
         bootstrappedEmptyDeskRef.current = true;
         setIsCreatingSession(true);
-        void createBrokerChatSession("Adaptive workspace", ADAPTIVE_SESSION_QUERY)
+        void createBrokerChatSession("Chat", ADAPTIVE_SESSION_QUERY)
             .then((session) => {
                 setSessions((current) => sortBrokerChatSessions([session, ...current]));
                 setActiveSessionId(session.id);
@@ -508,7 +508,7 @@ export function useAdaptiveWorkspaceChat({
         setIsCreatingSession(true);
         setError(null);
         try {
-            const session = await createBrokerChatSession("Adaptive workspace", ADAPTIVE_SESSION_QUERY);
+            const session = await createBrokerChatSession("Chat", ADAPTIVE_SESSION_QUERY);
             const copySpec = options?.copySpec;
             if (copySpec?.components.length) {
                 await createAdaptiveWorkspaceSnapshot(session.id, copySpec, "Duplicated desk");
@@ -549,7 +549,7 @@ export function useAdaptiveWorkspaceChat({
                 provider,
                 reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
                 session_id: activeSessionId || null,
-                session_title: activeSessionId ? null : "Adaptive workspace",
+                session_title: activeSessionId ? null : "Chat",
                 use_mcp: useMcp,
                 event_visibility: "full"
             });

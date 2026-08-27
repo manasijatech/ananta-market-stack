@@ -114,7 +114,7 @@ function AdaptiveWorkspaceShellInner({
     }, [canvas.spec, chat.messages, ingestMessageOutputs]);
 
     const selectedLabel = canvas.spec.components.find((item) => item.id === canvas.selectedId)?.type;
-    const deskTitle = chat.activeSession?.title ?? canvas.spec.title ?? "Adaptive workspace";
+    const deskTitle = chat.activeSession?.title ?? canvas.spec.title ?? "Chat";
 
     return (
         <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden min-[980px]:flex-row">

@@ -1,8 +1,8 @@
 """Adaptive Workspace composition tools.
 
-These tools are attached only to broker-chat runs whose metadata includes
-``adaptive_workspace: true``. Broker Chat at ``/broker-chat`` does not send
-that flag and therefore never sees these tools.
+These tools are attached only to Chat runs whose metadata includes
+``adaptive_workspace: true``. The hidden classic Broker Chat page at
+``/broker-chat`` does not send that flag and therefore never sees these tools.
 
 Validation follows the workflow-chat pattern: catalog/docs and dry-run
 validate return ``ok: true`` with ``valid`` / ``validation.errors`` so the

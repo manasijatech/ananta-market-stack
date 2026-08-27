@@ -141,6 +141,7 @@ PLACEHOLDER_SESSION_TITLES = frozenset(
         "broker chat",
         "adaptive workspace",
         "new broker chat",
+        "chat",
     }
 )
 
