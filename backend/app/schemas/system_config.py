@@ -19,6 +19,7 @@ class LlmModelOut(BaseModel):
     provider: LlmProvider
     model_id: str
     label: str | None = None
+    reasoning_effort: str | None = None
     is_enabled: bool = True
     created_at: datetime
     updated_at: datetime
@@ -45,7 +46,14 @@ class LlmModelCreateIn(BaseModel):
     provider: LlmProvider
     model_id: str = Field(..., min_length=1, max_length=256)
     label: str | None = Field(default=None, max_length=128)
+    reasoning_effort: str | None = Field(default=None, max_length=16)
     is_enabled: bool = True
+
+
+class LlmModelUpdateIn(BaseModel):
+    label: str | None = Field(default=None, max_length=128)
+    reasoning_effort: str | None = Field(default=None, max_length=16)
+    is_enabled: bool | None = None
 
 
 class LlmModelPricingOut(BaseModel):
@@ -215,6 +223,10 @@ class McpInventoryRefreshOut(BaseModel):
     refreshed: bool = True
 
 
+class FeatureFlagsOut(BaseModel):
+    adaptive_workspace: bool = False
+
+
 class SystemConfigOut(BaseModel):
     broker_data_default: BrokerDataDefaultConfigOut
     broker_data_search: BrokerDataSearchConfigOut
@@ -225,3 +237,4 @@ class SystemConfigOut(BaseModel):
     mcp_server: McpServerConfigOut
     mcp_servers: list[McpServerConfigOut] = Field(default_factory=list)
     mcp_connector_readiness: list[McpConnectorReadinessOut] = Field(default_factory=list)
+    features: FeatureFlagsOut = Field(default_factory=FeatureFlagsOut)

@@ -31,17 +31,38 @@ def parse_expiry(value: Any) -> datetime | None:
     raw = str(value).strip()
     if not raw:
         return None
-    candidates = [raw.replace("Z", "+00:00"), raw]
-    for candidate in candidates:
+    date_part = raw.split()[0] if raw[:1].isdigit() else raw
+    for candidate in (raw.replace("Z", "+00:00"), raw, date_part):
         try:
             return _as_utc_naive(datetime.fromisoformat(candidate))
         except ValueError:
             continue
-    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%Y/%m/%d", "%d%b%Y"):
+    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d%b%Y", "%Y/%m/%d"):
+        for candidate in (raw, date_part):
+            try:
+                return datetime.strptime(candidate, fmt)
+            except ValueError:
+                continue
+    parts = date_part.split("/")
+    if len(parts) == 3:
         try:
-            return datetime.strptime(raw, fmt)
+            left = int(parts[0])
+            middle = int(parts[1])
+            year = int(parts[2][:4])
         except ValueError:
-            continue
+            left = middle = year = 0
+        else:
+            try:
+                if left > 12 >= middle:
+                    return datetime(year, middle, left)
+                if middle > 12 >= left:
+                    return datetime(year, left, middle)
+                # Ambiguous 01-12/01-12. INDmoney CSV uses MM/DD/YYYY with a time.
+                if ":" in raw:
+                    return datetime(year, left, middle)
+                return datetime(year, middle, left)
+            except ValueError:
+                return None
     return None
 
 

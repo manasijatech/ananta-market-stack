@@ -57,3 +57,19 @@ def decrypt_value(cipher_text: str) -> str:
         return _fernet_singleton.decrypt(cipher_text.encode("ascii")).decode("utf-8")
     except InvalidToken as e:
         raise ValueError("Could not decrypt stored credential (wrong key or corrupt data)") from e
+
+
+def decrypt_value_or_none(cipher_text: str | None) -> str | None:
+    """Decrypt a stored credential, or return None if it is missing or unreadable.
+
+    Read APIs that only need a hint/fingerprint must not 500 the whole workspace
+    when one stored cipher is corrupt or was encrypted with a different key.
+    """
+    cleaned = (cipher_text or "").strip()
+    if not cleaned:
+        return None
+    try:
+        return decrypt_value(cleaned)
+    except Exception:
+        logger.warning("Could not decrypt stored credential; treating it as unavailable")
+        return None

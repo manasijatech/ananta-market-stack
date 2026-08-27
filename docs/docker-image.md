@@ -12,6 +12,8 @@ The image runs:
 
 No production secrets are baked into the image.
 
+Adaptive Workspace is on by default as Chat (`/chat`), gated by `ENABLE_ADAPTIVE_WORKSPACE`. Set the variable to `false` only as a kill switch. Do not bake `ENABLE_ADAPTIVE_WORKSPACE=false` into the image.
+
 The container itself is disposable. Persistent state lives in the `/data` mount, including SQLite, generated auth/encryption secrets, and bundled Redis data. Normal updates replace the container but reuse the same `/data` volume.
 
 ## Run Locally Or On A VPS

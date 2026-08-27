@@ -25,15 +25,10 @@ router = APIRouter()
 
 
 def _parse_symbols_query(symbols: list[str] | None, *, max_symbols: int = 20) -> list[str]:
-    normalized: list[str] = []
-    seen: set[str] = set()
+    parts: list[str] = []
     for raw_value in symbols or []:
-        for part in str(raw_value).split(","):
-            symbol = part.strip().upper()
-            if not symbol or symbol in seen:
-                continue
-            seen.add(symbol)
-            normalized.append(symbol)
+        parts.extend(str(raw_value).split(","))
+    normalized = alpha_feed_cache._normalize_symbols(parts)
     if not normalized:
         raise HTTPException(status_code=400, detail="'symbols' is required")
     if len(normalized) > max_symbols:
@@ -52,6 +47,7 @@ def get_alpha_feed_page(
     to: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
+    historical: bool = Query(default=False),
     force_refresh: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -69,6 +65,7 @@ def get_alpha_feed_page(
             to_date=to,
             page=page,
             limit=limit,
+            historical=historical,
             force_refresh=force_refresh,
         )
     except ValueError as exc:

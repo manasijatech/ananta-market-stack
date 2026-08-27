@@ -154,6 +154,9 @@ class MarginLeg(BaseModel):
     trigger_price: float = 0
     arrow_token: str | None = None
     instrument_token: str | None = None
+    dhan_security_id: str | None = None
+    indmoney_scrip_code: str | None = None
+    security_id: str | None = None
 
 
 class MarginRequest(BaseModel):
@@ -246,8 +249,9 @@ def post_margin(
     db: Session = Depends(get_db),
     principal: rbac.Principal = Depends(get_current_principal),
 ) -> dict[str, Any]:
-    client = _client_or_409(db, _account(db, principal, account_id, rbac.BROKER_USE_DATA))
-    positions = [item.model_dump() for item in body.positions]
+    acc = _account(db, principal, account_id, rbac.BROKER_USE_DATA)
+    client = _client_or_409(db, acc)
+    positions = broker_data.hydrate_instruments(db, acc, [item.model_dump() for item in body.positions])
     if positions:
         positions[0]["include_positions"] = body.include_positions
     return client.calculate_margin(positions)

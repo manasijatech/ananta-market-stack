@@ -321,3 +321,162 @@ def stream_capabilities() -> dict[str, Any]:
             "need broker-direct streaming."
         ),
     }
+
+
+_INDEX_UNDERLYINGS = frozenset(
+    {
+        "BANKEX",
+        "BANKNIFTY",
+        "FINNIFTY",
+        "INDIA VIX",
+        "INDIAVIX",
+        "MIDCPNIFTY",
+        "NIFTY",
+        "NIFTY 50",
+        "NIFTY50",
+        "SENSEX",
+    }
+)
+_FNO_PREFIXES = frozenset({"BFO", "CDS", "MCX", "NFO"})
+
+
+def _bare_scrip(value: Any) -> str | None:
+    raw = _clean_text(value)
+    if not raw:
+        return None
+    if "_" in raw:
+        raw = raw.rsplit("_", 1)[-1]
+    return raw
+
+
+def _option_chain_exchange(request: dict[str, Any]) -> str:
+    exchange = _normalize_exchange(request.get("exchange")) or "NSE"
+    if exchange in {"NFO", "NSEFO"}:
+        return "NSE"
+    if exchange in {"BFO", "BSEFO"}:
+        return "BSE"
+    if exchange in {"NSE", "BSE"}:
+        return exchange
+    return "NSE"
+
+
+def _option_chain_segment(request: dict[str, Any]) -> str:
+    segment = (_clean_text(request.get("segment")) or "").upper()
+    instrument_type = (_clean_text(request.get("instrument_type")) or "").upper()
+    symbol = _normalize_symbol(request.get("symbol")) or ""
+    compact = symbol.replace(" ", "")
+    if segment in {"INDEX", "INDICES"} or instrument_type in {"INDEX", "INDICES"}:
+        return "INDEX"
+    if symbol in _INDEX_UNDERLYINGS or compact in {"BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTY50"}:
+        return "INDEX"
+    return "EQUITY"
+
+
+def _expiry_ymd(value: Any) -> str | None:
+    raw = _clean_text(value)
+    if not raw:
+        return None
+    if "T" in raw:
+        raw = raw.split("T", 1)[0]
+    if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+        return raw[:10]
+    return raw
+
+
+def _underlying_scrip(request: dict[str, Any]) -> str | None:
+    explicit = _bare_scrip(request.get("underlying-scrip") or request.get("security_id"))
+    if explicit:
+        return explicit
+    raw = _clean_text(request.get("indmoney_scrip_code") or request.get("scrip_code"))
+    if not raw:
+        return None
+    prefix = raw.split("_", 1)[0].upper() if "_" in raw else ""
+    if prefix in _FNO_PREFIXES:
+        return None
+    return _bare_scrip(raw)
+
+
+def _attach_expiry_dates(payload: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+    dates = request.get("expiry_dates")
+    if not isinstance(dates, list):
+        return payload
+    cleaned = [str(item).strip()[:10] for item in dates if str(item).strip()]
+    if not cleaned:
+        return payload
+    payload["expiry_dates"] = cleaned
+    data = payload.get("data")
+    if isinstance(data, dict):
+        data.setdefault("expiry_dates", cleaned)
+    return payload
+
+
+def _normalize_option_chain_response(raw: Any, request: dict[str, Any]) -> dict[str, Any]:
+    extra = _attach_expiry_dates({}, request)
+    if not isinstance(raw, dict):
+        return {"status": "error", "message": str(raw), **extra}
+    data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+    status = str(raw.get("status") or "").strip().lower()
+    strikes = data.get("strikes")
+    if status == "success" or (isinstance(strikes, dict) and strikes):
+        payload = {
+            "status": "success",
+            "data": {
+                **data,
+                "expiry": data.get("expiry") or _expiry_ymd(request.get("expiry")),
+                "strikes": strikes or {},
+                "underlying_ltp": data.get("underlying_ltp"),
+            },
+        }
+        return _attach_expiry_dates(payload, request)
+    message = raw.get("message") or raw.get("error") or "INDmoney option chain request failed."
+    return {"status": "error", "message": str(message), "raw": raw, **extra}
+
+
+def fetch_option_chain(http: IndmoneyHTTP, request: dict[str, Any]) -> dict[str, Any]:
+    scrip = _underlying_scrip(request)
+    expiry = _expiry_ymd(request.get("expiry"))
+    extra_request = dict(request)
+    if not scrip:
+        return _attach_expiry_dates(
+            {
+                "status": "error",
+                "message": (
+                    "INDmoney option chain needs the underlying SECURITY_ID from the cash or index "
+                    "instrument (not an F&O contract). Sync instruments or pass indmoney_scrip_code."
+                ),
+            },
+            extra_request,
+        )
+    if not expiry:
+        return _attach_expiry_dates(
+            {
+                "status": "error",
+                "message": "INDmoney option chain requires an F&O expiry (YYYY-MM-DD).",
+            },
+            extra_request,
+        )
+    try:
+        strike_count = max(1, min(int(request.get("strike_count") or request.get("count") or 10), 50))
+    except (TypeError, ValueError):
+        strike_count = 10
+    raw = http.request(
+        "GET",
+        "/market/option-chain",
+        {
+            "exchange": _option_chain_exchange(request),
+            "expiry": expiry,
+            "segment": _option_chain_segment(request),
+            "strike_count": strike_count,
+            "underlying-scrip": scrip,
+        },
+        None,
+    )
+    return _normalize_option_chain_response(raw, extra_request)
+
+
+def fetch_greeks(http: IndmoneyHTTP, request: dict[str, Any]) -> dict[str, Any]:
+    payload = fetch_option_chain(http, request)
+    if payload.get("status") == "success":
+        payload = dict(payload)
+        payload["guidance"] = "INDmoney supplies option greeks inside each CE/PE option-chain entry."
+    return payload

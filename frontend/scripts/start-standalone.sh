@@ -39,5 +39,29 @@ if [ -z "${AUTH_DATABASE_PATH:-}" ]; then
   export AUTH_DATABASE_PATH
 fi
 
+load_env_file() {
+  file="$1"
+  if [ ! -f "$file" ]; then
+    return 0
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ""|\#*) continue ;;
+    esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in
+      ""|*[!A-Za-z0-9_]*) continue ;;
+    esac
+    eval "current=\${$key-}"
+    if [ -z "$current" ]; then
+      export "$key=$value"
+    fi
+  done < "$file"
+}
+
+load_env_file "$root/.env"
+load_env_file "$root/.env.local"
+
 export PORT HOSTNAME
 exec node .next/standalone/server.js

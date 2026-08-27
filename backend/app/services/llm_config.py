@@ -14,14 +14,50 @@ from app.schemas.system_config import (
     LlmModelOut,
     LlmModelPricingOut,
     LlmModelPricingUpsertIn,
+    LlmModelUpdateIn,
     LlmProvider,
     LlmProviderConfigOut,
     LlmProviderCredentialUpsertIn,
 )
 from app.services import rbac
-from broker.crypto import decrypt_value, encrypt_value
+from broker.crypto import decrypt_value, decrypt_value_or_none, encrypt_value
 from common.datetime_compat import UTC
 from db.models import LlmModelPricing, UserLlmModel, UserLlmProviderCredential
+
+REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
+
+
+def normalize_reasoning_effort(value: Any) -> str | None:
+    """Return a supported OpenRouter/OpenAI effort level, or None for provider default."""
+
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    if cleaned in {"", "default", "auto"}:
+        return None
+    if cleaned not in REASONING_EFFORTS:
+        raise ValueError(
+            "Reasoning effort must be one of none, minimal, low, medium, high, xhigh, or left empty for the model default."
+        )
+    return cleaned
+
+
+def get_model_reasoning_effort(db: Session, user_id: str, provider: str, model_id: str) -> str | None:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = db.scalars(
+        select(UserLlmModel).where(
+            UserLlmModel.user_id == owner_user_id,
+            UserLlmModel.provider == provider,
+            UserLlmModel.model_id == model_id,
+        )
+    ).first()
+    if row is None:
+        return None
+    try:
+        return normalize_reasoning_effort(row.reasoning_effort)
+    except ValueError:
+        return None
+
 
 _PROVIDER_DEFINITIONS: dict[LlmProvider, dict[str, str]] = {
     "openai": {
@@ -100,15 +136,14 @@ def list_provider_configs(db: Session, user_id: str) -> list[LlmProviderConfigOu
     for provider, definition in _PROVIDER_DEFINITIONS.items():
         credential = credential_by_provider.get(provider)
         provider_models = models_by_provider.get(provider, [])
+        plain_key = decrypt_value_or_none(credential.api_key_cipher if credential else None)
         out.append(
             LlmProviderConfigOut(
                 provider=provider,
                 label=definition["label"],
                 base_url=definition["base_url"],
                 has_api_key=bool(credential and credential.api_key_cipher),
-                api_key_hint=_build_api_key_hint(decrypt_value(credential.api_key_cipher))
-                if credential and credential.api_key_cipher
-                else None,
+                api_key_hint=_build_api_key_hint(plain_key) if plain_key else None,
                 is_enabled=bool(credential and credential.is_enabled),
                 api_key_updated_at=credential.updated_at if credential else None,
                 models=[LlmModelOut.model_validate(row) for row in provider_models],
@@ -179,9 +214,11 @@ def add_provider_model(
             UserLlmModel.model_id == payload.model_id,
         )
     ).first()
+    reasoning_effort = normalize_reasoning_effort(payload.reasoning_effort)
     if existing is not None:
         existing.label = payload.label
         existing.is_enabled = payload.is_enabled
+        existing.reasoning_effort = reasoning_effort
         db.add(existing)
         db.commit()
         return list_provider_configs(db, owner_user_id)
@@ -191,8 +228,30 @@ def add_provider_model(
         provider=payload.provider,
         model_id=payload.model_id,
         label=payload.label,
+        reasoning_effort=reasoning_effort,
         is_enabled=payload.is_enabled,
     )
+    db.add(row)
+    db.commit()
+    return list_provider_configs(db, owner_user_id)
+
+
+def update_provider_model(
+    db: Session,
+    user_id: str,
+    model_row_id: str,
+    payload: LlmModelUpdateIn,
+) -> list[LlmProviderConfigOut]:
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    row = db.get(UserLlmModel, model_row_id)
+    if row is None or row.user_id != owner_user_id:
+        raise ValueError("llm model not found")
+    if "label" in payload.model_fields_set:
+        row.label = payload.label
+    if "is_enabled" in payload.model_fields_set and payload.is_enabled is not None:
+        row.is_enabled = payload.is_enabled
+    if "reasoning_effort" in payload.model_fields_set:
+        row.reasoning_effort = normalize_reasoning_effort(payload.reasoning_effort)
     db.add(row)
     db.commit()
     return list_provider_configs(db, owner_user_id)

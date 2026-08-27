@@ -47,6 +47,7 @@ const ACTIVE_VERBS: Record<string, string> = {
   Set: "Setting",
   Check: "Checking",
   Find: "Finding",
+  Publish: "Publishing",
 };
 
 const COMPLETED_VERBS: Record<string, string> = {
@@ -70,7 +71,27 @@ const COMPLETED_VERBS: Record<string, string> = {
   Set: "Set",
   Check: "Checked",
   Find: "Found",
+  Publish: "Published",
 };
+
+function labelMcpTool(info: McpToolInfo): string {
+  if (info.serverName === "status") {
+    const name = info.toolName.toLowerCase();
+    if (name.includes("connected")) return "MCP connected";
+    if (name.includes("unavailable") || name.includes("failed")) return "MCP not connected";
+    return `MCP · ${info.displayName}`;
+  }
+  if (info.serverName === "ananta_intel") {
+    return `Ananta intel · ${info.displayName} (Drishti API, not MCP)`;
+  }
+  if (info.serverName === "ananta_broker") {
+    return `Broker · ${info.displayName}`;
+  }
+  if (info.serverName === "ananta") {
+    return `Ananta · ${info.displayName}`;
+  }
+  return `MCP · ${info.displayName}`;
+}
 
 function getActiveTitle(info: McpToolInfo): string {
   const words = info.displayName.split(" ");
@@ -175,10 +196,10 @@ export const McpTool = memo(function McpTool({
   const { isPending, isInterrupted } = getToolStatus(part, chatStatus);
 
   const title = useMemo(() => {
-    if (part.state === "input-streaming")
-      return `Preparing ${mcpInfo.displayName}`;
-    if (isPending) return getActiveTitle(mcpInfo);
-    return getCompletedTitle(mcpInfo);
+    const labeled = labelMcpTool(mcpInfo);
+    if (part.state === "input-streaming") return `Preparing ${labeled}`;
+    if (isPending) return getActiveTitle({ ...mcpInfo, displayName: labeled });
+    return getCompletedTitle({ ...mcpInfo, displayName: labeled });
   }, [part.state, isPending, mcpInfo]);
 
   const subtitle = useMemo(() => {

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.services import rbac
 from broker.core.redis_cache import _redis_client
-from broker.crypto import decrypt_value
+from broker.crypto import decrypt_value, decrypt_value_or_none
 from db.models import (
     AlphaWebSocketEvent,
     LiveSymbolSubscription,
@@ -497,7 +497,9 @@ def effective_subscription_for_user(db: Session, user_id: str) -> EffectiveAlpha
     elif not symbols:
         products = []
 
-    api_key = decrypt_value(credential.api_key_cipher)
+    api_key = decrypt_value_or_none(credential.api_key_cipher)
+    if not api_key:
+        return None
     return EffectiveAlphaSubscription(
         user_id=user_id,
         api_key=api_key,

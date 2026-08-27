@@ -353,6 +353,27 @@ export interface GreeksRequest {
     tokens?: string[];
 }
 
+export interface MarginLeg {
+    action: string;
+    arrow_token?: string | null;
+    dhan_security_id?: string | null;
+    exchange: string;
+    indmoney_scrip_code?: string | null;
+    instrument_token?: string | null;
+    price?: number;
+    pricetype?: string;
+    product: string;
+    quantity: number;
+    security_id?: string | null;
+    symbol?: string;
+    trigger_price?: number;
+}
+
+export interface MarginRequest {
+    include_positions?: boolean;
+    positions: MarginLeg[];
+}
+
 export interface StreamStatus {
     broker: BrokerCode | string;
     account_id: string;
@@ -416,6 +437,7 @@ export interface LlmModelConfig {
     provider: LlmProvider;
     model_id: string;
     label?: string | null;
+    reasoning_effort?: string | null;
     is_enabled: boolean;
     created_at: string;
     updated_at: string;
@@ -553,6 +575,9 @@ export interface SystemConfig {
     mcp_server: McpServerConfig;
     mcp_servers: McpServerConfig[];
     mcp_connector_readiness: Array<{ id: string; is_ready: boolean; reason?: string | null }>;
+    features?: {
+        adaptive_workspace: boolean;
+    };
 }
 
 export interface Notification {

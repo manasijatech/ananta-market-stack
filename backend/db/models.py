@@ -378,6 +378,7 @@ class UserBrokerChatPreference(Base):
     event_visibility: Mapped[str] = mapped_column(String(32), default="minimal")
     include_tool_outputs: Mapped[bool] = mapped_column(Boolean, default=False)
     include_reasoning: Mapped[bool] = mapped_column(Boolean, default=False)
+    reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     use_mcp: Mapped[bool] = mapped_column(Boolean, default=False)
     mcp_server_ids_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -436,6 +437,7 @@ class BrokerChatSession(Base):
         String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     title: Mapped[str] = mapped_column(String(256), default="Broker chat")
+    surface: Mapped[str] = mapped_column(String(32), default="broker_chat", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
@@ -491,6 +493,75 @@ class BrokerChatEvent(Base):
     full_payload_json: Mapped[str] = mapped_column(Text, default="{}")
     redis_stream_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class AdaptiveWorkspaceSnapshot(Base):
+    __tablename__ = "adaptive_workspace_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "version",
+            name="uq_adaptive_workspace_snapshots_session_version",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("broker_chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    label: Mapped[str] = mapped_column(String(256), default="Workspace snapshot")
+    workspace_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    validation_json: Mapped[str] = mapped_column(Text, default="{}")
+    valid: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class AdaptiveWorkspaceSavedDesk(Base):
+    __tablename__ = "adaptive_workspace_saved_desks"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "name",
+            name="uq_adaptive_workspace_saved_desks_user_name",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    workspace_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
+    )
+
+
+class AdaptiveWorkspacePreference(Base):
+    __tablename__ = "adaptive_workspace_preferences"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "pref_key",
+            name="uq_adaptive_workspace_preferences_user_key",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    pref_key: Mapped[str] = mapped_column(String(64), index=True)
+    value_json: Mapped[str] = mapped_column(Text, default="null")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
+    )
 
 
 class UserAlertWorkflowChatPreference(Base):
@@ -659,6 +730,7 @@ class UserLlmModel(Base):
     provider: Mapped[str] = mapped_column(String(32), index=True)
     model_id: Mapped[str] = mapped_column(String(256), index=True)
     label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(

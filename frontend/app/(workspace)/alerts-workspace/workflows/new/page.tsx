@@ -20,7 +20,7 @@ export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageP
             getAlertTemplates(),
             getWatchlists(),
             getAlertPresets(),
-            getSystemConfig(),
+            getSystemConfig().catch(() => null),
             getAlphaAnnouncementCategories().catch((caught) => {
                 creditWarningMessage = getAlphaCreditWarningMessage(caught);
                 return [];
@@ -58,7 +58,7 @@ export default async function NewWorkflowPage({ searchParams }: NewWorkflowPageP
                 accounts={accounts}
                 announcementCategories={announcementCategories}
                 initialWorkflow={initialWorkflow}
-                llmProviders={systemConfig.llm_providers}
+                llmProviders={systemConfig?.llm_providers ?? []}
                 openRouterModels={openRouterModels}
                 presets={presets}
                 watchlists={watchlists}

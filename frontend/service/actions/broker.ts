@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseActionError } from "@/components/brokers/action-error";
 import { fetchFastApi } from "@/lib/fastapi";
+import { isBrokerAuthFailure } from "@/lib/broker-auth-error";
 import type {
     BrokerAccount,
     BrokerAccountDetail,
@@ -27,6 +29,7 @@ import type {
     Notification,
     OhlcRequest,
     OrderBody,
+    MarginRequest,
     OptionChainRequest,
     QuoteRequest,
     QuoteResponse,
@@ -69,6 +72,14 @@ export type BrokerDataTestAction =
 export type BrokerDataTestResult =
     | { ok: true; data: unknown }
     | { ok: false; error: string };
+
+export type BrokerActionResult<T> = {
+    ok: boolean;
+    data: T | null;
+    error: string | null;
+    status?: number;
+    authFailed: boolean;
+};
 
 function isJsonObject(value: unknown): value is JsonObject {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -156,6 +167,23 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         }
     });
     return readResponse<T>(response);
+}
+
+async function requestResult<T>(path: string, init: RequestInit = {}): Promise<BrokerActionResult<T>> {
+    try {
+        const data = await request<T>(path, init);
+        return { ok: true, data, error: null, authFailed: false };
+    } catch (error) {
+        const parsed = parseActionError(error);
+        const message = parsed.message || "Request failed.";
+        return {
+            ok: false,
+            data: null,
+            error: message,
+            status: parsed.status,
+            authFailed: isBrokerAuthFailure(message, parsed.status)
+        };
+    }
 }
 
 function brokerDataTestError(error: unknown): string {
@@ -254,6 +282,10 @@ export async function getBrokerAccounts(): Promise<BrokerAccount[]> {
     return request<BrokerAccount[]>("/broker-accounts");
 }
 
+export async function getBrokerAccountsResult(): Promise<BrokerActionResult<BrokerAccount[]>> {
+    return requestResult<BrokerAccount[]>("/broker-accounts");
+}
+
 export async function getSupportedBrokers(): Promise<BrokerCode[]> {
     const data = await request<{ brokers: BrokerCode[] }>("/brokers/supported");
     return data.brokers;
@@ -267,12 +299,20 @@ export async function getSessionStatus(id: string, broker: BrokerCode): Promise<
     return request<SessionStatus>(`/broker-accounts/${id}/sessions/${broker}`);
 }
 
+export async function getSessionStatusResult(id: string, broker: BrokerCode): Promise<BrokerActionResult<SessionStatus>> {
+    return requestResult<SessionStatus>(`/broker-accounts/${id}/sessions/${broker}`);
+}
+
 export async function getNotifications(): Promise<Notification[]> {
     return request<Notification[]>("/notifications");
 }
 
 export async function getPortfolioFunds(id: string): Promise<JsonObject> {
     return request<JsonObject>(`/broker-accounts/${id}/portfolio/funds`);
+}
+
+export async function getPortfolioFundsResult(id: string): Promise<BrokerActionResult<JsonObject>> {
+    return requestResult<JsonObject>(`/broker-accounts/${id}/portfolio/funds`);
 }
 
 export async function getProfile(id: string): Promise<JsonObject> {
@@ -291,12 +331,27 @@ export async function getPositions(id: string): Promise<JsonObject> {
     return request<JsonObject>(`/broker-accounts/${id}/portfolio/positions`);
 }
 
+export async function getPositionsResult(id: string): Promise<BrokerActionResult<JsonObject>> {
+    return requestResult<JsonObject>(`/broker-accounts/${id}/portfolio/positions`);
+}
+
 export async function getHoldings(id: string): Promise<JsonObject> {
     return request<JsonObject>(`/broker-accounts/${id}/portfolio/holdings`);
 }
 
+export async function getHoldingsResult(id: string): Promise<BrokerActionResult<JsonObject>> {
+    return requestResult<JsonObject>(`/broker-accounts/${id}/portfolio/holdings`);
+}
+
 export async function getQuotes(id: string, payload: QuoteRequest): Promise<QuoteResponse[]> {
     return request<QuoteResponse[]>(`/broker-accounts/${id}/quotes`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
+export async function getQuotesResult(id: string, payload: QuoteRequest): Promise<BrokerActionResult<QuoteResponse[]>> {
+    return requestResult<QuoteResponse[]>(`/broker-accounts/${id}/quotes`, {
         method: "POST",
         body: JSON.stringify(payload)
     });
@@ -335,6 +390,19 @@ export async function searchBrokerInstruments(
     return request<InstrumentSearchRow[]>(`/broker-accounts/${id}/data/instruments/search${suffix}`);
 }
 
+export async function searchBrokerInstrumentsResult(
+    id: string,
+    params: { q?: string; exchange?: string; segment?: string; limit?: number } = {}
+): Promise<BrokerActionResult<InstrumentSearchRow[]>> {
+    const query = new URLSearchParams();
+    if (params.q) query.set("q", params.q);
+    if (params.exchange) query.set("exchange", params.exchange);
+    if (params.segment) query.set("segment", params.segment);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return requestResult<InstrumentSearchRow[]>(`/broker-accounts/${id}/data/instruments/search${suffix}`);
+}
+
 export async function searchDefaultBrokerInstruments(
     params: { q?: string; exchange?: string; segment?: string; limit?: number } = {}
 ): Promise<InstrumentSearchRow[]> {
@@ -347,12 +415,28 @@ export async function searchDefaultBrokerInstruments(
     return request<InstrumentSearchRow[]>(`/system-config/instruments/search${suffix}`);
 }
 
+export async function searchDefaultBrokerInstrumentsResult(
+    params: { q?: string; exchange?: string; segment?: string; limit?: number } = {}
+): Promise<BrokerActionResult<InstrumentSearchRow[]>> {
+    const query = new URLSearchParams();
+    if (params.q) query.set("q", params.q);
+    if (params.exchange) query.set("exchange", params.exchange);
+    if (params.segment) query.set("segment", params.segment);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return requestResult<InstrumentSearchRow[]>(`/system-config/instruments/search${suffix}`);
+}
+
 export async function getBrokerDataSearchConfig(): Promise<BrokerDataSearchConfig> {
     return request<BrokerDataSearchConfig>("/system-config/broker-search");
 }
 
 export async function getBrokerDataDefaultConfig(): Promise<BrokerDataDefaultConfig> {
     return request<BrokerDataDefaultConfig>("/system-config/broker-default");
+}
+
+export async function getBrokerDataDefaultConfigResult(): Promise<BrokerActionResult<BrokerDataDefaultConfig>> {
+    return requestResult<BrokerDataDefaultConfig>("/system-config/broker-default");
 }
 
 export async function updateBrokerDataDefaultConfig(
@@ -645,6 +729,7 @@ export async function addLlmProviderModel(payload: {
     provider: LlmProvider;
     model_id: string;
     label?: string | null;
+    reasoning_effort?: string | null;
     is_enabled?: boolean;
 }): Promise<LlmProviderConfig[]> {
     const result = await request<LlmProviderConfig[]>("/system-config/llm/models", {
@@ -653,10 +738,24 @@ export async function addLlmProviderModel(payload: {
             provider: payload.provider,
             model_id: payload.model_id,
             label: payload.label ?? null,
+            reasoning_effort: payload.reasoning_effort ?? null,
             is_enabled: payload.is_enabled ?? true
         })
     });
     revalidatePath("/settings");
+    return result;
+}
+
+export async function updateLlmProviderModel(
+    modelRowId: string,
+    payload: { label?: string | null; reasoning_effort?: string | null; is_enabled?: boolean }
+): Promise<LlmProviderConfig[]> {
+    const result = await request<LlmProviderConfig[]>(`/system-config/llm/models/${modelRowId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+    });
+    revalidatePath("/settings");
+    revalidatePath("/broker-chat");
     return result;
 }
 
@@ -710,6 +809,13 @@ export async function getDataQuotes(id: string, payload: QuoteRequest): Promise<
     });
 }
 
+export async function getDataQuotesResult(id: string, payload: QuoteRequest): Promise<BrokerActionResult<QuoteResponse[]>> {
+    return requestResult<QuoteResponse[]>(`/broker-accounts/${id}/data/quotes`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
 export async function getDataOhlc(id: string, payload: OhlcRequest): Promise<JsonObject[]> {
     return request<JsonObject[]>(`/broker-accounts/${id}/data/ohlc`, {
         method: "POST",
@@ -731,6 +837,16 @@ export async function getMarketChartData(id: string, payload: MarketChartRequest
     });
 }
 
+export async function getMarketChartDataResult(
+    id: string,
+    payload: MarketChartRequest
+): Promise<BrokerActionResult<MarketChartSnapshot>> {
+    return requestResult<MarketChartSnapshot>(`/broker-accounts/${id}/data/market-chart`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
 export async function getOptionChainData(id: string, payload: OptionChainRequest): Promise<JsonObject> {
     return request<JsonObject>(`/broker-accounts/${id}/data/option-chain`, {
         method: "POST",
@@ -738,8 +854,39 @@ export async function getOptionChainData(id: string, payload: OptionChainRequest
     });
 }
 
+export async function getOptionChainDataResult(
+    id: string,
+    payload: OptionChainRequest
+): Promise<BrokerActionResult<JsonObject>> {
+    return requestResult<JsonObject>(`/broker-accounts/${id}/data/option-chain`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
 export async function getGreeksData(id: string, payload: GreeksRequest): Promise<JsonObject> {
     return request<JsonObject>(`/broker-accounts/${id}/data/greeks`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
+export async function getGreeksDataResult(id: string, payload: GreeksRequest): Promise<BrokerActionResult<JsonObject>> {
+    return requestResult<JsonObject>(`/broker-accounts/${id}/data/greeks`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
+export async function calculateMargin(id: string, payload: MarginRequest): Promise<JsonObject> {
+    return request<JsonObject>(`/broker-accounts/${id}/margin/calculate`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
+export async function calculateMarginResult(id: string, payload: MarginRequest): Promise<BrokerActionResult<JsonObject>> {
+    return requestResult<JsonObject>(`/broker-accounts/${id}/margin/calculate`, {
         method: "POST",
         body: JSON.stringify(payload)
     });

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -66,16 +66,22 @@ def create_broker_chat_session(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> BrokerChatSessionOut:
-    return BrokerChatSessionOut.model_validate(chat_svc.create_session(db, user.id, payload.title))
+    try:
+        return BrokerChatSessionOut.model_validate(
+            chat_svc.create_session(db, user.id, payload.title, surface=payload.surface)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/sessions", response_model=list[BrokerChatSessionOut])
 def list_broker_chat_sessions(
     limit: int = Query(default=50, ge=1, le=200),
+    surface: Literal["broker_chat", "adaptive_workspace"] = Query(default="broker_chat"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[BrokerChatSessionOut]:
-    return chat_svc.list_sessions(db, user.id, limit=limit)
+    return chat_svc.list_sessions(db, user.id, limit=limit, surface=surface)
 
 
 @router.get("/sessions/{session_id}", response_model=BrokerChatSessionOut)
@@ -139,10 +145,11 @@ def submit_broker_chat_run(
 @router.get("/runs", response_model=list[BrokerChatRunOut])
 def list_broker_chat_runs(
     limit: int = Query(default=50, ge=1, le=200),
+    surface: Literal["broker_chat", "adaptive_workspace"] = Query(default="broker_chat"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[BrokerChatRunOut]:
-    return chat_svc.list_runs(db, user.id, limit=limit)
+    return chat_svc.list_runs(db, user.id, limit=limit, surface=surface)
 
 
 @router.get("/runs/{run_id}", response_model=BrokerChatRunOut)
@@ -226,9 +233,28 @@ def _latest_stream_id_for_sequence(db: Session, run_id: str, sequence: int) -> s
     return row.redis_stream_id if row and row.redis_stream_id else "0-0"
 
 
-def _run_is_terminal(db: Session, run_id: str) -> bool:
-    run = db.get(BrokerChatRun, run_id)
-    return bool(run and run.status in chat_svc.TERMINAL_STATUSES)
+def _pull_run_events(
+    db,
+    run,
+    sequence: int,
+    *,
+    visibility: str | None,
+    include_tool_outputs: bool | None,
+    include_reasoning: bool | None,
+    limit: int = 200,
+) -> tuple[int, list, list[str]]:
+    page = chat_svc.list_events(
+        db,
+        run,
+        after_sequence=sequence,
+        limit=limit,
+        visibility=_visibility_override(visibility),
+        include_tool_outputs=include_tool_outputs,
+        include_reasoning=include_reasoning,
+    )
+    chunks = [_sse(item.sequence, item.event_type, item.payload) for item in page.events]
+    next_sequence = page.events[-1].sequence if page.events else sequence
+    return next_sequence, page.events, chunks
 
 
 @router.get("/runs/{run_id}/stream")
@@ -255,20 +281,22 @@ async def stream_broker_chat_run(
             except ValueError:
                 yield _sse(sequence, "error", {"message": "broker chat run not found"})
                 return
-            page = chat_svc.list_events(
-                db,
-                run,
-                after_sequence=sequence,
-                limit=500,
-                visibility=_visibility_override(visibility),
-                include_tool_outputs=include_tool_outputs,
-                include_reasoning=include_reasoning,
-            )
-            for item in page.events:
-                sequence = item.sequence
-                yield _sse(item.sequence, item.event_type, item.payload)
+            while True:
+                sequence, events, chunks = _pull_run_events(
+                    db,
+                    run,
+                    sequence,
+                    visibility=visibility,
+                    include_tool_outputs=include_tool_outputs,
+                    include_reasoning=include_reasoning,
+                    limit=500,
+                )
+                for chunk in chunks:
+                    yield chunk
+                if len(events) < 500:
+                    break
             redis_stream_id = _latest_stream_id_for_sequence(db, run_id, sequence)
-            if run.status in chat_svc.TERMINAL_STATUSES and not page.events:
+            if run.status in chat_svc.TERMINAL_STATUSES:
                 return
         finally:
             db.close()
@@ -279,26 +307,28 @@ async def stream_broker_chat_run(
             redis_client = None
 
         while True:
+            db = SessionLocal()
+            try:
+                run = chat_svc.get_owned_run(db, user.id, run_id)
+                sequence, events, chunks = _pull_run_events(
+                    db,
+                    run,
+                    sequence,
+                    visibility=visibility,
+                    include_tool_outputs=include_tool_outputs,
+                    include_reasoning=include_reasoning,
+                )
+                for chunk in chunks:
+                    yield chunk
+                if events:
+                    redis_stream_id = _latest_stream_id_for_sequence(db, run_id, sequence)
+                    continue
+                if run.status in chat_svc.TERMINAL_STATUSES:
+                    return
+            finally:
+                db.close()
+
             if redis_client is None:
-                db = SessionLocal()
-                try:
-                    run = chat_svc.get_owned_run(db, user.id, run_id)
-                    page = chat_svc.list_events(
-                        db,
-                        run,
-                        after_sequence=sequence,
-                        limit=100,
-                        visibility=_visibility_override(visibility),
-                        include_tool_outputs=include_tool_outputs,
-                        include_reasoning=include_reasoning,
-                    )
-                    for item in page.events:
-                        sequence = item.sequence
-                        yield _sse(item.sequence, item.event_type, item.payload)
-                    if run.status in chat_svc.TERMINAL_STATUSES:
-                        return
-                finally:
-                    db.close()
                 yield "event: ping\ndata: {}\n\n"
                 await asyncio.sleep(2)
                 continue
@@ -315,44 +345,11 @@ async def stream_broker_chat_run(
                 await asyncio.sleep(2)
                 continue
             if not rows:
-                db = SessionLocal()
-                try:
-                    if _run_is_terminal(db, run_id):
-                        return
-                finally:
-                    db.close()
                 yield "event: ping\ndata: {}\n\n"
                 continue
             for _stream_name, messages in rows:
-                for message_id, fields in messages:
+                for message_id, _fields in messages:
                     redis_stream_id = message_id.decode() if isinstance(message_id, bytes) else str(message_id)
-                    raw_payload = fields.get(b"payload") if b"payload" in fields else fields.get("payload")
-                    if isinstance(raw_payload, bytes):
-                        raw_payload = raw_payload.decode()
-                    try:
-                        marker = json.loads(str(raw_payload or "{}"))
-                    except json.JSONDecodeError:
-                        continue
-                    marker_sequence = int(marker.get("sequence") or 0)
-                    if marker_sequence <= sequence:
-                        continue
-                    db = SessionLocal()
-                    try:
-                        run = chat_svc.get_owned_run(db, user.id, run_id)
-                        page = chat_svc.list_events(
-                            db,
-                            run,
-                            after_sequence=sequence,
-                            limit=100,
-                            visibility=_visibility_override(visibility),
-                            include_tool_outputs=include_tool_outputs,
-                            include_reasoning=include_reasoning,
-                        )
-                        for item in page.events:
-                            sequence = item.sequence
-                            yield _sse(item.sequence, item.event_type, item.payload)
-                    finally:
-                        db.close()
 
     return StreamingResponse(
         event_stream(),

@@ -77,8 +77,7 @@ export const ToolRenderer = memo(function ToolRenderer({
   // MCP tools
   const mcpInfo = parseMcpToolType(partType);
   if (mcpInfo) {
-    // Custom renderer for user-defined tools
-    if (toolRenderers && mcpInfo.serverName === "user-tools") {
+    if (toolRenderers) {
       const CustomRenderer = toolRenderers[mcpInfo.toolName];
       if (CustomRenderer) {
         return (

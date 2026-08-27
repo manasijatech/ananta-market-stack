@@ -9,13 +9,13 @@ export const authFormInputInvalidClassName =
 
 /** Neutralizes InputGroup default invalid rings; pair with authFormInputInvalidClassName when invalid. */
 export const authFormInputGroupClassName =
-    "h-10 items-center rounded-lg border border-border/80 bg-background shadow-none before:!hidden has-[input[aria-invalid]]:!ring-0 has-[input[aria-invalid]]:!shadow-none dark:has-[input[aria-invalid]]:!ring-0 has-[input:focus-visible]:has-[input[aria-invalid]]:!ring-0 has-[input:focus-visible]:border-primary has-[input:focus-visible]:ring-[3px] has-[input:focus-visible]:ring-[var(--accent-glow)] dark:bg-background **:[input]:h-full **:[input]:min-h-0 **:[input]:border-0 **:[input]:bg-transparent **:[input]:px-3.5 **:[input]:py-0 **:[input]:text-sm **:[input]:leading-normal **:[input]:shadow-none **:[input]:ring-0 **:[input]:placeholder:text-muted-foreground/90 sm:**:[input]:h-full sm:**:[input]:leading-normal [&_[data-slot=input-group-addon]]:pe-2 [&_[data-slot=button]]:border-transparent [&_[data-slot=button]]:bg-transparent [&_[data-slot=button]]:shadow-none [&_[data-slot=button]]:hover:bg-black/5 [&_[data-slot=button]]:hover:text-foreground [&_[data-slot=button]]:focus-visible:ring-0 dark:[&_[data-slot=button]]:hover:bg-white/5";
+    "h-10 items-center rounded-lg border border-border/80 bg-background shadow-none before:!hidden has-[input[aria-invalid]]:!ring-0 has-[input[aria-invalid]]:!shadow-none dark:has-[input[aria-invalid]]:!ring-0 has-[input:focus-visible]:has-[input[aria-invalid]]:!ring-0 has-[input:focus-visible]:border-primary has-[input:focus-visible]:ring-[3px] has-[input:focus-visible]:ring-[var(--accent-glow)] dark:bg-background **:[input]:h-full **:[input]:min-h-0 **:[input]:w-auto **:[input]:flex-1 **:[input]:border-0 **:[input]:bg-transparent **:[input]:px-3.5 **:[input]:py-0 **:[input]:text-sm **:[input]:leading-normal **:[input]:shadow-none **:[input]:ring-0 **:[input]:placeholder:text-muted-foreground/90 sm:**:[input]:h-full sm:**:[input]:leading-normal [&_[data-slot=input-group-addon]]:relative [&_[data-slot=input-group-addon]]:z-10 [&_[data-slot=input-group-addon]]:pe-2 [&_[data-slot=button]]:border-transparent [&_[data-slot=button]]:bg-transparent [&_[data-slot=button]]:shadow-none [&_[data-slot=button]]:hover:bg-black/5 [&_[data-slot=button]]:hover:text-foreground [&_[data-slot=button]]:focus-visible:ring-0 dark:[&_[data-slot=button]]:hover:bg-white/5";
 
 export const authFormInputGroupInputClassName =
-    "h-full min-h-0 w-full border-0 bg-transparent px-0 py-0 text-sm leading-normal shadow-none ring-0 placeholder:text-muted-foreground/90 sm:h-full sm:leading-normal";
+    "relative z-0 h-full min-h-0 min-w-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm leading-normal shadow-none ring-0 placeholder:text-muted-foreground/90 sm:h-full sm:leading-normal";
 
 export const authFormInputGroupButtonClassName =
-    "size-9 shrink-0 text-muted-foreground hover:text-foreground";
+    "relative z-10 size-9 shrink-0 pointer-events-auto text-muted-foreground hover:text-foreground";
 
 export const authFormCardClassName =
     "gap-0 border-border bg-card py-0";

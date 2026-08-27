@@ -43,9 +43,7 @@ async function request<T>(path: string): Promise<T> {
 
 function buildFeedQuery(params: AlphaFeedParams & { force_refresh?: boolean } = {}): string {
     const query = new URLSearchParams();
-    const symbols = (params.symbols ?? [])
-        .map((value) => value.trim().toUpperCase())
-        .filter(Boolean);
+    const symbols = (params.symbols ?? []).map((value) => value.trim().toUpperCase()).filter(Boolean);
     if (symbols.length) {
         // Backend accepts full watchlist comma lists; stale/missing symbols refresh in batches.
         query.set("symbols", Array.from(new Set(symbols)).join(","));
@@ -54,6 +52,7 @@ function buildFeedQuery(params: AlphaFeedParams & { force_refresh?: boolean } = 
     if (params.to) query.set("to", params.to);
     if (params.page) query.set("page", String(params.page));
     if (params.limit) query.set("limit", String(params.limit));
+    if (params.historical) query.set("historical", "true");
     if (params.force_refresh) query.set("force_refresh", "true");
     return query.toString();
 }

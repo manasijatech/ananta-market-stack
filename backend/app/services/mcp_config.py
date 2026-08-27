@@ -24,7 +24,7 @@ from app.schemas.system_config import (
     McpServerConfigUpdateIn,
 )
 from app.services import rbac
-from broker.crypto import decrypt_value, encrypt_value
+from broker.crypto import decrypt_value_or_none, encrypt_value
 from db.models import User, UserMcpServerConfig
 
 MCP_CLIENT_NAME = "Ananta Market Stack Broker Chat"
@@ -131,7 +131,7 @@ def _validate_url(url: str, *, required: bool) -> str:
 
 
 def _decrypt_or_empty(value: str | None) -> str:
-    return decrypt_value(value) if value else ""
+    return decrypt_value_or_none(value) or ""
 
 
 def _has_valid_oauth_token(row: UserMcpServerConfig) -> bool:
@@ -382,19 +382,38 @@ def get_enabled_mcp_connection(db: Session, user_id: str) -> McpConnectionConfig
     return connections[0] if connections else None
 
 
+def resolve_mcp_server_ids(
+    db: Session,
+    user_id: str,
+    selected_server_ids: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Return enabled MCP server ids, dropping stale selections.
+
+    If the client still points at a deleted/replaced server id, fall back to
+    enabled default servers so MCP actually connects.
+    """
+
+    owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    enabled = [row for row in _mcp_server_rows(db, owner_user_id) if row.is_enabled and row.url]
+    enabled_ids = {row.id for row in enabled}
+    requested = [item for item in (selected_server_ids or []) if item]
+    matched = [item for item in requested if item in enabled_ids]
+    dropped = [item for item in requested if item not in enabled_ids]
+    if matched:
+        return matched, dropped
+    defaults = [row.id for row in enabled if row.use_by_default] or [row.id for row in enabled]
+    return defaults, dropped
+
+
 def get_enabled_mcp_connections(
     db: Session,
     user_id: str,
     selected_server_ids: list[str] | None = None,
 ) -> list[McpConnectionConfig]:
     owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
-    selected = {item for item in (selected_server_ids or []) if item}
-    rows = [row for row in _mcp_server_rows(db, owner_user_id) if row.is_enabled and row.url]
-    if selected:
-        rows = [row for row in rows if row.id in selected]
-    else:
-        default_rows = [row for row in rows if row.use_by_default]
-        rows = default_rows or rows
+    resolved_ids, _dropped = resolve_mcp_server_ids(db, user_id, selected_server_ids)
+    resolved = set(resolved_ids)
+    rows = [row for row in _mcp_server_rows(db, owner_user_id) if row.id in resolved]
     return [_connection_from_row(row) for row in rows]
 
 

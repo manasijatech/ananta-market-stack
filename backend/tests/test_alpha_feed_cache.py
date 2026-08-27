@@ -51,6 +51,17 @@ def test_payload_symbol_rejects_na_and_uses_fallback():
     assert _payload_symbol({"symbol": "INFY"}, None) == "INFY"
 
 
+def test_normalize_symbols_strips_exchange_qualifiers():
+    assert alpha_feed_cache._normalize_symbols(["NSE:TCS", "INFY:BSE", "M&M", "NSE"]) == ["TCS", "INFY", "M&M"]
+    assert alpha_feed_cache._cash_equity_symbol("TCS.NS") == "TCS"
+
+
+def test_earnings_lookback_is_wider_than_news():
+    assert alpha_feed_cache._lookback_days("earnings") >= 180
+    assert alpha_feed_cache._lookback_days("concalls") >= 180
+    assert alpha_feed_cache._lookback_days("news") < alpha_feed_cache._lookback_days("earnings")
+
+
 def test_should_include_market_wide_feed_threshold():
     assert alpha_feed_cache._should_include_market_wide_feed(["CIPLA"]) is False
     assert alpha_feed_cache._should_include_market_wide_feed([f"S{i}" for i in range(20)]) is False
@@ -195,6 +206,23 @@ def test_symbols_needing_sync_force_refresh_includes_full_watchlist():
         force_refresh=True,
     )
     assert pending == symbols
+
+
+def test_historical_backfill_uses_requested_start_date():
+    class _FakeDb:
+        def scalars(self, _stmt):
+            raise AssertionError("historical requests should not need the sync-gap query")
+
+    start = alpha_feed_cache._refresh_from_date_for_batch(
+        _FakeDb(),
+        user_id="u1",
+        product="earnings",
+        batch=["CIPLA"],
+        from_date="2024-01-15T00:00:00Z",
+        historical=True,
+        force_refresh=False,
+    )
+    assert start == "2024-01-15"
 
 
 def test_list_cached_feed_items_page_two_skips_refresh(monkeypatch):

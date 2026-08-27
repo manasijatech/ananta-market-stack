@@ -23,6 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
+import {
+    providerSupportsReasoningEffort,
+    reasoningEffortSelectOptions
+} from "@/lib/llm-reasoning-effort";
+import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
+import { assistantText, brokerChatToolPartType } from "@/lib/adaptive-workspace/chat-events";
 import { cn } from "@/lib/utils";
 import {
     cancelBrokerChatRun,
@@ -87,6 +93,7 @@ type BrokerChatConfigPayload = {
     event_visibility: BrokerChatVisibility;
     include_tool_outputs: boolean;
     include_reasoning: boolean;
+    reasoning_effort: string | null;
     use_mcp: boolean;
     mcp_server_ids: string[];
 };
@@ -248,26 +255,6 @@ function normalizeAssistantMarkdown(value: string) {
     return output.join("\n");
 }
 
-function assistantText(events: BrokerChatEvent[], run: BrokerChatRun) {
-    const finalMessage = [...events]
-        .reverse()
-        .find((event) => event.event_type === "message_output" && textPayload(event.payload, "content"));
-    if (finalMessage) {
-        return textPayload(finalMessage.payload, "content");
-    }
-    const completed = [...events]
-        .reverse()
-        .find((event) => event.event_type === "run_completed" && textPayload(event.payload, "response_text"));
-    if (completed) {
-        return textPayload(completed.payload, "response_text");
-    }
-    const tokens = events
-        .filter((event) => event.event_type === "token")
-        .map((event) => textPayload(event.payload, "text"))
-        .join("");
-    return tokens || run.response_text || "";
-}
-
 function parseSseBlock(block: string): ParsedSseEvent | null {
     const event: ParsedSseEvent = {};
     const data: string[] = [];
@@ -391,11 +378,29 @@ function safeToolName(name: string) {
     return name.replace(/[^A-Za-z0-9_]/g, "_") || "broker_tool";
 }
 
+function mcpStatusParts(events: BrokerChatEvent[]) {
+    return events
+        .filter((event) => event.event_type.startsWith("mcp_"))
+        .map((event) => {
+            const status = textPayload(event.payload, "status") || event.event_type;
+            const message = textPayload(event.payload, "message");
+            const names = event.payload?.server_names;
+            const serverLabel = Array.isArray(names) ? names.filter((item) => typeof item === "string").join(", ") : "";
+            return {
+                input: { status, servers: serverLabel },
+                output: message || status,
+                state: "output-available",
+                toolCallId: event.id,
+                type: `tool-mcp__status__${event.event_type}`
+            };
+        });
+}
+
 function brokerToolPart(item: Extract<BrokerTraceItem, { kind: "tool" }>, isRunActive: boolean) {
     const startPayload = item.start?.payload;
     const outputPayload = item.output?.payload;
     return {
-        type: `tool-mcp__broker__${safeToolName(item.toolName)}`,
+        type: brokerChatToolPartType(item.toolName),
         toolCallId: item.callId || item.key,
         state: item.output ? "output-available" : isRunActive ? "input-available" : "output-error",
         input: payloadValue(startPayload, "arguments") ?? {},
@@ -418,10 +423,10 @@ function buildBrokerMessages({
 }): UIMessage[] {
     return runs.flatMap((run) => {
         const events = eventsByRun[run.id] ?? [];
-        const running = liveStatuses.has(run.status) || streamingIds.includes(run.id);
+        const running = liveStatuses.has(run.status);
         const traceItems = buildBrokerTraceItems(events);
         const text = assistantText(events, run);
-        const assistantParts: unknown[] = [];
+        const assistantParts: unknown[] = mcpStatusParts(events);
 
         for (const item of traceItems) {
             if (item.kind === "reasoning") {
@@ -511,6 +516,9 @@ export function BrokerChatWorkspace({
     const loadedSessionIdRef = useRef<string | null>(null);
     const [provider, setProvider] = useState<LlmProvider | "">(initialConfig.default_provider ?? "");
     const [model, setModel] = useState(initialConfig.default_model ?? "");
+    const [includeToolOutputs, setIncludeToolOutputs] = useState(initialConfig.include_tool_outputs);
+    const [includeReasoning, setIncludeReasoning] = useState(initialConfig.include_reasoning);
+    const [reasoningEffort, setReasoningEffort] = useState(initialConfig.reasoning_effort ?? "");
     const availableMcpServers = useMemo(
         () => (mcpServers.length ? mcpServers : [mcpServer]).filter((server) => server.id && server.is_enabled),
         [mcpServer, mcpServers]
@@ -523,6 +531,18 @@ export function BrokerChatWorkspace({
     const [selectedMcpServerIds, setSelectedMcpServerIds] = useState(
         initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds
     );
+
+    useEffect(() => {
+        const known = new Set(availableMcpServers.map((server) => server.id as string));
+        if (!known.size) {
+            if (selectedMcpServerIds.length) setSelectedMcpServerIds([]);
+            return;
+        }
+        const valid = selectedMcpServerIds.filter((id) => known.has(id));
+        if (!valid.length || valid.length !== selectedMcpServerIds.length) {
+            setSelectedMcpServerIds(valid.length ? valid : defaultMcpServerIds);
+        }
+    }, [availableMcpServers, defaultMcpServerIds, selectedMcpServerIds]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCreatingSession, setIsCreatingSession] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -539,8 +559,9 @@ export function BrokerChatWorkspace({
             default_provider: initialConfig.default_provider ?? "",
             default_model: initialConfig.default_model ?? "",
             event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
-            include_tool_outputs: BROKER_CHAT_INCLUDE_TOOL_OUTPUTS,
-            include_reasoning: BROKER_CHAT_INCLUDE_REASONING,
+            include_tool_outputs: initialConfig.include_tool_outputs,
+            include_reasoning: initialConfig.include_reasoning,
+            reasoning_effort: initialConfig.reasoning_effort ?? null,
             use_mcp: initialConfig.use_mcp && availableMcpServers.length > 0,
             mcp_server_ids: initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds
         })
@@ -630,12 +651,13 @@ export function BrokerChatWorkspace({
             default_provider: provider,
             default_model: model,
             event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
-            include_tool_outputs: BROKER_CHAT_INCLUDE_TOOL_OUTPUTS,
-            include_reasoning: BROKER_CHAT_INCLUDE_REASONING,
+            include_tool_outputs: includeToolOutputs,
+            include_reasoning: includeReasoning,
+            reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
             use_mcp: useMcp,
             mcp_server_ids: selectedMcpServerIds
         };
-    }, [model, provider, selectedMcpServerIds, useMcp]);
+    }, [includeReasoning, includeToolOutputs, model, provider, reasoningEffort, selectedMcpServerIds, useMcp]);
 
     useEffect(() => {
         const requestId = ++configSaveRequestRef.current;
@@ -701,6 +723,7 @@ export function BrokerChatWorkspace({
                 if (!response.ok || !response.body) {
                     throw new Error("Could not open broker chat stream.");
                 }
+                setError(null);
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = "";
@@ -746,6 +769,7 @@ export function BrokerChatWorkspace({
                                 parsed.event === "run_failed" ||
                                 parsed.event === "run_cancelled"
                             ) {
+                                setStreamingIds((current) => current.filter((id) => id !== runId));
                                 setRuns((current) =>
                                     current.map((run) =>
                                         run.id === runId
@@ -776,11 +800,13 @@ export function BrokerChatWorkspace({
                 }
             } catch (err) {
                 if ((err as Error).name !== "AbortError") {
-                    setError((err as Error).message || "Broker chat stream stopped.");
                     const freshRun = await getBrokerChatRun(runId).catch(() => null);
                     if (freshRun) {
                         setRuns((current) => mergeRuns(current, [freshRun]));
                         reconnectAfterClose = liveStatuses.has(freshRun.status);
+                    }
+                    if (!reconnectAfterClose && !isTransientChatStreamError(err)) {
+                        setError((err as Error).message || "Broker chat stream stopped.");
                     }
                 }
             } finally {
@@ -827,6 +853,7 @@ export function BrokerChatWorkspace({
             return;
         }
         loadedSessionIdRef.current = activeSessionId;
+        setError(null);
         let cancelled = false;
         async function loadSession() {
             try {
@@ -835,7 +862,9 @@ export function BrokerChatWorkspace({
                 setRuns((current) => mergeRuns(current, sessionRuns));
                 await Promise.all(sessionRuns.map((run) => loadRunEvents(run.id)));
             } catch (err) {
-                if (!cancelled) setError((err as Error).message);
+                if (!cancelled && !isTransientChatStreamError(err)) {
+                    setError((err as Error).message);
+                }
             }
         }
         void loadSession();
@@ -978,8 +1007,9 @@ export function BrokerChatWorkspace({
                 provider,
                 model,
                 event_visibility: BROKER_CHAT_EVENT_VISIBILITY,
-                include_tool_outputs: BROKER_CHAT_INCLUDE_TOOL_OUTPUTS,
-                include_reasoning: BROKER_CHAT_INCLUDE_REASONING,
+                include_tool_outputs: includeToolOutputs,
+                include_reasoning: includeReasoning,
+                reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
                 use_mcp: useMcp,
                 mcp_server_ids: selectedMcpServerIds
             });
@@ -1231,6 +1261,19 @@ export function BrokerChatWorkspace({
                                             size="sm"
                                             value={model}
                                         />
+                                        {providerSupportsReasoningEffort(provider) ? (
+                                            <SimpleSelect
+                                                aria-label="Reasoning effort"
+                                                className="h-7 w-[128px] bg-background px-2 text-xs"
+                                                onValueChange={setReasoningEffort}
+                                                options={reasoningEffortSelectOptions(
+                                                    selectedModels.find((item) => item.model_id === model)?.reasoning_effort
+                                                )}
+                                                placeholder="Effort"
+                                                size="sm"
+                                                value={reasoningEffort}
+                                            />
+                                        ) : null}
                                     </div>
                                 }
                                 onChange={setMessage}

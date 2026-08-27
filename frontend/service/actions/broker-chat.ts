@@ -12,6 +12,7 @@ import type {
     BrokerChatSession,
     BrokerChatSubmitRequest,
     BrokerChatSubmitResponse,
+    BrokerChatSurface,
     BrokerChatVisibility
 } from "@/service/types/broker-chat";
 
@@ -101,14 +102,27 @@ export async function updateBrokerChatConfig(payload: BrokerChatPreferenceUpdate
     return result;
 }
 
-export async function getBrokerChatSessions(limit = 50): Promise<BrokerChatSession[]> {
-    return request<BrokerChatSession[]>(`/broker-chat/sessions?limit=${limit}`);
+export async function getBrokerChatSessions(
+    limit = 50,
+    options?: { surface?: BrokerChatSurface }
+): Promise<BrokerChatSession[]> {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (options?.surface) {
+        query.set("surface", options.surface);
+    }
+    return request<BrokerChatSession[]>(`/broker-chat/sessions?${query.toString()}`);
 }
 
-export async function createBrokerChatSession(title?: string | null): Promise<BrokerChatSession> {
+export async function createBrokerChatSession(
+    title?: string | null,
+    options?: { surface?: BrokerChatSurface }
+): Promise<BrokerChatSession> {
     const result = await request<BrokerChatSession>("/broker-chat/sessions", {
         method: "POST",
-        body: JSON.stringify({ title: title || null })
+        body: JSON.stringify({
+            title: title || null,
+            ...(options?.surface ? { surface: options.surface } : {})
+        })
     });
     revalidatePath("/broker-chat");
     return result;

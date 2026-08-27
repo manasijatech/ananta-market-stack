@@ -40,7 +40,7 @@ export function PendingApprovalView() {
         error instanceof Error
             ? error.message
             : error
-              ? "Could not verify workspace access. Confirm the backend API is running."
+              ? "Could not verify workspace access. Confirm the backend API is running, then try Check again."
               : "";
 
     return (
@@ -48,10 +48,13 @@ export function PendingApprovalView() {
             <section className="app-card-surface w-full max-w-xl bg-card p-8">
                 <BrandLogo />
                 <p className="mt-8 type-step-eyebrow">Approval required</p>
-                <h1 className="mt-3 text-3xl font-heading font-bold tracking-tight">Your account is waiting for admin approval.</h1>
+                <h1 className="mt-3 text-3xl font-heading font-bold tracking-tight">
+                    {errorMessage ? "We could not verify your workspace access." : "Your account is waiting for admin approval."}
+                </h1>
                 <p className="mt-4 leading-7 text-muted-foreground">
-                    An admin needs to approve your account and assign broker access before you can use this workspace.
-                    Once a broker is connected, you won&apos;t need to re-enter those credentials.
+                    {errorMessage
+                        ? "Your sign-in cookie is valid, but the workspace service did not respond. Use Check again after the API is healthy, or Sign out and try a fresh login."
+                        : "An admin needs to approve your account and assign broker access before you can use this workspace. Once a broker is connected, you won't need to re-enter those credentials."}
                 </p>
 
                 <div className="mt-6 flex items-center gap-2.5 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-sm text-muted-foreground">

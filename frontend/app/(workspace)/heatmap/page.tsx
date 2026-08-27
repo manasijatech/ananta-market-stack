@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { Suspense } from "react";
 import { Activity, ArrowRight, Grid2X2, ListPlus, Minus, RadioTower, RefreshCw, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
 import {
     HEATMAP_FILTER_COOKIE_KEY,
@@ -271,7 +272,7 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
         ["Change", formatNumber(item.day_change)],
         ["Volume", formatCompact(item.volume)],
         ["Mcap", formatCompact(item.market_cap)],
-        ["Drishti", formatNumber(item.alpha_event_summary.total_count)],
+        ["Drishti", formatNumber(item.alpha_event_summary?.total_count)],
         ["Exchange", item.exchange || "-"]
     ];
 
@@ -361,7 +362,7 @@ function HeatmapCard({ dense = false, index, item }: { dense?: boolean; index: n
                     {item.sector ? <span className="rounded-lg border border-white/22 bg-black/16 px-2 py-1">{item.sector}</span> : null}
                     {item.industry ? <span className="rounded-lg border border-white/22 bg-black/16 px-2 py-1">{item.industry}</span> : null}
                     {item.theme ? <span className="rounded-lg border border-white/22 bg-black/16 px-2 py-1">{item.theme}</span> : null}
-                    {item.source_kinds.slice(0, 2).map((sourceKind) => (
+                    {(item.source_kinds ?? []).slice(0, 2).map((sourceKind) => (
                         <span className="rounded-lg border border-white/22 bg-black/16 px-2 py-1" key={sourceKind}>
                             {sourceKind}
                         </span>
@@ -531,13 +532,15 @@ export default async function HeatmapPage({
                     <Card>
                         <CardPanel className="grid min-w-0 gap-2 p-2">
                             <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                                <HeatmapFilters
-                                    accounts={accounts}
-                                    currentAccountId={effectiveAccountId}
-                                    currentScope={scope}
-                                    currentWatchlistId={effectiveWatchlistId}
-                                    watchlists={watchlists}
-                                />
+                                <Suspense fallback={<div className="h-9 min-w-[16rem] rounded-md bg-muted/60" />}>
+                                    <HeatmapFilters
+                                        accounts={accounts}
+                                        currentAccountId={effectiveAccountId}
+                                        currentScope={scope}
+                                        currentWatchlistId={effectiveWatchlistId}
+                                        watchlists={watchlists}
+                                    />
+                                </Suspense>
                                 <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
                                     <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
                                         <span className="min-w-0">Default broker</span>
