@@ -137,7 +137,7 @@ function AdaptiveWorkspaceShellInner({
                         type="button"
                     />
                     <Card
-                        className="grid min-h-0 h-[min(42vh,28rem)] w-full shrink-0 overflow-hidden grid-rows-[auto_minmax(0,1fr)_auto] min-[980px]:h-auto min-[980px]:w-[var(--adaptive-inspector-width)] [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px] [--an-max-width:760px] [--an-tool-border-radius:8px]"
+                        className="grid min-h-0 h-[min(42vh,28rem)] w-full shrink-0 overflow-hidden grid-rows-[auto_minmax(0,1fr)_auto] min-[980px]:h-full min-[980px]:w-[var(--adaptive-inspector-width)] [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px] [--an-max-width:760px] [--an-tool-border-radius:8px]"
                         style={{ ["--adaptive-inspector-width" as string]: `${layout.inspectorWidth}px` }}
                     >
                         <CardHeader className="border-b border-border p-3">
@@ -149,6 +149,7 @@ function AdaptiveWorkspaceShellInner({
                                     <div className="mt-2 min-w-0">
                                         <AdaptiveDeskSwitcher
                                             creating={chat.isCreatingSession}
+                                            liveSessionIds={chat.liveSessionIds}
                                             onCreate={() => void chat.createNewChat()}
                                             onDelete={(sessionId) => void chat.deleteSession(sessionId)}
                                             onDuplicate={() => void chat.createNewChat({ copySpec: canvas.spec })}
@@ -210,6 +211,7 @@ function AdaptiveWorkspaceShellInner({
                             ) : (
                                 <MessageList
                                     className="h-full min-h-0"
+                                    compactBreathingSpace
                                     messages={chat.messages}
                                     showCopyToolbar
                                     status={chat.chatStatus}

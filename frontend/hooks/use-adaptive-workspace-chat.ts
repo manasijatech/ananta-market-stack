@@ -25,19 +25,28 @@ import {
     getBrokerChatRun,
     getBrokerChatRuns,
     getBrokerChatSessions,
-    submitBrokerChatRun
+    submitBrokerChatRun,
+    updateBrokerChatConfig
 } from "@/service/actions/broker-chat";
 import type { LlmProvider, LlmProviderConfig, McpServerConfig } from "@/service/types/broker";
 import type { WorkspaceSpec } from "@/service/types/adaptive-workspace";
 import type {
     BrokerChatEvent,
     BrokerChatPreference,
+    BrokerChatPreferenceUpdate,
     BrokerChatQueueHealth,
     BrokerChatRun,
     BrokerChatSession
 } from "@/service/types/broker-chat";
 
 const ADAPTIVE_SESSION_QUERY = { surface: "adaptive_workspace" as const };
+const ADAPTIVE_EVENT_VISIBILITY = "full" as const;
+const ADAPTIVE_INCLUDE_TOOL_OUTPUTS = true;
+const ADAPTIVE_INCLUDE_REASONING = true;
+
+function adaptiveChatConfigKey(config: BrokerChatPreferenceUpdate) {
+    return JSON.stringify(config);
+}
 
 type Args = {
     getRunMetadata?: () => Record<string, unknown>;
@@ -99,6 +108,19 @@ export function useAdaptiveWorkspaceChat({
     const [queueHealth, setQueueHealth] = useState<BrokerChatQueueHealth | null>(null);
     const streamControllersRef = useRef<Record<string, AbortController>>({});
     const previousProviderRef = useRef<LlmProvider | "">(preference.default_provider ?? "");
+    const configSaveRequestRef = useRef(0);
+    const savedConfigKeyRef = useRef(
+        adaptiveChatConfigKey({
+            default_model: preference.default_model ?? "",
+            default_provider: preference.default_provider ?? null,
+            event_visibility: ADAPTIVE_EVENT_VISIBILITY,
+            include_reasoning: preference.include_reasoning,
+            include_tool_outputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
+            mcp_server_ids: preference.mcp_server_ids,
+            reasoning_effort: preference.reasoning_effort ?? null,
+            use_mcp: preference.use_mcp
+        })
+    );
     const bootstrappedEmptyDeskRef = useRef(initialSessions.length > 0);
     const runsRef = useRef(runs);
     const eventsByRunRef = useRef(eventsByRun);
@@ -140,17 +162,42 @@ export function useAdaptiveWorkspaceChat({
         () =>
             buildAdaptiveWorkspaceMessages({
                 eventsByRun,
-                includeReasoning: false,
+                includeReasoning: ADAPTIVE_INCLUDE_REASONING,
                 includeUnmappedTools: false,
                 runs: runsForActiveSession,
                 streamingIds
             }),
         [eventsByRun, runsForActiveSession, streamingIds]
     );
-    const activeLiveRunIdsKey = useMemo(
-        () => runsForActiveSession.filter((run) => LIVE_BROKER_CHAT_STATUSES.has(run.status)).map((run) => run.id).join("|"),
-        [runsForActiveSession]
+    const liveSessionIds = useMemo(() => {
+        const ids = new Set<string>();
+        for (const run of runs) {
+            if (LIVE_BROKER_CHAT_STATUSES.has(run.status)) ids.add(run.session_id);
+        }
+        return ids;
+    }, [runs]);
+    const liveRunIdsKey = useMemo(
+        () =>
+            runs
+                .filter((run) => LIVE_BROKER_CHAT_STATUSES.has(run.status))
+                .map((run) => run.id)
+                .sort()
+                .join("|"),
+        [runs]
     );
+    const configPayload = useMemo<BrokerChatPreferenceUpdate | null>(() => {
+        if (!provider || !model) return null;
+        return {
+            default_model: model,
+            default_provider: provider,
+            event_visibility: ADAPTIVE_EVENT_VISIBILITY,
+            include_reasoning: preference.include_reasoning,
+            include_tool_outputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
+            mcp_server_ids: selectedMcpServerIds,
+            reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
+            use_mcp: useMcp
+        };
+    }, [model, preference.include_reasoning, provider, reasoningEffort, selectedMcpServerIds, useMcp]);
 
     const streamRun = useCallback(
         async (runId: string, afterSequence = 0) => {
@@ -166,8 +213,8 @@ export function useAdaptiveWorkspaceChat({
             const params = new URLSearchParams({
                 after_sequence: String(afterSequence),
                 visibility: "full",
-                include_tool_outputs: "true",
-                include_reasoning: "false"
+                include_tool_outputs: String(ADAPTIVE_INCLUDE_TOOL_OUTPUTS),
+                include_reasoning: String(ADAPTIVE_INCLUDE_REASONING)
             });
             const url = `${getPublicApiBaseUrl()}/broker-chat/runs/${runId}/stream?${params.toString()}`;
             try {
@@ -274,10 +321,10 @@ export function useAdaptiveWorkspaceChat({
     const loadRunEvents = useCallback(
         async (runId: string) => {
             const page = await getBrokerChatEvents(runId, {
-                includeReasoning: false,
-                includeToolOutputs: true,
+                includeReasoning: ADAPTIVE_INCLUDE_REASONING,
+                includeToolOutputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
                 limit: 500,
-                visibility: "full"
+                visibility: ADAPTIVE_EVENT_VISIBILITY
             });
             setRuns((current) => mergeBrokerChatRuns(current, [page.run]));
             setEventsByRun((current) => ({
@@ -329,9 +376,7 @@ export function useAdaptiveWorkspaceChat({
     }, [eventsByRun, runs, streamRun]);
 
     useEffect(() => {
-        const liveRuns = runsRef.current.filter(
-            (run) => run.session_id === activeSessionId && LIVE_BROKER_CHAT_STATUSES.has(run.status)
-        );
+        const liveRuns = runsRef.current.filter((run) => LIVE_BROKER_CHAT_STATUSES.has(run.status));
         if (!liveRuns.length) return;
         let cancelled = false;
         const interval = window.setInterval(() => {
@@ -339,10 +384,10 @@ export function useAdaptiveWorkspaceChat({
                 liveRuns.map(async (run) => {
                     const page = await getBrokerChatEvents(run.id, {
                         afterSequence: eventsByRunRef.current[run.id]?.at(-1)?.sequence ?? 0,
-                        includeReasoning: false,
-                        includeToolOutputs: true,
+                        includeReasoning: ADAPTIVE_INCLUDE_REASONING,
+                        includeToolOutputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
                         limit: 100,
-                        visibility: "full"
+                        visibility: ADAPTIVE_EVENT_VISIBILITY
                     }).catch(() => null);
                     if (!page || cancelled) return;
                     setRuns((current) => mergeBrokerChatRuns(current, [page.run]));
@@ -359,7 +404,7 @@ export function useAdaptiveWorkspaceChat({
             cancelled = true;
             window.clearInterval(interval);
         };
-    }, [activeLiveRunIdsKey, activeSessionId]);
+    }, [liveRunIdsKey]);
 
     useEffect(() => {
         return () => {
@@ -368,9 +413,42 @@ export function useAdaptiveWorkspaceChat({
     }, []);
 
     useEffect(() => {
-        void getBrokerChatQueueHealth()
-            .then(setQueueHealth)
-            .catch(() => setQueueHealth(null));
+        const requestId = ++configSaveRequestRef.current;
+        if (!configPayload) return;
+        const nextConfigKey = adaptiveChatConfigKey(configPayload);
+        if (nextConfigKey === savedConfigKeyRef.current) return;
+        const timeout = window.setTimeout(async () => {
+            try {
+                await updateBrokerChatConfig(configPayload);
+                if (requestId === configSaveRequestRef.current) {
+                    savedConfigKeyRef.current = nextConfigKey;
+                }
+            } catch (err) {
+                if (requestId === configSaveRequestRef.current) {
+                    setError((err as Error).message);
+                }
+            }
+        }, 600);
+        return () => window.clearTimeout(timeout);
+    }, [configPayload]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const refresh = () => {
+            void getBrokerChatQueueHealth()
+                .then((health) => {
+                    if (!cancelled) setQueueHealth(health);
+                })
+                .catch(() => {
+                    if (!cancelled) setQueueHealth(null);
+                });
+        };
+        refresh();
+        const interval = window.setInterval(refresh, 15000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
     }, []);
 
     useEffect(() => {
@@ -459,8 +537,8 @@ export function useAdaptiveWorkspaceChat({
                     : null;
             const result = await submitBrokerChatRun({
                 default_account_id: defaultAccountId,
-                include_reasoning: false,
-                include_tool_outputs: true,
+                include_reasoning: ADAPTIVE_INCLUDE_REASONING,
+                include_tool_outputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
                 mcp_server_ids: selectedMcpServerIds,
                 message: trimmed,
                 metadata: {
@@ -503,6 +581,7 @@ export function useAdaptiveWorkspaceChat({
         hasConfiguredLlm,
         isCreatingSession,
         isSubmitting,
+        liveSessionIds,
         message,
         messages,
         model,

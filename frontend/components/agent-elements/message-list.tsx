@@ -26,6 +26,7 @@ export type MessageListProps = {
   className?: string;
   showCopyToolbar?: boolean;
   suppressQuestionTool?: boolean;
+  compactBreathingSpace?: boolean;
   /**
    * Where to position the scroll container on initial mount.
    * - "bottom" (default): classic chat behavior, pinned to the latest message.
@@ -275,6 +276,7 @@ export const MessageList = memo(function MessageList({
   className,
   showCopyToolbar = true,
   suppressQuestionTool = false,
+  compactBreathingSpace = false,
   initialScrollBehavior = "bottom",
   enableImagePreview = true,
   slots,
@@ -628,7 +630,10 @@ export const MessageList = memo(function MessageList({
         {showAssistantBreathingSpace && (
           <div
             aria-hidden="true"
-            className="min-h-[max(140px,24vh)] mx-auto max-w-an w-full"
+            className={cn(
+              "mx-auto max-w-an w-full",
+              compactBreathingSpace ? "min-h-16" : "min-h-[max(140px,24vh)]",
+            )}
           />
         )}
       </div>
