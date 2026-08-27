@@ -188,3 +188,7 @@ def test_broker_tool_call_maps_auth_failures_without_retry():
     server_error = broker_tools._tool_call(lambda: (_ for _ in ()).throw(HTTPException(status_code=503, detail="upstream unavailable")))
     assert server_error["code"] == "http_503"
     assert server_error["retry"] is True
+
+    rate_limited = broker_tools._tool_call(lambda: (_ for _ in ()).throw(HTTPException(status_code=429, detail="Dhan HTTP 429")))
+    assert rate_limited["code"] == "broker_rate_limited"
+    assert rate_limited["retry"] is False

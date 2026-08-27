@@ -116,6 +116,11 @@ Tool-call discipline:
   exactly one JSON object matching the advertised schema. If an MCP server
   returns an upstream data error, try another relevant MCP/local tool when
   available, then explain the unavailable source without failing the chat.
+- Never loop on describe_tools / execute_tool / call_token. Prefer first-class
+  MCP tools (get_daily_summary, get_news, get_top_movers, get_price_and_volume).
+  If execute_tool is the only path, pass call_token as a TOP-LEVEL argument
+  next to name (not inside arguments). After two execute_tool failures, stop
+  MCP gated calls and finish with intel_get_feed plus whatever already worked.
 - For MCP tools, never pack several searches or payloads into one call. Make
   separate MCP tool calls for separate searches, symbols, resources, or
   time windows.
@@ -162,10 +167,15 @@ Answer quality:
 - If a requested analysis is blocked by missing broker permissions, explain the
   exact broker error and provide the best available fallback snapshot.
 - When a broker tool returns ok=false with retry=false or code=broker_auth_failed,
-  do NOT call that broker's market-data tools again in this run. The connected
-  account is stale, expired, unpaid, or unauthorized even if session_status looked
-  active. Tell the user briefly to reconnect or renew from Broker connections,
-  then finish with MCP/intel/news tools and any widgets that do not need that broker.
+  do NOT call that broker's market-data tools again in this run (no live quotes,
+  cached quotes, search, or instrument sync on that account). The connected
+  account is stale, expired, unpaid, unauthorized, or rate-limited even if
+  session_status looked active. Try one other connected account at most once.
+  If that also fails (401/403/429), stop broker market data. Tell the user
+  briefly to reconnect or renew from Broker connections, then finish with
+  MCP/intel/news tools and widgets that do not need that broker.
+- HTTP 429 is not fixed by retrying. Switch account or MCP prices; do not hammer
+  the same quotes endpoint.
 - When MCP tools also ran, incorporate those facts in the same answer instead
   of only describing canvas layout.
 """
@@ -279,6 +289,15 @@ Canvas (html-artifact) rules:
   broker account for market data this run. Session status can still say active while
   the API key or subscription is dead. Tell the user once to reconnect/renew, then
   answer with MCP/intel and compose widgets that still work (news, html-artifact).
+- Do not call workspace_get_authoring_docs unless compose_surface or
+  workspace_validate_spec already failed. For a market briefing, skip evaluate_request.
+- When publishing a Canvas, call workspace_publish_html_artifact first, then copy
+  the returned bind.data object onto the html-artifact component. Never paste a
+  truncated HTML document into compose_surface. Never set spec-level props.
+  Never concatenate extra JSON after a component. If compose fails on document,
+  retry once with intel-feed + quote-ticker only (omit html-artifact).
+- If MCP describe_tools/execute_tool fails twice, stop that loop. Answer with
+  intel_get_feed and any MCP data already returned.
 
 WorkspaceSpec rules:
 - version must be the string "1". layout.mode must be "grid" and columns 12.
@@ -757,6 +776,7 @@ async def _run_broker_chat(run_id: str) -> None:
             if adaptive_workspace
             else [*BROKER_DATA_TOOLS, *INTEL_FEED_TOOLS]
         )
+        tools = [*tools, *mcp_handle.extra_tools]
         agent = Agent[BrokerAgentContext](
             name="Ananta Market Stack Broker Data Agent",
             instructions=_broker_chat_instructions(
@@ -769,7 +789,9 @@ async def _run_broker_chat(run_id: str) -> None:
             model_settings=_model_settings_for_run(run),
             tools=tools,
             mcp_servers=mcp_handle.active_servers,
-            mcp_config=broker_chat_mcp.broker_chat_mcp_config(),
+            mcp_config=broker_chat_mcp.broker_chat_mcp_config(
+                prefix_server_names=len(mcp_handle.active_servers) > 1 and not mcp_handle.extra_tools
+            ),
         )
         messages = broker_chat.conversation_history_for_run(db, run)
         messages.append({"role": "user", "content": run.message})

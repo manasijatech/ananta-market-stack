@@ -190,16 +190,38 @@ def _tool_call(fn):
         status = int(exc.status_code)
         if _broker_auth_failure(message, status):
             return _auth_tool_error(message, status=status)
+        if status == 429 or "429" in message or "rate limit" in message.lower() or "too many requests" in message.lower():
+            return _error(
+                message,
+                code="broker_rate_limited",
+                retry=False,
+                user_action="switch_account_or_use_mcp",
+                http_status=status,
+            )
         return _error(message, code=f"http_{status}", retry=status >= 500, http_status=status)
     except ValueError as exc:
         message = str(exc)
         if _broker_auth_failure(message):
             return _auth_tool_error(message)
+        if "429" in message or "rate limit" in message.lower():
+            return _error(
+                message,
+                code="broker_rate_limited",
+                retry=False,
+                user_action="switch_account_or_use_mcp",
+            )
         return _error(message, code="invalid_request", retry=False)
     except Exception as exc:
         message = str(exc)
         if _broker_auth_failure(message):
             return _auth_tool_error(message)
+        if "429" in message or "rate limit" in message.lower():
+            return _error(
+                message,
+                code="broker_rate_limited",
+                retry=False,
+                user_action="switch_account_or_use_mcp",
+            )
         return _error(message, code=exc.__class__.__name__, retry=False)
 
 
