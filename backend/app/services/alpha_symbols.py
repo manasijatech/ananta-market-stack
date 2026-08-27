@@ -135,6 +135,22 @@ def _unavailable_retry_due(row: AlphaSymbolMetadataCache, now: datetime) -> bool
     return not row.fetched_at or row.fetched_at <= now - _UNAVAILABLE_RETRY_INTERVAL
 
 
+def invalidate_unavailable_metadata_cache(db: Session) -> int:
+    """Remove negative metadata entries after a Drishti credential is verified."""
+    rows = db.scalars(select(AlphaSymbolMetadataCache)).all()
+    unavailable_rows: list[AlphaSymbolMetadataCache] = []
+    for row in rows:
+        try:
+            payload = json.loads(row.raw_payload_json or "{}")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("metadata_status") == "unavailable":
+            unavailable_rows.append(row)
+    for row in unavailable_rows:
+        db.delete(row)
+    return len(unavailable_rows)
+
+
 def _fetch_alpha_symbol_metadata(api_key: str, symbols: list[str]) -> list[AlphaSymbolMetadata]:
     if not symbols:
         return []

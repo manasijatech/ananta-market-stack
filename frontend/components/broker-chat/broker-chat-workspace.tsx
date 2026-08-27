@@ -10,7 +10,6 @@ import {
     IconPlugConnected,
     IconSearch,
     IconTerminal2,
-    IconTool,
     IconTrash
 } from "@tabler/icons-react";
 import { InputBar } from "@/components/agent-elements/input-bar";
@@ -113,6 +112,9 @@ type ComposerToggleProps = {
 
 const liveStatuses = new Set(["queued", "running"]);
 const BROKER_CHAT_EVENT_VISIBILITY: BrokerChatVisibility = "full";
+// Broker traces are always available to the chat UI; these are intentionally not user toggles.
+const BROKER_CHAT_INCLUDE_TOOL_OUTPUTS = true;
+const BROKER_CHAT_INCLUDE_REASONING = true;
 
 function brokerChatConfigKey(config: BrokerChatConfigKeyPayload) {
     return JSON.stringify(config);
@@ -550,7 +552,6 @@ export function BrokerChatWorkspace({
     const streamControllersRef = useRef<Record<string, AbortController>>({});
     const runsRef = useRef(runs);
     const eventsByRunRef = useRef(eventsByRun);
-    const streamDetailKeyRef = useRef(`${includeToolOutputs}:${includeReasoning}`);
     const previousProviderRef = useRef<LlmProvider | "">(initialConfig.default_provider ?? "");
     const configSaveRequestRef = useRef(0);
     const savedConfigKeyRef = useRef(
@@ -631,12 +632,12 @@ export function BrokerChatWorkspace({
         () =>
             buildBrokerMessages({
                 eventsByRun,
-                includeReasoning,
-                includeToolOutputs,
+                includeReasoning: BROKER_CHAT_INCLUDE_REASONING,
+                includeToolOutputs: BROKER_CHAT_INCLUDE_TOOL_OUTPUTS,
                 runs: runsForActiveSession,
                 streamingIds
             }),
-        [eventsByRun, includeReasoning, includeToolOutputs, runsForActiveSession, streamingIds]
+        [eventsByRun, runsForActiveSession, streamingIds]
     );
     const activeLiveRunIdsKey = useMemo(
         () => runsForActiveSession.filter((run) => liveStatuses.has(run.status)).map((run) => run.id).join("|"),
@@ -705,8 +706,8 @@ export function BrokerChatWorkspace({
             const params = new URLSearchParams({
                 after_sequence: String(afterSequence),
                 visibility: BROKER_CHAT_EVENT_VISIBILITY,
-                include_tool_outputs: String(includeToolOutputs),
-                include_reasoning: String(includeReasoning)
+                include_tool_outputs: String(BROKER_CHAT_INCLUDE_TOOL_OUTPUTS),
+                include_reasoning: String(BROKER_CHAT_INCLUDE_REASONING)
             });
             const url = `${getPublicApiBaseUrl()}/broker-chat/runs/${runId}/stream?${params.toString()}`;
 
@@ -820,7 +821,7 @@ export function BrokerChatWorkspace({
                 }
             }
         },
-        [includeReasoning, includeToolOutputs, user?.id]
+        [user?.id]
     );
 
     const loadRunEvents = useCallback(
@@ -828,8 +829,8 @@ export function BrokerChatWorkspace({
             const page = await getBrokerChatEvents(runId, {
                 limit: 500,
                 visibility: BROKER_CHAT_EVENT_VISIBILITY,
-                includeToolOutputs,
-                includeReasoning
+                includeToolOutputs: BROKER_CHAT_INCLUDE_TOOL_OUTPUTS,
+                includeReasoning: BROKER_CHAT_INCLUDE_REASONING
             });
             setRuns((current) => mergeRuns(current, [page.run]));
             setEventsByRun((current) => ({
@@ -841,7 +842,7 @@ export function BrokerChatWorkspace({
                 void streamRun(runId, lastSequence);
             }
         },
-        [includeReasoning, includeToolOutputs, streamRun]
+        [streamRun]
     );
 
     useEffect(() => {
@@ -890,24 +891,6 @@ export function BrokerChatWorkspace({
     }, [eventsByRun, runs, streamRun]);
 
     useEffect(() => {
-        const nextKey = `${includeToolOutputs}:${includeReasoning}`;
-        if (nextKey === streamDetailKeyRef.current) {
-            return;
-        }
-        streamDetailKeyRef.current = nextKey;
-        const liveRuns = runsRef.current.filter((run) => liveStatuses.has(run.status));
-        for (const run of liveRuns) {
-            streamControllersRef.current[run.id]?.abort();
-        }
-        window.setTimeout(() => {
-            for (const run of liveRuns) {
-                const lastSequence = eventsByRunRef.current[run.id]?.at(-1)?.sequence ?? 0;
-                void streamRun(run.id, lastSequence);
-            }
-        }, 0);
-    }, [includeReasoning, includeToolOutputs, streamRun]);
-
-    useEffect(() => {
         const liveRuns = runsRef.current.filter(
             (run) => run.session_id === activeSessionId && liveStatuses.has(run.status)
         );
@@ -923,8 +906,8 @@ export function BrokerChatWorkspace({
                         afterSequence,
                         limit: 100,
                         visibility: BROKER_CHAT_EVENT_VISIBILITY,
-                        includeToolOutputs,
-                        includeReasoning
+                        includeToolOutputs: BROKER_CHAT_INCLUDE_TOOL_OUTPUTS,
+                        includeReasoning: BROKER_CHAT_INCLUDE_REASONING
                     }).catch(() => null);
                     if (!page || cancelled) {
                         return;
@@ -946,7 +929,7 @@ export function BrokerChatWorkspace({
             cancelled = true;
             window.clearInterval(interval);
         };
-    }, [activeLiveRunIdsKey, activeSessionId, includeReasoning, includeToolOutputs]);
+    }, [activeLiveRunIdsKey, activeSessionId]);
 
     useEffect(() => {
         return () => {
@@ -1303,20 +1286,6 @@ export function BrokerChatWorkspace({
                                 placeholder="Ask about holdings, positions, quotes, option chains, or broker health."
                                 rightActions={
                                     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                                        <ComposerToggle
-                                            checked={includeToolOutputs}
-                                            icon={IconTool}
-                                            label="Tools"
-                                            onChange={setIncludeToolOutputs}
-                                            title="Show broker tool calls and outputs"
-                                        />
-                                        <ComposerToggle
-                                            checked={includeReasoning}
-                                            icon={IconTerminal2}
-                                            label="Reasoning"
-                                            onChange={setIncludeReasoning}
-                                            title="Show model reasoning when the provider returns it"
-                                        />
                                         <ComposerToggle
                                             checked={useMcp}
                                             disabled={!availableMcpServers.length}

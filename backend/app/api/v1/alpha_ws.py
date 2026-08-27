@@ -47,6 +47,7 @@ def get_alpha_feed_page(
     to: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
+    historical: bool = Query(default=False),
     force_refresh: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -64,6 +65,7 @@ def get_alpha_feed_page(
             to_date=to,
             page=page,
             limit=limit,
+            historical=historical,
             force_refresh=force_refresh,
         )
     except ValueError as exc:

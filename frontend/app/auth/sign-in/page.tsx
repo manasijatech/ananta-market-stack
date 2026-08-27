@@ -7,7 +7,7 @@ import { getSignupStatus } from "@/service/actions/rbac";
 export default async function SignInPage() {
     await redirectIfAuthenticated();
 
-    const signupStatus = await getSignupStatus().catch(() => ({ has_admin: false }));
+    const signupStatus = await getSignupStatus().catch(() => ({ has_admin: true }));
 
     if (!signupStatus.has_admin) {
         redirect("/auth/onboarding");

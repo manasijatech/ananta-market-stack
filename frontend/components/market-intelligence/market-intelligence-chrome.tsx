@@ -1,70 +1,63 @@
 "use client";
 
 import {
-	Bell,
-	ArrowRight,
-	IndianRupee,
-	Info,
-	ListPlus,
-	Megaphone,
-	MessageSquare,
-	Newspaper,
-	Radio,
-	Search,
-	X,
-	type LucideIcon,
+    Bell,
+    ArrowRight,
+    IndianRupee,
+    Info,
+    ListPlus,
+    Megaphone,
+    MessageSquare,
+    Newspaper,
+    Radio,
+    Search,
+    X,
+    type LucideIcon
 } from "lucide-react";
 import Link from "next/link";
+import { format } from "date-fns";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { AlphaCreditWarningTrigger } from "@/components/alpha/alpha-credit-warning-modal";
 import { parseActionError } from "@/components/brokers/action-error";
 import { brokerNames, PageHeader } from "@/components/brokers/ui";
 import {
-	FeedSearchInput,
-	LiveStatusPill,
-	WatchlistScopeTooltip,
+    FeedSearchInput,
+    LiveStatusPill,
+    WatchlistScopeTooltip
 } from "@/components/market-intelligence/market-intelligence-feed-primitives";
+import { MarketIntelligenceDateRangeFilter } from "@/components/market-intelligence/market-intelligence-date-range-filter";
 import {
-	MarketIntelligenceLiveFeed,
-	StateMessage,
-	type MarketIntelligenceSocketState,
+    MarketIntelligenceLiveFeed,
+    StateMessage,
+    type MarketIntelligenceSocketState
 } from "@/components/market-intelligence/market-intelligence-live-feed";
 import { MarketIntelligenceSymbolChart } from "@/components/market-intelligence/market-intelligence-symbol-chart";
 import { Button } from "@/components/ui/button";
 import {
-	Card,
-	CardFrame,
-	CardFrameAction,
-	CardFrameDescription,
-	CardFrameHeader,
-	CardFrameTitle,
-	CardPanel,
+    Card,
+    CardFrame,
+    CardFrameAction,
+    CardFrameDescription,
+    CardFrameHeader,
+    CardFrameTitle,
+    CardPanel
 } from "@/components/ui/card";
 import {
-	Dialog,
-	DialogDescription,
-	DialogHeader,
-	DialogPanel,
-	DialogPopup,
-	DialogTitle,
-	DialogTrigger,
+    Dialog,
+    DialogDescription,
+    DialogHeader,
+    DialogPanel,
+    DialogPopup,
+    DialogTitle,
+    DialogTrigger
 } from "@/components/ui/dialog";
 import { Group } from "@/components/ui/group";
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-	Empty,
-	EmptyContent,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyTitle,
-} from "@/components/ui/empty";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { SimpleSelect } from "@/components/ui/simple-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { DateRange } from "react-day-picker";
 import { getCachedAlphaFeed } from "@/service/actions/alpha/feeds";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import type { AlphaAlert } from "@/service/types/alpha/alerts";
@@ -72,1205 +65,1098 @@ import type { AlphaAnnouncementDetail, AlphaEarningsDetail } from "@/service/typ
 import type { AlphaConcall } from "@/service/types/alpha/concalls";
 import type { AlphaNewsItem } from "@/service/types/alpha/news";
 import type { AlphaSymbolMetadata } from "@/service/types/alpha/symbols";
-import {
-	getBrokerDataDefaultConfig,
-	getMarketChartData,
-	searchBrokerInstruments,
-} from "@/service/actions/broker";
+import { getBrokerDataDefaultConfig, getMarketChartData, searchBrokerInstruments } from "@/service/actions/broker";
 import type {
-	BrokerDataDefaultAccount,
-	InstrumentRef,
-	InstrumentSearchRow,
-	MarketChartSnapshot,
+    BrokerDataDefaultAccount,
+    InstrumentRef,
+    InstrumentSearchRow,
+    MarketChartSnapshot
 } from "@/service/types/broker";
+import { getAlphaCreditWarningMessage, notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import {
-	getAlphaCreditWarningMessage,
-	notifyAlphaCreditWarning,
-} from "@/lib/alpha-credit-warning";
-import {
-	emptyMarketIntelligenceFeeds,
-	emptyMarketIntelligenceHasMore,
-	marketIntelligenceProducts,
-	marketIntelligenceSections,
-	type AlphaSection,
-	type MarketIntelligenceFeeds,
-	type MarketIntelligenceHasMore,
-	type WatchlistCoverageGroup,
+    emptyMarketIntelligenceFeeds,
+    emptyMarketIntelligenceHasMore,
+    marketIntelligenceSections,
+    type AlphaSection,
+    type MarketIntelligenceFeeds,
+    type MarketIntelligenceHasMore,
+    type WatchlistCoverageGroup
 } from "@/components/market-intelligence/market-intelligence-data";
 import { itemKey } from "@/components/market-intelligence/market-intelligence-utils";
 
 const sectionChrome = {
-	news: {
-		icon: Newspaper,
-	},
-	announcements: {
-		icon: Megaphone,
-	},
-	earnings: {
-		icon: IndianRupee,
-	},
-	concalls: {
-		icon: MessageSquare,
-	},
-	alerts: {
-		icon: Bell,
-	},
+    news: {
+        icon: Newspaper
+    },
+    announcements: {
+        icon: Megaphone
+    },
+    earnings: {
+        icon: IndianRupee
+    },
+    concalls: {
+        icon: MessageSquare
+    },
+    alerts: {
+        icon: Bell
+    }
 } satisfies Record<AlphaSection, { icon: LucideIcon }>;
 
 const intelligenceHelpItems = [
-	{
-		title: "News",
-		body: "Market news and company-specific coverage from media sources. Use it for external context around price action, sentiment, and public market narratives.",
-	},
-	{
-		title: "Announcements",
-		body: "Official exchange and company disclosures, including board updates, corporate actions, regulatory filings, and other company-published events.",
-	},
-	{
-		title: "Earnings",
-		body: "Earnings-related disclosures and management guidance. These records highlight result updates and material financial context.",
-	},
-	{
-		title: "Concalls",
-		body: "Conference call summaries, transcripts, and management commentary from investor calls. Transcript and audio actions appear when the feed includes those links.",
-	},
-	{
-		title: "Alerts",
-		body: "Signal-style market alerts for price moves, volume spikes, 52-week levels, earnings, announcements, and other notable events.",
-	},
+    {
+        title: "News",
+        body: "Market news and company-specific coverage from media sources. Use it for external context around price action, sentiment, and public market narratives."
+    },
+    {
+        title: "Announcements",
+        body: "Official exchange and company disclosures, including board updates, corporate actions, regulatory filings, and other company-published events."
+    },
+    {
+        title: "Earnings",
+        body: "Earnings-related disclosures and management guidance. These records highlight result updates and material financial context."
+    },
+    {
+        title: "Concalls",
+        body: "Conference call summaries, transcripts, and management commentary from investor calls. Transcript and audio actions appear when the feed includes those links."
+    },
+    {
+        title: "Alerts",
+        body: "Signal-style market alerts for price moves, volume spikes, 52-week levels, earnings, announcements, and other notable events."
+    }
 ];
 
 const ALL_WATCHLISTS_ID = "__all_watchlists__";
 
 type BrokerChartState = {
-	error: string;
-	isLoading: boolean;
-	snapshot: MarketChartSnapshot | null;
+    error: string;
+    isLoading: boolean;
+    snapshot: MarketChartSnapshot | null;
 };
 
 function isoDateDaysAgo(days: number): string {
-	const date = new Date();
-	date.setDate(date.getDate() - days);
-	return date.toISOString().slice(0, 10);
+    const date = new Date();
+    date.setDate(date.getDate() - days);
+    return date.toISOString().slice(0, 10);
 }
 
 function todayIsoDate(): string {
-	return new Date().toISOString().slice(0, 10);
+    return new Date().toISOString().slice(0, 10);
+}
+
+type MarketIntelligenceDateRangeApi = {
+    from: string;
+    to: string;
+};
+
+function toMarketIntelligenceDateRangeApi(range: DateRange | undefined): MarketIntelligenceDateRangeApi | undefined {
+    if (!range?.from || !range.to) return undefined;
+    const from = format(range.from, "yyyy-MM-dd");
+    const to = format(range.to, "yyyy-MM-dd");
+    return from <= to ? { from, to } : { from: to, to: from };
 }
 
 function metadataBySymbol(items: AlphaSymbolMetadata[]) {
-	return items.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
-		const symbol = item.symbol?.trim().toUpperCase();
-		if (symbol) acc[symbol] = item;
-		return acc;
-	}, {});
+    return items.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
+        const symbol = item.symbol?.trim().toUpperCase();
+        if (symbol) acc[symbol] = item;
+        return acc;
+    }, {});
 }
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
-	return {
-		symbol: row.symbol,
-		exchange: row.exchange ?? null,
-		zerodha_instrument_token: row.identifiers.zerodha_instrument_token
-			? Number(row.identifiers.zerodha_instrument_token)
-			: null,
-		arrow_token: row.identifiers.arrow_token ?? null,
-		price_precision: row.price_precision ? Number(row.price_precision) : null,
-		upstox_instrument_key: row.identifiers.upstox_instrument_key ?? null,
-		angel_exchange: row.identifiers.angel_exchange ?? row.exchange ?? null,
-		angel_token: row.identifiers.angel_token
-			? Number(row.identifiers.angel_token)
-			: null,
-		dhan_exchange_segment: row.identifiers.dhan_exchange_segment ?? null,
-		dhan_security_id: row.identifiers.dhan_security_id ?? null,
-		groww_exchange: row.identifiers.groww_exchange ?? row.exchange ?? null,
-		groww_segment: row.identifiers.groww_segment ?? row.segment ?? null,
-		groww_trading_symbol:
-			row.identifiers.groww_trading_symbol ?? row.trading_symbol ?? null,
-		indmoney_scrip_code: row.identifiers.indmoney_scrip_code ?? null,
-		kotak_query: row.identifiers.kotak_query ?? null,
-		kotak_segment: row.identifiers.kotak_segment ?? null,
-		kotak_psymbol: row.identifiers.kotak_psymbol ?? null,
-	};
+    return {
+        symbol: row.symbol,
+        exchange: row.exchange ?? null,
+        zerodha_instrument_token: row.identifiers.zerodha_instrument_token
+            ? Number(row.identifiers.zerodha_instrument_token)
+            : null,
+        arrow_token: row.identifiers.arrow_token ?? null,
+        price_precision: row.price_precision ? Number(row.price_precision) : null,
+        upstox_instrument_key: row.identifiers.upstox_instrument_key ?? null,
+        angel_exchange: row.identifiers.angel_exchange ?? row.exchange ?? null,
+        angel_token: row.identifiers.angel_token ? Number(row.identifiers.angel_token) : null,
+        dhan_exchange_segment: row.identifiers.dhan_exchange_segment ?? null,
+        dhan_security_id: row.identifiers.dhan_security_id ?? null,
+        groww_exchange: row.identifiers.groww_exchange ?? row.exchange ?? null,
+        groww_segment: row.identifiers.groww_segment ?? row.segment ?? null,
+        groww_trading_symbol: row.identifiers.groww_trading_symbol ?? row.trading_symbol ?? null,
+        indmoney_scrip_code: row.identifiers.indmoney_scrip_code ?? null,
+        kotak_query: row.identifiers.kotak_query ?? null,
+        kotak_segment: row.identifiers.kotak_segment ?? null,
+        kotak_psymbol: row.identifiers.kotak_psymbol ?? null
+    };
 }
 
 const DERIVATIVE_EXCHANGES = new Set(["NFO", "BFO", "CDS", "MCX"]);
-const EQUITY_INSTRUMENT_TYPES = new Set([
-	"E",
-	"EQ",
-	"EQUITY",
-	"STOCK",
-	"CASH",
-	"NSE_EQ",
-	"BSE_EQ",
-	"BE",
-]);
-const DERIVATIVE_INSTRUMENT_TYPES = new Set([
-	"FUT",
-	"FUTSTK",
-	"FUTIDX",
-	"OPT",
-	"OPTSTK",
-	"OPTIDX",
-	"CE",
-	"PE",
-]);
-const DERIVATIVE_SEGMENT_PATTERN =
-	/\b(?:F&O|FNO|FO|FUT|OPT|DERIV|NFO|BFO|CDS|MCX)\b/i;
+const EQUITY_INSTRUMENT_TYPES = new Set(["E", "EQ", "EQUITY", "STOCK", "CASH", "NSE_EQ", "BSE_EQ", "BE"]);
+const DERIVATIVE_INSTRUMENT_TYPES = new Set(["FUT", "FUTSTK", "FUTIDX", "OPT", "OPTSTK", "OPTIDX", "CE", "PE"]);
+const DERIVATIVE_SEGMENT_PATTERN = /\b(?:F&O|FNO|FO|FUT|OPT|DERIV|NFO|BFO|CDS|MCX)\b/i;
 const DERIVATIVE_SYMBOL_PATTERN =
-	/(?:^|[-_])(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{4}(?:[-_]\d+(?:\.\d+)?)?(?:[-_](?:CE|PE))?(?:[-_]|$)|(?:^|[-_])(?:FUT|CE|PE)(?:[-_]|$)/i;
-const CONTRACT_MONTH_PATTERN =
-	/[-_](?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{4}/i;
+    /(?:^|[-_])(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{4}(?:[-_]\d+(?:\.\d+)?)?(?:[-_](?:CE|PE))?(?:[-_]|$)|(?:^|[-_])(?:FUT|CE|PE)(?:[-_]|$)/i;
+const CONTRACT_MONTH_PATTERN = /[-_](?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{4}/i;
 const FUTURE_TOKEN_PATTERN = /[-_]FUT(?:[-_]|$)/i;
 
 function isLikelyEquitySymbol(value: string): boolean {
-	const symbol = value.trim().toUpperCase();
-	return Boolean(symbol) && !DERIVATIVE_SYMBOL_PATTERN.test(symbol);
+    const symbol = value.trim().toUpperCase();
+    return Boolean(symbol) && !DERIVATIVE_SYMBOL_PATTERN.test(symbol);
 }
 
 function isEquitySearchRow(row: InstrumentSearchRow): boolean {
-	if (
-		!isLikelyEquitySymbol(row.symbol) ||
-		(row.trading_symbol && !isLikelyEquitySymbol(row.trading_symbol))
-	) {
-		return false;
-	}
-	if (row.expiry || row.strike || row.option_type) return false;
+    if (!isLikelyEquitySymbol(row.symbol) || (row.trading_symbol && !isLikelyEquitySymbol(row.trading_symbol))) {
+        return false;
+    }
+    if (row.expiry || row.strike || row.option_type) return false;
 
-	const exchange = row.exchange?.trim().toUpperCase();
-	if (exchange && DERIVATIVE_EXCHANGES.has(exchange)) return false;
+    const exchange = row.exchange?.trim().toUpperCase();
+    if (exchange && DERIVATIVE_EXCHANGES.has(exchange)) return false;
 
-	const instrumentType = row.instrument_type?.trim().toUpperCase();
-	if (instrumentType && DERIVATIVE_INSTRUMENT_TYPES.has(instrumentType))
-		return false;
-	if (instrumentType && !EQUITY_INSTRUMENT_TYPES.has(instrumentType))
-		return false;
+    const instrumentType = row.instrument_type?.trim().toUpperCase();
+    if (instrumentType && DERIVATIVE_INSTRUMENT_TYPES.has(instrumentType)) return false;
+    if (instrumentType && !EQUITY_INSTRUMENT_TYPES.has(instrumentType)) return false;
 
-	const segment = row.segment?.trim().toUpperCase();
-	if (segment && DERIVATIVE_SEGMENT_PATTERN.test(segment)) return false;
+    const segment = row.segment?.trim().toUpperCase();
+    if (segment && DERIVATIVE_SEGMENT_PATTERN.test(segment)) return false;
 
-	return true;
+    return true;
 }
 
 function marketIntelligenceSymbolFromValue(value: string): string {
-	const symbol = value.trim().toUpperCase();
-	const monthIndex = symbol.search(CONTRACT_MONTH_PATTERN);
-	if (monthIndex > 0) return symbol.slice(0, monthIndex);
+    const symbol = value.trim().toUpperCase();
+    const monthIndex = symbol.search(CONTRACT_MONTH_PATTERN);
+    if (monthIndex > 0) return symbol.slice(0, monthIndex);
 
-	const futureIndex = symbol.search(FUTURE_TOKEN_PATTERN);
-	if (futureIndex > 0) return symbol.slice(0, futureIndex);
+    const futureIndex = symbol.search(FUTURE_TOKEN_PATTERN);
+    if (futureIndex > 0) return symbol.slice(0, futureIndex);
 
-	return symbol;
+    return symbol;
 }
 
 function marketIntelligenceSymbolFromSearch(row: InstrumentSearchRow): string {
-	if (isEquitySearchRow(row)) return row.symbol.trim().toUpperCase();
-	return marketIntelligenceSymbolFromValue(
-		row.symbol || row.trading_symbol || "",
-	);
+    if (isEquitySearchRow(row)) return row.symbol.trim().toUpperCase();
+    return marketIntelligenceSymbolFromValue(row.symbol || row.trading_symbol || "");
 }
 
 function manualInstrument(symbol: string): InstrumentRef {
-	return { symbol: symbol.trim().toUpperCase() };
+    return { symbol: symbol.trim().toUpperCase() };
 }
 
 function defaultAccountLabel(account: BrokerDataDefaultAccount | null): string {
-	if (!account) return "No default broker";
-	const brokerCode = account.broker_code as keyof typeof brokerNames;
-	const broker = brokerNames[brokerCode] ?? account.broker_code;
-	return `${account.label} / ${broker}`;
+    if (!account) return "No default broker";
+    const brokerCode = account.broker_code as keyof typeof brokerNames;
+    const broker = brokerNames[brokerCode] ?? account.broker_code;
+    return `${account.label} / ${broker}`;
 }
 
 async function loadFeeds(
-	symbols: string[],
-	options: { page?: number; limit?: number; forceRefresh?: boolean } = {},
+    symbols: string[],
+    options: {
+        page?: number;
+        limit?: number;
+        forceRefresh?: boolean;
+        dateRange?: MarketIntelligenceDateRangeApi;
+    } = {}
 ): Promise<MarketIntelligenceFeeds & { hasMoreBySection?: Record<AlphaSection, boolean> }> {
-	if (!symbols.length) {
-		return {
-			...emptyMarketIntelligenceFeeds(),
-			hasMoreBySection: {
-				news: false,
-				announcements: false,
-				earnings: false,
-				concalls: false,
-				alerts: false,
-			},
-		};
-	}
-	const newsParams = {
-		symbols,
-		from: isoDateDaysAgo(30),
-		to: todayIsoDate(),
-		page: options.page ?? 1,
-		limit: options.limit ?? 20,
-		detailed: true,
-		force_refresh: options.forceRefresh,
-	};
-	const earningsParams = {
-		...newsParams,
-		from: isoDateDaysAgo(180),
-	};
-	const [news, announcements, earnings, concalls, alerts] =
-		await Promise.allSettled([
-			getCachedAlphaFeed<AlphaNewsItem>("news", newsParams),
-			getCachedAlphaFeed<AlphaAnnouncementDetail>("announcements", newsParams),
-			getCachedAlphaFeed<AlphaEarningsDetail>("earnings", earningsParams),
-			getCachedAlphaFeed<AlphaConcall>("concalls", earningsParams),
-			getCachedAlphaFeed<AlphaAlert>("alerts", newsParams),
-		]);
+    if (!symbols.length) {
+        return {
+            ...emptyMarketIntelligenceFeeds(),
+            hasMoreBySection: {
+                news: false,
+                announcements: false,
+                earnings: false,
+                concalls: false,
+                alerts: false
+            }
+        };
+    }
+    const params = {
+        // Full watchlist; backend refreshes every stale/missing symbol (batched for Drishti).
+        symbols,
+        from: isoDateDaysAgo(30),
+        to: todayIsoDate(),
+        page: options.page ?? 1,
+        limit: options.limit ?? 20,
+        detailed: true,
+        force_refresh: options.forceRefresh
+    };
+    const dateRangeParams = options.dateRange
+        ? {
+              ...params,
+              from: options.dateRange.from,
+              to: options.dateRange.to,
+              historical: true
+          }
+        : params;
+    const [news, announcements, earnings, concalls, alerts] = await Promise.allSettled([
+        getCachedAlphaFeed<AlphaNewsItem>("news", dateRangeParams),
+        getCachedAlphaFeed<AlphaAnnouncementDetail>("announcements", dateRangeParams),
+        getCachedAlphaFeed<AlphaEarningsDetail>("earnings", dateRangeParams),
+        getCachedAlphaFeed<AlphaConcall>("concalls", dateRangeParams),
+        getCachedAlphaFeed<AlphaAlert>("alerts", dateRangeParams)
+    ]);
 
-	const creditWarningMessage = getAlphaCreditWarningMessage(
-		news,
-		announcements,
-		earnings,
-		concalls,
-		alerts,
-	);
-	if (creditWarningMessage) notifyAlphaCreditWarning(creditWarningMessage);
+    const creditWarningMessage = getAlphaCreditWarningMessage(news, announcements, earnings, concalls, alerts);
+    if (creditWarningMessage) notifyAlphaCreditWarning(creditWarningMessage);
 
-	return {
-		news: news.status === "fulfilled" ? (news.value.data ?? []) : [],
-		announcements:
-			announcements.status === "fulfilled"
-				? (announcements.value.data ?? [])
-				: [],
-		earnings:
-			earnings.status === "fulfilled" ? (earnings.value.data ?? []) : [],
-		concalls:
-			concalls.status === "fulfilled" ? (concalls.value.data ?? []) : [],
-		alerts: alerts.status === "fulfilled" ? (alerts.value.data ?? []) : [],
-		hasMoreBySection: {
-			news: news.status === "fulfilled" ? Boolean(news.value.has_next) : false,
-			announcements:
-				announcements.status === "fulfilled"
-					? Boolean(announcements.value.has_next)
-					: false,
-			earnings:
-				earnings.status === "fulfilled" ? Boolean(earnings.value.has_next) : false,
-			concalls:
-				concalls.status === "fulfilled" ? Boolean(concalls.value.has_next) : false,
-			alerts: alerts.status === "fulfilled" ? Boolean(alerts.value.has_next) : false,
-		},
-	};
+    return {
+        news: news.status === "fulfilled" ? (news.value.data ?? []) : [],
+        announcements: announcements.status === "fulfilled" ? (announcements.value.data ?? []) : [],
+        earnings: earnings.status === "fulfilled" ? (earnings.value.data ?? []) : [],
+        concalls: concalls.status === "fulfilled" ? (concalls.value.data ?? []) : [],
+        alerts: alerts.status === "fulfilled" ? (alerts.value.data ?? []) : [],
+        hasMoreBySection: {
+            news: news.status === "fulfilled" ? Boolean(news.value.has_next) : false,
+            announcements: announcements.status === "fulfilled" ? Boolean(announcements.value.has_next) : false,
+            earnings: earnings.status === "fulfilled" ? Boolean(earnings.value.has_next) : false,
+            concalls: concalls.status === "fulfilled" ? Boolean(concalls.value.has_next) : false,
+            alerts: alerts.status === "fulfilled" ? Boolean(alerts.value.has_next) : false
+        }
+    };
 }
 
 function EmptyWatchlistState({ onSearchSymbol }: { onSearchSymbol: () => void }) {
-	return (
-		<Empty className="mb-5 grid min-h-[15rem] w-full grid-cols-1 items-center gap-6 rounded-lg border border-dashed border-border bg-card/40 p-6 text-left [text-wrap:initial] min-[860px]:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
-			<div className="min-w-0">
-				<EmptyHeader className="max-w-2xl items-start text-left">
-					<div className="mb-3 flex size-9 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
-						<ListPlus aria-hidden="true" />
-					</div>
-					<EmptyTitle className="text-lg">
-						Build a watchlist to unlock market intelligence
-					</EmptyTitle>
-					<EmptyDescription className="max-w-xl leading-6">
-						This page needs a symbol universe before it can stream relevant
-						news, announcements, earnings, concalls, and alerts. Create or
-						import a watchlist once, then monitor only the companies you care
-						about.
-					</EmptyDescription>
-				</EmptyHeader>
-				<EmptyContent className="mt-5 max-w-none items-start gap-3">
-					<div className="flex flex-wrap items-center gap-2">
-						<Button asChild>
-							<Link href="/watchlists">
-								<ListPlus aria-hidden="true" />
-								Open Watchlists
-								<ArrowRight aria-hidden="true" />
-							</Link>
-						</Button>
-						<Button onClick={onSearchSymbol} type="button" variant="outline">
-							<Search aria-hidden="true" />
-							Search one symbol
-						</Button>
-					</div>
-					<span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-						<Radio aria-hidden="true" className="size-3.5" />
-						Live feed starts after at least one watchlist has symbols.
-					</span>
-				</EmptyContent>
-			</div>
-			<div className="grid min-w-0 gap-2 text-sm">
-				<div className="rounded-lg border border-border bg-background/45 p-3">
-					<p className="font-medium text-foreground">1. Create the universe</p>
-					<p className="mt-1 leading-5 text-muted-foreground">
-						Add symbols manually or import a preset index list.
-					</p>
-				</div>
-				<div className="rounded-lg border border-border bg-background/45 p-3">
-					<p className="font-medium text-foreground">2. Stream relevant events</p>
-					<p className="mt-1 leading-5 text-muted-foreground">
-						Get Drishti updates filtered to your tracked companies.
-					</p>
-				</div>
-				<div className="rounded-lg border border-border bg-background/45 p-3">
-					<p className="font-medium text-foreground">3. Switch scopes later</p>
-					<p className="mt-1 leading-5 text-muted-foreground">
-						Compare all watchlists or narrow the feed to one list.
-					</p>
-				</div>
-			</div>
-		</Empty>
-	);
+    return (
+        <Empty className="mb-5 grid min-h-[15rem] w-full grid-cols-1 items-center gap-6 rounded-lg border border-dashed border-border bg-card/40 p-6 text-left [text-wrap:initial] min-[860px]:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
+            <div className="min-w-0">
+                <EmptyHeader className="max-w-2xl items-start text-left">
+                    <div className="mb-3 flex size-9 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
+                        <ListPlus aria-hidden="true" />
+                    </div>
+                    <EmptyTitle className="text-lg">Build a watchlist to unlock market intelligence</EmptyTitle>
+                    <EmptyDescription className="max-w-xl leading-6">
+                        This page needs a symbol universe before it can stream relevant news, announcements, earnings,
+                        concalls, and alerts. Create or import a watchlist once, then monitor only the companies you
+                        care about.
+                    </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent className="mt-5 max-w-none items-start gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button asChild>
+                            <Link href="/watchlists">
+                                <ListPlus aria-hidden="true" />
+                                Open Watchlists
+                                <ArrowRight aria-hidden="true" />
+                            </Link>
+                        </Button>
+                        <Button onClick={onSearchSymbol} type="button" variant="outline">
+                            <Search aria-hidden="true" />
+                            Search one symbol
+                        </Button>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Radio aria-hidden="true" className="size-3.5" />
+                        Live feed starts after at least one watchlist has symbols.
+                    </span>
+                </EmptyContent>
+            </div>
+            <div className="grid min-w-0 gap-2 text-sm">
+                <div className="rounded-lg border border-border bg-background/45 p-3">
+                    <p className="font-medium text-foreground">1. Create the universe</p>
+                    <p className="mt-1 leading-5 text-muted-foreground">
+                        Add symbols manually or import a preset index list.
+                    </p>
+                </div>
+                <div className="rounded-lg border border-border bg-background/45 p-3">
+                    <p className="font-medium text-foreground">2. Stream relevant events</p>
+                    <p className="mt-1 leading-5 text-muted-foreground">
+                        Get Drishti updates filtered to your tracked companies.
+                    </p>
+                </div>
+                <div className="rounded-lg border border-border bg-background/45 p-3">
+                    <p className="font-medium text-foreground">3. Switch scopes later</p>
+                    <p className="mt-1 leading-5 text-muted-foreground">
+                        Compare all watchlists or narrow the feed to one list.
+                    </p>
+                </div>
+            </div>
+        </Empty>
+    );
 }
 
 export function MarketIntelligenceChrome({
-	allSymbolsCount,
-	children,
-	creditWarningMessage,
-	error,
-	initialFeeds,
-	initialHasMoreBySection,
-	symbolMetadata,
-	symbols,
-	streamSymbols,
-	watchlistGroups,
+    allSymbolsCount,
+    children,
+    creditWarningMessage,
+    error,
+    initialFeeds,
+    initialHasMoreBySection,
+    symbolMetadata,
+    symbols,
+    streamSymbols,
+    watchlistGroups
 }: {
-	allSymbolsCount: number;
-	children: React.ReactNode;
-	creditWarningMessage?: string | null;
-	error?: string;
-	initialFeeds: MarketIntelligenceFeeds;
-	initialHasMoreBySection: MarketIntelligenceHasMore;
-	symbolMetadata: Record<string, AlphaSymbolMetadata>;
-	symbols: string[];
-	streamSymbols: string[];
-	watchlistGroups: WatchlistCoverageGroup[];
+    allSymbolsCount: number;
+    children: React.ReactNode;
+    creditWarningMessage?: string | null;
+    error?: string;
+    initialFeeds: MarketIntelligenceFeeds;
+    initialHasMoreBySection: MarketIntelligenceHasMore;
+    symbolMetadata: Record<string, AlphaSymbolMetadata>;
+    symbols: string[];
+    streamSymbols: string[];
+    watchlistGroups: WatchlistCoverageGroup[];
 }) {
-	const [activeSectionId, setActiveSectionId] = useState<AlphaSection>(
-		marketIntelligenceSections[0].id,
-	);
-	const [selectedWatchlistId, setSelectedWatchlistId] =
-		useState(ALL_WATCHLISTS_ID);
-	const [feeds, setFeeds] = useState(initialFeeds);
-	const [hasMoreBySection, setHasMoreBySection] = useState<MarketIntelligenceHasMore>(
-		initialHasMoreBySection,
-	);
-	const [feedPageBySection, setFeedPageBySection] = useState<Record<AlphaSection, number>>({
-		news: 1,
-		announcements: 1,
-		earnings: 1,
-		concalls: 1,
-		alerts: 1,
-	});
-	const [isLoadingMore, setIsLoadingMore] = useState(false);
-	const [activeMetadata, setActiveMetadata] = useState(symbolMetadata);
-	const [defaultBrokerAccount, setDefaultBrokerAccount] =
-		useState<BrokerDataDefaultAccount | null>(null);
-	const [brokerConfigError, setBrokerConfigError] = useState("");
-	const [isLoadingBrokerConfig, setIsLoadingBrokerConfig] = useState(true);
-	const [filterError, setFilterError] = useState("");
-	const [isLoadingFilter, setIsLoadingFilter] = useState(false);
-	const [feedSearch, setFeedSearch] = useState("");
-	const [socketState, setSocketState] =
-		useState<MarketIntelligenceSocketState>("connecting");
-	const [searchText, setSearchText] = useState("");
-	const [committedSymbol, setCommittedSymbol] = useState("");
-	const [committedIntelligenceSymbol, setCommittedIntelligenceSymbol] =
-		useState("");
-	const [committedInstrument, setCommittedInstrument] =
-		useState<InstrumentRef | null>(null);
-	const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
-	const [suggestionMetadata, setSuggestionMetadata] = useState<
-		Record<string, AlphaSymbolMetadata>
-	>({});
-	const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-	const [showSuggestions, setShowSuggestions] = useState(false);
-	const [symbolError, setSymbolError] = useState("");
-	const [isLoadingSymbolFeed, setIsLoadingSymbolFeed] = useState(false);
-	const [symbolSearchToken, setSymbolSearchToken] = useState(0);
-	const [suggestionMenuRect, setSuggestionMenuRect] = useState<{
-		left: number;
-		top: number;
-		width: number;
-	} | null>(null);
-	const searchAnchorRef = useRef<HTMLDivElement | null>(null);
-	const searchInputRef = useRef<HTMLInputElement | null>(null);
-	const [chartState, setChartState] = useState<BrokerChartState>({
-		error: "",
-		isLoading: false,
-		snapshot: null,
-	});
-	const activeSection =
-		marketIntelligenceSections.find((item) => item.id === activeSectionId) ??
-		marketIntelligenceSections[0];
-	const selectedWatchlist =
-		watchlistGroups.find((item) => item.id === selectedWatchlistId) ?? null;
-	const activeSymbols = useMemo(
-		() => (selectedWatchlist ? selectedWatchlist.symbols : streamSymbols),
-		[selectedWatchlist, streamSymbols],
-	);
-	const filterLabel = selectedWatchlist
-		? selectedWatchlist.name
-		: "All watchlists";
-	const symbolModeActive = Boolean(committedSymbol);
-	const suggestionsOpen = showSuggestions && Boolean(searchText.trim());
-	const visibleSymbols = useMemo(
-		() =>
-			symbolModeActive
-				? [committedIntelligenceSymbol || committedSymbol]
-				: activeSymbols,
-		[
-			activeSymbols,
-			committedIntelligenceSymbol,
-			committedSymbol,
-			symbolModeActive,
-		],
-	);
-	const chartMetadata = useMemo(() => {
-		if (!symbolModeActive || !committedSymbol || !committedIntelligenceSymbol)
-			return activeMetadata;
-		const underlyingMetadata = activeMetadata[committedIntelligenceSymbol];
-		if (!underlyingMetadata || activeMetadata[committedSymbol])
-			return activeMetadata;
-		return { ...activeMetadata, [committedSymbol]: underlyingMetadata };
-	}, [
-		activeMetadata,
-		committedIntelligenceSymbol,
-		committedSymbol,
-		symbolModeActive,
-	]);
+    const [activeSectionId, setActiveSectionId] = useState<AlphaSection>(marketIntelligenceSections[0].id);
+    const [selectedWatchlistId, setSelectedWatchlistId] = useState(ALL_WATCHLISTS_ID);
+    const [feeds, setFeeds] = useState(initialFeeds);
+    const [hasMoreBySection, setHasMoreBySection] = useState<MarketIntelligenceHasMore>(initialHasMoreBySection);
+    const [feedPageBySection, setFeedPageBySection] = useState<Record<AlphaSection, number>>({
+        news: 1,
+        announcements: 1,
+        earnings: 1,
+        concalls: 1,
+        alerts: 1
+    });
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [marketIntelligenceDateRange, setMarketIntelligenceDateRange] = useState<DateRange | undefined>();
+    const [activeMetadata, setActiveMetadata] = useState(symbolMetadata);
+    const [defaultBrokerAccount, setDefaultBrokerAccount] = useState<BrokerDataDefaultAccount | null>(null);
+    const [brokerConfigError, setBrokerConfigError] = useState("");
+    const [isLoadingBrokerConfig, setIsLoadingBrokerConfig] = useState(true);
+    const [filterError, setFilterError] = useState("");
+    const [isLoadingFilter, setIsLoadingFilter] = useState(false);
+    const [feedSearch, setFeedSearch] = useState("");
+    const [socketState, setSocketState] = useState<MarketIntelligenceSocketState>("connecting");
+    const [searchText, setSearchText] = useState("");
+    const [committedSymbol, setCommittedSymbol] = useState("");
+    const [committedIntelligenceSymbol, setCommittedIntelligenceSymbol] = useState("");
+    const [committedInstrument, setCommittedInstrument] = useState<InstrumentRef | null>(null);
+    const [suggestions, setSuggestions] = useState<InstrumentSearchRow[]>([]);
+    const [suggestionMetadata, setSuggestionMetadata] = useState<Record<string, AlphaSymbolMetadata>>({});
+    const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [symbolError, setSymbolError] = useState("");
+    const [isLoadingSymbolFeed, setIsLoadingSymbolFeed] = useState(false);
+    const [symbolSearchToken, setSymbolSearchToken] = useState(0);
+    const [suggestionMenuRect, setSuggestionMenuRect] = useState<{
+        left: number;
+        top: number;
+        width: number;
+    } | null>(null);
+    const searchAnchorRef = useRef<HTMLDivElement | null>(null);
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
+    const [chartState, setChartState] = useState<BrokerChartState>({
+        error: "",
+        isLoading: false,
+        snapshot: null
+    });
+    const activeSection =
+        marketIntelligenceSections.find((item) => item.id === activeSectionId) ?? marketIntelligenceSections[0];
+    const dateRangeApi = useMemo(
+        () => toMarketIntelligenceDateRangeApi(marketIntelligenceDateRange),
+        [marketIntelligenceDateRange]
+    );
+    const selectedWatchlist = watchlistGroups.find((item) => item.id === selectedWatchlistId) ?? null;
+    const activeSymbols = useMemo(
+        () => (selectedWatchlist ? selectedWatchlist.symbols : streamSymbols),
+        [selectedWatchlist, streamSymbols]
+    );
+    const filterLabel = selectedWatchlist ? selectedWatchlist.name : "All watchlists";
+    const symbolModeActive = Boolean(committedSymbol);
+    const suggestionsOpen = showSuggestions && Boolean(searchText.trim());
+    const visibleSymbols = useMemo(
+        () => (symbolModeActive ? [committedIntelligenceSymbol || committedSymbol] : activeSymbols),
+        [activeSymbols, committedIntelligenceSymbol, committedSymbol, symbolModeActive]
+    );
+    const chartMetadata = useMemo(() => {
+        if (!symbolModeActive || !committedSymbol || !committedIntelligenceSymbol) return activeMetadata;
+        const underlyingMetadata = activeMetadata[committedIntelligenceSymbol];
+        if (!underlyingMetadata || activeMetadata[committedSymbol]) return activeMetadata;
+        return { ...activeMetadata, [committedSymbol]: underlyingMetadata };
+    }, [activeMetadata, committedIntelligenceSymbol, committedSymbol, symbolModeActive]);
 
-	useEffect(() => {
-		if (!suggestionsOpen) {
-			setSuggestionMenuRect(null);
-			return;
-		}
+    useEffect(() => {
+        if (!suggestionsOpen) {
+            setSuggestionMenuRect(null);
+            return;
+        }
 
-		function updateMenuRect() {
-			const anchor = searchAnchorRef.current;
-			if (!anchor) return;
-			const rect = anchor.getBoundingClientRect();
-			setSuggestionMenuRect({
-				left: rect.left,
-				top: rect.bottom + 4,
-				width: rect.width,
-			});
-		}
+        function updateMenuRect() {
+            const anchor = searchAnchorRef.current;
+            if (!anchor) return;
+            const rect = anchor.getBoundingClientRect();
+            setSuggestionMenuRect({
+                left: rect.left,
+                top: rect.bottom + 4,
+                width: rect.width
+            });
+        }
 
-		updateMenuRect();
-		window.addEventListener("resize", updateMenuRect);
-		window.addEventListener("scroll", updateMenuRect, true);
-		return () => {
-			window.removeEventListener("resize", updateMenuRect);
-			window.removeEventListener("scroll", updateMenuRect, true);
-		};
-	}, [isLoadingSuggestions, suggestions.length, suggestionsOpen]);
+        updateMenuRect();
+        window.addEventListener("resize", updateMenuRect);
+        window.addEventListener("scroll", updateMenuRect, true);
+        return () => {
+            window.removeEventListener("resize", updateMenuRect);
+            window.removeEventListener("scroll", updateMenuRect, true);
+        };
+    }, [isLoadingSuggestions, suggestions.length, suggestionsOpen]);
 
-	useEffect(() => {
-		let cancelled = false;
-		setIsLoadingBrokerConfig(true);
-		setBrokerConfigError("");
-		void (async () => {
-			try {
-				const config = await getBrokerDataDefaultConfig();
-				if (cancelled) return;
-				const effective =
-					config.accounts.find(
-						(account) =>
-							account.account_id === config.effective_default_account_id,
-					) ?? null;
-				setDefaultBrokerAccount(effective);
-			} catch (caught) {
-				if (cancelled) return;
-				setDefaultBrokerAccount(null);
-				setBrokerConfigError(parseActionError(caught).message);
-			} finally {
-				if (!cancelled) setIsLoadingBrokerConfig(false);
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, []);
+    useEffect(() => {
+        let cancelled = false;
+        setIsLoadingBrokerConfig(true);
+        setBrokerConfigError("");
+        void (async () => {
+            try {
+                const config = await getBrokerDataDefaultConfig();
+                if (cancelled) return;
+                const effective =
+                    config.accounts.find((account) => account.account_id === config.effective_default_account_id) ??
+                    null;
+                setDefaultBrokerAccount(effective);
+            } catch (caught) {
+                if (cancelled) return;
+                setDefaultBrokerAccount(null);
+                setBrokerConfigError(parseActionError(caught).message);
+            } finally {
+                if (!cancelled) setIsLoadingBrokerConfig(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
-	useEffect(() => {
-		if (symbolModeActive) {
-			setIsLoadingFilter(false);
-			return;
-		}
-		if (!activeSymbols.length) {
-			setFeeds(emptyMarketIntelligenceFeeds());
-			setHasMoreBySection(emptyMarketIntelligenceHasMore());
-			setActiveMetadata({});
-			setFilterError("");
-			setIsLoadingFilter(false);
-			return;
-		}
+    useEffect(() => {
+        if (symbolModeActive) {
+            setIsLoadingFilter(false);
+            return;
+        }
+        if (!activeSymbols.length) {
+            setFeeds(emptyMarketIntelligenceFeeds());
+            setHasMoreBySection(emptyMarketIntelligenceHasMore());
+            setActiveMetadata({});
+            setFilterError("");
+            setIsLoadingFilter(false);
+            return;
+        }
 
-		let cancelled = false;
-		setFilterError("");
-		setIsLoadingFilter(true);
-		void (async () => {
-			const [nextMetadata, nextFeeds] = await Promise.allSettled([
-				getAlphaSymbolMetadata(activeSymbols),
-				loadFeeds(activeSymbols),
-			]);
-			if (cancelled) return;
-			if (nextMetadata.status === "fulfilled") {
-				setActiveMetadata(metadataBySymbol(nextMetadata.value));
-			} else {
-				notifyAlphaCreditWarning(nextMetadata.reason);
-				setActiveMetadata({});
-			}
-			if (nextFeeds.status === "fulfilled") {
-				const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
-				setFeeds(feedPayload);
-				setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
-				setFeedPageBySection({
-					news: 1,
-					announcements: 1,
-					earnings: 1,
-					concalls: 1,
-					alerts: 1,
-				});
-			} else {
-				notifyAlphaCreditWarning(nextFeeds.reason);
-				setFeeds(emptyMarketIntelligenceFeeds());
-				setFilterError(parseActionError(nextFeeds.reason).message);
-			}
-			setIsLoadingFilter(false);
-		})();
+        let cancelled = false;
+        setFilterError("");
+        setIsLoadingFilter(true);
+        void (async () => {
+            const [nextMetadata, nextFeeds] = await Promise.allSettled([
+                getAlphaSymbolMetadata(activeSymbols),
+                loadFeeds(activeSymbols, {
+                    dateRange: dateRangeApi
+                })
+            ]);
+            if (cancelled) return;
+            if (nextMetadata.status === "fulfilled") {
+                setActiveMetadata(metadataBySymbol(nextMetadata.value));
+            } else {
+                notifyAlphaCreditWarning(nextMetadata.reason);
+                setActiveMetadata({});
+            }
+            if (nextFeeds.status === "fulfilled") {
+                const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
+                setFeeds(feedPayload);
+                setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
+                setFeedPageBySection({
+                    news: 1,
+                    announcements: 1,
+                    earnings: 1,
+                    concalls: 1,
+                    alerts: 1
+                });
+            } else {
+                notifyAlphaCreditWarning(nextFeeds.reason);
+                setFeeds(emptyMarketIntelligenceFeeds());
+                setFilterError(parseActionError(nextFeeds.reason).message);
+            }
+            setIsLoadingFilter(false);
+        })();
 
-		return () => {
-			cancelled = true;
-		};
-	}, [activeSymbols, symbolModeActive]);
+        return () => {
+            cancelled = true;
+        };
+    }, [activeSymbols, dateRangeApi, symbolModeActive]);
 
-	useEffect(() => {
-		const query = searchText.trim();
-		const accountId = defaultBrokerAccount?.account_id;
-		if (!query || !accountId || query.toUpperCase() === committedSymbol) {
-			setSuggestions([]);
-			setSuggestionMetadata({});
-			setIsLoadingSuggestions(false);
-			return;
-		}
+    useEffect(() => {
+        const query = searchText.trim();
+        const accountId = defaultBrokerAccount?.account_id;
+        if (!query || !accountId || query.toUpperCase() === committedSymbol) {
+            setSuggestions([]);
+            setSuggestionMetadata({});
+            setIsLoadingSuggestions(false);
+            return;
+        }
 
-		let cancelled = false;
-		const handle = window.setTimeout(() => {
-			setIsLoadingSuggestions(true);
-			void (async () => {
-				try {
-					const rows = await searchBrokerInstruments(accountId, {
-						q: query,
-						limit: 8,
-					});
-					if (cancelled) return;
-					setSuggestions(rows);
-					setShowSuggestions(true);
-					setIsLoadingSuggestions(false);
-					const symbolsToLoad = Array.from(
-						new Set(
-							rows.map(marketIntelligenceSymbolFromSearch).filter(Boolean),
-						),
-					);
-					if (!symbolsToLoad.length) {
-						setSuggestionMetadata({});
-						return;
-					}
-					try {
-						const metadata = await getAlphaSymbolMetadata(symbolsToLoad);
-						if (cancelled) return;
-						setSuggestionMetadata(metadataBySymbol(metadata));
-					} catch (caught) {
-						notifyAlphaCreditWarning(caught);
-						if (!cancelled) setSuggestionMetadata({});
-					}
-				} catch {
-					if (cancelled) return;
-					setSuggestions([]);
-					setSuggestionMetadata({});
-				} finally {
-					if (!cancelled) setIsLoadingSuggestions(false);
-				}
-			})();
-		}, 250);
+        let cancelled = false;
+        const handle = window.setTimeout(() => {
+            setIsLoadingSuggestions(true);
+            void (async () => {
+                try {
+                    const rows = await searchBrokerInstruments(accountId, {
+                        q: query,
+                        limit: 8
+                    });
+                    if (cancelled) return;
+                    setSuggestions(rows);
+                    setShowSuggestions(true);
+                    setIsLoadingSuggestions(false);
+                    const symbolsToLoad = Array.from(
+                        new Set(rows.map(marketIntelligenceSymbolFromSearch).filter(Boolean))
+                    );
+                    if (!symbolsToLoad.length) {
+                        setSuggestionMetadata({});
+                        return;
+                    }
+                    try {
+                        const metadata = await getAlphaSymbolMetadata(symbolsToLoad);
+                        if (cancelled) return;
+                        setSuggestionMetadata(metadataBySymbol(metadata));
+                    } catch (caught) {
+                        notifyAlphaCreditWarning(caught);
+                        if (!cancelled) setSuggestionMetadata({});
+                    }
+                } catch {
+                    if (cancelled) return;
+                    setSuggestions([]);
+                    setSuggestionMetadata({});
+                } finally {
+                    if (!cancelled) setIsLoadingSuggestions(false);
+                }
+            })();
+        }, 250);
 
-		return () => {
-			cancelled = true;
-			window.clearTimeout(handle);
-		};
-	}, [committedSymbol, defaultBrokerAccount?.account_id, searchText]);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(handle);
+        };
+    }, [committedSymbol, defaultBrokerAccount?.account_id, searchText]);
 
-	useEffect(() => {
-		if (!committedIntelligenceSymbol) return;
+    useEffect(() => {
+        if (!committedIntelligenceSymbol) return;
 
-		let cancelled = false;
-		setSymbolError("");
-		setFilterError("");
-		setFeeds(emptyMarketIntelligenceFeeds());
-		setHasMoreBySection(emptyMarketIntelligenceHasMore());
-		setIsLoadingSymbolFeed(true);
-		void (async () => {
-			const [nextMetadata, nextFeeds] = await Promise.allSettled([
-				getAlphaSymbolMetadata([committedIntelligenceSymbol]),
-				// Backend auto-fetches from Drishti when this symbol has no cache/WS rows yet.
-				loadFeeds([committedIntelligenceSymbol]),
-			]);
-			if (cancelled) return;
-			if (nextMetadata.status === "fulfilled") {
-				setActiveMetadata(metadataBySymbol(nextMetadata.value));
-			} else {
-				notifyAlphaCreditWarning(nextMetadata.reason);
-				setActiveMetadata({});
-			}
-			if (nextFeeds.status === "fulfilled") {
-				const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
-				setFeeds(feedPayload);
-				setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
-				setFeedPageBySection({
-					news: 1,
-					announcements: 1,
-					earnings: 1,
-					concalls: 1,
-					alerts: 1,
-				});
-			} else {
-				notifyAlphaCreditWarning(nextFeeds.reason);
-				setFeeds(emptyMarketIntelligenceFeeds());
-				setSymbolError(parseActionError(nextFeeds.reason).message);
-			}
-			setIsLoadingSymbolFeed(false);
-		})();
+        let cancelled = false;
+        setSymbolError("");
+        setFilterError("");
+        setFeeds(emptyMarketIntelligenceFeeds());
+        setHasMoreBySection(emptyMarketIntelligenceHasMore());
+        setIsLoadingSymbolFeed(true);
+        void (async () => {
+            const [nextMetadata, nextFeeds] = await Promise.allSettled([
+                getAlphaSymbolMetadata([committedIntelligenceSymbol]),
+                // Backend auto-fetches from Drishti when this symbol has no cache/WS rows yet.
+                loadFeeds([committedIntelligenceSymbol], {
+                    dateRange: dateRangeApi
+                })
+            ]);
+            if (cancelled) return;
+            if (nextMetadata.status === "fulfilled") {
+                setActiveMetadata(metadataBySymbol(nextMetadata.value));
+            } else {
+                notifyAlphaCreditWarning(nextMetadata.reason);
+                setActiveMetadata({});
+            }
+            if (nextFeeds.status === "fulfilled") {
+                const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
+                setFeeds(feedPayload);
+                setHasMoreBySection(nextHasMore ?? emptyMarketIntelligenceHasMore());
+                setFeedPageBySection({
+                    news: 1,
+                    announcements: 1,
+                    earnings: 1,
+                    concalls: 1,
+                    alerts: 1
+                });
+            } else {
+                notifyAlphaCreditWarning(nextFeeds.reason);
+                setFeeds(emptyMarketIntelligenceFeeds());
+                setSymbolError(parseActionError(nextFeeds.reason).message);
+            }
+            setIsLoadingSymbolFeed(false);
+        })();
 
-		return () => {
-			cancelled = true;
-		};
-	}, [committedIntelligenceSymbol, symbolSearchToken]);
+        return () => {
+            cancelled = true;
+        };
+    }, [committedIntelligenceSymbol, dateRangeApi, symbolSearchToken]);
 
-	useEffect(() => {
-		if (!committedSymbol || !committedInstrument) {
-			setChartState({ error: "", isLoading: false, snapshot: null });
-			return;
-		}
-		if (isLoadingBrokerConfig) {
-			setChartState({ error: "", isLoading: true, snapshot: null });
-			return;
-		}
-		if (!defaultBrokerAccount) {
-			setChartState({
-				error:
-					brokerConfigError ||
-					"No active default broker account is available for price data.",
-				isLoading: false,
-				snapshot: null,
-			});
-			return;
-		}
-		if (!defaultBrokerAccount.session_active) {
-			setChartState({
-				error:
-					"The default broker session is not active. Activate it to load price data.",
-				isLoading: false,
-				snapshot: null,
-			});
-			return;
-		}
+    useEffect(() => {
+        if (!committedSymbol || !committedInstrument) {
+            setChartState({ error: "", isLoading: false, snapshot: null });
+            return;
+        }
+        if (isLoadingBrokerConfig) {
+            setChartState({ error: "", isLoading: true, snapshot: null });
+            return;
+        }
+        if (!defaultBrokerAccount) {
+            setChartState({
+                error: brokerConfigError || "No active default broker account is available for price data.",
+                isLoading: false,
+                snapshot: null
+            });
+            return;
+        }
+        if (!defaultBrokerAccount.session_active) {
+            setChartState({
+                error: "The default broker session is not active. Activate it to load price data.",
+                isLoading: false,
+                snapshot: null
+            });
+            return;
+        }
 
-		let cancelled = false;
-		setChartState({ error: "", isLoading: true, snapshot: null });
-		void (async () => {
-			try {
-				const snapshot = await getMarketChartData(
-					defaultBrokerAccount.account_id,
-					{
-						instrument: committedInstrument,
-						history_days: 90,
-						daily_interval: "day",
-						intraday_interval: "1minute",
-						include_live_quote: true,
-					},
-				);
-				if (cancelled) return;
-				setChartState({
-					error: snapshot.candles.length
-						? ""
-						: "No broker chart data returned for this symbol.",
-					isLoading: false,
-					snapshot,
-				});
-			} catch (caught) {
-				if (cancelled) return;
-				setChartState({
-					error: parseActionError(caught).message,
-					isLoading: false,
-					snapshot: null,
-				});
-			}
-		})();
+        let cancelled = false;
+        setChartState({ error: "", isLoading: true, snapshot: null });
+        void (async () => {
+            try {
+                const snapshot = await getMarketChartData(defaultBrokerAccount.account_id, {
+                    instrument: committedInstrument,
+                    history_days: 90,
+                    daily_interval: "day",
+                    intraday_interval: "1minute",
+                    include_live_quote: true
+                });
+                if (cancelled) return;
+                setChartState({
+                    error: snapshot.candles.length ? "" : "No broker chart data returned for this symbol.",
+                    isLoading: false,
+                    snapshot
+                });
+            } catch (caught) {
+                if (cancelled) return;
+                setChartState({
+                    error: parseActionError(caught).message,
+                    isLoading: false,
+                    snapshot: null
+                });
+            }
+        })();
 
-		return () => {
-			cancelled = true;
-		};
-	}, [
-		brokerConfigError,
-		committedInstrument,
-		committedSymbol,
-		defaultBrokerAccount,
-		isLoadingBrokerConfig,
-	]);
+        return () => {
+            cancelled = true;
+        };
+    }, [brokerConfigError, committedInstrument, committedSymbol, defaultBrokerAccount, isLoadingBrokerConfig]);
 
-	function commitSymbol(
-		symbol: string,
-		instrument: InstrumentRef,
-		intelligenceSymbol?: string,
-	) {
-		const normalized = symbol.trim().toUpperCase();
-		if (!normalized) {
-			setSymbolError("Enter a symbol to search market intelligence.");
-			return;
-		}
-		const normalizedIntelligenceSymbol =
-			intelligenceSymbol?.trim().toUpperCase() ||
-			marketIntelligenceSymbolFromValue(normalized);
-		setCommittedSymbol(normalized);
-		setCommittedIntelligenceSymbol(normalizedIntelligenceSymbol);
-		setCommittedInstrument({
-			...instrument,
-			symbol: instrument.symbol?.trim().toUpperCase() || normalized,
-		});
-		setSearchText(normalized);
-		setShowSuggestions(false);
-		setSymbolError("");
-		setFeeds(emptyMarketIntelligenceFeeds());
-		setHasMoreBySection(emptyMarketIntelligenceHasMore());
-		setSymbolSearchToken((current) => current + 1);
-	}
+    function commitSymbol(symbol: string, instrument: InstrumentRef, intelligenceSymbol?: string) {
+        const normalized = symbol.trim().toUpperCase();
+        if (!normalized) {
+            setSymbolError("Enter a symbol to search market intelligence.");
+            return;
+        }
+        const normalizedIntelligenceSymbol =
+            intelligenceSymbol?.trim().toUpperCase() || marketIntelligenceSymbolFromValue(normalized);
+        setCommittedSymbol(normalized);
+        setCommittedIntelligenceSymbol(normalizedIntelligenceSymbol);
+        setCommittedInstrument({
+            ...instrument,
+            symbol: instrument.symbol?.trim().toUpperCase() || normalized
+        });
+        setSearchText(normalized);
+        setShowSuggestions(false);
+        setSymbolError("");
+        setFeeds(emptyMarketIntelligenceFeeds());
+        setHasMoreBySection(emptyMarketIntelligenceHasMore());
+        setSymbolSearchToken((current) => current + 1);
+    }
 
-	function submitSymbolSearch(event: FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-		const query = searchText.trim().toUpperCase();
-		const exactSuggestion = suggestions.find((row) => {
-			const symbol = row.symbol.trim().toUpperCase();
-			const tradingSymbol = row.trading_symbol?.trim().toUpperCase();
-			return symbol === query || tradingSymbol === query;
-		});
-		if (exactSuggestion) {
-			commitSymbol(
-				exactSuggestion.symbol,
-				instrumentFromSearch(exactSuggestion),
-				marketIntelligenceSymbolFromSearch(exactSuggestion),
-			);
-			return;
-		}
-		commitSymbol(query, manualInstrument(query));
-	}
+    function submitSymbolSearch(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        const query = searchText.trim().toUpperCase();
+        const exactSuggestion = suggestions.find((row) => {
+            const symbol = row.symbol.trim().toUpperCase();
+            const tradingSymbol = row.trading_symbol?.trim().toUpperCase();
+            return symbol === query || tradingSymbol === query;
+        });
+        if (exactSuggestion) {
+            commitSymbol(
+                exactSuggestion.symbol,
+                instrumentFromSearch(exactSuggestion),
+                marketIntelligenceSymbolFromSearch(exactSuggestion)
+            );
+            return;
+        }
+        commitSymbol(query, manualInstrument(query));
+    }
 
-	function clearSymbolSearch() {
-		setSearchText("");
-		setCommittedSymbol("");
-		setCommittedIntelligenceSymbol("");
-		setCommittedInstrument(null);
-		setSuggestions([]);
-		setSuggestionMetadata({});
-		setShowSuggestions(false);
-		setSymbolError("");
-		setChartState({ error: "", isLoading: false, snapshot: null });
-	}
+    function clearSymbolSearch() {
+        setSearchText("");
+        setCommittedSymbol("");
+        setCommittedIntelligenceSymbol("");
+        setCommittedInstrument(null);
+        setSuggestions([]);
+        setSuggestionMetadata({});
+        setShowSuggestions(false);
+        setSymbolError("");
+        setChartState({ error: "", isLoading: false, snapshot: null });
+    }
 
-	function handleFeedSymbolClick(symbol: string) {
-		commitSymbol(symbol, manualInstrument(symbol));
-	}
+    function handleFeedSymbolClick(symbol: string) {
+        commitSymbol(symbol, manualInstrument(symbol));
+    }
 
-	function focusSymbolSearch() {
-		searchInputRef.current?.focus();
-		searchInputRef.current?.select();
-		setShowSuggestions(Boolean(searchText.trim()));
-	}
+    function focusSymbolSearch() {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        setShowSuggestions(Boolean(searchText.trim()));
+    }
 
-	return (
-		<>
-			<AlphaCreditWarningTrigger message={creditWarningMessage} />
-			<PageHeader
-				description={activeSection.description}
-				title="Market Intelligence"
-			/>
+    return (
+        <>
+            <AlphaCreditWarningTrigger message={creditWarningMessage} />
+            <PageHeader description={activeSection.description} title="Market Intelligence" />
 
-			<CardFrame className="relative z-10 mb-4 overflow-visible *:data-[slot=card]:overflow-visible *:data-[slot=card]:[clip-path:none]">
-				<CardFrameHeader>
-					<CardFrameTitle>Market feeds</CardFrameTitle>
-					<CardFrameDescription>
-						Switch product feeds and search a symbol chart
-						{isLoadingBrokerConfig
-							? ""
-							: defaultBrokerAccount
-								? ` · ${defaultAccountLabel(defaultBrokerAccount)}`
-								: " · no default broker"}
-						.
-					</CardFrameDescription>
-					<CardFrameAction>
-						<Dialog>
-							<DialogTrigger
-								render={
-									<Button
-										aria-label="Learn about market intelligence"
-										size="icon"
-										type="button"
-										variant="ghost"
-									/>
-								}
-							>
-								<Info aria-hidden="true" />
-							</DialogTrigger>
-							<DialogPopup className="max-w-xl">
-								<DialogHeader>
-									<DialogTitle>Understanding Market Intelligence</DialogTitle>
-									<DialogDescription>
-										How each Drishti product feed supports research and
-										monitoring.
-									</DialogDescription>
-								</DialogHeader>
-								<DialogPanel className="grid gap-4">
-									{intelligenceHelpItems.map((item) => (
-										<section className="grid gap-1" key={item.title}>
-											<h3 className="text-sm font-semibold leading-5 text-foreground">
-												{item.title}
-											</h3>
-											<p className="text-sm leading-6 text-muted-foreground">
-												{item.body}
-											</p>
-										</section>
-									))}
-								</DialogPanel>
-							</DialogPopup>
-						</Dialog>
-					</CardFrameAction>
-				</CardFrameHeader>
-				<Card className="overflow-visible">
-					<CardPanel className="relative z-10 grid gap-3 overflow-visible p-4">
-						<div className="flex min-w-0 flex-col gap-3 min-[960px]:flex-row min-[960px]:items-center min-[960px]:justify-between">
-							<ToggleGroup
-								aria-label="Market intelligence sections"
-								className="flex-wrap"
-								onValueChange={(next) => {
-									if (next.length === 1) {
-										setActiveSectionId(next[0] as AlphaSection);
-									}
-								}}
-								size="sm"
-								value={[activeSection.id]}
-								variant="outline"
-							>
-								{marketIntelligenceSections.map((item) => {
-									const Icon = sectionChrome[item.id].icon;
-									return (
-										<ToggleGroupItem
-											aria-label={item.label}
-											className="gap-1.5 px-3"
-											key={item.id}
-											value={item.id}
-										>
-											<Icon aria-hidden="true" />
-											{item.label}
-										</ToggleGroupItem>
-									);
-								})}
-							</ToggleGroup>
+            <CardFrame className="relative z-10 mb-4 overflow-visible *:data-[slot=card]:overflow-visible *:data-[slot=card]:[clip-path:none]">
+                <CardFrameHeader>
+                    <CardFrameTitle>Market feeds</CardFrameTitle>
+                    <CardFrameDescription>
+                        Switch product feeds and search a symbol chart
+                        {isLoadingBrokerConfig
+                            ? ""
+                            : defaultBrokerAccount
+                              ? ` · ${defaultAccountLabel(defaultBrokerAccount)}`
+                              : " · no default broker"}
+                        .
+                    </CardFrameDescription>
+                    <CardFrameAction>
+                        <Dialog>
+                            <DialogTrigger
+                                render={
+                                    <Button
+                                        aria-label="Learn about market intelligence"
+                                        size="icon"
+                                        type="button"
+                                        variant="ghost"
+                                    />
+                                }
+                            >
+                                <Info aria-hidden="true" />
+                            </DialogTrigger>
+                            <DialogPopup className="max-w-xl">
+                                <DialogHeader>
+                                    <DialogTitle>Understanding Market Intelligence</DialogTitle>
+                                    <DialogDescription>
+                                        How each Drishti product feed supports research and monitoring.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <DialogPanel className="grid gap-4">
+                                    {intelligenceHelpItems.map((item) => (
+                                        <section className="grid gap-1" key={item.title}>
+                                            <h3 className="text-sm font-semibold leading-5 text-foreground">
+                                                {item.title}
+                                            </h3>
+                                            <p className="text-sm leading-6 text-muted-foreground">{item.body}</p>
+                                        </section>
+                                    ))}
+                                </DialogPanel>
+                            </DialogPopup>
+                        </Dialog>
+                    </CardFrameAction>
+                </CardFrameHeader>
+                <Card className="overflow-visible">
+                    <CardPanel className="relative z-10 grid gap-3 overflow-visible p-4">
+                        <div className="flex min-w-0 flex-col gap-3 min-[960px]:flex-row min-[960px]:items-center min-[960px]:justify-between">
+                            <ToggleGroup
+                                aria-label="Market intelligence sections"
+                                className="flex-wrap"
+                                onValueChange={(next) => {
+                                    if (next.length === 1) {
+                                        setActiveSectionId(next[0] as AlphaSection);
+                                    }
+                                }}
+                                size="sm"
+                                value={[activeSection.id]}
+                                variant="outline"
+                            >
+                                {marketIntelligenceSections.map((item) => {
+                                    const Icon = sectionChrome[item.id].icon;
+                                    return (
+                                        <ToggleGroupItem
+                                            aria-label={item.label}
+                                            className="gap-1.5 px-3"
+                                            key={item.id}
+                                            value={item.id}
+                                        >
+                                            <Icon aria-hidden="true" />
+                                            {item.label}
+                                        </ToggleGroupItem>
+                                    );
+                                })}
+                            </ToggleGroup>
 
-							<form
-								className="flex min-w-0 w-full flex-col gap-2 min-[640px]:flex-row min-[640px]:items-center min-[960px]:max-w-sm min-[960px]:flex-1"
-								onSubmit={submitSymbolSearch}
-							>
-								<div className="relative min-w-0 flex-1" ref={searchAnchorRef}>
-									<InputGroup className="h-9 w-full">
-										<InputGroupAddon>
-											<Search aria-hidden="true" />
-										</InputGroupAddon>
-										<InputGroupInput
-											aria-autocomplete="list"
-											aria-expanded={suggestionsOpen}
-											aria-label="Search a symbol chart"
-											autoComplete="off"
-											onBlur={() =>
-												window.setTimeout(() => setShowSuggestions(false), 120)
-											}
-											onChange={(event) => {
-												setSearchText(event.target.value);
-												setShowSuggestions(true);
-											}}
-											onFocus={() => {
-												if (searchText.trim()) setShowSuggestions(true);
-											}}
-											placeholder="Search a symbol chart"
-											ref={searchInputRef}
-											role="combobox"
-											value={searchText}
-										/>
-									</InputGroup>
-								</div>
-								<Group className="w-full shrink-0 min-[640px]:w-auto">
-									<Button
-										className="h-9"
-										disabled={isLoadingSymbolFeed}
-										type="submit"
-									>
-										<Search aria-hidden="true" />
-										{isLoadingSymbolFeed ? "Loading..." : "Search"}
-									</Button>
-									{symbolModeActive ? (
-										<Button
-											className="h-9"
-											onClick={clearSymbolSearch}
-											type="button"
-											variant="outline"
-										>
-											<X aria-hidden="true" />
-											Clear
-										</Button>
-									) : null}
-								</Group>
-							</form>
-						</div>
-					</CardPanel>
-				</Card>
-			</CardFrame>
+                            <form
+                                className="flex min-w-0 w-full flex-col gap-2 min-[640px]:flex-row min-[640px]:items-center min-[960px]:max-w-sm min-[960px]:flex-1"
+                                onSubmit={submitSymbolSearch}
+                            >
+                                <div className="relative min-w-0 flex-1" ref={searchAnchorRef}>
+                                    <InputGroup className="h-9 w-full">
+                                        <InputGroupAddon>
+                                            <Search aria-hidden="true" />
+                                        </InputGroupAddon>
+                                        <InputGroupInput
+                                            aria-autocomplete="list"
+                                            aria-expanded={suggestionsOpen}
+                                            aria-label="Search a symbol chart"
+                                            autoComplete="off"
+                                            onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
+                                            onChange={(event) => {
+                                                setSearchText(event.target.value);
+                                                setShowSuggestions(true);
+                                            }}
+                                            onFocus={() => {
+                                                if (searchText.trim()) setShowSuggestions(true);
+                                            }}
+                                            placeholder="Search a symbol chart"
+                                            ref={searchInputRef}
+                                            role="combobox"
+                                            value={searchText}
+                                        />
+                                    </InputGroup>
+                                </div>
+                                <Group className="w-full shrink-0 min-[640px]:w-auto">
+                                    <Button className="h-9" disabled={isLoadingSymbolFeed} type="submit">
+                                        <Search aria-hidden="true" />
+                                        {isLoadingSymbolFeed ? "Loading..." : "Search"}
+                                    </Button>
+                                    {symbolModeActive ? (
+                                        <Button
+                                            className="h-9"
+                                            onClick={clearSymbolSearch}
+                                            type="button"
+                                            variant="outline"
+                                        >
+                                            <X aria-hidden="true" />
+                                            Clear
+                                        </Button>
+                                    ) : null}
+                                </Group>
+                            </form>
+                        </div>
+                    </CardPanel>
+                </Card>
+            </CardFrame>
 
-			{suggestionsOpen && suggestionMenuRect
-				? createPortal(
-						<div
-							className="fixed z-[200] max-h-80 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg ring-1 ring-black/20"
-							role="listbox"
-							style={{
-								left: suggestionMenuRect.left,
-								top: suggestionMenuRect.top,
-								width: suggestionMenuRect.width,
-							}}
-						>
-							{isLoadingSuggestions ? (
-								<div className="px-3 py-2 text-sm text-muted-foreground">
-									Searching...
-								</div>
-							) : null}
-							{!isLoadingSuggestions && suggestions.length
-								? suggestions.map((row) => {
-										const intelligenceSymbol =
-											marketIntelligenceSymbolFromSearch(row);
-										const metadata = suggestionMetadata[intelligenceSymbol];
-										const company = metadata?.company_name ?? row.name;
-										const detail = [
-											row.exchange,
-											row.instrument_type,
-											row.trading_symbol,
-											metadata?.sector,
-										].filter(Boolean);
-										return (
-											<button
-												className="flex w-full min-w-0 items-center justify-between gap-3 border-b border-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-accent"
-												key={`${row.account_id ?? "default"}-${row.exchange ?? ""}-${row.symbol}-${row.trading_symbol ?? ""}`}
-												onMouseDown={(event) => {
-													event.preventDefault();
-													commitSymbol(
-														row.symbol,
-														instrumentFromSearch(row),
-														intelligenceSymbol,
-													);
-												}}
-												role="option"
-												type="button"
-											>
-												<span className="flex min-w-0 flex-1 items-center gap-3">
-													<SymbolSearchLogo
-														metadata={metadata}
-														symbol={row.symbol}
-													/>
-													<span className="min-w-0">
-														<span className="block truncate text-sm font-semibold text-foreground">
-															{row.symbol}
-															{company ? (
-																<span className="font-normal text-muted-foreground">
-																	{" "}
-																	/ {company}
-																</span>
-															) : null}
-														</span>
-														<span className="block truncate text-xs text-muted-foreground">
-															{detail.join(" / ") || "Broker instrument"}
-														</span>
-													</span>
-												</span>
-											</button>
-										);
-									})
-								: null}
-							{!isLoadingSuggestions && !suggestions.length ? (
-								<div className="px-3 py-2 text-sm text-muted-foreground">
-									Press search to use this symbol.
-								</div>
-							) : null}
-						</div>,
-						document.body,
-					)
-				: null}
+            {suggestionsOpen && suggestionMenuRect
+                ? createPortal(
+                      <div
+                          className="fixed z-[200] max-h-80 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg ring-1 ring-black/20"
+                          role="listbox"
+                          style={{
+                              left: suggestionMenuRect.left,
+                              top: suggestionMenuRect.top,
+                              width: suggestionMenuRect.width
+                          }}
+                      >
+                          {isLoadingSuggestions ? (
+                              <div className="px-3 py-2 text-sm text-muted-foreground">Searching...</div>
+                          ) : null}
+                          {!isLoadingSuggestions && suggestions.length
+                              ? suggestions.map((row) => {
+                                    const intelligenceSymbol = marketIntelligenceSymbolFromSearch(row);
+                                    const metadata = suggestionMetadata[intelligenceSymbol];
+                                    const company = metadata?.company_name ?? row.name;
+                                    const detail = [
+                                        row.exchange,
+                                        row.instrument_type,
+                                        row.trading_symbol,
+                                        metadata?.sector
+                                    ].filter(Boolean);
+                                    return (
+                                        <button
+                                            className="flex w-full min-w-0 items-center justify-between gap-3 border-b border-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-accent"
+                                            key={`${row.account_id ?? "default"}-${row.exchange ?? ""}-${row.symbol}-${row.trading_symbol ?? ""}`}
+                                            onMouseDown={(event) => {
+                                                event.preventDefault();
+                                                commitSymbol(row.symbol, instrumentFromSearch(row), intelligenceSymbol);
+                                            }}
+                                            role="option"
+                                            type="button"
+                                        >
+                                            <span className="flex min-w-0 flex-1 items-center gap-3">
+                                                <SymbolSearchLogo metadata={metadata} symbol={row.symbol} />
+                                                <span className="min-w-0">
+                                                    <span className="block truncate text-sm font-semibold text-foreground">
+                                                        {row.symbol}
+                                                        {company ? (
+                                                            <span className="font-normal text-muted-foreground">
+                                                                {" "}
+                                                                / {company}
+                                                            </span>
+                                                        ) : null}
+                                                    </span>
+                                                    <span className="block truncate text-xs text-muted-foreground">
+                                                        {detail.join(" / ") || "Broker instrument"}
+                                                    </span>
+                                                </span>
+                                            </span>
+                                        </button>
+                                    );
+                                })
+                              : null}
+                          {!isLoadingSuggestions && !suggestions.length ? (
+                              <div className="px-3 py-2 text-sm text-muted-foreground">
+                                  Press search to use this symbol.
+                              </div>
+                          ) : null}
+                      </div>,
+                      document.body
+                  )
+                : null}
 
-			{symbolModeActive ? (
-				<div className="mb-5">
-					<MarketIntelligenceSymbolChart
-						account={defaultBrokerAccount}
-						feeds={feeds}
-						instrument={committedInstrument}
-						state={chartState}
-						symbol={committedSymbol}
-						symbolMetadata={chartMetadata}
-					/>
-				</div>
-			) : null}
+            {symbolModeActive ? (
+                <div className="mb-5">
+                    <MarketIntelligenceSymbolChart
+                        account={defaultBrokerAccount}
+                        feeds={feeds}
+                        instrument={committedInstrument}
+                        state={chartState}
+                        symbol={committedSymbol}
+                        symbolMetadata={chartMetadata}
+                    />
+                </div>
+            ) : null}
 
-			{error ? <StateMessage message={error} tone="error" /> : null}
-			{symbolError ? <StateMessage message={symbolError} tone="error" /> : null}
-			{filterError ? <StateMessage message={filterError} tone="error" /> : null}
-			{!error && !symbolModeActive && !symbols.length ? (
-				<EmptyWatchlistState onSearchSymbol={focusSymbolSearch} />
-			) : null}
-			{!error && visibleSymbols.length ? (
-				<CardFrame>
-					<CardFrameHeader>
-						<CardFrameTitle>{activeSection.label}</CardFrameTitle>
-						<CardFrameDescription>
-							{activeSection.description}
-							{symbolModeActive
-								? " · Single symbol mode"
-								: watchlistGroups.length
-									? ` · ${activeSymbols.length} symbols`
-									: ""}
-							{isLoadingFilter || isLoadingSymbolFeed ? " · Loading…" : ""}
-						</CardFrameDescription>
-						<CardFrameAction>
-							{!symbolModeActive && watchlistGroups.length ? (
-								<LiveStatusPill state={socketState} />
-							) : null}
-						</CardFrameAction>
-					</CardFrameHeader>
-					<Card>
-						<CardPanel className="grid gap-4 p-4">
-							{watchlistGroups.length ? (
-								<div className="flex min-w-0 flex-col gap-2 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
-									<WatchlistScopeTooltip symbolCount={allSymbolsCount}>
-
-										<SimpleSelect
-											aria-label="Filter market intelligence by watchlist"
-											disabled={isLoadingFilter || symbolModeActive}
-											onValueChange={setSelectedWatchlistId}
-											options={[
-												{
-													value: ALL_WATCHLISTS_ID,
-													label: `All watchlists (${allSymbolsCount} symbols)`,
-												},
-												...watchlistGroups.map((group) => ({
-													value: group.id,
-													label: `${group.name} (${group.symbols.length} symbols)`,
-												})),
-											]}
-											triggerClassName="h-9 min-w-[min(100%,16rem)]"
-											value={selectedWatchlistId}
-										/>
-									</WatchlistScopeTooltip>
-									<div className="min-w-0 w-full min-[760px]:max-w-sm min-[760px]:flex-1">
-										<FeedSearchInput
-											onChange={setFeedSearch}
-											placeholder={
-												symbolModeActive
-													? `Filter ${committedIntelligenceSymbol || committedSymbol} feed`
-													: `Filter ${filterLabel} feed`
-											}
-											value={feedSearch}
-										/>
-									</div>
-								</div>
-							) : null}
-							<MarketIntelligenceLiveFeed
-								activeSection={activeSection.id}
-								enableLiveUpdates
-								feedSearch={feedSearch}
-								hasMoreBySection={hasMoreBySection}
-								initialFeeds={feeds}
-								isLoadingMore={isLoadingMore}
-								onFeedSearchSymbol={handleFeedSymbolClick}
-								onLoadMore={(section) => {
-									if (isLoadingMore || !hasMoreBySection[section]) return;
-									const nextPage = (feedPageBySection[section] || 1) + 1;
-									setIsLoadingMore(true);
-									void (async () => {
-										try {
-											const page = await getCachedAlphaFeed(section, {
-												symbols: visibleSymbols,
-												from: isoDateDaysAgo(
-													section === "earnings" || section === "concalls" ? 180 : 30
-												),
-												to: todayIsoDate(),
-												page: nextPage,
-												limit: 20,
-												detailed: true,
-											});
-											const incoming = (page.data as typeof feeds[typeof section]) ?? [];
-											setFeeds((current) => {
-												const seen = new Set(
-													current[section].map((item) => itemKey(item)),
-												);
-												const appended = incoming.filter(
-													(item) => !seen.has(itemKey(item)),
-												);
-												return {
-													...current,
-													[section]: [...current[section], ...appended],
-												};
-											});
-											setHasMoreBySection((current) => ({
-												...current,
-												[section]: Boolean(page.has_next),
-											}));
-											setFeedPageBySection((current) => ({
-												...current,
-												[section]: nextPage,
-											}));
-										} catch (caught) {
-											notifyAlphaCreditWarning(caught);
-											setFilterError(parseActionError(caught).message);
-										} finally {
-											setIsLoadingMore(false);
-										}
-									})();
-								}}
-								onSocketStateChange={setSocketState}
-								symbolMetadata={activeMetadata}
-								symbols={visibleSymbols}
-							/>
-						</CardPanel>
-					</Card>
-				</CardFrame>
-			) : null}
-			{children}
-		</>
-	);
+            {error ? <StateMessage message={error} tone="error" /> : null}
+            {symbolError ? <StateMessage message={symbolError} tone="error" /> : null}
+            {filterError ? <StateMessage message={filterError} tone="error" /> : null}
+            {!error && !symbolModeActive && !symbols.length ? (
+                <EmptyWatchlistState onSearchSymbol={focusSymbolSearch} />
+            ) : null}
+            {!error && visibleSymbols.length ? (
+                <CardFrame>
+                    <CardFrameHeader>
+                        <CardFrameTitle>{activeSection.label}</CardFrameTitle>
+                        <CardFrameDescription>
+                            {activeSection.description}
+                            {symbolModeActive
+                                ? " · Single symbol mode"
+                                : watchlistGroups.length
+                                  ? ` · ${activeSymbols.length} symbols`
+                                  : ""}
+                            {isLoadingFilter || isLoadingSymbolFeed ? " · Loading…" : ""}
+                        </CardFrameDescription>
+                        <CardFrameAction>
+                            {!symbolModeActive && watchlistGroups.length ? (
+                                <LiveStatusPill state={socketState} />
+                            ) : null}
+                        </CardFrameAction>
+                    </CardFrameHeader>
+                    <Card>
+                        <CardPanel className="grid gap-4 p-4">
+                            <div className="flex min-w-0 flex-col gap-2 min-[760px]:flex-row min-[760px]:items-center min-[760px]:justify-between">
+                                {watchlistGroups.length ? (
+                                    <WatchlistScopeTooltip symbolCount={allSymbolsCount}>
+                                        <SimpleSelect
+                                            aria-label="Filter market intelligence by watchlist"
+                                            disabled={isLoadingFilter || symbolModeActive}
+                                            onValueChange={setSelectedWatchlistId}
+                                            options={[
+                                                {
+                                                    value: ALL_WATCHLISTS_ID,
+                                                    label: `All watchlists (${allSymbolsCount} symbols)`
+                                                },
+                                                ...watchlistGroups.map((group) => ({
+                                                    value: group.id,
+                                                    label: `${group.name} (${group.symbols.length} symbols)`
+                                                }))
+                                            ]}
+                                            triggerClassName="h-9 min-w-[min(100%,16rem)]"
+                                            value={selectedWatchlistId}
+                                        />
+                                    </WatchlistScopeTooltip>
+                                ) : null}
+                                <div className="flex min-w-0 w-full flex-col gap-2 min-[640px]:flex-row min-[640px]:items-center min-[760px]:max-w-sm min-[760px]:flex-1">
+                                    <MarketIntelligenceDateRangeFilter
+                                        disabled={isLoadingFilter || isLoadingSymbolFeed}
+                                        onChange={setMarketIntelligenceDateRange}
+                                        value={marketIntelligenceDateRange}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <FeedSearchInput
+                                            onChange={setFeedSearch}
+                                            placeholder={
+                                                symbolModeActive
+                                                    ? `Filter ${committedIntelligenceSymbol || committedSymbol} feed`
+                                                    : `Filter ${filterLabel} feed`
+                                            }
+                                            value={feedSearch}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <MarketIntelligenceLiveFeed
+                                activeSection={activeSection.id}
+                                enableLiveUpdates
+                                feedSearch={feedSearch}
+                                hasMoreBySection={hasMoreBySection}
+                                initialFeeds={feeds}
+                                isLoadingMore={isLoadingMore}
+                                onFeedSearchSymbol={handleFeedSymbolClick}
+                                onLoadMore={(section) => {
+                                    if (isLoadingMore || !hasMoreBySection[section]) return;
+                                    const nextPage = (feedPageBySection[section] || 1) + 1;
+                                    setIsLoadingMore(true);
+                                    void (async () => {
+                                        try {
+                                            const page = await getCachedAlphaFeed(section, {
+                                                symbols: visibleSymbols,
+                                                from: dateRangeApi ? dateRangeApi.from : isoDateDaysAgo(30),
+                                                to: dateRangeApi ? dateRangeApi.to : todayIsoDate(),
+                                                historical: Boolean(dateRangeApi),
+                                                page: nextPage,
+                                                limit: 20,
+                                                detailed: true
+                                            });
+                                            const incoming = (page.data as (typeof feeds)[typeof section]) ?? [];
+                                            setFeeds((current) => {
+                                                const seen = new Set(current[section].map((item) => itemKey(item)));
+                                                const appended = incoming.filter((item) => !seen.has(itemKey(item)));
+                                                return {
+                                                    ...current,
+                                                    [section]: [...current[section], ...appended]
+                                                };
+                                            });
+                                            setHasMoreBySection((current) => ({
+                                                ...current,
+                                                [section]: Boolean(page.has_next)
+                                            }));
+                                            setFeedPageBySection((current) => ({
+                                                ...current,
+                                                [section]: nextPage
+                                            }));
+                                        } catch (caught) {
+                                            notifyAlphaCreditWarning(caught);
+                                            setFilterError(parseActionError(caught).message);
+                                        } finally {
+                                            setIsLoadingMore(false);
+                                        }
+                                    })();
+                                }}
+                                onSocketStateChange={setSocketState}
+                                symbolMetadata={activeMetadata}
+                                symbols={visibleSymbols}
+                            />
+                        </CardPanel>
+                    </Card>
+                </CardFrame>
+            ) : null}
+            {children}
+        </>
+    );
 }
 
-function SymbolSearchLogo({
-	metadata,
-	symbol,
-}: {
-	metadata?: AlphaSymbolMetadata;
-	symbol: string;
-}) {
-	const [failed, setFailed] = useState(false);
-	const logo = metadata?.logo && !failed ? metadata.logo : "";
+function SymbolSearchLogo({ metadata, symbol }: { metadata?: AlphaSymbolMetadata; symbol: string }) {
+    const [failed, setFailed] = useState(false);
+    const logo = metadata?.logo && !failed ? metadata.logo : "";
 
-	if (logo) {
-		return (
-			<img
-				alt=""
-				className="size-8 shrink-0 object-contain"
-				loading="lazy"
-				onError={() => setFailed(true)}
-				referrerPolicy="no-referrer"
-				src={logo}
-			/>
-		);
-	}
+    if (logo) {
+        return (
+            <img
+                alt=""
+                className="size-8 shrink-0 object-contain"
+                loading="lazy"
+                onError={() => setFailed(true)}
+                referrerPolicy="no-referrer"
+                src={logo}
+            />
+        );
+    }
 
-	return (
-		<span className="flex size-8 shrink-0 items-center justify-center bg-secondary font-mono text-[10px] font-semibold text-muted-foreground">
-			{symbol.slice(0, 2).toUpperCase()}
-		</span>
-	);
+    return (
+        <span className="flex size-8 shrink-0 items-center justify-center bg-secondary font-mono text-[10px] font-semibold text-muted-foreground">
+            {symbol.slice(0, 2).toUpperCase()}
+        </span>
+    );
 }

@@ -25,6 +25,8 @@ export interface AlphaFeedParams {
     detailed?: boolean;
     page?: number;
     limit?: number;
+    /** Request an explicit historical backfill through the local cache. */
+    historical?: boolean;
 }
 
 const ALPHA_BATCH_LIMIT = 20;

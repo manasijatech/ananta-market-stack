@@ -76,7 +76,7 @@ def _normalize_text(value: str | None) -> str:
 
 
 def _normalize_symbol(value: str | None) -> str:
-    return re.sub(r"[^A-Z0-9_\-]", "", (value or "").strip().upper())
+    return re.sub(r"[^A-Z0-9_&\-]", "", (value or "").strip().upper())
 
 
 def _slugify(value: str | None) -> str:

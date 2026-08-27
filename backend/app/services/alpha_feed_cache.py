@@ -382,15 +382,24 @@ def _refresh_from_date_for_batch(
     user_id: str,
     product: str,
     batch: list[str],
+    from_date: str | None,
+    historical: bool,
     force_refresh: bool,
     requested_from: str | None = None,
 ) -> str | None:
-    """Narrow Drishti REST `from` to the sync gap instead of a too-short UI window."""
+    """Choose the REST backfill start, including explicit historical ranges and sync gaps."""
+    if historical and from_date:
+        try:
+            return datetime.strptime(from_date[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+
     lookback = timedelta(days=_lookback_days(product))
     floor = _utc_now() - lookback
-    if requested_from:
+    effective_from = requested_from or from_date
+    if effective_from:
         try:
-            requested = datetime.strptime(requested_from[:10], "%Y-%m-%d")
+            requested = datetime.strptime(effective_from[:10], "%Y-%m-%d")
             if requested < floor:
                 floor = requested
         except ValueError:
@@ -518,6 +527,7 @@ def refresh_feed_cache_for_symbols(
     *,
     from_date: str | None = None,
     to_date: str | None = None,
+    historical: bool = False,
     force_refresh: bool = False,
     max_batches: int | None = _FEED_MAX_REFRESH_BATCHES,
 ) -> dict[str, Any]:
@@ -532,15 +542,18 @@ def refresh_feed_cache_for_symbols(
         for symbol in normalized
         if not _symbol_has_cached_items(db, user_id=user_id, product=product, symbol=symbol)
     ]
+    effective_force = force_refresh or historical
+    if len(normalized) == 1 and not force_refresh and not historical and empty_symbols:
+        effective_force = True
 
     pending = _symbols_needing_sync(
         db,
         user_id=user_id,
         product=product,
         symbols=normalized,
-        force_refresh=force_refresh,
+        force_refresh=effective_force,
     )
-    if not force_refresh:
+    if not effective_force:
         for symbol in empty_symbols:
             if symbol not in pending:
                 pending.append(symbol)
@@ -565,7 +578,9 @@ def refresh_feed_cache_for_symbols(
             user_id=user_id,
             product=product,
             batch=batch,
-            force_refresh=force_refresh or bool(empty_symbols),
+            from_date=from_date,
+            historical=historical,
+            force_refresh=effective_force or bool(empty_symbols),
             requested_from=from_date,
         )
         try:
@@ -722,6 +737,7 @@ def list_cached_feed_items(
     *,
     from_date: str | None = None,
     to_date: str | None = None,
+    historical: bool = False,
     page: int = 1,
     limit: int = 20,
     force_refresh: bool = False,
@@ -766,6 +782,7 @@ def list_cached_feed_items(
                 normalized,
                 from_date=from_date,
                 to_date=to_date,
+                historical=historical,
                 force_refresh=force_refresh,
             )
             if refresh_stats.get("upserted"):

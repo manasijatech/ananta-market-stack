@@ -142,3 +142,38 @@ def test_unavailable_metadata_is_retried_only_after_backoff(monkeypatch):
     assert first[0].company_name is None
     assert calls == [["RELIANCE"]]
     assert second[0].company_name == "Reliance"
+
+
+def test_invalidating_unavailable_metadata_preserves_valid_rows():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    now = datetime.utcnow()
+    db.add_all(
+        [
+            AlphaSymbolMetadataCache(
+                symbol="MISSING",
+                raw_payload_json=json.dumps({"metadata_status": "unavailable"}),
+                fetched_at=now,
+                created_at=now,
+                updated_at=now,
+            ),
+            AlphaSymbolMetadataCache(
+                symbol="RELIANCE",
+                company_name="Reliance Industries",
+                raw_payload_json=json.dumps({"symbol": "RELIANCE"}),
+                fetched_at=now,
+                created_at=now,
+                updated_at=now,
+            ),
+        ]
+    )
+    db.commit()
+
+    invalidated = alpha_symbols.invalidate_unavailable_metadata_cache(db)
+    db.commit()
+
+    assert invalidated == 1
+    assert db.get(AlphaSymbolMetadataCache, "MISSING") is None
+    assert db.get(AlphaSymbolMetadataCache, "RELIANCE") is not None
+    db.close()

@@ -2700,10 +2700,7 @@ _LIVE_STATUS_HEALTH_PRIORITY = {
 }
 
 
-def _subscription_has_live_quote(row: LiveSubscriptionOut) -> bool:
-    if row.last_received_at:
-        return True
-    payload = row.last_quote or {}
+def _payload_has_live_price(payload: dict[str, Any]) -> bool:
     candidates = [payload.get("ltp"), payload.get("last_price")]
     raw = payload.get("raw")
     if isinstance(raw, dict):
@@ -2715,6 +2712,10 @@ def _subscription_has_live_quote(row: LiveSubscriptionOut) -> bool:
         except (TypeError, ValueError):
             continue
     return False
+
+
+def _subscription_has_live_quote(row: LiveSubscriptionOut) -> bool:
+    return bool(row.last_received_at) or _payload_has_live_price(row.last_quote or {})
 
 
 def _subscription_sort_key(row: LiveSubscriptionOut) -> tuple[datetime, str]:
@@ -2983,6 +2984,28 @@ def touch_ui_live_subscriptions(
         ): row
         for row in existing_rows
     }
+    account_ids = {account_id for _, account_id, _, _, _, _, _ in normalized_payloads if account_id}
+    symbols = {symbol for _, _, _, symbol, _, _, _ in normalized_payloads}
+    cached_quote_rows: dict[tuple[str | None, str | None, str, str | None], LiveSymbolSubscription] = {}
+    cached_quote_rows_by_symbol: dict[tuple[str | None, str | None, str], LiveSymbolSubscription] = {}
+    if account_ids and symbols:
+        quote_candidates = db.scalars(
+            select(LiveSymbolSubscription)
+            .where(
+                LiveSymbolSubscription.user_id == user_id,
+                LiveSymbolSubscription.account_id.in_(account_ids),
+                LiveSymbolSubscription.symbol.in_(symbols),
+                LiveSymbolSubscription.last_received_at.is_not(None),
+            )
+            .order_by(LiveSymbolSubscription.last_received_at.desc())
+        ).all()
+        for candidate in quote_candidates:
+            if not _payload_has_live_price(_json_loads(candidate.last_quote_json, {})):
+                continue
+            exact_key = (candidate.account_id, candidate.broker_code, candidate.symbol, candidate.exchange)
+            symbol_key = (candidate.account_id, candidate.broker_code, candidate.symbol)
+            cached_quote_rows.setdefault(exact_key, candidate)
+            cached_quote_rows_by_symbol.setdefault(symbol_key, candidate)
     for row in existing_rows:
         source_type = row.source_type or ""
         desired_symbols = desired_by_scope.get((source_type, row.source_id or ""), set())
@@ -3029,6 +3052,15 @@ def touch_ui_live_subscriptions(
         row.owner_kind = "ui"
         row.owner_id = source_id
         row.status = "active"
+        if not row.last_received_at and not _payload_has_live_price(_json_loads(row.last_quote_json, {})):
+            cached_quote = cached_quote_rows.get((account_id, broker_code, symbol, exchange))
+            if cached_quote is None:
+                cached_quote = cached_quote_rows_by_symbol.get((account_id, broker_code, symbol))
+            if cached_quote is not None:
+                row.last_quote_json = cached_quote.last_quote_json
+                row.last_received_at = cached_quote.last_received_at
+                row.health_status = "stale"
+                row.health_reason = "Showing the last known quote while the live price worker refreshes it."
         if row.health_status in {"", "unknown", "healthy"} and not row.last_received_at:
             row.health_status = "pending"
             row.health_reason = "Waiting for the live price worker to fetch this active UI demand."
@@ -3244,7 +3276,14 @@ def live_stream_status(db: Session, user_id: str) -> LiveStreamsStatusOut:
     client = _redis_client() if ok else None
     if client:
         try:
-            for key in client.scan_iter(match=f"alert-live:session:{user_id}:*"):
+            # Redis-py's default SCAN batch is intentionally tiny. On a shared
+            # remote Redis database that turns this user-scoped lookup into
+            # thousands of network round trips and can hold the settings page
+            # in its route-level loading state for minutes.
+            for key in client.scan_iter(
+                match=f"alert-live:session:{user_id}:*",
+                count=1_000,
+            ):
                 payload = _json_loads(client.get(key), {})
                 if not payload:
                     continue

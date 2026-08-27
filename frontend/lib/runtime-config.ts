@@ -15,6 +15,25 @@ export function getPublicApiBaseUrl(): string {
     ).replace(/\/+$/, "");
 }
 
+/**
+ * Builds a browser-reachable WebSocket URL under the public API prefix.
+ *
+ * Native development serves Next.js and FastAPI on different ports, so a
+ * same-origin `/api/v1` socket would hit Next.js, whose route handler only
+ * proxies HTTP. Deployments can set NEXT_PUBLIC_WS_BASE_URL when their public
+ * WebSocket endpoint differs from NEXT_PUBLIC_API_BASE_URL.
+ */
+export function getPublicApiWebSocketUrl(path: string): URL {
+    const browserOrigin = typeof window === "undefined" ? getPublicAppUrl() : window.location.origin;
+    const configuredBase = process.env.NEXT_PUBLIC_WS_BASE_URL ?? getPublicApiBaseUrl();
+    const url = new URL(configuredBase, browserOrigin);
+    url.protocol = url.protocol === "https:" || url.protocol === "wss:" ? "wss:" : "ws:";
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+    url.search = "";
+    url.hash = "";
+    return url;
+}
+
 export function getInternalApiBaseUrl(): string {
     const configured = (
         process.env.MARKET_STACK_API_INTERNAL_URL ??
