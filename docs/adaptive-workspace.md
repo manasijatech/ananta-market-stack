@@ -1,44 +1,35 @@
-# Adaptive Workspace
+# Adaptive Workspace (Chat)
 
-Preview surface for Ananta’s agentic desk. Conversation is the control layer. The main area is a persistent, editable canvas composed from trusted Ananta components. The agent emits a typed `WorkspaceSpec`, never React, HTML, or CSS.
+Default Intelligence surface for Ananta’s agentic desk. Conversation is the control layer. The main area is a persistent, editable canvas composed from trusted Ananta components. The agent emits a typed `WorkspaceSpec`, never React, HTML, or CSS.
 
-This document is the implementation plan for branch `feat/adaptive-workspace`.
+The product route is **`/chat`**. `/adaptive-workspace` redirects there.
 
 ## Isolation rule
 
-**Do not replace Broker Chat while this is incomplete.**
-
-Sessions are partitioned by `surface` (`broker_chat` | `adaptive_workspace`). The Broker Chat session list defaults to `broker_chat`. Adaptive Workspace lists and creates `adaptive_workspace` sessions. The two surfaces share SSE/run machinery but never share history.
+Sessions stay partitioned by `surface` (`broker_chat` | `adaptive_workspace`). Chat lists and creates `adaptive_workspace` sessions. Classic Broker Chat at `/broker-chat` is **kept in the repo** but **hidden from the nav** so old transcripts still load if someone has the URL.
 
 | Surface | Route | Session `surface` | Status |
 |---|---|---|---|
-| Existing Broker Chat | `/broker-chat` | `broker_chat` (API default) | Unchanged. Keep look, behavior, and session UI as they are. |
-| Adaptive Workspace preview | `/adaptive-workspace` | `adaptive_workspace` | New page. Build the desk here until it is ready to become the default. |
+| Chat (Adaptive Workspace) | `/chat` | `adaptive_workspace` | Default Intelligence UI. |
+| Classic Broker Chat | `/broker-chat` | `broker_chat` (API default) | Hidden from nav on purpose. Do not delete. |
 
-The preview page may reuse the existing broker-chat **backend** (sessions, runs, SSE, broker tools). It must not change the existing `/broker-chat` frontend. Shared preference writes (`PUT /broker-chat/config`) stay owned by Broker Chat so preview toggles cannot rewrite that page’s settings. Submitting an adaptive run onto a Broker Chat session (or the inverse) is rejected.
+Shared SSE/run machinery. Submitting an adaptive run onto a Broker Chat session (or the inverse) is still rejected.
 
 ## Feature flag
 
-Adaptive Workspace is **off by default**. Published Docker images must not ship it until a dedicated release.
+Chat is **on by default**. `ENABLE_ADAPTIVE_WORKSPACE=false` is a kill switch.
 
 | Variable | Default | Effect when off |
 |---|---|---|
-| `ENABLE_ADAPTIVE_WORKSPACE` | `false` | `/adaptive-workspace` HTTP API returns `404`. Frontend nav and page stay hidden. Broker Chat never gets compose/intel/alert-studio tools, even if run metadata claims `adaptive_workspace: true`. |
+| `ENABLE_ADAPTIVE_WORKSPACE` | `true` | Chat HTTP API returns `404`. Frontend hides `/chat`. Broker Chat never gets compose/intel/alert-studio tools, even if run metadata claims `adaptive_workspace: true`. |
 
-Enable locally:
+Disable locally:
 
 ```env
-ENABLE_ADAPTIVE_WORKSPACE=true
+ENABLE_ADAPTIVE_WORKSPACE=false
 ```
 
-Set it in `backend/.env` (or Compose env) and restart the backend. Do not use a `NEXT_PUBLIC_*` bake; the frontend reads the flag at runtime from `GET /api/v1/features` and authenticated `GET /api/v1/system-config`.
-
-When the preview is complete, a later change can:
-
-1. Make `/adaptive-workspace` the Intelligence default.
-2. Redirect `/broker-chat` to it, or keep Broker Chat as a legacy transcript view.
-
-Until then, `/broker-chat` stays in the sidebar. Adaptive Workspace appears only when `ENABLE_ADAPTIVE_WORKSPACE=true`.
+Set it in `backend/.env` (or Compose env) and restart the backend. The frontend reads the flag at runtime from `GET /api/v1/features` and authenticated `GET /api/v1/system-config`.
 
 ## Product contract
 
