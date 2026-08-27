@@ -21,7 +21,7 @@ function feedItems(envelope: Record<string, unknown> | null) {
     }));
 }
 
-export function IntelFeedCard({ input, name, output, status }: CustomToolRendererProps) {
+export function IntelFeedCard({ input: _input, name: _name, output, status }: CustomToolRendererProps) {
     const pending = status === "pending" || status === "streaming";
     const envelope = pending ? null : asToolEnvelope(output);
     const ok = toolEnvelopeOk(envelope);

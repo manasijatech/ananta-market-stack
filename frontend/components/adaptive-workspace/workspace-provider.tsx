@@ -236,7 +236,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
                 const existing = current.components[index];
                 const nextPosition = patch.position ? clampPosition(patch.position) : existing.position;
                 const nextProps = patch.props ? { ...(existing.props ?? {}), ...patch.props } : existing.props;
-                let next = cloneWorkspaceSpec(current);
+                const next = cloneWorkspaceSpec(current);
                 next.components[index] = { ...existing, position: nextPosition, props: nextProps };
                 if (patch.position) {
                     const packed = placeWithoutOverlap(next.components, id, nextPosition);

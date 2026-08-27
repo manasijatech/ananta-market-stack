@@ -374,10 +374,6 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
     return items.sort((left, right) => left.sequence - right.sequence);
 }
 
-function safeToolName(name: string) {
-    return name.replace(/[^A-Za-z0-9_]/g, "_") || "broker_tool";
-}
-
 function mcpStatusParts(events: BrokerChatEvent[]) {
     return events
         .filter((event) => event.event_type.startsWith("mcp_"))
@@ -413,7 +409,7 @@ function buildBrokerMessages({
     includeReasoning,
     includeToolOutputs,
     runs,
-    streamingIds
+    streamingIds: _streamingIds
 }: {
     eventsByRun: Record<string, BrokerChatEvent[]>;
     includeReasoning: boolean;
@@ -516,8 +512,8 @@ export function BrokerChatWorkspace({
     const loadedSessionIdRef = useRef<string | null>(null);
     const [provider, setProvider] = useState<LlmProvider | "">(initialConfig.default_provider ?? "");
     const [model, setModel] = useState(initialConfig.default_model ?? "");
-    const [includeToolOutputs, setIncludeToolOutputs] = useState(initialConfig.include_tool_outputs);
-    const [includeReasoning, setIncludeReasoning] = useState(initialConfig.include_reasoning);
+    const [includeToolOutputs] = useState(initialConfig.include_tool_outputs);
+    const [includeReasoning] = useState(initialConfig.include_reasoning);
     const [reasoningEffort, setReasoningEffort] = useState(initialConfig.reasoning_effort ?? "");
     const availableMcpServers = useMemo(
         () => (mcpServers.length ? mcpServers : [mcpServer]).filter((server) => server.id && server.is_enabled),

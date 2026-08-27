@@ -27,7 +27,7 @@ function quoteRows(envelope: Record<string, unknown> | null) {
     });
 }
 
-export function QuoteTickerCard({ input, name, output, status }: CustomToolRendererProps) {
+export function QuoteTickerCard({ input: _input, name, output, status }: CustomToolRendererProps) {
     const pending = status === "pending" || status === "streaming";
     const envelope = pending ? null : asToolEnvelope(output);
     const ok = toolEnvelopeOk(envelope);
