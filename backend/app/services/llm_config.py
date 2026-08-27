@@ -20,7 +20,7 @@ from app.schemas.system_config import (
     LlmProviderCredentialUpsertIn,
 )
 from app.services import rbac
-from broker.crypto import decrypt_value, encrypt_value
+from broker.crypto import decrypt_value, decrypt_value_or_none, encrypt_value
 from common.datetime_compat import UTC
 from db.models import LlmModelPricing, UserLlmModel, UserLlmProviderCredential
 
@@ -136,15 +136,14 @@ def list_provider_configs(db: Session, user_id: str) -> list[LlmProviderConfigOu
     for provider, definition in _PROVIDER_DEFINITIONS.items():
         credential = credential_by_provider.get(provider)
         provider_models = models_by_provider.get(provider, [])
+        plain_key = decrypt_value_or_none(credential.api_key_cipher if credential else None)
         out.append(
             LlmProviderConfigOut(
                 provider=provider,
                 label=definition["label"],
                 base_url=definition["base_url"],
                 has_api_key=bool(credential and credential.api_key_cipher),
-                api_key_hint=_build_api_key_hint(decrypt_value(credential.api_key_cipher))
-                if credential and credential.api_key_cipher
-                else None,
+                api_key_hint=_build_api_key_hint(plain_key) if plain_key else None,
                 is_enabled=bool(credential and credential.is_enabled),
                 api_key_updated_at=credential.updated_at if credential else None,
                 models=[LlmModelOut.model_validate(row) for row in provider_models],

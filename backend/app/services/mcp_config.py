@@ -24,7 +24,7 @@ from app.schemas.system_config import (
     McpServerConfigUpdateIn,
 )
 from app.services import rbac
-from broker.crypto import decrypt_value, encrypt_value
+from broker.crypto import decrypt_value_or_none, encrypt_value
 from db.models import User, UserMcpServerConfig
 
 MCP_CLIENT_NAME = "Ananta Market Stack Broker Chat"
@@ -131,7 +131,7 @@ def _validate_url(url: str, *, required: bool) -> str:
 
 
 def _decrypt_or_empty(value: str | None) -> str:
-    return decrypt_value(value) if value else ""
+    return decrypt_value_or_none(value) or ""
 
 
 def _has_valid_oauth_token(row: UserMcpServerConfig) -> bool:
