@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode, type UIEvent } from "react";
 import { CheckCircle2, ChevronDown, Radio, Server } from "lucide-react";
+import { flattenLivePriceTick, mergeLivePriceTick, tickHasLivePrice } from "@/lib/live-price-tick";
 import { getLiveStreamsStatus, reconcileLiveSubscriptions } from "@/service/actions/alerts";
 import type { LivePriceTick, LiveStreamsStatus, LiveSubscription } from "@/service/types/alerts";
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,7 @@ function tickKey(tick: LivePriceTick): string {
 }
 
 function hasLivePrice(tick: LivePriceTick | undefined): boolean {
-    return toNumber(tick?.ltp ?? tick?.last_price) !== null;
+    return tickHasLivePrice(tick);
 }
 
 function hasRenderableTick(tick: LivePriceTick | undefined): boolean {
@@ -66,24 +67,7 @@ function hasRenderableTick(tick: LivePriceTick | undefined): boolean {
 }
 
 function mergePriceTick(current: LivePriceTick | undefined, incoming: LivePriceTick): LivePriceTick {
-    if (!current || !hasLivePrice(current)) return incoming;
-    if (!hasLivePrice(incoming)) return current;
-    const incomingChange = toNumber(incoming.change_pct ?? incoming.day_change_perc);
-    const currentChange = toNumber(current.change_pct ?? current.day_change_perc);
-    if (incomingChange !== null) return incoming;
-    if (currentChange === null) return incoming;
-    return {
-        ...incoming,
-        change_pct: current.change_pct ?? current.day_change_perc,
-        day_change_perc: current.day_change_perc ?? current.change_pct,
-        open: incoming.open ?? current.open,
-        high: incoming.high ?? current.high,
-        low: incoming.low ?? current.low,
-        close: incoming.close ?? current.close,
-        volume: incoming.volume ?? current.volume,
-        best_bid_price: incoming.best_bid_price ?? current.best_bid_price,
-        best_ask_price: incoming.best_ask_price ?? current.best_ask_price
-    };
+    return mergeLivePriceTick(current, incoming);
 }
 
 function subscriptionKey(subscription: LiveSubscription): string {
@@ -106,16 +90,16 @@ function subscriptionHealthReason(subscription: LiveSubscription): string {
 function tickFromSubscription(subscription: LiveSubscription): LivePriceTick | null {
     const quote = subscription.last_quote || {};
     const status = (subscription.health_status || "").toLowerCase();
-    if (Object.keys(quote).length) {
-        return {
-            ...(quote as Partial<LivePriceTick>),
-            symbol: subscription.symbol,
-            exchange: subscription.exchange,
-            account_id: subscription.account_id ?? undefined,
-            broker_code: subscription.broker_code ?? undefined,
-            received_at: subscription.last_received_at || (quote as Partial<LivePriceTick>).received_at || null,
-            status: status || (quote as Partial<LivePriceTick>).status || null
-        };
+    const flattened = flattenLivePriceTick(quote, {
+        account_id: subscription.account_id ?? undefined,
+        broker_code: subscription.broker_code ?? undefined,
+        exchange: subscription.exchange,
+        received_at: subscription.last_received_at,
+        status: status || undefined,
+        symbol: subscription.symbol
+    });
+    if (flattened && (tickHasLivePrice(flattened) || Object.keys(quote).length)) {
+        return flattened;
     }
     const reason = subscriptionHealthReason(subscription);
     if (!reason || status === "ok" || status === "healthy") return null;
@@ -267,7 +251,17 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                             symbol_count?: number;
                         };
                         if (payload.type === "snapshot" || payload.type === "prices") {
-                            enqueue(Array.isArray(payload.rows) ? payload.rows : []);
+                            enqueue(
+                                (Array.isArray(payload.rows) ? payload.rows : []).flatMap((row) => {
+                                    const tick = flattenLivePriceTick(row as unknown as Record<string, unknown>, {
+                                        account_id: row.account_id,
+                                        broker_code: row.broker_code,
+                                        exchange: row.exchange,
+                                        symbol: row.symbol
+                                    });
+                                    return tick ? [tick] : [];
+                                })
+                            );
                         } else if (payload.type === "connected" || payload.type === "scope") {
                             setMessage(`${payload.symbol_count ?? 0} symbols in live scope`);
                         } else if (payload.type === "error") {
@@ -280,8 +274,6 @@ function LivePricesPanel({ status }: { status: LiveStreamsStatus }) {
                     }
                 };
                 socket.onerror = () => {
-                    setSocketState("connecting");
-                    setMessage("Live price connection interrupted; reconnecting");
                     socket.close();
                 };
                 socket.onclose = () => {

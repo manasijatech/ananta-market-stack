@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
             static: 180
         }
     },
+    allowedDevOrigins: ["127.0.0.1", "localhost"],
     async redirects() {
         return [
             {
@@ -74,6 +75,16 @@ const nextConfig: NextConfig = {
             {
                 source: "/alert-channels",
                 destination: "/settings",
+                permanent: false
+            },
+            {
+                source: "/adaptive-workspace",
+                destination: "/chat",
+                permanent: false
+            },
+            {
+                source: "/adaptive-workspace/:path*",
+                destination: "/chat",
                 permanent: false
             }
         ];

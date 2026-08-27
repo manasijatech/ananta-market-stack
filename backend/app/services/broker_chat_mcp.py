@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from agents.mcp import MCPServerManager, MCPServerSse, MCPServerStreamableHttp
 from agents.run_context import RunContextWrapper
+from agents.tool import FunctionTool
 from sqlalchemy.orm import Session
 
 from app.services import broker_chat, mcp_config
+from app.services.broker_chat_mcp_gate import flatten_gated_mcp_servers, looks_like_call_token_error
 from db.models import BrokerChatRun
 
 
@@ -20,6 +22,8 @@ class BrokerChatMcpHandle:
     active_servers: list[Any]
     enabled: bool
     inventory: dict[str, Any] | None = None
+    extra_tools: list[FunctionTool] = field(default_factory=list)
+    flattened_tool_names: list[str] = field(default_factory=list)
 
     async def close(self) -> None:
         if self.manager is None:
@@ -30,12 +34,13 @@ class BrokerChatMcpHandle:
             pass
 
 
-def broker_chat_mcp_config() -> dict[str, Any]:
+def broker_chat_mcp_config(*, prefix_server_names: bool = False) -> dict[str, Any]:
     """Agent-level MCP behavior recommended for this chat surface."""
 
     return {
-        "convert_schemas_to_strict": True,
-        "include_server_in_tool_names": True,
+        # Strict conversion drops optional MCP fields such as call_token defaults.
+        "convert_schemas_to_strict": False,
+        "include_server_in_tool_names": prefix_server_names,
         "failure_error_function": mcp_tool_failure_message,
     }
 
@@ -44,6 +49,16 @@ def mcp_tool_failure_message(_context: RunContextWrapper[Any], error: Exception)
     """Return a model-visible, recoverable MCP tool error."""
 
     message = mcp_config.describe_exception(error)
+    if looks_like_call_token_error(message):
+        return (
+            "MCP execute_tool failed because call_token was missing or expired. "
+            "Do not loop. Prefer the first-class MCP tools (get_daily_summary, get_news, "
+            "get_top_movers, get_price_and_volume). If those are not listed, call execute_tool "
+            "ONCE with a single JSON object whose top-level keys are name, arguments, and "
+            "call_token (call_token is a sibling of name, never nested inside arguments). "
+            "After two failures, stop MCP gated calls and use intel_get_feed plus any data "
+            f"already gathered. Server message: {message}"
+        )
     if _looks_like_json_argument_error(message):
         return (
             "Recoverable MCP tool argument error. The previous MCP tool call did not contain exactly one valid JSON object. "
@@ -53,7 +68,8 @@ def mcp_tool_failure_message(_context: RunContextWrapper[Any], error: Exception)
         )
     return (
         "Recoverable MCP tool error. Do not fail the whole chat because of this single MCP call. "
-        "If the request can be corrected, retry once with valid arguments; otherwise continue with other MCP/local tools or explain the unavailable source. "
+        "Retry that same tool at most once. If it fails again, continue with other MCP/local tools "
+        "or intel_get_feed. Do not loop. "
         f"Tool error: {message}"
     )
 
@@ -74,27 +90,66 @@ def mcp_context_instructions(handle: BrokerChatMcpHandle) -> str:
         return ""
     inventory = handle.inventory or {}
     sections = [
-        "MCP is connected for this run. Treat connected MCP servers as additional tool and context providers. "
-        "Use their advertised tools, prompts, and resources according to the server-provided names, descriptions, schemas, and the user's request. "
-        "For the user's connected broker account and portfolio state, local broker tools remain the authoritative source."
+        "MCP is connected for this run. You MUST use advertised MCP tools when they "
+        "can answer market news, daily/morning summaries, events, research, filings, "
+        "or when the user asked to use MCP. Do not skip MCP in favor of instrument-cache "
+        "search loops. Local broker tools remain authoritative for connected-account "
+        "portfolio state and live quotes."
     ]
-    inventory_sections: list[str] = []
-    servers = inventory.get("servers")
-    if isinstance(servers, list) and servers:
-        inventory_sections.append(f"Servers:\n{_inventory_json(servers)}")
-    for label, key in (("Tools", "tools"), ("Prompts", "prompts"), ("Resources", "resources")):
-        value = inventory.get(key)
-        if value:
-            inventory_sections.append(f"{label}:\n{_inventory_json(value)}")
+    tool_names = _inventory_tool_names(inventory)
+    if handle.flattened_tool_names:
+        sections.append(
+            "MCP capabilities are exposed as first-class tools. Call them by these names: "
+            + ", ".join(handle.flattened_tool_names[:80])
+            + ". Do NOT call describe_tools or execute_tool. Tokens are handled by the host."
+        )
+    elif tool_names:
+        callable_names = [
+            name
+            for name in tool_names
+            if name.lower() not in {"describe_tools", "describe_tool", "execute_tool", "execute"}
+        ]
+        sections.append(
+            "Connected MCP tool names (call these by their MCP names, not by guessing broker tools): "
+            + ", ".join((callable_names or tool_names)[:80])
+        )
+        if any(name.lower() in {"describe_tools", "execute_tool"} for name in tool_names):
+            sections.append(
+                "If you still see describe_tools/execute_tool, call describe_tools once, then "
+                "execute_tool with top-level keys name, arguments, and call_token. "
+                "call_token is a sibling of name. After two execute_tool failures, stop and use intel_get_feed."
+            )
     errors = inventory.get("errors")
     if errors:
-        inventory_sections.append(f"Inventory listing notes:\n{_inventory_json(errors)}")
-    if inventory_sections:
-        sections.append(
-            "Cached MCP inventory follows. It is not a whitelist; live MCP tool availability is determined by the connected server.\n\n"
-            + "\n\n".join(inventory_sections)
-        )
+        sections.append(f"Inventory listing notes: {_inventory_json(errors)}")
     return "\n\n".join(sections)
+
+
+def _inventory_tool_names(inventory: dict[str, Any]) -> list[str]:
+    tools = inventory.get("tools")
+    if not isinstance(tools, list):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in tools:
+        candidates: list[str] = []
+        if isinstance(item, str):
+            candidates.append(item)
+        elif isinstance(item, dict):
+            for key in ("name", "tool", "id"):
+                value = item.get(key)
+                if isinstance(value, str):
+                    candidates.append(value)
+            nested = item.get("function")
+            if isinstance(nested, dict) and isinstance(nested.get("name"), str):
+                candidates.append(nested["name"])
+        for raw in candidates:
+            name = str(raw).strip()
+            if not name or name in seen or name.startswith("{"):
+                continue
+            seen.add(name)
+            names.append(name)
+    return names
 
 
 def _inventory_json(value: Any) -> str:
@@ -109,7 +164,7 @@ def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
         "sse_read_timeout": float(max(connection.timeout_seconds, 30)),
     }
     kwargs = {
-        "cache_tools_list": True,
+        "cache_tools_list": False,
         "name": connection.name or f"MCP server {connection.id}",
         "client_session_timeout_seconds": float(connection.timeout_seconds),
         "max_retry_attempts": 2,
@@ -138,6 +193,19 @@ async def connect_broker_chat_mcp(
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=False)
 
     selected_server_ids = _selected_server_ids(metadata)
+    resolved_ids, dropped_ids = mcp_config.resolve_mcp_server_ids(db, run.user_id, selected_server_ids)
+    if dropped_ids:
+        broker_chat.append_event(
+            db,
+            run,
+            event_type="mcp_unavailable",
+            public_payload={
+                "status": "stale_selection",
+                "message": "A saved MCP server id was out of date. Connecting the currently enabled MCP server instead.",
+            },
+            full_payload={"status": "stale_selection", "dropped_server_ids": dropped_ids, "resolved_server_ids": resolved_ids},
+        )
+    selected_server_ids = resolved_ids
     for server_id in mcp_config.stale_mcp_server_ids(db, run.user_id, selected_server_ids):
         try:
             mcp_schema = await mcp_config.refresh_mcp_inventory(db, run.user_id, server_id)
@@ -195,7 +263,7 @@ async def connect_broker_chat_mcp(
             db,
             run,
             event_type="mcp_unavailable",
-            public_payload={"status": "disabled", "message": "MCP is not enabled in System Config."},
+            public_payload={"status": "disabled", "message": "No enabled MCP server is configured in Settings."},
         )
         return BrokerChatMcpHandle(manager=None, active_servers=[], enabled=True)
 
@@ -261,11 +329,26 @@ async def connect_broker_chat_mcp(
             "inventory": inventory,
         },
     )
+    extra_tools: list[FunctionTool] = []
+    flattened_tool_names: list[str] = []
+    try:
+        extra_tools, flattened_tool_names = await flatten_gated_mcp_servers(list(manager.active_servers))
+    except Exception as exc:
+        broker_chat.append_event(
+            db,
+            run,
+            event_type="mcp_flatten_failed",
+            public_payload={"status": "failed", "message": "Could not flatten gated MCP tools."},
+            full_payload={"status": "failed", "message": str(exc), "error_type": exc.__class__.__name__},
+        )
+
     return BrokerChatMcpHandle(
         manager=manager,
         active_servers=list(manager.active_servers),
         enabled=True,
         inventory=inventory,
+        extra_tools=extra_tools,
+        flattened_tool_names=flattened_tool_names,
     )
 
 

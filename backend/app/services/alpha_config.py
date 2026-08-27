@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.schemas.system_config import AlphaApiConfigOut, AlphaApiCredentialUpsertIn
 from app.services import rbac
 from app.services.alpha_websocket import fetch_alpha_account
-from broker.crypto import decrypt_value, encrypt_value
+from broker.crypto import decrypt_value_or_none, encrypt_value
 from db.models import UserAlphaApiCredential
 
 
@@ -21,11 +21,10 @@ def _build_api_key_hint(api_key: str) -> str | None:
 def get_alpha_api_config(db: Session, user_id: str) -> AlphaApiConfigOut:
     owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     row = db.get(UserAlphaApiCredential, owner_user_id)
+    plain_key = decrypt_value_or_none(row.api_key_cipher if row else None)
     return AlphaApiConfigOut(
         has_api_key=bool(row and row.api_key_cipher),
-        api_key_hint=_build_api_key_hint(decrypt_value(row.api_key_cipher))
-        if row and row.api_key_cipher
-        else None,
+        api_key_hint=_build_api_key_hint(plain_key) if plain_key else None,
         is_enabled=bool(row and row.is_enabled),
         api_key_updated_at=row.updated_at if row else None,
         account=_json_loads(row.account_json, {}) if row else {},

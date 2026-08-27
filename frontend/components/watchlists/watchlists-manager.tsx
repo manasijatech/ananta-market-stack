@@ -19,6 +19,7 @@ import {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import { livePriceWebSocketCandidates } from "@/lib/live-price-ws";
 import { getAlphaSymbolMetadata } from "@/service/actions/alpha/symbols";
 import { touchLiveDemandSubscriptions } from "@/service/actions/alerts";
 import { searchDefaultBrokerInstruments } from "@/service/actions/broker";
@@ -69,7 +70,6 @@ import { notifyAlphaCreditWarning } from "@/lib/alpha-credit-warning";
 import { formatIstDateTime } from "@/lib/datetime";
 import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import { formatMarketCap } from "@/lib/market-cap";
-import { getPublicApiWebSocketUrl } from "@/lib/runtime-config";
 import { typography } from "@/lib/typography";
 import { cn } from "@/lib/utils";
 
@@ -662,14 +662,20 @@ export function WatchlistsManager({
             }
         }
 
+        let urlIndex = 0;
+        let openedOnce = false;
+        let switchUrl = false;
+
         async function connect() {
             if (!livePriceRefs.length) {
                 setLiveState("disconnected");
                 setLiveMessage("No broker-backed symbols are available for live pricing.");
                 return;
             }
-            setLiveState("connecting");
-            setLiveMessage("Connecting to the live price stream.");
+            setLiveState(openedOnce ? "disconnected" : "connecting");
+            if (!openedOnce) {
+                setLiveMessage("Connecting to the live price stream.");
+            }
             try {
                 const userId = initialWatchlists[0]?.user_id;
                 if (!userId) {
@@ -677,13 +683,18 @@ export function WatchlistsManager({
                     setLiveMessage("The watchlist is not linked to the current user.");
                     return;
                 }
-                const url = getPublicApiWebSocketUrl("live-streams/prices/ws");
-                url.searchParams.set("user_id", userId);
-                url.searchParams.set("scope", "client");
+                const urls = livePriceWebSocketCandidates(userId);
+                const url = urls[Math.min(urlIndex, Math.max(urls.length - 1, 0))];
+                if (!url) {
+                    setLiveState("error");
+                    setLiveMessage("Could not resolve a live price stream URL.");
+                    return;
+                }
                 if (cancelled) return;
-                const socket = new WebSocket(url.toString());
+                const socket = new WebSocket(url);
                 liveSocketRef.current = socket;
                 socket.onopen = () => {
+                    openedOnce = true;
                     socket.send(
                         JSON.stringify({
                             type: "subscribe",
@@ -717,20 +728,28 @@ export function WatchlistsManager({
                     }
                 };
                 socket.onerror = () => {
-                    setLiveState("error");
-                    setLiveMessage("The live price connection was interrupted. Retrying shortly.");
+                    if (!openedOnce && urlIndex < urls.length - 1) {
+                        urlIndex += 1;
+                        switchUrl = true;
+                    } else {
+                        setLiveState("error");
+                        setLiveMessage("The live price connection was interrupted. Retrying shortly.");
+                    }
                     socket.close();
                 };
                 socket.onclose = () => {
                     if (liveSocketRef.current === socket) liveSocketRef.current = null;
                     if (cancelled) return;
-                    setLiveState("disconnected");
-                    setLiveMessage((current) =>
-                        current.includes("error") || current.includes("interrupted")
-                            ? current
-                            : "The live price connection closed. Retrying shortly."
-                    );
-                    reconnectTimer = setTimeout(connect, 2500);
+                    setLiveState(openedOnce ? "disconnected" : "connecting");
+                    if (!switchUrl) {
+                        setLiveMessage((current) =>
+                            current.includes("error") || current.includes("interrupted")
+                                ? current
+                                : "The live price connection closed. Retrying shortly."
+                        );
+                    }
+                    reconnectTimer = setTimeout(connect, switchUrl ? 150 : 2500);
+                    switchUrl = false;
                 };
             } catch (caught) {
                 if (cancelled) return;

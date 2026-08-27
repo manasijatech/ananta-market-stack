@@ -64,6 +64,9 @@ export async function requireActiveWorkspace(): Promise<RbacPrincipal> {
 
         return principal;
     } catch {
-        redirect("/auth/sign-in");
+        // Keep the Better Auth session. Sending a signed-in user to /auth/sign-in
+        // races the edge proxy (cookie present → bounce back to /broker-connections)
+        // and produces ERR_TOO_MANY_REDIRECTS when RBAC is temporarily unavailable.
+        redirect("/pending-approval");
     }
 }

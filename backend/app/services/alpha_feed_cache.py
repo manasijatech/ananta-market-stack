@@ -28,10 +28,17 @@ _FEED_MAX_REFRESH_BATCHES = 4
 # One REST page per symbol batch — avoids replaying deep history (credit-heavy).
 _FEED_MAX_DRISHTI_PAGES_PER_BATCH = 1
 # Incremental REST backfill window when symbols were synced before.
-_FEED_REFRESH_LOOKBACK_DAYS = 7
+_FEED_REFRESH_LOOKBACK_DAYS = {
+    "news": 14,
+    "announcements": 14,
+    "alerts": 14,
+    "earnings": 180,
+    "concalls": 365,
+}
 # Market-wide websocket rows (N/A) only belong in very large watchlist scopes.
 _FEED_INCLUDE_MARKET_WIDE_MIN_SYMBOLS = 50
 _INVALID_FEED_SYMBOLS = frozenset({"N/A", "NA", "NONE", ""})
+_EXCHANGE_TOKENS = frozenset({"NSE", "BSE", "NFO", "BFO", "MCX", "NCDEX", "CDS", "BSEFO", "NSECM", "BSECM"})
 
 
 def _utc_now() -> datetime:
@@ -51,11 +58,25 @@ def _json_loads(value: str | None, default: Any = None) -> Any:
         return default
 
 
+def _lookback_days(product: str) -> int:
+    return int(_FEED_REFRESH_LOOKBACK_DAYS.get(product, 14))
+
+
+def _cash_equity_symbol(value: str) -> str:
+    """Drishti REST takes NSE/BSE tickers only — drop exchange/segment qualifiers."""
+    item = str(value or "").strip().upper().replace(".NS", "").replace(".BO", "")
+    if not item or item in _INVALID_FEED_SYMBOLS or item in _EXCHANGE_TOKENS:
+        return ""
+    parts = [part for part in item.replace("/", ":").split(":") if part]
+    parts = [part for part in parts if part not in _EXCHANGE_TOKENS]
+    return parts[0] if parts else ""
+
+
 def _normalize_symbols(symbols: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for symbol in symbols:
-        item = str(symbol or "").strip().upper()
+        item = _cash_equity_symbol(str(symbol or ""))
         if not item or item in seen:
             continue
         seen.add(item)
@@ -102,10 +123,7 @@ def _published_at(payload: dict[str, Any], fallback: datetime | None = None) -> 
 
 
 def _normalize_feed_symbol(value: str | None) -> str | None:
-    symbol = (value or "").strip().upper()
-    if not symbol or symbol in _INVALID_FEED_SYMBOLS:
-        return None
-    return symbol.split(",")[0].split(":")[0]
+    return _cash_equity_symbol(value or "") or None
 
 
 def _payload_symbol(payload: dict[str, Any], fallback: str | None = None) -> str | None:
@@ -367,16 +385,27 @@ def _refresh_from_date_for_batch(
     from_date: str | None,
     historical: bool,
     force_refresh: bool,
+    requested_from: str | None = None,
 ) -> str | None:
-    """Choose the REST backfill start, including explicit historical ranges."""
+    """Choose the REST backfill start, including explicit historical ranges and sync gaps."""
     if historical and from_date:
         try:
             return datetime.strptime(from_date[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
         except ValueError:
             pass
+
+    lookback = timedelta(days=_lookback_days(product))
+    floor = _utc_now() - lookback
+    effective_from = requested_from or from_date
+    if effective_from:
+        try:
+            requested = datetime.strptime(effective_from[:10], "%Y-%m-%d")
+            if requested < floor:
+                floor = requested
+        except ValueError:
+            pass
     if force_refresh:
-        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
-        return cutoff.strftime("%Y-%m-%d")
+        return floor.strftime("%Y-%m-%d")
 
     rows = db.scalars(
         select(AlphaFeedSymbolSync).where(
@@ -388,8 +417,7 @@ def _refresh_from_date_for_batch(
     sync_by_symbol = {row.symbol: row for row in rows}
     never_synced = [symbol for symbol in batch if sync_by_symbol.get(symbol) is None]
     if never_synced:
-        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
-        return cutoff.strftime("%Y-%m-%d")
+        return floor.strftime("%Y-%m-%d")
 
     synced_times = [
         row.last_synced_at
@@ -397,14 +425,12 @@ def _refresh_from_date_for_batch(
         if row.last_synced_at is not None
     ]
     if not synced_times:
-        cutoff = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
-        return cutoff.strftime("%Y-%m-%d")
+        return floor.strftime("%Y-%m-%d")
 
     oldest_sync = min(synced_times)
     cutoff = oldest_sync - timedelta(hours=1)
-    max_lookback = _utc_now() - timedelta(days=_FEED_REFRESH_LOOKBACK_DAYS)
-    if cutoff < max_lookback:
-        cutoff = max_lookback
+    if cutoff < floor:
+        cutoff = floor
     return cutoff.strftime("%Y-%m-%d")
 
 
@@ -511,12 +537,14 @@ def refresh_feed_cache_for_symbols(
     if not normalized:
         return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
 
-    # Single-symbol focus: if nothing is cached yet (REST or prior WS), always hit Drishti.
+    empty_symbols = [
+        symbol
+        for symbol in normalized
+        if not _symbol_has_cached_items(db, user_id=user_id, product=product, symbol=symbol)
+    ]
     effective_force = force_refresh or historical
-    if len(normalized) == 1 and not force_refresh:
-        symbol = normalized[0]
-        if not _symbol_has_cached_items(db, user_id=user_id, product=product, symbol=symbol):
-            effective_force = True
+    if len(normalized) == 1 and not force_refresh and not historical and empty_symbols:
+        effective_force = True
 
     pending = _symbols_needing_sync(
         db,
@@ -525,6 +553,10 @@ def refresh_feed_cache_for_symbols(
         symbols=normalized,
         force_refresh=effective_force,
     )
+    if not effective_force:
+        for symbol in empty_symbols:
+            if symbol not in pending:
+                pending.append(symbol)
     if not pending:
         return {"refreshed_symbols": 0, "upserted": 0, "pending_remaining": 0}
 
@@ -548,12 +580,14 @@ def refresh_feed_cache_for_symbols(
             batch=batch,
             from_date=from_date,
             historical=historical,
-            force_refresh=force_refresh,
+            force_refresh=effective_force or bool(empty_symbols),
+            requested_from=from_date,
         )
         try:
             page = 1
             batch_upserted = 0
-            while page <= _FEED_MAX_DRISHTI_PAGES_PER_BATCH:
+            page_cap = 2 if (force_refresh or bool(empty_symbols)) else _FEED_MAX_DRISHTI_PAGES_PER_BATCH
+            while page <= page_cap:
                 rows = _fetch_product_page(
                     client,
                     product,
@@ -632,7 +666,7 @@ def _feed_query_filters(
         AlphaFeedItem.product == product,
         symbol_clause,
     ]
-    if from_date:
+    if from_date and product not in {"earnings", "concalls"}:
         try:
             start = datetime.strptime(from_date[:10], "%Y-%m-%d")
             filters.append(or_(AlphaFeedItem.published_at.is_(None), AlphaFeedItem.published_at >= start))
@@ -781,6 +815,7 @@ def list_cached_feed_items(
 
     return {
         **result,
+        "from_cache": bool(result.get("from_cache")) and int(refresh_stats.get("upserted") or 0) == 0,
         "synced_symbols": int(refresh_stats.get("refreshed_symbols") or 0),
         "pending_symbols": int(refresh_stats.get("pending_remaining") or 0),
     }

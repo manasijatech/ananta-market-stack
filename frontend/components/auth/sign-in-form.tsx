@@ -4,7 +4,7 @@ import { authMutationKeys } from "@better-auth-ui/core";
 import { useAuth, useFetchOptions, useSignInEmail } from "@better-auth-ui/react";
 import { IconEye, IconEyeOff } from "@tabler/icons-react";
 import { useIsMutating } from "@tanstack/react-query";
-import { type SyntheticEvent, useState } from "react";
+import { type SyntheticEvent, useEffect, useState } from "react";
 import {
     authFormInputClassName,
     authFormInputGroupButtonClassName,
@@ -22,6 +22,8 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { resolvePostAuthRoute } from "@/service/actions/auth-routing";
+import { signInWithEmailAction } from "@/service/actions/auth-session";
 
 export type SignInFormProps = {
     socialLayout?: SocialLayout;
@@ -35,7 +37,6 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
         emailAndPassword,
         localization,
         plugins,
-        redirectTo,
         socialProviders,
         viewPaths,
         navigate,
@@ -46,22 +47,41 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
     const [password, setPassword] = useState("");
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+    const [formError, setFormError] = useState<string | null>(null);
+    const [isRedirecting, setIsRedirecting] = useState(false);
 
     const { mutate: signInEmail, isPending: signInEmailPending } = useSignInEmail(authClient, {
         onError: (error, { email }) => {
             setPassword("");
+            setIsRedirecting(false);
             if (error.error?.code === "EMAIL_NOT_VERIFIED") {
                 sessionStorage.setItem("better-auth-ui.verify-email", email);
                 navigate({ to: `${basePaths.auth}/${viewPaths.auth.verifyEmail}` });
+                return;
             }
+            setFormError(error.error?.message || "Could not sign in. Check your email and password.");
             resetFetchOptions();
         },
-        onSuccess: () => navigate({ to: redirectTo })
+        onSuccess: () => {
+            setIsRedirecting(true);
+            void (async () => {
+                const destination = await resolvePostAuthRoute().catch(() => "/broker-connections");
+                window.location.assign(destination);
+            })();
+        }
     });
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const error = params.get("error");
+        if (error) {
+            setFormError(error);
+        }
+    }, []);
 
     const signInMutating = useIsMutating({ mutationKey: authMutationKeys.signIn.all });
     const signUpMutating = useIsMutating({ mutationKey: authMutationKeys.signUp.all });
-    const isPending = signInMutating + signUpMutating > 0;
+    const isPending = signInMutating + signUpMutating > 0 || isRedirecting;
 
     const Captcha = plugins.find((plugin) => plugin.captchaComponent)?.captchaComponent;
     const showSeparator = emailAndPassword?.enabled && socialProviders && socialProviders.length > 0;
@@ -71,6 +91,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
         const formData = new FormData(event.currentTarget);
         const email = formData.get("email") as string;
         const rememberMe = formData.get("rememberMe") === "on";
+        setFormError(null);
 
         signInEmail({
             email,
@@ -97,7 +118,7 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
             ) : null}
 
             {emailAndPassword?.enabled ? (
-                <form className="grid gap-5" onSubmit={handleSubmit}>
+                <form className="grid gap-5" method="POST" action={signInWithEmailAction} onSubmit={handleSubmit}>
                     <FieldGroup className="gap-3.5">
                         <Field data-invalid={!!fieldErrors.email}>
                             <FieldLabel htmlFor="sign-in-email">{localization.auth.email}</FieldLabel>
@@ -218,6 +239,8 @@ export function SignInForm({ socialLayout, socialPosition = "bottom" }: SignInFo
 
                         {Captcha ? <div className="flex justify-center">{Captcha}</div> : null}
                     </FieldGroup>
+
+                    {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
 
                     <div className="space-y-5">
                         <Button type="submit" disabled={isPending} size="lg" className={authFormPrimaryButtonClassName}>

@@ -26,7 +26,7 @@ type RawOpenRouterModel = {
     architecture?: { modality?: string };
 };
 
-const ONE_WEEK_SECONDS = 60 * 60 * 24 * 7;
+const THREE_HOURS_SECONDS = 60 * 60 * 3;
 
 function normalize(raw: RawOpenRouterModel): OpenRouterModel | null {
     if (!raw.id) return null;
@@ -45,10 +45,9 @@ function normalize(raw: RawOpenRouterModel): OpenRouterModel | null {
 /**
  * OpenRouter's full model catalog (public endpoint, no auth required).
  *
- * Hard-cached for a week via `unstable_cache`: the catalog changes rarely, so we
- * memoize the normalized result in the Next Data Cache and only hit the network
- * on a cold/expired cache. Used to populate the model dropdowns in LLM provider
- * setup so users pick from a real list instead of pasting model IDs by hand.
+ * Hard-cached for three hours via `unstable_cache`: the catalog changes often
+ * enough that we refresh periodically, but not on every request. Used to populate
+ * the model dropdowns in LLM provider setup; custom model ids bypass the catalog.
  */
 export const getOpenRouterModels = unstable_cache(
     async (): Promise<OpenRouterModel[]> => {
@@ -76,6 +75,6 @@ export const getOpenRouterModels = unstable_cache(
             return [];
         }
     },
-    ["openrouter-models-v2-text-only"],
-    { revalidate: ONE_WEEK_SECONDS, tags: ["openrouter-models"] }
+    ["openrouter-models-v3-text-only-3h"],
+    { revalidate: THREE_HOURS_SECONDS, tags: ["openrouter-models"] }
 );

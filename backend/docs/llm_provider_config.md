@@ -98,6 +98,7 @@ Current routes:
 - `PUT /api/v1/system-config/llm/providers/{provider}`
 - `DELETE /api/v1/system-config/llm/providers/{provider}`
 - `POST /api/v1/system-config/llm/models`
+- `PATCH /api/v1/system-config/llm/models/{model_row_id}`
 - `DELETE /api/v1/system-config/llm/models/{model_row_id}`
 
 ## Provider notes
@@ -113,6 +114,10 @@ Current routes:
 - Uses the OpenAI SDK with `base_url` override
 - Optional `HTTP-Referer` and `X-OpenRouter-Title` headers are attached when
   `APP_PUBLIC_BASE_URL` is configured
+- Saved models can set an optional reasoning effort (`none` / `minimal` / `low` /
+  `medium` / `high` / `xhigh`). Leave it empty to use the model default. Broker
+  Chat and Adaptive Workspace send this as OpenRouter `reasoning.effort` only
+  when a level is selected.
 
 ### Gemini
 

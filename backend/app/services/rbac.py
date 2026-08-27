@@ -805,6 +805,7 @@ def _reconcile_owner_llm_config(db: Session, owner_user_id: str, source_user_ids
                     provider=source_model.provider,
                     model_id=source_model.model_id,
                     label=source_model.label,
+                    reasoning_effort=source_model.reasoning_effort,
                     is_enabled=source_model.is_enabled,
                 )
             )

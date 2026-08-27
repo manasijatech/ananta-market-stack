@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from typing import Any, Callable, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
@@ -8,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_current_principal, get_current_user
 from app.schemas.broker import (
+    BrokerDataDefaultConfigOut,
     BrokerDataDefaultConfigUpdateIn,
+    BrokerDataSearchConfigOut,
     BrokerDataSearchConfigUpdateIn,
     InstrumentSearchRow,
 )
@@ -18,8 +22,10 @@ from app.schemas.system_config import (
     AlphaApiKeyOut,
     AlphaWebSocketConfigOut,
     AlphaWebSocketConfigUpdateIn,
+    FeatureFlagsOut,
     LlmModelCreateIn,
     LlmModelPricingOut,
+    LlmModelUpdateIn,
     LlmModelPricingUpsertIn,
     LlmProvider,
     LlmProviderConfigOut,
@@ -35,6 +41,7 @@ from app.schemas.system_config import (
 from app.services import alpha_config
 from app.services import alpha_websocket
 from app.services import broker_data_preferences
+from app.services import feature_flags
 from app.services import llm_config
 from app.services import mcp_config
 from app.services import rbac
@@ -42,7 +49,19 @@ from app.services.rbac import Principal
 from db.models import User
 from db.session import get_db
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+T = TypeVar("T")
+
+
+def _safe_config(label: str, factory: Callable[[], T], fallback: Callable[[], T]) -> T:
+    try:
+        return factory()
+    except Exception:
+        logger.exception("system-config failed while loading %s", label)
+        return fallback()
 
 
 def _mcp_read_allowed(principal: Principal) -> bool:
@@ -58,21 +77,58 @@ def get_system_config(
 ) -> SystemConfigOut:
     mcp_server = McpServerConfigOut()
     mcp_servers: list[McpServerConfigOut] = []
-    mcp_connector_readiness = []
+    mcp_connector_readiness: list[Any] = []
     if _mcp_read_allowed(principal):
-        mcp_server = mcp_config.get_mcp_server_config(db, principal.user.id)
-        mcp_servers = mcp_config.list_mcp_server_configs(db, principal.user.id)
-        mcp_connector_readiness = mcp_config.list_mcp_connector_readiness()
+        mcp_server = _safe_config(
+            "mcp_server",
+            lambda: mcp_config.get_mcp_server_config(db, principal.user.id),
+            McpServerConfigOut,
+        )
+        mcp_servers = _safe_config(
+            "mcp_servers",
+            lambda: mcp_config.list_mcp_server_configs(db, principal.user.id),
+            list,
+        )
+        mcp_connector_readiness = _safe_config(
+            "mcp_connector_readiness",
+            mcp_config.list_mcp_connector_readiness,
+            list,
+        )
     return SystemConfigOut(
-        broker_data_default=broker_data_preferences.get_broker_data_default_config(db, principal.user.id, principal),
-        broker_data_search=broker_data_preferences.get_broker_data_search_config(db, principal.user.id, principal),
-        llm_providers=llm_config.list_provider_configs(db, principal.user.id),
-        llm_model_pricing=llm_config.list_model_pricing(db, principal.user.id),
-        alpha_api=alpha_config.get_alpha_api_config(db, principal.user.id),
-        alpha_websocket=alpha_websocket.alpha_ws_config_out(db, principal.user.id),
+        broker_data_default=_safe_config(
+            "broker_data_default",
+            lambda: broker_data_preferences.get_broker_data_default_config(db, principal.user.id, principal),
+            BrokerDataDefaultConfigOut,
+        ),
+        broker_data_search=_safe_config(
+            "broker_data_search",
+            lambda: broker_data_preferences.get_broker_data_search_config(db, principal.user.id, principal),
+            BrokerDataSearchConfigOut,
+        ),
+        llm_providers=_safe_config(
+            "llm_providers",
+            lambda: llm_config.list_provider_configs(db, principal.user.id),
+            list,
+        ),
+        llm_model_pricing=_safe_config(
+            "llm_model_pricing",
+            lambda: llm_config.list_model_pricing(db, principal.user.id),
+            list,
+        ),
+        alpha_api=_safe_config(
+            "alpha_api",
+            lambda: alpha_config.get_alpha_api_config(db, principal.user.id),
+            AlphaApiConfigOut,
+        ),
+        alpha_websocket=_safe_config(
+            "alpha_websocket",
+            lambda: alpha_websocket.alpha_ws_config_out(db, principal.user.id),
+            AlphaWebSocketConfigOut,
+        ),
         mcp_server=mcp_server,
         mcp_servers=mcp_servers,
         mcp_connector_readiness=mcp_connector_readiness,
+        features=FeatureFlagsOut(adaptive_workspace=feature_flags.adaptive_workspace_enabled()),
     )
 
 
@@ -247,6 +303,20 @@ def add_llm_model(
     rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
     try:
         return llm_config.add_provider_model(db, principal.user.id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/llm/models/{model_row_id}", response_model=list[LlmProviderConfigOut])
+def update_llm_model(
+    model_row_id: str,
+    body: LlmModelUpdateIn,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_current_principal),
+) -> list[LlmProviderConfigOut]:
+    rbac.require_workspace_permission(principal, rbac.SETTINGS_MANAGE_LLM)
+    try:
+        return llm_config.update_provider_model(db, principal.user.id, model_row_id, body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

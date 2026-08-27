@@ -14,6 +14,7 @@ import {
     getBrokerDataSearchConfig,
     startMcpOAuth,
     updateBrokerDataDefaultConfig,
+    updateLlmProviderModel,
     updateMcpServerConfig,
     upsertAlphaApiCredential,
     upsertLlmProviderCredential
@@ -39,11 +40,17 @@ import { DRISHTI_API_SIGNUP_URL } from "@/lib/drishti";
 import type { LlmProvider, SystemConfig } from "@/service/types/broker";
 import type { OpenRouterModel } from "@/service/actions/llm-models";
 import { LlmModelPicker } from "@/components/system/llm-model-picker";
+import {
+    effortForProvider,
+    providerSupportsReasoningEffort,
+    reasoningEffortSelectOptions
+} from "@/lib/llm-reasoning-effort";
 
 type ProviderDraftState = {
     apiKey: string;
     modelId: string;
     label: string;
+    reasoningEffort: string;
 };
 
 export type SystemConfigPanelSection = "all" | "broker-data" | "alpha" | "mcp" | "llm";
@@ -329,7 +336,7 @@ export function SystemConfigPanel({
         Object.fromEntries(
             initialConfig.llm_providers.map((provider) => [
                 provider.provider,
-                { apiKey: "", modelId: "", label: "" }
+                { apiKey: "", modelId: "", label: "", reasoningEffort: "" }
             ])
         )
     );
@@ -458,7 +465,7 @@ export function SystemConfigPanel({
         setDrafts((current) => ({
             ...current,
             [providerKey(provider)]: {
-                ...(current[providerKey(provider)] ?? { apiKey: "", modelId: "", label: "" }),
+                ...(current[providerKey(provider)] ?? { apiKey: "", modelId: "", label: "", reasoningEffort: "" }),
                 ...patch
             }
         }));
@@ -733,10 +740,25 @@ export function SystemConfigPanel({
                 const next = await addLlmProviderModel({
                     provider,
                     model_id: drafts[providerKey(provider)]?.modelId ?? "",
-                    label: drafts[providerKey(provider)]?.label || null
+                    label: drafts[providerKey(provider)]?.label || null,
+                    reasoning_effort: effortForProvider(provider, drafts[providerKey(provider)]?.reasoningEffort)
                 });
                 replaceProviders(next);
-                updateDraft(provider, { modelId: "", label: "" });
+                updateDraft(provider, { modelId: "", label: "", reasoningEffort: "" });
+            } catch (caught) {
+                setProviderErrors((current) => ({ ...current, [provider]: parseActionError(caught).message }));
+            }
+        });
+    }
+
+    function updateModelReasoningEffort(provider: LlmProvider, modelRowId: string, reasoningEffort: string) {
+        setProviderErrors((current) => ({ ...current, [provider]: "" }));
+        startTransition(async () => {
+            try {
+                const next = await updateLlmProviderModel(modelRowId, {
+                    reasoning_effort: effortForProvider(provider, reasoningEffort)
+                });
+                replaceProviders(next);
             } catch (caught) {
                 setProviderErrors((current) => ({ ...current, [provider]: parseActionError(caught).message }));
             }
@@ -1635,31 +1657,25 @@ export function SystemConfigPanel({
                         </div>
 
                         {provider.has_api_key ? (
-                            <div className="mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_minmax(140px,0.6fr)_auto]">
-                                {openRouterModels.length ? (
-                                    <LlmModelPicker
-                                        disabled={llmReadOnly}
-                                        models={openRouterModels}
-                                        onSelect={(modelId, modelName) =>
-                                            updateDraft(provider.provider, {
-                                                modelId,
-                                                label: drafts[providerKey(provider.provider)]?.label || modelName
-                                            })
-                                        }
-                                        provider={provider.provider}
-                                        value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
-                                    />
-                                ) : (
-                                    <Input
-                                        className="h-9 text-sm"
-                                        disabled={llmReadOnly}
-                                        onChange={(event) =>
-                                            updateDraft(provider.provider, { modelId: event.target.value })
-                                        }
-                                        placeholder="Model id"
-                                        value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
-                                    />
-                                )}
+                            <div
+                                className={
+                                    providerSupportsReasoningEffort(provider.provider)
+                                        ? "mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_minmax(140px,0.55fr)_minmax(150px,0.45fr)_auto]"
+                                        : "mt-4 grid gap-2 @lg:grid-cols-[minmax(200px,1fr)_minmax(140px,0.6fr)_auto]"
+                                }
+                            >
+                                <LlmModelPicker
+                                    disabled={llmReadOnly}
+                                    models={openRouterModels}
+                                    onSelect={(modelId, modelName) =>
+                                        updateDraft(provider.provider, {
+                                            modelId,
+                                            label: drafts[providerKey(provider.provider)]?.label || modelName
+                                        })
+                                    }
+                                    provider={provider.provider}
+                                    value={drafts[providerKey(provider.provider)]?.modelId ?? ""}
+                                />
                                 <Input
                                     className="h-9 text-sm"
                                     disabled={llmReadOnly}
@@ -1667,6 +1683,19 @@ export function SystemConfigPanel({
                                     placeholder="Optional label"
                                     value={drafts[providerKey(provider.provider)]?.label ?? ""}
                                 />
+                                {providerSupportsReasoningEffort(provider.provider) ? (
+                                    <SimpleSelect
+                                        aria-label="Reasoning effort"
+                                        className="h-9 bg-background px-2 text-sm"
+                                        disabled={llmReadOnly}
+                                        onValueChange={(value) =>
+                                            updateDraft(provider.provider, { reasoningEffort: value })
+                                        }
+                                        options={reasoningEffortSelectOptions()}
+                                        placeholder="Reasoning"
+                                        value={drafts[providerKey(provider.provider)]?.reasoningEffort ?? ""}
+                                    />
+                                ) : null}
                                 <Button
                                     disabled={llmReadOnly || isPending || !(drafts[providerKey(provider.provider)]?.modelId ?? "").trim()}
                                     onClick={() => addModel(provider.provider)}
@@ -1696,7 +1725,21 @@ export function SystemConfigPanel({
                                             {model.label || "No custom label"} · saved {formatIstDateTime(model.created_at)}
                                         </div>
                                     </div>
-                                    <Button
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {providerSupportsReasoningEffort(provider.provider) ? (
+                                            <SimpleSelect
+                                                aria-label={`Reasoning effort for ${model.model_id}`}
+                                                className="h-8 w-[148px] bg-background px-2 text-xs"
+                                                disabled={llmReadOnly || isPending}
+                                                onValueChange={(value) =>
+                                                    updateModelReasoningEffort(provider.provider, model.id, value)
+                                                }
+                                                options={reasoningEffortSelectOptions()}
+                                                size="sm"
+                                                value={model.reasoning_effort ?? ""}
+                                            />
+                                        ) : null}
+                                        <Button
                                         className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
                                         disabled={llmReadOnly || isPending}
                                         onClick={() => removeModel(provider.provider, model.id)}
@@ -1707,6 +1750,7 @@ export function SystemConfigPanel({
                                     >
                                         Remove
                                     </Button>
+                                    </div>
                                 </div>
                             ))}
                             {!provider.models.length ? (

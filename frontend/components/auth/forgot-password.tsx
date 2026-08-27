@@ -1,8 +1,7 @@
 "use client";
 
 import { useAuth, useFetchOptions, useRequestPasswordReset } from "@better-auth-ui/react";
-import { type SyntheticEvent, useRef, useState } from "react";
-import { toast } from "sonner";
+import { type SyntheticEvent, useEffect, useRef, useState } from "react";
 import {
     authFormInputClassName,
     authFormInputInvalidClassName,
@@ -12,30 +11,51 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { resetPasswordPagePath } from "@/lib/auth-reset";
 import { cn } from "@/lib/utils";
+import { requestPasswordResetAction } from "@/service/actions/auth-session";
 
 export type ForgotPasswordProps = {
     className?: string;
 };
 
 export function ForgotPassword({ className }: ForgotPasswordProps) {
-    const { authClient, baseURL, basePaths, localization, plugins, viewPaths, Link } = useAuth();
+    const { authClient, basePaths, localization, plugins, viewPaths, Link } = useAuth();
     const { fetchOptions, resetFetchOptions } = useFetchOptions();
     const submittedEmailRef = useRef("");
     const [fieldErrors, setFieldErrors] = useState<{ email?: string }>({});
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [isContinuing, setIsContinuing] = useState(false);
 
     const { mutate: requestPasswordReset, isPending } = useRequestPasswordReset(authClient, {
         onError: () => {
+            setIsContinuing(false);
+            setErrorMessage("Could not start password reset. Try again.");
             resetFetchOptions();
         },
         onSuccess: () => {
-            toast.success(localization.auth.passwordResetEmailSent);
             void loadDevResetLink(submittedEmailRef.current);
         }
     });
 
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("sent") === "1") {
+            setStatusMessage(
+                "If that email is on this workspace, a reset link is ready. Check this page or the frontend terminal for the local-dev link."
+            );
+        }
+        const error = params.get("error");
+        if (error) {
+            setErrorMessage(error);
+        }
+    }, []);
+
     async function loadDevResetLink(email: string) {
         if (!email) {
+            setStatusMessage("If an account exists for that email, a reset link was created.");
+            setIsContinuing(false);
             return;
         }
 
@@ -44,13 +64,20 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
         }).catch(() => null);
 
         if (!response?.ok) {
+            setStatusMessage("If an account exists for that email, a reset link was created. Check the frontend terminal in local dev.");
+            setIsContinuing(false);
             return;
         }
 
         const payload = (await response.json().catch(() => null)) as { url?: string | null } | null;
-        if (payload?.url) {
-            window.location.assign(payload.url);
+        const resetPath = payload?.url ? resetPasswordPagePath(payload.url) : null;
+        if (resetPath) {
+            window.location.assign(resetPath);
+            return;
         }
+
+        setStatusMessage("If an account exists for that email, a reset link was created. Check the frontend terminal in local dev.");
+        setIsContinuing(false);
     }
 
     function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
@@ -58,14 +85,18 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
         const formData = new FormData(event.currentTarget);
         const email = formData.get("email") as string;
         submittedEmailRef.current = email;
+        setErrorMessage(null);
+        setStatusMessage(null);
+        setIsContinuing(true);
         requestPasswordReset({
             email,
-            redirectTo: `${baseURL}${basePaths.auth}/${viewPaths.auth.resetPassword}`,
+            redirectTo: `${window.location.origin}${basePaths.auth}/${viewPaths.auth.resetPassword}`,
             fetchOptions
         });
     }
 
     const Captcha = plugins.find((plugin) => plugin.captchaComponent)?.captchaComponent;
+    const busy = isPending || isContinuing;
 
     return (
         <div className={cn("flex w-full flex-col gap-5", className)}>
@@ -76,7 +107,14 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
                 </p>
             </div>
 
-            <form className="grid gap-5" onSubmit={handleSubmit}>
+            {statusMessage ? (
+                <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
+                    {statusMessage}
+                </p>
+            ) : null}
+            {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+
+            <form className="grid gap-5" method="POST" action={requestPasswordResetAction} onSubmit={handleSubmit}>
                 <FieldGroup className="gap-3.5">
                     <Field data-invalid={!!fieldErrors.email}>
                         <FieldLabel htmlFor="forgot-password-email">{localization.auth.email}</FieldLabel>
@@ -87,7 +125,7 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
                             autoComplete="email"
                             placeholder={localization.auth.emailPlaceholder}
                             required
-                            disabled={isPending}
+                            disabled={busy}
                             className={cn(authFormInputClassName, fieldErrors.email && authFormInputInvalidClassName)}
                             onChange={() => setFieldErrors((prev) => ({ ...prev, email: undefined }))}
                             onInvalid={(event) => {
@@ -109,8 +147,8 @@ export function ForgotPassword({ className }: ForgotPasswordProps) {
                 </FieldGroup>
 
                 <div className="space-y-5">
-                    <Button type="submit" disabled={isPending} className={authFormPrimaryButtonClassName}>
-                        {isPending ? <Spinner /> : null}
+                    <Button type="submit" disabled={busy} className={authFormPrimaryButtonClassName}>
+                        {busy ? <Spinner /> : null}
                         Continue
                     </Button>
 

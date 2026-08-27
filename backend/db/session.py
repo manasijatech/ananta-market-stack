@@ -71,11 +71,14 @@ def init_db() -> None:
         if _requires_sqlite_legacy_bootstrap():
             logger.info("Applying legacy SQLite bootstrap for ananta-market-stack database")
             Base.metadata.create_all(bind=engine)
-            _apply_sqlite_legacy_patches_if_needed()
+            _apply_sqlite_schema_patches()
             _stamp_database_at_head()
             _repair_installation_access_after_migration()
             return
         _upgrade_database_to_head()
+        # Additive SQLite column ensures stay idempotent and cover fields that are
+        # modeled in SQLAlchemy before a dedicated Alembic revision lands.
+        _apply_sqlite_schema_patches()
         _repair_installation_access_after_migration()
 
 
@@ -144,14 +147,12 @@ def _stamp_database_at_head() -> None:
         raise
 
 
-def _apply_sqlite_legacy_patches_if_needed() -> None:
+def _apply_sqlite_schema_patches() -> None:
     if not _settings.database_url.startswith("sqlite:///"):
         return
     db_path = _settings.database_url.replace("sqlite:///", "", 1)
     conn = sqlite3.connect(db_path)
     try:
-        if _has_alembic_version_table(conn):
-            return
         _ensure_table_columns(
             conn,
             "users",
@@ -309,8 +310,21 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
                 "event_visibility": "VARCHAR(32) DEFAULT 'minimal'",
                 "include_tool_outputs": "BOOLEAN DEFAULT 0",
                 "include_reasoning": "BOOLEAN DEFAULT 0",
+                "reasoning_effort": "VARCHAR(16)",
                 "use_mcp": "BOOLEAN DEFAULT 0",
                 "mcp_server_ids_json": "TEXT DEFAULT '[]'",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "broker_chat_sessions",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "title": "VARCHAR(256) DEFAULT 'Broker chat'",
+                "surface": "VARCHAR(32) DEFAULT 'broker_chat'",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
             },
@@ -400,6 +414,7 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
                 "provider": "VARCHAR(32)",
                 "model_id": "VARCHAR(256)",
                 "label": "VARCHAR(128)",
+                "reasoning_effort": "VARCHAR(16)",
                 "is_enabled": "BOOLEAN DEFAULT 1",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
@@ -608,6 +623,45 @@ def _apply_sqlite_legacy_patches_if_needed() -> None:
                 "valid": "BOOLEAN DEFAULT 0",
                 "applied_at": "DATETIME",
                 "created_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "adaptive_workspace_snapshots",
+            {
+                "id": "VARCHAR(36)",
+                "session_id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "version": "INTEGER DEFAULT 1",
+                "label": "VARCHAR(256) DEFAULT 'Workspace snapshot'",
+                "workspace_payload_json": "TEXT DEFAULT '{}'",
+                "validation_json": "TEXT DEFAULT '{}'",
+                "valid": "BOOLEAN DEFAULT 0",
+                "applied_at": "DATETIME",
+                "created_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "adaptive_workspace_saved_desks",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "name": "VARCHAR(120)",
+                "workspace_payload_json": "TEXT DEFAULT '{}'",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "adaptive_workspace_preferences",
+            {
+                "id": "VARCHAR(36)",
+                "user_id": "VARCHAR(36)",
+                "pref_key": "VARCHAR(64)",
+                "value_json": "TEXT DEFAULT 'null'",
+                "updated_at": "DATETIME",
             },
         )
         _ensure_table_columns(

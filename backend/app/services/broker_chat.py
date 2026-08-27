@@ -17,7 +17,7 @@ from app.schemas.broker_chat import (
     BrokerChatSessionOut,
     BrokerChatSubmitIn,
 )
-from app.services import llm_config, rbac
+from app.services import llm_config, mcp_config, rbac
 from app.services.broker_chat_queue import (
     cancel_broker_chat_job,
     broker_chat_job_status,
@@ -40,6 +40,16 @@ from db.models import (
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_STATUSES = {"queued", "running"}
+BROKER_CHAT_SURFACE = "broker_chat"
+ADAPTIVE_WORKSPACE_SURFACE = "adaptive_workspace"
+VALID_SESSION_SURFACES = {BROKER_CHAT_SURFACE, ADAPTIVE_WORKSPACE_SURFACE}
+
+
+def _safe_reasoning_effort(value: Any) -> str | None:
+    try:
+        return llm_config.normalize_reasoning_effort(value)
+    except ValueError:
+        return None
 
 
 def utc_now() -> datetime:
@@ -82,20 +92,22 @@ def get_or_create_preference(db: Session, user_id: str) -> UserBrokerChatPrefere
     return pref
 
 
-def preference_to_schema(pref: UserBrokerChatPreference) -> BrokerChatPreferenceOut:
+def preference_to_schema(db: Session, pref: UserBrokerChatPreference) -> BrokerChatPreferenceOut:
+    resolved_ids, _dropped = mcp_config.resolve_mcp_server_ids(db, pref.user_id, json_loads(pref.mcp_server_ids_json, []))
     return BrokerChatPreferenceOut(
         default_provider=pref.default_provider or None,
         default_model=pref.default_model or None,
         event_visibility=pref.event_visibility or "minimal",
         include_tool_outputs=bool(pref.include_tool_outputs),
         include_reasoning=bool(pref.include_reasoning),
+        reasoning_effort=_safe_reasoning_effort(getattr(pref, "reasoning_effort", None)),
         use_mcp=bool(pref.use_mcp),
-        mcp_server_ids=json_loads(pref.mcp_server_ids_json, []),
+        mcp_server_ids=resolved_ids,
     )
 
 
 def get_preference(db: Session, user_id: str) -> BrokerChatPreferenceOut:
-    return preference_to_schema(get_or_create_preference(db, user_id))
+    return preference_to_schema(db, get_or_create_preference(db, user_id))
 
 
 def update_preference(
@@ -111,15 +123,27 @@ def update_preference(
     pref.event_visibility = payload.event_visibility
     pref.include_tool_outputs = payload.include_tool_outputs
     pref.include_reasoning = payload.include_reasoning
+    pref.reasoning_effort = _safe_reasoning_effort(payload.reasoning_effort)
     mcp_allowed = rbac.user_has_workspace_permission(db, user_id, rbac.SETTINGS_USE_MCP) or rbac.user_has_workspace_permission(
         db, user_id, rbac.SETTINGS_MANAGE_MCP
     )
     pref.use_mcp = bool(payload.use_mcp and mcp_allowed)
-    pref.mcp_server_ids_json = json_dumps(payload.mcp_server_ids if mcp_allowed else [])
+    resolved_ids, _dropped = mcp_config.resolve_mcp_server_ids(db, user_id, payload.mcp_server_ids if mcp_allowed else [])
+    pref.mcp_server_ids_json = json_dumps(resolved_ids if mcp_allowed else [])
     db.add(pref)
     db.commit()
     db.refresh(pref)
-    return preference_to_schema(pref)
+    return preference_to_schema(db, pref)
+
+
+PLACEHOLDER_SESSION_TITLES = frozenset(
+    {
+        "broker chat",
+        "adaptive workspace",
+        "new broker chat",
+        "chat",
+    }
+)
 
 
 def _default_title(message: str) -> str:
@@ -129,13 +153,53 @@ def _default_title(message: str) -> str:
     return cleaned[:80]
 
 
-def create_session(db: Session, user_id: str, title: str | None = None) -> BrokerChatSession:
+def _is_placeholder_session_title(title: str | None) -> bool:
+    return (title or "").strip().lower() in PLACEHOLDER_SESSION_TITLES
+
+
+def _maybe_retitle_session(session: BrokerChatSession, message: str) -> None:
+    if not _is_placeholder_session_title(session.title):
+        return
+    next_title = _default_title(message)
+    if _is_placeholder_session_title(next_title):
+        return
+    session.title = next_title
+
+
+def _normalize_surface(surface: str | None, *, default: str = BROKER_CHAT_SURFACE) -> str:
+    if surface is None or not str(surface).strip():
+        return default
+    normalized = str(surface).strip()
+    if normalized not in VALID_SESSION_SURFACES:
+        raise ValueError(f"unsupported broker chat surface: {normalized}")
+    return normalized
+
+
+def _run_is_adaptive(payload: BrokerChatSubmitIn) -> bool:
+    return bool(payload.metadata.get("adaptive_workspace"))
+
+
+def _assert_session_surface_allows_run(session: BrokerChatSession, *, adaptive: bool) -> None:
+    session_surface = getattr(session, "surface", None) or BROKER_CHAT_SURFACE
+    if adaptive and session_surface == BROKER_CHAT_SURFACE:
+        raise ValueError("this session belongs to Broker Chat")
+    if not adaptive and session_surface == ADAPTIVE_WORKSPACE_SURFACE:
+        raise ValueError("this session belongs to Adaptive Workspace")
+
+
+def create_session(
+    db: Session,
+    user_id: str,
+    title: str | None = None,
+    surface: str | None = None,
+) -> BrokerChatSession:
     ensure_user(db, user_id)
     now = utc_now()
     row = BrokerChatSession(
         id=str(uuid.uuid4()),
         user_id=user_id,
         title=(title or "Broker chat").strip()[:256] or "Broker chat",
+        surface=_normalize_surface(surface),
         created_at=now,
         updated_at=now,
     )
@@ -152,13 +216,21 @@ def get_owned_session(db: Session, user_id: str, session_id: str) -> BrokerChatS
     return row
 
 
-def list_sessions(db: Session, user_id: str, *, limit: int = 50) -> list[BrokerChatSessionOut]:
+def list_sessions(
+    db: Session,
+    user_id: str,
+    *,
+    limit: int = 50,
+    surface: str | None = BROKER_CHAT_SURFACE,
+) -> list[BrokerChatSessionOut]:
+    stmt = select(BrokerChatSession).where(BrokerChatSession.user_id == user_id)
+    if surface is not None:
+        stmt = stmt.where(BrokerChatSession.surface == _normalize_surface(surface))
     rows = list(
         db.scalars(
-            select(BrokerChatSession)
-            .where(BrokerChatSession.user_id == user_id)
-            .order_by(BrokerChatSession.updated_at.desc(), BrokerChatSession.id.desc())
-            .limit(max(1, min(limit, 200)))
+            stmt.order_by(BrokerChatSession.updated_at.desc(), BrokerChatSession.id.desc()).limit(
+                max(1, min(limit, 200))
+            )
         ).all()
     )
     return [BrokerChatSessionOut.model_validate(row) for row in rows]
@@ -195,10 +267,17 @@ def create_run(
 ) -> BrokerChatRun:
     ensure_user(db, user_id)
     pref = get_or_create_preference(db, user_id)
+    adaptive = _run_is_adaptive(payload)
     if payload.session_id:
         session = get_owned_session(db, user_id, payload.session_id)
+        _assert_session_surface_allows_run(session, adaptive=adaptive)
     else:
-        session = create_session(db, user_id, payload.session_title or _default_title(payload.message))
+        session = create_session(
+            db,
+            user_id,
+            payload.session_title or _default_title(payload.message),
+            surface=ADAPTIVE_WORKSPACE_SURFACE if adaptive else BROKER_CHAT_SURFACE,
+        )
     active_run = db.scalars(
         select(BrokerChatRun)
         .where(
@@ -211,6 +290,11 @@ def create_run(
     ).first()
     if active_run is not None:
         raise ValueError("A broker chat run is already active in this session. Stop it or wait for it to finish.")
+    existing_run_count = db.scalar(
+        select(func.count())
+        .select_from(BrokerChatRun)
+        .where(BrokerChatRun.session_id == session.id)
+    ) or 0
     provider, model = _resolve_provider_model(db, user_id, payload, pref)
     now = utc_now()
     mcp_allowed = rbac.user_has_workspace_permission(db, user_id, rbac.SETTINGS_USE_MCP) or rbac.user_has_workspace_permission(
@@ -219,7 +303,16 @@ def create_run(
     requested_use_mcp = pref.use_mcp if payload.use_mcp is None else payload.use_mcp
     use_mcp = bool(requested_use_mcp and mcp_allowed)
     requested_server_ids = payload.mcp_server_ids if payload.mcp_server_ids is not None else json_loads(pref.mcp_server_ids_json, [])
-    mcp_server_ids = requested_server_ids if mcp_allowed else []
+    mcp_server_ids = (
+        mcp_config.resolve_mcp_server_ids(db, user_id, requested_server_ids)[0] if mcp_allowed else []
+    )
+    override_effort = payload.reasoning_effort if payload.reasoning_effort is not None else pref.reasoning_effort
+    try:
+        reasoning_effort = llm_config.normalize_reasoning_effort(override_effort) or llm_config.get_model_reasoning_effort(
+            db, user_id, provider, model
+        )
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     run = BrokerChatRun(
         id=str(uuid.uuid4()),
         session_id=session.id,
@@ -240,6 +333,7 @@ def create_run(
                 "search_account_id": payload.search_account_id,
                 "use_mcp": bool(use_mcp),
                 "mcp_server_ids": mcp_server_ids,
+                "reasoning_effort": reasoning_effort,
             }
         ),
         queued_at=now,
@@ -248,6 +342,8 @@ def create_run(
     )
     db.add(run)
     session.updated_at = now
+    if existing_run_count == 0:
+        _maybe_retitle_session(session, payload.message)
     db.add(session)
     db.commit()
     db.refresh(run)
@@ -347,11 +443,16 @@ def list_runs(
     user_id: str,
     *,
     session_id: str | None = None,
+    surface: str | None = None,
     limit: int = 50,
 ) -> list[BrokerChatRunOut]:
     stmt = select(BrokerChatRun).where(BrokerChatRun.user_id == user_id)
     if session_id:
         stmt = stmt.where(BrokerChatRun.session_id == session_id)
+    if surface is not None:
+        stmt = stmt.join(BrokerChatSession, BrokerChatRun.session_id == BrokerChatSession.id).where(
+            BrokerChatSession.surface == _normalize_surface(surface)
+        )
     rows = list(
         db.scalars(
             stmt.order_by(BrokerChatRun.created_at.desc(), BrokerChatRun.id.desc()).limit(max(1, min(limit, 200)))

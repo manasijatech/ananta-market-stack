@@ -1,5 +1,6 @@
 import { AccessDeniedState } from "@/components/access/access-denied-state";
 import { parseActionError } from "@/components/brokers/action-error";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LlmUsageDashboard, buildLlmUsageFilterOptions } from "@/components/llm-usage/llm-usage-dashboard";
 import { LLM_USAGE_ALL_FILTER_VALUE } from "@/lib/llm-usage-filters";
 import {
@@ -70,7 +71,16 @@ export default async function LlmUsagePage({ searchParams }: LlmUsagePageProps) 
                 />
             );
         }
-        throw caught;
+        return (
+            <div className="grid w-full min-w-0 gap-5 px-5 py-5">
+                <h1 className="font-heading text-3xl font-semibold tracking-tight">LLM Usage</h1>
+                <Alert variant="warning">
+                    <AlertDescription>
+                        LLM usage is temporarily unavailable. {parsed.message}
+                    </AlertDescription>
+                </Alert>
+            </div>
+        );
     }
     const filterOptions = buildLlmUsageFilterOptions(filterOptionsOverview, filterOptionsEvents);
 

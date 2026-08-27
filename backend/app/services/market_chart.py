@@ -321,7 +321,7 @@ def _fetch_historical_candles(
     interval: str,
     from_time: datetime,
     to_time: datetime,
-) -> list[NormalizedCandle]:
+) -> tuple[list[NormalizedCandle], str | None]:
     payload = broker_data.fetch_historical(
         db,
         acc,
@@ -333,9 +333,11 @@ def _fetch_historical_candles(
         },
     )
     if not isinstance(payload, dict):
-        return []
+        return [], None
     candles = _normalize_payload_candles(payload)
-    return [candle for candle in candles if from_time <= candle.time <= to_time]
+    fallback = payload.get("exchange_fallback")
+    used_exchange = str(fallback).strip().upper() if isinstance(fallback, str) and fallback.strip() else None
+    return [candle for candle in candles if from_time <= candle.time <= to_time], used_exchange
 
 
 def _quote_row_to_dict(row: Any) -> dict[str, Any]:
@@ -442,7 +444,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
                 from_time=daily_from_utc,
                 to_time=daily_to_utc,
             )
-        daily_candles = _fetch_historical_candles(
+        daily_candles, daily_fallback = _fetch_historical_candles(
             db,
             acc,
             instrument=instrument,
@@ -450,6 +452,9 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
             from_time=daily_from_utc,
             to_time=daily_to_utc,
         )
+        if daily_fallback:
+            exchange = daily_fallback
+            instrument = {**instrument, "exchange": daily_fallback}
         if daily_candles:
             _replace_cached_candles(
                 db,
@@ -498,7 +503,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
                     from_time=intraday_from_utc,
                     to_time=now_utc,
                 )
-            intraday_candles = _fetch_historical_candles(
+            intraday_candles, _intraday_fallback = _fetch_historical_candles(
                 db,
                 acc,
                 instrument=instrument,
