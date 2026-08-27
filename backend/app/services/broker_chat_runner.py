@@ -28,7 +28,7 @@ from db.session import SessionLocal
 MAX_REASONING_EVENTS_PER_RUN = 25
 MAX_RUN_CONTINUATIONS = 3
 BROKER_CHAT_MAX_TURNS = 36
-ADAPTIVE_WORKSPACE_MAX_TURNS = 32
+ADAPTIVE_WORKSPACE_MAX_TURNS = 36
 
 CONTINUE_USER_MESSAGE = (
     "Continue this task. The previous turn stopped before a complete user-facing answer. "
@@ -294,8 +294,10 @@ Operating rules:
 - Call workspace_evaluate_request only when composing or rearranging a desk,
   not before answering a briefing/research question.
 - Never answer by listing the catalog. Do not call workspace_get_authoring_docs
-  unless compose/validate already failed. Fetch real data, answer in chat, then
-  compose matching live widgets. A catalog dump is not a desk or an answer.
+  unless compose/validate already failed. Prefer broker_* and intel_* tools
+  (and connected MCP) the same way Broker Chat does. Fetch real data, answer
+  in chat, then compose matching live widgets. A catalog dump is not a desk
+  or an answer.
 - For research, headlines, or "look into X": use connected MCP tools first,
   then intel_get_feed(force_refresh=true). Answer in chat, then publish or
   update one html-artifact briefing of those facts without being asked for HTML.
