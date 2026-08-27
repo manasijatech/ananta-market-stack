@@ -32,7 +32,7 @@ export default async function BrokerChatPage() {
         ]);
 
     if (configResult.status === "rejected" || sessionsResult.status === "rejected") {
-        const reason = configResult.status === "rejected" ? configResult.reason : sessionsResult.reason;
+        const reason = configResult.status === "rejected" ? configResult.reason : sessionsResult.status === "rejected" ? sessionsResult.reason : null;
         return (
             <div className="grid w-full min-w-0 gap-5 px-5 py-5">
                 <h1 className="font-heading text-3xl font-semibold tracking-tight">Chat</h1>
