@@ -17,6 +17,7 @@ GRID_COLUMNS = 12
 WorkspaceComponentType = Literal[
     "portfolio-summary",
     "holdings-table",
+    "holdings-vs-index",
     "pnl-exposure-strip",
     "price-chart",
     "quote-ticker",
@@ -464,6 +465,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "preferred_sizes": {
                 "quote-ticker": {"w": 6, "h": 3},
                 "holdings-table": {"w": 12, "h": 5},
+                "holdings-vs-index": {"w": 12, "h": 6},
                 "price-chart": {"w": 8, "h": 4},
                 "quote-chart": {"w": 12, "h": 7},
                 "broker-health": {"w": 4, "h": 3},
@@ -492,6 +494,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "broker-health",
             "greeks-panel",
             "holdings-table",
+            "holdings-vs-index",
             "intel-feed",
             "margin-scenario",
             "market-heatmap",
@@ -518,6 +521,7 @@ def workspace_authoring_docs() -> dict[str, Any]:
             "greeks-panel",
             "margin-scenario",
             "pnl-exposure-strip",
+            "holdings-vs-index",
             "market-heatmap",
             "notes-block",
         ],
@@ -530,6 +534,8 @@ def workspace_authoring_docs() -> dict[str, Any]:
         "common_mistakes": {
             "holdings": "holdings-table",
             "portfolio": "holdings-table",
+            "vs-index": "holdings-vs-index",
+            "vs nifty": "holdings-vs-index",
             "quotes": "quote-ticker",
             "quote": "quote-ticker",
             "quote-chart": "quote-chart",

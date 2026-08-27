@@ -51,10 +51,14 @@ export function LiveCanvasBody({ component, onPatch, refreshNonce }: Props) {
         case "approval-card":
             return <LiveApprovalCardWidget component={component} refreshNonce={refreshNonce} />;
         case "holdings-table":
+        case "holdings-vs-index":
         case "portfolio-summary":
             return (
                 <SuppressPin>
-                    <LiveHoldingsWidget refreshNonce={refreshNonce} />
+                    <LiveHoldingsWidget
+                        refreshNonce={refreshNonce}
+                        vsIndex={component.type === "holdings-vs-index"}
+                    />
                 </SuppressPin>
             );
         case "pnl-exposure-strip":

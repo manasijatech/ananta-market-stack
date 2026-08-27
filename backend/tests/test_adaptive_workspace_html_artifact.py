@@ -55,6 +55,10 @@ def test_parse_wraps_raw_canvas_fragment():
     assert "--aw-gold" in document
     assert "<html" in document.lower()
     assert spec.components[0].props["kind"] == "timeline"
+    assert "color-scheme" in document
+    assert "html.dark" in document
+    assert "html.light" in document
+    assert "aw-theme" in document
 
 
 def test_html_artifact_valid_spec_accepted():

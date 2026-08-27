@@ -171,6 +171,8 @@ def test_authoring_docs_list_catalog_and_example_spec():
     assert "option-chain" in docs["live_component_types"]
     assert "market-heatmap" in docs["live_component_types"]
     assert "agent-timeline" in docs["live_component_types"]
+    assert "holdings-vs-index" in docs["component_types"]
+    assert "holdings-vs-index" in docs["live_component_types"]
     assert component_type_for_tool("broker_get_option_chain") == "option-chain"
     assert component_type_for_tool("broker_get_greeks") == "greeks-panel"
     assert component_type_for_tool("broker_calculate_margin") == "margin-scenario"
@@ -408,3 +410,15 @@ def test_evaluate_request_covers_live_derivative_and_heatmap_types():
     assert "pnl-exposure-strip" in planned["recommended_types"]
     assert "broker_get_option_chain" in planned["recommended_tools"]
     assert "broker_get_greeks" in planned["recommended_tools"]
+
+
+def test_evaluate_request_covers_holdings_vs_index():
+    from app.services.adaptive_workspace import evaluate_request
+
+    planned = evaluate_request("Compare my holdings versus Nifty 50")
+    assert "holdings_vs_index" in planned["intents"]
+    assert "holdings-vs-index" in planned["recommended_types"]
+    assert "holdings-table" not in planned["recommended_types"]
+    assert "broker_get_portfolio" in planned["recommended_tools"]
+    assert "broker_get_quotes" in planned["recommended_tools"]
+    assert any("Nifty" in step or "nifty" in step.lower() for step in planned["plan"])

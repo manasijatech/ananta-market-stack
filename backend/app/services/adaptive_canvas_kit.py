@@ -12,7 +12,7 @@ from typing import Any
 
 CANVAS_KINDS = ("briefing", "timeline", "snapshot", "comparison", "movers", "notes")
 
-CANVAS_KIT_VERSION = "1"
+CANVAS_KIT_VERSION = "2"
 
 _STYLE_TAG_RE = re.compile(r"<style\b[^>]*>.*?</style>", re.I | re.S)
 _STYLE_ATTR_RE = re.compile(r"\sstyle\s*=\s*(['\"]).*?\1", re.I | re.S)
@@ -60,8 +60,33 @@ ALLOWED_CLASSES = frozenset(
     }
 )
 
+CANVAS_THEME_SCRIPT = (
+    "(function(){function apply(t){var m=t==='light'?'light':'dark';"
+    "document.documentElement.classList.remove('light','dark');"
+    "document.documentElement.classList.add(m);"
+    "document.documentElement.setAttribute('data-theme',m);"
+    "document.documentElement.style.colorScheme=m;}"
+    "apply('dark');"
+    "window.addEventListener('message',function(e){"
+    "if(!e.data||e.data.type!=='aw-theme')return;apply(e.data.theme);});})();"
+)
+
 CANVAS_KIT_CSS = """
-:root {
+:root, html.light, html[data-theme="light"] {
+  color-scheme: light;
+  --aw-bg: #ffffff;
+  --aw-fg: #18181b;
+  --aw-muted: #71717a;
+  --aw-surface: #f4f4f5;
+  --aw-line: rgba(24, 24, 27, 0.12);
+  --aw-gold: #c9a00e;
+  --aw-gold-ink: #18181b;
+  --aw-up: #059669;
+  --aw-down: #dc2626;
+  --aw-pad: 12px;
+}
+html.dark, html[data-theme="dark"] {
+  color-scheme: dark;
   --aw-bg: #1c1c1c;
   --aw-fg: #f4f4f5;
   --aw-muted: #a1a1aa;
@@ -71,7 +96,6 @@ CANVAS_KIT_CSS = """
   --aw-gold-ink: #131722;
   --aw-up: #34d399;
   --aw-down: #f87171;
-  --aw-pad: 12px;
 }
 html, body {
   margin: 0;
@@ -336,10 +360,11 @@ def wrap_canvas_document(body_html: str) -> str:
     if not re.search(r"class=['\"][^'\"]*\baw\b", inner):
         inner = f'<div class="aw">{inner}</div>'
     css = CANVAS_KIT_CSS.replace("</", "<\\/")
+    script = CANVAS_THEME_SCRIPT.replace("</", "<\\/")
     return (
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/>"
-        "<meta name=\"color-scheme\" content=\"dark\"/>"
-        f"<style>{css}</style></head><body>{inner}</body></html>"
+        '<!DOCTYPE html><html class="dark" data-theme="dark"><head><meta charset="utf-8"/>'
+        '<meta name="color-scheme" content="light dark"/>'
+        f"<style>{css}</style><script>{script}</script></head><body>{inner}</body></html>"
     )
 
 
@@ -380,7 +405,7 @@ def authoring_canvas_docs() -> dict[str, Any]:
         "kind_guide": CANVAS_KIND_GUIDE,
         "classes": CANVAS_CLASS_CATALOG,
         "rules": [
-            "Do not write <style> or color/background inline styles. The kit is injected.",
+            "Do not write <style> or color/background inline styles. The kit is injected and follows the host light/dark theme.",
             "Only aw-* classes from the catalog. Unknown classes are stripped.",
             "Exception: aw-bar__fill may use style='width:NN%'.",
             "No emoji, gradients, box-shadows, or rainbow date pills.",

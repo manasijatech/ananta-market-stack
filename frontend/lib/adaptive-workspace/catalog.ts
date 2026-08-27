@@ -56,6 +56,8 @@ export function titleForComponentType(type: string, fallback = "Widget"): string
             return "Quotes & chart";
         case "holdings-table":
             return "Portfolio";
+        case "holdings-vs-index":
+            return "Holdings vs index";
         case "price-chart":
             return "Price chart";
         case "broker-health":
@@ -101,6 +103,8 @@ export function defaultSizeForType(type: string): WorkspacePosition {
     switch (type) {
         case "holdings-table":
             return { h: 5, w: 12, x: 0, y: 0 };
+        case "holdings-vs-index":
+            return { h: 6, w: 12, x: 0, y: 0 };
         case "price-chart":
             return { h: 4, w: 8, x: 0, y: 0 };
         case "broker-health":

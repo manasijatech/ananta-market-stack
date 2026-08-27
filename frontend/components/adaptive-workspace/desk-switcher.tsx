@@ -1,6 +1,6 @@
 "use client";
 
-import { IconCheck, IconChevronDown, IconMessagePlus, IconTrash } from "@tabler/icons-react";
+import { IconCheck, IconChevronDown, IconCopy, IconMessagePlus, IconTrash } from "@tabler/icons-react";
 import { formatDate } from "@/components/brokers/ui";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,12 +18,13 @@ type Props = {
     creating: boolean;
     onCreate: () => void;
     onDelete: (sessionId: string) => void;
+    onDuplicate?: () => void;
     onSelect: (sessionId: string) => void;
     sessions: BrokerChatSession[];
     title: string;
 };
 
-export function AdaptiveDeskSwitcher({ creating, onCreate, onDelete, onSelect, sessions, title }: Props) {
+export function AdaptiveDeskSwitcher({ creating, onCreate, onDelete, onDuplicate, onSelect, sessions, title }: Props) {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger
@@ -47,6 +48,18 @@ export function AdaptiveDeskSwitcher({ creating, onCreate, onDelete, onSelect, s
                     <IconMessagePlus className="size-4" stroke={1.8} />
                     New desk
                 </DropdownMenuItem>
+                {onDuplicate ? (
+                    <DropdownMenuItem
+                        disabled={creating}
+                        onSelect={(event) => {
+                            event.preventDefault();
+                            onDuplicate();
+                        }}
+                    >
+                        <IconCopy className="size-4" stroke={1.8} />
+                        Duplicate this desk
+                    </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuSeparator />
                 {sessions.length ? (
                     sessions.map((session) => (

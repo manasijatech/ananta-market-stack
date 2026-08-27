@@ -43,6 +43,7 @@ type Props = {
 const STARTER_PROMPTS = [
     "Compose a desk with my last watchlist, its news, live price movements, and alerts",
     "Latest news on RELIANCE with quotes on this desk",
+    "Compare my holdings versus Nifty 50",
     "Open an alert workflow studio on this canvas",
     "Show a live heatmap and my P&L exposure",
     "Apply the Research sandbox skill",
@@ -150,13 +151,14 @@ function AdaptiveWorkspaceShellInner({
                                             creating={chat.isCreatingSession}
                                             onCreate={() => void chat.createNewChat()}
                                             onDelete={(sessionId) => void chat.deleteSession(sessionId)}
+                                            onDuplicate={() => void chat.createNewChat({ copySpec: canvas.spec })}
                                             onSelect={chat.setActiveSessionId}
                                             sessions={chat.sessions}
                                             title={deskTitle}
                                         />
                                     </div>
                                     <p className="mt-1 text-xs text-muted-foreground">
-                                        Chat authors the canvas. History lives in this desk switcher.
+                                        Chat authors the canvas. New desk is blank; duplicate this desk to keep the current layout.
                                     </p>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">

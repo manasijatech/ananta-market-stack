@@ -32,6 +32,7 @@ export function rectanglesOverlap(left: WorkspacePosition, right: WorkspacePosit
 export function expandedSizeForType(type: string): WorkspacePosition {
     switch (type) {
         case "holdings-table":
+        case "holdings-vs-index":
             return { h: 8, w: 12, x: 0, y: 0 };
         case "price-chart":
             return { h: 6, w: 12, x: 0, y: 0 };

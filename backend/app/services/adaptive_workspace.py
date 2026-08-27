@@ -419,6 +419,7 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "research sandbox",
     )),
     ("alerts", ("alert", "alerts", "notification", "notifications")),
+    ("holdings_vs_index", ("vs index", "vs nifty", "versus nifty", "beat the index", "relative to nifty", "holdings vs")),
     ("holdings", ("holding", "holdings", "portfolio", "funds")),
     ("chart", ("chart", "historical", "ohlc", "candlestick", "1-year", "1 year", "performance")),
     ("health", ("health", "session status", "broker connection", "login")),
@@ -455,6 +456,7 @@ _INTENT_TOOLS: dict[str, list[str]] = {
     "alert_studio": ["alert_get_studio", "alert_create_draft"],
     "sandbox": ["workspace_get_micro_app"],
     "alerts": ["intel_list_alert_workflows", "intel_list_alert_notifications"],
+    "holdings_vs_index": ["broker_get_portfolio", "broker_get_quotes"],
     "holdings": ["broker_get_portfolio"],
     "chart": ["broker_get_historical"],
     "health": ["broker_get_session_status"],
@@ -477,6 +479,7 @@ _INTENT_TYPES: dict[str, str] = {
     "alert_studio": "alert-rule-draft",
     "sandbox": "micro-app",
     "alerts": "alert-rule-draft",
+    "holdings_vs_index": "holdings-vs-index",
     "holdings": "holdings-table",
     "chart": "price-chart",
     "health": "broker-health",
@@ -514,6 +517,8 @@ def _spec_covers_type(needed: str, spec_types: list[str]) -> bool:
     if needed in {"quote-ticker", "price-chart"} and "quote-chart" in spec_types:
         return True
     if needed == "quote-chart" and {"quote-ticker", "price-chart"}.issubset(set(spec_types)):
+        return True
+    if needed == "holdings-table" and "holdings-vs-index" in spec_types:
         return True
     return False
 
@@ -621,6 +626,12 @@ def evaluate_request(
         plan.append(
             "Call workspace_get_micro_app. Compose micro-app with props.appId from the registry, plus notes-block. Never emit src, href, or script."
         )
+    if any(intent in intents for intent in ("news", "announcements", "earnings", "concalls", "visualization")):
+        plan.append(
+            "Call connected MCP research/news tools first when MCP is enabled, then intel_get_feed. After the "
+            "briefing, publish or update one html-artifact canvas of the same facts even if the user did not ask "
+            "for HTML — kit classes only, no custom CSS."
+        )
     if "visualization" in intents:
         plan.append(
             "Fetch broker/intel data first, then publish or update a Canvas using only kit classes from "
@@ -629,7 +640,14 @@ def evaluate_request(
             "existing canvas id from canvas_inventory when the kind/title/symbol matches. Never author custom CSS; "
             "live quotes and feeds stay on first-party widgets."
         )
-    if "holdings" in intents:
+    if "holdings_vs_index" in intents:
+        recommended_types[:] = [item for item in recommended_types if item != "holdings-table"]
+        if "holdings-vs-index" not in recommended_types:
+            recommended_types.append("holdings-vs-index")
+        if "broker_get_quotes" not in recommended_tools:
+            recommended_tools.append("broker_get_quotes")
+        plan.append("Call broker_get_portfolio and a Nifty 50 quote. Compose holdings-vs-index, not a plain holdings table.")
+    elif "holdings" in intents:
         plan.append("Call broker_get_portfolio with holdings and funds.")
     if "notes" in intents and "sandbox" not in intents:
         plan.append("Compose a notes-block for desk research text. The user can edit and autosave it; chat may set or update props.text.")

@@ -1,7 +1,33 @@
 /** Host-injected Adaptive Workspace canvas kit. Keep in sync with backend adaptive_canvas_kit.py. */
 
+export const CANVAS_KIT_VERSION = "2";
+
+export const CANVAS_THEME_SCRIPT =
+    "(function(){function apply(t){var m=t==='light'?'light':'dark';" +
+    "document.documentElement.classList.remove('light','dark');" +
+    "document.documentElement.classList.add(m);" +
+    "document.documentElement.setAttribute('data-theme',m);" +
+    "document.documentElement.style.colorScheme=m;}" +
+    "apply('dark');" +
+    "window.addEventListener('message',function(e){" +
+    "if(!e.data||e.data.type!=='aw-theme')return;apply(e.data.theme);});})();";
+
 export const CANVAS_KIT_CSS = `
-:root {
+:root, html.light, html[data-theme="light"] {
+  color-scheme: light;
+  --aw-bg: #ffffff;
+  --aw-fg: #18181b;
+  --aw-muted: #71717a;
+  --aw-surface: #f4f4f5;
+  --aw-line: rgba(24, 24, 27, 0.12);
+  --aw-gold: #c9a00e;
+  --aw-gold-ink: #18181b;
+  --aw-up: #059669;
+  --aw-down: #dc2626;
+  --aw-pad: 12px;
+}
+html.dark, html[data-theme="dark"] {
+  color-scheme: dark;
   --aw-bg: #1c1c1c;
   --aw-fg: #f4f4f5;
   --aw-muted: #a1a1aa;
@@ -11,7 +37,6 @@ export const CANVAS_KIT_CSS = `
   --aw-gold-ink: #131722;
   --aw-up: #34d399;
   --aw-down: #f87171;
-  --aw-pad: 12px;
 }
 html, body {
   margin: 0;
@@ -184,18 +209,22 @@ html, body {
 
 const BODY_INNER_RE = /<body\b[^>]*>([\s\S]*)<\/body>/i;
 
-export function ensureCanvasKitDocument(document: string): string {
-    const raw = document.trim();
-    if (!raw) return raw;
-    if (raw.includes("--aw-gold") && /<style[\s>]/i.test(raw)) {
-        return raw;
-    }
-    const bodyMatch = BODY_INNER_RE.exec(raw);
-    let inner = (bodyMatch ? bodyMatch[1] : raw).trim();
-    inner = inner.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "").trim();
+export function wrapCanvasDocument(bodyHtml: string): string {
+    let inner = bodyHtml.trim();
     if (!/\bclass=['"][^'"]*\baw\b/.test(inner)) {
         inner = `<div class="aw">${inner}</div>`;
     }
     const css = CANVAS_KIT_CSS.replace(/<\//g, "<\\/");
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="color-scheme" content="dark"/><style>${css}</style></head><body>${inner}</body></html>`;
+    const script = CANVAS_THEME_SCRIPT.replace(/<\//g, "<\\/");
+    return `<!DOCTYPE html><html class="dark" data-theme="dark"><head><meta charset="utf-8"/><meta name="color-scheme" content="light dark"/><style>${css}</style><script>${script}</script></head><body>${inner}</body></html>`;
+}
+
+export function ensureCanvasKitDocument(document: string): string {
+    const raw = document.trim();
+    if (!raw) return raw;
+    const bodyMatch = BODY_INNER_RE.exec(raw);
+    let inner = (bodyMatch ? bodyMatch[1] : raw).trim();
+    inner = inner.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "").trim();
+    inner = inner.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").trim();
+    return wrapCanvasDocument(inner);
 }

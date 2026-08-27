@@ -33,12 +33,14 @@ function conditionSummary(payload: Record<string, unknown>): string {
 }
 
 export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props) {
-    const { busy, createDraft, error, loading, selectWorkflow, studio } = useAlertStudio(component, refreshNonce);
+    const { busy, createDraft, error, loading, refresh, selectWorkflow, studio } = useAlertStudio(component, refreshNonce);
     const workflows = studio?.workflows ?? [];
     const selectedId = studio?.workflow_id || "";
     const [symbol, setSymbol] = useState("");
+    const [field, setField] = useState("ltp");
     const [operator, setOperator] = useState("gte");
     const [threshold, setThreshold] = useState("");
+    const [name, setName] = useState("");
     const [createdHint, setCreatedHint] = useState(false);
 
     return (
@@ -92,15 +94,30 @@ export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props
                     event.preventDefault();
                     const value = Number(threshold);
                     if (!symbol.trim() || !Number.isFinite(value)) return;
-                    void createDraft({ operator, symbol: symbol.trim().toUpperCase(), value }).then((next) => {
+                    void createDraft({
+                        field,
+                        name: name.trim() || undefined,
+                        operator,
+                        symbol: symbol.trim().toUpperCase(),
+                        value
+                    }).then((next) => {
                         if (next.workflow_id) onPatch({ workflowId: next.workflow_id });
                         setSymbol("");
                         setThreshold("");
+                        setName("");
                         setCreatedHint(true);
                     });
                 }}
             >
-                <p className="text-[11px] font-medium text-muted-foreground">New LTP draft</p>
+                <p className="text-[11px] font-medium text-muted-foreground">New condition draft</p>
+                <Input
+                    aria-label="Draft name"
+                    className="h-7"
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Optional name"
+                    size="sm"
+                    value={name}
+                />
                 <div className="flex flex-wrap items-center gap-1.5">
                     <Input
                         aria-label="Symbol"
@@ -109,6 +126,18 @@ export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props
                         placeholder="RELIANCE"
                         size="sm"
                         value={symbol}
+                    />
+                    <SimpleSelect
+                        aria-label="Field"
+                        className="h-7 w-[8.5rem]"
+                        onValueChange={setField}
+                        options={[
+                            { label: "LTP", value: "ltp" },
+                            { label: "Day change %", value: "day_change_perc" },
+                            { label: "Volume", value: "volume" }
+                        ]}
+                        size="sm"
+                        value={field}
                     />
                     <SimpleSelect
                         aria-label="Operator"
@@ -134,8 +163,20 @@ export function LiveAlertDraftWidget({ component, onPatch, refreshNonce }: Props
                     <Button disabled={busy || !symbol.trim() || !threshold.trim()} size="xs" type="submit">
                         Create draft
                     </Button>
+                    <Button
+                        disabled={busy || !studio?.workflow_id}
+                        onClick={() => void refresh()}
+                        size="xs"
+                        type="button"
+                        variant="outline"
+                    >
+                        Simulate snapshot
+                    </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">Saves as draft only. Deploy stays on the approval card after you confirm.</p>
+                <p className="text-[11px] text-muted-foreground">
+                    Saves as draft only. Simulate snapshot prepares samples for the simulation widget. Deploy stays on the
+                    approval card after you confirm.
+                </p>
                 {createdHint ? (
                     <p className="text-[11px] text-primary">
                         Use the approval card: prepare snapshot, then confirm deploy.

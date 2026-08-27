@@ -15,6 +15,7 @@ import {
 import { getPublicApiBaseUrl } from "@/lib/runtime-config";
 import { providerSupportsReasoningEffort } from "@/lib/llm-reasoning-effort";
 import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
+import { createAdaptiveWorkspaceSnapshot } from "@/service/actions/adaptive-workspace";
 import {
     cancelBrokerChatRun,
     createBrokerChatSession,
@@ -27,6 +28,7 @@ import {
     submitBrokerChatRun
 } from "@/service/actions/broker-chat";
 import type { LlmProvider, LlmProviderConfig, McpServerConfig } from "@/service/types/broker";
+import type { WorkspaceSpec } from "@/service/types/adaptive-workspace";
 import type {
     BrokerChatEvent,
     BrokerChatPreference,
@@ -424,11 +426,15 @@ export function useAdaptiveWorkspaceChat({
         }
     }
 
-    async function createNewChat() {
+    async function createNewChat(options?: { copySpec?: WorkspaceSpec | null }) {
         setIsCreatingSession(true);
         setError(null);
         try {
             const session = await createBrokerChatSession("Adaptive workspace", ADAPTIVE_SESSION_QUERY);
+            const copySpec = options?.copySpec;
+            if (copySpec?.components.length) {
+                await createAdaptiveWorkspaceSnapshot(session.id, copySpec, "Duplicated desk");
+            }
             setSessions((current) => sortBrokerChatSessions([session, ...current]));
             setActiveSessionId(session.id);
             loadedSessionIdRef.current = session.id;

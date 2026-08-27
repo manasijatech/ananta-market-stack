@@ -1,6 +1,7 @@
 "use client";
 
 import { LiveStatusBadge, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { Button } from "@/components/ui/button";
 import { isRecord } from "@/lib/adaptive-workspace/tool-envelope";
 import { useAlertStudio } from "@/hooks/use-alert-studio";
 import type { WorkspaceComponent } from "@/service/types/adaptive-workspace";
@@ -18,7 +19,7 @@ function tickEntries(samples: Record<string, unknown>): Array<[string, string]> 
 }
 
 export function LiveWorkflowSimulationWidget({ component, refreshNonce }: Props) {
-    const { error, loading, studio } = useAlertStudio(component, refreshNonce);
+    const { error, loading, refresh, studio } = useAlertStudio(component, refreshNonce);
     const samples = studio?.samples ?? {};
     const rows = Array.isArray(samples.samples) ? samples.samples.filter(isRecord) : [];
     const tick = tickEntries(samples);
@@ -27,7 +28,12 @@ export function LiveWorkflowSimulationWidget({ component, refreshNonce }: Props)
         <WidgetState error={error} loading={loading} loadingLabel="Loading simulation">
             <div className="flex items-center justify-between gap-2 px-3 pt-2">
                 <p className="text-xs text-muted-foreground">{rows.length} sample alerts</p>
-                <LiveStatusBadge label={studio?.source === "snapshot" ? "Snapshot" : "Preview"} tone="cached" />
+                <div className="flex items-center gap-1.5">
+                    <Button onClick={() => void refresh()} size="xs" type="button" variant="outline">
+                        Refresh samples
+                    </Button>
+                    <LiveStatusBadge label={studio?.source === "snapshot" ? "Snapshot" : "Preview"} tone="cached" />
+                </div>
             </div>
             {tick.length || rows.length ? (
                 <div className="grid gap-3 p-3">

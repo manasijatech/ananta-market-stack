@@ -4,6 +4,7 @@ export const GRID_COLUMNS = 12;
 export const ADAPTIVE_COMPONENT_TYPES = [
     "portfolio-summary",
     "holdings-table",
+    "holdings-vs-index",
     "pnl-exposure-strip",
     "price-chart",
     "quote-ticker",

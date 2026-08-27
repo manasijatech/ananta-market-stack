@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
-import { getBrokerAccounts } from "@/service/actions/broker";
+import { getBrokerAccounts, getBrokerDataDefaultConfig } from "@/service/actions/broker";
 import { getWatchlists } from "@/service/actions/watchlist";
 import type { BrokerAccount } from "@/service/types/broker";
 import type { Watchlist } from "@/service/types/watchlist";
@@ -69,6 +69,7 @@ export function useDeskAccounts() {
     const [accounts, setAccounts] = useState<BrokerAccount[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [settingsDefaultId, setSettingsDefaultId] = useState("");
 
     const reload = useCallback(async () => {
         try {
@@ -86,7 +87,15 @@ export function useDeskAccounts() {
         void reload();
     }, [reload]);
 
-    const defaultAccountId = prefs?.defaultAccountId ?? "";
+    useEffect(() => {
+        void getBrokerDataDefaultConfig()
+            .then((config) => {
+                setSettingsDefaultId(config.effective_default_account_id || config.preferred_default_account_id || "");
+            })
+            .catch(() => undefined);
+    }, []);
+
+    const defaultAccountId = prefs?.defaultAccountId || settingsDefaultId;
     const account = useMemo(() => {
         const preferred = defaultAccountId ? accounts.find((item) => item.id === defaultAccountId) : undefined;
         if (preferred) return preferred;

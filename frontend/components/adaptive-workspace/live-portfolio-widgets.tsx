@@ -4,17 +4,134 @@ import { useEffect, useState } from "react";
 import { HoldingsTableCard } from "@/components/adaptive-workspace/holdings-table-card";
 import { SessionStatusCard } from "@/components/adaptive-workspace/session-status-card";
 import { DeskAccountState, WidgetState } from "@/components/adaptive-workspace/widget-kit";
+import { normalizeHoldings } from "@/components/brokers/normalizers";
 import { useDeskAccounts } from "@/hooks/use-desk-data";
-import { getHoldings, getPortfolioFunds, getSessionStatus } from "@/service/actions/broker";
-import type { BrokerCode, JsonObject, SessionStatus } from "@/service/types/broker";
+import { numberFrom } from "@/lib/adaptive-workspace/tool-envelope";
+import { cn } from "@/lib/utils";
+import { getHoldings, getPortfolioFunds, getQuotes, getSessionStatus } from "@/service/actions/broker";
+import type { BrokerCode, JsonObject, QuoteResponse, SessionStatus } from "@/service/types/broker";
 
 type Props = {
     refreshNonce: number;
 };
 
-export function LiveHoldingsWidget({ refreshNonce }: Props) {
+type HoldingsProps = Props & {
+    vsIndex?: boolean;
+};
+
+const INDEX_INSTRUMENTS = [
+    { exchange: "NSE", symbol: "NIFTY 50" },
+    { exchange: "NSE", symbol: "NIFTY50" },
+    { exchange: "NSE", symbol: "NIFTY" }
+];
+
+function formatPct(value: number | null) {
+    if (value == null || !Number.isFinite(value)) return "—";
+    const prefix = value > 0 ? "+" : "";
+    return `${prefix}${value.toFixed(2)}%`;
+}
+
+function quoteChangePct(quote: QuoteResponse): number | null {
+    const detail = quote.detail ?? {};
+    const direct = numberFrom(detail, [
+        "day_change_percentage",
+        "dayChangePerc",
+        "change_percent",
+        "change_perc",
+        "net_change_percent",
+        "pChange",
+        "percentageChange"
+    ]);
+    if (direct != null) return direct;
+    const net = numberFrom(detail, ["net_change", "change", "day_change", "netChange"]);
+    if (net != null && quote.ltp && quote.ltp !== net) {
+        const previous = quote.ltp - net;
+        if (previous) return (net / previous) * 100;
+    }
+    return null;
+}
+
+function holdingsSessionPct(data: JsonObject): number | null {
+    const rows = normalizeHoldings(data);
+    let weight = 0;
+    let weighted = 0;
+    for (const row of rows) {
+        const value = (row.quantity || 0) * (row.last_price ?? row.average_price ?? 0);
+        if (!value) continue;
+        let pct = row.pnl_percent;
+        if (pct == null && row.last_price != null && row.average_price) {
+            pct = ((row.last_price - row.average_price) / row.average_price) * 100;
+        }
+        if (pct == null) continue;
+        weight += value;
+        weighted += value * pct;
+    }
+    return weight ? weighted / weight : null;
+}
+
+async function loadIndexQuote(accountId: string): Promise<{ label: string; quote: QuoteResponse } | null> {
+    for (const instrument of INDEX_INSTRUMENTS) {
+        try {
+            const rows = await getQuotes(accountId, { instruments: [instrument] });
+            const quote = rows.find((item) => item.ltp != null) ?? rows[0];
+            if (quote?.ltp) {
+                return { label: instrument.symbol, quote };
+            }
+        } catch {
+            continue;
+        }
+    }
+    return null;
+}
+
+function VsIndexStrip({
+    indexChange,
+    indexLabel,
+    indexLtp,
+    portfolioChange
+}: {
+    indexChange: number | null;
+    indexLabel: string;
+    indexLtp: number | null;
+    portfolioChange: number | null;
+}) {
+    const relative =
+        portfolioChange != null && indexChange != null ? portfolioChange - indexChange : null;
+    return (
+        <div className="grid grid-cols-3 gap-2 border-b border-border/70 px-3 py-2 text-xs">
+            <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    {indexLabel}
+                </p>
+                <p className="font-mono font-semibold tabular-nums">
+                    {indexLtp != null ? indexLtp.toLocaleString("en-IN") : "—"}
+                </p>
+                <p className={cn("tabular-nums", (indexChange ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
+                    {formatPct(indexChange)}
+                </p>
+            </div>
+            <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Holdings</p>
+                <p className={cn("font-mono font-semibold tabular-nums", (portfolioChange ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
+                    {formatPct(portfolioChange)}
+                </p>
+                <p className="text-muted-foreground">Weighted move</p>
+            </div>
+            <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Relative</p>
+                <p className={cn("font-mono font-semibold tabular-nums", (relative ?? 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
+                    {formatPct(relative)}
+                </p>
+                <p className="text-muted-foreground">vs index</p>
+            </div>
+        </div>
+    );
+}
+
+export function LiveHoldingsWidget({ refreshNonce, vsIndex = false }: HoldingsProps) {
     const { account, accounts, error: accountError, loading: accountsLoading } = useDeskAccounts();
     const [output, setOutput] = useState<Record<string, unknown> | null>(null);
+    const [index, setIndex] = useState<{ label: string; quote: QuoteResponse } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -25,14 +142,19 @@ export function LiveHoldingsWidget({ refreshNonce }: Props) {
         }
         let cancelled = false;
         setLoading(true);
-        Promise.all([getHoldings(account.id), getPortfolioFunds(account.id).catch(() => ({}))])
-            .then(([holdings, funds]) => {
+        Promise.all([
+            getHoldings(account.id),
+            getPortfolioFunds(account.id).catch(() => ({})),
+            loadIndexQuote(account.id).catch(() => null)
+        ])
+            .then(([holdings, funds, nextIndex]) => {
                 if (cancelled) return;
                 setOutput({
                     account: { account_id: account.id, broker_code: account.broker_code, label: account.label },
                     data: { ...(holdings as JsonObject), ...(funds as JsonObject) },
                     ok: true
                 });
+                setIndex(nextIndex);
                 setError(null);
             })
             .catch((caught) => {
@@ -46,9 +168,25 @@ export function LiveHoldingsWidget({ refreshNonce }: Props) {
         };
     }, [account, accountsLoading, refreshNonce]);
 
+    const holdingsData = output && typeof output.data === "object" && output.data ? (output.data as JsonObject) : {};
+    const showStrip = vsIndex || Boolean(index);
+
     return (
         <WidgetState error={error || accountError} loading={accountsLoading || loading} loadingLabel="Loading portfolio">
             <DeskAccountState account={account} accounts={accounts}>
+                {showStrip ? (
+                    <VsIndexStrip
+                        indexChange={index ? quoteChangePct(index.quote) : null}
+                        indexLabel={index?.label ?? "Nifty 50"}
+                        indexLtp={index?.quote.ltp ?? null}
+                        portfolioChange={holdingsSessionPct(holdingsData)}
+                    />
+                ) : null}
+                {vsIndex && !index ? (
+                    <p className="px-3 pt-2 text-[11px] text-muted-foreground">
+                        Index quote was unavailable. Holdings still loaded for this account.
+                    </p>
+                ) : null}
                 {output ? <HoldingsTableCard input={{}} name="broker_get_portfolio" output={output} status="success" /> : null}
             </DeskAccountState>
         </WidgetState>
