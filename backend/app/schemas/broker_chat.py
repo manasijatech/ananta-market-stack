@@ -14,9 +14,9 @@ BrokerChatStatus = Literal["queued", "running", "completed", "failed", "cancelle
 class BrokerChatPreferenceOut(BaseModel):
     default_provider: LlmProvider | None = None
     default_model: str | None = None
-    event_visibility: BrokerChatVisibility = "minimal"
-    include_tool_outputs: bool = False
-    include_reasoning: bool = False
+    event_visibility: BrokerChatVisibility = "full"
+    include_tool_outputs: bool = True
+    include_reasoning: bool = True
     reasoning_effort: str | None = None
     use_mcp: bool = False
     mcp_server_ids: list[str] = Field(default_factory=list)
@@ -25,9 +25,9 @@ class BrokerChatPreferenceOut(BaseModel):
 class BrokerChatPreferenceUpdateIn(BaseModel):
     default_provider: LlmProvider | None = None
     default_model: str | None = Field(default=None, max_length=256)
-    event_visibility: BrokerChatVisibility = "minimal"
-    include_tool_outputs: bool = False
-    include_reasoning: bool = False
+    event_visibility: BrokerChatVisibility = "full"
+    include_tool_outputs: bool = True
+    include_reasoning: bool = True
     reasoning_effort: str | None = None
     use_mcp: bool = False
     mcp_server_ids: list[str] = Field(default_factory=list)

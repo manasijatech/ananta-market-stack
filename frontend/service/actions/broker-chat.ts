@@ -182,6 +182,39 @@ export async function getBrokerChatEvents(
     return request<BrokerChatEventsPage>(`/broker-chat/runs/${runId}/events?${query.toString()}`);
 }
 
+export async function getAllBrokerChatEvents(
+    runId: string,
+    params: {
+        afterSequence?: number | null;
+        limit?: number;
+        visibility?: BrokerChatVisibility;
+        includeToolOutputs?: boolean;
+        includeReasoning?: boolean;
+    } = {}
+): Promise<BrokerChatEventsPage> {
+    const pageSize = params.limit ?? 500;
+    const events: BrokerChatEventsPage["events"] = [];
+    let afterSequence = params.afterSequence ?? null;
+    let run: BrokerChatEventsPage["run"] | null = null;
+    for (let pageIndex = 0; pageIndex < 40; pageIndex += 1) {
+        const page = await getBrokerChatEvents(runId, { ...params, afterSequence, limit: pageSize });
+        run = page.run;
+        if (!page.events.length) break;
+        events.push(...page.events);
+        const lastSequence = page.events[page.events.length - 1]?.sequence;
+        if (page.events.length < pageSize || lastSequence == null) break;
+        afterSequence = lastSequence;
+    }
+    if (!run) {
+        return getBrokerChatEvents(runId, params);
+    }
+    return {
+        run,
+        events,
+        next_after_sequence: events.at(-1)?.sequence ?? afterSequence
+    };
+}
+
 export async function getBrokerChatRun(runId: string): Promise<BrokerChatRun> {
     return request<BrokerChatRun>(`/broker-chat/runs/${runId}`);
 }

@@ -35,6 +35,7 @@ import {
     createBrokerChatSession,
     deleteBrokerChatSession,
     getBrokerChatEvents,
+    getAllBrokerChatEvents,
     getBrokerChatQueueHealth,
     getBrokerChatRun,
     getBrokerChatRuns,
@@ -822,7 +823,7 @@ export function BrokerChatWorkspace({
 
     const loadRunEvents = useCallback(
         async (runId: string) => {
-            const page = await getBrokerChatEvents(runId, {
+            const page = await getAllBrokerChatEvents(runId, {
                 limit: 500,
                 visibility: BROKER_CHAT_EVENT_VISIBILITY,
                 includeToolOutputs: BROKER_CHAT_INCLUDE_TOOL_OUTPUTS,

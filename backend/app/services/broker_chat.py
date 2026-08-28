@@ -97,8 +97,8 @@ def preference_to_schema(db: Session, pref: UserBrokerChatPreference) -> BrokerC
     return BrokerChatPreferenceOut(
         default_provider=pref.default_provider or None,
         default_model=pref.default_model or None,
-        event_visibility=pref.event_visibility or "minimal",
-        include_tool_outputs=bool(pref.include_tool_outputs),
+        event_visibility=pref.event_visibility or "full",
+        include_tool_outputs=bool(pref.include_tool_outputs) if pref.include_tool_outputs is not None else True,
         include_reasoning=bool(pref.include_reasoning),
         reasoning_effort=_safe_reasoning_effort(getattr(pref, "reasoning_effort", None)),
         use_mcp=bool(pref.use_mcp),
@@ -321,7 +321,7 @@ def create_run(
         provider=provider,
         model_id=model,
         message=payload.message.strip(),
-        event_visibility=payload.event_visibility or pref.event_visibility or "minimal",
+        event_visibility=payload.event_visibility or pref.event_visibility or "full",
         include_tool_outputs=(
             pref.include_tool_outputs if payload.include_tool_outputs is None else payload.include_tool_outputs
         ),
@@ -583,7 +583,7 @@ def list_events(
         stmt = stmt.where(BrokerChatEvent.sequence > after_sequence)
     rows = list(
         db.scalars(
-            stmt.order_by(BrokerChatEvent.sequence.asc()).limit(max(1, min(limit, 500)))
+            stmt.order_by(BrokerChatEvent.sequence.asc()).limit(max(1, min(limit, 2000)))
         ).all()
     )
     effective_visibility = visibility or run.event_visibility

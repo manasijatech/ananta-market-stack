@@ -17,7 +17,7 @@ def test_broker_chat_schemas_and_stream_key_are_stable():
     preference = BrokerChatPreferenceOut()
     request = BrokerChatSubmitIn(message="Show my holdings")
 
-    assert preference.event_visibility == "minimal"
+    assert preference.event_visibility == "full"
     assert request.message == "Show my holdings"
     assert broker_chat_stream_key("run-1") == "broker-chat:run:run-1:events"
 

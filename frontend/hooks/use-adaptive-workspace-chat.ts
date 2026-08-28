@@ -21,6 +21,7 @@ import {
     createBrokerChatSession,
     deleteBrokerChatSession,
     getBrokerChatEvents,
+    getAllBrokerChatEvents,
     getBrokerChatQueueHealth,
     getBrokerChatRun,
     getBrokerChatRuns,
@@ -163,7 +164,7 @@ export function useAdaptiveWorkspaceChat({
             buildAdaptiveWorkspaceMessages({
                 eventsByRun,
                 includeReasoning: ADAPTIVE_INCLUDE_REASONING,
-                includeUnmappedTools: false,
+                includeUnmappedTools: true,
                 runs: runsForActiveSession,
                 streamingIds
             }),
@@ -320,7 +321,7 @@ export function useAdaptiveWorkspaceChat({
 
     const loadRunEvents = useCallback(
         async (runId: string) => {
-            const page = await getBrokerChatEvents(runId, {
+            const page = await getAllBrokerChatEvents(runId, {
                 includeReasoning: ADAPTIVE_INCLUDE_REASONING,
                 includeToolOutputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
                 limit: 500,

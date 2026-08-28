@@ -180,7 +180,7 @@ def cancel_broker_chat_run(
 def get_broker_chat_events(
     run_id: str,
     after_sequence: int | None = Query(default=None, ge=0),
-    limit: int = Query(default=200, ge=1, le=500),
+    limit: int = Query(default=500, ge=1, le=2000),
     visibility: str | None = Query(default=None),
     include_tool_outputs: bool | None = Query(default=None),
     include_reasoning: bool | None = Query(default=None),

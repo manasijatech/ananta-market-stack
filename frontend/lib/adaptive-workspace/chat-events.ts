@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai";
-import { isAdaptiveRenderTool } from "@/lib/adaptive-workspace/catalog";
+import { displayNameForTool } from "@/lib/agent/tool-labels";
 import type { BrokerChatEvent, BrokerChatRun } from "@/service/types/broker-chat";
 
 export const LIVE_BROKER_CHAT_STATUSES = new Set(["queued", "running"]);
@@ -118,6 +118,9 @@ function tokenText(events: BrokerChatEvent[]) {
 export function brokerChatToolPartType(toolName: string) {
     const name = toolName || "tool";
     const safe = name.replace(/[^A-Za-z0-9_]/g, "_") || "tool";
+    if (name.startsWith("sandbox_")) {
+        return `tool-mcp__ananta_compute__${safe}`;
+    }
     if (name.startsWith("intel_")) {
         return `tool-mcp__ananta_intel__${safe}`;
     }
@@ -166,11 +169,10 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
     for (const event of events.slice().sort((left, right) => left.sequence - right.sequence)) {
         if (event.event_type === "reasoning") {
             const message = textPayload(event.payload, "message");
-            const rawType = textPayload(event.payload, "raw_type");
-            if (!rawType.endsWith(".delta") && (message || rawType)) {
+            if (message) {
                 if (!reasoningStartSequence) reasoningStartSequence = event.sequence;
                 reasoningEvents.push(event);
-                if (message) reasoningText.push(message);
+                reasoningText.push(message);
             }
             continue;
         }
@@ -235,19 +237,24 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
 function brokerToolPart(item: Extract<BrokerTraceItem, { kind: "tool" }>, isRunActive: boolean) {
     const startPayload = item.start?.payload;
     const outputPayload = item.output?.payload;
+    const label = displayNameForTool(
+        item.toolName,
+        textPayload(startPayload || {}, "display_name") || textPayload(outputPayload || {}, "display_name")
+    );
     return {
         input: payloadValue(startPayload, "arguments") ?? {},
         output: payloadValue(outputPayload, "output"),
         state: item.output ? "output-available" : isRunActive ? "input-available" : "output-error",
         toolCallId: item.callId || item.key,
         type: brokerChatToolPartType(item.toolName),
+        displayName: label
     };
 }
 
 export function buildAdaptiveWorkspaceMessages({
     eventsByRun,
-    includeReasoning = false,
-    includeUnmappedTools = false,
+    includeReasoning = true,
+    includeUnmappedTools = true,
     runs,
     streamingIds: _streamingIds
 }: {
@@ -291,16 +298,11 @@ export function buildAdaptiveWorkspaceMessages({
                     });
                     continue;
                 }
-                const mapped = isAdaptiveRenderTool(item.toolName);
-                if (
-                    item.toolName === "workspace_get_authoring_docs" ||
-                    item.toolName === "workspace_evaluate_request" ||
-                    item.toolName === "workspace_validate_spec" ||
-                    item.toolName === "workspace_get_current"
-                ) {
+                const noisyHelper = item.toolName === "workspace_get_authoring_docs";
+                if (noisyHelper) {
                     continue;
                 }
-                if (mapped || includeUnmappedTools || running || !item.output) {
+                if (includeUnmappedTools || running || !item.output) {
                     assistantParts.push(brokerToolPart(item, running));
                 }
             }

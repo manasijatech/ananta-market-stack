@@ -48,6 +48,8 @@ const ACTIVE_VERBS: Record<string, string> = {
   Check: "Checking",
   Find: "Finding",
   Publish: "Publishing",
+  Run: "Running",
+  Calculate: "Calculating",
 };
 
 const COMPLETED_VERBS: Record<string, string> = {
@@ -72,6 +74,8 @@ const COMPLETED_VERBS: Record<string, string> = {
   Check: "Checked",
   Find: "Found",
   Publish: "Published",
+  Run: "Ran",
+  Calculate: "Calculated",
 };
 
 function labelMcpTool(info: McpToolInfo): string {
@@ -89,6 +93,9 @@ function labelMcpTool(info: McpToolInfo): string {
   }
   if (info.serverName === "ananta") {
     return `Ananta · ${info.displayName}`;
+  }
+  if (info.serverName === "ananta_compute") {
+    return `Calculate · ${info.displayName}`;
   }
   return `MCP · ${info.displayName}`;
 }

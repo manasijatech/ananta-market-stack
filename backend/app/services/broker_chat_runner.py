@@ -17,6 +17,7 @@ from openai.types.shared.reasoning import Reasoning
 
 from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
+from app.agent_tools.tool_labels import decorate_tool_payload
 from app.services import broker_chat, broker_chat_mcp, feature_flags, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
@@ -820,7 +821,7 @@ async def _run_broker_chat(run_id: str) -> None:
                                 run,
                                 event_type="token",
                                 public_payload={"text": delta},
-                                full_payload={"text": delta, "raw_type": raw_type, "raw": _safe_data(data)},
+                                full_payload={"text": delta, "raw_type": raw_type},
                             )
                     elif raw_type == "response.created":
                         response_started_at = datetime.now(tz=UTC).replace(tzinfo=None)
@@ -873,41 +874,42 @@ async def _run_broker_chat(run_id: str) -> None:
                         if call_id:
                             tool_names_by_call_id[call_id] = tool_name
                         pending_tool_names.append(tool_name)
+                        started = decorate_tool_payload(
+                            tool_name,
+                            {
+                                "tool_name": tool_name,
+                                "tool_call_id": call_id,
+                                "arguments": arguments,
+                            },
+                        )
                         broker_chat.append_event(
                             db,
                             run,
                             event_type="tool_call_started",
-                            public_payload={
-                                "tool_name": tool_name,
-                                "tool_call_id": call_id,
-                                "arguments": arguments,
-                            },
-                            full_payload={
-                                "tool_name": tool_name,
-                                "tool_call_id": call_id,
-                                "arguments": arguments,
-                                "raw_item": _safe_data(item),
-                            },
+                            public_payload=started,
+                            full_payload={**started, "raw_item": _safe_data(item)},
                         )
                     elif item_type == "tool_call_output_item":
                         call_id, output = _extract_tool_call_output(item)
                         tool_name = tool_names_by_call_id.get(call_id or "", "unknown")
                         if tool_name == "unknown" and pending_tool_names:
                             tool_name = pending_tool_names.pop(0)
-                        broker_chat.append_event(
-                            db,
-                            run,
-                            event_type="tool_call_completed",
-                            public_payload={
+                        completed = decorate_tool_payload(
+                            tool_name,
+                            {
                                 "tool_name": tool_name,
                                 "tool_call_id": call_id,
                                 "output_metadata": _output_preview(output),
                             },
+                        )
+                        broker_chat.append_event(
+                            db,
+                            run,
+                            event_type="tool_call_completed",
+                            public_payload=completed,
                             full_payload={
-                                "tool_name": tool_name,
-                                "tool_call_id": call_id,
+                                **completed,
                                 "output": output,
-                                "output_metadata": _output_preview(output),
                                 "raw_item": _safe_data(item),
                             },
                         )
