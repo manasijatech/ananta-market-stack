@@ -121,6 +121,9 @@ export function brokerChatToolPartType(toolName: string) {
     if (name.startsWith("sandbox_")) {
         return `tool-mcp__ananta_compute__${safe}`;
     }
+    if (name.startsWith("web_")) {
+        return `tool-mcp__ananta_web__${safe}`;
+    }
     if (name.startsWith("intel_")) {
         return `tool-mcp__ananta_intel__${safe}`;
     }

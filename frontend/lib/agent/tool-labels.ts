@@ -4,6 +4,8 @@
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
     sandbox_run_python: "Run calculation",
+    web_fetch: "Open page",
+    web_search: "Web search",
     intel_get_feed: "Market intelligence",
     intel_list_alert_workflows: "List alert workflows",
     intel_list_alert_notifications: "List alert notifications",

@@ -8,14 +8,14 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from agents import Agent, ModelSettings, RunConfig, Runner
-from agents.exceptions import MaxTurnsExceeded
+from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 from agents.items import ItemHelpers
 from agents.models.chatcmpl_converter import Converter
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from openai.types.shared.reasoning import Reasoning
 
-from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
+from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WEB_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
 from app.agent_tools.tool_labels import decorate_tool_payload
 from app.services import broker_chat, broker_chat_mcp, feature_flags, llm_config
@@ -546,6 +546,15 @@ def _install_chat_completions_message_sanitizer() -> None:
     _CHAT_COMPLETIONS_SANITIZER_INSTALLED = True
 
 
+WEB_RESEARCH_INSTRUCTIONS = """
+Public web:
+- If the user pastes any http(s) link (Screener, NSE, BSE, filings, news), call web_fetch on it in the same turn.
+- If the question needs the open web and MCP/intel/broker do not have it, call web_search at most twice (one query, one refinement), then web_fetch the best 1–3 URLs. Do not keep searching after you have usable titles and URLs.
+- Login-walled pages: say the page is not readable and continue with other sources.
+- Never mention crawlers, fetch tools, or search engines unless the user asks how you got the page.
+"""
+
+
 def _broker_chat_instructions(
     mcp_context: str = "",
     *,
@@ -566,6 +575,7 @@ def _broker_chat_instructions(
             instructions = (
                 f"{instructions}\nCurrent WorkspaceSpec JSON:\n{_truncate_json(workspace_spec)}"
             )
+        instructions = f"{instructions}\n{WEB_RESEARCH_INSTRUCTIONS}"
     return instructions
 
 
@@ -687,6 +697,19 @@ def _output_preview(output: Any) -> dict[str, Any]:
     }
 
 
+def _provider_retry_delay(attempt: int) -> float:
+    return min(12.0, 1.5 * (2 ** attempt))
+
+
+def _is_retryable_provider_error(exc: BaseException) -> bool:
+    status = getattr(exc, "status_code", None)
+    if status in {408, 409, 429, 500, 502, 503, 504}:
+        return True
+    text = str(exc).lower()
+    tokens = ("rate limit", "overloaded", "temporar", "timeout", "connection reset", "503", "429")
+    return any(token in text for token in tokens)
+
+
 def _build_model(db, run) -> OpenAIChatCompletionsModel:
     _install_chat_completions_message_sanitizer()
     definition = llm_config.provider_definition(run.provider)
@@ -777,6 +800,8 @@ async def _run_broker_chat(run_id: str) -> None:
             if adaptive_workspace
             else [*BROKER_DATA_TOOLS, *INTEL_FEED_TOOLS]
         )
+        if adaptive_workspace:
+            tools = [*tools, *WEB_TOOLS]
         tools = [*tools, *mcp_handle.extra_tools]
         agent = Agent[BrokerAgentContext](
             name="Ananta Market Stack Broker Data Agent",
@@ -956,6 +981,49 @@ async def _run_broker_chat(run_id: str) -> None:
                 await consume_stream(stream)
             except MaxTurnsExceeded:
                 hit_max_turns = True
+            except ModelBehaviorError as exc:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="run_continued",
+                    public_payload={
+                        "status": "running",
+                        "attempt": attempt + 1,
+                        "reason": "unknown_tool",
+                    },
+                    full_payload={"message": str(exc)[:500]},
+                )
+                if attempt >= MAX_RUN_CONTINUATIONS:
+                    raise
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"A tool call failed: {exc}. Do not call unknown first-class tool names. "
+                            "Use only attached tools. For MCP catalog names, use the prefixed MCP tools "
+                            "or execute_tool with name at the top level. Otherwise use web_search, "
+                            "web_fetch, intel_get_feed, or broker tools. Continue the original task."
+                        ),
+                    }
+                )
+                continue
+            except Exception as exc:
+                if _is_retryable_provider_error(exc) and attempt < MAX_RUN_CONTINUATIONS:
+                    delay = _provider_retry_delay(attempt)
+                    broker_chat.append_event(
+                        db,
+                        run,
+                        event_type="run_continued",
+                        public_payload={
+                            "status": "running",
+                            "attempt": attempt + 1,
+                            "reason": "provider_retry",
+                        },
+                        full_payload={"message": str(exc)[:500], "delay_seconds": delay},
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
             if not final_text and getattr(stream, "final_output", None):
                 final_text = str(stream.final_output)
             db.refresh(run)
