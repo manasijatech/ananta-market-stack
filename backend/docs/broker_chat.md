@@ -64,6 +64,8 @@ The config payload includes a nested `retry` object (`enabled`, `max_retries`, `
 
 Audit vs model context (plan 02): `broker_chat_events` stays the full audit. The next LLM call gets a bounded projection from `app.agent_harness.model_context` (tool summaries, `retrieval_key` when truncated, secrets stripped). Clock, WorkspaceSpec JSON, and MCP inventory sit in a last `user` harness status message, not in the frozen system prompt. Current-turn SDK tool outputs stay raw until wave 2.
 
+Evidence-based done (plan 03): each run stores `evidence_json` (`contract`, `gaps`, `status`, `blockers`). After a stream attempt the harness checks **audit** `tool_call_completed` events. Missing required evidence continues with a hidden `harness_nudge` (cap 3, separate from provider retries). Typed blockers count as done. Exhausted gaps still `status=completed` with public `evidence_incomplete`. Calculation is optional on OSS when no calculator is attached. Research steps map to `evidence_todos` in the UI.
+
 Queue health is available at:
 
 - `GET /api/v1/broker-chat/queue/health`

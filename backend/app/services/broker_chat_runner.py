@@ -14,6 +14,17 @@ from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from openai.types.shared.reasoning import Reasoning
 
+from app.agent_harness.evidence import (
+    MAX_EVIDENCE_CONTINUATIONS,
+    clarify_nudge_message,
+    evidence_gaps,
+    evidence_nudge_message,
+    evidence_status_line,
+    load_run_events,
+    persist_evidence,
+    plan_evidence_contract,
+    ui_todos,
+)
 from app.agent_harness.model_context import build_model_input, build_status_bar
 from app.agent_harness.retry_policy import (
     AgentRetryError,
@@ -426,20 +437,26 @@ def response_looks_incomplete(text: str, *, tool_calls: int, had_message: bool) 
     return False
 
 
-def _continuation_input(previous_input: list[Any], stream: Any, final_text: str) -> list[Any]:
+def _continuation_input(
+    previous_input: list[Any],
+    stream: Any,
+    final_text: str,
+    *,
+    nudge: str = CONTINUE_USER_MESSAGE,
+) -> list[Any]:
     to_list = getattr(stream, "to_input_list", None)
     if callable(to_list):
         try:
             items = list(to_list())
             if items:
-                items.append({"role": "user", "content": CONTINUE_USER_MESSAGE})
+                items.append({"role": "user", "content": nudge})
                 return items
         except Exception:
             pass
     next_input = list(previous_input)
     if final_text.strip():
         next_input.append({"role": "assistant", "content": final_text})
-    next_input.append({"role": "user", "content": CONTINUE_USER_MESSAGE})
+    next_input.append({"role": "user", "content": nudge})
     return next_input
 
 
@@ -787,6 +804,8 @@ async def _run_broker_chat(run_id: str) -> None:
             },
         )
         run_span.__enter__()
+        if run.status in {"completed", "failed"}:
+            return
         if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
             broker_chat.mark_run_terminal(db, run, status="cancelled", response_text=run.response_text)
             broker_chat.append_event_once(db, run, event_type="run_cancelled", public_payload={"status": "cancelled"})
@@ -831,10 +850,34 @@ async def _run_broker_chat(run_id: str) -> None:
             tools = [*tools, *WEB_TOOLS]
         tools = [*tools, *mcp_handle.extra_tools]
         instructions = _broker_chat_instructions(adaptive_workspace=adaptive_workspace)
+        sandbox_available = False
+        evidence_contract = plan_evidence_contract(
+            run.message,
+            adaptive_workspace=adaptive_workspace,
+            sandbox_available=sandbox_available,
+            mcp_enabled=bool(mcp_handle.enabled),
+        )
+        evidence_report = evidence_gaps(
+            evidence_contract,
+            [],
+            sandbox_available=sandbox_available,
+        )
+        persist_evidence(db, run, evidence_report)
+        if evidence_report.todos:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="evidence_todos",
+                public_payload={"todos": ui_todos(evidence_report.todos), "title": "Research steps"},
+                full_payload={"todos": evidence_report.todos},
+            )
+        evidence_continuations_used = 0
+        clarify_used = False
         status_bar = build_status_bar(
             mcp_context=mcp_context,
             workspace_spec=workspace_spec,
             selected_component_id=selected_component_id,
+            evidence_line=evidence_status_line(evidence_report),
         )
         context_build = build_model_input(
             db,
@@ -1129,18 +1172,72 @@ async def _run_broker_chat(run_id: str) -> None:
             incomplete = hit_max_turns or response_looks_incomplete(
                 final_text, tool_calls=tool_calls, had_message=had_message
             )
-            if not incomplete or continuations_used >= MAX_RUN_CONTINUATIONS:
-                break
-            continuations_used += 1
-            _append_run_continued(
-                db,
-                run,
-                attempt=continuations_used,
-                reason="max_turns" if hit_max_turns else "incomplete_answer",
-                error_class="task_incomplete",
+            evidence_report = evidence_gaps(
+                evidence_contract,
+                load_run_events(db, run.id),
+                final_text=final_text,
+                sandbox_available=sandbox_available,
             )
-            messages = _continuation_input(messages, stream, final_text)
-            had_message = False
+            persist_evidence(db, run, evidence_report)
+            if evidence_report.todos:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="evidence_todos",
+                    public_payload={"todos": ui_todos(evidence_report.todos), "title": "Research steps"},
+                    full_payload={"todos": evidence_report.todos},
+                )
+            evidence_open = bool(evidence_report.unsatisfied())
+            if evidence_open and evidence_continuations_used < MAX_EVIDENCE_CONTINUATIONS:
+                evidence_continuations_used += 1
+                nudge = evidence_nudge_message(evidence_report)
+                if evidence_contract.clarify and not clarify_used:
+                    nudge = f"{clarify_nudge_message()}\n{nudge}"
+                    clarify_used = True
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="harness_nudge",
+                    public_payload={"reason": "evidence_gap"},
+                    full_payload={"message": nudge, "gaps": evidence_report.as_json()["gaps"]},
+                )
+                _append_run_continued(
+                    db,
+                    run,
+                    attempt=evidence_continuations_used,
+                    reason="evidence_gap",
+                    error_class="evidence_incomplete",
+                )
+                messages = _continuation_input(messages, stream, final_text, nudge=nudge)
+                had_message = False
+                continue
+            if incomplete and continuations_used < MAX_RUN_CONTINUATIONS:
+                continuations_used += 1
+                _append_run_continued(
+                    db,
+                    run,
+                    attempt=continuations_used,
+                    reason="max_turns" if hit_max_turns else "incomplete_answer",
+                    error_class="task_incomplete",
+                )
+                messages = _continuation_input(messages, stream, final_text)
+                had_message = False
+                continue
+            if evidence_open:
+                evidence_report.status = "partial"
+                persist_evidence(db, run, evidence_report)
+                missing = "; ".join(gap.reason for gap in evidence_report.unsatisfied())
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="evidence_incomplete",
+                    public_payload={
+                        "message": f"I could not verify every research step. {missing}" if missing else "I could not verify every research step.",
+                        "status": "partial",
+                    },
+                    full_payload=evidence_report.as_json(),
+                )
+            break
 
         broker_chat.mark_run_terminal(db, run, status="completed", response_text=final_text)
         db.refresh(run)

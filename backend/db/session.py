@@ -323,6 +323,13 @@ def _apply_sqlite_schema_patches() -> None:
         )
         _ensure_table_columns(
             conn,
+            "broker_chat_runs",
+            {
+                "evidence_json": "TEXT DEFAULT '{}'",
+            },
+        )
+        _ensure_table_columns(
+            conn,
             "broker_chat_sessions",
             {
                 "id": "VARCHAR(36)",

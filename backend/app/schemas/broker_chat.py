@@ -95,6 +95,7 @@ class BrokerChatRunOut(BaseModel):
     include_tool_outputs: bool = False
     include_reasoning: bool = False
     metadata_json: str = "{}"
+    evidence_json: str = "{}"
     queued_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None

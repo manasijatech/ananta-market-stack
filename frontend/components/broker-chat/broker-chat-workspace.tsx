@@ -29,7 +29,7 @@ import {
     reasoningEffortSelectOptions
 } from "@/lib/llm-reasoning-effort";
 import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
-import { assistantText, brokerChatToolPartType, harnessRetryParts } from "@/lib/adaptive-workspace/chat-events";
+import { assistantText, brokerChatToolPartType, evidenceIncompleteParts, evidenceTodoParts, harnessRetryParts } from "@/lib/adaptive-workspace/chat-events";
 import { cn } from "@/lib/utils";
 import {
     cancelBrokerChatRun,
@@ -427,7 +427,11 @@ function buildBrokerMessages({
         const running = liveStatuses.has(run.status);
         const traceItems = buildBrokerTraceItems(events);
         const text = assistantText(events, run);
-        const assistantParts: unknown[] = [...harnessRetryParts(events, running), ...mcpStatusParts(events)];
+        const assistantParts: unknown[] = [
+            ...harnessRetryParts(events, running),
+            ...evidenceTodoParts(events),
+            ...mcpStatusParts(events)
+        ];
 
         for (const item of traceItems) {
             if (item.kind === "reasoning") {
@@ -453,6 +457,7 @@ function buildBrokerMessages({
                 text: run.error ? `Run failed: ${run.error}` : "No assistant response was stored for this run."
             });
         }
+        assistantParts.push(...evidenceIncompleteParts(events));
 
         const messages: UIMessage[] = [
             {

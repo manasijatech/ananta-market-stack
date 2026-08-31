@@ -69,6 +69,7 @@ export interface BrokerChatRun {
     include_tool_outputs: boolean;
     include_reasoning: boolean;
     metadata_json: string;
+    evidence_json?: string;
     queued_at: string;
     started_at?: string | null;
     completed_at?: string | null;

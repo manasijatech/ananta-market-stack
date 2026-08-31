@@ -128,6 +128,35 @@ export function harnessRetryParts(events: BrokerChatEvent[], running: boolean) {
         }));
 }
 
+function lastEventOfType(events: BrokerChatEvent[], eventType: string) {
+    return [...events].reverse().find((event) => event.event_type === eventType);
+}
+
+export function evidenceTodoParts(events: BrokerChatEvent[]) {
+    const event = lastEventOfType(events, "evidence_todos");
+    if (!event) return [];
+    const todos = event.payload?.todos;
+    if (!Array.isArray(todos) || todos.length === 0) return [];
+    return [
+        {
+            input: { todos },
+            output: { todos },
+            state: "output-available",
+            toolCallId: event.id,
+            type: "tool-TodoWrite",
+            displayName: textPayload(event.payload, "title") || "Research steps"
+        }
+    ];
+}
+
+export function evidenceIncompleteParts(events: BrokerChatEvent[]) {
+    const event = lastEventOfType(events, "evidence_incomplete");
+    if (!event) return [];
+    const message = textPayload(event.payload, "message");
+    if (!message) return [];
+    return [{ text: message, type: "text" as const }];
+}
+
 export function brokerChatToolPartType(toolName: string) {
     const name = toolName || "tool";
     const safe = name.replace(/[^A-Za-z0-9_]/g, "_") || "tool";
@@ -289,6 +318,7 @@ export function buildAdaptiveWorkspaceMessages({
             const text = assistantText(events, run);
             const assistantParts: unknown[] = [
                 ...harnessRetryParts(events, running),
+                ...evidenceTodoParts(events),
                 ...events
                     .filter((event) => event.event_type.startsWith("mcp_"))
                     .map((event) => ({
@@ -334,6 +364,7 @@ export function buildAdaptiveWorkspaceMessages({
                     type: "text"
                 });
             }
+            assistantParts.push(...evidenceIncompleteParts(events));
 
             const messages: UIMessage[] = [
                 {

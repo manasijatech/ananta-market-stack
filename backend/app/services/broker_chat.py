@@ -18,6 +18,7 @@ from app.schemas.broker_chat import (
     BrokerChatSessionOut,
     BrokerChatSubmitIn,
 )
+from app.agent_harness.evidence import HIDDEN_EVENT_TYPES
 from app.agent_harness.retry_policy import clamp_user_retry, resolve_agent_retry_policy
 from app.services import llm_config, mcp_config, rbac
 from app.services.broker_chat_queue import (
@@ -603,7 +604,7 @@ def list_events(
     visible_rows = [
         row
         for row in rows
-        if row.event_type not in {"model_context_built"}
+        if row.event_type not in HIDDEN_EVENT_TYPES
         and (row.event_type != "reasoning" or include_reasoning_value)
     ]
     events = [

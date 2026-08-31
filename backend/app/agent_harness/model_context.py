@@ -425,6 +425,7 @@ def build_status_bar(
     mcp_context: str = "",
     workspace_spec: dict[str, Any] | None = None,
     selected_component_id: str | None = None,
+    evidence_line: str = "",
     now: datetime | None = None,
 ) -> str:
     instant = now or datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -432,6 +433,8 @@ def build_status_bar(
         STATUS_BAR_PREFIX,
         instant.strftime("Today is %A, %B %d, %Y in Asia/Kolkata (IST)."),
     ]
+    if evidence_line:
+        lines.append(evidence_line)
     if selected_component_id:
         lines.append(f"Selected canvas component id: {selected_component_id}")
     if workspace_spec:

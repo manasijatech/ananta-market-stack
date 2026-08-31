@@ -466,6 +466,7 @@ class BrokerChatRun(Base):
     include_tool_outputs: Mapped[bool] = mapped_column(Boolean, default=False)
     include_reasoning: Mapped[bool] = mapped_column(Boolean, default=False)
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    evidence_json: Mapped[str] = mapped_column(Text, default="{}")
     queued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
