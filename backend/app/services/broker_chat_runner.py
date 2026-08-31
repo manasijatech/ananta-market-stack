@@ -38,6 +38,7 @@ from app.agent_harness.retry_policy import (
     repair_unpaired_tool_messages,
     resolve_agent_retry_policy,
     retry_delay_seconds,
+    extend_job_timeout_window,
     ToolFingerprintTracker,
 )
 from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WEB_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
@@ -934,6 +935,7 @@ async def _run_broker_chat(run_id: str) -> None:
                     event = await anext_with_idle(event_iter, retry_policy.stream_idle_seconds)
                 except StopAsyncIteration:
                     break
+                extend_job_timeout_window(job_timeout)
                 db.refresh(run)
                 if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
                     raise BrokerChatCancelled()
@@ -1068,6 +1070,7 @@ async def _run_broker_chat(run_id: str) -> None:
                     )
 
         while True:
+            extend_job_timeout_window(job_timeout)
             db.refresh(run)
             if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
                 raise BrokerChatCancelled()

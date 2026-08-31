@@ -39,7 +39,8 @@ Scaling guidance:
 Environment variables:
 
 - `BROKER_CHAT_QUEUE_NAME`: base RQ queue name. The backend automatically appends a database fingerprint.
-- `BROKER_CHAT_JOB_TIMEOUT_SECONDS`: max runtime for one chat job.
+- `BROKER_CHAT_JOB_TIMEOUT_SECONDS`: wall-clock cap for one chat RQ job. **`0` (default) means no cap**. A positive value is a sliding window re-armed on each stream event. Cancel still stops the run.
+- `BROKER_CHAT_STREAM_IDLE_SECONDS`: abort if the model stream emits **no events** for this long. **`0` (default) disables** that stall watchdog.
 - `BROKER_CHAT_RESULT_TTL_SECONDS`: RQ result/failure retention.
 - `BROKER_CHAT_STREAM_MAXLEN`: Redis stream approximate max length per run.
 - `BROKER_CHAT_HISTORY_TURN_LIMIT`: prior completed turns included in the next agent call.
@@ -49,7 +50,6 @@ Environment variables:
 - `BROKER_CHAT_RETRY_BASE_DELAY_SECONDS` / `BROKER_CHAT_RETRY_MAX_DELAY_SECONDS`: exponential backoff with jitter for agent retries.
 - `BROKER_CHAT_RETRY_MAX_SERVER_DELAY_SECONDS`: fail fast if the provider asks to wait longer than this (default 60s). Quota / spend-cap errors never retry.
 - `BROKER_CHAT_PROVIDER_TIMEOUT_SECONDS`: HTTP timeout on the chat model client (default 60).
-- `BROKER_CHAT_STREAM_IDLE_SECONDS`: abort a stalled SSE/stream if no event arrives for this long (default 90; `0` disables).
 - `MODEL_TOOL_RESULT_CHARS`: per-tool cap for current-turn projections (default 4000; in-turn replacement is wave 2).
 - `MODEL_PRIOR_TURN_TOOL_CHARS`: per-tool cap when projecting **previous** completed runs into the next LLM call (default 1200).
 - `MODEL_INPUT_CHAR_BUDGET`: max characters of prior-turn + current user + status-bar messages (default 120000). Oldest turns drop first.

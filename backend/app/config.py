@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     )
     broker_chat_queue_name: str = Field(default="broker-chat", validation_alias="BROKER_CHAT_QUEUE_NAME")
     broker_chat_job_timeout_seconds: int = Field(
-        default=600,
+        default=0,
         validation_alias="BROKER_CHAT_JOB_TIMEOUT_SECONDS",
     )
     broker_chat_result_ttl_seconds: int = Field(
@@ -109,7 +109,7 @@ class Settings(BaseSettings):
         validation_alias="BROKER_CHAT_PROVIDER_TIMEOUT_SECONDS",
     )
     broker_chat_stream_idle_seconds: float = Field(
-        default=90.0,
+        default=0.0,
         ge=0,
         validation_alias="BROKER_CHAT_STREAM_IDLE_SECONDS",
     )

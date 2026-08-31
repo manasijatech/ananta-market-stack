@@ -104,6 +104,18 @@ def test_remaining_job_time_shorter_than_delay_fails():
     assert capped_sleep_seconds(2, remaining_job_seconds=40) == 2
 
 
+def test_unlimited_job_timeout_never_exhausts_budget():
+    from app.agent_harness.retry_policy import rq_timeout_value
+
+    started = datetime.utcnow() - timedelta(hours=26)
+    remaining = remaining_job_seconds(started, 0)
+    assert remaining == float("inf")
+    assert capped_sleep_seconds(12, remaining_job_seconds=remaining) == 12
+    assert rq_timeout_value(0) == -1
+    assert rq_timeout_value(-5) == -1
+    assert rq_timeout_value(600) == 600
+
+
 def test_retry_delay_honours_retry_after_and_jitter(monkeypatch):
     policy = AgentRetryPolicy(base_delay_seconds=2, max_delay_seconds=12)
     assert retry_delay_seconds(policy, 0, 7.0) == 7.0

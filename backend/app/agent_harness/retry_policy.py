@@ -33,7 +33,7 @@ DEFAULT_BASE_DELAY_SECONDS = 2.0
 DEFAULT_MAX_DELAY_SECONDS = 12.0
 DEFAULT_MAX_SERVER_DELAY_SECONDS = 60.0
 DEFAULT_PROVIDER_TIMEOUT_SECONDS = 60.0
-DEFAULT_STREAM_IDLE_SECONDS = 90.0
+DEFAULT_STREAM_IDLE_SECONDS = 0.0
 JOB_SLEEP_RESERVE_SECONDS = 15.0
 FINGERPRINT_BREAK_THRESHOLD = 3
 UNPAIRED_TOOL_PLACEHOLDER = '{"error":"tool result missing; skipped"}'
@@ -337,6 +337,8 @@ def capped_sleep_seconds(
 
 
 def remaining_job_seconds(started_at: datetime | None, timeout_seconds: float, *, now: datetime | None = None) -> float:
+    if timeout_seconds <= 0:
+        return float("inf")
     if started_at is None:
         return timeout_seconds
     current = now or datetime.utcnow()
@@ -344,6 +346,29 @@ def remaining_job_seconds(started_at: datetime | None, timeout_seconds: float, *
         current = current.replace(tzinfo=started_at.tzinfo) if current.tzinfo is None else current
     elapsed = (current - started_at).total_seconds()
     return max(0.0, timeout_seconds - elapsed)
+
+
+def rq_timeout_value(timeout_seconds: int | float) -> int:
+    """Map product timeout to RQ. ``0`` or negative means no wall-clock death penalty."""
+    value = int(timeout_seconds)
+    return -1 if value <= 0 else value
+
+
+def extend_job_timeout_window(timeout_seconds: float) -> None:
+    """Slide RQ's SIGALRM window forward while the run is still making progress.
+
+    No-op when the job has no wall-clock cap. Cancel still stops the run.
+    """
+    value = int(timeout_seconds)
+    if value <= 0:
+        return
+    try:
+        import signal
+
+        if hasattr(signal, "SIGALRM"):
+            signal.alarm(value)
+    except (ValueError, OSError, RuntimeError):
+        return
 
 
 def job_deadline(started_at: datetime | None, timeout_seconds: float) -> datetime:
