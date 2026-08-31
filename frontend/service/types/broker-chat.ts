@@ -12,7 +12,7 @@ export interface BrokerChatPreference {
     include_tool_outputs: boolean;
     include_reasoning: boolean;
     reasoning_effort?: string | null;
-    use_mcp: bool;
+    use_mcp: boolean;
     mcp_server_ids: string[];
     retry: BrokerChatRetryPolicy;
 }
