@@ -235,20 +235,26 @@ def create_broker_account(
     elif isinstance(payload, IndmoneyCreate):
         token = (payload.access_token or "").strip()
         token_generated_at = datetime.now(tz=UTC) if token else None
+        has_totp = bool(payload.client_id and payload.mpin and payload.totp_secret)
         db.add(
             IndmoneyCredentials(
                 account_id=bid,
                 access_token_cipher=encrypt_value(token),
+                client_id_cipher=encrypt_value(payload.client_id) if payload.client_id else None,
+                mpin_cipher=encrypt_value(payload.mpin) if payload.mpin else None,
+                totp_secret_cipher=encrypt_value(payload.totp_secret) if payload.totp_secret else None,
                 access_token_generated_at=token_generated_at,
                 access_token_expires_at=token_generated_at.replace(microsecond=0) + timedelta(hours=24)
                 if token_generated_at
                 else None,
             )
         )
+        acc.automation_enabled = has_totp
+        acc.automation_mode = "indmoney_totp" if has_totp else None
         acc.last_error = (
             None
             if token
-            else "INDmoney access token not provided yet. Generate it from the broker portal and POST it to the INDmoney session endpoint."
+            else "INDmoney TOTP automation is configured. Generate the first session from the broker account."
         )
     elif isinstance(payload, KotakCreate):
         db.add(

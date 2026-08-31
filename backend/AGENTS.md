@@ -175,8 +175,9 @@ Root `GET /health` duplicates a minimal liveness check (for load balancers).
 | POST | `/broker-accounts/{id}/sessions/kotak/refresh` | Automated Kotak refresh using stored mobile + MPIN + TOTP secret |
 | GET | `/broker-accounts/{id}/sessions/groww` | Session status / automation readiness |
 | POST | `/broker-accounts/{id}/sessions/groww` | Refresh Groww token via approval flow, TOTP flow, or manual token submit |
-| GET | `/broker-accounts/{id}/sessions/indmoney` | Session status / manual token guidance |
-| POST | `/broker-accounts/{id}/sessions/indmoney` | Store refreshed INDmoney access token |
+| GET | `/broker-accounts/{id}/sessions/indmoney` | Session status / manual-token or TOTP guidance |
+| POST | `/broker-accounts/{id}/sessions/indmoney` | Store manual token or generate one from a supplied TOTP |
+| POST | `/broker-accounts/{id}/sessions/indmoney/refresh` | Generate a token from stored INDmoney TOTP credentials |
 
 ### Notifications
 

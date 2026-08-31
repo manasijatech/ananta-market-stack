@@ -52,6 +52,7 @@ import type {
 } from "@/service/types/broker";
 
 type GrowwMode = "approval" | "totp" | "token";
+type IndmoneyMode = "totp" | "token";
 
 const fallbackBrokers: BrokerCode[] = [
 	"arrow",
@@ -157,6 +158,9 @@ function brokerFieldPlaceholder(
 		},
 		indmoney: {
 			access_token: "Paste INDmoney access token",
+			client_id: "Paste INDstocks Client ID",
+			mpin: "Enter INDmoney MPIN",
+			totp_secret: "Paste INDstocks TOTP secret",
 		},
 		kotak: {
 			ucc: "Enter Kotak UCC",
@@ -279,6 +283,7 @@ function StepActions({ children }: { children: ReactNode }) {
 function makeBrokerPayload(
 	broker: BrokerCode,
 	growwMode: GrowwMode,
+	indmoneyMode: IndmoneyMode,
 	formData: FormData,
 	defaultRedirectUri: string,
 ): CreateBrokerAccountPayload {
@@ -348,7 +353,10 @@ function makeBrokerPayload(
 			return {
 				broker,
 				label,
-				access_token: nullableValue(formData, "access_token"),
+				access_token: indmoneyMode === "token" ? nullableValue(formData, "access_token") : null,
+				client_id: indmoneyMode === "totp" ? nullableValue(formData, "client_id") : null,
+				mpin: indmoneyMode === "totp" ? nullableValue(formData, "mpin") : null,
+				totp_secret: indmoneyMode === "totp" ? nullableValue(formData, "totp_secret") : null,
 			};
 		case "kotak":
 			return {
@@ -520,6 +528,7 @@ export function BrokerStep({ data }: { data: OnboardingSetupData }) {
 		supportedBrokers[0] ?? "zerodha",
 	);
 	const [growwMode, setGrowwMode] = useState<GrowwMode>("approval");
+	const [indmoneyMode, setIndmoneyMode] = useState<IndmoneyMode>("totp");
 	const [defaultRedirectUri, setDefaultRedirectUri] = useState(
 		"http://localhost:3000/broker-connections",
 	);
@@ -536,6 +545,7 @@ export function BrokerStep({ data }: { data: OnboardingSetupData }) {
 		const payload = makeBrokerPayload(
 			broker,
 			growwMode,
+			indmoneyMode,
 			formData,
 			defaultRedirectUri,
 		);
@@ -888,19 +898,17 @@ export function BrokerStep({ data }: { data: OnboardingSetupData }) {
 					</>
 				) : null}
 				{broker === "indmoney" ? (
-					<SetupField
-						description={brokerFieldDescription(broker, "access_token")}
-						error={fieldErrors.access_token}
-						label="Access token"
-						name="access_token"
-						placeholder={brokerFieldPlaceholder(
-							broker,
-							"access_token",
-							defaultRedirectUri,
-						)}
-						resetKey={broker}
-						type="password"
-					/>
+					<>
+						<Field data-onboarding-motion-item>
+							<FieldLabel>INDmoney auth mode</FieldLabel>
+							<SimpleSelect onValueChange={(value) => setIndmoneyMode(value as IndmoneyMode)} options={[{ value: "totp", label: "Daily TOTP" }, { value: "token", label: "Manual token" }]} value={indmoneyMode} />
+						</Field>
+						{indmoneyMode === "totp" ? <div className={twoColumnFieldClassName}>
+							<SetupField description={brokerFieldDescription(broker, "client_id")} error={fieldErrors.client_id} label="Client ID" name="client_id" placeholder={brokerFieldPlaceholder(broker, "client_id", defaultRedirectUri)} resetKey={`${broker}:${indmoneyMode}`} />
+							<SetupField description={brokerFieldDescription(broker, "mpin")} error={fieldErrors.mpin} label="MPIN" name="mpin" placeholder={brokerFieldPlaceholder(broker, "mpin", defaultRedirectUri)} resetKey={`${broker}:${indmoneyMode}`} type="password" />
+							<SetupField description={brokerFieldDescription(broker, "totp_secret")} error={fieldErrors.totp_secret} label="TOTP secret" name="totp_secret" placeholder={brokerFieldPlaceholder(broker, "totp_secret", defaultRedirectUri)} resetKey={`${broker}:${indmoneyMode}`} type="password" />
+						</div> : <SetupField description={brokerFieldDescription(broker, "access_token")} error={fieldErrors.access_token} label="Access token" name="access_token" placeholder={brokerFieldPlaceholder(broker, "access_token", defaultRedirectUri)} resetKey={`${broker}:${indmoneyMode}`} type="password" />}
+					</>
 				) : null}
 				{broker === "kotak" ? (
 					<div className={twoColumnFieldClassName}>

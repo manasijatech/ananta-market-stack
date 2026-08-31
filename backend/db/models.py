@@ -1153,6 +1153,9 @@ class IndmoneyCredentials(Base):
         String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), primary_key=True
     )
     access_token_cipher: Mapped[str] = mapped_column(Text)
+    client_id_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mpin_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
+    totp_secret_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
     access_token_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

@@ -225,6 +225,9 @@ def _apply_sqlite_schema_patches() -> None:
             conn,
             "broker_indmoney_credentials",
             {
+                "client_id_cipher": "TEXT",
+                "mpin_cipher": "TEXT",
+                "totp_secret_cipher": "TEXT",
                 "access_token_generated_at": "DATETIME",
                 "access_token_expires_at": "DATETIME",
             },

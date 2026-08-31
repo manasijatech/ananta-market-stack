@@ -79,7 +79,7 @@ function payloadFromForm(broker: BrokerCode, formData: FormData): SessionLoginPa
         case "kotak":
             return { broker, mobile_number: value("mobile_number"), totp: value("totp"), mpin: value("mpin") };
         case "indmoney":
-            return { broker, access_token: value("access_token") };
+            return { broker, access_token: value("access_token") || null, totp: value("totp") || null };
     }
 }
 
@@ -128,6 +128,8 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
         !sessionStatus.session_active && "login_url" in sessionStatus && Boolean(sessionStatus.login_url);
     const shouldPulseLogin = shouldHighlightLogin && isExpiredTokenStatus(sessionStatus, expiresAt);
     const shouldUseManualFallback = isRedirectLoginBroker(broker);
+    const indmoneyAutomationEnabled =
+        broker === "indmoney" && "automation_enabled" in sessionStatus && Boolean(sessionStatus.automation_enabled);
     const hasManualSessionForm =
         broker === "indmoney" ||
         (!sessionStatus.session_active &&
@@ -381,16 +383,19 @@ export function SessionPanel({ account, sessionStatus }: { account: BrokerAccoun
                     </>
                 ) : null}
                 {broker === "indmoney" ? (
-                    <Input
-                        autoComplete="new-password"
-                        data-1p-ignore="true"
-                        data-form-type="other"
-                        data-lpignore="true"
-                        name={brokerSessionInputName("access_token")}
-                        placeholder="Paste access token"
-                        required
-                        type="password"
-                    />
+                    <>
+                        {indmoneyAutomationEnabled ? <TOTPInput /> : null}
+                        <Input
+                            autoComplete="new-password"
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            name={brokerSessionInputName("access_token")}
+                            placeholder="Paste access token instead"
+                            required={!indmoneyAutomationEnabled}
+                            type="password"
+                        />
+                    </>
                 ) : null}
                 <Button className="w-fit" disabled={isPending} type="submit">
                     {isPending ? "Submitting..." : setup.manualSubmitLabel}
