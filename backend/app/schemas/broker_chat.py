@@ -11,6 +11,13 @@ BrokerChatVisibility = Literal["minimal", "tool_calls", "full"]
 BrokerChatStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
 
+class BrokerChatRetryPolicyOut(BaseModel):
+    enabled: bool = True
+    max_retries: int = Field(default=3, ge=0)
+    base_delay_seconds: float = Field(default=2.0, ge=0)
+    max_delay_seconds: float = Field(default=12.0, ge=0)
+
+
 class BrokerChatPreferenceOut(BaseModel):
     default_provider: LlmProvider | None = None
     default_model: str | None = None
@@ -20,6 +27,7 @@ class BrokerChatPreferenceOut(BaseModel):
     reasoning_effort: str | None = None
     use_mcp: bool = False
     mcp_server_ids: list[str] = Field(default_factory=list)
+    retry: BrokerChatRetryPolicyOut = Field(default_factory=BrokerChatRetryPolicyOut)
 
 
 class BrokerChatPreferenceUpdateIn(BaseModel):
@@ -31,6 +39,7 @@ class BrokerChatPreferenceUpdateIn(BaseModel):
     reasoning_effort: str | None = None
     use_mcp: bool = False
     mcp_server_ids: list[str] = Field(default_factory=list)
+    retry: BrokerChatRetryPolicyOut | None = None
 
 
 BrokerChatSurface = Literal["broker_chat", "adaptive_workspace"]

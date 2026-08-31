@@ -77,6 +77,42 @@ class Settings(BaseSettings):
         default=1.0,
         validation_alias="BROKER_CHAT_WORKER_POLL_SECONDS",
     )
+    broker_chat_agent_max_retries: int = Field(
+        default=3,
+        ge=0,
+        le=8,
+        validation_alias="BROKER_CHAT_AGENT_MAX_RETRIES",
+    )
+    broker_chat_provider_max_retries: int = Field(
+        default=0,
+        ge=0,
+        validation_alias="BROKER_CHAT_PROVIDER_MAX_RETRIES",
+    )
+    broker_chat_retry_base_delay_seconds: float = Field(
+        default=2.0,
+        ge=0,
+        validation_alias="BROKER_CHAT_RETRY_BASE_DELAY_SECONDS",
+    )
+    broker_chat_retry_max_delay_seconds: float = Field(
+        default=12.0,
+        ge=0,
+        validation_alias="BROKER_CHAT_RETRY_MAX_DELAY_SECONDS",
+    )
+    broker_chat_retry_max_server_delay_seconds: float = Field(
+        default=60.0,
+        ge=0,
+        validation_alias="BROKER_CHAT_RETRY_MAX_SERVER_DELAY_SECONDS",
+    )
+    broker_chat_provider_timeout_seconds: float = Field(
+        default=60.0,
+        ge=1,
+        validation_alias="BROKER_CHAT_PROVIDER_TIMEOUT_SECONDS",
+    )
+    broker_chat_stream_idle_seconds: float = Field(
+        default=90.0,
+        ge=0,
+        validation_alias="BROKER_CHAT_STREAM_IDLE_SECONDS",
+    )
     alert_workflow_chat_queue_name: str = Field(
         default="alert-workflow-chat",
         validation_alias="ALERT_WORKFLOW_CHAT_QUEUE_NAME",

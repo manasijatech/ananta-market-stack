@@ -7,7 +7,8 @@ import {
     IconLayoutDashboard,
     IconLayoutSidebarRightCollapse,
     IconLoader2,
-    IconPlugConnected
+    IconPlugConnected,
+    IconRefresh
 } from "@tabler/icons-react";
 import { AdaptiveCanvasBoard } from "@/components/adaptive-workspace/canvas-board";
 import { AdaptiveDeskPrefsProvider, useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
@@ -286,22 +287,41 @@ function AdaptiveWorkspaceShellInner({
                                                 : "Ask to compose a desk, or change the selected widget."
                                         }
                                         rightActions={
-                                            chat.availableMcpServers.length ? (
+                                            <div className="flex shrink-0 items-center gap-1.5">
+                                                {chat.availableMcpServers.length ? (
+                                                    <button
+                                                        aria-pressed={chat.useMcp}
+                                                        className={cn(
+                                                            "inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold uppercase",
+                                                            chat.useMcp
+                                                                ? "border-primary/40 bg-primary/10 text-primary"
+                                                                : "border-border bg-background text-muted-foreground"
+                                                        )}
+                                                        onClick={() => chat.setUseMcp(!chat.useMcp)}
+                                                        type="button"
+                                                    >
+                                                        <IconPlugConnected className="size-3.5" stroke={1.8} />
+                                                        MCP
+                                                    </button>
+                                                ) : null}
                                                 <button
-                                                    aria-pressed={chat.useMcp}
+                                                    aria-pressed={chat.retry.enabled}
                                                     className={cn(
                                                         "inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-semibold uppercase",
-                                                        chat.useMcp
+                                                        chat.retry.enabled
                                                             ? "border-primary/40 bg-primary/10 text-primary"
                                                             : "border-border bg-background text-muted-foreground"
                                                     )}
-                                                    onClick={() => chat.setUseMcp(!chat.useMcp)}
+                                                    onClick={() =>
+                                                        chat.setRetry({ ...chat.retry, enabled: !chat.retry.enabled })
+                                                    }
+                                                    title="Retry transient model-provider errors"
                                                     type="button"
                                                 >
-                                                    <IconPlugConnected className="size-3.5" stroke={1.8} />
-                                                    MCP
+                                                    <IconRefresh className="size-3.5" stroke={1.8} />
+                                                    Retry
                                                 </button>
-                                            ) : null
+                                            </div>
                                         }
                                         status={chat.chatStatus}
                                         value={chat.message}
@@ -330,6 +350,25 @@ function AdaptiveWorkspaceShellInner({
                                                     </Label>
                                                 );
                                             })}
+                                        </div>
+                                    ) : null}
+                                    {chat.retry.enabled ? (
+                                        <div className="flex flex-wrap items-center gap-2 border-t border-border/70 px-3 py-2 text-[11px] text-muted-foreground">
+                                            <span className="font-semibold uppercase tracking-wide">Reliability</span>
+                                            <SimpleSelect
+                                                aria-label="Provider retry attempts"
+                                                className="h-7 w-[88px] bg-background px-2 text-xs"
+                                                onValueChange={(value) =>
+                                                    chat.setRetry({ ...chat.retry, max_retries: Number(value) })
+                                                }
+                                                options={[1, 2, 3, 4, 5, 6, 7, 8].map((count) => ({
+                                                    label: `${count}×`,
+                                                    value: String(count)
+                                                }))}
+                                                size="sm"
+                                                value={String(chat.retry.max_retries)}
+                                            />
+                                            <span>provider retries on busy/timeout</span>
                                         </div>
                                     ) : null}
                                 </div>

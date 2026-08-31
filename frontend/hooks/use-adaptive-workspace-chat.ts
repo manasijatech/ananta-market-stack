@@ -36,9 +36,11 @@ import type {
     BrokerChatPreference,
     BrokerChatPreferenceUpdate,
     BrokerChatQueueHealth,
+    BrokerChatRetryPolicy,
     BrokerChatRun,
     BrokerChatSession
 } from "@/service/types/broker-chat";
+import { DEFAULT_BROKER_CHAT_RETRY } from "@/service/types/broker-chat";
 
 const ADAPTIVE_SESSION_QUERY = { surface: "adaptive_workspace" as const };
 const ADAPTIVE_EVENT_VISIBILITY = "full" as const;
@@ -87,6 +89,7 @@ export function useAdaptiveWorkspaceChat({
         [mcpServer, mcpServers]
     );
     const [useMcp, setUseMcp] = useState(preference.use_mcp && availableMcpServers.length > 0);
+    const [retry, setRetry] = useState<BrokerChatRetryPolicy>(preference.retry ?? DEFAULT_BROKER_CHAT_RETRY);
     const [selectedMcpServerIds, setSelectedMcpServerIds] = useState(() => {
         if (preference.mcp_server_ids.length) return preference.mcp_server_ids;
         const defaults = availableMcpServers.filter((server) => server.use_by_default).map((server) => server.id as string);
@@ -119,7 +122,8 @@ export function useAdaptiveWorkspaceChat({
             include_tool_outputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
             mcp_server_ids: preference.mcp_server_ids,
             reasoning_effort: preference.reasoning_effort ?? null,
-            use_mcp: preference.use_mcp
+            use_mcp: preference.use_mcp,
+            retry: preference.retry ?? DEFAULT_BROKER_CHAT_RETRY
         })
     );
     const bootstrappedEmptyDeskRef = useRef(initialSessions.length > 0);
@@ -196,9 +200,10 @@ export function useAdaptiveWorkspaceChat({
             include_tool_outputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
             mcp_server_ids: selectedMcpServerIds,
             reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
-            use_mcp: useMcp
+            use_mcp: useMcp,
+            retry
         };
-    }, [model, preference.include_reasoning, provider, reasoningEffort, selectedMcpServerIds, useMcp]);
+    }, [model, preference.include_reasoning, provider, reasoningEffort, retry, selectedMcpServerIds, useMcp]);
 
     const streamRun = useCallback(
         async (runId: string, afterSequence = 0) => {
@@ -599,8 +604,10 @@ export function useAdaptiveWorkspaceChat({
         setModel,
         setProvider,
         setReasoningEffort,
+        setRetry,
         setSelectedMcpServerIds,
         setUseMcp,
+        retry,
         stopActiveRun,
         useMcp,
         eventsByRun,

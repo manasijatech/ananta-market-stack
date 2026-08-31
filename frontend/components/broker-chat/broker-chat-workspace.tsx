@@ -8,6 +8,7 @@ import {
     IconLoader2,
     IconMessagePlus,
     IconPlugConnected,
+    IconRefresh,
     IconSearch,
     IconTerminal2,
     IconTrash
@@ -28,7 +29,7 @@ import {
     reasoningEffortSelectOptions
 } from "@/lib/llm-reasoning-effort";
 import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
-import { assistantText, brokerChatToolPartType } from "@/lib/adaptive-workspace/chat-events";
+import { assistantText, brokerChatToolPartType, harnessRetryParts } from "@/lib/adaptive-workspace/chat-events";
 import { cn } from "@/lib/utils";
 import {
     cancelBrokerChatRun,
@@ -49,10 +50,12 @@ import type {
     BrokerChatEvent,
     BrokerChatPreference,
     BrokerChatQueueHealth,
+    BrokerChatRetryPolicy,
     BrokerChatRun,
     BrokerChatSession,
     BrokerChatVisibility
 } from "@/service/types/broker-chat";
+import { DEFAULT_BROKER_CHAT_RETRY } from "@/service/types/broker-chat";
 
 type Props = {
     initialConfig: BrokerChatPreference;
@@ -97,6 +100,7 @@ type BrokerChatConfigPayload = {
     reasoning_effort: string | null;
     use_mcp: boolean;
     mcp_server_ids: string[];
+    retry: BrokerChatRetryPolicy;
 };
 type BrokerChatConfigKeyPayload = Omit<BrokerChatConfigPayload, "default_provider"> & {
     default_provider: LlmProvider | "";
@@ -423,7 +427,7 @@ function buildBrokerMessages({
         const running = liveStatuses.has(run.status);
         const traceItems = buildBrokerTraceItems(events);
         const text = assistantText(events, run);
-        const assistantParts: unknown[] = mcpStatusParts(events);
+        const assistantParts: unknown[] = [...harnessRetryParts(events, running), ...mcpStatusParts(events)];
 
         for (const item of traceItems) {
             if (item.kind === "reasoning") {
@@ -525,6 +529,7 @@ export function BrokerChatWorkspace({
         return defaults.length ? defaults : availableMcpServers.map((server) => server.id as string);
     }, [availableMcpServers]);
     const [useMcp, setUseMcp] = useState(initialConfig.use_mcp && availableMcpServers.length > 0);
+    const [retry, setRetry] = useState(initialConfig.retry ?? DEFAULT_BROKER_CHAT_RETRY);
     const [selectedMcpServerIds, setSelectedMcpServerIds] = useState(
         initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds
     );
@@ -560,7 +565,8 @@ export function BrokerChatWorkspace({
             include_reasoning: initialConfig.include_reasoning,
             reasoning_effort: initialConfig.reasoning_effort ?? null,
             use_mcp: initialConfig.use_mcp && availableMcpServers.length > 0,
-            mcp_server_ids: initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds
+            mcp_server_ids: initialConfig.mcp_server_ids.length ? initialConfig.mcp_server_ids : defaultMcpServerIds,
+            retry: initialConfig.retry ?? DEFAULT_BROKER_CHAT_RETRY
         })
     );
 
@@ -652,9 +658,10 @@ export function BrokerChatWorkspace({
             include_reasoning: includeReasoning,
             reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
             use_mcp: useMcp,
-            mcp_server_ids: selectedMcpServerIds
+            mcp_server_ids: selectedMcpServerIds,
+            retry
         };
-    }, [includeReasoning, includeToolOutputs, model, provider, reasoningEffort, selectedMcpServerIds, useMcp]);
+    }, [includeReasoning, includeToolOutputs, model, provider, reasoningEffort, retry, selectedMcpServerIds, useMcp]);
 
     useEffect(() => {
         const requestId = ++configSaveRequestRef.current;
@@ -1291,6 +1298,13 @@ export function BrokerChatWorkspace({
                                             onChange={setUseMcp}
                                             title="Use configured MCP servers for broker chat"
                                         />
+                                        <ComposerToggle
+                                            checked={retry.enabled}
+                                            icon={IconRefresh}
+                                            label="Retry"
+                                            onChange={(enabled) => setRetry((current) => ({ ...current, enabled }))}
+                                            title="Retry transient model-provider errors"
+                                        />
                                     </div>
                                 }
                                 status={brokerChatStatus}
@@ -1320,6 +1334,25 @@ export function BrokerChatWorkspace({
                                             </Label>
                                         );
                                     })}
+                                </div>
+                            ) : null}
+                            {retry.enabled ? (
+                                <div className="flex flex-wrap items-center gap-2 border-t border-border/70 px-3 py-2 text-[11px] text-muted-foreground">
+                                    <span className="font-semibold uppercase tracking-wide">Reliability</span>
+                                    <SimpleSelect
+                                        aria-label="Provider retry attempts"
+                                        className="h-7 w-[88px] bg-background px-2 text-xs"
+                                        onValueChange={(value) =>
+                                            setRetry((current) => ({ ...current, max_retries: Number(value) }))
+                                        }
+                                        options={[1, 2, 3, 4, 5, 6, 7, 8].map((count) => ({
+                                            label: `${count}×`,
+                                            value: String(count)
+                                        }))}
+                                        size="sm"
+                                        value={String(retry.max_retries)}
+                                    />
+                                    <span>provider retries on busy/timeout</span>
                                 </div>
                             ) : null}
                         </div>

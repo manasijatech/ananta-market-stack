@@ -13,10 +13,12 @@ from app.schemas.broker_chat import (
     BrokerChatEventsPageOut,
     BrokerChatPreferenceOut,
     BrokerChatPreferenceUpdateIn,
+    BrokerChatRetryPolicyOut,
     BrokerChatRunOut,
     BrokerChatSessionOut,
     BrokerChatSubmitIn,
 )
+from app.agent_harness.retry_policy import clamp_user_retry, resolve_agent_retry_policy
 from app.services import llm_config, mcp_config, rbac
 from app.services.broker_chat_queue import (
     cancel_broker_chat_job,
@@ -92,6 +94,11 @@ def get_or_create_preference(db: Session, user_id: str) -> UserBrokerChatPrefere
     return pref
 
 
+def _retry_schema(pref: UserBrokerChatPreference) -> BrokerChatRetryPolicyOut:
+    policy = resolve_agent_retry_policy(getattr(pref, "retry_json", None))
+    return BrokerChatRetryPolicyOut(**policy.user_facing())
+
+
 def preference_to_schema(db: Session, pref: UserBrokerChatPreference) -> BrokerChatPreferenceOut:
     resolved_ids, _dropped = mcp_config.resolve_mcp_server_ids(db, pref.user_id, json_loads(pref.mcp_server_ids_json, []))
     return BrokerChatPreferenceOut(
@@ -103,6 +110,7 @@ def preference_to_schema(db: Session, pref: UserBrokerChatPreference) -> BrokerC
         reasoning_effort=_safe_reasoning_effort(getattr(pref, "reasoning_effort", None)),
         use_mcp=bool(pref.use_mcp),
         mcp_server_ids=resolved_ids,
+        retry=_retry_schema(pref),
     )
 
 
@@ -130,6 +138,10 @@ def update_preference(
     pref.use_mcp = bool(payload.use_mcp and mcp_allowed)
     resolved_ids, _dropped = mcp_config.resolve_mcp_server_ids(db, user_id, payload.mcp_server_ids if mcp_allowed else [])
     pref.mcp_server_ids_json = json_dumps(resolved_ids if mcp_allowed else [])
+    if payload.retry is not None:
+        pref.retry_json = json_dumps(
+            clamp_user_retry(payload.retry.model_dump(), env_policy=resolve_agent_retry_policy())
+        )
     db.add(pref)
     db.commit()
     db.refresh(pref)

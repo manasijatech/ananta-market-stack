@@ -15,6 +15,20 @@ from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from openai.types.shared.reasoning import Reasoning
 
+from app.agent_harness.retry_policy import (
+    AgentRetryError,
+    AgentRetryPolicy,
+    anext_with_idle,
+    capped_sleep_seconds,
+    classify_provider_error,
+    fingerprint_nudge_message,
+    openai_client_kwargs,
+    remaining_job_seconds,
+    repair_unpaired_tool_messages,
+    resolve_agent_retry_policy,
+    retry_delay_seconds,
+    ToolFingerprintTracker,
+)
 from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WEB_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
 from app.agent_tools.tool_labels import decorate_tool_payload
@@ -22,6 +36,7 @@ from app.services import broker_chat, broker_chat_mcp, feature_flags, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.broker_chat_queue import broker_chat_cancel_requested
+from app.config import get_settings
 from common.datetime_compat import UTC
 from db.models import BrokerChatRun
 from db.session import SessionLocal
@@ -697,31 +712,50 @@ def _output_preview(output: Any) -> dict[str, Any]:
     }
 
 
-def _provider_retry_delay(attempt: int) -> float:
-    return min(12.0, 1.5 * (2 ** attempt))
+def _append_run_continued(
+    db,
+    run,
+    *,
+    attempt: int,
+    reason: str,
+    error_class: str | None = None,
+    delay_seconds: float | None = None,
+    extra_full: dict[str, Any] | None = None,
+) -> None:
+    public_payload: dict[str, Any] = {
+        "status": "running",
+        "attempt": attempt,
+        "reason": reason,
+    }
+    if reason == "provider_retry":
+        public_payload["display_name"] = "Retrying provider…"
+    full_payload: dict[str, Any] = {"reason": reason, "error_class": error_class}
+    if delay_seconds is not None:
+        full_payload["delay_seconds"] = delay_seconds
+    if extra_full:
+        full_payload.update(extra_full)
+    broker_chat.append_event(
+        db,
+        run,
+        event_type="run_continued",
+        public_payload=public_payload,
+        full_payload=full_payload,
+    )
 
 
-def _is_retryable_provider_error(exc: BaseException) -> bool:
-    status = getattr(exc, "status_code", None)
-    if status in {408, 409, 429, 500, 502, 503, 504}:
-        return True
-    text = str(exc).lower()
-    tokens = ("rate limit", "overloaded", "temporar", "timeout", "connection reset", "503", "429")
-    return any(token in text for token in tokens)
-
-
-def _build_model(db, run) -> OpenAIChatCompletionsModel:
+def _build_model(db, run, policy: AgentRetryPolicy) -> OpenAIChatCompletionsModel:
     _install_chat_completions_message_sanitizer()
     definition = llm_config.provider_definition(run.provider)
     api_key = llm_config.get_provider_api_key(db, run.user_id, run.provider)
-    kwargs: dict[str, Any] = {
-        "api_key": api_key,
-        "base_url": definition["base_url"],
-        "timeout": 60.0,
-    }
     return OpenAIChatCompletionsModel(
         model=run.model_id,
-        openai_client=AsyncOpenAI(**kwargs),
+        openai_client=AsyncOpenAI(
+            **openai_client_kwargs(
+                api_key=api_key,
+                base_url=definition["base_url"],
+                policy=policy,
+            )
+        ),
         strict_feature_validation=False,
     )
 
@@ -795,6 +829,13 @@ async def _run_broker_chat(run_id: str) -> None:
         )
         mcp_handle = await broker_chat_mcp.connect_broker_chat_mcp(db, run, metadata)
         mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle)
+        pref = broker_chat.get_or_create_preference(db, run.user_id)
+        retry_policy = resolve_agent_retry_policy(getattr(pref, "retry_json", None))
+        job_timeout = float(get_settings().broker_chat_job_timeout_seconds)
+        fingerprint_tracker = ToolFingerprintTracker(threshold=retry_policy.fingerprint_break_threshold)
+        nudged_fingerprints: set[str] = set()
+        provider_retries_used = 0
+        continuations_used = 0
         tools = (
             [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS]
             if adaptive_workspace
@@ -811,7 +852,7 @@ async def _run_broker_chat(run_id: str) -> None:
                 workspace_spec=workspace_spec,
                 selected_component_id=selected_component_id,
             ),
-            model=_build_model(db, run),
+            model=_build_model(db, run, retry_policy),
             model_settings=_model_settings_for_run(run),
             tools=tools,
             mcp_servers=mcp_handle.active_servers,
@@ -829,7 +870,12 @@ async def _run_broker_chat(run_id: str) -> None:
         async def consume_stream(active_stream: Any) -> None:
             nonlocal final_text, response_started_at, usage_events_recorded
             nonlocal reasoning_events_emitted, tool_calls, had_message
-            async for event in active_stream.stream_events():
+            event_iter = active_stream.stream_events().__aiter__()
+            while True:
+                try:
+                    event = await anext_with_idle(event_iter, retry_policy.stream_idle_seconds)
+                except StopAsyncIteration:
+                    break
                 db.refresh(run)
                 if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
                     raise BrokerChatCancelled()
@@ -896,6 +942,7 @@ async def _run_broker_chat(run_id: str) -> None:
                     if item_type == "tool_call_item":
                         tool_name, arguments, call_id = _extract_tool_call_start(item)
                         tool_calls += 1
+                        fingerprint_tracker.record(tool_name, arguments)
                         if call_id:
                             tool_names_by_call_id[call_id] = tool_name
                         pending_tool_names.append(tool_name)
@@ -962,10 +1009,11 @@ async def _run_broker_chat(run_id: str) -> None:
                         full_payload={"agent": agent_name},
                     )
 
-        for attempt in range(MAX_RUN_CONTINUATIONS + 1):
+        while True:
             db.refresh(run)
             if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
                 raise BrokerChatCancelled()
+            messages = repair_unpaired_tool_messages(messages)
             stream = Runner.run_streamed(
                 starting_agent=agent,
                 input=messages,
@@ -979,22 +1027,26 @@ async def _run_broker_chat(run_id: str) -> None:
             hit_max_turns = False
             try:
                 await consume_stream(stream)
+            except BrokerChatCancelled:
+                raise
+            except AgentRetryError:
+                raise
             except MaxTurnsExceeded:
                 hit_max_turns = True
             except ModelBehaviorError as exc:
-                broker_chat.append_event(
+                if continuations_used >= MAX_RUN_CONTINUATIONS:
+                    raise AgentRetryError(
+                        classify_provider_error(exc, max_server_delay_seconds=retry_policy.max_server_delay_seconds)
+                    ) from exc
+                continuations_used += 1
+                _append_run_continued(
                     db,
                     run,
-                    event_type="run_continued",
-                    public_payload={
-                        "status": "running",
-                        "attempt": attempt + 1,
-                        "reason": "unknown_tool",
-                    },
-                    full_payload={"message": str(exc)[:500]},
+                    attempt=continuations_used,
+                    reason="unknown_tool",
+                    error_class="unknown_tool",
+                    extra_full={"message": str(exc)[:500]},
                 )
-                if attempt >= MAX_RUN_CONTINUATIONS:
-                    raise
                 messages.append(
                     {
                         "role": "user",
@@ -1008,41 +1060,69 @@ async def _run_broker_chat(run_id: str) -> None:
                 )
                 continue
             except Exception as exc:
-                if _is_retryable_provider_error(exc) and attempt < MAX_RUN_CONTINUATIONS:
-                    delay = _provider_retry_delay(attempt)
-                    broker_chat.append_event(
+                classified = classify_provider_error(
+                    exc, max_server_delay_seconds=retry_policy.max_server_delay_seconds
+                )
+                can_retry = (
+                    classified.retryable
+                    and retry_policy.enabled
+                    and provider_retries_used < retry_policy.max_retries
+                )
+                if can_retry:
+                    delay = retry_delay_seconds(
+                        retry_policy, provider_retries_used, classified.retry_after_seconds
+                    )
+                    remaining = remaining_job_seconds(run.started_at, job_timeout)
+                    sleep_for = capped_sleep_seconds(delay, remaining_job_seconds=remaining)
+                    if sleep_for is None:
+                        raise AgentRetryError(classified) from exc
+                    provider_retries_used += 1
+                    _append_run_continued(
                         db,
                         run,
-                        event_type="run_continued",
-                        public_payload={
-                            "status": "running",
-                            "attempt": attempt + 1,
-                            "reason": "provider_retry",
-                        },
-                        full_payload={"message": str(exc)[:500], "delay_seconds": delay},
+                        attempt=provider_retries_used,
+                        reason="provider_retry",
+                        error_class=classified.error_class,
+                        delay_seconds=sleep_for,
+                        extra_full={"message": str(exc)[:500], "layer": classified.layer},
                     )
-                    await asyncio.sleep(delay)
+                    await asyncio.sleep(sleep_for)
                     continue
-                raise
+                raise AgentRetryError(classified) from exc
             if not final_text and getattr(stream, "final_output", None):
                 final_text = str(stream.final_output)
             db.refresh(run)
             if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
                 raise BrokerChatCancelled()
+            new_breaks = [
+                fingerprint for fingerprint in fingerprint_tracker.broken_fingerprints() if fingerprint not in nudged_fingerprints
+            ]
+            if new_breaks and continuations_used < MAX_RUN_CONTINUATIONS:
+                continuations_used += 1
+                nudged_fingerprints.update(new_breaks)
+                _append_run_continued(
+                    db,
+                    run,
+                    attempt=continuations_used,
+                    reason="repeated_tool",
+                    error_class="repeated_tool",
+                    extra_full={"fingerprints": new_breaks},
+                )
+                messages.append({"role": "user", "content": fingerprint_nudge_message(new_breaks)})
+                had_message = False
+                continue
             incomplete = hit_max_turns or response_looks_incomplete(
                 final_text, tool_calls=tool_calls, had_message=had_message
             )
-            if not incomplete or attempt >= MAX_RUN_CONTINUATIONS:
+            if not incomplete or continuations_used >= MAX_RUN_CONTINUATIONS:
                 break
-            broker_chat.append_event(
+            continuations_used += 1
+            _append_run_continued(
                 db,
                 run,
-                event_type="run_continued",
-                public_payload={
-                    "status": "running",
-                    "attempt": attempt + 1,
-                    "reason": "max_turns" if hit_max_turns else "incomplete_answer",
-                },
+                attempt=continuations_used,
+                reason="max_turns" if hit_max_turns else "incomplete_answer",
+                error_class="task_incomplete",
             )
             messages = _continuation_input(messages, stream, final_text)
             had_message = False
@@ -1070,6 +1150,8 @@ async def _run_broker_chat(run_id: str) -> None:
     except Exception as exc:
         run = db.get(BrokerChatRun, run_id)
         if run is not None and run.status != "cancelled":
+            classified = classify_provider_error(exc)
+            user_message = classified.user_message
             if usage_events_recorded == 0:
                 _record_broker_chat_usage(
                     run,
@@ -1078,14 +1160,20 @@ async def _run_broker_chat(run_id: str) -> None:
                     status="error",
                     error=str(exc),
                 )
-            broker_chat.mark_run_terminal(db, run, status="failed", response_text=final_text, error=str(exc))
+            broker_chat.mark_run_terminal(db, run, status="failed", response_text=final_text, error=user_message)
             db.refresh(run)
             broker_chat.append_event(
                 db,
                 run,
                 event_type="run_failed",
-                public_payload={"status": "failed", "message": str(exc)},
-                full_payload={"status": "failed", "message": str(exc), "error_type": exc.__class__.__name__},
+                public_payload={"status": "failed", "message": user_message},
+                full_payload={
+                    "status": "failed",
+                    "message": str(exc),
+                    "error_type": exc.__class__.__name__,
+                    "error_class": classified.error_class,
+                    "layer": classified.layer,
+                },
             )
         raise
     finally:

@@ -44,11 +44,19 @@ Environment variables:
 - `BROKER_CHAT_STREAM_MAXLEN`: Redis stream approximate max length per run.
 - `BROKER_CHAT_HISTORY_TURN_LIMIT`: prior completed turns included in the next agent call.
 - `BROKER_CHAT_WORKER_POLL_SECONDS`: polling interval for the fallback worker loop.
+- `BROKER_CHAT_AGENT_MAX_RETRIES`: agent-level provider retries after the first attempt (default 3, cap 8).
+- `BROKER_CHAT_PROVIDER_MAX_RETRIES`: OpenAI SDK retries. Product default is **0** so Ananta classifies 429/quota/stream errors instead of waiting on a provider `Retry-After` of hours.
+- `BROKER_CHAT_RETRY_BASE_DELAY_SECONDS` / `BROKER_CHAT_RETRY_MAX_DELAY_SECONDS`: exponential backoff with jitter for agent retries.
+- `BROKER_CHAT_RETRY_MAX_SERVER_DELAY_SECONDS`: fail fast if the provider asks to wait longer than this (default 60s). Quota / spend-cap errors never retry.
+- `BROKER_CHAT_PROVIDER_TIMEOUT_SECONDS`: HTTP timeout on the chat model client (default 60).
+- `BROKER_CHAT_STREAM_IDLE_SECONDS`: abort a stalled SSE/stream if no event arrives for this long (default 90; `0` disables).
 
 User-level display defaults are managed through:
 
 - `GET /api/v1/broker-chat/config`
 - `PUT /api/v1/broker-chat/config`
+
+The config payload includes a nested `retry` object (`enabled`, `max_retries`, `base_delay_seconds`, `max_delay_seconds`). Users cannot set `max_retries` above 8 and cannot change SDK retries or the server delay cap. Title generation and later compaction/eval clients must use a separate `AgentRetryPolicy.background()` client so they do not share the Chat run's retry budget.
 
 Queue health is available at:
 

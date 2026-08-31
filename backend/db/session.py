@@ -313,6 +313,7 @@ def _apply_sqlite_schema_patches() -> None:
                 "reasoning_effort": "VARCHAR(16)",
                 "use_mcp": "BOOLEAN DEFAULT 0",
                 "mcp_server_ids_json": "TEXT DEFAULT '[]'",
+                "retry_json": "TEXT DEFAULT '{}'",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
             },

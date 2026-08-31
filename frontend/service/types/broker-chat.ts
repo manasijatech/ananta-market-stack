@@ -12,9 +12,24 @@ export interface BrokerChatPreference {
     include_tool_outputs: boolean;
     include_reasoning: boolean;
     reasoning_effort?: string | null;
-    use_mcp: boolean;
+    use_mcp: bool;
     mcp_server_ids: string[];
+    retry: BrokerChatRetryPolicy;
 }
+
+export interface BrokerChatRetryPolicy {
+    enabled: boolean;
+    max_retries: number;
+    base_delay_seconds: number;
+    max_delay_seconds: number;
+}
+
+export const DEFAULT_BROKER_CHAT_RETRY: BrokerChatRetryPolicy = {
+    enabled: true,
+    max_retries: 3,
+    base_delay_seconds: 2,
+    max_delay_seconds: 12
+};
 
 export interface BrokerChatPreferenceUpdate {
     default_provider?: LlmProvider | null;
@@ -25,6 +40,7 @@ export interface BrokerChatPreferenceUpdate {
     reasoning_effort?: string | null;
     use_mcp: boolean;
     mcp_server_ids: string[];
+    retry?: BrokerChatRetryPolicy;
 }
 
 export type BrokerChatSurface = "broker_chat" | "adaptive_workspace";

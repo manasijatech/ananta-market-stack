@@ -381,6 +381,7 @@ class UserBrokerChatPreference(Base):
     reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     use_mcp: Mapped[bool] = mapped_column(Boolean, default=False)
     mcp_server_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    retry_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

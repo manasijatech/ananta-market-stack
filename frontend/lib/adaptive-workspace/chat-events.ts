@@ -115,6 +115,19 @@ function tokenText(events: BrokerChatEvent[]) {
         .join("");
 }
 
+export function harnessRetryParts(events: BrokerChatEvent[], running: boolean) {
+    return events
+        .filter((event) => event.event_type === "run_continued" && textPayload(event.payload, "reason") === "provider_retry")
+        .map((event) => ({
+            input: { reason: "provider_retry" },
+            output: running ? "" : "Retry finished",
+            state: running ? "input-available" : "output-available",
+            toolCallId: event.id,
+            type: "tool-harness__retry",
+            displayName: textPayload(event.payload, "display_name") || "Retrying provider…"
+        }));
+}
+
 export function brokerChatToolPartType(toolName: string) {
     const name = toolName || "tool";
     const safe = name.replace(/[^A-Za-z0-9_]/g, "_") || "tool";
@@ -274,9 +287,11 @@ export function buildAdaptiveWorkspaceMessages({
             const running = LIVE_BROKER_CHAT_STATUSES.has(run.status);
             const traceItems = buildBrokerTraceItems(events);
             const text = assistantText(events, run);
-            const assistantParts: unknown[] = events
-                .filter((event) => event.event_type.startsWith("mcp_"))
-                .map((event) => ({
+            const assistantParts: unknown[] = [
+                ...harnessRetryParts(events, running),
+                ...events
+                    .filter((event) => event.event_type.startsWith("mcp_"))
+                    .map((event) => ({
                     input: {
                         status: textPayload(event.payload, "status") || event.event_type,
                         servers: Array.isArray(event.payload?.server_names)
@@ -287,7 +302,8 @@ export function buildAdaptiveWorkspaceMessages({
                     state: "output-available",
                     toolCallId: event.id,
                     type: `tool-mcp__status__${event.event_type}`
-                }));
+                })),
+            ];
 
             for (const item of traceItems) {
                 if (item.kind === "reasoning") {
