@@ -5,7 +5,6 @@ import json
 import re
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from agents import Agent, ModelSettings, RunConfig, Runner
 from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
@@ -15,6 +14,7 @@ from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from openai.types.shared.reasoning import Reasoning
 
+from app.agent_harness.model_context import build_model_input, build_status_bar
 from app.agent_harness.retry_policy import (
     AgentRetryError,
     AgentRetryPolicy,
@@ -64,11 +64,10 @@ _INCOMPLETE_LAST_LINE = re.compile(
 BROKER_CHAT_INSTRUCTIONS_TEMPLATE = """
 You are Ananta Market Stack's broker data assistant.
 
-Current calendar context:
-- __CURRENT_DAY_CONTEXT__
-- Interpret relative periods like today, yesterday, last 1 month, last 6 months,
-  YTD, and last year from this date unless the user gives explicit dates.
-- Use ISO dates in tool arguments. For example, YYYY-MM-DD.
+Current calendar context comes from the latest harness status message, not
+this system prompt. Interpret relative periods like today, yesterday, last
+1 month, last 6 months, YTD, and last year from that date unless the user
+gives explicit dates. Use ISO dates in tool arguments. For example, YYYY-MM-DD.
 
 Use the broker tools whenever the user asks about connected broker accounts,
 portfolio state, positions, holdings, funds, live quotes, OHLC, historical data,
@@ -571,25 +570,12 @@ Public web:
 
 
 def _broker_chat_instructions(
-    mcp_context: str = "",
     *,
     adaptive_workspace: bool = False,
-    workspace_spec: dict[str, Any] | None = None,
-    selected_component_id: str | None = None,
 ) -> str:
-    now = datetime.now(ZoneInfo("Asia/Kolkata"))
-    current_day_context = now.strftime("Today is %A, %B %d, %Y in Asia/Kolkata (IST).")
-    instructions = BROKER_CHAT_INSTRUCTIONS_TEMPLATE.replace("__CURRENT_DAY_CONTEXT__", current_day_context)
-    if mcp_context.strip():
-        instructions = f"{instructions}\n\nConnected MCP context:\n{mcp_context.strip()}"
+    instructions = BROKER_CHAT_INSTRUCTIONS_TEMPLATE
     if adaptive_workspace:
         instructions = f"{instructions}\n{ADAPTIVE_WORKSPACE_INSTRUCTIONS}"
-        if selected_component_id:
-            instructions = f"{instructions}\nSelected canvas component id: {selected_component_id}"
-        if workspace_spec:
-            instructions = (
-                f"{instructions}\nCurrent WorkspaceSpec JSON:\n{_truncate_json(workspace_spec)}"
-            )
         instructions = f"{instructions}\n{WEB_RESEARCH_INSTRUCTIONS}"
     return instructions
 
@@ -844,14 +830,44 @@ async def _run_broker_chat(run_id: str) -> None:
         if adaptive_workspace:
             tools = [*tools, *WEB_TOOLS]
         tools = [*tools, *mcp_handle.extra_tools]
+        instructions = _broker_chat_instructions(adaptive_workspace=adaptive_workspace)
+        status_bar = build_status_bar(
+            mcp_context=mcp_context,
+            workspace_spec=workspace_spec,
+            selected_component_id=selected_component_id,
+        )
+        context_build = build_model_input(
+            db,
+            run,
+            current_user_text=run.message,
+            status_bar=status_bar,
+            instructions=instructions,
+        )
+        if get_settings().broker_chat_emit_model_context_event:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="model_context_built",
+                public_payload={
+                    "prior_turns": context_build.prior_turns,
+                    "tool_projections": context_build.tool_projections,
+                    "caps_hit": context_build.caps_hit,
+                    "char_count": context_build.char_count,
+                },
+                full_payload={
+                    "prior_turns": context_build.prior_turns,
+                    "tool_projections": context_build.tool_projections,
+                    "caps_hit": context_build.caps_hit,
+                    "dropped_oldest_turns": context_build.dropped_oldest_turns,
+                    "char_count": context_build.char_count,
+                    "cache_breakers": context_build.cache_breakers,
+                    "hook_names": [],
+                    "skill_names": [],
+                },
+            )
         agent = Agent[BrokerAgentContext](
             name="Ananta Market Stack Broker Data Agent",
-            instructions=_broker_chat_instructions(
-                mcp_context,
-                adaptive_workspace=adaptive_workspace,
-                workspace_spec=workspace_spec,
-                selected_component_id=selected_component_id,
-            ),
+            instructions=instructions,
             model=_build_model(db, run, retry_policy),
             model_settings=_model_settings_for_run(run),
             tools=tools,
@@ -860,8 +876,7 @@ async def _run_broker_chat(run_id: str) -> None:
                 prefix_server_names=len(mcp_handle.active_servers) > 1 and not mcp_handle.extra_tools
             ),
         )
-        messages = broker_chat.conversation_history_for_run(db, run)
-        messages.append({"role": "user", "content": run.message})
+        messages = context_build.messages
         max_turns = ADAPTIVE_WORKSPACE_MAX_TURNS if adaptive_workspace else BROKER_CHAT_MAX_TURNS
         tool_calls = 0
         had_message = False

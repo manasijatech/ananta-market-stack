@@ -50,6 +50,10 @@ Environment variables:
 - `BROKER_CHAT_RETRY_MAX_SERVER_DELAY_SECONDS`: fail fast if the provider asks to wait longer than this (default 60s). Quota / spend-cap errors never retry.
 - `BROKER_CHAT_PROVIDER_TIMEOUT_SECONDS`: HTTP timeout on the chat model client (default 60).
 - `BROKER_CHAT_STREAM_IDLE_SECONDS`: abort a stalled SSE/stream if no event arrives for this long (default 90; `0` disables).
+- `MODEL_TOOL_RESULT_CHARS`: per-tool cap for current-turn projections (default 4000; in-turn replacement is wave 2).
+- `MODEL_PRIOR_TURN_TOOL_CHARS`: per-tool cap when projecting **previous** completed runs into the next LLM call (default 1200).
+- `MODEL_INPUT_CHAR_BUDGET`: max characters of prior-turn + current user + status-bar messages (default 120000). Oldest turns drop first.
+- `BROKER_CHAT_EMIT_MODEL_CONTEXT_EVENT`: write a debug `model_context_built` audit event (hidden from the default UI/SSE page).
 
 User-level display defaults are managed through:
 
@@ -57,6 +61,8 @@ User-level display defaults are managed through:
 - `PUT /api/v1/broker-chat/config`
 
 The config payload includes a nested `retry` object (`enabled`, `max_retries`, `base_delay_seconds`, `max_delay_seconds`). Users cannot set `max_retries` above 8 and cannot change SDK retries or the server delay cap. Title generation and later compaction/eval clients must use a separate `AgentRetryPolicy.background()` client so they do not share the Chat run's retry budget.
+
+Audit vs model context (plan 02): `broker_chat_events` stays the full audit. The next LLM call gets a bounded projection from `app.agent_harness.model_context` (tool summaries, `retrieval_key` when truncated, secrets stripped). Clock, WorkspaceSpec JSON, and MCP inventory sit in a last `user` harness status message, not in the frozen system prompt. Current-turn SDK tool outputs stay raw until wave 2.
 
 Queue health is available at:
 

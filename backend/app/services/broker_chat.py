@@ -603,7 +603,8 @@ def list_events(
     visible_rows = [
         row
         for row in rows
-        if row.event_type != "reasoning" or include_reasoning_value
+        if row.event_type not in {"model_context_built"}
+        and (row.event_type != "reasoning" or include_reasoning_value)
     ]
     events = [
         event_to_schema(
@@ -730,22 +731,7 @@ def mark_run_terminal(
 
 
 def conversation_history_for_run(db: Session, run: BrokerChatRun, *, limit: int | None = None) -> list[dict[str, str]]:
-    history_limit = limit or get_settings().broker_chat_history_turn_limit
-    rows = list(
-        db.scalars(
-            select(BrokerChatRun)
-            .where(
-                BrokerChatRun.session_id == run.session_id,
-                BrokerChatRun.id != run.id,
-                BrokerChatRun.status == "completed",
-            )
-            .order_by(BrokerChatRun.created_at.desc(), BrokerChatRun.id.desc())
-            .limit(max(0, history_limit))
-        ).all()
-    )
-    messages: list[dict[str, str]] = []
-    for previous in reversed(rows):
-        messages.append({"role": "user", "content": previous.message})
-        if previous.response_text:
-            messages.append({"role": "assistant", "content": previous.response_text})
+    from app.agent_harness.model_context import prior_turn_messages_for_run
+
+    messages, _stats = prior_turn_messages_for_run(db, run, limit=limit)
     return messages

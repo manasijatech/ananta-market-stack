@@ -113,6 +113,25 @@ class Settings(BaseSettings):
         ge=0,
         validation_alias="BROKER_CHAT_STREAM_IDLE_SECONDS",
     )
+    model_tool_result_chars: int = Field(
+        default=4000,
+        ge=256,
+        validation_alias="MODEL_TOOL_RESULT_CHARS",
+    )
+    model_prior_turn_tool_chars: int = Field(
+        default=1200,
+        ge=256,
+        validation_alias="MODEL_PRIOR_TURN_TOOL_CHARS",
+    )
+    model_input_char_budget: int = Field(
+        default=120_000,
+        ge=4000,
+        validation_alias="MODEL_INPUT_CHAR_BUDGET",
+    )
+    broker_chat_emit_model_context_event: bool = Field(
+        default=True,
+        validation_alias="BROKER_CHAT_EMIT_MODEL_CONTEXT_EVENT",
+    )
     alert_workflow_chat_queue_name: str = Field(
         default="alert-workflow-chat",
         validation_alias="ALERT_WORKFLOW_CHAT_QUEUE_NAME",
