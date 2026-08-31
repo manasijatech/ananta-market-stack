@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from common.datetime_compat import UTC
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.schemas.broker import (
@@ -66,6 +66,26 @@ def _mark_session_healthy(db: Session, acc: BrokerAccount, *, verified_at: datet
     mark_session_healthy(db, acc, verified_at=verified_at)
 
 
+def _existing_account_with_label(
+    db: Session,
+    *,
+    user_id: str,
+    workspace_id: str | None,
+    broker_code: str,
+    label: str,
+) -> BrokerAccount | None:
+    normalized = label.strip().lower()
+    query = select(BrokerAccount).where(
+        BrokerAccount.broker_code == broker_code,
+        func.lower(BrokerAccount.label) == normalized,
+    )
+    if workspace_id:
+        query = query.where(BrokerAccount.workspace_id == workspace_id)
+    else:
+        query = query.where(BrokerAccount.user_id == user_id, BrokerAccount.workspace_id.is_(None))
+    return db.scalar(query.order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc()))
+
+
 def create_broker_account(
     db: Session,
     user_id: str,
@@ -75,6 +95,18 @@ def create_broker_account(
 ) -> BrokerAccount:
     if not db.get(User, user_id):
         raise ValueError("user not found")
+    existing = _existing_account_with_label(
+        db,
+        user_id=user_id,
+        workspace_id=workspace_id,
+        broker_code=payload.broker,
+        label=payload.label,
+    )
+    if existing is not None:
+        raise ValueError(
+            f"A {payload.broker} account named {payload.label.strip()!r} already exists in this workspace. "
+            "Open that connection or use a different label."
+        )
     bid = str(uuid.uuid4())
     acc = BrokerAccount(
         id=bid,

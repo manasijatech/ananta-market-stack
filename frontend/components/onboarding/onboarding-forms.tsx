@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
 	useEffect,
+	useRef,
 	useState,
 	useTransition,
 	type FormEvent,
@@ -429,10 +430,15 @@ function useOnboardingMutation() {
 	const [formError, setFormError] = useState("");
 	const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 	const [isPending, startTransition] = useTransition();
+	const submittingRef = useRef(false);
 
 	function run<T>(fn: () => Promise<T>, nextPath: string) {
+		if (isPending || submittingRef.current) {
+			return;
+		}
 		setFormError("");
 		setFieldErrors({});
+		submittingRef.current = true;
 		startTransition(() => {
 			void (async () => {
 				try {
@@ -442,6 +448,8 @@ function useOnboardingMutation() {
 					const parsed = parseActionError(error);
 					setFormError(parsed.message);
 					setFieldErrors(parsed.fieldErrors);
+				} finally {
+					submittingRef.current = false;
 				}
 			})();
 		});

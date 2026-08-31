@@ -3,7 +3,7 @@
 import { BookOpen } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { createBrokerAccount } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
@@ -366,6 +366,7 @@ export function AddBrokerForm({
     const [indmoneyMode, setIndmoneyMode] = useState<IndmoneyMode>("totp");
     const [kotakMode, setKotakMode] = useState<KotakMode>("manual");
     const [isPending, startTransition] = useTransition();
+    const submittingRef = useRef(false);
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
     const [message, setMessage] = useState("");
     const [defaultBrokerRedirectUrl, setDefaultBrokerRedirectUrl] = useState(fallbackBrokerRedirectUrl);
@@ -379,6 +380,9 @@ export function AddBrokerForm({
 
     function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        if (isPending || submittingRef.current) {
+            return;
+        }
         const formData = new FormData(event.currentTarget);
         const payload = makePayload(
             broker,
@@ -395,6 +399,7 @@ export function AddBrokerForm({
         );
         setFieldErrors({});
         setMessage("");
+        submittingRef.current = true;
 
         startTransition(async () => {
             try {
@@ -408,6 +413,8 @@ export function AddBrokerForm({
                 setMessage(parsed.message);
                 setFieldErrors(parsed.fieldErrors);
                 toast.error(parsed.message || `Could not add ${selectedName}.`);
+            } finally {
+                submittingRef.current = false;
             }
         });
     }
