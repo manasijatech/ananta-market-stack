@@ -420,12 +420,54 @@ def frozen_system_cache_breakers(instructions: str) -> list[str]:
     return breakers
 
 
+def tool_usage_line(events: Any) -> str:
+    """Code-maintained tool counts for the status bar (never ask the model to recount)."""
+    from collections import Counter
+
+    counts: Counter[str] = Counter()
+    for event in events or []:
+        event_type = getattr(event, "event_type", None) or (event.get("event_type") if isinstance(event, dict) else "")
+        if event_type != "tool_call_completed":
+            continue
+        if isinstance(event, dict):
+            payload = event.get("payload") or event.get("full_payload") or {}
+        else:
+            raw = getattr(event, "full_payload_json", None) or getattr(event, "public_payload_json", "{}")
+            try:
+                payload = json.loads(raw) if isinstance(raw, str) else {}
+            except json.JSONDecodeError:
+                payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        name = str(payload.get("tool_name") or "")
+        if name:
+            counts[name] += 1
+    interesting = (
+        "web_search",
+        "web_fetch",
+        "sandbox_run_python",
+        "compose_surface",
+        "patch_surface",
+        "workspace_publish_html_artifact",
+        "intel_get_feed",
+    )
+    parts = [f"{name} {counts[name]}" for name in interesting if counts[name]]
+    local_prefixes = ("broker_", "intel_", "workspace_", "alert_", "compose_", "patch_", "sandbox_", "web_")
+    mcp = sum(count for name, count in counts.items() if name and not name.startswith(local_prefixes))
+    if mcp:
+        parts.append(f"mcp {mcp}")
+    if not parts:
+        return ""
+    return "tools: " + ", ".join(parts)
+
+
 def build_status_bar(
     *,
     mcp_context: str = "",
     workspace_spec: dict[str, Any] | None = None,
     selected_component_id: str | None = None,
     evidence_line: str = "",
+    tools_line: str = "",
     now: datetime | None = None,
 ) -> str:
     instant = now or datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -435,6 +477,8 @@ def build_status_bar(
     ]
     if evidence_line:
         lines.append(evidence_line)
+    if tools_line:
+        lines.append(tools_line)
     if selected_component_id:
         lines.append(f"Selected canvas component id: {selected_component_id}")
     if workspace_spec:

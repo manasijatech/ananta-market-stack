@@ -16,29 +16,31 @@ The API process submits RQ jobs and returns immediately. The RQ worker runs the 
 
 ## Worker Model
 
-RQ workers are process based. One normal worker process handles one broker chat run at a time. Concurrency comes from running more worker processes against the same queue, not from one worker processing several jobs in parallel.
+RQ workers are process based. One worker process handles one broker chat run at a time. **`BROKER_CHAT_WORKER_COUNT` (default 4)** starts that many processes from a single `python -m app.workers.broker_chat` entrypoint, so different users and sessions can run at once. One **session** still stays serial: a second send in the same chat is rejected until the active run finishes (canvas/spec would otherwise clobber). FIFO follow-ups inside one session are plan 04, not this change.
 
 Current deployment options:
 
-- Local/single-process: start only the FastAPI server. If no dedicated RQ worker is registered for the scoped queue, the backend fallback loop processes queued broker-chat jobs.
-- Higher throughput: run one or more dedicated RQ workers with `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat`. These workers subscribe to the same automatically scoped queue as the API process.
+- Local/single-process: start only the FastAPI server. If no dedicated RQ worker is registered for the scoped queue, the backend fallback loop processes queued broker-chat jobs (one at a time).
+- Higher throughput: run `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat`. That process reconciles incomplete runs once, then spawns `BROKER_CHAT_WORKER_COUNT` RQ workers on the scoped queue. Raise the env var (1–32) instead of launching extra terminals.
 - Preferred execution path: dedicated RQ workers win. When at least one dedicated worker is registered on the scoped queue, the backend fallback loop stays idle and does not consume jobs.
 - Shared Redis safety: the effective queue name includes a local database fingerprint. Two local SQLite installs can share one Redis server without consuming each other's chat jobs.
 - Restart repair: backend and dedicated-worker startup reconcile incomplete chat runs. Queued runs are re-enqueued on the scoped queue; running runs are requeued only when no active scoped RQ job exists.
 
 Scaling guidance:
 
-- Worker count is the number of running worker processes subscribed to the effective scoped queue name returned by `/api/v1/broker-chat/queue/health`.
-- Autoscaling is controlled outside RQ by the process manager or platform. Scale up when queue depth or oldest queued age rises; scale down when queue depth remains zero.
+- Worker count is `BROKER_CHAT_WORKER_COUNT` (or more processes/replicas subscribed to the effective scoped queue name from `/api/v1/broker-chat/queue/health`).
+- Autoscaling is still available outside RQ via the process manager. Scale up when queue depth or oldest queued age rises; scale down when queue depth remains zero.
 - The queue health endpoint reports the base queue name, effective queue name, queue fingerprint, `queued_count`, `oldest_queued_seconds`, dedicated worker count, fallback worker count, and whether the fallback loop is available.
 - A practical autoscaling policy is: desired workers = clamp(ceil(`queued_count` / target_jobs_per_worker), min_workers, max_workers), with an override to scale up immediately when `oldest_queued_seconds` crosses the acceptable chat startup latency.
-- Broker chat jobs use live LLM and broker/MCP network calls, so keep worker counts within provider rate limits and broker session constraints.
+- Broker chat jobs use live LLM and broker/MCP network calls, so keep worker counts within provider rate limits and broker session constraints. MCP, sandbox, and internal tools already accept concurrent calls; the previous bottleneck was a single RQ consumer.
 
 ## Configuration
 
 Environment variables:
 
 - `BROKER_CHAT_QUEUE_NAME`: base RQ queue name. The backend automatically appends a database fingerprint.
+- `BROKER_CHAT_WORKER_COUNT`: dedicated RQ worker processes started by `app.workers.broker_chat` (default **4**, range 1–32).
+- `BROKER_CHAT_MAX_TOKENS`: generation cap passed to the model. **`0` (default) omits `max_tokens`** so canvas HTML and long sandbox artifacts are not cut off at 8k. Set a positive value only if you need a hard cap.
 - `BROKER_CHAT_JOB_TIMEOUT_SECONDS`: wall-clock cap for one chat RQ job. **`0` (default) means no cap**. A positive value is a sliding window re-armed on each stream event. Cancel still stops the run.
 - `BROKER_CHAT_STREAM_IDLE_SECONDS`: abort if the model stream emits **no events** for this long. **`0` (default) disables** that stall watchdog.
 - `BROKER_CHAT_RESULT_TTL_SECONDS`: RQ result/failure retention.
@@ -62,7 +64,7 @@ User-level display defaults are managed through:
 
 The config payload includes a nested `retry` object (`enabled`, `max_retries`, `base_delay_seconds`, `max_delay_seconds`). Users cannot set `max_retries` above 8 and cannot change SDK retries or the server delay cap. Title generation and later compaction/eval clients must use a separate `AgentRetryPolicy.background()` client so they do not share the Chat run's retry budget.
 
-Audit vs model context (plan 02): `broker_chat_events` stays the full audit. The next LLM call gets a bounded projection from `app.agent_harness.model_context` (tool summaries, `retrieval_key` when truncated, secrets stripped). Clock, WorkspaceSpec JSON, and MCP inventory sit in a last `user` harness status message, not in the frozen system prompt. Current-turn SDK tool outputs stay raw until wave 2.
+Audit vs model context (plan 02): `broker_chat_events` stays the full audit. The next LLM call gets a bounded projection from `app.agent_harness.model_context` (tool summaries, `retrieval_key` when truncated, secrets stripped). Clock, WorkspaceSpec JSON, MCP inventory, evidence gaps, and **code-counted tool usage** sit in a last `user` harness status message, not in the frozen system prompt. Grounding SOP (never invent numbers, calculator for CAGR, canvas only after compose/publish) is frozen in the system prompt so the prefix/KV cache stays byte-stable. Continuations append a new status bar instead of rewriting the system string. Current-turn SDK tool outputs stay raw until wave 2.
 
 Evidence-based done (plan 03): each run stores `evidence_json` (`contract`, `gaps`, `status`, `blockers`). After a stream attempt the harness checks **audit** `tool_call_completed` events. Missing required evidence continues with a hidden `harness_nudge` (cap 3, separate from provider retries). Typed blockers count as done. Exhausted gaps still `status=completed` with public `evidence_incomplete`. Calculation is optional on OSS when no calculator is attached. Research steps map to `evidence_todos` in the UI.
 

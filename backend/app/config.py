@@ -77,6 +77,17 @@ class Settings(BaseSettings):
         default=1.0,
         validation_alias="BROKER_CHAT_WORKER_POLL_SECONDS",
     )
+    broker_chat_worker_count: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        validation_alias="BROKER_CHAT_WORKER_COUNT",
+    )
+    broker_chat_max_tokens: int = Field(
+        default=0,
+        ge=0,
+        validation_alias="BROKER_CHAT_MAX_TOKENS",
+    )
     broker_chat_agent_max_retries: int = Field(
         default=3,
         ge=0,

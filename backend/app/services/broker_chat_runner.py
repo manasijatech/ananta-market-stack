@@ -25,7 +25,7 @@ from app.agent_harness.evidence import (
     plan_evidence_contract,
     ui_todos,
 )
-from app.agent_harness.model_context import build_model_input, build_status_bar
+from app.agent_harness.model_context import build_model_input, build_status_bar, tool_usage_line
 from app.agent_harness.retry_policy import (
     AgentRetryError,
     AgentRetryPolicy,
@@ -63,9 +63,24 @@ CONTINUE_USER_MESSAGE = (
     "Use tool results already gathered. Do not repeat successful identical tool calls. "
     "If MCP is connected and the user asked for market news, daily summary, events, research, "
     "or to use MCP, call those MCP tools now if you have not already. "
+    "If HTML, Python, or a canvas payload was truncated, republish the full artifact. "
     "Then write the full answer. Do not stop after a planning sentence. "
     "Do not mark the work complete until the user has a real answer. The user did not cancel."
 )
+
+HARNESS_GROUNDING_RULES = """
+Grounding (harness — do not skip):
+- Never invent prices, filings, ratios, holdings, or canvas HTML. If a tool did
+  not return a number, say that source was missing. Do not fill gaps from memory.
+- Calculator: when sandbox_run_python is attached and the user asked for CAGR,
+  splits, or scenarios, run it. Mental math is not evidence.
+- Canvas: do not say the desk is live until compose_surface or
+  workspace_publish_html_artifact succeeded. If HTML was cut off, republish the
+  complete document; do not leave a half-written artifact.
+- Prefer continuing from tool results you already have over repeating identical
+  successful calls. If a source is unreadable (403, login, empty), state that
+  blocker and finish that step.
+"""
 
 _INCOMPLETE_LAST_LINE = re.compile(
     r"(let me|i'll|i will|i am going to|checking|fetching|searching|hold on|one moment|"
@@ -130,7 +145,7 @@ Important operating rules:
   remains genuinely ambiguous after checking available data.
 - Keep answers concise and cite the broker/account label when tool data includes it.
 - Do not place, modify, cancel, or suggest that a trade has been executed.
-
+""" + HARNESS_GROUNDING_RULES + """
 Tool-call discipline:
 - Every tool call must contain exactly one valid JSON object.
 - Never concatenate two JSON objects in a single tool call. If you need daily
@@ -210,7 +225,7 @@ Answer quality:
 ADAPTIVE_WORKSPACE_INSTRUCTIONS = """
 This run is an Adaptive Workspace desk session. Chat answers first, then the
 canvas visualizes. Do not treat compose_surface as a substitute for answering.
-
+""" + HARNESS_GROUNDING_RULES + """
 Priority for a market / news / research question (same as Broker Chat):
 1. Call connected MCP tools (daily summary, news, events, movers, research).
 2. Call local broker tools for live quotes, holdings, chains, health.
@@ -459,6 +474,15 @@ def _continuation_input(
         next_input.append({"role": "assistant", "content": final_text})
     next_input.append({"role": "user", "content": nudge})
     return next_input
+
+
+def _nudge_with_progress(db: Any, run: BrokerChatRun, nudge: str, evidence_report: Any = None) -> str:
+    events = load_run_events(db, run.id)
+    bar = build_status_bar(
+        evidence_line=evidence_status_line(evidence_report) if evidence_report is not None else "",
+        tools_line=tool_usage_line(events),
+    )
+    return f"{nudge}\n{bar}"
 
 
 def _usage_response_from_raw_event(data: Any) -> Any:
@@ -772,13 +796,16 @@ def _model_settings_for_run(run) -> ModelSettings:
         effort = None
     extra_body = {"reasoning": {"effort": effort}} if effort and run.provider == "openrouter" else None
     reasoning = Reasoning(effort=effort) if effort else None
-    return ModelSettings(
-        temperature=0.3,
-        max_tokens=8000,
-        include_usage=True,
-        extra_body=extra_body,
-        reasoning=reasoning,
-    )
+    settings: dict[str, Any] = {
+        "temperature": 0.3,
+        "include_usage": True,
+        "extra_body": extra_body,
+        "reasoning": reasoning,
+    }
+    max_tokens = int(get_settings().broker_chat_max_tokens)
+    if max_tokens > 0:
+        settings["max_tokens"] = max_tokens
+    return ModelSettings(**settings)
 
 
 async def _run_broker_chat(run_id: str) -> None:
@@ -879,6 +906,7 @@ async def _run_broker_chat(run_id: str) -> None:
             workspace_spec=workspace_spec,
             selected_component_id=selected_component_id,
             evidence_line=evidence_status_line(evidence_report),
+            tools_line=tool_usage_line(load_run_events(db, run.id)),
         )
         context_build = build_model_input(
             db,
@@ -1169,7 +1197,12 @@ async def _run_broker_chat(run_id: str) -> None:
                     error_class="repeated_tool",
                     extra_full={"fingerprints": new_breaks},
                 )
-                messages.append({"role": "user", "content": fingerprint_nudge_message(new_breaks)})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": _nudge_with_progress(db, run, fingerprint_nudge_message(new_breaks)),
+                    }
+                )
                 had_message = False
                 continue
             incomplete = hit_max_turns or response_looks_incomplete(
@@ -1211,7 +1244,9 @@ async def _run_broker_chat(run_id: str) -> None:
                     reason="evidence_gap",
                     error_class="evidence_incomplete",
                 )
-                messages = _continuation_input(messages, stream, final_text, nudge=nudge)
+                messages = _continuation_input(
+                    messages, stream, final_text, nudge=_nudge_with_progress(db, run, nudge, evidence_report)
+                )
                 had_message = False
                 continue
             if incomplete and continuations_used < MAX_RUN_CONTINUATIONS:
@@ -1223,7 +1258,12 @@ async def _run_broker_chat(run_id: str) -> None:
                     reason="max_turns" if hit_max_turns else "incomplete_answer",
                     error_class="task_incomplete",
                 )
-                messages = _continuation_input(messages, stream, final_text)
+                messages = _continuation_input(
+                    messages,
+                    stream,
+                    final_text,
+                    nudge=_nudge_with_progress(db, run, CONTINUE_USER_MESSAGE, evidence_report),
+                )
                 had_message = False
                 continue
             if evidence_open:

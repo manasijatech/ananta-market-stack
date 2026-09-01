@@ -49,3 +49,36 @@ def test_model_settings_omit_reasoning_when_default():
     settings = _model_settings_for_run(run)
     assert settings.extra_body is None
     assert settings.reasoning is None
+    assert settings.max_tokens is None
+
+
+def test_model_settings_omit_max_tokens_by_default():
+    run = BrokerChatRun(
+        id="r1",
+        session_id="s1",
+        user_id="u1",
+        provider="openrouter",
+        model_id="deepseek/deepseek-v4-flash",
+        message="hi",
+        metadata_json="{}",
+    )
+    settings = _model_settings_for_run(run)
+    assert settings.max_tokens is None
+
+
+def test_model_settings_honours_positive_max_tokens(monkeypatch):
+    class _Settings:
+        broker_chat_max_tokens = 32000
+
+    monkeypatch.setattr("app.services.broker_chat_runner.get_settings", lambda: _Settings())
+    run = BrokerChatRun(
+        id="r1",
+        session_id="s1",
+        user_id="u1",
+        provider="openrouter",
+        model_id="deepseek/deepseek-v4-flash",
+        message="hi",
+        metadata_json="{}",
+    )
+    settings = _model_settings_for_run(run)
+    assert settings.max_tokens == 32000

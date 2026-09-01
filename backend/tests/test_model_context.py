@@ -15,6 +15,7 @@ from app.agent_harness.model_context import (
     project_generic,
     project_web_fetch,
     stable_json,
+    tool_usage_line,
 )
 from app.services.broker_chat import (
     _event_payload_for_visibility,
@@ -98,15 +99,18 @@ def test_frozen_system_prompt_has_no_clock_or_spec():
     assert frozen_system_cache_breakers(instructions) == []
     assert "Today is " not in instructions
     assert "WorkspaceSpec JSON" not in instructions
+    assert "Never invent prices" in instructions
     status = build_status_bar(
         mcp_context="Connected MCP tool names: get_news",
         workspace_spec={"components": [{"id": "w1", "type": "watchlist"}]},
         selected_component_id="w1",
+        tools_line="tools: web_search 2, sandbox_run_python 1",
     )
     assert status.startswith(STATUS_BAR_PREFIX)
     assert "Today is " in status
     assert "watchlist" in status
     assert "get_news" in status
+    assert "tools: web_search 2, sandbox_run_python 1" in status
 
 
 def _seed_fetch_session(db):
@@ -219,3 +223,31 @@ def test_build_model_input_puts_user_and_status_at_end():
     assert built.cache_breakers == []
     assert built.caps_hit >= 1
     assert built.prior_turns == 1
+
+
+def test_tool_usage_line_counts_completed_tools_from_audit():
+    events = [
+        {
+            "event_type": "tool_call_completed",
+            "payload": {"tool_name": "web_search"},
+        },
+        {
+            "event_type": "tool_call_completed",
+            "payload": {"tool_name": "web_search"},
+        },
+        {
+            "event_type": "tool_call_completed",
+            "payload": {"tool_name": "web_fetch"},
+        },
+        {
+            "event_type": "tool_call_completed",
+            "payload": {"tool_name": "get_daily_summary"},
+        },
+        {
+            "event_type": "response_delta",
+            "payload": {"tool_name": "web_search"},
+        },
+    ]
+    line = tool_usage_line(events)
+    assert line == "tools: web_search 2, web_fetch 1, mcp 1"
+    assert tool_usage_line([]) == ""
