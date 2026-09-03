@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -17,7 +18,16 @@ from app.agent_harness.hooks import (
 )
 from app.agent_harness.model_context import STATUS_BAR_PREFIX, build_model_input, build_status_bar
 from app.services.broker_chat import list_events
-from db.models import BrokerChatEvent, BrokerChatRun, BrokerChatSession, User
+from db.models import (
+    AdaptiveWorkspacePreference,
+    BrokerAccount,
+    BrokerChatEvent,
+    BrokerChatRun,
+    BrokerChatSession,
+    User,
+    UserWatchlist,
+    UserWatchlistSymbol,
+)
 from db.session import Base
 
 
@@ -194,6 +204,223 @@ def test_context_injected_hidden_from_transcript_api():
     assert [event.event_type for event in page.events] == ["message_completed"]
 
 
+def test_broker_health_and_watchlists_hooks():
+    clear_hooks()
+    register_builtin_hooks()
+    db = _db()
+    run = _seed_run(db)
+    db.add(
+        BrokerAccount(
+            id="acc-1",
+            user_id="user-1",
+            broker_code="indmoney",
+            label="INDmoney main",
+            is_active=True,
+            session_status="active",
+        )
+    )
+    wl = UserWatchlist(
+        id="wl-1",
+        user_id="user-1",
+        name="Core",
+        kind="manual",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(wl)
+    db.add(
+        UserWatchlistSymbol(
+            id="wls-1",
+            watchlist_id="wl-1",
+            symbol="RELIANCE",
+            exchange="NSE",
+            sort_order=0,
+            created_at=datetime.utcnow(),
+        )
+    )
+    db.commit()
+    result = run_context_hooks(
+        HookContext(
+            db=db,
+            user_id="user-1",
+            session_id="session-1",
+            run=run,
+            user_message="hi",
+            workspace_spec={"components": [{"id": "a", "type": "quote-ticker", "props": {"symbol": "TCS"}}]},
+            adaptive_workspace=True,
+            inject_holdings=False,
+        )
+    )
+    assert "broker_health" in result.hook_names
+    assert "watchlists" in result.hook_names
+    assert "INDmoney main" in result.message
+    assert "RELIANCE" in result.message
+    assert "holdings_snapshot" not in result.hook_names
+
+
+def test_holdings_hook_truncates_and_skips_secrets(monkeypatch):
+    clear_hooks()
+    register_builtin_hooks()
+    db = _db()
+    run = _seed_run(db)
+    db.add(
+        BrokerAccount(
+            id="acc-1",
+            user_id="user-1",
+            broker_code="indmoney",
+            label="Main",
+            is_active=True,
+            session_status="active",
+        )
+    )
+    db.commit()
+
+    class _Session:
+        session_active = True
+
+    payload = {
+        "holdings": [
+            {"symbol": f"SYM{i}", "market_value": 1000 - i, "access_token": "SECRET"}
+            for i in range(40)
+        ]
+    }
+
+    monkeypatch.setattr(
+        "app.services.broker_sessions.get_broker_session_status",
+        lambda acc: _Session(),
+    )
+    monkeypatch.setattr(
+        "app.services.broker_data.fetch_holdings",
+        lambda db, acc: payload,
+    )
+    # Avoid Redis dependency in unit test
+    monkeypatch.setattr("app.agent_harness.hook_world.cache_get_json", lambda key: None)
+    monkeypatch.setattr("app.agent_harness.hook_world.cache_set_json", lambda key, value, ttl: None)
+
+    result = run_context_hooks(
+        HookContext(
+            db=db,
+            user_id="user-1",
+            session_id="session-1",
+            run=run,
+            user_message="holdings?",
+            workspace_spec={"components": []},
+            adaptive_workspace=True,
+            inject_holdings=True,
+            default_account_id="acc-1",
+        )
+    )
+    assert "holdings_snapshot" in result.hook_names
+    assert "SECRET" not in result.message
+    assert "access_token" not in result.message
+    assert "SYM0" in result.message
+    holdings_audit = next(item.audit for item in result.results if "holdings" in item.audit)
+    assert holdings_audit["holdings"]["truncated"] is True
+
+
+def test_inject_holdings_pref_false_skips_holdings():
+    clear_hooks()
+    register_builtin_hooks()
+    db = _db()
+    run = _seed_run(db)
+    from app.agent_harness.hook_world import resolve_inject_holdings
+
+    db.add(
+        AdaptiveWorkspacePreference(
+            id="pref-1",
+            user_id="user-1",
+            pref_key="inject_holdings",
+            value_json="false",
+            updated_at=datetime.utcnow(),
+        )
+    )
+    db.commit()
+    assert resolve_inject_holdings(db, "user-1") is False
+    assert resolve_inject_holdings(db, "user-1", {"inject_holdings": True}) is True
+
+
+def test_action_required_omits_holding_numbers(monkeypatch):
+    clear_hooks()
+    register_builtin_hooks()
+    db = _db()
+    run = _seed_run(db)
+    db.add(
+        BrokerAccount(
+            id="acc-1",
+            user_id="user-1",
+            broker_code="indmoney",
+            label="Main",
+            is_active=True,
+            session_status="action_required",
+            last_error="login needed",
+        )
+    )
+    db.commit()
+    called = {"fetch": False}
+
+    def _boom(*args, **kwargs):
+        called["fetch"] = True
+        raise AssertionError("should not fetch")
+
+    monkeypatch.setattr("app.services.broker_data.fetch_holdings", _boom)
+    result = run_context_hooks(
+        HookContext(
+            db=db,
+            user_id="user-1",
+            session_id="session-1",
+            run=run,
+            user_message="hi",
+            workspace_spec={"components": []},
+            adaptive_workspace=True,
+            inject_holdings=True,
+        )
+    )
+    assert "holdings_snapshot" in result.hook_names
+    assert called["fetch"] is False
+    assert "action_required" in result.message
+
+
+def test_intel_pulse_uses_desk_symbols(monkeypatch):
+    clear_hooks()
+    register_builtin_hooks()
+    db = _db()
+    run = _seed_run(db)
+
+    def _feed(db, user_id, product, symbols, **kwargs):
+        return {
+            "data": [
+                {
+                    "id": "n1",
+                    "symbol": "RELIANCE",
+                    "title": "Reliance announces something",
+                    "published_at": "2026-09-03",
+                }
+            ],
+            "from_cache": True,
+        }
+
+    monkeypatch.setattr("app.services.alpha_feed_cache.list_cached_feed_items", _feed)
+    monkeypatch.setattr("app.agent_harness.hook_world.cache_get_json", lambda key: None)
+    monkeypatch.setattr("app.agent_harness.hook_world.cache_set_json", lambda key, value, ttl: None)
+
+    result = run_context_hooks(
+        HookContext(
+            db=db,
+            user_id="user-1",
+            session_id="session-1",
+            run=run,
+            user_message="news?",
+            workspace_spec={
+                "components": [{"id": "q1", "type": "quote-ticker", "props": {"symbol": "RELIANCE"}}]
+            },
+            adaptive_workspace=True,
+            inject_holdings=False,
+        )
+    )
+    assert "intel_pulse" in result.hook_names
+    assert "Reliance announces something" in result.message
+
+
 def test_build_model_input_appends_hooks_before_status_bar():
     clear_hooks()
     ensure_builtin_hooks_registered()
@@ -212,3 +439,4 @@ def test_build_model_input_appends_hooks_before_status_bar():
     assert contents[-3] == "hello"
     assert contents[-2].startswith(CONTEXT_HOOKS_PREFIX)
     assert contents[-1].startswith(STATUS_BAR_PREFIX)
+

@@ -922,6 +922,9 @@ async def _run_broker_chat(run_id: str) -> None:
         context_hooks_message = ""
         if adaptive_workspace:
             ensure_builtin_hooks_registered()
+            from app.agent_harness.hook_world import resolve_inject_holdings
+
+            inject_holdings = resolve_inject_holdings(db, run.user_id, metadata)
             hook_bundle = run_context_hooks(
                 HookContext(
                     db=db,
@@ -934,6 +937,7 @@ async def _run_broker_chat(run_id: str) -> None:
                     adaptive_workspace=adaptive_workspace,
                     sandbox_available=sandbox_available,
                     mcp_enabled=bool(mcp_handle.enabled),
+                    inject_holdings=inject_holdings,
                     default_account_id=metadata.get("default_account_id"),
                 )
             )

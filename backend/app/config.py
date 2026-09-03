@@ -143,6 +143,12 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="BROKER_CHAT_EMIT_MODEL_CONTEXT_EVENT",
     )
+    hooks_holdings_cache_ttl_seconds: int = Field(
+        default=45,
+        ge=5,
+        le=600,
+        validation_alias="HOOKS_HOLDINGS_CACHE_TTL_SECONDS",
+    )
     hooks_total_chars: int = Field(
         default=8_000,
         ge=1_000,
