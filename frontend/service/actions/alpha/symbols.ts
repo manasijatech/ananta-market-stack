@@ -3,6 +3,8 @@
 import { fetchFastApi } from "@/lib/fastapi";
 import type { AlphaSymbolMetadata, AlphaSymbolMetadataResponse } from "@/service/types/alpha/symbols";
 
+const METADATA_BATCH_SIZE = 40;
+
 function normalizeSymbols(symbols: string[]): string[] {
     const seen = new Set<string>();
     const normalized: string[] = [];
@@ -43,6 +45,10 @@ function numericValue(value: unknown): number | null {
     return null;
 }
 
+function isHollowMetadata(row: AlphaSymbolMetadata): boolean {
+    return !row.company_name && !row.logo;
+}
+
 function normalizeMetadataRows(symbols: string[], rows: unknown): AlphaSymbolMetadata[] {
     const bySymbol = new Map<string, AlphaSymbolMetadata>();
     if (Array.isArray(rows)) {
@@ -70,18 +76,32 @@ function normalizeMetadataRows(symbols: string[], rows: unknown): AlphaSymbolMet
     return symbols.map((symbol) => bySymbol.get(symbol) ?? fallbackMetadataRow(symbol));
 }
 
-async function getAlphaSymbolMetadataBulk(symbols: string[]): Promise<AlphaSymbolMetadata[]> {
-    const response = await fetchFastApi("/alpha/symbols/metadata/bulk", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ symbols, force_refresh: false })
-    });
-    if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        throw new Error(detail || `Symbol metadata request failed (${response.status}).`);
+async function getAlphaSymbolMetadataBulk(
+    symbols: string[],
+    options: { forceRefresh?: boolean } = {}
+): Promise<AlphaSymbolMetadata[]> {
+    const forceRefresh = Boolean(options.forceRefresh);
+    if (!symbols.length) return [];
+    const batches: string[][] = [];
+    for (let index = 0; index < symbols.length; index += METADATA_BATCH_SIZE) {
+        batches.push(symbols.slice(index, index + METADATA_BATCH_SIZE));
     }
-    const result = (await response.json()) as AlphaSymbolMetadataResponse;
-    return normalizeMetadataRows(symbols, result.data);
+    const settled = await Promise.all(
+        batches.map(async (batch) => {
+            const response = await fetchFastApi("/alpha/symbols/metadata/bulk", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ symbols: batch, force_refresh: forceRefresh })
+            });
+            if (!response.ok) {
+                const detail = await response.text().catch(() => "");
+                throw new Error(detail || `Symbol metadata request failed (${response.status}).`);
+            }
+            const result = (await response.json()) as AlphaSymbolMetadataResponse;
+            return normalizeMetadataRows(batch, result.data);
+        })
+    );
+    return settled.flat();
 }
 
 export async function getAlphaSymbolMetadata(symbols: string[]): Promise<AlphaSymbolMetadata[]> {
@@ -90,7 +110,25 @@ export async function getAlphaSymbolMetadata(symbols: string[]): Promise<AlphaSy
         return [];
     }
     try {
-        return await getAlphaSymbolMetadataBulk(normalized);
+        let rows = await getAlphaSymbolMetadataBulk(normalized, { forceRefresh: false });
+        const hollow = rows.filter(isHollowMetadata).map((row) => row.symbol);
+        // Self-heal: if the first pass is mostly empty (stale cache / recovered API key),
+        // force one Drishti refresh for the hollow symbols only.
+        if (hollow.length > 0 && hollow.length >= Math.max(1, Math.ceil(rows.length * 0.4))) {
+            try {
+                const refreshed = await getAlphaSymbolMetadataBulk(hollow, { forceRefresh: true });
+                const bySymbol = new Map(rows.map((row) => [row.symbol, row]));
+                for (const row of refreshed) {
+                    if (!isHollowMetadata(row)) {
+                        bySymbol.set(row.symbol, row);
+                    }
+                }
+                rows = normalized.map((symbol) => bySymbol.get(symbol) ?? fallbackMetadataRow(symbol));
+            } catch {
+                // Keep the first-pass rows; callers already tolerate hollow metadata.
+            }
+        }
+        return rows;
     } catch {
         return fallbackMetadata(normalized);
     }

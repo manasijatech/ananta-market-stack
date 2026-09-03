@@ -201,7 +201,8 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/health")
 def root_health() -> dict:
-    return {"status": "ok"}
+    import os
+    return {"status": "ok", "pid": os.getpid()}
 
 
 @app.get("/ready")
