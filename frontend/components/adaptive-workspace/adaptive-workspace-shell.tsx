@@ -15,6 +15,7 @@ import { AdaptiveCanvasBoard } from "@/components/adaptive-workspace/canvas-boar
 import { AdaptiveDeskPrefsProvider, useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { adaptiveBrokerToolRenderers } from "@/components/adaptive-workspace/broker-tool-renderers";
 import { AdaptiveDeskSwitcher } from "@/components/adaptive-workspace/desk-switcher";
+import { LivePriceIslandProvider } from "@/components/adaptive-workspace/live-price-island-context";
 import { AdaptiveWorkspaceProvider, useAdaptiveWorkspace } from "@/components/adaptive-workspace/workspace-provider";
 import { InputBar } from "@/components/agent-elements/input-bar";
 import { MessageList } from "@/components/agent-elements/message-list";
@@ -128,6 +129,12 @@ function AdaptiveWorkspaceShellInner({
     const deskTitle = chat.activeSession?.title ?? canvas.spec.title ?? "Chat";
 
     return (
+        <LivePriceIslandProvider
+            accountId={defaultAccountId}
+            brokerCode={account?.broker_code || null}
+            sessionId={chat.activeSessionId}
+            userId={account?.user_id || null}
+        >
         <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden min-[980px]:flex-row">
             <Card className="grid min-h-0 min-w-0 flex-1 overflow-hidden grid-rows-[minmax(0,1fr)]">
                 <AdaptiveCanvasBoard
@@ -441,6 +448,7 @@ function AdaptiveWorkspaceShellInner({
                 </Button>
             )}
         </section>
+        </LivePriceIslandProvider>
     );
 }
 

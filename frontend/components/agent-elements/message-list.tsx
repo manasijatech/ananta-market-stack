@@ -19,6 +19,8 @@ import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { ToolRenderer as DefaultToolRenderer } from "./tools/tool-renderer";
 import { normalizeAssistantToolParts } from "./utils/tool-part-normalizer";
 import { SpiralLoader } from "./spiral-loader";
+import { useOptionalLivePriceIsland } from "@/components/adaptive-workspace/live-price-island-context";
+import { flattenLiveLtpIslands } from "@/lib/live-ltp-island";
 
 export type MessageListProps = {
   messages: UIMessage[];
@@ -171,9 +173,11 @@ function CopyButton({
 }) {
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
+  const islandCtx = useOptionalLivePriceIsland();
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(text);
+    const flattened = flattenLiveLtpIslands(text, islandCtx?.displayed ?? {});
+    navigator.clipboard.writeText(flattened);
     setCopied(true);
     if (copiedTimerRef.current) {
       window.clearTimeout(copiedTimerRef.current);
@@ -496,18 +500,18 @@ export const MessageList = memo(function MessageList({
       ref={containerRefCallback}
       onScroll={handleScroll}
       className={cn(
-        "an-message-list flex-1 min-h-0 overflow-y-auto",
+        "an-message-list min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto",
         className,
       )}
     >
-      <div ref={contentWrapperRef} className="mx-auto px-4 py-6 max-w-an">
-        <div className="space-y-2">
+      <div ref={contentWrapperRef} className="mx-auto min-w-0 w-full max-w-an overflow-x-hidden px-4 py-6">
+        <div className="min-w-0 space-y-2">
           {turns.map((turn, turnIndex) => {
             const isLastTurn = turnIndex === turns.length - 1;
             const turnKey = turn.userMsg?.id ?? `turn-${turnIndex}`;
 
             return (
-              <div key={turnKey} className="relative space-y-2">
+            <div key={turnKey} className="relative min-w-0 space-y-2">
                 {turn.userMsg &&
                   (() => {
                     const text = getTextFromParts(
@@ -574,8 +578,8 @@ export const MessageList = memo(function MessageList({
                     const toolbarText = showCopyToolbar ? assistantText : "";
 
                     return (
-                      <div className="group/assistant-turn">
-                        <div className="flex flex-col gap-3">
+                      <div className="group/assistant-turn min-w-0">
+                        <div className="flex min-w-0 flex-col gap-3">
                           {turn.assistantMsgs.map((msg, i) => {
                             const isLastMsg =
                               isLastTurn && i === turn.assistantMsgs.length - 1;
@@ -704,7 +708,7 @@ function AssistantParts({
           elems.push(
             <div
               key={`${msg.id}-text-${i}`}
-              className="group/assistant-text text-[14px]"
+              className="group/assistant-text min-w-0 max-w-full overflow-x-auto text-[14px]"
             >
               <Markdown
                 content={text}
