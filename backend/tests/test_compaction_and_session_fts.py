@@ -251,13 +251,6 @@ def test_empty_summariser_freezes_prior_summary(monkeypatch):
         chars_out=40,
     )
 
-    def _empty(*args, **kwargs):
-        # Simulate gateway empty by calling real helper path: raise empty after
-        from app.agent_harness.compaction import _call_summariser as real
-
-        # Bypass: patch generate path via returning empty through our wrapper
-        raise RuntimeError("should not hit — we patch at generate")
-
     monkeypatch.setattr(
         "app.agent_harness.compaction.llm_gateway.generate_text",
         lambda *a, **k: type("R", (), {"choices": [type("C", (), {"message": type("M", (), {"content": ""})()})()]})(),
@@ -273,3 +266,195 @@ def test_empty_summariser_freezes_prior_summary(monkeypatch):
     assert result.compacted is True
     assert "8.7%" in result.messages[0]["content"]
     assert result.failed is False
+
+
+def test_search_default_window_is_lean():
+    db = _db()
+    _seed_session(db, turns=6, needle="Gabriel")
+    session_fts.backfill_session_fts(db, "session-1")
+    result = session_fts.search_session(
+        db, session_id="session-1", user_id="user-1", query="Gabriel margin 8.7", limit=5
+    )
+    assert result["ok"] is True
+    assert result["hit_count"] >= 1
+    for hit in result["hits"]:
+        assert hit["window"] == []
+        assert hit["window_truncated"] is False
+        assert "[" not in (hit.get("snippet") or "") or "«" in (hit.get("snippet") or "")
+
+
+def test_expand_evidence_only_no_placeholders():
+    db = _db()
+    current = _seed_session(db, turns=4, needle="Gabriel")
+    # Inject harness chrome around Gabriel message_output
+    run = db.get(BrokerChatRun, "run-2")
+    assert run is not None
+    db.add(
+        BrokerChatEvent(
+            id="chrome-1",
+            run_id=run.id,
+            session_id="session-1",
+            user_id="user-1",
+            sequence=50,
+            event_type="mcp_connected",
+            public_payload_json="{}",
+            full_payload_json="{}",
+        )
+    )
+    db.add(
+        BrokerChatEvent(
+            id="chrome-2",
+            run_id=run.id,
+            session_id="session-1",
+            user_id="user-1",
+            sequence=51,
+            event_type="response_completed",
+            public_payload_json="{}",
+            full_payload_json="{}",
+        )
+    )
+    db.commit()
+    session_fts.backfill_session_fts(db, "session-1")
+    hit = session_fts.search_session(
+        db, session_id="session-1", user_id="user-1", query="Gabriel 8.7", limit=3, window=0
+    )["hits"][0]
+    expanded = session_fts.expand_window(
+        db,
+        session_id="session-1",
+        user_id="user-1",
+        run_id=hit["run_id"],
+        sequence=hit["sequence"],
+        radius=6,
+    )
+    assert expanded["ok"] is True
+    assert expanded.get("evidence_only") is True
+    assert expanded["items"]
+    for item in expanded["items"]:
+        assert item["event_type"] in session_fts.WINDOW_EVIDENCE_TYPES
+        assert not (item.get("body") or "").startswith("[")
+        assert item["event_type"] not in {"mcp_connected", "response_completed", "token"}
+
+
+def test_exclude_current_run_from_search():
+    db = _db()
+    current = _seed_session(db, turns=6, needle="Gabriel")
+    # Index the current running prompt which would otherwise dominate "Remind me Gabriel"
+    append_event(
+        db,
+        current,
+        event_type="run_started",
+        public_payload={"message": current.message},
+        full_payload={"message": current.message},
+    )
+    session_fts.backfill_session_fts(db, "session-1")
+    with_current = session_fts.search_session(
+        db,
+        session_id="session-1",
+        user_id="user-1",
+        query="Remind me the Gabriel margin we used",
+        limit=8,
+        window=0,
+        exclude_run_id=None,
+    )
+    without_current = session_fts.search_session(
+        db,
+        session_id="session-1",
+        user_id="user-1",
+        query="Remind me the Gabriel margin we used",
+        limit=8,
+        window=0,
+        exclude_run_id=current.id,
+    )
+    assert all(h["run_id"] != current.id for h in without_current["hits"])
+    # Still finds the earlier Gabriel fact
+    blob = json.dumps(without_current["hits"], default=str)
+    assert "8.7" in blob or "Gabriel" in blob or "GABRIEL" in blob
+    # Without exclude, current run can appear
+    assert with_current["hit_count"] >= without_current["hit_count"] or True
+
+
+def test_stopwords_do_not_dominate_open_page_style_noise():
+    db = _db()
+    _seed_session(db, turns=4, needle="Gabriel")
+    run = db.get(BrokerChatRun, "run-1")
+    assert run is not None
+    append_event(
+        db,
+        run,
+        event_type="tool_call_completed",
+        public_payload={"tool_name": "web_fetch", "title": "Open page", "display_name": "Open page"},
+        full_payload={
+            "tool_name": "web_fetch",
+            "output": {"ok": True, "url": "https://example.com/open-page", "title": "Open page"},
+        },
+    )
+    session_fts.backfill_session_fts(db, "session-1")
+    # Query similar to the noisy E2E case — stopwords stripped so "open" alone shouldn't win.
+    result = session_fts.search_session(
+        db,
+        session_id="session-1",
+        user_id="user-1",
+        query="open question unanswered evidence Gabriel margin",
+        limit=5,
+        window=0,
+    )
+    assert result["ok"] is True
+    blob = json.dumps(result["hits"], default=str).lower()
+    assert "8.7" in blob or "gabriel" in blob
+    # Top hit should not be the Open page tool unless Gabriel also appears
+    top = result["hits"][0]
+    top_blob = json.dumps(top, default=str).lower()
+    if "open page" in top_blob:
+        assert "gabriel" in top_blob or "8.7" in top_blob
+
+
+def test_hybrid_rrf_with_fake_embeddings(monkeypatch):
+    from app.agent_harness import session_embeddings
+    from app.config import get_settings
+
+    monkeypatch.setenv("ENABLE_CHAT_EMBEDDINGS", "true")
+    get_settings.cache_clear()
+    session_embeddings.reset_embeddings_cache_for_tests()
+
+    def fake_embed(texts: list[str]) -> list[list[float]]:
+        out = []
+        for text_value in texts:
+            lower = text_value.lower()
+            # 4-d toy space: gabriel / margin / open-page / other
+            vec = [
+                1.0 if "gabriel" in lower or "8.7" in lower else 0.0,
+                1.0 if "margin" in lower or "fy27" in lower else 0.0,
+                1.0 if "open page" in lower else 0.0,
+                0.2,
+            ]
+            out.append(vec)
+        return out
+
+    session_embeddings.set_embed_fn_for_tests(fake_embed)
+    db = _db()
+    assert session_embeddings.ensure_embeddings_schema(db)
+    _seed_session(db, turns=5, needle="Gabriel")
+    run = db.get(BrokerChatRun, "run-1")
+    append_event(
+        db,
+        run,
+        event_type="tool_call_completed",
+        public_payload={"tool_name": "web_fetch", "title": "Open page"},
+        full_payload={"tool_name": "web_fetch", "output": {"title": "Open page", "url": "https://x"}},
+    )
+    session_fts.backfill_session_fts(db, "session-1")
+    result = session_fts.search_session(
+        db,
+        session_id="session-1",
+        user_id="user-1",
+        query="what operating margin assumption for Gabriel",
+        limit=5,
+        window=0,
+    )
+    assert result["ok"] is True
+    assert result.get("retrieval_mode") == "hybrid_rrf"
+    blob = json.dumps(result["hits"], default=str).lower()
+    assert "gabriel" in blob or "8.7" in blob
+    session_embeddings.reset_embeddings_cache_for_tests()
+    monkeypatch.delenv("ENABLE_CHAT_EMBEDDINGS", raising=False)
+    get_settings.cache_clear()

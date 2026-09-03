@@ -188,6 +188,10 @@ class Settings(BaseSettings):
         default=False,
         validation_alias="ENABLE_CHAT_EMBEDDINGS",
     )
+    chat_embedding_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        validation_alias="CHAT_EMBEDDING_MODEL",
+    )
     alert_workflow_chat_queue_name: str = Field(
         default="alert-workflow-chat",
         validation_alias="ALERT_WORKFLOW_CHAT_QUEUE_NAME",

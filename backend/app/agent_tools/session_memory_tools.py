@@ -38,14 +38,26 @@ def _session_id(ctx: RunContextWrapper[BrokerAgentContext]) -> str | None:
     return getattr(context, "session_id", None) or getattr(context, "session_key", None)
 
 
+def _run_id(ctx: RunContextWrapper[BrokerAgentContext]) -> str | None:
+    context = getattr(ctx, "context", None)
+    if isinstance(context, BrokerAgentContext):
+        return getattr(context, "run_id", None)
+    if isinstance(context, dict):
+        return context.get("run_id")
+    return getattr(context, "run_id", None)
+
+
 @function_tool(strict_mode=False)
 def session_search(
     ctx: RunContextWrapper[BrokerAgentContext],
     query: str,
-    limit: int = 8,
-    window: int = 2,
+    limit: int = 5,
+    window: int = 0,
 ) -> dict[str, Any]:
     """Recall facts from earlier in THIS chat (not the live web).
+
+    Returns lean hit cards (snippet + ids). Default window=0 — call session_expand
+    only when you need surrounding evidence for an exact number.
 
     When to use:
     - After compaction / long threads when you need a number, symbol, URL, or decision
@@ -56,7 +68,7 @@ def session_search(
     - For live quotes, holdings, or fresh news (use broker_* / intel / MCP tools).
     - To invent facts — if search returns nothing, say you cannot find it.
 
-    Example: query="Gabriel margin", limit=5, window=2
+    Example: query="Gabriel margin", limit=5, window=0
     """
 
     def call() -> dict[str, Any]:
@@ -67,7 +79,6 @@ def session_search(
             return _error("session_id missing", code="missing_session")
         db = _db()
         try:
-            # Best-effort backfill for older sessions that predate FTS.
             try:
                 session_fts.backfill_session_fts(db, session_id, max_events=500)
             except Exception:
@@ -79,6 +90,7 @@ def session_search(
                 query=query,
                 limit=limit,
                 window=window,
+                exclude_run_id=_run_id(ctx),
             )
             if not result.get("ok"):
                 return _error(result.get("message") or "search failed", code=result.get("code") or "search_failed")
@@ -96,7 +108,10 @@ def session_expand(
     sequence: int,
     radius: int = 4,
 ) -> dict[str, Any]:
-    """Expand a session_search hit to a wider window of surrounding events.
+    """Expand a session_search hit to surrounding evidence events only.
+
+    Returns user/assistant/tool evidence — never harness chrome
+    (tokens, mcp_connected, response_completed placeholders, etc.).
 
     When to use:
     - After session_search, when the snippet is too thin for an exact number
