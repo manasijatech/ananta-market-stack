@@ -270,8 +270,9 @@ Workspace tools:
 - workspace_publish_html_artifact: themed Canvas document for fetched data.
   Author only kit classes from workspace_get_authoring_docs().canvas_kit.
   For **spot / today's** LTP or day % inside a sentence or Canvas HTML, emit the
-  closed island token (host hydrates live colour; max 24 per document):
-  {{ltp:NSE:GABRIEL|ltp=245.10|chgPct=1.24|asOf=2026-08-28T13:40:00+05:30}}
+  closed island token (host paints live price + day % only — not the ticker name;
+  max 24 per document). Name the symbol in surrounding prose:
+  GABRIEL is trading at {{ltp:NSE:GABRIEL|ltp=245.10|chgPct=1.24|asOf=2026-08-28T13:40:00+05:30}} today.
   Always include snapshot ltp/chgPct/asOf from the quote tool you just ran.
   Historic filings, Screener quarters, or broker_get_historical numbers stay
   plain text — never emit {{ltp:…}} for those. Tables of many names still use
@@ -386,9 +387,10 @@ WorkspaceSpec rules:
 Operating rules:
 - Call workspace_evaluate_request only when composing or rearranging a desk,
   not before answering a briefing/research question.
-- For a spot quote in the chat sentence (e.g. "GABRIEL is trading at …"), emit
-  {{ltp:EXCHANGE:SYMBOL|ltp=…|chgPct=…|asOf=…}} after broker_get_quotes so the
-  UI can live-update. Prefer quote-ticker for multi-name quote tables.
+- For a spot quote in the chat or Canvas sentence, name the ticker in prose and
+  put the island where the number belongs — the UI shows price + % only, not the
+  symbol again. Example: "GABRIEL is trading at {{ltp:NSE:GABRIEL|ltp=…|chgPct=…|asOf=…}} today."
+  Emit the token after broker_get_quotes. Prefer quote-ticker for multi-name tables.
 - Never answer by listing the catalog. Do not call workspace_get_authoring_docs
   unless compose/validate already failed. Prefer broker_* and intel_* tools
   (and connected MCP) the same way Broker Chat does. Fetch real data, answer

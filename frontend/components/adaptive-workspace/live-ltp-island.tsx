@@ -53,11 +53,18 @@ export function LiveLtpIsland({ attrs }: { attrs: LiveLtpIslandAttrs }) {
             data-exchange={attrs.exchange}
             data-live={isLive ? "1" : "0"}
             data-symbol={attrs.symbol}
-            title={!isLive && asOf ? `As of ${asOf}` : isLive ? "Live" : undefined}
+            title={
+                !isLive && asOf
+                    ? `${attrs.symbol} · as of ${asOf}`
+                    : isLive
+                      ? `${attrs.symbol} · live`
+                      : attrs.symbol
+            }
         >
-            <span className="font-sans tracking-tight">{attrs.symbol}</span>
+            {/* Symbol lives in prose + aria/title; island paints numbers only to avoid "GABRIEL … GABRIEL 1,345". */}
             {showLtp ? <span className="font-mono text-[0.95em]">{formatLtp(ltp)}</span> : null}
             {showChg ? <span className="font-mono text-[0.9em] opacity-90">({chgText})</span> : null}
+            {!showLtp && !showChg ? <span className="font-mono">—</span> : null}
         </span>
     );
 }
