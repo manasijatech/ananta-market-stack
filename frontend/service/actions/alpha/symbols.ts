@@ -77,14 +77,11 @@ async function getAlphaSymbolMetadataBulk(symbols: string[]): Promise<AlphaSymbo
         body: JSON.stringify({ symbols, force_refresh: false })
     });
     if (!response.ok) {
-        return fallbackMetadata(symbols);
+        const detail = await response.text().catch(() => "");
+        throw new Error(detail || `Symbol metadata request failed (${response.status}).`);
     }
-    try {
-        const result = (await response.json()) as AlphaSymbolMetadataResponse;
-        return normalizeMetadataRows(symbols, result.data);
-    } catch {
-        return fallbackMetadata(symbols);
-    }
+    const result = (await response.json()) as AlphaSymbolMetadataResponse;
+    return normalizeMetadataRows(symbols, result.data);
 }
 
 export async function getAlphaSymbolMetadata(symbols: string[]): Promise<AlphaSymbolMetadata[]> {

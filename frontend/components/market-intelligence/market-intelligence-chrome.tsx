@@ -220,6 +220,35 @@ function isEquitySearchRow(row: InstrumentSearchRow): boolean {
     return true;
 }
 
+function equitySearchRank(row: InstrumentSearchRow): number {
+    const exchange = row.exchange?.trim().toUpperCase() || "";
+    if (exchange === "NSE") return 0;
+    if (exchange === "BSE") return 1;
+    return 2;
+}
+
+function rankMarketIntelligenceSuggestions(rows: InstrumentSearchRow[]): InstrumentSearchRow[] {
+    const equity = rows.filter(isEquitySearchRow);
+    const ranked = (equity.length ? equity : rows).slice();
+    ranked.sort((left, right) => {
+        const rankDelta = equitySearchRank(left) - equitySearchRank(right);
+        if (rankDelta !== 0) return rankDelta;
+        return String(left.symbol).localeCompare(String(right.symbol));
+    });
+    return ranked;
+}
+
+function pickExactEquitySuggestion(rows: InstrumentSearchRow[], query: string): InstrumentSearchRow | undefined {
+    const normalized = query.trim().toUpperCase();
+    if (!normalized) return undefined;
+    const matches = rows.filter((row) => {
+        const symbol = row.symbol.trim().toUpperCase();
+        const tradingSymbol = row.trading_symbol?.trim().toUpperCase();
+        return symbol === normalized || tradingSymbol === normalized;
+    });
+    return rankMarketIntelligenceSuggestions(matches)[0];
+}
+
 function marketIntelligenceSymbolFromValue(value: string): string {
     const symbol = value.trim().toUpperCase();
     const monthIndex = symbol.search(CONTRACT_MONTH_PATTERN);
@@ -590,11 +619,12 @@ export function MarketIntelligenceChrome({
                         limit: 8
                     });
                     if (cancelled) return;
-                    setSuggestions(rows);
+                    const ranked = rankMarketIntelligenceSuggestions(rows);
+                    setSuggestions(ranked);
                     setShowSuggestions(true);
                     setIsLoadingSuggestions(false);
                     const symbolsToLoad = Array.from(
-                        new Set(rows.map(marketIntelligenceSymbolFromSearch).filter(Boolean))
+                        new Set(ranked.map(marketIntelligenceSymbolFromSearch).filter(Boolean))
                     );
                     if (!symbolsToLoad.length) {
                         setSuggestionMetadata({});
@@ -752,14 +782,10 @@ export function MarketIntelligenceChrome({
         setSymbolSearchToken((current) => current + 1);
     }
 
-    function submitSymbolSearch(event: FormEvent<HTMLFormElement>) {
+    async function submitSymbolSearch(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const query = searchText.trim().toUpperCase();
-        const exactSuggestion = suggestions.find((row) => {
-            const symbol = row.symbol.trim().toUpperCase();
-            const tradingSymbol = row.trading_symbol?.trim().toUpperCase();
-            return symbol === query || tradingSymbol === query;
-        });
+        const exactSuggestion = pickExactEquitySuggestion(suggestions, query);
         if (exactSuggestion) {
             commitSymbol(
                 exactSuggestion.symbol,
@@ -767,6 +793,27 @@ export function MarketIntelligenceChrome({
                 marketIntelligenceSymbolFromSearch(exactSuggestion)
             );
             return;
+        }
+        // Prefer a resolved NSE cash instrument when the user presses Enter without
+        // picking a row, so broker charts get scrip identifiers instead of a bare symbol.
+        if (defaultBrokerAccount?.account_id) {
+            try {
+                const rows = await searchBrokerInstruments(defaultBrokerAccount.account_id, {
+                    q: query,
+                    limit: 8
+                });
+                const preferred = pickExactEquitySuggestion(rows, query) ?? rankMarketIntelligenceSuggestions(rows)[0];
+                if (preferred && isEquitySearchRow(preferred)) {
+                    commitSymbol(
+                        preferred.symbol,
+                        instrumentFromSearch(preferred),
+                        marketIntelligenceSymbolFromSearch(preferred)
+                    );
+                    return;
+                }
+            } catch {
+                // Fall through to a bare-symbol commit.
+            }
         }
         commitSymbol(query, manualInstrument(query));
     }
@@ -783,8 +830,29 @@ export function MarketIntelligenceChrome({
         setChartState({ error: "", isLoading: false, snapshot: null });
     }
 
-    function handleFeedSymbolClick(symbol: string) {
-        commitSymbol(symbol, manualInstrument(symbol));
+    async function handleFeedSymbolClick(symbol: string) {
+        const normalized = symbol.trim().toUpperCase();
+        if (!normalized) return;
+        if (defaultBrokerAccount?.account_id) {
+            try {
+                const rows = await searchBrokerInstruments(defaultBrokerAccount.account_id, {
+                    q: normalized,
+                    limit: 8
+                });
+                const preferred = pickExactEquitySuggestion(rows, normalized) ?? rankMarketIntelligenceSuggestions(rows)[0];
+                if (preferred && isEquitySearchRow(preferred)) {
+                    commitSymbol(
+                        preferred.symbol,
+                        instrumentFromSearch(preferred),
+                        marketIntelligenceSymbolFromSearch(preferred)
+                    );
+                    return;
+                }
+            } catch {
+                // Fall through to bare-symbol commit.
+            }
+        }
+        commitSymbol(normalized, manualInstrument(normalized));
     }
 
     function focusSymbolSearch() {
@@ -878,7 +946,7 @@ export function MarketIntelligenceChrome({
 
                             <form
                                 className="flex min-w-0 w-full flex-col gap-2 min-[640px]:flex-row min-[640px]:items-center min-[960px]:max-w-sm min-[960px]:flex-1"
-                                onSubmit={submitSymbolSearch}
+                                onSubmit={(event) => void submitSymbolSearch(event)}
                             >
                                 <div className="relative min-w-0 flex-1" ref={searchAnchorRef}>
                                     <InputGroup className="h-9 w-full">
@@ -1083,7 +1151,7 @@ export function MarketIntelligenceChrome({
                                 hasMoreBySection={hasMoreBySection}
                                 initialFeeds={feeds}
                                 isLoadingMore={isLoadingMore}
-                                onFeedSearchSymbol={handleFeedSymbolClick}
+                                onFeedSearchSymbol={(symbol) => void handleFeedSymbolClick(symbol)}
                                 onLoadMore={(section) => {
                                     if (isLoadingMore || !hasMoreBySection[section]) return;
                                     const nextPage = (feedPageBySection[section] || 1) + 1;
