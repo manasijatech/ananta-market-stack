@@ -48,6 +48,7 @@ import {
     parseConcallSections,
     parseEarningsMetrics,
     parseFinancialMetricsTable,
+    resolveFeedSymbolMetadata,
     type AnnouncementTypeKind
 } from "@/components/market-intelligence/market-intelligence-utils";
 import type { AlphaSection } from "@/components/market-intelligence/market-intelligence-data";
@@ -229,7 +230,7 @@ export function NewsTab({
 
             {filtered.map((item) => {
                 const symbol = item.symbol ?? "";
-                const metadata = symbolMetadata[symbol.trim().toUpperCase()];
+                const { displaySymbol, metadata } = resolveFeedSymbolMetadata(symbolMetadata, symbol);
                 const id = itemKey(item);
                 const headline = item.specific_title ?? item.title ?? "Untitled news";
                 const body = item.long_summary ?? item.summary ?? "";
@@ -238,7 +239,7 @@ export function NewsTab({
                 return (
                     <FeedCard
                         key={id}
-                        avatar={<TickerAvatar metadata={metadata} symbol={symbol || "NA"} />}
+                        avatar={<TickerAvatar metadata={metadata} symbol={displaySymbol} />}
                         body={<ExpandableBody minSentences={2} text={body || "No summary provided."} />}
                         categoryBadge={<SentimentBadge sentiment={item.sentiment} />}
                         headline={headline}
@@ -308,7 +309,7 @@ export function AnnouncementsTab({
     const grouped = useMemo(() => {
         const map = new Map<string, AlphaAnnouncementDetail[]>();
         for (const item of items) {
-            const metadata = symbolMetadata[item.symbol?.trim().toUpperCase() ?? ""];
+            const { metadata } = resolveFeedSymbolMetadata(symbolMetadata, item.symbol);
             const key = announcementDedupKey(item, metadata);
             const group = map.get(key) ?? [];
             group.push(item);
@@ -378,7 +379,7 @@ function AnnouncementCard({
     const [expanded, setExpanded] = useState(false);
     const primary = group[0];
     const symbol = primary.symbol ?? "";
-    const metadata = symbolMetadata[symbol.trim().toUpperCase()];
+    const { displaySymbol, metadata } = resolveFeedSymbolMetadata(symbolMetadata, symbol);
     const typeKind = classifyAnnouncementType(primary.category);
     const typeLabel = announcementTypeLabel(typeKind);
     const rawTitle = primary.headline ?? primary.title ?? "Untitled announcement";
@@ -389,7 +390,7 @@ function AnnouncementCard({
 
     return (
         <FeedCard
-            avatar={<TickerAvatar metadata={metadata} symbol={symbol || "NA"} />}
+            avatar={<TickerAvatar metadata={metadata} symbol={displaySymbol} />}
             body={
                 <>
                     {original ? <p className="mb-1 text-[11px] text-muted-foreground">{original}</p> : null}
@@ -552,7 +553,7 @@ export function EarningsTab({
             {filtered.length ? null : <EmptyFeed section="earnings" />}
             {filtered.map((item) => {
                 const symbol = item.symbol ?? "";
-                const metadata = symbolMetadata[symbol.trim().toUpperCase()];
+                const { displaySymbol, metadata } = resolveFeedSymbolMetadata(symbolMetadata, symbol);
                 const summary = item.summary ?? "";
                 const earningsTable = item.earnings_table ?? item.earnings_table_extraction ?? null;
                 const quarter = item.quarter?.trim() || "Quarter";
@@ -562,7 +563,7 @@ export function EarningsTab({
                 const headline =
                     titleFromData && !titleSameAsBody
                         ? titleFromData
-                        : `${metadata?.company_name ?? symbol} ${quarter} Earnings`;
+                        : `${metadata?.company_name ?? displaySymbol} ${quarter} Earnings`;
                 const chips = parseEarningsMetrics(summary);
                 const significance = item.earnings_significant
                     ? { label: "Significant", variant: "warning" as const }
@@ -573,7 +574,7 @@ export function EarningsTab({
                 return (
                     <FeedCard
                         key={itemKey(item)}
-                        avatar={<TickerAvatar metadata={metadata} symbol={symbol || "NA"} />}
+                        avatar={<TickerAvatar metadata={metadata} symbol={displaySymbol} />}
                         body={
                             <>
                                 <div className="flex flex-wrap items-center gap-1.5">
@@ -735,7 +736,7 @@ function ConcallCard({
 }) {
     const [expanded, setExpanded] = useState(false);
     const symbol = item.symbol ?? "";
-    const metadata = symbolMetadata[symbol.trim().toUpperCase()];
+    const { displaySymbol, metadata } = resolveFeedSymbolMetadata(symbolMetadata, symbol);
     const sections = parseConcallSections(item.short_analysis ?? item.expanded_analysis);
     const guidance = sections.find((section) => section.key.toLowerCase().includes("guidance"));
     const summarization = sections.find((section) => section.key.toLowerCase().includes("summarization"));
@@ -751,7 +752,7 @@ function ConcallCard({
             <CardPanel className="p-3">
                 <div className="flex flex-col gap-3 min-[720px]:flex-row min-[720px]:items-start min-[720px]:justify-between">
                     <div className="flex min-w-0 gap-2.5">
-                        <TickerAvatar metadata={metadata} symbol={symbol || "NA"} />
+                        <TickerAvatar metadata={metadata} symbol={displaySymbol} />
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                                 <TickerChipRow onTickerClick={onTickerClick} symbol={symbol} />
@@ -1182,7 +1183,7 @@ function AlertGroupCard({
 }) {
     const [expanded, setExpanded] = useState(false);
     const primary = group[0];
-    const metadata = symbolMetadata[symbol];
+    const { displaySymbol, metadata } = resolveFeedSymbolMetadata(symbolMetadata, symbol);
     const severity = classifyAlertSeverity(primary.reason ?? "");
     const borderAccent =
         severity === "extraordinary" ? "danger" : severity === "significant" ? "warning" : "muted";
@@ -1191,7 +1192,7 @@ function AlertGroupCard({
 
     return (
         <FeedCard
-            avatar={<TickerAvatar metadata={metadata} symbol={symbol} />}
+            avatar={<TickerAvatar metadata={metadata} symbol={displaySymbol} />}
             body={
                 <>
                     {expanded && group.length > 1 ? (

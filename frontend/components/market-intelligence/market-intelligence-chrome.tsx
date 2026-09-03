@@ -82,7 +82,7 @@ import {
     type MarketIntelligenceHasMore,
     type WatchlistCoverageGroup
 } from "@/components/market-intelligence/market-intelligence-data";
-import { itemKey } from "@/components/market-intelligence/market-intelligence-utils";
+import { itemKey, collectSymbolsFromFeeds, isUsableSymbolMetadata, mergeSymbolMetadataMaps } from "@/components/market-intelligence/market-intelligence-utils";
 
 const sectionChrome = {
     news: {
@@ -161,6 +161,14 @@ function metadataBySymbol(items: AlphaSymbolMetadata[]) {
         if (symbol) acc[symbol] = item;
         return acc;
     }, {});
+}
+
+function applyMetadataUpdate(
+    current: Record<string, AlphaSymbolMetadata>,
+    incoming: AlphaSymbolMetadata[] | Record<string, AlphaSymbolMetadata>
+) {
+    const mapped = Array.isArray(incoming) ? metadataBySymbol(incoming) : incoming;
+    return mergeSymbolMetadataMaps(current, mapped);
 }
 
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
@@ -494,6 +502,10 @@ export function MarketIntelligenceChrome({
     }, [activeMetadata, committedIntelligenceSymbol, committedSymbol, symbolModeActive]);
 
     useEffect(() => {
+        setActiveMetadata((current) => applyMetadataUpdate(current, symbolMetadata));
+    }, [symbolMetadata]);
+
+    useEffect(() => {
         if (!suggestionsOpen) {
             setSuggestionMenuRect(null);
             return;
@@ -552,7 +564,6 @@ export function MarketIntelligenceChrome({
         if (!activeSymbols.length) {
             setFeeds(emptyMarketIntelligenceFeeds());
             setHasMoreBySection(emptyMarketIntelligenceHasMore());
-            setActiveMetadata({});
             setFilterError("");
             setIsLoadingFilter(false);
             return;
@@ -570,10 +581,9 @@ export function MarketIntelligenceChrome({
             ]);
             if (cancelled) return;
             if (nextMetadata.status === "fulfilled") {
-                setActiveMetadata(metadataBySymbol(nextMetadata.value));
+                setActiveMetadata((current) => applyMetadataUpdate(current, nextMetadata.value));
             } else {
                 notifyAlphaCreditWarning(nextMetadata.reason);
-                setActiveMetadata({});
             }
             if (nextFeeds.status === "fulfilled") {
                 const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
@@ -598,6 +608,38 @@ export function MarketIntelligenceChrome({
             cancelled = true;
         };
     }, [activeSymbols, dateRangeApi, symbolModeActive]);
+
+    const missingFeedMetadataKey = useMemo(() => {
+        const feedSymbols = collectSymbolsFromFeeds(feeds);
+        return feedSymbols
+            .filter((symbol) => !isUsableSymbolMetadata(activeMetadata[symbol]))
+            .sort()
+            .join(",");
+    }, [activeMetadata, feeds.alerts, feeds.announcements, feeds.concalls, feeds.earnings, feeds.news]);
+
+    useEffect(() => {
+        if (!missingFeedMetadataKey) return;
+        const missing = missingFeedMetadataKey.split(",").filter(Boolean);
+        if (!missing.length) return;
+
+        let cancelled = false;
+        const handle = window.setTimeout(() => {
+            void (async () => {
+                try {
+                    const metadata = await getAlphaSymbolMetadata(missing);
+                    if (cancelled) return;
+                    setActiveMetadata((current) => applyMetadataUpdate(current, metadata));
+                } catch (caught) {
+                    notifyAlphaCreditWarning(caught);
+                }
+            })();
+        }, 150);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(handle);
+        };
+    }, [missingFeedMetadataKey]);
 
     useEffect(() => {
         const query = searchText.trim();
@@ -633,10 +675,9 @@ export function MarketIntelligenceChrome({
                     try {
                         const metadata = await getAlphaSymbolMetadata(symbolsToLoad);
                         if (cancelled) return;
-                        setSuggestionMetadata(metadataBySymbol(metadata));
+                        setSuggestionMetadata((current) => applyMetadataUpdate(current, metadata));
                     } catch (caught) {
                         notifyAlphaCreditWarning(caught);
-                        if (!cancelled) setSuggestionMetadata({});
                     }
                 } catch {
                     if (cancelled) return;
@@ -673,10 +714,9 @@ export function MarketIntelligenceChrome({
             ]);
             if (cancelled) return;
             if (nextMetadata.status === "fulfilled") {
-                setActiveMetadata(metadataBySymbol(nextMetadata.value));
+                setActiveMetadata((current) => applyMetadataUpdate(current, nextMetadata.value));
             } else {
                 notifyAlphaCreditWarning(nextMetadata.reason);
-                setActiveMetadata({});
             }
             if (nextFeeds.status === "fulfilled") {
                 const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
@@ -1207,13 +1247,18 @@ export function MarketIntelligenceChrome({
 
 function SymbolSearchLogo({ metadata, symbol }: { metadata?: AlphaSymbolMetadata; symbol: string }) {
     const [failed, setFailed] = useState(false);
-    const logo = metadata?.logo && !failed ? metadata.logo : "";
+    const logo = metadata?.logo?.trim() || "";
 
-    if (logo) {
+    useEffect(() => {
+        setFailed(false);
+    }, [logo]);
+
+    if (logo && !failed) {
         return (
             <img
                 alt=""
                 className="size-8 shrink-0 object-contain"
+                key={logo}
                 loading="lazy"
                 onError={() => setFailed(true)}
                 referrerPolicy="no-referrer"

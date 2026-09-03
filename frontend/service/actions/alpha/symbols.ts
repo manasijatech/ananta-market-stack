@@ -45,8 +45,8 @@ function numericValue(value: unknown): number | null {
     return null;
 }
 
-function isHollowMetadata(row: AlphaSymbolMetadata): boolean {
-    return !row.company_name && !row.logo;
+function isHollowMetadata(row: AlphaSymbolMetadata | null | undefined): boolean {
+    return !row?.company_name && !row?.logo;
 }
 
 function normalizeMetadataRows(symbols: string[], rows: unknown): AlphaSymbolMetadata[] {
@@ -74,6 +74,19 @@ function normalizeMetadataRows(symbols: string[], rows: unknown): AlphaSymbolMet
         }
     }
     return symbols.map((symbol) => bySymbol.get(symbol) ?? fallbackMetadataRow(symbol));
+}
+
+function preferMetadataRow(current: AlphaSymbolMetadata | undefined, incoming: AlphaSymbolMetadata): AlphaSymbolMetadata {
+    if (!current) return incoming;
+    const currentUsable = !isHollowMetadata(current);
+    const incomingUsable = !isHollowMetadata(incoming);
+    if (incomingUsable && !currentUsable) return incoming;
+    if (currentUsable && !incomingUsable) return current;
+    if (incoming.logo && !current.logo) return incoming;
+    if (current.logo && !incoming.logo) return current;
+    if (incoming.company_name && !current.company_name) return incoming;
+    if (incomingUsable) return incoming;
+    return current;
 }
 
 async function getAlphaSymbolMetadataBulk(
@@ -104,32 +117,44 @@ async function getAlphaSymbolMetadataBulk(
     return settled.flat();
 }
 
+function mergeMetadataRows(base: AlphaSymbolMetadata[], incoming: AlphaSymbolMetadata[]): AlphaSymbolMetadata[] {
+    const bySymbol = new Map(base.map((row) => [row.symbol, row]));
+    for (const row of incoming) {
+        bySymbol.set(row.symbol, preferMetadataRow(bySymbol.get(row.symbol), row));
+    }
+    return base.map((row) => bySymbol.get(row.symbol) ?? row);
+}
+
 export async function getAlphaSymbolMetadata(symbols: string[]): Promise<AlphaSymbolMetadata[]> {
     const normalized = normalizeSymbols(symbols);
     if (!normalized.length) {
         return [];
     }
+
+    let rows: AlphaSymbolMetadata[] = [];
     try {
-        let rows = await getAlphaSymbolMetadataBulk(normalized, { forceRefresh: false });
-        const hollow = rows.filter(isHollowMetadata).map((row) => row.symbol);
-        // Self-heal: if the first pass is mostly empty (stale cache / recovered API key),
-        // force one Drishti refresh for the hollow symbols only.
-        if (hollow.length > 0 && hollow.length >= Math.max(1, Math.ceil(rows.length * 0.4))) {
-            try {
-                const refreshed = await getAlphaSymbolMetadataBulk(hollow, { forceRefresh: true });
-                const bySymbol = new Map(rows.map((row) => [row.symbol, row]));
-                for (const row of refreshed) {
-                    if (!isHollowMetadata(row)) {
-                        bySymbol.set(row.symbol, row);
-                    }
-                }
-                rows = normalized.map((symbol) => bySymbol.get(symbol) ?? fallbackMetadataRow(symbol));
-            } catch {
-                // Keep the first-pass rows; callers already tolerate hollow metadata.
-            }
+        rows = await getAlphaSymbolMetadataBulk(normalized, { forceRefresh: false });
+    } catch (error) {
+        console.error("[alpha-metadata] bulk fetch failed; retrying once", error);
+        try {
+            rows = await getAlphaSymbolMetadataBulk(normalized, { forceRefresh: true });
+        } catch (retryError) {
+            console.error("[alpha-metadata] bulk fetch retry failed", retryError);
+            return fallbackMetadata(normalized);
         }
+    }
+
+    const hollow = rows.filter(isHollowMetadata).map((row) => row.symbol);
+    if (!hollow.length) {
         return rows;
-    } catch {
-        return fallbackMetadata(normalized);
+    }
+
+    // Always self-heal hollow rows — even a single missing logo/name should backfill.
+    try {
+        const refreshed = await getAlphaSymbolMetadataBulk(hollow, { forceRefresh: true });
+        return mergeMetadataRows(rows, refreshed);
+    } catch (error) {
+        console.error("[alpha-metadata] hollow force-refresh failed", error);
+        return rows;
     }
 }

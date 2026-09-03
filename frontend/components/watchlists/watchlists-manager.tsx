@@ -258,8 +258,25 @@ function liveStateLabel(state: "connecting" | "connected" | "disconnected" | "er
 }
 
 function SymbolAvatar({ symbol, logo, className }: { symbol: string; logo?: string | null; className?: string }) {
-    if (logo) {
-        return <img alt="" className={cn("shrink-0 object-contain", className)} src={logo} />;
+    const [failed, setFailed] = useState(false);
+    const src = logo?.trim() || "";
+
+    useEffect(() => {
+        setFailed(false);
+    }, [src]);
+
+    if (src && !failed) {
+        return (
+            <img
+                alt=""
+                className={cn("shrink-0 object-contain", className)}
+                key={src}
+                loading="lazy"
+                onError={() => setFailed(true)}
+                referrerPolicy="no-referrer"
+                src={src}
+            />
+        );
     }
     return (
         <span
@@ -596,16 +613,25 @@ export function WatchlistsManager({
         getAlphaSymbolMetadata(alphaSymbols)
             .then((metadata) => {
                 if (cancelled) return;
-                setWatchlistMetadata(
-                    metadata.reduce<Record<string, AlphaSymbolMetadata>>((acc, item) => {
-                        acc[item.symbol.trim().toUpperCase()] = item;
-                        return acc;
-                    }, {})
-                );
+                setWatchlistMetadata((current) => {
+                    const next = { ...current };
+                    for (const item of metadata) {
+                        const symbol = item.symbol.trim().toUpperCase();
+                        if (!symbol) continue;
+                        const prev = next[symbol];
+                        const incomingUsable = Boolean(item.company_name?.trim() || item.logo?.trim());
+                        const prevUsable = Boolean(prev?.company_name?.trim() || prev?.logo?.trim());
+                        if (!prev || (incomingUsable && !prevUsable) || (incomingUsable && item.logo && !prev.logo)) {
+                            next[symbol] = item;
+                        } else if (incomingUsable) {
+                            next[symbol] = item;
+                        }
+                    }
+                    return next;
+                });
             })
             .catch((caught) => {
                 notifyAlphaCreditWarning(caught);
-                if (!cancelled) setWatchlistMetadata({});
             });
         return () => {
             cancelled = true;

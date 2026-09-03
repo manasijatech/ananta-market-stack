@@ -60,6 +60,81 @@ export function companyDetail(metadata?: AlphaSymbolMetadata): string {
     return [metadata?.company_name, metadata?.sector].filter(Boolean).join(" · ");
 }
 
+export function isUsableSymbolMetadata(metadata?: AlphaSymbolMetadata | null): boolean {
+    return Boolean(metadata?.company_name?.trim() || metadata?.logo?.trim());
+}
+
+export function preferSymbolMetadata(
+    current: AlphaSymbolMetadata | undefined,
+    incoming: AlphaSymbolMetadata
+): AlphaSymbolMetadata {
+    if (!current) return incoming;
+    const currentUsable = isUsableSymbolMetadata(current);
+    const incomingUsable = isUsableSymbolMetadata(incoming);
+    if (incomingUsable && !currentUsable) return incoming;
+    if (currentUsable && !incomingUsable) return current;
+    if (incoming.logo?.trim() && !current.logo?.trim()) return incoming;
+    if (current.logo?.trim() && !incoming.logo?.trim()) return current;
+    if (incoming.company_name?.trim() && !current.company_name?.trim()) return incoming;
+    if (incomingUsable) return incoming;
+    return current;
+}
+
+export function mergeSymbolMetadataMaps(
+    current: Record<string, AlphaSymbolMetadata>,
+    incoming: Record<string, AlphaSymbolMetadata>
+): Record<string, AlphaSymbolMetadata> {
+    const next = { ...current };
+    for (const [symbol, row] of Object.entries(incoming)) {
+        const key = symbol.trim().toUpperCase();
+        if (!key) continue;
+        next[key] = preferSymbolMetadata(next[key], { ...row, symbol: key });
+    }
+    return next;
+}
+
+export function collectSymbolsFromFeeds(feeds: {
+    news?: Array<{ symbol?: string | null; symbols?: string | null }>;
+    announcements?: Array<{ symbol?: string | null }>;
+    earnings?: Array<{ symbol?: string | null }>;
+    concalls?: Array<{ symbol?: string | null }>;
+    alerts?: Array<{ symbol?: string | null; symbols?: string | null }>;
+}): string[] {
+    const seen = new Set<string>();
+    const add = (value?: string | null) => {
+        for (const symbol of parseTickerSymbols(value)) {
+            seen.add(symbol);
+        }
+    };
+    for (const item of feeds.news ?? []) {
+        add(item.symbol);
+        add(item.symbols);
+    }
+    for (const item of feeds.announcements ?? []) add(item.symbol);
+    for (const item of feeds.earnings ?? []) add(item.symbol);
+    for (const item of feeds.concalls ?? []) add(item.symbol);
+    for (const item of feeds.alerts ?? []) {
+        add(item.symbol);
+        add(item.symbols);
+    }
+    return Array.from(seen);
+}
+
+export function resolveFeedSymbolMetadata(
+    symbolMetadata: Record<string, AlphaSymbolMetadata>,
+    rawSymbol?: string | null
+): { displaySymbol: string; metadata?: AlphaSymbolMetadata } {
+    const symbols = parseTickerSymbols(rawSymbol);
+    for (const symbol of symbols) {
+        const metadata = symbolMetadata[symbol];
+        if (isUsableSymbolMetadata(metadata)) {
+            return { displaySymbol: symbol, metadata };
+        }
+    }
+    const displaySymbol = symbols[0] || rawSymbol?.trim().toUpperCase() || "NA";
+    return { displaySymbol, metadata: symbolMetadata[displaySymbol] };
+}
+
 export function formatFeedTimestamp(value?: string | null): string {
     if (!value?.trim()) return "";
     const date = parseApiDate(value);
