@@ -35,7 +35,9 @@ EVIDENCE_KINDS: tuple[EvidenceKind, ...] = (
 )
 
 MAX_EVIDENCE_CONTINUATIONS = 3
-HIDDEN_EVENT_TYPES = frozenset({"model_context_built", "harness_nudge"})
+HIDDEN_EVENT_TYPES = frozenset(
+    {"model_context_built", "harness_nudge", "context_injected", "context_hook_error"}
+)
 
 _URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
 _CALC_RE = re.compile(
@@ -90,7 +92,7 @@ _NUDGE_HINTS: dict[EvidenceKind, str] = {
     "broker_read": "call the matching broker_* tool, or report action_required / empty holdings",
     "calculation": "run sandbox_run_python (or show the arithmetic steps if no calculator is attached)",
     "canvas": "compose_surface or workspace_publish_html_artifact, then a one-line pointer in chat",
-    "mcp_or_intel": "call connected MCP tools or intel_get_feed, or say MCP/intel is unavailable",
+    "mcp_or_intel": "call connected MCP tools (get_news, get_daily_summary, events). Do not use intel_get_feed while MCP is connected.",
 }
 
 
@@ -377,11 +379,7 @@ def evidence_gaps(
             gaps.append(EvidenceGap("canvas", "desk/canvas was not published"))
 
     if "mcp_or_intel" in contract.required:
-        news_ok = any(
-            (record["tool_name"].startswith("intel_") or _is_mcp_tool(record["tool_name"]))
-            and _record_succeeded(record)
-            for record in records
-        )
+        news_ok = any(_is_mcp_tool(record["tool_name"]) and _record_succeeded(record) for record in records)
         if not news_ok:
             mcp_events = [
                 event
@@ -391,9 +389,9 @@ def evidence_gaps(
             ]
             if mcp_events:
                 blockers.append("mcp_unavailable")
-                gaps.append(EvidenceGap("mcp_or_intel", "MCP/intel was unavailable", "mcp_unavailable"))
+                gaps.append(EvidenceGap("mcp_or_intel", "MCP was unavailable", "mcp_unavailable"))
             else:
-                gaps.append(EvidenceGap("mcp_or_intel", "no MCP or intel_get_feed result"))
+                gaps.append(EvidenceGap("mcp_or_intel", "no connected MCP news/summary result"))
 
     stripped = (final_text or "").strip()
     canvas_only = "canvas" in contract.required and not stripped

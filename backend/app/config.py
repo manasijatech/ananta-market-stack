@@ -143,6 +143,11 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="BROKER_CHAT_EMIT_MODEL_CONTEXT_EVENT",
     )
+    hooks_total_chars: int = Field(
+        default=8_000,
+        ge=1_000,
+        validation_alias="HOOKS_TOTAL_CHARS",
+    )
     alert_workflow_chat_queue_name: str = Field(
         default="alert-workflow-chat",
         validation_alias="ALERT_WORKFLOW_CHAT_QUEUE_NAME",

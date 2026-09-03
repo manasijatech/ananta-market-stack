@@ -26,6 +26,13 @@ from app.agent_harness.evidence import (
     ui_todos,
 )
 from app.agent_harness.model_context import build_model_input, build_status_bar, tool_usage_line
+from app.agent_harness.hooks import (
+    CONTEXT_HOOK_ERROR_EVENT,
+    CONTEXT_INJECTED_EVENT,
+    HookContext,
+    ensure_builtin_hooks_registered,
+    run_context_hooks,
+)
 from app.agent_harness.retry_policy import (
     AgentRetryError,
     AgentRetryPolicy,
@@ -907,17 +914,63 @@ async def _run_broker_chat(run_id: str) -> None:
         clarify_used = False
         status_bar = build_status_bar(
             mcp_context=mcp_context,
-            workspace_spec=workspace_spec,
             selected_component_id=selected_component_id,
             evidence_line=evidence_status_line(evidence_report),
             tools_line=tool_usage_line(load_run_events(db, run.id)),
         )
+        hook_names: list[str] = []
+        context_hooks_message = ""
+        if adaptive_workspace:
+            ensure_builtin_hooks_registered()
+            hook_bundle = run_context_hooks(
+                HookContext(
+                    db=db,
+                    user_id=run.user_id,
+                    session_id=run.session_id,
+                    run=run,
+                    user_message=run.message,
+                    workspace_spec=workspace_spec,
+                    selected_component_id=selected_component_id,
+                    adaptive_workspace=adaptive_workspace,
+                    sandbox_available=sandbox_available,
+                    mcp_enabled=bool(mcp_handle.enabled),
+                    default_account_id=metadata.get("default_account_id"),
+                )
+            )
+            context_hooks_message = hook_bundle.message
+            hook_names = list(hook_bundle.hook_names)
+            if context_hooks_message:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type=CONTEXT_INJECTED_EVENT,
+                    public_payload={
+                        "hook_names": hook_names,
+                        "char_count": hook_bundle.total_chars,
+                    },
+                    full_payload={
+                        "hook_names": hook_names,
+                        "char_count": hook_bundle.total_chars,
+                        "titles": [item.title for item in hook_bundle.results],
+                        "audits": [item.audit for item in hook_bundle.results],
+                        "message_preview": (context_hooks_message or "")[:4_000],
+                    },
+                )
+            for error in hook_bundle.errors:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type=CONTEXT_HOOK_ERROR_EVENT,
+                    public_payload={"hook_id": error.get("hook_id")},
+                    full_payload=error,
+                )
         context_build = build_model_input(
             db,
             run,
             current_user_text=run.message,
             status_bar=status_bar,
             instructions=instructions,
+            context_hooks_message=context_hooks_message,
         )
         if get_settings().broker_chat_emit_model_context_event:
             broker_chat.append_event(
@@ -937,7 +990,7 @@ async def _run_broker_chat(run_id: str) -> None:
                     "dropped_oldest_turns": context_build.dropped_oldest_turns,
                     "char_count": context_build.char_count,
                     "cache_breakers": context_build.cache_breakers,
-                    "hook_names": [],
+                    "hook_names": hook_names,
                     "skill_names": [],
                 },
             )

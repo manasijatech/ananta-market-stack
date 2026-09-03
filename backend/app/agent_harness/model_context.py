@@ -40,7 +40,7 @@ SECRET_KEY_TOKENS = (
     "bearer",
 )
 
-DEBUG_EVENT_TYPES = frozenset({"model_context_built"})
+DEBUG_EVENT_TYPES = frozenset({"model_context_built", "context_injected", "context_hook_error"})
 
 Projector = Callable[[dict[str, Any], int, str | None], "ToolProjection"]
 
@@ -468,8 +468,11 @@ def build_status_bar(
     selected_component_id: str | None = None,
     evidence_line: str = "",
     tools_line: str = "",
+    workspace_catalog: str = "",
     now: datetime | None = None,
+    include_workspace_spec: bool = False,
 ) -> str:
+    """Trailing harness status (clock + counters). Desk JSON lives in plan-05 hooks."""
     instant = now or datetime.now(ZoneInfo("Asia/Kolkata"))
     lines = [
         STATUS_BAR_PREFIX,
@@ -479,9 +482,13 @@ def build_status_bar(
         lines.append(evidence_line)
     if tools_line:
         lines.append(tools_line)
+    if workspace_catalog.strip():
+        lines.append(workspace_catalog.strip())
     if selected_component_id:
         lines.append(f"Selected canvas component id: {selected_component_id}")
-    if workspace_spec:
+    # Full WorkspaceSpec dumps break KV-cache and bloat the prompt. Plan 05
+    # injects a compact desk_spec hook instead. Keep the opt-in for tests.
+    if include_workspace_spec and workspace_spec:
         spec_text, _truncated = freeze_truncate(stable_json(strip_secrets(workspace_spec)), 4000)
         lines.append("WorkspaceSpec JSON:")
         lines.append(spec_text)
@@ -589,9 +596,12 @@ def build_model_input(
     current_user_text: str,
     status_bar: str,
     instructions: str = "",
+    context_hooks_message: str = "",
 ) -> ModelContextBuild:
     messages, stats = prior_turn_messages_for_run(db, run)
     messages.append({"role": "user", "content": current_user_text})
+    if context_hooks_message.strip():
+        messages.append({"role": "user", "content": context_hooks_message})
     if status_bar.strip():
         messages.append({"role": "user", "content": status_bar})
     stats.messages = messages

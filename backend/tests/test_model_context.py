@@ -108,9 +108,17 @@ def test_frozen_system_prompt_has_no_clock_or_spec():
     )
     assert status.startswith(STATUS_BAR_PREFIX)
     assert "Today is " in status
-    assert "watchlist" in status
+    assert "WorkspaceSpec JSON" not in status  # desk lives in plan-05 hooks
+    assert "Selected canvas component id: w1" in status
     assert "get_news" in status
     assert "tools: web_search 2, sandbox_run_python 1" in status
+
+    legacy = build_status_bar(
+        workspace_spec={"components": [{"id": "w1", "type": "watchlist"}]},
+        include_workspace_spec=True,
+    )
+    assert "WorkspaceSpec JSON" in legacy
+    assert "watchlist" in legacy
 
 
 def _seed_fetch_session(db):
