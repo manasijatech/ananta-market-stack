@@ -63,6 +63,7 @@ class ModelContextBuild:
     dropped_oldest_turns: int = 0
     char_count: int = 0
     cache_breakers: list[str] = field(default_factory=list)
+    compaction: dict[str, Any] = field(default_factory=dict)
 
 
 def freeze_truncate(text: str, limit: int) -> tuple[str, bool]:
@@ -597,8 +598,36 @@ def build_model_input(
     status_bar: str,
     instructions: str = "",
     context_hooks_message: str = "",
+    enable_compaction: bool = True,
 ) -> ModelContextBuild:
-    messages, stats = prior_turn_messages_for_run(db, run)
+    compaction_audit: dict[str, Any] = {}
+    overhead = len(context_hooks_message or "") + len(status_bar or "")
+    if enable_compaction:
+        from app.agent_harness.compaction import build_compacted_prior_messages
+
+        compacted = build_compacted_prior_messages(
+            db,
+            run,
+            current_user_text=current_user_text,
+            overhead_chars=overhead,
+        )
+        messages = list(compacted.messages)
+        stats = compacted.stats
+        compaction_audit = {
+            "compacted": compacted.compacted,
+            "failed": compacted.failed,
+            "failure_reason": compacted.failure_reason,
+            "cache_hit": compacted.cache_hit,
+            "model_id": compacted.model_id,
+            "chars_in": compacted.chars_in,
+            "chars_out": compacted.chars_out,
+            "first_kept_run_id": compacted.first_kept_run_id,
+            "summary_chars": len(compacted.summary or ""),
+            **(compacted.audit or {}),
+        }
+        stats.compaction = compaction_audit
+    else:
+        messages, stats = prior_turn_messages_for_run(db, run)
     messages.append({"role": "user", "content": current_user_text})
     if context_hooks_message.strip():
         messages.append({"role": "user", "content": context_hooks_message})

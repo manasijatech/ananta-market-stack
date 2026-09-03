@@ -154,6 +154,40 @@ class Settings(BaseSettings):
         ge=1_000,
         validation_alias="HOOKS_TOTAL_CHARS",
     )
+    compact_reserve_chars: int = Field(
+        default=12_000,
+        ge=2_000,
+        validation_alias="COMPACT_RESERVE_CHARS",
+    )
+    compact_keep_recent_chars: int = Field(
+        default=20_000,
+        ge=4_000,
+        validation_alias="COMPACT_KEEP_RECENT_CHARS",
+    )
+    compact_summary_max_chars: int = Field(
+        default=3_500,
+        ge=500,
+        validation_alias="COMPACT_SUMMARY_MAX_CHARS",
+    )
+    compact_anxiety_ratio: float = Field(
+        default=0.80,
+        ge=0.50,
+        le=0.95,
+        validation_alias="COMPACT_ANXIETY_RATIO",
+    )
+    compact_timeout_seconds: float = Field(
+        default=45.0,
+        ge=5.0,
+        validation_alias="COMPACT_TIMEOUT_SECONDS",
+    )
+    broker_chat_compaction_model: str = Field(
+        default="",
+        validation_alias="BROKER_CHAT_COMPACTION_MODEL",
+    )
+    enable_chat_embeddings: bool = Field(
+        default=False,
+        validation_alias="ENABLE_CHAT_EMBEDDINGS",
+    )
     alert_workflow_chat_queue_name: str = Field(
         default="alert-workflow-chat",
         validation_alias="ALERT_WORKFLOW_CHAT_QUEUE_NAME",

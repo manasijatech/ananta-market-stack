@@ -786,6 +786,12 @@ def append_event(
     db.commit()
     db.refresh(row)
     try:
+        from app.agent_harness.session_fts import index_event
+
+        index_event(db, row, run)
+    except Exception:
+        pass
+    try:
         client = redis_connection()
         stream_id = client.xadd(
             broker_chat_stream_key(run.id),

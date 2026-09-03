@@ -50,7 +50,9 @@ from app.agent_harness.retry_policy import (
 )
 from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WEB_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
+from app.agent_tools.session_memory_tools import SESSION_MEMORY_TOOLS
 from app.agent_tools.tool_labels import decorate_tool_payload
+from app.agent_harness.compaction import COMPACTION_EVENT, COMPACTION_FAILED_EVENT
 from app.services import broker_chat, broker_chat_mcp, feature_flags, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
@@ -142,6 +144,10 @@ Important operating rules:
   user provides only a plain symbol. Use portfolio holdings first when the user
   says "my holding", "its performance", "this stock", or otherwise refers to a
   previous holding/instrument.
+- After long threads or compaction, if you need a number/symbol/URL from earlier
+  in THIS chat, call session_search (Recall from this chat). Do not invent it.
+  For numbers the user will act on, session_expand or re-fetch — a compaction
+  summary alone is weak evidence.
 - When a symbol exists on multiple Indian cash exchanges and the user did not
   specify one, prefer NSE. If NSE quotes or candles are missing or LTP is 0,
   automatically retry BSE for that same symbol. Do not ask the user to pick
@@ -881,7 +887,7 @@ async def _run_broker_chat(run_id: str) -> None:
         provider_retries_used = 0
         continuations_used = 0
         tools = (
-            [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS]
+            [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS, *SESSION_MEMORY_TOOLS]
             if adaptive_workspace
             else [*BROKER_DATA_TOOLS, *INTEL_FEED_TOOLS]
         )
@@ -975,7 +981,29 @@ async def _run_broker_chat(run_id: str) -> None:
             status_bar=status_bar,
             instructions=instructions,
             context_hooks_message=context_hooks_message,
+            enable_compaction=adaptive_workspace,
         )
+        compaction_meta = getattr(context_build, "compaction", None) or {}
+        if compaction_meta.get("compacted"):
+            broker_chat.append_event(
+                db,
+                run,
+                event_type=COMPACTION_EVENT,
+                public_payload={
+                    "chars_in": compaction_meta.get("chars_in"),
+                    "chars_out": compaction_meta.get("chars_out"),
+                    "model_id": compaction_meta.get("model_id"),
+                },
+                full_payload=compaction_meta,
+            )
+        elif compaction_meta.get("failed"):
+            broker_chat.append_event(
+                db,
+                run,
+                event_type=COMPACTION_FAILED_EVENT,
+                public_payload={"fallback": compaction_meta.get("fallback") or "drop_oldest"},
+                full_payload=compaction_meta,
+            )
         if get_settings().broker_chat_emit_model_context_event:
             broker_chat.append_event(
                 db,
@@ -995,6 +1023,7 @@ async def _run_broker_chat(run_id: str) -> None:
                     "char_count": context_build.char_count,
                     "cache_breakers": context_build.cache_breakers,
                     "hook_names": hook_names,
+                    "compaction": compaction_meta,
                     "skill_names": [],
                 },
             )

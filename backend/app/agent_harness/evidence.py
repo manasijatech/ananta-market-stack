@@ -36,7 +36,14 @@ EVIDENCE_KINDS: tuple[EvidenceKind, ...] = (
 
 MAX_EVIDENCE_CONTINUATIONS = 3
 HIDDEN_EVENT_TYPES = frozenset(
-    {"model_context_built", "harness_nudge", "context_injected", "context_hook_error"}
+    {
+        "model_context_built",
+        "harness_nudge",
+        "context_injected",
+        "context_hook_error",
+        "compaction",
+        "compaction_failed",
+    }
 )
 
 _URL_RE = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)

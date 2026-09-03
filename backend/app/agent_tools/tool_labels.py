@@ -59,6 +59,8 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "workspace_get_micro_app": "Micro-app",
     "workspace_publish_html_artifact": "Publish canvas",
     "workspace_update_html_artifact": "Update canvas",
+    "session_search": "Recall from this chat",
+    "session_expand": "Expand chat recall",
     "get_daily_summary": "Daily summary",
     "get_news": "News",
     "get_top_movers": "Top movers",

@@ -443,6 +443,14 @@ class BrokerChatSession(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
     )
+    # Plan 06 — frozen model-facing session summary (audit remains full).
+    compaction_summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    compaction_summary_json: Mapped[str] = mapped_column(Text, default="{}")
+    compaction_first_kept_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    compaction_model_id: Mapped[str] = mapped_column(String(256), default="")
+    compaction_chars_in: Mapped[int] = mapped_column(Integer, default=0)
+    compaction_chars_out: Mapped[int] = mapped_column(Integer, default=0)
+    compaction_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class BrokerChatRun(Base):
