@@ -838,6 +838,10 @@ async def _run_broker_chat(run_id: str) -> None:
             broker_chat.mark_run_terminal(db, run, status="cancelled", response_text=run.response_text)
             broker_chat.append_event_once(db, run, event_type="run_cancelled", public_payload={"status": "cancelled"})
             return
+        other_running = broker_chat.running_run_for_session(db, run.session_id)
+        if other_running is not None and other_running.id != run.id:
+            # Another turn owns this session; leave this row queued for start_next.
+            return
         broker_chat.mark_run_running(db, run)
         db.refresh(run)
         broker_chat.append_event(

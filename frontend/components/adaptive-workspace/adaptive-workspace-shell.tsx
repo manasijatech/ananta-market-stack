@@ -10,6 +10,7 @@ import {
     IconPlugConnected,
     IconRefresh
 } from "@tabler/icons-react";
+import { ContextUsageIndicator } from "@/components/adaptive-workspace/context-usage-indicator";
 import { AdaptiveCanvasBoard } from "@/components/adaptive-workspace/canvas-board";
 import { AdaptiveDeskPrefsProvider, useOptionalAdaptiveDeskPrefs } from "@/components/adaptive-workspace/desk-prefs";
 import { adaptiveBrokerToolRenderers } from "@/components/adaptive-workspace/broker-tool-renderers";
@@ -61,7 +62,7 @@ function AdaptiveWorkspaceShellInner({
     mcpServers
 }: Props) {
     const canvas = useAdaptiveWorkspace();
-    const { applySpec, bindSession, ingestMessageOutputs } = canvas;
+    const { applySpec, bindSession, ingestMessageOutputs, reloadCurrent } = canvas;
     const layout = useAdaptiveWorkspaceLayout();
     const prefs = useOptionalAdaptiveDeskPrefs();
     const { account } = useDeskAccounts();
@@ -99,10 +100,8 @@ function AdaptiveWorkspaceShellInner({
         const latest = latestSurfaceSpecFromMessages(chat.messages);
         const sessionId = chat.activeSessionId || null;
         if (hydratedSessionRef.current !== chat.activeSessionId) {
-            if (latest) seenSurfaceKeysRef.current.add(latest.key);
             hydratedSessionRef.current = chat.activeSessionId;
-            ingestMessageOutputs(chat.messages);
-            return;
+            seenSurfaceKeysRef.current = new Set();
         }
         if (latest && !seenSurfaceKeysRef.current.has(latest.key)) {
             seenSurfaceKeysRef.current.add(latest.key);
@@ -110,6 +109,16 @@ function AdaptiveWorkspaceShellInner({
         }
         ingestMessageOutputs(chat.messages);
     }, [applySpec, chat.activeSessionId, chat.messages, ingestMessageOutputs]);
+
+    const surfaceReadyKey = chat.runsForActiveSession
+        .filter((run) => run.status === "completed" || run.status === "failed")
+        .map((run) => `${run.id}:${run.updated_at}`)
+        .join("|");
+
+    useEffect(() => {
+        if (!chat.activeSessionId || chat.chatStatus === "streaming") return;
+        reloadCurrent();
+    }, [chat.activeSessionId, chat.chatStatus, reloadCurrent, surfaceReadyKey]);
 
     useEffect(() => {
         ingestMessageOutputs(chat.messages);
@@ -139,10 +148,10 @@ function AdaptiveWorkspaceShellInner({
                         type="button"
                     />
                     <Card
-                        className="grid min-h-0 h-[min(42vh,28rem)] w-full shrink-0 overflow-hidden grid-rows-[auto_minmax(0,1fr)_auto] min-[980px]:h-full min-[980px]:w-[var(--adaptive-inspector-width)] [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px] [--an-max-width:760px] [--an-tool-border-radius:8px]"
+                        className="grid min-h-0 min-w-0 h-[min(42vh,28rem)] w-full max-w-full shrink-0 overflow-hidden grid-rows-[auto_minmax(0,1fr)_auto] min-[980px]:h-full min-[980px]:w-[var(--adaptive-inspector-width)] [--an-border-radius:10px] [--an-input-background:var(--background)] [--an-input-border-radius:10px] [--an-max-width:760px] [--an-tool-border-radius:8px]"
                         style={{ ["--adaptive-inspector-width" as string]: `${layout.inspectorWidth}px` }}
                     >
-                        <CardHeader className="shrink-0 border-b border-border p-3">
+                        <CardHeader className="min-w-0 shrink-0 overflow-hidden border-b border-border p-3">
                             <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0 flex-1">
                                     <p className="font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
@@ -150,6 +159,7 @@ function AdaptiveWorkspaceShellInner({
                                     </p>
                                     <div className="mt-2 min-w-0">
                                         <AdaptiveDeskSwitcher
+                                            activeSessionId={chat.activeSessionId}
                                             creating={chat.isCreatingSession}
                                             liveSessionIds={chat.liveSessionIds}
                                             onCreate={() => void chat.createNewChat()}
@@ -189,7 +199,7 @@ function AdaptiveWorkspaceShellInner({
                                 </div>
                             ) : null}
                             {chat.error ? (
-                                <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                                <div className="mt-3 flex min-w-0 items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm break-words text-destructive">
                                     <IconAlertTriangle className="mt-0.5 size-4 shrink-0" stroke={1.8} />
                                     {chat.error}
                                 </div>
@@ -207,7 +217,7 @@ function AdaptiveWorkspaceShellInner({
                                 </p>
                             ) : null}
                         </CardHeader>
-                        <CardPanel className="relative min-h-0 overflow-hidden p-0">
+                        <CardPanel className="relative min-h-0 min-w-0 overflow-hidden p-0">
                             {!chat.messages.length ? (
                                 <div className="flex h-full min-h-0 items-center justify-center px-4 py-10 text-center">
                                     <div className="w-full max-w-sm">
@@ -219,7 +229,7 @@ function AdaptiveWorkspaceShellInner({
                                 </div>
                             ) : (
                                 <MessageList
-                                    className="h-full min-h-0"
+                                    className="h-full min-h-0 min-w-0"
                                     compactBreathingSpace
                                     messages={chat.messages}
                                     showCopyToolbar
@@ -228,12 +238,41 @@ function AdaptiveWorkspaceShellInner({
                                 />
                             )}
                         </CardPanel>
-                        <CardFooter className="border-t border-border bg-secondary/20 px-3 pb-3 pt-3">
-                            <div className="mx-auto w-full">
+                        <CardFooter className="min-w-0 overflow-hidden border-t border-border bg-secondary/20 px-3 pb-3 pt-3">
+                            <div className="mx-auto w-full space-y-2">
+                                {chat.queuedRuns.length ? (
+                                    <div className="flex flex-wrap items-center gap-1.5 px-0.5">
+                                        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                            {chat.waitingCount} waiting
+                                        </span>
+                                        {chat.queuedRuns.map((run) => (
+                                            <button
+                                                key={run.id}
+                                                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/80 bg-background/80 px-2 py-1 text-left text-[11px] text-muted-foreground opacity-80 transition hover:opacity-100"
+                                                onClick={() => void chat.cancelQueuedRun(run.id)}
+                                                title="Cancel this queued follow-up"
+                                                type="button"
+                                            >
+                                                <span className="truncate">{run.message}</span>
+                                                <span className="shrink-0 font-semibold text-foreground/70">Cancel</span>
+                                            </button>
+                                        ))}
+                                        {chat.queuedRuns.length > 1 ? (
+                                            <button
+                                                className="inline-flex h-7 items-center rounded-md border border-border px-2 text-[11px] font-semibold uppercase text-muted-foreground"
+                                                onClick={() => void chat.clearSessionQueue()}
+                                                type="button"
+                                            >
+                                                Clear queue
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                ) : null}
                                 <div className="rounded-lg border border-border/80 bg-background">
                                     <InputBar
+                                        allowSendWhileStreaming
                                         className="px-0 pb-0"
-                                        disabled={!chat.hasConfiguredLlm || chat.isSubmitting || Boolean(chat.activeRun)}
+                                        disabled={!chat.hasConfiguredLlm || chat.isSubmitting}
                                         leftActions={
                                             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                                 <SimpleSelect
@@ -276,6 +315,11 @@ function AdaptiveWorkspaceShellInner({
                                                         value={chat.reasoningEffort}
                                                     />
                                                 ) : null}
+                                                {chat.waitingCount ? (
+                                                    <span className="inline-flex h-7 items-center rounded-md border border-border/80 bg-secondary/40 px-2 text-[11px] font-semibold text-muted-foreground">
+                                                        {chat.waitingCount} waiting
+                                                    </span>
+                                                ) : null}
                                             </div>
                                         }
                                         onChange={chat.setMessage}
@@ -288,6 +332,13 @@ function AdaptiveWorkspaceShellInner({
                                         }
                                         rightActions={
                                             <div className="flex shrink-0 items-center gap-1.5">
+                                                {chat.activeSessionId ? (
+                                                    <ContextUsageIndicator
+                                                        eventsByRun={chat.eventsByRun}
+                                                        runs={chat.runsForActiveSession}
+                                                        sessionId={chat.activeSessionId}
+                                                    />
+                                                ) : null}
                                                 {chat.availableMcpServers.length ? (
                                                     <button
                                                         aria-pressed={chat.useMcp}

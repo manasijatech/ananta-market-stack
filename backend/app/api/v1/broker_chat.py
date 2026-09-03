@@ -122,20 +122,36 @@ def list_broker_chat_session_runs(
     return chat_svc.list_runs(db, user.id, session_id=session_id, limit=limit)
 
 
+@router.get("/sessions/{session_id}/queue", response_model=list[BrokerChatRunOut])
+def list_broker_chat_session_queue(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[BrokerChatRunOut]:
+    try:
+        return chat_svc.list_session_queue(db, user.id, session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/runs", response_model=BrokerChatSubmitOut)
 def submit_broker_chat_run(
     payload: BrokerChatSubmitIn,
+    strict_single_active: bool = Query(
+        default=False,
+        description="Reject submit when the session already has a queued or running run.",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> BrokerChatSubmitOut:
     try:
-        run = chat_svc.create_run(db, user.id, payload)
+        run = chat_svc.create_run(db, user.id, payload, strict_single_active=strict_single_active)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"failed to enqueue broker chat run: {exc}") from exc
     return BrokerChatSubmitOut(
-        run=BrokerChatRunOut.model_validate(run),
+        run=chat_svc.run_to_schema(db, run),
         stream_url=f"/api/v1/broker-chat/runs/{run.id}/stream",
         status_url=f"/api/v1/broker-chat/runs/{run.id}",
         events_url=f"/api/v1/broker-chat/runs/{run.id}/events",
@@ -159,7 +175,7 @@ def get_broker_chat_run(
     user: User = Depends(get_current_user),
 ) -> BrokerChatRunOut:
     try:
-        return BrokerChatRunOut.model_validate(chat_svc.get_owned_run(db, user.id, run_id))
+        return chat_svc.run_to_schema(db, chat_svc.get_owned_run(db, user.id, run_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -167,11 +183,18 @@ def get_broker_chat_run(
 @router.post("/runs/{run_id}/cancel", response_model=BrokerChatRunOut)
 def cancel_broker_chat_run(
     run_id: str,
+    cancel_queued: bool = Query(
+        default=False,
+        description="Also cancel every waiting follow-up in the same session.",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> BrokerChatRunOut:
     try:
-        return BrokerChatRunOut.model_validate(chat_svc.cancel_run(db, user.id, run_id))
+        return chat_svc.run_to_schema(
+            db,
+            chat_svc.cancel_run(db, user.id, run_id, cancel_queued=cancel_queued),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

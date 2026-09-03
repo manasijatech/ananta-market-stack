@@ -101,6 +101,8 @@ class BrokerChatRunOut(BaseModel):
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # 1-based position among queued runs in the session; null when not queued.
+    queue_position: int | None = None
 
 
 class BrokerChatSubmitOut(BaseModel):

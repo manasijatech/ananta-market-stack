@@ -219,8 +219,16 @@ export async function getBrokerChatRun(runId: string): Promise<BrokerChatRun> {
     return request<BrokerChatRun>(`/broker-chat/runs/${runId}`);
 }
 
-export async function cancelBrokerChatRun(runId: string): Promise<BrokerChatRun> {
-    const result = await request<BrokerChatRun>(`/broker-chat/runs/${runId}/cancel`, {
+export async function getBrokerChatSessionQueue(sessionId: string): Promise<BrokerChatRun[]> {
+    return request<BrokerChatRun[]>(`/broker-chat/sessions/${sessionId}/queue`);
+}
+
+export async function cancelBrokerChatRun(
+    runId: string,
+    options: { cancelQueued?: boolean } = {}
+): Promise<BrokerChatRun> {
+    const query = options.cancelQueued ? "?cancel_queued=true" : "";
+    const result = await request<BrokerChatRun>(`/broker-chat/runs/${runId}/cancel${query}`, {
         method: "POST"
     });
     revalidatePath("/broker-chat");

@@ -75,6 +75,8 @@ export interface BrokerChatRun {
     completed_at?: string | null;
     created_at: string;
     updated_at: string;
+    /** 1-based position among queued runs in the session; null when not queued. */
+    queue_position?: number | null;
 }
 
 export interface BrokerChatSubmitRequest {

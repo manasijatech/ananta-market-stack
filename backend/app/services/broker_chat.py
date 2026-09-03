@@ -43,6 +43,8 @@ from db.models import (
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_STATUSES = {"queued", "running"}
+RUNNING_STATUS = "running"
+QUEUED_STATUS = "queued"
 BROKER_CHAT_SURFACE = "broker_chat"
 ADAPTIVE_WORKSPACE_SURFACE = "adaptive_workspace"
 VALID_SESSION_SURFACES = {BROKER_CHAT_SURFACE, ADAPTIVE_WORKSPACE_SURFACE}
@@ -270,13 +272,83 @@ def _resolve_provider_model(
         model = models[0].model_id if models else None
     if not model:
         raise ValueError("No broker chat model was provided or saved for the selected LLM provider.")
-    return provider, model
+    return provider, llm_config.normalize_provider_model_id(provider, model)
+
+
+def running_run_for_session(db: Session, session_id: str) -> BrokerChatRun | None:
+    return db.scalars(
+        select(BrokerChatRun)
+        .where(
+            BrokerChatRun.session_id == session_id,
+            BrokerChatRun.status == RUNNING_STATUS,
+        )
+        .order_by(BrokerChatRun.started_at.asc(), BrokerChatRun.id.asc())
+        .limit(1)
+    ).first()
+
+
+def queued_runs_for_session(db: Session, session_id: str) -> list[BrokerChatRun]:
+    return list(
+        db.scalars(
+            select(BrokerChatRun)
+            .where(
+                BrokerChatRun.session_id == session_id,
+                BrokerChatRun.status == QUEUED_STATUS,
+            )
+            .order_by(BrokerChatRun.queued_at.asc(), BrokerChatRun.id.asc())
+        ).all()
+    )
+
+
+def queue_position_for_run(db: Session, run: BrokerChatRun) -> int | None:
+    if run.status != QUEUED_STATUS:
+        return None
+    for index, item in enumerate(queued_runs_for_session(db, run.session_id), start=1):
+        if item.id == run.id:
+            return index
+    return None
+
+
+def session_queue_blocked(db: Session, session_id: str) -> bool:
+    """True when a follow-up must wait (running or earlier queued head exists)."""
+    return running_run_for_session(db, session_id) is not None or bool(queued_runs_for_session(db, session_id))
+
+
+def start_next_queued_run(db: Session, session_id: str) -> BrokerChatRun | None:
+    """Enqueue the oldest queued run for a session when nothing is running.
+
+    Idempotent: safe to call after every terminal transition and from reconcile.
+    """
+    if running_run_for_session(db, session_id) is not None:
+        return None
+    queued = queued_runs_for_session(db, session_id)
+    if not queued:
+        return None
+    next_run = queued[0]
+    try:
+        next_run.job_id = ensure_broker_chat_job_queued(next_run.id)
+        next_run.updated_at = utc_now()
+        db.add(next_run)
+        db.commit()
+        db.refresh(next_run)
+    except Exception as exc:
+        next_run.status = "failed"
+        next_run.error = f"failed to enqueue broker chat run: {exc}"
+        next_run.completed_at = utc_now()
+        next_run.updated_at = next_run.completed_at
+        db.add(next_run)
+        db.commit()
+        db.refresh(next_run)
+        return start_next_queued_run(db, session_id)
+    return next_run
 
 
 def create_run(
     db: Session,
     user_id: str,
     payload: BrokerChatSubmitIn,
+    *,
+    strict_single_active: bool = False,
 ) -> BrokerChatRun:
     ensure_user(db, user_id)
     pref = get_or_create_preference(db, user_id)
@@ -301,8 +373,10 @@ def create_run(
         .order_by(BrokerChatRun.created_at.desc(), BrokerChatRun.id.desc())
         .limit(1)
     ).first()
-    if active_run is not None:
+    if strict_single_active and active_run is not None:
         raise ValueError("A broker chat run is already active in this session. Stop it or wait for it to finish.")
+    # At most one RQ job per session: enqueue now only when the session is idle.
+    should_enqueue_now = not session_queue_blocked(db, session.id)
     existing_run_count = db.scalar(
         select(func.count())
         .select_from(BrokerChatRun)
@@ -326,11 +400,27 @@ def create_run(
         )
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
+    metadata: dict[str, Any] = {
+        **payload.metadata,
+        "default_account_id": payload.default_account_id,
+        "search_account_id": payload.search_account_id,
+        "use_mcp": bool(use_mcp),
+        "mcp_server_ids": mcp_server_ids,
+        "reasoning_effort": reasoning_effort,
+    }
+    if not should_enqueue_now:
+        # Audit the desk at enqueue time; the runner still binds to the latest
+        # session spec when the follow-up actually starts (via tools / status bar).
+        if "workspace_spec" in payload.metadata:
+            metadata["spec_at_enqueue"] = payload.metadata.get("workspace_spec")
+        if "selected_component_id" in payload.metadata:
+            metadata["selected_component_id_at_enqueue"] = payload.metadata.get("selected_component_id")
+        metadata["session_queue"] = True
     run = BrokerChatRun(
         id=str(uuid.uuid4()),
         session_id=session.id,
         user_id=user_id,
-        status="queued",
+        status=QUEUED_STATUS,
         provider=provider,
         model_id=model,
         message=payload.message.strip(),
@@ -339,16 +429,7 @@ def create_run(
             pref.include_tool_outputs if payload.include_tool_outputs is None else payload.include_tool_outputs
         ),
         include_reasoning=pref.include_reasoning if payload.include_reasoning is None else payload.include_reasoning,
-        metadata_json=json_dumps(
-            {
-                **payload.metadata,
-                "default_account_id": payload.default_account_id,
-                "search_account_id": payload.search_account_id,
-                "use_mcp": bool(use_mcp),
-                "mcp_server_ids": mcp_server_ids,
-                "reasoning_effort": reasoning_effort,
-            }
-        ),
+        metadata_json=json_dumps(metadata),
         queued_at=now,
         created_at=now,
         updated_at=now,
@@ -360,6 +441,8 @@ def create_run(
     db.add(session)
     db.commit()
     db.refresh(run)
+    if not should_enqueue_now:
+        return run
     try:
         job_id = enqueue_broker_chat_run(run.id)
     except Exception as exc:
@@ -387,7 +470,13 @@ def get_owned_run(db: Session, user_id: str, run_id: str) -> BrokerChatRun:
 
 
 def reconcile_run_queue_state(db: Session, run: BrokerChatRun) -> BrokerChatRun:
-    if run.status != "queued":
+    """Ensure only the session head is on RQ when nothing is running."""
+    if run.status != QUEUED_STATUS:
+        return run
+    if running_run_for_session(db, run.session_id) is not None:
+        return run
+    queued = queued_runs_for_session(db, run.session_id)
+    if not queued or queued[0].id != run.id:
         return run
     try:
         run.job_id = ensure_broker_chat_job_queued(run.id)
@@ -403,9 +492,8 @@ def reconcile_run_queue_state(db: Session, run: BrokerChatRun) -> BrokerChatRun:
 def reconcile_incomplete_runs(db: Session, *, limit: int = 200) -> dict[str, int]:
     """Repair queued/running broker-chat runs after process restarts.
 
-    Queued runs are re-enqueued onto this app instance's scoped RQ queue. Runs
-    that were marked running before a restart are moved back to queued so the
-    local in-process worker or any dedicated worker can pick them up again.
+    Per session: keep at most one live RQ job. Stale `running` rows without an
+    active job fall back to `queued`; only the oldest queued run is enqueued.
     """
 
     rows = list(
@@ -416,29 +504,37 @@ def reconcile_incomplete_runs(db: Session, *, limit: int = 200) -> dict[str, int
             .limit(max(1, min(limit, 1000)))
         ).all()
     )
+    by_session: dict[str, list[BrokerChatRun]] = {}
+    for run in rows:
+        by_session.setdefault(run.session_id, []).append(run)
+
     requeued = 0
     running_reset = 0
     running_kept = 0
     failed = 0
-    for run in rows:
+    for session_id, session_runs in by_session.items():
         try:
-            if run.status == "running":
+            live_running = False
+            for run in session_runs:
+                if run.status != RUNNING_STATUS:
+                    continue
                 status = broker_chat_job_status(run.id)
                 if status in {"queued", "started"}:
                     running_kept += 1
+                    live_running = True
                     continue
-                run.status = "queued"
+                run.status = QUEUED_STATUS
                 run.error = None
                 run.updated_at = utc_now()
                 db.add(run)
                 db.commit()
                 db.refresh(run)
                 running_reset += 1
-            run.job_id = ensure_broker_chat_job_queued(run.id)
-            run.updated_at = utc_now()
-            db.add(run)
-            db.commit()
-            requeued += 1
+            if live_running:
+                continue
+            started = start_next_queued_run(db, session_id)
+            if started is not None:
+                requeued += 1
         except Exception:
             db.rollback()
             failed += 1
@@ -449,6 +545,17 @@ def reconcile_incomplete_runs(db: Session, *, limit: int = 200) -> dict[str, int
         "running_kept": running_kept,
         "failed": failed,
     }
+
+
+def run_to_schema(db: Session, run: BrokerChatRun) -> BrokerChatRunOut:
+    out = BrokerChatRunOut.model_validate(run)
+    out.queue_position = queue_position_for_run(db, run)
+    return out
+
+
+def list_session_queue(db: Session, user_id: str, session_id: str) -> list[BrokerChatRunOut]:
+    get_owned_session(db, user_id, session_id)
+    return [run_to_schema(db, run) for run in queued_runs_for_session(db, session_id)]
 
 
 def list_runs(
@@ -473,7 +580,7 @@ def list_runs(
     )
     for row in rows:
         reconcile_run_queue_state(db, row)
-    return [BrokerChatRunOut.model_validate(row) for row in rows]
+    return [run_to_schema(db, row) for row in rows]
 
 
 def delete_session(db: Session, user_id: str, session_id: str) -> None:
@@ -501,13 +608,22 @@ def delete_session(db: Session, user_id: str, session_id: str) -> None:
     db.commit()
 
 
-def cancel_run(db: Session, user_id: str, run_id: str) -> BrokerChatRun:
+def cancel_run(
+    db: Session,
+    user_id: str,
+    run_id: str,
+    *,
+    cancel_queued: bool = False,
+) -> BrokerChatRun:
     run = get_owned_run(db, user_id, run_id)
+    session_id = run.session_id
     if run.status in TERMINAL_STATUSES:
+        if cancel_queued:
+            cancel_queued_runs(db, user_id, session_id)
         return run
     request_broker_chat_cancel(run.id)
     cancel_broker_chat_job(run.id)
-    mark_run_terminal(db, run, status="cancelled", response_text=run.response_text, error=None)
+    mark_run_terminal(db, run, status="cancelled", response_text=run.response_text, error=None, start_next=False)
     db.refresh(run)
     append_event_once(
         db,
@@ -515,11 +631,31 @@ def cancel_run(db: Session, user_id: str, run_id: str) -> BrokerChatRun:
         event_type="run_cancelled",
         public_payload={"status": "cancelled"},
     )
+    if cancel_queued:
+        cancel_queued_runs(db, user_id, session_id)
+    else:
+        start_next_queued_run(db, session_id)
+    db.refresh(run)
     return run
 
 
-def run_to_schema(run: BrokerChatRun) -> BrokerChatRunOut:
-    return BrokerChatRunOut.model_validate(run)
+def cancel_queued_runs(db: Session, user_id: str, session_id: str) -> list[BrokerChatRun]:
+    get_owned_session(db, user_id, session_id)
+    cancelled: list[BrokerChatRun] = []
+    for run in list(queued_runs_for_session(db, session_id)):
+        if run.user_id != user_id:
+            continue
+        request_broker_chat_cancel(run.id)
+        cancel_broker_chat_job(run.id)
+        mark_run_terminal(db, run, status="cancelled", response_text=run.response_text, error=None, start_next=False)
+        append_event_once(
+            db,
+            run,
+            event_type="run_cancelled",
+            public_payload={"status": "cancelled", "queued": True},
+        )
+        cancelled.append(run)
+    return cancelled
 
 
 def next_event_sequence(db: Session, run_id: str) -> int:
@@ -619,7 +755,7 @@ def list_events(
         for row in visible_rows
     ]
     return BrokerChatEventsPageOut(
-        run=run_to_schema(run),
+        run=run_to_schema(db, run),
         events=events,
         next_after_sequence=events[-1].sequence if events else after_sequence,
     )
@@ -709,8 +845,10 @@ def mark_run_terminal(
     status: str,
     response_text: str = "",
     error: str | None = None,
+    start_next: bool = True,
 ) -> BrokerChatRun:
     now = utc_now()
+    session_id = run.session_id
     run.status = status
     run.response_text = response_text
     run.error = error
@@ -728,6 +866,9 @@ def mark_run_terminal(
             clear_broker_chat_cancel(run.id)
         except Exception:
             pass
+        if start_next:
+            start_next_queued_run(db, session_id)
+            db.refresh(run)
     return run
 
 
