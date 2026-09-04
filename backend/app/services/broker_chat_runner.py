@@ -52,6 +52,7 @@ from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, 
 from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
 from app.agent_tools.session_memory_tools import SESSION_MEMORY_TOOLS
 from app.agent_tools.skill_tools import SKILL_TOOLS
+from app.agent_harness.extensions_host import extra_tools as extension_tools
 from app.agent_tools.tool_labels import decorate_tool_payload
 from app.agent_harness.compaction import COMPACTION_EVENT, COMPACTION_FAILED_EVENT
 from app.agent_harness.skills import (
@@ -935,6 +936,7 @@ async def _run_broker_chat(run_id: str) -> None:
         )
         if adaptive_workspace:
             tools = [*tools, *WEB_TOOLS]
+            tools = [*tools, *extension_tools(context)]
         tools = [*tools, *mcp_handle.extra_tools]
         skill_overrides: list[dict] = []
         session_instructions = ""
