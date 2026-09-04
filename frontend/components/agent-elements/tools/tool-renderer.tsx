@@ -90,7 +90,12 @@ export const ToolRenderer = memo(function ToolRenderer({
         );
       }
     }
-    return <McpTool part={part} mcpInfo={mcpInfo} chatStatus={chatStatus} />;
+    const labeled = {
+      ...mcpInfo,
+      displayName:
+        (typeof part.displayName === "string" && part.displayName) || mcpInfo.displayName,
+    };
+    return <McpTool part={part} mcpInfo={labeled} chatStatus={chatStatus} />;
   }
 
   // Registry-based generic tools (Read, Grep, Glob, WebFetch, etc.)

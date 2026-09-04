@@ -14,7 +14,22 @@ export interface BrokerChatPreference {
     reasoning_effort?: string | null;
     use_mcp: boolean;
     mcp_server_ids: string[];
+    retry: BrokerChatRetryPolicy;
 }
+
+export interface BrokerChatRetryPolicy {
+    enabled: boolean;
+    max_retries: number;
+    base_delay_seconds: number;
+    max_delay_seconds: number;
+}
+
+export const DEFAULT_BROKER_CHAT_RETRY: BrokerChatRetryPolicy = {
+    enabled: true,
+    max_retries: 3,
+    base_delay_seconds: 2,
+    max_delay_seconds: 12
+};
 
 export interface BrokerChatPreferenceUpdate {
     default_provider?: LlmProvider | null;
@@ -25,6 +40,7 @@ export interface BrokerChatPreferenceUpdate {
     reasoning_effort?: string | null;
     use_mcp: boolean;
     mcp_server_ids: string[];
+    retry?: BrokerChatRetryPolicy;
 }
 
 export type BrokerChatSurface = "broker_chat" | "adaptive_workspace";
@@ -34,8 +50,27 @@ export interface BrokerChatSession {
     user_id: string;
     title: string;
     surface?: BrokerChatSurface;
+    agent_instructions?: string;
     created_at: string;
     updated_at: string;
+}
+
+export interface AgentSkillCatalogItem {
+    id: string;
+    name: string;
+    description: string;
+    triggers: string[];
+    tools: string[];
+    version: number;
+    source: string;
+    enabled: boolean;
+}
+
+export interface AgentSkillPref {
+    skill_id: string;
+    enabled: boolean;
+    markdown?: string | null;
+    updated_at?: string | null;
 }
 
 export interface BrokerChatRun {
@@ -53,11 +88,14 @@ export interface BrokerChatRun {
     include_tool_outputs: boolean;
     include_reasoning: boolean;
     metadata_json: string;
+    evidence_json?: string;
     queued_at: string;
     started_at?: string | null;
     completed_at?: string | null;
     created_at: string;
     updated_at: string;
+    /** 1-based position among queued runs in the session; null when not queued. */
+    queue_position?: number | null;
 }
 
 export interface BrokerChatSubmitRequest {

@@ -144,6 +144,44 @@ def test_unavailable_metadata_is_retried_only_after_backoff(monkeypatch):
     assert second[0].company_name == "Reliance"
 
 
+def test_hollow_metadata_retries_after_short_backoff(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    now = datetime.utcnow()
+    cached = AlphaSymbolMetadataCache(
+        symbol="TCS",
+        company_name=None,
+        logo=None,
+        raw_payload_json=json.dumps({"symbol": "TCS"}),
+        fetched_at=now - timedelta(minutes=20),
+        created_at=now - timedelta(minutes=20),
+        updated_at=now - timedelta(minutes=20),
+    )
+    db.add(cached)
+    db.commit()
+    calls: list[list[str]] = []
+    monkeypatch.setattr(alpha_symbols.alpha_config, "get_alpha_api_key", lambda *_args: "test-key")
+    monkeypatch.setattr(
+        alpha_symbols,
+        "_fetch_alpha_symbol_metadata",
+        lambda _api_key, requested: calls.append(list(requested))
+        or [
+            alpha_symbols._payload_to_schema(
+                {"symbol": "TCS", "company_name": "Tata Consultancy", "logo": "https://example/logo.png"},
+                "TCS",
+            )
+        ],
+    )
+
+    rows = alpha_symbols.get_symbol_metadata(db, "u1", ["TCS"])
+    db.close()
+
+    assert calls == [["TCS"]]
+    assert rows[0].company_name == "Tata Consultancy"
+    assert rows[0].logo == "https://example/logo.png"
+
+
 def test_invalidating_unavailable_metadata_preserves_valid_rows():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)

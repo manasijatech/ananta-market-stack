@@ -3,7 +3,7 @@
 import { BookOpen } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { createBrokerAccount } from "@/service/actions/broker";
 import { parseActionError } from "@/components/brokers/action-error";
@@ -34,6 +34,7 @@ type ArrowStreamMode = "standard" | "hft";
 type AngelMode = "manual" | "automation";
 type DhanMode = "consent" | "automation";
 type GrowwMode = "approval" | "totp" | "token";
+type IndmoneyMode = "totp" | "token";
 type KotakMode = "manual" | "automation";
 
 const fallbackBrokerRedirectUrl = "http://localhost:3000/broker-connections";
@@ -60,6 +61,7 @@ function makePayload(
     angelMode: AngelMode,
     dhanMode: DhanMode,
     growwMode: GrowwMode,
+    indmoneyMode: IndmoneyMode,
     kotakMode: KotakMode,
     defaultBrokerRedirectUrl: string
 ): CreateBrokerAccountPayload {
@@ -138,7 +140,10 @@ function makePayload(
             return {
                 broker,
                 label,
-                access_token: nullableField(formData, "access_token")
+                access_token: indmoneyMode === "token" ? nullableField(formData, "access_token") : null,
+                client_id: indmoneyMode === "totp" ? nullableField(formData, "client_id") : null,
+                mpin: indmoneyMode === "totp" ? nullableField(formData, "mpin") : null,
+                totp_secret: indmoneyMode === "totp" ? nullableField(formData, "totp_secret") : null
             };
     }
 }
@@ -358,8 +363,10 @@ export function AddBrokerForm({
     const [angelMode, setAngelMode] = useState<AngelMode>("manual");
     const [dhanMode, setDhanMode] = useState<DhanMode>("consent");
     const [growwMode, setGrowwMode] = useState<GrowwMode>("approval");
+    const [indmoneyMode, setIndmoneyMode] = useState<IndmoneyMode>("totp");
     const [kotakMode, setKotakMode] = useState<KotakMode>("manual");
     const [isPending, startTransition] = useTransition();
+    const submittingRef = useRef(false);
     const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
     const [message, setMessage] = useState("");
     const [defaultBrokerRedirectUrl, setDefaultBrokerRedirectUrl] = useState(fallbackBrokerRedirectUrl);
@@ -373,6 +380,9 @@ export function AddBrokerForm({
 
     function onSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        if (isPending || submittingRef.current) {
+            return;
+        }
         const formData = new FormData(event.currentTarget);
         const payload = makePayload(
             broker,
@@ -383,11 +393,13 @@ export function AddBrokerForm({
             angelMode,
             dhanMode,
             growwMode,
+            indmoneyMode,
             kotakMode,
             defaultBrokerRedirectUrl
         );
         setFieldErrors({});
         setMessage("");
+        submittingRef.current = true;
 
         startTransition(async () => {
             try {
@@ -401,6 +413,8 @@ export function AddBrokerForm({
                 setMessage(parsed.message);
                 setFieldErrors(parsed.fieldErrors);
                 toast.error(parsed.message || `Could not add ${selectedName}.`);
+            } finally {
+                submittingRef.current = false;
             }
         });
     }
@@ -814,13 +828,18 @@ export function AddBrokerForm({
                                 ) : null}
 
                                 {broker === "indmoney" ? (
-                                    <BrokerField
-                                        description={fieldDescription("access_token")}
-                                        error={fieldErrors.access_token}
-                                        label="Access token"
-                                        name="access_token"
-                                        type="password"
-                                    />
+                                    <>
+                                        <BrokerModeSwitch
+                                            modes={[{ value: "totp", label: "Daily TOTP" }, { value: "token", label: "Manual token" }]}
+                                            onChange={setIndmoneyMode}
+                                            value={indmoneyMode}
+                                        />
+                                        {indmoneyMode === "totp" ? <>
+                                            <BrokerField description="Static Client ID shown after INDstocks TOTP setup." error={fieldErrors.client_id} label="Client ID" name="client_id" />
+                                            <BrokerField description="INDmoney account MPIN; encrypted at rest." error={fieldErrors.mpin} label="MPIN" name="mpin" type="password" />
+                                            <BrokerField description="Base32 secret saved during INDstocks TOTP enrollment; encrypted at rest." error={fieldErrors.totp_secret} label="TOTP secret" name="totp_secret" type="password" />
+                                        </> : <BrokerField description={fieldDescription("access_token")} error={fieldErrors.access_token} label="Access token" name="access_token" type="password" />}
+                                    </>
                                 ) : null}
                             </FieldGroup>
 

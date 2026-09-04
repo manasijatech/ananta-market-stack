@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.schemas.system_config import AlphaApiConfigOut, AlphaApiCredentialUpsertIn
 from app.services import rbac
 from app.services.alpha_websocket import fetch_alpha_account
-from broker.crypto import decrypt_value_or_none, encrypt_value
+from broker.crypto import decrypt_value, decrypt_value_or_none, encrypt_value
 from db.models import UserAlphaApiCredential
 
 

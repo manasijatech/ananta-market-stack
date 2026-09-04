@@ -180,10 +180,10 @@ Note: Angel auth requirements have evolved over time; keep SmartAPI policy chang
 
 ### Current repo flow
 
-- Manual only in this repo.
-- Create account without token if needed.
-- When the user generates a new portal token, call:
-  - `POST /api/v1/broker-accounts/{account_id}/sessions/indmoney`
+- Manual mode: store an access token at creation or with `POST /api/v1/broker-accounts/{account_id}/sessions/indmoney`.
+- TOTP mode: store INDstocks Client ID, MPIN, and base32 TOTP secret at creation. They are encrypted at rest.
+- Ananta generates at most one TOTP token in its daily maintenance pass and reuses it for its 24-hour lifetime. A user can explicitly refresh with `POST /api/v1/broker-accounts/{account_id}/sessions/indmoney/refresh`.
+- Do not use another process to call INDstocks `/generate/token` for the same account: a successful generation invalidates the prior TOTP token.
 
 The repo also emits notifications when the token is missing or expired.
 

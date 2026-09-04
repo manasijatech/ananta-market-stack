@@ -21,10 +21,11 @@ from app.schemas.live_heatmap import (
     HeatmapSymbolOut,
 )
 from app.services import alerts as alert_svc
+from app.services import alpha_symbols
 from app.services import broker_accounts, broker_data, broker_data_preferences, watchlists as watchlist_svc
 from app.services.live_price_scope import publish_scope_change
 from broker.core.redis_cache import _redis_client
-from db.models import AlphaSymbolMetadataCache, AlphaWebSocketEvent, BrokerAccount, LiveSymbolSubscription
+from db.models import AlphaWebSocketEvent, BrokerAccount, LiveSymbolSubscription
 
 HeatmapScope = Literal["tracked", "watchlist", "portfolio_holdings"]
 _TRANSIENT_TRACKED_UI_SOURCE_TYPES = {"heatmap", "symbol_search"}
@@ -184,10 +185,15 @@ def _load_redis_quotes(
     return quotes
 
 
-def _metadata_by_symbol(db: Session, symbols: list[str]) -> dict[str, AlphaSymbolMetadataCache]:
+def _metadata_by_symbol(db: Session, user_id: str, symbols: list[str]) -> dict[str, Any]:
+    """Resolve logos/names/sectors via the shared Alpha metadata cache (with backfill)."""
     if not symbols:
         return {}
-    rows = db.scalars(select(AlphaSymbolMetadataCache).where(AlphaSymbolMetadataCache.symbol.in_(symbols))).all()
+    try:
+        rows = alpha_symbols.get_symbol_metadata(db, user_id, symbols)
+    except Exception:
+        # Heatmap quotes should still render even if Drishti metadata is unavailable.
+        return {}
     return {row.symbol: row for row in rows}
 
 
@@ -745,7 +751,7 @@ def get_live_heatmap(
     )
     limited_rows = quote_rows[:limit]
     symbols = [row.symbol for row, _ in limited_rows]
-    metadata_map = _metadata_by_symbol(db, symbols)
+    metadata_map = _metadata_by_symbol(db, user_id, symbols)
     alpha_events_map = _alpha_events_by_symbol(db, user_id=user_id, symbols=symbols, days=days)
 
     items: list[HeatmapSymbolOut] = []

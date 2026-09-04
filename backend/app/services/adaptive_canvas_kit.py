@@ -12,7 +12,7 @@ from typing import Any
 
 CANVAS_KINDS = ("briefing", "timeline", "snapshot", "comparison", "movers", "notes")
 
-CANVAS_KIT_VERSION = "2"
+CANVAS_KIT_VERSION = "4"
 
 _STYLE_TAG_RE = re.compile(r"<style\b[^>]*>.*?</style>", re.I | re.S)
 _STYLE_ATTR_RE = re.compile(r"\sstyle\s*=\s*(['\"]).*?\1", re.I | re.S)
@@ -57,6 +57,12 @@ ALLOWED_CLASSES = frozenset(
         "aw-bar__fill",
         "aw-rule",
         "aw-lead",
+        "aw-fold",
+        "aw-chart",
+        "aw-tabs",
+        "aw-tab",
+        "aw-panel",
+        "aw-mark",
     }
 )
 
@@ -69,6 +75,64 @@ CANVAS_THEME_SCRIPT = (
     "apply(document.documentElement.getAttribute('data-theme')||'dark');"
     "window.addEventListener('message',function(e){"
     "if(!e.data||e.data.type!=='aw-theme')return;apply(e.data.theme);});})();"
+)
+
+CANVAS_INTERACT_SCRIPT = (
+    "(function(){function spark(el){var pts=[];try{pts=JSON.parse(el.getAttribute('data-aw-spark')||'[]')}"
+    "catch(e){return}if(!pts.length)return;var w=Math.max(240,el.clientWidth||320),h=Math.max(120,el.clientHeight||140);"
+    "var xs=pts.map(function(p){return +p[0]}),ys=pts.map(function(p){return +p[1]});"
+    "var minX=Math.min.apply(null,xs),maxX=Math.max.apply(null,xs),minY=Math.min.apply(null,ys),maxY=Math.max.apply(null,ys);"
+    "var dx=maxX-minX||1,dy=maxY-minY||1;"
+    "function xy(p){return [(p[0]-minX)/dx*(w-20)+10,h-14-(p[1]-minY)/dy*(h-28)];}"
+    "var d=pts.map(function(p,i){var c=xy(p);return (i?'L':'M')+c[0].toFixed(1)+','+c[1].toFixed(1)}).join(' ');"
+    "var ns='http://www.w3.org/2000/svg';var svg=document.createElementNS(ns,'svg');"
+    "svg.setAttribute('viewBox','0 0 '+w+' '+h);svg.setAttribute('width','100%');svg.setAttribute('height',String(h));"
+    "var path=document.createElementNS(ns,'path');path.setAttribute('d',d);path.setAttribute('fill','none');"
+    "path.setAttribute('stroke','var(--aw-gold)');path.setAttribute('stroke-width','2');svg.appendChild(path);"
+    "var marks=[];try{marks=JSON.parse(el.getAttribute('data-aw-marks')||'[]')}catch(e){}"
+    "marks.forEach(function(m){var t=+m.t||+m[0],v=+m.v||+m[1];var c=xy([t,v]);"
+    "var cir=document.createElementNS(ns,'circle');cir.setAttribute('cx',c[0]);cir.setAttribute('cy',c[1]);"
+    "cir.setAttribute('r','4');cir.setAttribute('fill','var(--aw-gold)');svg.appendChild(cir);"
+    "var tx=document.createElementNS(ns,'text');tx.setAttribute('x',c[0]+6);tx.setAttribute('y',c[1]-6);"
+    "tx.setAttribute('fill','var(--aw-fg)');tx.setAttribute('font-size','10');tx.textContent=m.label||m[2]||'';"
+    "svg.appendChild(tx);});el.innerHTML='';el.appendChild(svg);}"
+    "function tabs(root){var btns=[].slice.call(root.querySelectorAll('[data-aw-tab]'));"
+    "var panels=[].slice.call(root.querySelectorAll('[data-aw-panel]'));"
+    "function show(id){btns.forEach(function(b){b.setAttribute('aria-selected',String(b.getAttribute('data-aw-tab')===id));});"
+    "panels.forEach(function(p){p.hidden=p.getAttribute('data-aw-panel')!==id;});}"
+    "btns.forEach(function(b){b.addEventListener('click',function(){show(b.getAttribute('data-aw-tab'));});});"
+    "if(btns[0])show(btns[0].getAttribute('data-aw-tab'));}"
+    "document.querySelectorAll('[data-aw-spark]').forEach(spark);"
+    "document.querySelectorAll('[data-aw-tabs]').forEach(tabs);})();"
+)
+
+# Parent posts {type:'aw-ltp', ticks:[{exchange,symbol,ltp,chgPct,live}]}. Iframe never opens a WebSocket.
+CANVAS_LTP_SCRIPT = (
+    "(function(){function fmt(n){if(n==null||!isFinite(n))return'\\u2014';"
+    "try{return new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n)}catch(e){return String(n)}}"
+    "function chg(n){if(n==null||!isFinite(n))return null;var s=n>0?'+':n<0?'\\u2212':'';"
+    "return s+Math.abs(n).toFixed(2)+'%'}function tone(n){if(n==null||!isFinite(n)||n===0)return'flat';"
+    "return n>0?'up':'down'}function paint(el,tick){var kind=(el.getAttribute('data-kind')||'both');"
+    "var sym=el.getAttribute('data-symbol')||'';var ltp=tick&&tick.ltp!=null?+tick.ltp:+el.getAttribute('data-ltp');"
+    "var pct=tick&&tick.chgPct!=null?+tick.chgPct:+el.getAttribute('data-chg-pct');"
+    "if(!isFinite(ltp))ltp=null;if(!isFinite(pct))pct=null;var live=!!(tick&&tick.live);"
+    "var t=tone(pct);el.setAttribute('data-move',t);el.setAttribute('data-live',live?'1':'0');"
+    "var parts=[];"
+    "if(kind!=='chgPct')parts.push('<span class=\"ananta-ltp__ltp\">'+fmt(ltp)+'</span>');"
+    "var c=chg(pct);if(kind!=='ltp'&&c)parts.push('<span class=\"ananta-ltp__chg\">('+c+')</span>');"
+    "if(!parts.length)parts.push('<span class=\"ananta-ltp__ltp\">\\u2014</span>');"
+    "el.innerHTML=parts.join(' ');"
+    "var asOf=el.getAttribute('data-as-of');el.title=sym+(live?' \\u00b7 live':(asOf?(' \\u00b7 as of '+asOf):''));"
+    "el.setAttribute('aria-label',[sym,ltp!=null?fmt(ltp)+' rupees':'',c||'',live?'live':(asOf||'')].filter(Boolean).join(', '));}"
+    "function all(){return [].slice.call(document.querySelectorAll('ananta-ltp'));}"
+    "function boot(){all().forEach(function(el){paint(el,null);});}"
+    "window.addEventListener('message',function(e){if(!e.data||e.data.type!=='aw-ltp')return;"
+    "var ticks=e.data.ticks||[];var map={};ticks.forEach(function(t){"
+    "if(!t||!t.symbol)return;var ex=(t.exchange||'NSE').toUpperCase();var sy=String(t.symbol).toUpperCase();"
+    "map[ex+':'+sy]=t;map[sy]=t;});"
+    "all().forEach(function(el){var ex=(el.getAttribute('data-exchange')||'NSE').toUpperCase();"
+    "var sy=(el.getAttribute('data-symbol')||'').toUpperCase();paint(el,map[ex+':'+sy]||map[sy]||null);});});"
+    "if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();})();"
 )
 
 CANVAS_KIT_CSS = """
@@ -264,6 +328,51 @@ html, body {
   background: var(--aw-gold);
   border-radius: 99px;
 }
+details.aw-fold {
+  border: 1px solid var(--aw-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--aw-surface);
+}
+details.aw-fold + details.aw-fold { margin-top: 8px; }
+details.aw-fold > summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--aw-fg);
+}
+.aw-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.aw-tab {
+  appearance: none;
+  border: 1px solid var(--aw-line);
+  background: transparent;
+  color: var(--aw-muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.aw-tab[aria-selected="true"] {
+  background: var(--aw-gold);
+  border-color: var(--aw-gold);
+  color: var(--aw-gold-ink);
+}
+.aw-panel { margin-top: 10px; }
+.aw-chart { width: 100%; min-height: 140px; }
+ananta-ltp {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  white-space: nowrap;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  vertical-align: baseline;
+}
+ananta-ltp[data-move="up"] { color: var(--aw-up); }
+ananta-ltp[data-move="down"] { color: var(--aw-down); }
+ananta-ltp[data-move="flat"], ananta-ltp:not([data-move]) { color: var(--aw-muted); }
+ananta-ltp[data-live="0"] { opacity: 0.92; }
+ananta-ltp .ananta-ltp__sym { font-family: inherit; letter-spacing: -0.02em; }
+ananta-ltp .ananta-ltp__ltp, ananta-ltp .ananta-ltp__chg { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em; }
 """.strip()
 
 CANVAS_CLASS_CATALOG: list[dict[str, str]] = [
@@ -284,6 +393,9 @@ CANVAS_CLASS_CATALOG: list[dict[str, str]] = [
     {"class": "aw-split", "use": "Two purposeful columns (e.g. activity | earnings)."},
     {"class": "aw-bar*", "use": "Simple proportion bar. Fill width via inline style ONLY on aw-bar__fill as width:N%."},
     {"class": "aw-rule", "use": "Hairline divider."},
+    {"class": "aw-fold", "use": "Put on <details> for an accordion section. Pair with <summary>."},
+    {"class": "aw-tabs / aw-tab / aw-panel", "use": "Tab strip: wrap in data-aw-tabs; buttons data-aw-tab=id; panels data-aw-panel=id."},
+    {"class": "aw-chart", "use": "Sparkline host. data-aw-spark='[[t,v],...]' and optional data-aw-marks='[{\"t\":t,\"v\":v,\"label\":\"Buy\"}]'."},
 ]
 
 CANVAS_KIND_GUIDE: dict[str, str] = {
@@ -360,17 +472,23 @@ def wrap_canvas_document(body_html: str) -> str:
     if not re.search(r"class=['\"][^'\"]*\baw\b", inner):
         inner = f'<div class="aw">{inner}</div>'
     css = CANVAS_KIT_CSS.replace("</", "<\\/")
-    script = CANVAS_THEME_SCRIPT.replace("</", "<\\/")
+    theme = CANVAS_THEME_SCRIPT.replace("</", "<\\/")
+    interact = CANVAS_INTERACT_SCRIPT.replace("</", "<\\/")
+    ltp = CANVAS_LTP_SCRIPT.replace("</", "<\\/")
     return (
         '<!DOCTYPE html><html class="dark" data-theme="dark"><head><meta charset="utf-8"/>'
         '<meta name="color-scheme" content="light dark"/>'
-        f"<style>{css}</style><script>{script}</script></head><body>{inner}</body></html>"
+        f"<style>{css}</style><script>{theme}</script></head><body>{inner}"
+        f"<script>{interact}</script><script>{ltp}</script></body></html>"
     )
 
 
 def prepare_canvas_html(document: str) -> str:
+    from app.services.live_ltp_island import prepare_live_ltp_in_html
+
     body = extract_canvas_body(document)
     body = strip_agent_css(body)
+    body = prepare_live_ltp_in_html(body)
     body = filter_unknown_classes(body)
     if not body.strip():
         raise ValueError("document is empty after sanitization")
@@ -410,8 +528,9 @@ def authoring_canvas_docs() -> dict[str, Any]:
             "Exception: aw-bar__fill may use style='width:NN%'.",
             "No emoji, gradients, box-shadows, or rainbow date pills.",
             "One purpose per canvas. Add a second html-artifact for a second purpose.",
+            "Use details.aw-fold, data-aw-tabs, and aw-chart sparklines to group information. Do not emit six identical KPI stacks.",
             "Call workspace_get_current, then workspace_update_html_artifact(component_id) to evolve an existing canvas.",
-            "Live quotes/charts/feeds stay on first-party widgets, not in HTML.",
+            "Desk live quotes/charts/feeds stay on first-party widgets. For inline spot LTP in chat or Canvas HTML, emit {{ltp:NSE:SYMBOL|ltp=…|chgPct=…|asOf=…}} (host hydrates; max 24). Historic/as-of narrative stays plain text. Mark trades on quote-chart props.markers.",
         ],
         "example": (
             "<div class='aw'><div class='aw-stack'>"

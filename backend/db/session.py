@@ -225,6 +225,9 @@ def _apply_sqlite_schema_patches() -> None:
             conn,
             "broker_indmoney_credentials",
             {
+                "client_id_cipher": "TEXT",
+                "mpin_cipher": "TEXT",
+                "totp_secret_cipher": "TEXT",
                 "access_token_generated_at": "DATETIME",
                 "access_token_expires_at": "DATETIME",
             },
@@ -313,8 +316,16 @@ def _apply_sqlite_schema_patches() -> None:
                 "reasoning_effort": "VARCHAR(16)",
                 "use_mcp": "BOOLEAN DEFAULT 0",
                 "mcp_server_ids_json": "TEXT DEFAULT '[]'",
+                "retry_json": "TEXT DEFAULT '{}'",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",
+            },
+        )
+        _ensure_table_columns(
+            conn,
+            "broker_chat_runs",
+            {
+                "evidence_json": "TEXT DEFAULT '{}'",
             },
         )
         _ensure_table_columns(

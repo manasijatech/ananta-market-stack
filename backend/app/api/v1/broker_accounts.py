@@ -627,9 +627,26 @@ def session_indmoney(
     db: Session = Depends(get_db),
     principal: rbac.Principal = Depends(get_current_principal),
 ) -> VerifyOut:
-    """**Update INDmoney session token manually.**"""
+    """**Store a manual INDmoney token or generate one from a supplied TOTP code.**"""
     acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
     if acc.broker_code != "indmoney":
         raise HTTPException(status_code=400, detail="account is not indmoney")
-    ok, err = bs_svc.update_indmoney_access_token(db, acc, body.access_token)
+    if body.access_token and body.access_token.strip():
+        ok, err = bs_svc.update_indmoney_access_token(db, acc, body.access_token.strip())
+    else:
+        ok, err = bs_svc.refresh_indmoney_session(db, acc, body.totp)
+    return build_verify_out(db, acc, ok, err or "")
+
+
+@router.post("/{account_id}/sessions/indmoney/refresh", response_model=VerifyOut)
+def refresh_indmoney_session(
+    account_id: str,
+    db: Session = Depends(get_db),
+    principal: rbac.Principal = Depends(get_current_principal),
+) -> VerifyOut:
+    """**Generate a fresh INDmoney token using the stored TOTP secret.**"""
+    acc = _get_account(db, principal, account_id, rbac.BROKER_MANAGE_SESSIONS)
+    if acc.broker_code != "indmoney":
+        raise HTTPException(status_code=400, detail="account is not indmoney")
+    ok, err = bs_svc.refresh_indmoney_session(db, acc)
     return build_verify_out(db, acc, ok, err or "")

@@ -5,10 +5,8 @@ import { cache } from "react";
 import { auth } from "@/lib/auth";
 import { getInternalApiBaseUrl, getPublicApiBaseUrl } from "@/lib/runtime-config";
 
-const apiBaseUrl = getInternalApiBaseUrl();
-const fallbackApiBaseUrl = getPublicApiBaseUrl();
-
-function absoluteFallbackApiBaseUrl(): string | null {
+function absoluteFallbackApiBaseUrl(apiBaseUrl: string): string | null {
+    const fallbackApiBaseUrl = getPublicApiBaseUrl();
     if (fallbackApiBaseUrl === apiBaseUrl) {
         return null;
     }
@@ -22,10 +20,12 @@ function absoluteFallbackApiBaseUrl(): string | null {
 }
 
 async function fetchBackend(path: string, init: RequestInit): Promise<Response> {
+    // Resolve per request so a port/env change does not stick to a stale module-level URL.
+    const apiBaseUrl = getInternalApiBaseUrl();
     try {
         return await fetch(`${apiBaseUrl}${path}`, init);
     } catch (error) {
-        const fallback = absoluteFallbackApiBaseUrl();
+        const fallback = absoluteFallbackApiBaseUrl(apiBaseUrl);
         if (!(error instanceof TypeError) || init.signal?.aborted || !fallback) {
             throw error;
         }

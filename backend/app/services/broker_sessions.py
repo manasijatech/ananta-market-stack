@@ -22,6 +22,7 @@ from broker.arrow import auth as arrow_auth
 from broker.crypto import decrypt_value, encrypt_value
 from broker.dhan import auth as dhan_auth
 from broker.groww import auth as groww_auth
+from broker.indmoney import auth as indmoney_auth
 from broker.kotak import auth as kotak_auth
 from broker.upstox import auth as upstox_auth
 from broker.zerodha import auth as zerodha_auth
@@ -106,7 +107,7 @@ def _session_action_message(acc: BrokerAccount, detail: str | None = None) -> st
         "dhan": "Dhan login is not complete. Open the broker account and click Login with Dhan to activate this session.",
         "angel": "Angel One session is not active. Open the broker account and enter client code, PIN, and TOTP to activate it.",
         "groww": "Groww session is not active. Open the broker account and run automatic refresh, or use the manual Groww fallback.",
-        "indmoney": "INDmoney token is not active. Open the broker account and paste a fresh INDmoney access token.",
+        "indmoney": "INDmoney token is not active. Open the broker account to generate a token with TOTP or paste a fresh access token.",
         "kotak": "Kotak Neo session is not active. Open the broker account and enter mobile number, TOTP, and MPIN to activate it.",
     }
     base = messages.get(acc.broker_code, f"{broker_label} session is not active. Open the broker account to activate it.")
@@ -403,20 +404,23 @@ def get_broker_session_status(acc: BrokerAccount) -> BrokerSessionStatusOut:
         if not row:
             raise ValueError("missing indmoney credentials")
         access_token = decrypt_value(row.access_token_cipher)
+        has_totp = bool(row.client_id_cipher and row.mpin_cipher and row.totp_secret_cipher)
         return BrokerSessionStatusOut(
             broker=code,
             account_id=acc.id,
             session_active=bool(access_token) and _is_active(row.access_token_expires_at),
-            automation_supported=False,
-            automation_enabled=False,
+            automation_supported=True,
+            automation_enabled=has_totp,
+            automation_mode=acc.automation_mode,
             has_access_token=bool(access_token),
             token_generated_at=row.access_token_generated_at,
             token_expires_at=row.access_token_expires_at,
-            fields_required=["access_token"],
+            fields_required=[] if has_totp else ["access_token or client_id+mpin+totp_secret"],
             guidance=(
-                "INDmoney remains a manual portal token flow with IP whitelisting requirements. "
-                "When the token expires, prompt the user to generate a new token from the "
-                "broker portal and submit it through POST /sessions/indmoney."
+                "INDmoney TOTP automation is configured. Ananta generates one token per day and reuses it; "
+                "do not run token generation concurrently from another machine."
+                if has_totp
+                else "INDmoney needs a portal access token, or Client ID, MPIN, and TOTP secret for daily automation."
             ),
         )
 
@@ -770,6 +774,26 @@ def update_indmoney_access_token(db: Session, acc: BrokerAccount, access_token: 
     return True, ""
 
 
+def refresh_indmoney_session(db: Session, acc: BrokerAccount, totp: str | None = None) -> tuple[bool, str]:
+    row = acc.indmoney
+    if not row or not row.client_id_cipher or not row.mpin_cipher or not row.totp_secret_cipher:
+        return False, "INDmoney TOTP automation needs client_id, mpin, and totp_secret"
+    try:
+        totp_value = (totp or _totp(decrypt_value(row.totp_secret_cipher))).strip()
+    except Exception as exc:
+        return False, f"invalid INDmoney totp_secret: {exc}"
+    if len(totp_value) != 6 or not totp_value.isdigit():
+        return False, "INDmoney TOTP must be a current 6-digit code"
+    token, err = indmoney_auth.generate_access_token(
+        client_id=decrypt_value(row.client_id_cipher),
+        mpin=decrypt_value(row.mpin_cipher),
+        totp=totp_value,
+    )
+    if err or not token:
+        return False, err or "INDmoney token generation failed"
+    return update_indmoney_access_token(db, acc, token)
+
+
 def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
     code = acc.broker_code
     if code == "arrow":
@@ -853,8 +877,16 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
 
     if code == "indmoney":
         status = get_broker_session_status(acc)
+        if acc.automation_enabled and not status.session_active and acc.session_status != "action_required":
+            ok, msg = refresh_indmoney_session(db, acc)
+            if ok:
+                return
+            status = get_broker_session_status(acc)
+            detail = msg
+        else:
+            detail = status.guidance
         if not status.session_active:
-            user_message = _session_action_message(acc, status.guidance)
+            user_message = _session_action_message(acc, detail)
             _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=user_message)
             _create_notification_once_per_day(
                 db,
@@ -862,7 +894,7 @@ def process_account_maintenance(db: Session, acc: BrokerAccount) -> None:
                 account_id=acc.id,
                 broker_code=code,
                 kind="session_action_required",
-                title=f"{acc.label}: INDmoney token update required",
+                title=f"{acc.label}: INDmoney session update required",
                 message=user_message,
                 level="warning",
             )
@@ -973,6 +1005,54 @@ def run_expiring_arrow_maintenance_once() -> None:
         db.close()
 
 
+def run_expiring_indmoney_maintenance_once() -> None:
+    """Renew INDmoney TOTP tokens before their 24-hour expiry.
+
+    This runs frequently so a token first issued after the daily pass is still
+    renewed before it expires. A failure becomes action-required rather than
+    being retried on every maintenance loop, protecting the provider's TOTP
+    lockout budget.
+    """
+    db = SessionLocal()
+    try:
+        accounts = list(
+            db.scalars(
+                select(BrokerAccount).where(
+                    BrokerAccount.is_active.is_(True),
+                    BrokerAccount.broker_code == "indmoney",
+                    BrokerAccount.automation_enabled.is_(True),
+                )
+            ).all()
+        )
+        retry_before = _now_utc() + timedelta(hours=1)
+        for acc in accounts:
+            if acc.session_status == "action_required":
+                continue
+            status = get_broker_session_status(acc)
+            expires_at = _as_utc(status.token_expires_at)
+            if not status.session_active or expires_at is None or expires_at <= retry_before:
+                # The INDstocks API allows only one generation per 60 seconds;
+                # only issue near expiry, then persist the new 24-hour token.
+                ok, message = refresh_indmoney_session(db, acc)
+                if not ok:
+                    user_message = _session_action_message(acc, message)
+                    _set_session_state(acc, status="action_required", expires_at=status.token_expires_at, error=user_message)
+                    _create_notification_once_per_day(
+                        db,
+                        user_id=acc.user_id,
+                        account_id=acc.id,
+                        broker_code="indmoney",
+                        kind="session_refresh_failed",
+                        title=f"{acc.label}: INDmoney session refresh failed",
+                        message=user_message,
+                        level="warning",
+                    )
+                    db.add(acc)
+                    db.commit()
+    finally:
+        db.close()
+
+
 def run_daily_maintenance_once() -> None:
     global _last_maintenance_date
     now_ist = datetime.now(tz=IST)
@@ -1076,6 +1156,10 @@ async def maintenance_loop(stop_event: asyncio.Event) -> None:
             pass
         try:
             run_expiring_arrow_maintenance_once()
+        except Exception:
+            pass
+        try:
+            run_expiring_indmoney_maintenance_once()
         except Exception:
             pass
         try:

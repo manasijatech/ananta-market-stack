@@ -175,8 +175,9 @@ Root `GET /health` duplicates a minimal liveness check (for load balancers).
 | POST | `/broker-accounts/{id}/sessions/kotak/refresh` | Automated Kotak refresh using stored mobile + MPIN + TOTP secret |
 | GET | `/broker-accounts/{id}/sessions/groww` | Session status / automation readiness |
 | POST | `/broker-accounts/{id}/sessions/groww` | Refresh Groww token via approval flow, TOTP flow, or manual token submit |
-| GET | `/broker-accounts/{id}/sessions/indmoney` | Session status / manual token guidance |
-| POST | `/broker-accounts/{id}/sessions/indmoney` | Store refreshed INDmoney access token |
+| GET | `/broker-accounts/{id}/sessions/indmoney` | Session status / manual-token or TOTP guidance |
+| POST | `/broker-accounts/{id}/sessions/indmoney` | Store manual token or generate one from a supplied TOTP |
+| POST | `/broker-accounts/{id}/sessions/indmoney/refresh` | Generate a token from stored INDmoney TOTP credentials |
 
 ### Notifications
 
@@ -279,7 +280,7 @@ SQLite instrument cache tables:
 - **Migrations**: Alembic is now scaffolded in `alembic/`. Existing databases should be stamped to the baseline revision first, then future schema changes should use generated revisions instead of only runtime patching.
 - **Token maintenance**: a lightweight in-process maintenance loop checks broker sessions daily after **06:30 IST**, attempts broker-supported refresh paths, and emits notifications for manual re-auth flows. Use `/broker-accounts/maintenance/run` to trigger the same logic on demand.
 - **Instrument maintenance**: a separate daily sync pass runs after **08:30 IST** and refreshes instrument metadata into SQLite once per broker per day.
-- **Broker chat worker**: start `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat` to process `/broker-chat/runs` jobs from RQ.
+- **Broker chat worker**: start `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat` to process `/broker-chat/runs` jobs from RQ. One process starts `BROKER_CHAT_WORKER_COUNT` (default 4) workers so distinct sessions can run concurrently.
 - **Alert workers**: start these separately when you need live alerting:
   - `PYTHONPATH=. ./venv/bin/python -m app.workers.live_market_data`
   - `PYTHONPATH=. ./venv/bin/python -m app.workers.alert_evaluator`

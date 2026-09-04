@@ -357,3 +357,24 @@ def test_backfill_skips_missing_snapshots_table():
         surface = conn.execute(text("SELECT surface FROM broker_chat_sessions WHERE id = 's1'")).scalar_one()
 
     assert surface == "broker_chat"
+
+
+def test_preference_includes_retry_defaults():
+    db = _db()
+    preference = chat_svc.get_preference(db, "user-1")
+
+    assert preference.retry.enabled is True
+    assert preference.retry.max_retries == 3
+
+
+def test_preference_retry_json_is_clamped_on_read():
+    db = _db()
+    pref = chat_svc.get_or_create_preference(db, "user-1")
+    pref.retry_json = chat_svc.json_dumps({"enabled": True, "max_retries": 99, "provider_max_retries": 4})
+    db.add(pref)
+    db.commit()
+
+    preference = chat_svc.preference_to_schema(db, pref)
+
+    assert preference.retry.max_retries == 8
+    assert preference.retry.enabled is True

@@ -82,7 +82,7 @@ import {
     type MarketIntelligenceHasMore,
     type WatchlistCoverageGroup
 } from "@/components/market-intelligence/market-intelligence-data";
-import { itemKey } from "@/components/market-intelligence/market-intelligence-utils";
+import { itemKey, collectSymbolsFromFeeds, isUsableSymbolMetadata, mergeSymbolMetadataMaps } from "@/components/market-intelligence/market-intelligence-utils";
 
 const sectionChrome = {
     news: {
@@ -163,6 +163,14 @@ function metadataBySymbol(items: AlphaSymbolMetadata[]) {
     }, {});
 }
 
+function applyMetadataUpdate(
+    current: Record<string, AlphaSymbolMetadata>,
+    incoming: AlphaSymbolMetadata[] | Record<string, AlphaSymbolMetadata>
+) {
+    const mapped = Array.isArray(incoming) ? metadataBySymbol(incoming) : incoming;
+    return mergeSymbolMetadataMaps(current, mapped);
+}
+
 function instrumentFromSearch(row: InstrumentSearchRow): InstrumentRef {
     return {
         symbol: row.symbol,
@@ -218,6 +226,35 @@ function isEquitySearchRow(row: InstrumentSearchRow): boolean {
     if (segment && DERIVATIVE_SEGMENT_PATTERN.test(segment)) return false;
 
     return true;
+}
+
+function equitySearchRank(row: InstrumentSearchRow): number {
+    const exchange = row.exchange?.trim().toUpperCase() || "";
+    if (exchange === "NSE") return 0;
+    if (exchange === "BSE") return 1;
+    return 2;
+}
+
+function rankMarketIntelligenceSuggestions(rows: InstrumentSearchRow[]): InstrumentSearchRow[] {
+    const equity = rows.filter(isEquitySearchRow);
+    const ranked = (equity.length ? equity : rows).slice();
+    ranked.sort((left, right) => {
+        const rankDelta = equitySearchRank(left) - equitySearchRank(right);
+        if (rankDelta !== 0) return rankDelta;
+        return String(left.symbol).localeCompare(String(right.symbol));
+    });
+    return ranked;
+}
+
+function pickExactEquitySuggestion(rows: InstrumentSearchRow[], query: string): InstrumentSearchRow | undefined {
+    const normalized = query.trim().toUpperCase();
+    if (!normalized) return undefined;
+    const matches = rows.filter((row) => {
+        const symbol = row.symbol.trim().toUpperCase();
+        const tradingSymbol = row.trading_symbol?.trim().toUpperCase();
+        return symbol === normalized || tradingSymbol === normalized;
+    });
+    return rankMarketIntelligenceSuggestions(matches)[0];
 }
 
 function marketIntelligenceSymbolFromValue(value: string): string {
@@ -465,6 +502,10 @@ export function MarketIntelligenceChrome({
     }, [activeMetadata, committedIntelligenceSymbol, committedSymbol, symbolModeActive]);
 
     useEffect(() => {
+        setActiveMetadata((current) => applyMetadataUpdate(current, symbolMetadata));
+    }, [symbolMetadata]);
+
+    useEffect(() => {
         if (!suggestionsOpen) {
             setSuggestionMenuRect(null);
             return;
@@ -523,7 +564,6 @@ export function MarketIntelligenceChrome({
         if (!activeSymbols.length) {
             setFeeds(emptyMarketIntelligenceFeeds());
             setHasMoreBySection(emptyMarketIntelligenceHasMore());
-            setActiveMetadata({});
             setFilterError("");
             setIsLoadingFilter(false);
             return;
@@ -541,10 +581,9 @@ export function MarketIntelligenceChrome({
             ]);
             if (cancelled) return;
             if (nextMetadata.status === "fulfilled") {
-                setActiveMetadata(metadataBySymbol(nextMetadata.value));
+                setActiveMetadata((current) => applyMetadataUpdate(current, nextMetadata.value));
             } else {
                 notifyAlphaCreditWarning(nextMetadata.reason);
-                setActiveMetadata({});
             }
             if (nextFeeds.status === "fulfilled") {
                 const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
@@ -570,6 +609,38 @@ export function MarketIntelligenceChrome({
         };
     }, [activeSymbols, dateRangeApi, symbolModeActive]);
 
+    const missingFeedMetadataKey = useMemo(() => {
+        const feedSymbols = collectSymbolsFromFeeds(feeds);
+        return feedSymbols
+            .filter((symbol) => !isUsableSymbolMetadata(activeMetadata[symbol]))
+            .sort()
+            .join(",");
+    }, [activeMetadata, feeds.alerts, feeds.announcements, feeds.concalls, feeds.earnings, feeds.news]);
+
+    useEffect(() => {
+        if (!missingFeedMetadataKey) return;
+        const missing = missingFeedMetadataKey.split(",").filter(Boolean);
+        if (!missing.length) return;
+
+        let cancelled = false;
+        const handle = window.setTimeout(() => {
+            void (async () => {
+                try {
+                    const metadata = await getAlphaSymbolMetadata(missing);
+                    if (cancelled) return;
+                    setActiveMetadata((current) => applyMetadataUpdate(current, metadata));
+                } catch (caught) {
+                    notifyAlphaCreditWarning(caught);
+                }
+            })();
+        }, 150);
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(handle);
+        };
+    }, [missingFeedMetadataKey]);
+
     useEffect(() => {
         const query = searchText.trim();
         const accountId = defaultBrokerAccount?.account_id;
@@ -590,11 +661,12 @@ export function MarketIntelligenceChrome({
                         limit: 8
                     });
                     if (cancelled) return;
-                    setSuggestions(rows);
+                    const ranked = rankMarketIntelligenceSuggestions(rows);
+                    setSuggestions(ranked);
                     setShowSuggestions(true);
                     setIsLoadingSuggestions(false);
                     const symbolsToLoad = Array.from(
-                        new Set(rows.map(marketIntelligenceSymbolFromSearch).filter(Boolean))
+                        new Set(ranked.map(marketIntelligenceSymbolFromSearch).filter(Boolean))
                     );
                     if (!symbolsToLoad.length) {
                         setSuggestionMetadata({});
@@ -603,10 +675,9 @@ export function MarketIntelligenceChrome({
                     try {
                         const metadata = await getAlphaSymbolMetadata(symbolsToLoad);
                         if (cancelled) return;
-                        setSuggestionMetadata(metadataBySymbol(metadata));
+                        setSuggestionMetadata((current) => applyMetadataUpdate(current, metadata));
                     } catch (caught) {
                         notifyAlphaCreditWarning(caught);
-                        if (!cancelled) setSuggestionMetadata({});
                     }
                 } catch {
                     if (cancelled) return;
@@ -643,10 +714,9 @@ export function MarketIntelligenceChrome({
             ]);
             if (cancelled) return;
             if (nextMetadata.status === "fulfilled") {
-                setActiveMetadata(metadataBySymbol(nextMetadata.value));
+                setActiveMetadata((current) => applyMetadataUpdate(current, nextMetadata.value));
             } else {
                 notifyAlphaCreditWarning(nextMetadata.reason);
-                setActiveMetadata({});
             }
             if (nextFeeds.status === "fulfilled") {
                 const { hasMoreBySection: nextHasMore, ...feedPayload } = nextFeeds.value;
@@ -752,14 +822,10 @@ export function MarketIntelligenceChrome({
         setSymbolSearchToken((current) => current + 1);
     }
 
-    function submitSymbolSearch(event: FormEvent<HTMLFormElement>) {
+    async function submitSymbolSearch(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const query = searchText.trim().toUpperCase();
-        const exactSuggestion = suggestions.find((row) => {
-            const symbol = row.symbol.trim().toUpperCase();
-            const tradingSymbol = row.trading_symbol?.trim().toUpperCase();
-            return symbol === query || tradingSymbol === query;
-        });
+        const exactSuggestion = pickExactEquitySuggestion(suggestions, query);
         if (exactSuggestion) {
             commitSymbol(
                 exactSuggestion.symbol,
@@ -767,6 +833,27 @@ export function MarketIntelligenceChrome({
                 marketIntelligenceSymbolFromSearch(exactSuggestion)
             );
             return;
+        }
+        // Prefer a resolved NSE cash instrument when the user presses Enter without
+        // picking a row, so broker charts get scrip identifiers instead of a bare symbol.
+        if (defaultBrokerAccount?.account_id) {
+            try {
+                const rows = await searchBrokerInstruments(defaultBrokerAccount.account_id, {
+                    q: query,
+                    limit: 8
+                });
+                const preferred = pickExactEquitySuggestion(rows, query) ?? rankMarketIntelligenceSuggestions(rows)[0];
+                if (preferred && isEquitySearchRow(preferred)) {
+                    commitSymbol(
+                        preferred.symbol,
+                        instrumentFromSearch(preferred),
+                        marketIntelligenceSymbolFromSearch(preferred)
+                    );
+                    return;
+                }
+            } catch {
+                // Fall through to a bare-symbol commit.
+            }
         }
         commitSymbol(query, manualInstrument(query));
     }
@@ -783,8 +870,29 @@ export function MarketIntelligenceChrome({
         setChartState({ error: "", isLoading: false, snapshot: null });
     }
 
-    function handleFeedSymbolClick(symbol: string) {
-        commitSymbol(symbol, manualInstrument(symbol));
+    async function handleFeedSymbolClick(symbol: string) {
+        const normalized = symbol.trim().toUpperCase();
+        if (!normalized) return;
+        if (defaultBrokerAccount?.account_id) {
+            try {
+                const rows = await searchBrokerInstruments(defaultBrokerAccount.account_id, {
+                    q: normalized,
+                    limit: 8
+                });
+                const preferred = pickExactEquitySuggestion(rows, normalized) ?? rankMarketIntelligenceSuggestions(rows)[0];
+                if (preferred && isEquitySearchRow(preferred)) {
+                    commitSymbol(
+                        preferred.symbol,
+                        instrumentFromSearch(preferred),
+                        marketIntelligenceSymbolFromSearch(preferred)
+                    );
+                    return;
+                }
+            } catch {
+                // Fall through to bare-symbol commit.
+            }
+        }
+        commitSymbol(normalized, manualInstrument(normalized));
     }
 
     function focusSymbolSearch() {
@@ -878,7 +986,7 @@ export function MarketIntelligenceChrome({
 
                             <form
                                 className="flex min-w-0 w-full flex-col gap-2 min-[640px]:flex-row min-[640px]:items-center min-[960px]:max-w-sm min-[960px]:flex-1"
-                                onSubmit={submitSymbolSearch}
+                                onSubmit={(event) => void submitSymbolSearch(event)}
                             >
                                 <div className="relative min-w-0 flex-1" ref={searchAnchorRef}>
                                     <InputGroup className="h-9 w-full">
@@ -1083,7 +1191,7 @@ export function MarketIntelligenceChrome({
                                 hasMoreBySection={hasMoreBySection}
                                 initialFeeds={feeds}
                                 isLoadingMore={isLoadingMore}
-                                onFeedSearchSymbol={handleFeedSymbolClick}
+                                onFeedSearchSymbol={(symbol) => void handleFeedSymbolClick(symbol)}
                                 onLoadMore={(section) => {
                                     if (isLoadingMore || !hasMoreBySection[section]) return;
                                     const nextPage = (feedPageBySection[section] || 1) + 1;
@@ -1139,13 +1247,18 @@ export function MarketIntelligenceChrome({
 
 function SymbolSearchLogo({ metadata, symbol }: { metadata?: AlphaSymbolMetadata; symbol: string }) {
     const [failed, setFailed] = useState(false);
-    const logo = metadata?.logo && !failed ? metadata.logo : "";
+    const logo = metadata?.logo?.trim() || "";
 
-    if (logo) {
+    useEffect(() => {
+        setFailed(false);
+    }, [logo]);
+
+    if (logo && !failed) {
         return (
             <img
                 alt=""
                 className="size-8 shrink-0 object-contain"
+                key={logo}
                 loading="lazy"
                 onError={() => setFailed(true)}
                 referrerPolicy="no-referrer"

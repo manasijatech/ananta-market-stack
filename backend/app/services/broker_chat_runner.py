@@ -5,22 +5,68 @@ import json
 import re
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from agents import Agent, ModelSettings, RunConfig, Runner
-from agents.exceptions import MaxTurnsExceeded
+from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 from agents.items import ItemHelpers
 from agents.models.chatcmpl_converter import Converter
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from openai import AsyncOpenAI
 from openai.types.shared.reasoning import Reasoning
 
-from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
+from app.agent_harness.evidence import (
+    MAX_EVIDENCE_CONTINUATIONS,
+    clarify_nudge_message,
+    evidence_gaps,
+    evidence_nudge_message,
+    evidence_status_line,
+    load_run_events,
+    persist_evidence,
+    plan_evidence_contract,
+    ui_todos,
+)
+from app.agent_harness.model_context import build_model_input, build_status_bar, tool_usage_line
+from app.agent_harness.hooks import (
+    CONTEXT_HOOK_ERROR_EVENT,
+    CONTEXT_INJECTED_EVENT,
+    HookContext,
+    ensure_builtin_hooks_registered,
+    run_context_hooks,
+)
+from app.agent_harness.retry_policy import (
+    AgentRetryError,
+    AgentRetryPolicy,
+    anext_with_idle,
+    capped_sleep_seconds,
+    classify_provider_error,
+    fingerprint_nudge_message,
+    openai_client_kwargs,
+    remaining_job_seconds,
+    repair_unpaired_tool_messages,
+    resolve_agent_retry_policy,
+    retry_delay_seconds,
+    extend_job_timeout_window,
+    ToolFingerprintTracker,
+)
+from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WEB_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
-from app.services import broker_chat, broker_chat_mcp, feature_flags, llm_config
+from app.agent_tools.session_memory_tools import SESSION_MEMORY_TOOLS
+from app.agent_tools.skill_tools import SKILL_TOOLS
+from app.agent_harness.extensions_host import extra_tools as extension_tools
+from app.agent_tools.tool_labels import decorate_tool_payload
+from app.agent_harness.compaction import COMPACTION_EVENT, COMPACTION_FAILED_EVENT
+from app.agent_harness.skills import (
+    SESSION_INSTRUCTIONS_MAX_CHARS,
+    auto_match_skills,
+    format_skill_body_message,
+    format_skill_catalog,
+    list_skill_catalog,
+)
+from app.services import agent_skill_prefs, broker_chat, broker_chat_mcp, feature_flags, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.broker_chat_queue import broker_chat_cancel_requested
+from app.config import get_settings
 from common.datetime_compat import UTC
 from db.models import BrokerChatRun
 from db.session import SessionLocal
@@ -35,9 +81,30 @@ CONTINUE_USER_MESSAGE = (
     "Use tool results already gathered. Do not repeat successful identical tool calls. "
     "If MCP is connected and the user asked for market news, daily summary, events, research, "
     "or to use MCP, call those MCP tools now if you have not already. "
+    "If HTML, Python, or a canvas payload was truncated, republish the full artifact. "
     "Then write the full answer. Do not stop after a planning sentence. "
     "Do not mark the work complete until the user has a real answer. The user did not cancel."
 )
+
+HARNESS_GROUNDING_RULES = """
+Grounding (harness — do not skip):
+- Never invent prices, filings, ratios, holdings, or canvas HTML. If a tool did
+  not return a number, say that source was missing. Do not fill gaps from memory.
+- Calculator: when sandbox_run_python is attached and the user asked for CAGR,
+  splits, or scenarios, run it. Mental math is not evidence.
+- Canvas: do not say the desk is live until compose_surface or
+  workspace_publish_html_artifact succeeded. If HTML was cut off, republish the
+  complete document; do not leave a half-written artifact.
+- Prefer continuing from tool results you already have over repeating identical
+  successful calls. If a source is unreadable (403, login, empty), state that
+  blocker and finish that step.
+- User-facing voice: write for the investor, not an ops log. Do not name
+  internal tool ids (broker_get_*, workspace_*, intel_*, execute_tool, read_me,
+  search_tools), widget ids (it-quotes, infy-trend), MCP discovery/protocol
+  details, or "workspace write failed" diagnostics in the answer. Cite human
+  sources (broker account label, Economic Times, company filing) when useful.
+  If something is missing, one plain sentence — not a Gaps/sources appendix.
+"""
 
 _INCOMPLETE_LAST_LINE = re.compile(
     r"(let me|i'll|i will|i am going to|checking|fetching|searching|hold on|one moment|"
@@ -48,11 +115,10 @@ _INCOMPLETE_LAST_LINE = re.compile(
 BROKER_CHAT_INSTRUCTIONS_TEMPLATE = """
 You are Ananta Market Stack's broker data assistant.
 
-Current calendar context:
-- __CURRENT_DAY_CONTEXT__
-- Interpret relative periods like today, yesterday, last 1 month, last 6 months,
-  YTD, and last year from this date unless the user gives explicit dates.
-- Use ISO dates in tool arguments. For example, YYYY-MM-DD.
+Current calendar context comes from the latest harness status message, not
+this system prompt. Interpret relative periods like today, yesterday, last
+1 month, last 6 months, YTD, and last year from that date unless the user
+gives explicit dates. Use ISO dates in tool arguments. For example, YYYY-MM-DD.
 
 Use the broker tools whenever the user asks about connected broker accounts,
 portfolio state, positions, holdings, funds, live quotes, OHLC, historical data,
@@ -93,6 +159,10 @@ Important operating rules:
   user provides only a plain symbol. Use portfolio holdings first when the user
   says "my holding", "its performance", "this stock", or otherwise refers to a
   previous holding/instrument.
+- After long threads or compaction, if you need a number/symbol/URL from earlier
+  in THIS chat, call session_search (Recall from this chat). Do not invent it.
+  For numbers the user will act on, session_expand or re-fetch — a compaction
+  summary alone is weak evidence.
 - When a symbol exists on multiple Indian cash exchanges and the user did not
   specify one, prefer NSE. If NSE quotes or candles are missing or LTP is 0,
   automatically retry BSE for that same symbol. Do not ask the user to pick
@@ -103,7 +173,7 @@ Important operating rules:
   remains genuinely ambiguous after checking available data.
 - Keep answers concise and cite the broker/account label when tool data includes it.
 - Do not place, modify, cancel, or suggest that a trade has been executed.
-
+""" + HARNESS_GROUNDING_RULES + """
 Tool-call discipline:
 - Every tool call must contain exactly one valid JSON object.
 - Never concatenate two JSON objects in a single tool call. If you need daily
@@ -183,12 +253,14 @@ Answer quality:
 ADAPTIVE_WORKSPACE_INSTRUCTIONS = """
 This run is an Adaptive Workspace desk session. Chat answers first, then the
 canvas visualizes. Do not treat compose_surface as a substitute for answering.
-
+""" + HARNESS_GROUNDING_RULES + """
 Priority for a market / news / research question (same as Broker Chat):
 1. Call connected MCP tools (daily summary, news, events, movers, research).
 2. Call local broker tools for live quotes, holdings, chains, health.
 3. Call intel_get_feed(force_refresh=true) for Ananta/Drishti headlines.
-4. Write a complete briefing in chat with numbers, headlines, and sources.
+4. Write a complete briefing in chat with numbers, headlines, and human-readable
+   sources (not tool names). For spot prices / today's change, put {{ltp:…}}
+   islands in the sentence after quotes return.
 5. Then compose or patch the canvas so the same facts are visible. First-party
    widgets for live broker data; html-artifact (Canvas) for themed briefings,
    timelines, and snapshots of data you already fetched — host injects CSS.
@@ -214,6 +286,14 @@ Workspace tools:
   Research notes go on notes-block, not a micro-app.
 - workspace_publish_html_artifact: themed Canvas document for fetched data.
   Author only kit classes from workspace_get_authoring_docs().canvas_kit.
+  For **spot / today's** LTP or day % inside a sentence or Canvas HTML, emit the
+  closed island token (host paints live price + day % only — not the ticker name;
+  max 24 per document). Name the symbol in surrounding prose:
+  GABRIEL is trading at {{ltp:NSE:GABRIEL|ltp=245.10|chgPct=1.24|asOf=2026-08-28T13:40:00+05:30}} today.
+  Always include snapshot ltp/chgPct/asOf from the quote tool you just ran.
+  Historic filings, Screener quarters, or broker_get_historical numbers stay
+  plain text — never emit {{ltp:…}} for those. Tables of many names still use
+  quote-ticker. Do not invent raw <ananta-ltp> with onclick/src/href.
   workspace_update_html_artifact evolves an existing canvas id. No remote scripts.
 
 Data tools also on this desk:
@@ -324,6 +404,14 @@ WorkspaceSpec rules:
 Operating rules:
 - Call workspace_evaluate_request only when composing or rearranging a desk,
   not before answering a briefing/research question.
+- Chat voice (Adaptive): answer like a desk analyst. Lead with the takeaway,
+  then a tight fact block. Prefer {{ltp:EXCHANGE:SYMBOL|ltp=…|chgPct=…|asOf=…}}
+  for spot / today change after broker quotes — name the ticker in prose; the
+  island shows price + % only. Do not write "Source: `broker_get_quotes`" or
+  list MCP tool catalogs. Do not end with a widget-id inventory
+  (`it-quotes`, `infy-trend`, …); at most one short line that the desk has live
+  quotes / chart / news. Prefer quote-ticker for multi-name quote tables on the
+  canvas; islands for inline mentions.
 - Never answer by listing the catalog. Do not call workspace_get_authoring_docs
   unless compose/validate already failed. Prefer broker_* and intel_* tools
   (and connected MCP) the same way Broker Chat does. Fetch real data, answer
@@ -350,13 +438,11 @@ Operating rules:
   them on quote-chart.
 - If validate or compose returns valid=false, read validation.errors, fix the
   listed paths, and retry at most once. Do not loop.
-- After one successful compose or patch (applied=true), write a useful desk
-  briefing in chat — not just "I composed a canvas":
-  - What landed (widget types and bindings).
-  - Concrete numbers from tools: LTPs, session %, date range, headline count.
-  - Notable news/announcement/concall items (title, symbol, date) when fetched.
-  - MCP or other tool findings that are not on the canvas.
-  - Gaps: missing NSE then BSE tried, empty intel after refresh, broker errors.
+- After one successful compose or patch (applied=true), finish the chat answer
+  with the analysis the user asked for (numbers, headlines, reading). Do not
+  narrate the compose itself, dump widget ids/bindings, or attach a Gaps /
+  sources appendix of tool failures. Mention a missing source only if it
+  materially changes the answer (one sentence).
 - Then stop. Do not rebuild the desk unless the user asks.
 - If a component is selected, prefer patch_surface on that id for "change this"
   requests instead of compose_surface.
@@ -411,21 +497,36 @@ def response_looks_incomplete(text: str, *, tool_calls: int, had_message: bool) 
     return False
 
 
-def _continuation_input(previous_input: list[Any], stream: Any, final_text: str) -> list[Any]:
+def _continuation_input(
+    previous_input: list[Any],
+    stream: Any,
+    final_text: str,
+    *,
+    nudge: str = CONTINUE_USER_MESSAGE,
+) -> list[Any]:
     to_list = getattr(stream, "to_input_list", None)
     if callable(to_list):
         try:
             items = list(to_list())
             if items:
-                items.append({"role": "user", "content": CONTINUE_USER_MESSAGE})
+                items.append({"role": "user", "content": nudge})
                 return items
         except Exception:
             pass
     next_input = list(previous_input)
     if final_text.strip():
         next_input.append({"role": "assistant", "content": final_text})
-    next_input.append({"role": "user", "content": CONTINUE_USER_MESSAGE})
+    next_input.append({"role": "user", "content": nudge})
     return next_input
+
+
+def _nudge_with_progress(db: Any, run: BrokerChatRun, nudge: str, evidence_report: Any = None) -> str:
+    events = load_run_events(db, run.id)
+    bar = build_status_bar(
+        evidence_line=evidence_status_line(evidence_report) if evidence_report is not None else "",
+        tools_line=tool_usage_line(events),
+    )
+    return f"{nudge}\n{bar}"
 
 
 def _usage_response_from_raw_event(data: Any) -> Any:
@@ -545,25 +646,34 @@ def _install_chat_completions_message_sanitizer() -> None:
     _CHAT_COMPLETIONS_SANITIZER_INSTALLED = True
 
 
+WEB_RESEARCH_INSTRUCTIONS = """
+Public web:
+- If the user pastes any http(s) link (Screener, NSE, BSE, filings, news), call web_fetch on it in the same turn.
+- If the question needs the open web and MCP/intel/broker do not have it, call web_search at most twice (one query, one refinement), then web_fetch the best 1–3 URLs. Do not keep searching after you have usable titles and URLs.
+- Login-walled pages: say the page is not readable and continue with other sources.
+- Never mention crawlers, fetch tools, or search engines unless the user asks how you got the page.
+"""
+
+
 def _broker_chat_instructions(
-    mcp_context: str = "",
     *,
     adaptive_workspace: bool = False,
-    workspace_spec: dict[str, Any] | None = None,
-    selected_component_id: str | None = None,
+    skill_catalog_xml: str = "",
+    session_instructions: str = "",
 ) -> str:
-    now = datetime.now(ZoneInfo("Asia/Kolkata"))
-    current_day_context = now.strftime("Today is %A, %B %d, %Y in Asia/Kolkata (IST).")
-    instructions = BROKER_CHAT_INSTRUCTIONS_TEMPLATE.replace("__CURRENT_DAY_CONTEXT__", current_day_context)
-    if mcp_context.strip():
-        instructions = f"{instructions}\n\nConnected MCP context:\n{mcp_context.strip()}"
+    instructions = BROKER_CHAT_INSTRUCTIONS_TEMPLATE
     if adaptive_workspace:
         instructions = f"{instructions}\n{ADAPTIVE_WORKSPACE_INSTRUCTIONS}"
-        if selected_component_id:
-            instructions = f"{instructions}\nSelected canvas component id: {selected_component_id}"
-        if workspace_spec:
+        instructions = f"{instructions}\n{WEB_RESEARCH_INSTRUCTIONS}"
+        catalog = (skill_catalog_xml or "").strip()
+        if catalog:
+            instructions = f"{instructions}\n\nAgent Skills catalog (progressive disclosure):\n{catalog}"
+        project = (session_instructions or "").strip()
+        if project:
+            if len(project) > SESSION_INSTRUCTIONS_MAX_CHARS:
+                project = project[: SESSION_INSTRUCTIONS_MAX_CHARS - 20] + "\n...[truncated]"
             instructions = (
-                f"{instructions}\nCurrent WorkspaceSpec JSON:\n{_truncate_json(workspace_spec)}"
+                f"{instructions}\n\nDesk/session project instructions (always apply):\n{project}"
             )
     return instructions
 
@@ -686,18 +796,50 @@ def _output_preview(output: Any) -> dict[str, Any]:
     }
 
 
-def _build_model(db, run) -> OpenAIChatCompletionsModel:
+def _append_run_continued(
+    db,
+    run,
+    *,
+    attempt: int,
+    reason: str,
+    error_class: str | None = None,
+    delay_seconds: float | None = None,
+    extra_full: dict[str, Any] | None = None,
+) -> None:
+    public_payload: dict[str, Any] = {
+        "status": "running",
+        "attempt": attempt,
+        "reason": reason,
+    }
+    if reason == "provider_retry":
+        public_payload["display_name"] = "Retrying provider…"
+    full_payload: dict[str, Any] = {"reason": reason, "error_class": error_class}
+    if delay_seconds is not None:
+        full_payload["delay_seconds"] = delay_seconds
+    if extra_full:
+        full_payload.update(extra_full)
+    broker_chat.append_event(
+        db,
+        run,
+        event_type="run_continued",
+        public_payload=public_payload,
+        full_payload=full_payload,
+    )
+
+
+def _build_model(db, run, policy: AgentRetryPolicy) -> OpenAIChatCompletionsModel:
     _install_chat_completions_message_sanitizer()
     definition = llm_config.provider_definition(run.provider)
     api_key = llm_config.get_provider_api_key(db, run.user_id, run.provider)
-    kwargs: dict[str, Any] = {
-        "api_key": api_key,
-        "base_url": definition["base_url"],
-        "timeout": 60.0,
-    }
     return OpenAIChatCompletionsModel(
         model=run.model_id,
-        openai_client=AsyncOpenAI(**kwargs),
+        openai_client=AsyncOpenAI(
+            **openai_client_kwargs(
+                api_key=api_key,
+                base_url=definition["base_url"],
+                policy=policy,
+            )
+        ),
         strict_feature_validation=False,
     )
 
@@ -710,13 +852,16 @@ def _model_settings_for_run(run) -> ModelSettings:
         effort = None
     extra_body = {"reasoning": {"effort": effort}} if effort and run.provider == "openrouter" else None
     reasoning = Reasoning(effort=effort) if effort else None
-    return ModelSettings(
-        temperature=0.3,
-        max_tokens=8000,
-        include_usage=True,
-        extra_body=extra_body,
-        reasoning=reasoning,
-    )
+    settings: dict[str, Any] = {
+        "temperature": 0.3,
+        "include_usage": True,
+        "extra_body": extra_body,
+        "reasoning": reasoning,
+    }
+    max_tokens = int(get_settings().broker_chat_max_tokens)
+    if max_tokens > 0:
+        settings["max_tokens"] = max_tokens
+    return ModelSettings(**settings)
 
 
 async def _run_broker_chat(run_id: str) -> None:
@@ -743,9 +888,15 @@ async def _run_broker_chat(run_id: str) -> None:
             },
         )
         run_span.__enter__()
+        if run.status in {"completed", "failed"}:
+            return
         if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
             broker_chat.mark_run_terminal(db, run, status="cancelled", response_text=run.response_text)
             broker_chat.append_event_once(db, run, event_type="run_cancelled", public_payload={"status": "cancelled"})
+            return
+        other_running = broker_chat.running_run_for_session(db, run.session_id)
+        if other_running is not None and other_running.id != run.id:
+            # Another turn owns this session; leave this row queued for start_next.
             return
         broker_chat.mark_run_running(db, run)
         db.refresh(run)
@@ -771,21 +922,200 @@ async def _run_broker_chat(run_id: str) -> None:
         )
         mcp_handle = await broker_chat_mcp.connect_broker_chat_mcp(db, run, metadata)
         mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle)
+        pref = broker_chat.get_or_create_preference(db, run.user_id)
+        retry_policy = resolve_agent_retry_policy(getattr(pref, "retry_json", None))
+        job_timeout = float(get_settings().broker_chat_job_timeout_seconds)
+        fingerprint_tracker = ToolFingerprintTracker(threshold=retry_policy.fingerprint_break_threshold)
+        nudged_fingerprints: set[str] = set()
+        provider_retries_used = 0
+        continuations_used = 0
         tools = (
-            [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS]
+            [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS, *SESSION_MEMORY_TOOLS, *SKILL_TOOLS]
             if adaptive_workspace
             else [*BROKER_DATA_TOOLS, *INTEL_FEED_TOOLS]
         )
+        if adaptive_workspace:
+            tools = [*tools, *WEB_TOOLS]
+            tools = [*tools, *extension_tools(context)]
         tools = [*tools, *mcp_handle.extra_tools]
+        skill_overrides: list[dict] = []
+        session_instructions = ""
+        skill_bodies_message = ""
+        if adaptive_workspace:
+            try:
+                skill_overrides = agent_skill_prefs.list_overrides(db, user_id=run.user_id)
+            except Exception:
+                skill_overrides = []
+            try:
+                from db.models import BrokerChatSession as _Session
+
+                session_row = db.get(_Session, run.session_id)
+                session_instructions = getattr(session_row, "agent_instructions", "") or ""
+            except Exception:
+                session_instructions = ""
+            catalog_entries = list_skill_catalog(overrides=skill_overrides)
+            catalog_xml = format_skill_catalog(catalog_entries)
+            auto_skills = auto_match_skills(run.message, overrides=skill_overrides)
+            skill_bodies_message = format_skill_body_message(auto_skills)
+            if auto_skills:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="skill_auto_loaded",
+                    public_payload={
+                        "skill_ids": [s.id for s in auto_skills],
+                        "names": [s.name for s in auto_skills],
+                    },
+                    full_payload={
+                        "skill_ids": [s.id for s in auto_skills],
+                        "names": [s.name for s in auto_skills],
+                        "triggers": {s.id: s.triggers for s in auto_skills},
+                    },
+                )
+        else:
+            catalog_xml = ""
+        instructions = _broker_chat_instructions(
+            adaptive_workspace=adaptive_workspace,
+            skill_catalog_xml=catalog_xml,
+            session_instructions=session_instructions,
+        )
+        sandbox_available = False
+        evidence_contract = plan_evidence_contract(
+            run.message,
+            adaptive_workspace=adaptive_workspace,
+            sandbox_available=sandbox_available,
+            mcp_enabled=bool(mcp_handle.enabled),
+        )
+        evidence_report = evidence_gaps(
+            evidence_contract,
+            [],
+            sandbox_available=sandbox_available,
+        )
+        persist_evidence(db, run, evidence_report)
+        if evidence_report.todos:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="evidence_todos",
+                public_payload={"todos": ui_todos(evidence_report.todos), "title": "Research steps"},
+                full_payload={"todos": evidence_report.todos},
+            )
+        evidence_continuations_used = 0
+        clarify_used = False
+        status_bar = build_status_bar(
+            mcp_context=mcp_context,
+            selected_component_id=selected_component_id,
+            evidence_line=evidence_status_line(evidence_report),
+            tools_line=tool_usage_line(load_run_events(db, run.id)),
+        )
+        hook_names: list[str] = []
+        context_hooks_message = ""
+        if adaptive_workspace:
+            ensure_builtin_hooks_registered()
+            from app.agent_harness.hook_world import resolve_inject_holdings
+
+            inject_holdings = resolve_inject_holdings(db, run.user_id, metadata)
+            hook_bundle = run_context_hooks(
+                HookContext(
+                    db=db,
+                    user_id=run.user_id,
+                    session_id=run.session_id,
+                    run=run,
+                    user_message=run.message,
+                    workspace_spec=workspace_spec,
+                    selected_component_id=selected_component_id,
+                    adaptive_workspace=adaptive_workspace,
+                    sandbox_available=sandbox_available,
+                    mcp_enabled=bool(mcp_handle.enabled),
+                    inject_holdings=inject_holdings,
+                    default_account_id=metadata.get("default_account_id"),
+                )
+            )
+            context_hooks_message = hook_bundle.message
+            hook_names = list(hook_bundle.hook_names)
+            if context_hooks_message:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type=CONTEXT_INJECTED_EVENT,
+                    public_payload={
+                        "hook_names": hook_names,
+                        "char_count": hook_bundle.total_chars,
+                    },
+                    full_payload={
+                        "hook_names": hook_names,
+                        "char_count": hook_bundle.total_chars,
+                        "titles": [item.title for item in hook_bundle.results],
+                        "audits": [item.audit for item in hook_bundle.results],
+                        "message_preview": (context_hooks_message or "")[:4_000],
+                    },
+                )
+            for error in hook_bundle.errors:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type=CONTEXT_HOOK_ERROR_EVENT,
+                    public_payload={"hook_id": error.get("hook_id")},
+                    full_payload=error,
+                )
+        context_build = build_model_input(
+            db,
+            run,
+            current_user_text=run.message,
+            status_bar=status_bar,
+            instructions=instructions,
+            context_hooks_message=context_hooks_message,
+            skill_bodies_message=skill_bodies_message,
+            enable_compaction=adaptive_workspace,
+        )
+        compaction_meta = getattr(context_build, "compaction", None) or {}
+        if compaction_meta.get("compacted"):
+            broker_chat.append_event(
+                db,
+                run,
+                event_type=COMPACTION_EVENT,
+                public_payload={
+                    "chars_in": compaction_meta.get("chars_in"),
+                    "chars_out": compaction_meta.get("chars_out"),
+                    "model_id": compaction_meta.get("model_id"),
+                },
+                full_payload=compaction_meta,
+            )
+        elif compaction_meta.get("failed"):
+            broker_chat.append_event(
+                db,
+                run,
+                event_type=COMPACTION_FAILED_EVENT,
+                public_payload={"fallback": compaction_meta.get("fallback") or "drop_oldest"},
+                full_payload=compaction_meta,
+            )
+        if get_settings().broker_chat_emit_model_context_event:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="model_context_built",
+                public_payload={
+                    "prior_turns": context_build.prior_turns,
+                    "tool_projections": context_build.tool_projections,
+                    "caps_hit": context_build.caps_hit,
+                    "char_count": context_build.char_count,
+                },
+                full_payload={
+                    "prior_turns": context_build.prior_turns,
+                    "tool_projections": context_build.tool_projections,
+                    "caps_hit": context_build.caps_hit,
+                    "dropped_oldest_turns": context_build.dropped_oldest_turns,
+                    "char_count": context_build.char_count,
+                    "cache_breakers": context_build.cache_breakers,
+                    "hook_names": hook_names,
+                    "compaction": compaction_meta,
+                    "skill_names": [],
+                },
+            )
         agent = Agent[BrokerAgentContext](
             name="Ananta Market Stack Broker Data Agent",
-            instructions=_broker_chat_instructions(
-                mcp_context,
-                adaptive_workspace=adaptive_workspace,
-                workspace_spec=workspace_spec,
-                selected_component_id=selected_component_id,
-            ),
-            model=_build_model(db, run),
+            instructions=instructions,
+            model=_build_model(db, run, retry_policy),
             model_settings=_model_settings_for_run(run),
             tools=tools,
             mcp_servers=mcp_handle.active_servers,
@@ -793,8 +1123,7 @@ async def _run_broker_chat(run_id: str) -> None:
                 prefix_server_names=len(mcp_handle.active_servers) > 1 and not mcp_handle.extra_tools
             ),
         )
-        messages = broker_chat.conversation_history_for_run(db, run)
-        messages.append({"role": "user", "content": run.message})
+        messages = context_build.messages
         max_turns = ADAPTIVE_WORKSPACE_MAX_TURNS if adaptive_workspace else BROKER_CHAT_MAX_TURNS
         tool_calls = 0
         had_message = False
@@ -803,7 +1132,13 @@ async def _run_broker_chat(run_id: str) -> None:
         async def consume_stream(active_stream: Any) -> None:
             nonlocal final_text, response_started_at, usage_events_recorded
             nonlocal reasoning_events_emitted, tool_calls, had_message
-            async for event in active_stream.stream_events():
+            event_iter = active_stream.stream_events().__aiter__()
+            while True:
+                try:
+                    event = await anext_with_idle(event_iter, retry_policy.stream_idle_seconds)
+                except StopAsyncIteration:
+                    break
+                extend_job_timeout_window(job_timeout)
                 db.refresh(run)
                 if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
                     raise BrokerChatCancelled()
@@ -820,7 +1155,7 @@ async def _run_broker_chat(run_id: str) -> None:
                                 run,
                                 event_type="token",
                                 public_payload={"text": delta},
-                                full_payload={"text": delta, "raw_type": raw_type, "raw": _safe_data(data)},
+                                full_payload={"text": delta, "raw_type": raw_type},
                             )
                     elif raw_type == "response.created":
                         response_started_at = datetime.now(tz=UTC).replace(tzinfo=None)
@@ -870,44 +1205,46 @@ async def _run_broker_chat(run_id: str) -> None:
                     if item_type == "tool_call_item":
                         tool_name, arguments, call_id = _extract_tool_call_start(item)
                         tool_calls += 1
+                        fingerprint_tracker.record(tool_name, arguments)
                         if call_id:
                             tool_names_by_call_id[call_id] = tool_name
                         pending_tool_names.append(tool_name)
+                        started = decorate_tool_payload(
+                            tool_name,
+                            {
+                                "tool_name": tool_name,
+                                "tool_call_id": call_id,
+                                "arguments": arguments,
+                            },
+                        )
                         broker_chat.append_event(
                             db,
                             run,
                             event_type="tool_call_started",
-                            public_payload={
-                                "tool_name": tool_name,
-                                "tool_call_id": call_id,
-                                "arguments": arguments,
-                            },
-                            full_payload={
-                                "tool_name": tool_name,
-                                "tool_call_id": call_id,
-                                "arguments": arguments,
-                                "raw_item": _safe_data(item),
-                            },
+                            public_payload=started,
+                            full_payload={**started, "raw_item": _safe_data(item)},
                         )
                     elif item_type == "tool_call_output_item":
                         call_id, output = _extract_tool_call_output(item)
                         tool_name = tool_names_by_call_id.get(call_id or "", "unknown")
                         if tool_name == "unknown" and pending_tool_names:
                             tool_name = pending_tool_names.pop(0)
-                        broker_chat.append_event(
-                            db,
-                            run,
-                            event_type="tool_call_completed",
-                            public_payload={
+                        completed = decorate_tool_payload(
+                            tool_name,
+                            {
                                 "tool_name": tool_name,
                                 "tool_call_id": call_id,
                                 "output_metadata": _output_preview(output),
                             },
+                        )
+                        broker_chat.append_event(
+                            db,
+                            run,
+                            event_type="tool_call_completed",
+                            public_payload=completed,
                             full_payload={
-                                "tool_name": tool_name,
-                                "tool_call_id": call_id,
+                                **completed,
                                 "output": output,
-                                "output_metadata": _output_preview(output),
                                 "raw_item": _safe_data(item),
                             },
                         )
@@ -935,10 +1272,12 @@ async def _run_broker_chat(run_id: str) -> None:
                         full_payload={"agent": agent_name},
                     )
 
-        for attempt in range(MAX_RUN_CONTINUATIONS + 1):
+        while True:
+            extend_job_timeout_window(job_timeout)
             db.refresh(run)
             if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
                 raise BrokerChatCancelled()
+            messages = repair_unpaired_tool_messages(messages)
             stream = Runner.run_streamed(
                 starting_agent=agent,
                 input=messages,
@@ -952,30 +1291,171 @@ async def _run_broker_chat(run_id: str) -> None:
             hit_max_turns = False
             try:
                 await consume_stream(stream)
+            except BrokerChatCancelled:
+                raise
+            except AgentRetryError:
+                raise
             except MaxTurnsExceeded:
                 hit_max_turns = True
+            except ModelBehaviorError as exc:
+                if continuations_used >= MAX_RUN_CONTINUATIONS:
+                    raise AgentRetryError(
+                        classify_provider_error(exc, max_server_delay_seconds=retry_policy.max_server_delay_seconds)
+                    ) from exc
+                continuations_used += 1
+                _append_run_continued(
+                    db,
+                    run,
+                    attempt=continuations_used,
+                    reason="unknown_tool",
+                    error_class="unknown_tool",
+                    extra_full={"message": str(exc)[:500]},
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"A tool call failed: {exc}. Do not call unknown first-class tool names. "
+                            "Use only attached tools. For MCP catalog names, use the prefixed MCP tools "
+                            "or execute_tool with name at the top level. Otherwise use web_search, "
+                            "web_fetch, intel_get_feed, or broker tools. Continue the original task."
+                        ),
+                    }
+                )
+                continue
+            except Exception as exc:
+                classified = classify_provider_error(
+                    exc, max_server_delay_seconds=retry_policy.max_server_delay_seconds
+                )
+                can_retry = (
+                    classified.retryable
+                    and retry_policy.enabled
+                    and provider_retries_used < retry_policy.max_retries
+                )
+                if can_retry:
+                    delay = retry_delay_seconds(
+                        retry_policy, provider_retries_used, classified.retry_after_seconds
+                    )
+                    remaining = remaining_job_seconds(run.started_at, job_timeout)
+                    sleep_for = capped_sleep_seconds(delay, remaining_job_seconds=remaining)
+                    if sleep_for is None:
+                        raise AgentRetryError(classified) from exc
+                    provider_retries_used += 1
+                    _append_run_continued(
+                        db,
+                        run,
+                        attempt=provider_retries_used,
+                        reason="provider_retry",
+                        error_class=classified.error_class,
+                        delay_seconds=sleep_for,
+                        extra_full={"message": str(exc)[:500], "layer": classified.layer},
+                    )
+                    await asyncio.sleep(sleep_for)
+                    continue
+                raise AgentRetryError(classified) from exc
             if not final_text and getattr(stream, "final_output", None):
                 final_text = str(stream.final_output)
             db.refresh(run)
             if run.status == "cancelled" or broker_chat_cancel_requested(run.id):
                 raise BrokerChatCancelled()
+            new_breaks = [
+                fingerprint for fingerprint in fingerprint_tracker.broken_fingerprints() if fingerprint not in nudged_fingerprints
+            ]
+            if new_breaks and continuations_used < MAX_RUN_CONTINUATIONS:
+                continuations_used += 1
+                nudged_fingerprints.update(new_breaks)
+                _append_run_continued(
+                    db,
+                    run,
+                    attempt=continuations_used,
+                    reason="repeated_tool",
+                    error_class="repeated_tool",
+                    extra_full={"fingerprints": new_breaks},
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": _nudge_with_progress(db, run, fingerprint_nudge_message(new_breaks)),
+                    }
+                )
+                had_message = False
+                continue
             incomplete = hit_max_turns or response_looks_incomplete(
                 final_text, tool_calls=tool_calls, had_message=had_message
             )
-            if not incomplete or attempt >= MAX_RUN_CONTINUATIONS:
-                break
-            broker_chat.append_event(
-                db,
-                run,
-                event_type="run_continued",
-                public_payload={
-                    "status": "running",
-                    "attempt": attempt + 1,
-                    "reason": "max_turns" if hit_max_turns else "incomplete_answer",
-                },
+            evidence_report = evidence_gaps(
+                evidence_contract,
+                load_run_events(db, run.id),
+                final_text=final_text,
+                sandbox_available=sandbox_available,
             )
-            messages = _continuation_input(messages, stream, final_text)
-            had_message = False
+            persist_evidence(db, run, evidence_report)
+            if evidence_report.todos:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="evidence_todos",
+                    public_payload={"todos": ui_todos(evidence_report.todos), "title": "Research steps"},
+                    full_payload={"todos": evidence_report.todos},
+                )
+            evidence_open = bool(evidence_report.unsatisfied())
+            if evidence_open and evidence_continuations_used < MAX_EVIDENCE_CONTINUATIONS:
+                evidence_continuations_used += 1
+                nudge = evidence_nudge_message(evidence_report)
+                if evidence_contract.clarify and not clarify_used:
+                    nudge = f"{clarify_nudge_message()}\n{nudge}"
+                    clarify_used = True
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="harness_nudge",
+                    public_payload={"reason": "evidence_gap"},
+                    full_payload={"message": nudge, "gaps": evidence_report.as_json()["gaps"]},
+                )
+                _append_run_continued(
+                    db,
+                    run,
+                    attempt=evidence_continuations_used,
+                    reason="evidence_gap",
+                    error_class="evidence_incomplete",
+                )
+                messages = _continuation_input(
+                    messages, stream, final_text, nudge=_nudge_with_progress(db, run, nudge, evidence_report)
+                )
+                had_message = False
+                continue
+            if incomplete and continuations_used < MAX_RUN_CONTINUATIONS:
+                continuations_used += 1
+                _append_run_continued(
+                    db,
+                    run,
+                    attempt=continuations_used,
+                    reason="max_turns" if hit_max_turns else "incomplete_answer",
+                    error_class="task_incomplete",
+                )
+                messages = _continuation_input(
+                    messages,
+                    stream,
+                    final_text,
+                    nudge=_nudge_with_progress(db, run, CONTINUE_USER_MESSAGE, evidence_report),
+                )
+                had_message = False
+                continue
+            if evidence_open:
+                evidence_report.status = "partial"
+                persist_evidence(db, run, evidence_report)
+                missing = "; ".join(gap.reason for gap in evidence_report.unsatisfied())
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="evidence_incomplete",
+                    public_payload={
+                        "message": f"I could not verify every research step. {missing}" if missing else "I could not verify every research step.",
+                        "status": "partial",
+                    },
+                    full_payload=evidence_report.as_json(),
+                )
+            break
 
         broker_chat.mark_run_terminal(db, run, status="completed", response_text=final_text)
         db.refresh(run)
@@ -1000,6 +1480,8 @@ async def _run_broker_chat(run_id: str) -> None:
     except Exception as exc:
         run = db.get(BrokerChatRun, run_id)
         if run is not None and run.status != "cancelled":
+            classified = classify_provider_error(exc)
+            user_message = classified.user_message
             if usage_events_recorded == 0:
                 _record_broker_chat_usage(
                     run,
@@ -1008,14 +1490,20 @@ async def _run_broker_chat(run_id: str) -> None:
                     status="error",
                     error=str(exc),
                 )
-            broker_chat.mark_run_terminal(db, run, status="failed", response_text=final_text, error=str(exc))
+            broker_chat.mark_run_terminal(db, run, status="failed", response_text=final_text, error=user_message)
             db.refresh(run)
             broker_chat.append_event(
                 db,
                 run,
                 event_type="run_failed",
-                public_payload={"status": "failed", "message": str(exc)},
-                full_payload={"status": "failed", "message": str(exc), "error_type": exc.__class__.__name__},
+                public_payload={"status": "failed", "message": user_message},
+                full_payload={
+                    "status": "failed",
+                    "message": str(exc),
+                    "error_type": exc.__class__.__name__,
+                    "error_class": classified.error_class,
+                    "layer": classified.layer,
+                },
             )
         raise
     finally:

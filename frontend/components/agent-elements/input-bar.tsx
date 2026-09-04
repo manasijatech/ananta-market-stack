@@ -72,6 +72,11 @@ export type InputBarProps = {
   value?: string;
   onChange?: (value: string) => void;
   disabled?: boolean;
+  /**
+   * When true, the user can submit follow-up messages while a run is streaming.
+   * Stop remains available when the input is empty.
+   */
+  allowSendWhileStreaming?: boolean;
   autoFocus?: boolean;
   suggestions?:
     | SuggestionItem[]
@@ -139,6 +144,7 @@ export const InputBar = memo(function InputBar({
   value: controlledValue,
   onChange: controlledOnChange,
   disabled,
+  allowSendWhileStreaming = false,
   autoFocus,
   suggestions = [],
   typingAnimation,
@@ -170,6 +176,7 @@ export const InputBar = memo(function InputBar({
 
   const isStreaming = status === "streaming" || status === "submitted";
   const isTyping = typingAnimation?.isActive ?? false;
+  const blockSendForStream = isStreaming && !allowSendWhileStreaming;
 
   const { displayedText, showImage } = useInputTyping(
     typingAnimation?.text ?? "",
@@ -201,10 +208,10 @@ export const InputBar = memo(function InputBar({
 
   const handleSubmit = useCallback(() => {
     const trimmed = input.trim();
-    if (!trimmed || isStreaming || disabled) return;
+    if (!trimmed || blockSendForStream || disabled) return;
     onSend({ role: "user", content: trimmed });
     setInput("");
-  }, [input, isStreaming, disabled, onSend, setInput]);
+  }, [input, blockSendForStream, disabled, onSend, setInput]);
 
   const handleInfoBarClose = useCallback(() => {
     setIsInfoBarOpen(false);
@@ -395,7 +402,7 @@ export const InputBar = memo(function InputBar({
 
   const handleSuggestionSelect = useCallback(
     (item: SuggestionItem) => {
-      if (disabled || isStreaming) return;
+      if (disabled || blockSendForStream) return;
       setInput(item.value ?? item.label);
       requestAnimationFrame(() => {
         const el = textareaRef.current;
@@ -405,7 +412,7 @@ export const InputBar = memo(function InputBar({
         el.setSelectionRange(end, end);
       });
     },
-    [disabled, isStreaming, setInput],
+    [disabled, blockSendForStream, setInput],
   );
 
   const suggestionItems = Array.isArray(suggestions)
@@ -539,7 +546,9 @@ export const InputBar = memo(function InputBar({
                 {/* Send / Stop button */}
                 <div
                   onClick={() => {
-                    if (isStreaming) {
+                    if (allowSendWhileStreaming && hasInput && !disabled) {
+                      handleSubmit();
+                    } else if (isStreaming) {
                       onStop();
                     } else if (hasInput) {
                       handleSubmit();
@@ -549,11 +558,13 @@ export const InputBar = memo(function InputBar({
                 >
                   <SendButton
                     state={
-                      isStreaming
-                        ? "streaming"
-                        : hasInput && !disabled
-                          ? "typing"
-                          : "idle"
+                      allowSendWhileStreaming && hasInput && !disabled
+                        ? "typing"
+                        : isStreaming
+                          ? "streaming"
+                          : hasInput && !disabled
+                            ? "typing"
+                            : "idle"
                     }
                   />
                 </div>
@@ -564,7 +575,7 @@ export const InputBar = memo(function InputBar({
             <Suggestions
               items={suggestionItems}
               onSelect={handleSuggestionSelect}
-              disabled={disabled || isStreaming}
+              disabled={disabled || blockSendForStream}
               className={cn("mt-4 px-3", suggestionsClassName)}
               itemClassName={suggestionItemClassName}
             />

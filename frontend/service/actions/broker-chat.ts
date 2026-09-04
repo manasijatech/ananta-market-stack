@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { fetchFastApi } from "@/lib/fastapi";
 import type {
+    AgentSkillCatalogItem,
+    AgentSkillPref,
     BrokerChatEvent,
     BrokerChatEventsPage,
     BrokerChatPreference,
@@ -182,15 +184,86 @@ export async function getBrokerChatEvents(
     return request<BrokerChatEventsPage>(`/broker-chat/runs/${runId}/events?${query.toString()}`);
 }
 
+export async function getAllBrokerChatEvents(
+    runId: string,
+    params: {
+        afterSequence?: number | null;
+        limit?: number;
+        visibility?: BrokerChatVisibility;
+        includeToolOutputs?: boolean;
+        includeReasoning?: boolean;
+    } = {}
+): Promise<BrokerChatEventsPage> {
+    const pageSize = params.limit ?? 500;
+    const events: BrokerChatEventsPage["events"] = [];
+    let afterSequence = params.afterSequence ?? null;
+    let run: BrokerChatEventsPage["run"] | null = null;
+    for (let pageIndex = 0; pageIndex < 40; pageIndex += 1) {
+        const page = await getBrokerChatEvents(runId, { ...params, afterSequence, limit: pageSize });
+        run = page.run;
+        if (!page.events.length) break;
+        events.push(...page.events);
+        const lastSequence = page.events[page.events.length - 1]?.sequence;
+        if (page.events.length < pageSize || lastSequence == null) break;
+        afterSequence = lastSequence;
+    }
+    if (!run) {
+        return getBrokerChatEvents(runId, params);
+    }
+    return {
+        run,
+        events,
+        next_after_sequence: events.at(-1)?.sequence ?? afterSequence
+    };
+}
+
 export async function getBrokerChatRun(runId: string): Promise<BrokerChatRun> {
     return request<BrokerChatRun>(`/broker-chat/runs/${runId}`);
 }
 
-export async function cancelBrokerChatRun(runId: string): Promise<BrokerChatRun> {
-    const result = await request<BrokerChatRun>(`/broker-chat/runs/${runId}/cancel`, {
+export async function getBrokerChatSessionQueue(sessionId: string): Promise<BrokerChatRun[]> {
+    return request<BrokerChatRun[]>(`/broker-chat/sessions/${sessionId}/queue`);
+}
+
+export async function cancelBrokerChatRun(
+    runId: string,
+    options: { cancelQueued?: boolean } = {}
+): Promise<BrokerChatRun> {
+    const query = options.cancelQueued ? "?cancel_queued=true" : "";
+    const result = await request<BrokerChatRun>(`/broker-chat/runs/${runId}/cancel${query}`, {
         method: "POST"
     });
     revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function listAgentSkills(includeDisabled = true): Promise<AgentSkillCatalogItem[]> {
+    const query = new URLSearchParams({ include_disabled: includeDisabled ? "true" : "false" });
+    return request<AgentSkillCatalogItem[]>(`/broker-chat/agent-skills?${query.toString()}`);
+}
+
+export async function updateAgentSkillPref(
+    skillId: string,
+    payload: { enabled?: boolean; markdown?: string | null }
+): Promise<AgentSkillPref> {
+    const result = await request<AgentSkillPref>(`/broker-chat/agent-skills/${encodeURIComponent(skillId)}`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+    });
+    revalidatePath("/settings");
+    revalidatePath("/chat");
+    return result;
+}
+
+export async function updateBrokerChatSessionInstructions(
+    sessionId: string,
+    agentInstructions: string
+): Promise<BrokerChatSession> {
+    const result = await request<BrokerChatSession>(`/broker-chat/sessions/${sessionId}/instructions`, {
+        method: "PATCH",
+        body: JSON.stringify({ agent_instructions: agentInstructions })
+    });
+    revalidatePath("/chat");
     return result;
 }
 

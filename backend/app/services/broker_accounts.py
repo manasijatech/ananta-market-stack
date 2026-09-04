@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from common.datetime_compat import UTC
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.schemas.broker import (
@@ -66,6 +66,26 @@ def _mark_session_healthy(db: Session, acc: BrokerAccount, *, verified_at: datet
     mark_session_healthy(db, acc, verified_at=verified_at)
 
 
+def _existing_account_with_label(
+    db: Session,
+    *,
+    user_id: str,
+    workspace_id: str | None,
+    broker_code: str,
+    label: str,
+) -> BrokerAccount | None:
+    normalized = label.strip().lower()
+    query = select(BrokerAccount).where(
+        BrokerAccount.broker_code == broker_code,
+        func.lower(BrokerAccount.label) == normalized,
+    )
+    if workspace_id:
+        query = query.where(BrokerAccount.workspace_id == workspace_id)
+    else:
+        query = query.where(BrokerAccount.user_id == user_id, BrokerAccount.workspace_id.is_(None))
+    return db.scalar(query.order_by(BrokerAccount.created_at.asc(), BrokerAccount.id.asc()))
+
+
 def create_broker_account(
     db: Session,
     user_id: str,
@@ -75,6 +95,18 @@ def create_broker_account(
 ) -> BrokerAccount:
     if not db.get(User, user_id):
         raise ValueError("user not found")
+    existing = _existing_account_with_label(
+        db,
+        user_id=user_id,
+        workspace_id=workspace_id,
+        broker_code=payload.broker,
+        label=payload.label,
+    )
+    if existing is not None:
+        raise ValueError(
+            f"A {payload.broker} account named {payload.label.strip()!r} already exists in this workspace. "
+            "Open that connection or use a different label."
+        )
     bid = str(uuid.uuid4())
     acc = BrokerAccount(
         id=bid,
@@ -235,20 +267,26 @@ def create_broker_account(
     elif isinstance(payload, IndmoneyCreate):
         token = (payload.access_token or "").strip()
         token_generated_at = datetime.now(tz=UTC) if token else None
+        has_totp = bool(payload.client_id and payload.mpin and payload.totp_secret)
         db.add(
             IndmoneyCredentials(
                 account_id=bid,
                 access_token_cipher=encrypt_value(token),
+                client_id_cipher=encrypt_value(payload.client_id) if payload.client_id else None,
+                mpin_cipher=encrypt_value(payload.mpin) if payload.mpin else None,
+                totp_secret_cipher=encrypt_value(payload.totp_secret) if payload.totp_secret else None,
                 access_token_generated_at=token_generated_at,
                 access_token_expires_at=token_generated_at.replace(microsecond=0) + timedelta(hours=24)
                 if token_generated_at
                 else None,
             )
         )
+        acc.automation_enabled = has_totp
+        acc.automation_mode = "indmoney_totp" if has_totp else None
         acc.last_error = (
             None
             if token
-            else "INDmoney access token not provided yet. Generate it from the broker portal and POST it to the INDmoney session endpoint."
+            else "INDmoney TOTP automation is configured. Generate the first session from the broker account."
         )
     elif isinstance(payload, KotakCreate):
         db.add(

@@ -96,6 +96,9 @@ export interface GrowwCreatePayload extends CreatePayloadBase {
 export interface IndmoneyCreatePayload extends CreatePayloadBase {
     broker: "indmoney";
     access_token?: string | null;
+    client_id?: string | null;
+    mpin?: string | null;
+    totp_secret?: string | null;
 }
 
 export interface KotakCreatePayload extends CreatePayloadBase {
@@ -190,7 +193,8 @@ export interface KotakSessionPayload {
 
 export interface IndmoneySessionPayload {
     broker: "indmoney";
-    access_token: string;
+    access_token?: string | null;
+    totp?: string | null;
 }
 
 export type SessionLoginPayload =
