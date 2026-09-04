@@ -11,19 +11,24 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_current_user
 from app.schemas.broker_chat import (
+    AgentSkillCatalogItemOut,
+    AgentSkillPrefOut,
+    AgentSkillPrefUpdateIn,
     BrokerChatEventsPageOut,
     BrokerChatPreferenceOut,
     BrokerChatPreferenceUpdateIn,
     BrokerChatRunOut,
     BrokerChatSessionCreateIn,
+    BrokerChatSessionInstructionsIn,
     BrokerChatSessionOut,
     BrokerChatSubmitIn,
     BrokerChatSubmitOut,
     BrokerChatVisibility,
 )
-from app.services import broker_chat as chat_svc
+from app.services import agent_skill_prefs, broker_chat as chat_svc
+from app.agent_harness.skills import resolve_skills
 from app.services.broker_chat_queue import broker_chat_queue_health, broker_chat_stream_key, redis_connection
-from db.models import BrokerChatEvent, BrokerChatRun, User
+from db.models import BrokerChatEvent, BrokerChatRun, BrokerChatSession, User
 from db.session import SessionLocal, get_db
 
 router = APIRouter()
@@ -94,6 +99,58 @@ def get_broker_chat_session(
         return BrokerChatSessionOut.model_validate(chat_svc.get_owned_session(db, user.id, session_id))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.patch("/sessions/{session_id}/instructions", response_model=BrokerChatSessionOut)
+def update_broker_chat_session_instructions(
+    session_id: str,
+    payload: BrokerChatSessionInstructionsIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> BrokerChatSessionOut:
+    try:
+        session = chat_svc.get_owned_session(db, user.id, session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    text = (payload.agent_instructions or "").strip()
+    if len(text) > 4000:
+        raise HTTPException(status_code=400, detail="agent_instructions must be at most 4000 characters")
+    session.agent_instructions = text
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return BrokerChatSessionOut.model_validate(session)
+
+
+@router.get("/agent-skills", response_model=list[AgentSkillCatalogItemOut])
+def list_agent_skills(
+    include_disabled: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[AgentSkillCatalogItemOut]:
+    overrides = agent_skill_prefs.list_overrides(db, user_id=user.id)
+    skills = resolve_skills(overrides=overrides, include_disabled=include_disabled)
+    return [AgentSkillCatalogItemOut.model_validate(skills[k].catalog_entry()) for k in sorted(skills.keys())]
+
+
+@router.put("/agent-skills/{skill_id}", response_model=AgentSkillPrefOut)
+def upsert_agent_skill_pref(
+    skill_id: str,
+    payload: AgentSkillPrefUpdateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AgentSkillPrefOut:
+    try:
+        row = agent_skill_prefs.upsert_pref(
+            db,
+            user_id=user.id,
+            skill_id=skill_id,
+            enabled=payload.enabled,
+            markdown=payload.markdown,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AgentSkillPrefOut.model_validate(row)
 
 
 @router.delete("/sessions/{session_id}", status_code=204)

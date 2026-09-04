@@ -451,6 +451,8 @@ class BrokerChatSession(Base):
     compaction_chars_in: Mapped[int] = mapped_column(Integer, default=0)
     compaction_chars_out: Mapped[int] = mapped_column(Integer, default=0)
     compaction_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Plan 07 — short desk/session project instructions (always in prompt; cap at load).
+    agent_instructions: Mapped[str] = mapped_column(Text, default="")
 
 
 class BrokerChatRun(Base):
@@ -1703,3 +1705,18 @@ class AlertAudioAsset(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class AgentSkillPref(Base):
+    """Plan 07 — per-user enable/disable + optional markdown override for Agent Skills."""
+
+    __tablename__ = "agent_skill_prefs"
+    __table_args__ = (UniqueConstraint("user_id", "skill_id", name="uq_agent_skill_prefs_user_skill"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    markdown: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -51,9 +51,17 @@ from app.agent_harness.retry_policy import (
 from app.agent_tools import ALERT_STUDIO_TOOLS, BROKER_DATA_TOOLS, INTEL_TOOLS, WEB_TOOLS, WORKSPACE_TOOLS, BrokerAgentContext
 from app.agent_tools.intel_tools import INTEL_FEED_TOOLS
 from app.agent_tools.session_memory_tools import SESSION_MEMORY_TOOLS
+from app.agent_tools.skill_tools import SKILL_TOOLS
 from app.agent_tools.tool_labels import decorate_tool_payload
 from app.agent_harness.compaction import COMPACTION_EVENT, COMPACTION_FAILED_EVENT
-from app.services import broker_chat, broker_chat_mcp, feature_flags, llm_config
+from app.agent_harness.skills import (
+    SESSION_INSTRUCTIONS_MAX_CHARS,
+    auto_match_skills,
+    format_skill_body_message,
+    format_skill_catalog,
+    list_skill_catalog,
+)
+from app.services import agent_skill_prefs, broker_chat, broker_chat_mcp, feature_flags, llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.broker_chat_queue import broker_chat_cancel_requested
@@ -649,11 +657,23 @@ Public web:
 def _broker_chat_instructions(
     *,
     adaptive_workspace: bool = False,
+    skill_catalog_xml: str = "",
+    session_instructions: str = "",
 ) -> str:
     instructions = BROKER_CHAT_INSTRUCTIONS_TEMPLATE
     if adaptive_workspace:
         instructions = f"{instructions}\n{ADAPTIVE_WORKSPACE_INSTRUCTIONS}"
         instructions = f"{instructions}\n{WEB_RESEARCH_INSTRUCTIONS}"
+        catalog = (skill_catalog_xml or "").strip()
+        if catalog:
+            instructions = f"{instructions}\n\nAgent Skills catalog (progressive disclosure):\n{catalog}"
+        project = (session_instructions or "").strip()
+        if project:
+            if len(project) > SESSION_INSTRUCTIONS_MAX_CHARS:
+                project = project[: SESSION_INSTRUCTIONS_MAX_CHARS - 20] + "\n...[truncated]"
+            instructions = (
+                f"{instructions}\n\nDesk/session project instructions (always apply):\n{project}"
+            )
     return instructions
 
 
@@ -909,14 +929,54 @@ async def _run_broker_chat(run_id: str) -> None:
         provider_retries_used = 0
         continuations_used = 0
         tools = (
-            [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS, *SESSION_MEMORY_TOOLS]
+            [*BROKER_DATA_TOOLS, *INTEL_TOOLS, *ALERT_STUDIO_TOOLS, *WORKSPACE_TOOLS, *SESSION_MEMORY_TOOLS, *SKILL_TOOLS]
             if adaptive_workspace
             else [*BROKER_DATA_TOOLS, *INTEL_FEED_TOOLS]
         )
         if adaptive_workspace:
             tools = [*tools, *WEB_TOOLS]
         tools = [*tools, *mcp_handle.extra_tools]
-        instructions = _broker_chat_instructions(adaptive_workspace=adaptive_workspace)
+        skill_overrides: list[dict] = []
+        session_instructions = ""
+        skill_bodies_message = ""
+        if adaptive_workspace:
+            try:
+                skill_overrides = agent_skill_prefs.list_overrides(db, user_id=run.user_id)
+            except Exception:
+                skill_overrides = []
+            try:
+                from db.models import BrokerChatSession as _Session
+
+                session_row = db.get(_Session, run.session_id)
+                session_instructions = getattr(session_row, "agent_instructions", "") or ""
+            except Exception:
+                session_instructions = ""
+            catalog_entries = list_skill_catalog(overrides=skill_overrides)
+            catalog_xml = format_skill_catalog(catalog_entries)
+            auto_skills = auto_match_skills(run.message, overrides=skill_overrides)
+            skill_bodies_message = format_skill_body_message(auto_skills)
+            if auto_skills:
+                broker_chat.append_event(
+                    db,
+                    run,
+                    event_type="skill_auto_loaded",
+                    public_payload={
+                        "skill_ids": [s.id for s in auto_skills],
+                        "names": [s.name for s in auto_skills],
+                    },
+                    full_payload={
+                        "skill_ids": [s.id for s in auto_skills],
+                        "names": [s.name for s in auto_skills],
+                        "triggers": {s.id: s.triggers for s in auto_skills},
+                    },
+                )
+        else:
+            catalog_xml = ""
+        instructions = _broker_chat_instructions(
+            adaptive_workspace=adaptive_workspace,
+            skill_catalog_xml=catalog_xml,
+            session_instructions=session_instructions,
+        )
         sandbox_available = False
         evidence_contract = plan_evidence_contract(
             run.message,
@@ -1003,6 +1063,7 @@ async def _run_broker_chat(run_id: str) -> None:
             status_bar=status_bar,
             instructions=instructions,
             context_hooks_message=context_hooks_message,
+            skill_bodies_message=skill_bodies_message,
             enable_compaction=adaptive_workspace,
         )
         compaction_meta = getattr(context_build, "compaction", None) or {}

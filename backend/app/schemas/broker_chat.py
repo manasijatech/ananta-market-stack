@@ -57,8 +57,36 @@ class BrokerChatSessionOut(BaseModel):
     user_id: str
     title: str
     surface: BrokerChatSurface | str = "broker_chat"
+    agent_instructions: str = ""
     created_at: datetime
     updated_at: datetime
+
+
+class BrokerChatSessionInstructionsIn(BaseModel):
+    agent_instructions: str = Field(default="", max_length=4000)
+
+
+class AgentSkillCatalogItemOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    triggers: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    version: int = 1
+    source: str = "shipped"
+    enabled: bool = True
+
+
+class AgentSkillPrefUpdateIn(BaseModel):
+    enabled: bool | None = None
+    markdown: str | None = Field(default=None, max_length=20000)
+
+
+class AgentSkillPrefOut(BaseModel):
+    skill_id: str
+    enabled: bool = True
+    markdown: str | None = None
+    updated_at: str | None = None
 
 
 class BrokerChatSubmitIn(BaseModel):

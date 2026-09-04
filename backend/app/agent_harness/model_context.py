@@ -598,10 +598,15 @@ def build_model_input(
     status_bar: str,
     instructions: str = "",
     context_hooks_message: str = "",
+    skill_bodies_message: str = "",
     enable_compaction: bool = True,
 ) -> ModelContextBuild:
     compaction_audit: dict[str, Any] = {}
-    overhead = len(context_hooks_message or "") + len(status_bar or "")
+    overhead = (
+        len(context_hooks_message or "")
+        + len(status_bar or "")
+        + len(skill_bodies_message or "")
+    )
     if enable_compaction:
         from app.agent_harness.compaction import build_compacted_prior_messages
 
@@ -631,6 +636,9 @@ def build_model_input(
     messages.append({"role": "user", "content": current_user_text})
     if context_hooks_message.strip():
         messages.append({"role": "user", "content": context_hooks_message})
+    # Plan 07: skill bodies at trajectory end (not spliced into system) for prefix cache.
+    if skill_bodies_message.strip():
+        messages.append({"role": "user", "content": skill_bodies_message})
     if status_bar.strip():
         messages.append({"role": "user", "content": status_bar})
     stats.messages = messages

@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { fetchFastApi } from "@/lib/fastapi";
 import type {
+    AgentSkillCatalogItem,
+    AgentSkillPref,
     BrokerChatEvent,
     BrokerChatEventsPage,
     BrokerChatPreference,
@@ -232,6 +234,36 @@ export async function cancelBrokerChatRun(
         method: "POST"
     });
     revalidatePath("/broker-chat");
+    return result;
+}
+
+export async function listAgentSkills(includeDisabled = true): Promise<AgentSkillCatalogItem[]> {
+    const query = new URLSearchParams({ include_disabled: includeDisabled ? "true" : "false" });
+    return request<AgentSkillCatalogItem[]>(`/broker-chat/agent-skills?${query.toString()}`);
+}
+
+export async function updateAgentSkillPref(
+    skillId: string,
+    payload: { enabled?: boolean; markdown?: string | null }
+): Promise<AgentSkillPref> {
+    const result = await request<AgentSkillPref>(`/broker-chat/agent-skills/${encodeURIComponent(skillId)}`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+    });
+    revalidatePath("/settings");
+    revalidatePath("/chat");
+    return result;
+}
+
+export async function updateBrokerChatSessionInstructions(
+    sessionId: string,
+    agentInstructions: string
+): Promise<BrokerChatSession> {
+    const result = await request<BrokerChatSession>(`/broker-chat/sessions/${sessionId}/instructions`, {
+        method: "PATCH",
+        body: JSON.stringify({ agent_instructions: agentInstructions })
+    });
+    revalidatePath("/chat");
     return result;
 }
 

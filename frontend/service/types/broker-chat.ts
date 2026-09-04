@@ -50,8 +50,27 @@ export interface BrokerChatSession {
     user_id: string;
     title: string;
     surface?: BrokerChatSurface;
+    agent_instructions?: string;
     created_at: string;
     updated_at: string;
+}
+
+export interface AgentSkillCatalogItem {
+    id: string;
+    name: string;
+    description: string;
+    triggers: string[];
+    tools: string[];
+    version: number;
+    source: string;
+    enabled: boolean;
+}
+
+export interface AgentSkillPref {
+    skill_id: string;
+    enabled: boolean;
+    markdown?: string | null;
+    updated_at?: string | null;
 }
 
 export interface BrokerChatRun {
