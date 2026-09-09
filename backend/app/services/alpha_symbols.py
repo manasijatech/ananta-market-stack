@@ -17,6 +17,11 @@ from db.models import AlphaSymbolMetadataCache
 
 _ALPHA_SYMBOL_BATCH_SIZE = 20
 _UNAVAILABLE_RETRY_INTERVAL = timedelta(hours=6)
+_HOLLOW_RETRY_INTERVAL = timedelta(minutes=15)
+# Drishti / NSE ticker renames that still appear on legacy watchlists.
+_METADATA_SYMBOL_ALIASES = {
+    "TATAMOTORS": "TMPV",
+}
 logger = logging.getLogger(__name__)
 
 
@@ -95,6 +100,19 @@ def _optional_str(value: Any) -> str | None:
     return text or None
 
 
+def _raw_payload(row: AlphaSymbolMetadataCache) -> dict[str, Any]:
+    try:
+        payload = json.loads(row.raw_payload_json or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _is_usable_metadata_row(row: AlphaSymbolMetadataCache) -> bool:
+    """True when the cache row has at least one user-visible identity field."""
+    return bool(_optional_str(row.company_name) or _optional_str(row.logo))
+
+
 def _upsert_metadata(db: Session, item: AlphaSymbolMetadata, raw_payload: dict[str, Any]) -> None:
     now = _now_utc_naive()
     row = db.get(AlphaSymbolMetadataCache, item.symbol)
@@ -126,13 +144,23 @@ def _cached_rows(
 
 
 def _unavailable_retry_due(row: AlphaSymbolMetadataCache, now: datetime) -> bool:
-    try:
-        payload = json.loads(row.raw_payload_json or "{}")
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(payload, dict) or payload.get("metadata_status") != "unavailable":
+    payload = _raw_payload(row)
+    if payload.get("metadata_status") != "unavailable":
         return False
     return not row.fetched_at or row.fetched_at <= now - _UNAVAILABLE_RETRY_INTERVAL
+
+
+def _needs_metadata_refresh(row: AlphaSymbolMetadataCache | None, now: datetime, *, force_refresh: bool) -> bool:
+    if force_refresh or row is None:
+        return True
+    if _is_usable_metadata_row(row):
+        return False
+    payload = _raw_payload(row)
+    if payload.get("metadata_status") == "unavailable":
+        return _unavailable_retry_due(row, now)
+    # Hollow / partial cache (empty name+logo without a durable negative marker).
+    # Retry on a short interval so a recovered API key self-heals the UI.
+    return not row.fetched_at or row.fetched_at <= now - _HOLLOW_RETRY_INTERVAL
 
 
 def invalidate_unavailable_metadata_cache(db: Session) -> int:
@@ -140,11 +168,8 @@ def invalidate_unavailable_metadata_cache(db: Session) -> int:
     rows = db.scalars(select(AlphaSymbolMetadataCache)).all()
     unavailable_rows: list[AlphaSymbolMetadataCache] = []
     for row in rows:
-        try:
-            payload = json.loads(row.raw_payload_json or "{}")
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict) and payload.get("metadata_status") == "unavailable":
+        payload = _raw_payload(row)
+        if payload.get("metadata_status") == "unavailable":
             unavailable_rows.append(row)
     for row in unavailable_rows:
         db.delete(row)
@@ -186,15 +211,21 @@ def get_symbol_metadata(
     missing = [
         symbol
         for symbol in requested
-        if force_refresh or symbol not in cached or _unavailable_retry_due(cached[symbol], now)
+        if _needs_metadata_refresh(cached.get(symbol), now, force_refresh=force_refresh)
     ]
     if missing:
         try:
             api_key = alpha_config.get_alpha_api_key(db, user_id)
         except Exception as exc:
-            logger.info("Alpha symbol metadata backfill skipped because no usable API key is available: %s", exc)
+            logger.warning(
+                "Alpha symbol metadata backfill skipped for %s symbol(s); no usable API key: %s: %s",
+                len(missing),
+                type(exc).__name__,
+                exc,
+            )
             by_symbol = {symbol: _row_to_schema(row) for symbol, row in cached.items()}
-            return [by_symbol.get(symbol) or _fallback_schema(symbol) for symbol in requested]
+            results = [by_symbol.get(symbol) or _fallback_schema(symbol) for symbol in requested]
+            return _fill_from_symbol_aliases(db, user_id, results, force_refresh=False)
         for index in range(0, len(missing), _ALPHA_SYMBOL_BATCH_SIZE):
             batch = missing[index:index + _ALPHA_SYMBOL_BATCH_SIZE]
             fetch_failed = False
@@ -217,7 +248,11 @@ def get_symbol_metadata(
             fetched_symbols = {item.symbol for item in fetched}
             for item in fetched:
                 if item.symbol in batch:
-                    _upsert_metadata(db, item, item.model_dump())
+                    raw = item.model_dump()
+                    if not (item.company_name or item.logo):
+                        raw["metadata_status"] = "unavailable"
+                        raw["metadata_error"] = "Alpha metadata response was empty for this symbol."
+                    _upsert_metadata(db, item, raw)
             if not fetch_failed:
                 for symbol in batch:
                     if symbol not in fetched_symbols:
@@ -234,4 +269,46 @@ def get_symbol_metadata(
         cached = _cached_rows(db, requested)
 
     by_symbol = {symbol: _row_to_schema(row) for symbol, row in cached.items()}
-    return [by_symbol.get(symbol) or _fallback_schema(symbol) for symbol in requested]
+    results = [by_symbol.get(symbol) or _fallback_schema(symbol) for symbol in requested]
+    return _fill_from_symbol_aliases(db, user_id, results, force_refresh=force_refresh)
+
+
+def _fill_from_symbol_aliases(
+    db: Session,
+    user_id: str,
+    rows: list[AlphaSymbolMetadata],
+    *,
+    force_refresh: bool,
+) -> list[AlphaSymbolMetadata]:
+    """Copy metadata from renamed tickers onto legacy symbols still used in UI lists."""
+    need_alias = [
+        row.symbol
+        for row in rows
+        if not (row.company_name or row.logo) and row.symbol in _METADATA_SYMBOL_ALIASES
+    ]
+    if not need_alias:
+        return rows
+
+    alias_targets = [_METADATA_SYMBOL_ALIASES[symbol] for symbol in need_alias]
+    alias_rows = get_symbol_metadata(
+        db,
+        user_id,
+        alias_targets,
+        force_refresh=force_refresh,
+    )
+    alias_by_symbol = {row.symbol: row for row in alias_rows}
+    filled: list[AlphaSymbolMetadata] = []
+    for row in rows:
+        if row.company_name or row.logo or row.symbol not in _METADATA_SYMBOL_ALIASES:
+            filled.append(row)
+            continue
+        alias = alias_by_symbol.get(_METADATA_SYMBOL_ALIASES[row.symbol])
+        if alias is None or not (alias.company_name or alias.logo):
+            filled.append(row)
+            continue
+        merged = alias.model_copy(update={"symbol": row.symbol})
+        _upsert_metadata(db, merged, {**alias.model_dump(), "symbol": row.symbol, "metadata_alias_of": alias.symbol})
+        filled.append(merged)
+    if any(row.symbol in need_alias for row in filled):
+        db.commit()
+    return filled

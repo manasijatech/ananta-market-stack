@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import type { BrokerChatSession } from "@/service/types/broker-chat";
 
 type Props = {
+    activeSessionId: string | null;
     creating: boolean;
     liveSessionIds?: ReadonlySet<string>;
     onCreate: () => void;
@@ -26,6 +27,7 @@ type Props = {
 };
 
 export function AdaptiveDeskSwitcher({
+    activeSessionId,
     creating,
     liveSessionIds,
     onCreate,
@@ -78,7 +80,7 @@ export function AdaptiveDeskSwitcher({
                                 key={session.id}
                             >
                                 <DropdownMenuItem className="min-w-0 flex-1" onSelect={() => onSelect(session.id)}>
-                                    {session.title === title ? (
+                                    {session.id === activeSessionId ? (
                                         <IconCheck className="size-3.5" stroke={1.8} />
                                     ) : (
                                         <span className="size-3.5" />

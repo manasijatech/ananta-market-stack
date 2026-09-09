@@ -1,6 +1,8 @@
 "use client";
 
 import { Streamdown, type Components } from "streamdown";
+import { LiveLtpIsland } from "@/components/adaptive-workspace/live-ltp-island";
+import { liveLtpTokensToMarkdownLinks, parseAnantaLtpHref } from "@/lib/live-ltp-island";
 import { cn } from "./utils/cn";
 import { streamdownCodePlugin as code } from "./utils/streamdown-code-plugin";
 
@@ -44,8 +46,8 @@ export type MarkdownProps = {
 };
 
 export function Markdown({ content, className }: MarkdownProps) {
-  const safeContent = normalizeCodeFenceLanguages(
-    fixNumberedListBreaks(content),
+  const safeContent = liveLtpTokensToMarkdownLinks(
+    normalizeCodeFenceLanguages(fixNumberedListBreaks(content)),
   );
   const components: Components = {
     h1: ({ children, ...props }) => (
@@ -104,6 +106,10 @@ export function Markdown({ content, className }: MarkdownProps) {
     ),
     a: ({ href, children, ...props }) => {
       if (!href) return <span>{children}</span>;
+      const island = parseAnantaLtpHref(href);
+      if (island) {
+        return <LiveLtpIsland attrs={island} />;
+      }
       const isExternal = href.startsWith("http") || href.startsWith("mailto:");
       return (
         <a
@@ -160,7 +166,7 @@ export function Markdown({ content, className }: MarkdownProps) {
     <div
       className={cn(
         "an-markdown",
-        "overflow-hidden wrap-break-word",
+        "min-w-0 max-w-full overflow-x-auto wrap-break-word",
         "[&_li>p]:inline [&_li>p]:mb-0",
         className,
       )}

@@ -179,10 +179,10 @@ def get_client_for_account(
             raise ValueError("missing indmoney credentials")
         access_token = decrypt_value(i.access_token_cipher)
         if not access_token:
-            raise ValueError("INDmoney access token is missing. Update it from the broker portal session flow.")
+            raise ValueError("INDmoney access token is missing. Generate it from the INDmoney session flow.")
         _ensure_not_expired(
             account,
-            "INDmoney access token is expired. Ask the user to generate a fresh broker portal token.",
+            "INDmoney access token is expired. Refresh it from the INDmoney session flow.",
         )
         return IndmoneyClient(
             access_token=access_token,

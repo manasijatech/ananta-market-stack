@@ -146,25 +146,28 @@ export const brokerGuides: Record<BrokerCode, BrokerGuide> = {
     },
     indmoney: {
         broker: "indmoney",
-        title: "INDmoney Token Setup",
-        summary: "Connect INDmoney with a manually generated bearer access token.",
-        required: ["Account label", "Access token"],
+        title: "INDmoney Setup",
+        summary: "Connect INDmoney with daily TOTP token generation or a manual access token.",
+        required: ["Account label", "TOTP: Client ID + MPIN + secret, or manual access token"],
         setupSteps: [
             "Open the INDstocks API trading page.",
-            "Generate or copy a fresh INDmoney bearer access token.",
-            "Set up static IP allowlisting if INDmoney requires it.",
-            "Paste the access token into Ananta Market Stack."
+            "For daily automation, set up TOTP and copy the Client ID plus the one-time-displayed secret.",
+            "Set up static IP allowlisting for order placement.",
+            "Enter the TOTP credentials or a manual access token into Ananta Market Stack."
         ],
         formMapping: [
-            { label: "Access token", field: "access_token", note: "Paste only the token value, not the word Bearer." }
+            { label: "Client ID", field: "client_id", note: "Static x-api-key shown after INDstocks TOTP setup." },
+            { label: "MPIN", field: "mpin", note: "Account MPIN, encrypted at rest." },
+            { label: "TOTP secret", field: "totp_secret", note: "Base32 enrollment secret, encrypted at rest." },
+            { label: "Access token", field: "access_token", note: "Manual alternative; paste only the token value." }
         ],
         sessionSteps: [
-            "Save the account with an access token.",
-            "If the token expires, open the broker detail page and paste a fresh token into the INDmoney session form."
+            "Save a TOTP-configured account and activate its first session from the detail page.",
+            "Ananta renews the single live TOTP token before expiry; do not generate one from another process."
         ],
         notes: [
             "Treat access tokens like passwords.",
-            "INDmoney is manual-token only in Ananta Market Stack right now; there is no automated login or TOTP flow."
+            "INDstocks invalidates the previous TOTP token when a new one is generated."
         ]
     },
     kotak: {

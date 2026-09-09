@@ -180,7 +180,19 @@ class IndmoneyCreate(BaseModel):
 
     broker: Literal["indmoney"] = "indmoney"
     label: str = Field(..., max_length=128, description="A unique label for this account.")
-    access_token: str | None = Field(None, description="The session Bearer token from the INDmoney web portal.")
+    access_token: str | None = Field(None, description="A current INDstocks access token for manual setup.")
+    client_id: str | None = Field(None, description="INDstocks TOTP Client ID (x-api-key).")
+    mpin: str | None = Field(None, description="INDmoney account MPIN, encrypted at rest.")
+    totp_secret: str | None = Field(None, description="Base32 secret from the INDstocks TOTP enrollment, encrypted at rest.")
+
+    @model_validator(mode="after")
+    def _validate_indmoney_auth(self) -> "IndmoneyCreate":
+        has_totp = bool((self.client_id or "").strip() and (self.mpin or "").strip() and (self.totp_secret or "").strip())
+        if not has_totp and not (self.access_token or "").strip():
+            raise ValueError("Provide an access_token or client_id+mpin+totp_secret for INDmoney.")
+        if any((self.client_id, self.mpin, self.totp_secret)) and not has_totp:
+            raise ValueError("INDmoney TOTP automation requires client_id, mpin, and totp_secret together.")
+        return self
 
 
 class KotakCreate(BaseModel):
@@ -311,7 +323,14 @@ class SessionGrowwIn(BaseModel):
 
 
 class SessionIndmoneyIn(BaseModel):
-    access_token: str
+    access_token: str | None = None
+    totp: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_indmoney_session(self) -> "SessionIndmoneyIn":
+        if not (self.access_token or "").strip() and not (self.totp or "").strip():
+            raise ValueError("Provide access_token or a current TOTP code.")
+        return self
 
 
 class SessionStartOut(BaseModel):

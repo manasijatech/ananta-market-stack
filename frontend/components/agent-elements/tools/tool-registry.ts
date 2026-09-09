@@ -1,4 +1,5 @@
 import type React from "react";
+import { displayNameForTool } from "@/lib/agent/tool-labels";
 import {
   IconSearch as Search,
   IconEye as Eye,
@@ -361,19 +362,8 @@ export const toolRegistry: Record<string, ToolMeta> = {
 // MCP tool parsing
 const MCP_TOOL_PREFIX = "tool-mcp__";
 
-const CANVAS_TOOL_DISPLAY_NAMES: Record<string, string> = {
-  workspace_publish_html_artifact: "Publish Canvas",
-  workspace_update_html_artifact: "Update Canvas",
-};
-
 function friendlyCanvasToolName(toolName: string): string {
-  return (
-    CANVAS_TOOL_DISPLAY_NAMES[toolName] ??
-    toolName
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-      .trim()
-  );
+  return displayNameForTool(toolName);
 }
 
 export type McpToolInfo = {

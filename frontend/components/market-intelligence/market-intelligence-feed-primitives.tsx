@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, Search, X } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardPanel } from "@/components/ui/card";
@@ -62,13 +62,18 @@ export function TickerAvatar({
     const [failed, setFailed] = useState(false);
     const initials = symbol.slice(0, 2).toUpperCase();
     const sizeClass = size === 28 ? "size-7 text-[10px]" : "size-6 text-[9px]";
-    const logo = metadata?.logo && !failed ? metadata.logo : "";
+    const logo = metadata?.logo?.trim() || "";
 
-    if (logo) {
+    useEffect(() => {
+        setFailed(false);
+    }, [logo]);
+
+    if (logo && !failed) {
         return (
             <img
                 alt=""
                 className={cn(sizeClass, "shrink-0 rounded-full object-cover")}
+                key={logo}
                 loading="lazy"
                 onError={() => setFailed(true)}
                 referrerPolicy="no-referrer"

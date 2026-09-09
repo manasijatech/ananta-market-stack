@@ -83,6 +83,10 @@ class BrokerAgentContext(BaseModel):
         default=None,
         description="Canvas component the user selected for scoped follow-ups.",
     )
+    web_usage: dict[str, int] = Field(
+        default_factory=dict,
+        description="Per-run counters for public web search/fetch so the model cannot loop.",
+    )
 
 
 class BrokerToolActionRequired(Exception):

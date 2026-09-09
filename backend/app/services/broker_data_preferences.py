@@ -281,7 +281,11 @@ def list_broker_accounts_with_preferences(
         [row for row in accounts if row.is_active]
     )
     result: list[BrokerAccountOut] = []
+    seen_ids: set[str] = set()
     for row in accounts:
+        if row.id in seen_ids:
+            continue
+        seen_ids.add(row.id)
         _clear_stale_session_error_if_active(db, row)
         out = BrokerAccountOut.model_validate(row)
         out.is_preferred_instrument_search = row.id == default_preferred

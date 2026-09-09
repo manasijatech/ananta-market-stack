@@ -14,6 +14,7 @@ import type { TablerIcon } from "@tabler/icons-react";
 import { ChannelSettings } from "@/components/alerts/channel-settings";
 import { StreamManager } from "@/components/alerts/stream-manager";
 import { SubscriptionsManager } from "@/components/alerts/subscriptions-manager";
+import { AgentSkillsSettings } from "@/components/settings/agent-skills-settings";
 import { SystemConfigPanel } from "@/components/system/system-config-panel";
 import { PageContainer } from "@/components/ui/page-container";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -28,6 +29,7 @@ type SettingsSection =
     | "alpha"
     | "mcp"
     | "llm"
+    | "agent-skills"
     | "live-subscriptions"
     | "stream-manager"
     | "alert-channels";
@@ -88,6 +90,14 @@ const sections: Array<{
         title: "LLM providers",
         description: "Store provider keys and saved model IDs for chat and alert analysis.",
         group: "Developer",
+        icon: IconRobot
+    },
+    {
+        value: "agent-skills",
+        label: "Agent Skills",
+        title: "Agent Skills",
+        description: "Enable or disable Adaptive Chat research playbooks (progressive disclosure).",
+        group: "Workspace",
         icon: IconRobot
     },
     {
@@ -245,6 +255,9 @@ export function SettingsSections({
                                     permissions={permissions}
                                     section="llm"
                                 />
+                            </TabsContent>
+                            <TabsContent className="mt-0 min-w-0 max-w-full" value="agent-skills">
+                                <AgentSkillsSettings />
                             </TabsContent>
                             <TabsContent className="mt-0 min-w-0 max-w-full" value="live-subscriptions">
                                 <SubscriptionsManager

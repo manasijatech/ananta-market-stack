@@ -300,7 +300,7 @@ PYTHONPATH=. .venv/bin/python -m app.workers.alert_evaluator
 PYTHONPATH=. .venv/bin/python -m app.workers.alert_delivery
 ```
 
-Broker chat worker:
+Broker chat worker (starts `BROKER_CHAT_WORKER_COUNT` processes, default 4):
 
 ```bash
 cd backend

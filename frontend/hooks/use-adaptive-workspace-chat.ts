@@ -8,7 +8,9 @@ import {
     buildAdaptiveWorkspaceMessages,
     mergeBrokerChatEvents,
     mergeBrokerChatRuns,
+    mergeBrokerChatSessions,
     parseSseBlock,
+    shouldStreamBrokerChatRun,
     sortBrokerChatSessions,
     textPayload
 } from "@/lib/adaptive-workspace/chat-events";
@@ -21,6 +23,7 @@ import {
     createBrokerChatSession,
     deleteBrokerChatSession,
     getBrokerChatEvents,
+    getAllBrokerChatEvents,
     getBrokerChatQueueHealth,
     getBrokerChatRun,
     getBrokerChatRuns,
@@ -35,14 +38,43 @@ import type {
     BrokerChatPreference,
     BrokerChatPreferenceUpdate,
     BrokerChatQueueHealth,
+    BrokerChatRetryPolicy,
     BrokerChatRun,
     BrokerChatSession
 } from "@/service/types/broker-chat";
+import { DEFAULT_BROKER_CHAT_RETRY } from "@/service/types/broker-chat";
 
 const ADAPTIVE_SESSION_QUERY = { surface: "adaptive_workspace" as const };
 const ADAPTIVE_EVENT_VISIBILITY = "full" as const;
 const ADAPTIVE_INCLUDE_TOOL_OUTPUTS = true;
 const ADAPTIVE_INCLUDE_REASONING = true;
+const ADAPTIVE_ACTIVE_SESSION_KEY = "adaptive-workspace-active-session";
+const ADAPTIVE_SESSION_EVENT_LOAD_LIMIT = 24;
+
+function storedActiveSessionId() {
+    if (typeof window === "undefined") return "";
+    try {
+        return sessionStorage.getItem(ADAPTIVE_ACTIVE_SESSION_KEY) ?? "";
+    } catch {
+        return "";
+    }
+}
+
+function persistActiveSessionId(sessionId: string) {
+    if (typeof window === "undefined") return;
+    try {
+        if (sessionId) sessionStorage.setItem(ADAPTIVE_ACTIVE_SESSION_KEY, sessionId);
+        else sessionStorage.removeItem(ADAPTIVE_ACTIVE_SESSION_KEY);
+    } catch {
+        /* ignore quota / private mode */
+    }
+}
+
+function initialActiveSessionId(initialSessions: BrokerChatSession[], initialRuns: BrokerChatRun[]) {
+    const stored = storedActiveSessionId();
+    if (stored && initialSessions.some((session) => session.id === stored)) return stored;
+    return initialSessions[0]?.id ?? initialRuns[0]?.session_id ?? "";
+}
 
 function adaptiveChatConfigKey(config: BrokerChatPreferenceUpdate) {
     return JSON.stringify(config);
@@ -75,7 +107,7 @@ export function useAdaptiveWorkspaceChat({
     const [sessions, setSessions] = useState(() => sortBrokerChatSessions(initialSessions));
     const [runs, setRuns] = useState(() => mergeBrokerChatRuns([], initialRuns));
     const [eventsByRun, setEventsByRun] = useState<Record<string, BrokerChatEvent[]>>({});
-    const [activeSessionId, setActiveSessionId] = useState(initialSessions[0]?.id ?? initialRuns[0]?.session_id ?? "");
+    const [activeSessionId, setActiveSessionId] = useState(() => initialActiveSessionId(initialSessions, initialRuns));
     const [message, setMessage] = useState("");
     const loadedSessionIdRef = useRef<string | null>(null);
     const [provider, setProvider] = useState<LlmProvider | "">(preference.default_provider ?? "");
@@ -86,6 +118,7 @@ export function useAdaptiveWorkspaceChat({
         [mcpServer, mcpServers]
     );
     const [useMcp, setUseMcp] = useState(preference.use_mcp && availableMcpServers.length > 0);
+    const [retry, setRetry] = useState<BrokerChatRetryPolicy>(preference.retry ?? DEFAULT_BROKER_CHAT_RETRY);
     const [selectedMcpServerIds, setSelectedMcpServerIds] = useState(() => {
         if (preference.mcp_server_ids.length) return preference.mcp_server_ids;
         const defaults = availableMcpServers.filter((server) => server.use_by_default).map((server) => server.id as string);
@@ -118,7 +151,8 @@ export function useAdaptiveWorkspaceChat({
             include_tool_outputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
             mcp_server_ids: preference.mcp_server_ids,
             reasoning_effort: preference.reasoning_effort ?? null,
-            use_mcp: preference.use_mcp
+            use_mcp: preference.use_mcp,
+            retry: preference.retry ?? DEFAULT_BROKER_CHAT_RETRY
         })
     );
     const bootstrappedEmptyDeskRef = useRef(initialSessions.length > 0);
@@ -156,14 +190,24 @@ export function useAdaptiveWorkspaceChat({
     );
     const activeSession = sessions.find((session) => session.id === activeSessionId);
     const hasConfiguredLlm = Boolean(provider && model);
-    const activeRun = runsForActiveSession.find((run) => LIVE_BROKER_CHAT_STATUSES.has(run.status)) ?? null;
-    const chatStatus: ChatStatus = activeRun || isSubmitting ? "streaming" : "ready";
+    const runningRun = runsForActiveSession.find((run) => run.status === "running") ?? null;
+    const queuedRuns = useMemo(
+        () => runsForActiveSession.filter((run) => run.status === "queued" && !run.job_id),
+        [runsForActiveSession]
+    );
+    const waitingCount = queuedRuns.length;
+    /** Stop target: the in-flight turn (running), else the head waiting on a worker. */
+    const activeRun =
+        runningRun ??
+        runsForActiveSession.find((run) => run.status === "queued" && Boolean(run.job_id)) ??
+        null;
+    const chatStatus: ChatStatus = runningRun || isSubmitting || Boolean(activeRun) ? "streaming" : "ready";
     const messages = useMemo(
         () =>
             buildAdaptiveWorkspaceMessages({
                 eventsByRun,
                 includeReasoning: ADAPTIVE_INCLUDE_REASONING,
-                includeUnmappedTools: false,
+                includeUnmappedTools: true,
                 runs: runsForActiveSession,
                 streamingIds
             }),
@@ -195,9 +239,10 @@ export function useAdaptiveWorkspaceChat({
             include_tool_outputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
             mcp_server_ids: selectedMcpServerIds,
             reasoning_effort: providerSupportsReasoningEffort(provider) ? reasoningEffort || null : null,
-            use_mcp: useMcp
+            use_mcp: useMcp,
+            retry
         };
-    }, [model, preference.include_reasoning, provider, reasoningEffort, selectedMcpServerIds, useMcp]);
+    }, [model, preference.include_reasoning, provider, reasoningEffort, retry, selectedMcpServerIds, useMcp]);
 
     const streamRun = useCallback(
         async (runId: string, afterSequence = 0) => {
@@ -320,7 +365,7 @@ export function useAdaptiveWorkspaceChat({
 
     const loadRunEvents = useCallback(
         async (runId: string) => {
-            const page = await getBrokerChatEvents(runId, {
+            const page = await getAllBrokerChatEvents(runId, {
                 includeReasoning: ADAPTIVE_INCLUDE_REASONING,
                 includeToolOutputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
                 limit: 500,
@@ -331,7 +376,7 @@ export function useAdaptiveWorkspaceChat({
                 ...current,
                 [runId]: mergeBrokerChatEvents(current[runId] ?? [], page.events)
             }));
-            if (LIVE_BROKER_CHAT_STATUSES.has(page.run.status)) {
+            if (LIVE_BROKER_CHAT_STATUSES.has(page.run.status) && shouldStreamBrokerChatRun(page.run)) {
                 void streamRun(runId, page.events.at(-1)?.sequence ?? 0);
             }
         },
@@ -339,7 +384,13 @@ export function useAdaptiveWorkspaceChat({
     );
 
     useEffect(() => {
-        if (!activeSessionId || loadedSessionIdRef.current === activeSessionId) return;
+        persistActiveSessionId(activeSessionId);
+    }, [activeSessionId]);
+
+    useEffect(() => {
+        if (!activeSessionId) return;
+        const cached = runsRef.current.some((run) => run.session_id === activeSessionId);
+        if (loadedSessionIdRef.current === activeSessionId && cached) return;
         loadedSessionIdRef.current = activeSessionId;
         setError(null);
         let cancelled = false;
@@ -348,7 +399,10 @@ export function useAdaptiveWorkspaceChat({
                 const sessionRuns = await getBrokerChatRuns({ limit: 80, sessionId: activeSessionId });
                 if (cancelled) return;
                 setRuns((current) => mergeBrokerChatRuns(current, sessionRuns));
-                await Promise.all(sessionRuns.map((run) => loadRunEvents(run.id)));
+                const recent = [...sessionRuns]
+                    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+                    .slice(0, ADAPTIVE_SESSION_EVENT_LOAD_LIMIT);
+                await Promise.all(recent.map((run) => loadRunEvents(run.id)));
             } catch (err) {
                 if (!cancelled && !isTransientChatStreamError(err)) setError((err as Error).message);
             }
@@ -369,42 +423,58 @@ export function useAdaptiveWorkspaceChat({
 
     useEffect(() => {
         for (const run of runs) {
-            if (LIVE_BROKER_CHAT_STATUSES.has(run.status)) {
+            if (shouldStreamBrokerChatRun(run)) {
                 void streamRun(run.id, eventsByRun[run.id]?.at(-1)?.sequence ?? 0);
             }
         }
     }, [eventsByRun, runs, streamRun]);
 
     useEffect(() => {
-        const liveRuns = runsRef.current.filter((run) => LIVE_BROKER_CHAT_STATUSES.has(run.status));
-        if (!liveRuns.length) return;
+        const liveRuns = runsRef.current.filter((run) => shouldStreamBrokerChatRun(run));
+        const waitingRuns = runsRef.current.filter((run) => run.status === "queued" && !run.job_id);
+        if (!liveRuns.length && !waitingRuns.length) return;
         let cancelled = false;
         const interval = window.setInterval(() => {
-            void Promise.all(
-                liveRuns.map(async (run) => {
-                    const page = await getBrokerChatEvents(run.id, {
-                        afterSequence: eventsByRunRef.current[run.id]?.at(-1)?.sequence ?? 0,
-                        includeReasoning: ADAPTIVE_INCLUDE_REASONING,
-                        includeToolOutputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
-                        limit: 100,
-                        visibility: ADAPTIVE_EVENT_VISIBILITY
-                    }).catch(() => null);
-                    if (!page || cancelled) return;
-                    setRuns((current) => mergeBrokerChatRuns(current, [page.run]));
-                    if (page.events.length) {
-                        setEventsByRun((current) => ({
-                            ...current,
-                            [run.id]: mergeBrokerChatEvents(current[run.id] ?? [], page.events)
-                        }));
+            void (async () => {
+                if (waitingRuns.length) {
+                    const sessionIds = [...new Set(waitingRuns.map((run) => run.session_id))];
+                    for (const sessionId of sessionIds) {
+                        const sessionRuns = await getBrokerChatRuns({ limit: 80, sessionId }).catch(() => null);
+                        if (!sessionRuns || cancelled) return;
+                        setRuns((current) => mergeBrokerChatRuns(current, sessionRuns));
+                        for (const run of sessionRuns) {
+                            if (shouldStreamBrokerChatRun(run)) {
+                                void streamRun(run.id, eventsByRunRef.current[run.id]?.at(-1)?.sequence ?? 0);
+                            }
+                        }
                     }
-                })
-            );
+                }
+                await Promise.all(
+                    liveRuns.map(async (run) => {
+                        const page = await getBrokerChatEvents(run.id, {
+                            afterSequence: eventsByRunRef.current[run.id]?.at(-1)?.sequence ?? 0,
+                            includeReasoning: ADAPTIVE_INCLUDE_REASONING,
+                            includeToolOutputs: ADAPTIVE_INCLUDE_TOOL_OUTPUTS,
+                            limit: 100,
+                            visibility: ADAPTIVE_EVENT_VISIBILITY
+                        }).catch(() => null);
+                        if (!page || cancelled) return;
+                        setRuns((current) => mergeBrokerChatRuns(current, [page.run]));
+                        if (page.events.length) {
+                            setEventsByRun((current) => ({
+                                ...current,
+                                [run.id]: mergeBrokerChatEvents(current[run.id] ?? [], page.events)
+                            }));
+                        }
+                    })
+                );
+            })();
         }, 2500);
         return () => {
             cancelled = true;
             window.clearInterval(interval);
         };
-    }, [liveRunIdsKey]);
+    }, [liveRunIdsKey, streamRun]);
 
     useEffect(() => {
         return () => {
@@ -452,6 +522,27 @@ export function useAdaptiveWorkspaceChat({
     }, []);
 
     useEffect(() => {
+        let cancelled = false;
+        const refreshSessions = () => {
+            void getBrokerChatSessions(80, ADAPTIVE_SESSION_QUERY)
+                .then((nextSessions) => {
+                    if (!cancelled) {
+                        setSessions((current) => mergeBrokerChatSessions(current, nextSessions));
+                    }
+                })
+                .catch(() => undefined);
+        };
+        const onFocus = () => refreshSessions();
+        window.addEventListener("focus", onFocus);
+        const interval = window.setInterval(refreshSessions, 30000);
+        return () => {
+            cancelled = true;
+            window.removeEventListener("focus", onFocus);
+            window.clearInterval(interval);
+        };
+    }, []);
+
+    useEffect(() => {
         if (bootstrappedEmptyDeskRef.current || isCreatingSession) return;
         if (sessions.length > 0) {
             bootstrappedEmptyDeskRef.current = true;
@@ -477,6 +568,31 @@ export function useAdaptiveWorkspaceChat({
             streamControllersRef.current[activeRun.id]?.abort();
             setRuns((current) => mergeBrokerChatRuns(current, [nextRun]));
             await loadRunEvents(activeRun.id);
+            if (activeSessionId) {
+                const sessionRuns = await getBrokerChatRuns({ limit: 80, sessionId: activeSessionId }).catch(() => []);
+                if (sessionRuns.length) setRuns((current) => mergeBrokerChatRuns(current, sessionRuns));
+            }
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function cancelQueuedRun(runId: string) {
+        setError(null);
+        try {
+            const nextRun = await cancelBrokerChatRun(runId);
+            setRuns((current) => mergeBrokerChatRuns(current, [nextRun]));
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function clearSessionQueue() {
+        if (!queuedRuns.length) return;
+        setError(null);
+        try {
+            const cancelled = await Promise.all(queuedRuns.map((run) => cancelBrokerChatRun(run.id)));
+            setRuns((current) => mergeBrokerChatRuns(current, cancelled));
         } catch (err) {
             setError((err as Error).message);
         }
@@ -486,16 +602,22 @@ export function useAdaptiveWorkspaceChat({
         if (!sessionId) return;
         setError(null);
         try {
-            runs.filter((run) => run.session_id === sessionId).forEach((run) => streamControllersRef.current[run.id]?.abort());
+            const removedRuns = runs.filter((run) => run.session_id === sessionId);
+            removedRuns.forEach((run) => streamControllersRef.current[run.id]?.abort());
             await deleteBrokerChatSession(sessionId);
+            const dropIds = new Set([sessionId]);
+            setSessions((current) => current.filter((session) => session.id !== sessionId));
+            setRuns((current) => current.filter((run) => run.session_id !== sessionId));
+            setEventsByRun((current) => {
+                const next = { ...current };
+                for (const run of removedRuns) delete next[run.id];
+                return next;
+            });
             const nextSessions = await getBrokerChatSessions(80, ADAPTIVE_SESSION_QUERY);
-            const nextActiveId = sessionId === activeSessionId ? (nextSessions[0]?.id ?? "") : activeSessionId;
-            const nextRuns = nextActiveId
-                ? await getBrokerChatRuns({ sessionId: nextActiveId, limit: 80 }).catch(() => [])
-                : [];
-            setSessions(sortBrokerChatSessions(nextSessions));
-            setRuns(mergeBrokerChatRuns([], nextRuns));
+            setSessions((current) => mergeBrokerChatSessions(current, nextSessions, { dropIds }));
             if (sessionId === activeSessionId) {
+                const remaining = mergeBrokerChatSessions([], nextSessions, { dropIds });
+                const nextActiveId = remaining[0]?.id ?? "";
                 setActiveSessionId(nextActiveId);
                 loadedSessionIdRef.current = null;
             }
@@ -513,7 +635,7 @@ export function useAdaptiveWorkspaceChat({
             if (copySpec?.components.length) {
                 await createAdaptiveWorkspaceSnapshot(session.id, copySpec, "Duplicated desk");
             }
-            setSessions((current) => sortBrokerChatSessions([session, ...current]));
+            setSessions((current) => mergeBrokerChatSessions(current, [session]));
             setActiveSessionId(session.id);
             loadedSessionIdRef.current = session.id;
             setMessage("");
@@ -526,7 +648,7 @@ export function useAdaptiveWorkspaceChat({
 
     async function sendMessage(nextMessage = message) {
         const trimmed = nextMessage.trim();
-        if (!trimmed || !provider || !model || isSubmitting || activeRun) return;
+        if (!trimmed || !provider || !model || isSubmitting) return;
         setIsSubmitting(true);
         setError(null);
         try {
@@ -558,9 +680,13 @@ export function useAdaptiveWorkspaceChat({
             if (!activeSessionId) {
                 setActiveSessionId(result.run.session_id);
             }
-            void streamRun(result.run.id, 0);
-            const nextSessions = await getBrokerChatSessions(80, ADAPTIVE_SESSION_QUERY).catch(() => sessions);
-            setSessions(sortBrokerChatSessions(nextSessions));
+            if (shouldStreamBrokerChatRun(result.run)) {
+                void streamRun(result.run.id, 0);
+            }
+            const nextSessions = await getBrokerChatSessions(80, ADAPTIVE_SESSION_QUERY).catch(() => []);
+            if (nextSessions.length) {
+                setSessions((current) => mergeBrokerChatSessions(current, nextSessions));
+            }
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -573,7 +699,9 @@ export function useAdaptiveWorkspaceChat({
         activeSession,
         activeSessionId,
         availableMcpServers,
+        cancelQueuedRun,
         chatStatus,
+        clearSessionQueue,
         configuredProviders,
         createNewChat,
         deleteSession,
@@ -587,7 +715,9 @@ export function useAdaptiveWorkspaceChat({
         model,
         provider,
         queueHealth,
+        queuedRuns,
         reasoningEffort,
+        runningRun,
         selectedMcpServerIds,
         selectedModels,
         selectedProvider,
@@ -598,11 +728,14 @@ export function useAdaptiveWorkspaceChat({
         setModel,
         setProvider,
         setReasoningEffort,
+        setRetry,
         setSelectedMcpServerIds,
         setUseMcp,
+        retry,
         stopActiveRun,
         useMcp,
         eventsByRun,
-        runsForActiveSession
+        runsForActiveSession,
+        waitingCount
     };
 }

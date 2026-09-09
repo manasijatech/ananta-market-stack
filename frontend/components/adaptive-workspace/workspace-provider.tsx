@@ -44,6 +44,7 @@ type AdaptiveWorkspaceContextValue = {
         options?: { history?: boolean }
     ) => void;
     patchUniverse: (symbols: string[]) => void;
+    reloadCurrent: () => void;
     remove: (id: string) => void;
     select: (id: string | null) => void;
     selectedId: string | null;
@@ -160,6 +161,21 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
         },
         []
     );
+
+    const reloadCurrent = useCallback(() => {
+        const currentSessionId = sessionIdRef.current;
+        if (!currentSessionId) return;
+        setLoading(true);
+        void getAdaptiveWorkspaceCurrent(currentSessionId)
+            .then((current) => {
+                if (sessionIdRef.current !== currentSessionId) return;
+                setSpec(parseWorkspaceSpec(current.spec) ?? emptyWorkspaceSpec());
+            })
+            .catch(() => undefined)
+            .finally(() => {
+                if (sessionIdRef.current === currentSessionId) setLoading(false);
+            });
+    }, []);
 
     const remove = useCallback(
         (id: string) => {
@@ -297,6 +313,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             outputs,
             patchComponent,
             patchUniverse,
+            reloadCurrent,
             remove,
             select,
             selectedId,
@@ -315,6 +332,7 @@ export function AdaptiveWorkspaceProvider({ children }: { children: ReactNode })
             outputs,
             patchComponent,
             patchUniverse,
+            reloadCurrent,
             remove,
             select,
             selectedId,

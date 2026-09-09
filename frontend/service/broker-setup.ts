@@ -51,11 +51,11 @@ export const brokerSessionSetup: Record<BrokerCode, BrokerSessionSetup> = {
         manualSubmitLabel: "Activate Groww"
     },
     indmoney: {
-        activationLabel: "Update INDmoney token",
-        activationDescription: "Paste a fresh INDmoney bearer access token from the broker portal.",
-        manualFallbackDescription: "INDmoney is manual-token only in Ananta right now.",
-        manualFallbackLabel: "Access token",
-        manualSubmitLabel: "Update INDmoney token"
+        activationLabel: "Activate INDmoney",
+        activationDescription: "Generate one daily INDmoney token with TOTP, or paste a manually generated token.",
+        manualFallbackDescription: "Use a current TOTP code when automation is configured, or paste a portal token.",
+        manualFallbackLabel: "INDmoney session",
+        manualSubmitLabel: "Activate INDmoney"
     },
     kotak: {
         activationLabel: "Activate Kotak Neo",

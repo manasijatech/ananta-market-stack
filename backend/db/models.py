@@ -381,6 +381,7 @@ class UserBrokerChatPreference(Base):
     reasoning_effort: Mapped[str | None] = mapped_column(String(16), nullable=True)
     use_mcp: Mapped[bool] = mapped_column(Boolean, default=False)
     mcp_server_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    retry_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -442,6 +443,16 @@ class BrokerChatSession(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True
     )
+    # Plan 06 — frozen model-facing session summary (audit remains full).
+    compaction_summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    compaction_summary_json: Mapped[str] = mapped_column(Text, default="{}")
+    compaction_first_kept_run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    compaction_model_id: Mapped[str] = mapped_column(String(256), default="")
+    compaction_chars_in: Mapped[int] = mapped_column(Integer, default=0)
+    compaction_chars_out: Mapped[int] = mapped_column(Integer, default=0)
+    compaction_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Plan 07 — short desk/session project instructions (always in prompt; cap at load).
+    agent_instructions: Mapped[str] = mapped_column(Text, default="")
 
 
 class BrokerChatRun(Base):
@@ -465,6 +476,7 @@ class BrokerChatRun(Base):
     include_tool_outputs: Mapped[bool] = mapped_column(Boolean, default=False)
     include_reasoning: Mapped[bool] = mapped_column(Boolean, default=False)
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    evidence_json: Mapped[str] = mapped_column(Text, default="{}")
     queued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
@@ -1152,6 +1164,9 @@ class IndmoneyCredentials(Base):
         String(36), ForeignKey("broker_accounts.id", ondelete="CASCADE"), primary_key=True
     )
     access_token_cipher: Mapped[str] = mapped_column(Text)
+    client_id_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mpin_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
+    totp_secret_cipher: Mapped[str | None] = mapped_column(Text, nullable=True)
     access_token_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -1690,3 +1705,18 @@ class AlertAudioAsset(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class AgentSkillPref(Base):
+    """Plan 07 — per-user enable/disable + optional markdown override for Agent Skills."""
+
+    __tablename__ = "agent_skill_prefs"
+    __table_args__ = (UniqueConstraint("user_id", "skill_id", name="uq_agent_skill_prefs_user_skill"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    skill_id: Mapped[str] = mapped_column(String(128), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    markdown: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

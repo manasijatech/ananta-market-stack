@@ -11,6 +11,7 @@ from rq.job import Job
 from rq.registry import FailedJobRegistry, StartedJobRegistry
 from rq.worker import Worker
 
+from app.agent_harness.retry_policy import rq_timeout_value
 from app.config import get_settings
 
 IN_PROCESS_WORKER_NAME_PREFIX = "broker-chat-inline-"
@@ -83,7 +84,7 @@ def enqueue_broker_chat_run(run_id: str) -> str:
         "app.services.broker_chat_runner.run_broker_chat_job",
         run_id,
         job_id=broker_chat_job_id(run_id),
-        job_timeout=settings.broker_chat_job_timeout_seconds,
+        job_timeout=rq_timeout_value(settings.broker_chat_job_timeout_seconds),
         result_ttl=settings.broker_chat_result_ttl_seconds,
         failure_ttl=settings.broker_chat_result_ttl_seconds,
         description=f"broker chat run {run_id}",

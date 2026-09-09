@@ -11,26 +11,35 @@ BrokerChatVisibility = Literal["minimal", "tool_calls", "full"]
 BrokerChatStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
 
+class BrokerChatRetryPolicyOut(BaseModel):
+    enabled: bool = True
+    max_retries: int = Field(default=3, ge=0)
+    base_delay_seconds: float = Field(default=2.0, ge=0)
+    max_delay_seconds: float = Field(default=12.0, ge=0)
+
+
 class BrokerChatPreferenceOut(BaseModel):
     default_provider: LlmProvider | None = None
     default_model: str | None = None
-    event_visibility: BrokerChatVisibility = "minimal"
-    include_tool_outputs: bool = False
-    include_reasoning: bool = False
+    event_visibility: BrokerChatVisibility = "full"
+    include_tool_outputs: bool = True
+    include_reasoning: bool = True
     reasoning_effort: str | None = None
     use_mcp: bool = False
     mcp_server_ids: list[str] = Field(default_factory=list)
+    retry: BrokerChatRetryPolicyOut = Field(default_factory=BrokerChatRetryPolicyOut)
 
 
 class BrokerChatPreferenceUpdateIn(BaseModel):
     default_provider: LlmProvider | None = None
     default_model: str | None = Field(default=None, max_length=256)
-    event_visibility: BrokerChatVisibility = "minimal"
-    include_tool_outputs: bool = False
-    include_reasoning: bool = False
+    event_visibility: BrokerChatVisibility = "full"
+    include_tool_outputs: bool = True
+    include_reasoning: bool = True
     reasoning_effort: str | None = None
     use_mcp: bool = False
     mcp_server_ids: list[str] = Field(default_factory=list)
+    retry: BrokerChatRetryPolicyOut | None = None
 
 
 BrokerChatSurface = Literal["broker_chat", "adaptive_workspace"]
@@ -48,8 +57,36 @@ class BrokerChatSessionOut(BaseModel):
     user_id: str
     title: str
     surface: BrokerChatSurface | str = "broker_chat"
+    agent_instructions: str = ""
     created_at: datetime
     updated_at: datetime
+
+
+class BrokerChatSessionInstructionsIn(BaseModel):
+    agent_instructions: str = Field(default="", max_length=4000)
+
+
+class AgentSkillCatalogItemOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    triggers: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    version: int = 1
+    source: str = "shipped"
+    enabled: bool = True
+
+
+class AgentSkillPrefUpdateIn(BaseModel):
+    enabled: bool | None = None
+    markdown: str | None = Field(default=None, max_length=20000)
+
+
+class AgentSkillPrefOut(BaseModel):
+    skill_id: str
+    enabled: bool = True
+    markdown: str | None = None
+    updated_at: str | None = None
 
 
 class BrokerChatSubmitIn(BaseModel):
@@ -86,11 +123,14 @@ class BrokerChatRunOut(BaseModel):
     include_tool_outputs: bool = False
     include_reasoning: bool = False
     metadata_json: str = "{}"
+    evidence_json: str = "{}"
     queued_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # 1-based position among queued runs in the session; null when not queued.
+    queue_position: int | None = None
 
 
 class BrokerChatSubmitOut(BaseModel):

@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     )
     broker_chat_queue_name: str = Field(default="broker-chat", validation_alias="BROKER_CHAT_QUEUE_NAME")
     broker_chat_job_timeout_seconds: int = Field(
-        default=600,
+        default=0,
         validation_alias="BROKER_CHAT_JOB_TIMEOUT_SECONDS",
     )
     broker_chat_result_ttl_seconds: int = Field(
@@ -76,6 +76,121 @@ class Settings(BaseSettings):
     broker_chat_worker_poll_seconds: float = Field(
         default=1.0,
         validation_alias="BROKER_CHAT_WORKER_POLL_SECONDS",
+    )
+    broker_chat_worker_count: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        validation_alias="BROKER_CHAT_WORKER_COUNT",
+    )
+    broker_chat_max_tokens: int = Field(
+        default=0,
+        ge=0,
+        validation_alias="BROKER_CHAT_MAX_TOKENS",
+    )
+    broker_chat_agent_max_retries: int = Field(
+        default=3,
+        ge=0,
+        le=8,
+        validation_alias="BROKER_CHAT_AGENT_MAX_RETRIES",
+    )
+    broker_chat_provider_max_retries: int = Field(
+        default=0,
+        ge=0,
+        validation_alias="BROKER_CHAT_PROVIDER_MAX_RETRIES",
+    )
+    broker_chat_retry_base_delay_seconds: float = Field(
+        default=2.0,
+        ge=0,
+        validation_alias="BROKER_CHAT_RETRY_BASE_DELAY_SECONDS",
+    )
+    broker_chat_retry_max_delay_seconds: float = Field(
+        default=12.0,
+        ge=0,
+        validation_alias="BROKER_CHAT_RETRY_MAX_DELAY_SECONDS",
+    )
+    broker_chat_retry_max_server_delay_seconds: float = Field(
+        default=60.0,
+        ge=0,
+        validation_alias="BROKER_CHAT_RETRY_MAX_SERVER_DELAY_SECONDS",
+    )
+    broker_chat_provider_timeout_seconds: float = Field(
+        default=60.0,
+        ge=1,
+        validation_alias="BROKER_CHAT_PROVIDER_TIMEOUT_SECONDS",
+    )
+    broker_chat_stream_idle_seconds: float = Field(
+        default=0.0,
+        ge=0,
+        validation_alias="BROKER_CHAT_STREAM_IDLE_SECONDS",
+    )
+    model_tool_result_chars: int = Field(
+        default=4000,
+        ge=256,
+        validation_alias="MODEL_TOOL_RESULT_CHARS",
+    )
+    model_prior_turn_tool_chars: int = Field(
+        default=1200,
+        ge=256,
+        validation_alias="MODEL_PRIOR_TURN_TOOL_CHARS",
+    )
+    model_input_char_budget: int = Field(
+        default=120_000,
+        ge=4000,
+        validation_alias="MODEL_INPUT_CHAR_BUDGET",
+    )
+    broker_chat_emit_model_context_event: bool = Field(
+        default=True,
+        validation_alias="BROKER_CHAT_EMIT_MODEL_CONTEXT_EVENT",
+    )
+    hooks_holdings_cache_ttl_seconds: int = Field(
+        default=45,
+        ge=5,
+        le=600,
+        validation_alias="HOOKS_HOLDINGS_CACHE_TTL_SECONDS",
+    )
+    hooks_total_chars: int = Field(
+        default=8_000,
+        ge=1_000,
+        validation_alias="HOOKS_TOTAL_CHARS",
+    )
+    compact_reserve_chars: int = Field(
+        default=12_000,
+        ge=2_000,
+        validation_alias="COMPACT_RESERVE_CHARS",
+    )
+    compact_keep_recent_chars: int = Field(
+        default=20_000,
+        ge=4_000,
+        validation_alias="COMPACT_KEEP_RECENT_CHARS",
+    )
+    compact_summary_max_chars: int = Field(
+        default=3_500,
+        ge=500,
+        validation_alias="COMPACT_SUMMARY_MAX_CHARS",
+    )
+    compact_anxiety_ratio: float = Field(
+        default=0.80,
+        ge=0.50,
+        le=0.95,
+        validation_alias="COMPACT_ANXIETY_RATIO",
+    )
+    compact_timeout_seconds: float = Field(
+        default=45.0,
+        ge=5.0,
+        validation_alias="COMPACT_TIMEOUT_SECONDS",
+    )
+    broker_chat_compaction_model: str = Field(
+        default="",
+        validation_alias="BROKER_CHAT_COMPACTION_MODEL",
+    )
+    enable_chat_embeddings: bool = Field(
+        default=False,
+        validation_alias="ENABLE_CHAT_EMBEDDINGS",
+    )
+    chat_embedding_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        validation_alias="CHAT_EMBEDDING_MODEL",
     )
     alert_workflow_chat_queue_name: str = Field(
         default="alert-workflow-chat",

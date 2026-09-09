@@ -1,8 +1,14 @@
 import type { UIMessage } from "ai";
-import { isAdaptiveRenderTool } from "@/lib/adaptive-workspace/catalog";
+import { displayNameForTool } from "@/lib/agent/tool-labels";
 import type { BrokerChatEvent, BrokerChatRun } from "@/service/types/broker-chat";
 
 export const LIVE_BROKER_CHAT_STATUSES = new Set(["queued", "running"]);
+
+/** Runs that should open an SSE stream (not waiting behind another turn). */
+export function shouldStreamBrokerChatRun(run: { status: string; job_id?: string | null }): boolean {
+    if (run.status === "running") return true;
+    return run.status === "queued" && Boolean(run.job_id);
+}
 
 type BrokerTraceItem =
     | {
@@ -28,6 +34,24 @@ export function mergeBrokerChatRuns(existing: BrokerChatRun[], incoming: BrokerC
     return Array.from(byId.values()).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
 }
 
+export function mergeBrokerChatSessions<T extends { id: string; updated_at: string }>(
+    existing: T[],
+    incoming: T[],
+    options?: { dropIds?: ReadonlySet<string> }
+) {
+    const dropped = options?.dropIds;
+    const byId = new Map<string, T>();
+    for (const item of existing) {
+        if (dropped?.has(item.id)) continue;
+        byId.set(item.id, item);
+    }
+    for (const item of incoming) {
+        if (dropped?.has(item.id)) continue;
+        byId.set(item.id, { ...byId.get(item.id), ...item });
+    }
+    return sortBrokerChatSessions([...byId.values()]);
+}
+
 export function mergeBrokerChatEvents(existing: BrokerChatEvent[], incoming: BrokerChatEvent[]) {
     const bySequence = new Map(existing.map((item) => [item.sequence, item]));
     incoming.forEach((item) => bySequence.set(item.sequence, { ...bySequence.get(item.sequence), ...item }));
@@ -45,6 +69,24 @@ export function textPayload(payload: Record<string, unknown>, key: string) {
 
 function payloadValue(payload: Record<string, unknown> | undefined, key: string) {
     return payload && Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : undefined;
+}
+
+function coerceToolArguments(value: unknown): Record<string, unknown> {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+    }
+    if (typeof value === "string" && value.trim()) {
+        try {
+            const parsed = JSON.parse(value) as unknown;
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                return parsed as Record<string, unknown>;
+            }
+        } catch {
+            /* keep raw */
+        }
+        return { raw: value };
+    }
+    return {};
 }
 
 export function parseSseBlock(block: string): { data?: string; event?: string; id?: string } | null {
@@ -115,9 +157,140 @@ function tokenText(events: BrokerChatEvent[]) {
         .join("");
 }
 
+const CONTINUE_REASON_LABELS: Record<string, string> = {
+    provider_retry: "Retrying the model",
+    provider_param_fix: "Adjusting model settings",
+    unknown_tool: "Correcting a tool call",
+    incomplete_answer: "Continuing the answer",
+    max_turns: "Still working through tools",
+    evidence_gap: "Filling a gap in the evidence"
+};
+
+export function harnessRetryParts(events: BrokerChatEvent[], running: boolean) {
+    return events
+        .filter((event) => event.event_type === "run_continued")
+        .map((event) => {
+            const reason = textPayload(event.payload, "reason") || "continue";
+            return {
+                input: { reason },
+                output: running ? "" : "Finished this step",
+                state: running ? "input-available" : "output-available",
+                toolCallId: event.id,
+                type: "tool-harness__retry",
+                displayName: CONTINUE_REASON_LABELS[reason] || textPayload(event.payload, "display_name") || "Still working"
+            };
+        });
+}
+
+export function describeAgentActivity(
+    events: BrokerChatEvent[],
+    run: BrokerChatRun | null
+): { title: string; detail?: string } | null {
+    if (!run || !LIVE_BROKER_CHAT_STATUSES.has(run.status)) return null;
+    if (run.status === "queued") {
+        if (run.job_id) {
+            return { title: "Waiting for a worker", detail: "Your turn is in the queue." };
+        }
+        return {
+            title: "Queued",
+            detail: "Waiting for the previous turn in this chat to finish."
+        };
+    }
+    const sorted = [...events].sort((left, right) => left.sequence - right.sequence);
+    const pending: Array<{ callId: string; name: string; display: string }> = [];
+    let lastReasoning = "";
+    let lastContinue = "";
+    let wroteTokens = false;
+    for (const event of sorted) {
+        if (event.event_type === "reasoning") {
+            lastReasoning = textPayload(event.payload, "message");
+            continue;
+        }
+        if (event.event_type === "run_continued") {
+            const reason = textPayload(event.payload, "reason");
+            lastContinue = CONTINUE_REASON_LABELS[reason] || "Still working";
+            continue;
+        }
+        if (event.event_type === "token" || event.event_type === "message_output") {
+            wroteTokens = true;
+            continue;
+        }
+        if (event.event_type === "tool_call_started") {
+            const name = textPayload(event.payload, "tool_name") || "tool";
+            pending.push({
+                callId: textPayload(event.payload, "tool_call_id") || event.id,
+                name,
+                display: displayNameForTool(name, textPayload(event.payload, "display_name"))
+            });
+            continue;
+        }
+        if (event.event_type === "tool_call_completed") {
+            const callId = textPayload(event.payload, "tool_call_id");
+            const name = textPayload(event.payload, "tool_name");
+            const index = callId
+                ? pending.findIndex((item) => item.callId === callId)
+                : pending.findIndex((item) => !name || name === "unknown" || item.name === name);
+            if (index >= 0) pending.splice(index, 1);
+            else if (pending.length) pending.pop();
+        }
+    }
+    const current = pending.at(-1);
+    if (current) {
+        return {
+            title: current.display,
+            detail: "In progress — market data, search, and calculations can take a minute."
+        };
+    }
+    if (lastContinue) {
+        return { title: lastContinue, detail: "The run has not finished the answer yet." };
+    }
+    if (lastReasoning) {
+        return { title: "Thinking", detail: lastReasoning.slice(0, 180) };
+    }
+    if (wroteTokens) {
+        return { title: "Writing the answer" };
+    }
+    return { title: "Working on your question", detail: "Gathering sources and updating the desk." };
+}
+
+function lastEventOfType(events: BrokerChatEvent[], eventType: string) {
+    return [...events].reverse().find((event) => event.event_type === eventType);
+}
+
+export function evidenceTodoParts(events: BrokerChatEvent[]) {
+    const event = lastEventOfType(events, "evidence_todos");
+    if (!event) return [];
+    const todos = event.payload?.todos;
+    if (!Array.isArray(todos) || todos.length === 0) return [];
+    return [
+        {
+            input: { todos },
+            output: { todos },
+            state: "output-available",
+            toolCallId: event.id,
+            type: "tool-TodoWrite",
+            displayName: textPayload(event.payload, "title") || "Research steps"
+        }
+    ];
+}
+
+export function evidenceIncompleteParts(events: BrokerChatEvent[]) {
+    const event = lastEventOfType(events, "evidence_incomplete");
+    if (!event) return [];
+    const message = textPayload(event.payload, "message");
+    if (!message) return [];
+    return [{ text: message, type: "text" as const }];
+}
+
 export function brokerChatToolPartType(toolName: string) {
     const name = toolName || "tool";
     const safe = name.replace(/[^A-Za-z0-9_]/g, "_") || "tool";
+    if (name.startsWith("sandbox_")) {
+        return `tool-mcp__ananta_compute__${safe}`;
+    }
+    if (name.startsWith("web_")) {
+        return `tool-mcp__ananta_web__${safe}`;
+    }
     if (name.startsWith("intel_")) {
         return `tool-mcp__ananta_intel__${safe}`;
     }
@@ -166,11 +339,10 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
     for (const event of events.slice().sort((left, right) => left.sequence - right.sequence)) {
         if (event.event_type === "reasoning") {
             const message = textPayload(event.payload, "message");
-            const rawType = textPayload(event.payload, "raw_type");
-            if (!rawType.endsWith(".delta") && (message || rawType)) {
+            if (message) {
                 if (!reasoningStartSequence) reasoningStartSequence = event.sequence;
                 reasoningEvents.push(event);
-                if (message) reasoningText.push(message);
+                reasoningText.push(message);
             }
             continue;
         }
@@ -235,19 +407,26 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
 function brokerToolPart(item: Extract<BrokerTraceItem, { kind: "tool" }>, isRunActive: boolean) {
     const startPayload = item.start?.payload;
     const outputPayload = item.output?.payload;
+    const label = displayNameForTool(
+        item.toolName,
+        textPayload(startPayload || {}, "display_name") || textPayload(outputPayload || {}, "display_name")
+    );
     return {
-        input: payloadValue(startPayload, "arguments") ?? {},
+        input: coerceToolArguments(
+            payloadValue(startPayload, "arguments") ?? payloadValue(outputPayload, "arguments")
+        ),
         output: payloadValue(outputPayload, "output"),
         state: item.output ? "output-available" : isRunActive ? "input-available" : "output-error",
         toolCallId: item.callId || item.key,
         type: brokerChatToolPartType(item.toolName),
+        displayName: label
     };
 }
 
 export function buildAdaptiveWorkspaceMessages({
     eventsByRun,
-    includeReasoning = false,
-    includeUnmappedTools = false,
+    includeReasoning = true,
+    includeUnmappedTools = true,
     runs,
     streamingIds: _streamingIds
 }: {
@@ -261,12 +440,16 @@ export function buildAdaptiveWorkspaceMessages({
         .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
         .flatMap((run) => {
             const events = eventsByRun[run.id] ?? [];
-            const running = LIVE_BROKER_CHAT_STATUSES.has(run.status);
+            const waitingInSessionQueue = run.status === "queued" && !run.job_id;
+            const running = LIVE_BROKER_CHAT_STATUSES.has(run.status) && !waitingInSessionQueue;
             const traceItems = buildBrokerTraceItems(events);
             const text = assistantText(events, run);
-            const assistantParts: unknown[] = events
-                .filter((event) => event.event_type.startsWith("mcp_"))
-                .map((event) => ({
+            const assistantParts: unknown[] = [
+                ...harnessRetryParts(events, running),
+                ...evidenceTodoParts(events),
+                ...events
+                    .filter((event) => event.event_type.startsWith("mcp_"))
+                    .map((event) => ({
                     input: {
                         status: textPayload(event.payload, "status") || event.event_type,
                         servers: Array.isArray(event.payload?.server_names)
@@ -277,7 +460,8 @@ export function buildAdaptiveWorkspaceMessages({
                     state: "output-available",
                     toolCallId: event.id,
                     type: `tool-mcp__status__${event.event_type}`
-                }));
+                })),
+            ];
 
             for (const item of traceItems) {
                 if (item.kind === "reasoning") {
@@ -291,37 +475,57 @@ export function buildAdaptiveWorkspaceMessages({
                     });
                     continue;
                 }
-                const mapped = isAdaptiveRenderTool(item.toolName);
-                if (
-                    item.toolName === "workspace_get_authoring_docs" ||
-                    item.toolName === "workspace_evaluate_request" ||
-                    item.toolName === "workspace_validate_spec" ||
-                    item.toolName === "workspace_get_current"
-                ) {
+                const noisyHelper = item.toolName === "workspace_get_authoring_docs";
+                if (noisyHelper) {
                     continue;
                 }
-                if (mapped || includeUnmappedTools || running || !item.output) {
+                if (includeUnmappedTools || running || !item.output) {
                     assistantParts.push(brokerToolPart(item, running));
                 }
             }
 
             if (text) {
                 assistantParts.push({ text, type: "text" });
-            } else if (!running && !assistantParts.length) {
+            } else if (!running && !waitingInSessionQueue && !assistantParts.length) {
                 assistantParts.push({
                     text: run.error ? `Run failed: ${run.error}` : "No assistant response was stored for this run.",
                     type: "text"
                 });
             }
+            assistantParts.push(...evidenceIncompleteParts(events));
 
             const messages: UIMessage[] = [
                 {
                     createdAt: new Date(run.created_at),
                     id: `${run.id}:user`,
+                    metadata: {
+                        brokerChatRunId: run.id,
+                        queued: waitingInSessionQueue,
+                        queuePosition: run.queue_position ?? null
+                    },
                     parts: [{ text: run.message, type: "text" }],
                     role: "user"
                 } as UIMessage
             ];
+
+            if (waitingInSessionQueue) {
+                messages.push({
+                    createdAt: new Date(run.created_at),
+                    id: `${run.id}:queued`,
+                    metadata: { brokerChatRunId: run.id, queued: true },
+                    parts: [
+                        {
+                            text:
+                                run.queue_position && run.queue_position > 1
+                                    ? `Queued (#${run.queue_position}) — waiting for earlier turns.`
+                                    : "Queued — waiting for the current turn to finish.",
+                            type: "text"
+                        }
+                    ],
+                    role: "assistant"
+                } as UIMessage);
+                return messages;
+            }
 
             if (assistantParts.length || running) {
                 messages.push({
