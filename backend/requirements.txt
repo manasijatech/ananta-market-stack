@@ -76,8 +76,8 @@ typing-inspection==0.4.2
 typing_extensions==4.16.0
 urllib3==2.7.0
 uvicorn==0.52.0
-uvloop==0.22.1
+uvloop==0.22.1; sys_platform != "win32"
 watchfiles==1.2.0
 websockets==16.0
 zstandard==0.25.0
-winloop==0.6.3
+winloop==0.6.3; sys_platform == "win32"

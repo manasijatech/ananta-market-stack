@@ -476,7 +476,7 @@ async def anext_with_idle(async_iter: Any, idle_seconds: float) -> Any:
         return await anext(async_iter)
     try:
         return await asyncio.wait_for(anext(async_iter), timeout=idle_seconds)
-    except TimeoutError as exc:
+    except asyncio.TimeoutError as exc:
         raise StreamIdleError(idle_seconds) from exc
 
 
