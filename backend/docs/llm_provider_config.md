@@ -47,6 +47,9 @@ Important fields:
 - `provider`
 - `model_id`
 - `label`
+- `reasoning_effort`
+- `openrouter_providers_json`
+- `openrouter_allow_fallbacks`
 - `is_enabled`
 
 These model rows are intended to be reused later by alert workflows and other
@@ -118,6 +121,18 @@ Current routes:
   `medium` / `high` / `xhigh`). Leave it empty to use the model default. Broker
   Chat and Adaptive Workspace send this as OpenRouter `reasoning.effort` only
   when a level is selected.
+- Saved OpenRouter models can optionally pin **providers** (e.g. `together` or
+  `deepinfra/turbo`). Leave empty for OpenRouter automatic routing. One
+  provider pins all requests to it; several run in the listed fallback order.
+  The **allow fallbacks** toggle (default on) controls whether OpenRouter may
+  use other providers when the listed ones are unavailable — turn it off to
+  fail instead of falling back. Sent as OpenRouter `provider.order` +
+  `provider.allow_fallbacks` (see
+  https://openrouter.ai/docs/features/provider-routing). Applies to Broker
+  Chat, Adaptive Workspace, compaction summaries, and alert LLM analyses —
+  every path resolves the saved model's routing at request time. Find provider
+  slugs on the model's OpenRouter page
+  (`https://openrouter.ai/models/<model-id>`).
 
 ### Gemini
 

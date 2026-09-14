@@ -442,6 +442,8 @@ export interface LlmModelConfig {
     model_id: string;
     label?: string | null;
     reasoning_effort?: string | null;
+    openrouter_providers?: string[];
+    openrouter_allow_fallbacks?: boolean;
     is_enabled: boolean;
     created_at: string;
     updated_at: string;

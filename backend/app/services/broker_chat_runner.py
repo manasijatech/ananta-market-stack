@@ -850,7 +850,16 @@ def _model_settings_for_run(run) -> ModelSettings:
         effort = llm_config.normalize_reasoning_effort(metadata.get("reasoning_effort"))
     except ValueError:
         effort = None
-    extra_body = {"reasoning": {"effort": effort}} if effort and run.provider == "openrouter" else None
+    providers, allow_fallbacks = llm_config.routing_from_metadata(metadata)
+    if run.provider == "openrouter":
+        extra_body = llm_config.merge_openrouter_extra_body(
+            None,
+            reasoning_effort=effort,
+            providers=providers,
+            allow_fallbacks=allow_fallbacks,
+        )
+    else:
+        extra_body = None
     reasoning = Reasoning(effort=effort) if effort else None
     settings: dict[str, Any] = {
         "temperature": 0.3,

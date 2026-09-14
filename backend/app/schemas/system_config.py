@@ -3,13 +3,62 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.broker import BrokerDataDefaultConfigOut, BrokerDataSearchConfigOut
 
 LlmProvider = Literal["openai", "openrouter", "gemini", "anthropic"]
 McpTransport = Literal["streamable_http", "sse"]
 McpAuthMode = Literal["oauth", "api_key"]
+
+
+def _lenient_openrouter_providers(value: Any) -> list[str]:
+    """Best-effort read-path parsing for stored provider routing.
+
+    Strict validation lives in `app.services.llm_config` on write. The read
+    path must never fail the whole system-config API on a single bad row, so
+    this helper cleans defensively and drops invalid entries.
+    """
+
+    import json as _json
+    import re as _re
+
+    candidates: list[Any] = []
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        try:
+            parsed = _json.loads(stripped)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, list):
+            candidates = parsed
+        elif isinstance(parsed, str):
+            candidates = [parsed]
+        else:
+            # Back-compat: allow raw comma-separated text stored by older drafts.
+            candidates = [part for part in stripped.split(",")]
+    elif isinstance(value, (list, tuple)):
+        candidates = list(value)
+    else:
+        return []
+    pattern = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-/]*$")
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in candidates:
+        cleaned = str(item or "").strip().lower()
+        if not cleaned or len(cleaned) > 64 or not pattern.match(cleaned):
+            continue
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        out.append(cleaned)
+        if len(out) >= 5:
+            break
+    return out
 
 
 class LlmModelOut(BaseModel):
@@ -20,9 +69,44 @@ class LlmModelOut(BaseModel):
     model_id: str
     label: str | None = None
     reasoning_effort: str | None = None
+    openrouter_providers: list[str] = Field(default_factory=list)
+    openrouter_allow_fallbacks: bool = True
     is_enabled: bool = True
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _populate_openrouter_routing(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "openrouter_providers" not in data and "openrouter_providers_json" in data:
+                data = {
+                    **data,
+                    "openrouter_providers": _lenient_openrouter_providers(data.get("openrouter_providers_json")),
+                }
+            if "openrouter_allow_fallbacks" not in data:
+                data = {**data, "openrouter_allow_fallbacks": True}
+            return data
+        json_value = getattr(data, "openrouter_providers_json", None)
+        if json_value is not None or not hasattr(data, "openrouter_providers"):
+            try:
+                return {
+                    "id": getattr(data, "id"),
+                    "provider": getattr(data, "provider"),
+                    "model_id": getattr(data, "model_id"),
+                    "label": getattr(data, "label", None),
+                    "reasoning_effort": getattr(data, "reasoning_effort", None),
+                    "openrouter_providers": _lenient_openrouter_providers(json_value),
+                    "openrouter_allow_fallbacks": bool(
+                        getattr(data, "openrouter_allow_fallbacks", True)
+                    ),
+                    "is_enabled": getattr(data, "is_enabled", True),
+                    "created_at": getattr(data, "created_at"),
+                    "updated_at": getattr(data, "updated_at"),
+                }
+            except Exception:
+                return data
+        return data
 
 
 class LlmProviderConfigOut(BaseModel):
@@ -47,12 +131,16 @@ class LlmModelCreateIn(BaseModel):
     model_id: str = Field(..., min_length=1, max_length=256)
     label: str | None = Field(default=None, max_length=128)
     reasoning_effort: str | None = Field(default=None, max_length=16)
+    openrouter_providers: list[str] | str | None = Field(default=None)
+    openrouter_allow_fallbacks: bool | None = Field(default=None)
     is_enabled: bool = True
 
 
 class LlmModelUpdateIn(BaseModel):
     label: str | None = Field(default=None, max_length=128)
     reasoning_effort: str | None = Field(default=None, max_length=16)
+    openrouter_providers: list[str] | str | None = Field(default=None)
+    openrouter_allow_fallbacks: bool | None = Field(default=None)
     is_enabled: bool | None = None
 
 
