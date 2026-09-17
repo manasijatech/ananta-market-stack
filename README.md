@@ -8,7 +8,16 @@ Ananta Market Stack is a self-hosted trading and market-data workspace for conne
 
 It is built for people who want a practical local or self-hosted market workspace without wiring together every broker integration themselves. Developers can also use it as a FastAPI + Next.js reference implementation for broker account management, encrypted credential storage, market-data APIs, alerting, and broker-aware automation.
 
-Resources: [Manasija](https://manasija.in/) | [Developer portal](https://developers.manasija.in) | [API docs](https://developers.manasija.in/docs) | [API key registration](http://platform.manasija.in/)
+Resources: [Manasija](https://manasija.in/) | [Drishti Indian stock market API](https://drishti.manasija.in/) | [Drishti API docs](https://developers.manasija.in/docs) | [API key registration](https://platform.manasija.in/)
+
+## Market-data integration
+
+Ananta Market Stack can be paired with [Drishti](https://drishti.manasija.in),
+an Indian-equities market intelligence API for applications that need structured
+company information, exchange announcements, earnings, conference calls, news,
+and event context alongside broker-connected portfolio workflows. Review the
+[Drishti API documentation](https://developers.manasija.in/docs) before enabling
+hosted API access in a deployment.
 
 ## What It Includes
 
