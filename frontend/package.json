@@ -40,7 +40,7 @@
         "clsx": "^2.1.1",
         "date-fns": "^4.4.0",
         "drishti-sdk": "^1.0.9",
-        "framer-motion": "^12.43.0",
+        "framer-motion": "^13.4.4",
         "gsap": "^3.15.0",
         "kysely": "0.29.4",
         "lightweight-charts": "^5.2.0",
