@@ -4,6 +4,7 @@
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
     sandbox_run_python: "Run calculation",
+    code_run: "Run code",
     web_fetch: "Open page",
     web_search: "Web search",
     intel_get_feed: "Market intelligence",

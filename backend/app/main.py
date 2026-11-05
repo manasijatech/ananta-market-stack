@@ -103,9 +103,31 @@ class BackgroundAsyncLoopThread:
         self.stop_event = None
 
 
+async def _log_code_sandbox_ping() -> None:
+    """Ping the code runner when code mode is configured. Missing sockets stay quiet for direct mode."""
+    from app.execution_planes.code_sandbox_client import sandbox_status
+
+    reason = "socket_missing"
+    ok = False
+    for _ in range(20):
+        ok, reason = await sandbox_status()
+        if ok:
+            break
+        await asyncio.sleep(0.5)
+    # uvicorn owns the stderr handler used for startup lines. The app logger
+    # has no stream handler unless file logging is on, so this is what shows up.
+    message = "code sandbox reachable (ping)" if ok else f"code sandbox not reachable (ping): {reason}"
+    logger.info(message)
+    logging.getLogger("uvicorn.error").info(message)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     configure_llm_telemetry()
+    # Before init_db(): Alembic's ini fileConfig disables the uvicorn handlers,
+    # so a later logger.info never reaches the container log.
+    if settings.chat_tool_mode == "code_mode":
+        await _log_code_sandbox_ping()
     init_db()
     maintenance_service = _start_background_service("maintenance-loop", maintenance_loop)
     alert_worker_service = None

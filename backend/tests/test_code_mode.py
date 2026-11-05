@@ -1,0 +1,843 @@
+import asyncio
+import json
+from types import SimpleNamespace
+
+import pytest
+
+from app.agent_harness.code_mode import (
+    CODE_MODE_INSTRUCTIONS,
+    CodeRegistry,
+    api_tools,
+    bootstrap,
+    catalog_inventory,
+    generate_api,
+    normalize_result,
+    select_strategy,
+    signature,
+)
+from app.config import get_settings
+from app.services.broker_chat_code_mode import (
+    build_code_tool_event,
+    prepare_broker_chat_tools,
+    requested_tool_mode,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_settings_cache():
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _code_mode_shapes_do_not_touch_redis(monkeypatch):
+    """Shape memory uses Redis when it is up. Tests must not write to a shared server."""
+
+    def unavailable():
+        raise RuntimeError("redis disabled in code mode tests")
+
+    monkeypatch.setattr("app.services.broker_chat_queue.redis_connection", unavailable)
+
+
+def tool(name="broker_get_quotes", schema=None, invoke=None, description="Read quotes."):
+    async def default(ctx, args):
+        return json.dumps({"ok": True, "data": json.loads(args)})
+
+    return SimpleNamespace(
+        name=name,
+        description=description,
+        params_json_schema=schema or {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]},
+        on_invoke_tool=invoke or default,
+        needs_approval=False,
+    )
+
+
+def test_stubs_varied_schemas():
+    schema = {
+        "properties": {
+            "symbol": {"type": "string"},
+            "count": {"type": "integer"},
+            "items": {"type": "array", "items": {"type": "number"}},
+            "choice": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+            "obj": {"$ref": "#/$defs/Thing"},
+            "required_after_optional": {"type": "object"},
+        },
+        "required": ["required_after_optional"],
+    }
+    source = generate_api([tool(schema=schema), tool("weird", {"properties": {"from": {"type": "string"}}})])
+    ns = {}
+    exec(compile(source, "api.py", "exec"), ns)
+    assert ns["list"]() == ["broker_get_quotes", "weird"]
+    assert ns["describe"]("broker_get_quotes")["parameters"] == schema
+    assert "broker_get_quotes" in ns["search"]("quotes")
+    compile(bootstrap("from ananta import api", source), "<guest>", "exec")
+    with pytest.raises(TypeError):
+        ns["broker_get_quotes"]()
+
+
+@pytest.mark.asyncio
+async def test_wrappers_parallel_events_and_denial():
+    barrier = asyncio.Event()
+    active = []
+
+    async def wrapped(ctx, args):
+        assert ctx == "context"
+        active.append(args)
+        if len(active) == 2:
+            barrier.set()
+        await asyncio.wait_for(barrier.wait(), 1)
+        return '{"ok": true, "source": "wrapped"}'
+
+    events = []
+
+    async def emit(kind, payload):
+        events.append((kind, payload))
+
+    registry = CodeRegistry([tool(invoke=wrapped)], emit)
+    ledger = []
+    result = await registry.dispatch(
+        "context",
+        {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {}}] * 2},
+        ledger,
+        "parent",
+    )
+    assert all(item["ok"] for item in result["results"]) and len(ledger) == 2
+    assert [event[0] for event in events].count("tool_call_completed") == 2
+    assert all(event[1]["parent_tool"] == "code_run" for event in events)
+    denied = await registry.dispatch(
+        "context",
+        {"id": 2, "calls": [{"name": "delete_all", "args": {}}]},
+        ledger,
+        "parent",
+    )
+    assert not denied["results"][0]["ok"]
+    with pytest.raises(ValueError):
+        await registry.dispatch(None, {"id": 3, "calls": [{}] * 9}, ledger, "parent")
+
+
+def test_allowlist_keeps_reads_and_drops_mutations():
+    from app.agent_tools.alert_studio_tools import ALERT_STUDIO_TOOLS
+    from app.agent_tools.broker_tools import BROKER_DATA_TOOLS
+    from app.agent_tools.web_tools import WEB_TOOLS
+    from app.agent_tools.workspace_tools import WORKSPACE_TOOLS
+
+    names = {
+        item.name
+        for item in api_tools([*BROKER_DATA_TOOLS, *WEB_TOOLS, *WORKSPACE_TOOLS, *ALERT_STUDIO_TOOLS])
+    }
+    assert "broker_get_quotes" in names
+    assert "broker_get_historical" in names
+    assert "broker_list_accounts" in names
+    assert "web_search" in names
+    assert "web_fetch" in names
+    assert "broker_delete_watchlist" not in names
+    assert "broker_sync_instruments" not in names
+    assert "workspace_publish_html_artifact" not in names
+    assert "alert_create_draft" not in names
+    assert "compose_surface" not in names
+    news = tool("get_news", description="News")
+    execute = tool("execute_tool", description="Run")
+    assert [item.name for item in api_tools([news, execute])] == ["get_news"]
+    assert [item.name for item in api_tools([news, execute], mcp_names={"get_news", "execute_tool"})] == ["get_news"]
+
+
+def test_strategy_and_catalog():
+    assert select_strategy("code_mode", SimpleNamespace(available=False, capabilities=["python.bridge"])) == "direct"
+    assert select_strategy("code_mode", SimpleNamespace(available=True, capabilities=[])) == "direct"
+    assert select_strategy("code_mode", SimpleNamespace(available=True, capabilities=["python.bridge"])) == "code_mode"
+    read, control, executor = tool(), tool("ask_user"), tool("code_run")
+    attached = [read, control]
+    inventory = catalog_inventory([read, control], attached, executor, [read])
+    assert [item.name for item in attached] == ["ask_user", "code_run"]
+    assert [item.name for item in inventory] == ["ask_user", "code_run"]
+
+
+def test_metadata_override_requires_server_flag(monkeypatch):
+    monkeypatch.setenv("CHAT_TOOL_MODE", "direct")
+    monkeypatch.setenv("CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE", "false")
+    get_settings.cache_clear()
+    assert requested_tool_mode({"chat_tool_mode": "code_mode"}) == "direct"
+    monkeypatch.setenv("CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE", "true")
+    get_settings.cache_clear()
+    assert requested_tool_mode({"chat_tool_mode": "code_mode"}) == "code_mode"
+    assert requested_tool_mode({"chat_tool_mode": "nope"}) == "direct"
+    monkeypatch.setenv("CHAT_TOOL_MODE", "code_mode")
+    monkeypatch.setenv("CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE", "false")
+    get_settings.cache_clear()
+    assert requested_tool_mode({}) == "code_mode"
+    assert requested_tool_mode({"chat_tool_mode": "direct"}) == "code_mode"
+
+
+def test_guest_rpc_partial_stdout_and_api_error(monkeypatch):
+    import io
+    import sys
+
+    ns = {}
+    exec(generate_api([tool()]), ns)
+    output = io.StringIO()
+    output.write("partial output")
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"id":1,"results":[{"ok":true,"value":{"price":10}}]}\n'))
+    assert ns["broker_get_quotes"](symbol="TCS") == {"price": 10}
+    frame = json.loads(output.getvalue().split("@@ANANTA_RPC ")[1])
+    assert frame["calls"][0]["args"] == {"symbol": "TCS"}
+    assert "\n@@ANANTA_RPC" in output.getvalue()
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"id":2,"results":[{"ok":false,"error":"source blocked"}]}\n'))
+    with pytest.raises(ns["ApiError"], match="source blocked"):
+        ns["broker_get_quotes"](symbol="TCS")
+
+
+def test_event_payload_uses_parent_tool():
+    public, full = build_code_tool_event(
+        "tool_call_completed",
+        {
+            "tool_name": "broker_get_quotes",
+            "tool_call_id": "inner",
+            "parent_tool": "code_run",
+            "parent_tool_call_id": "parent",
+            "ok": True,
+            "output": {"price": 10},
+        },
+    )
+    assert public["parent_tool"] == "code_run"
+    assert public["display_name"] == "Live quotes"
+    assert full["output"]["price"] == 10
+    assert public["output_metadata"]["preview"]
+
+
+@pytest.mark.asyncio
+async def test_code_run_returns_only_printed_output_and_ledger(monkeypatch):
+    from app.agent_tools import code_mode_tools
+
+    events = []
+
+    async def emit(kind, payload):
+        events.append((kind, payload))
+
+    async def bridge(**kwargs):
+        assert kwargs["timeout_seconds"] == 120
+        assert "def broker_get_quotes" in kwargs["api_source"]
+        assert kwargs["user_id"] == "u"
+        reply = await kwargs["rpc"]({"id": 1, "calls": [{"name": "broker_get_quotes", "args": {"symbol": "TCS"}}]})
+        assert reply["results"][0]["value"]["data"] == {"symbol": "TCS"}
+        return {"stdout": "x" * 9000, "stderr": "", "exit_code": 0}
+
+    monkeypatch.setattr(code_mode_tools, "run_bridge", bridge)
+    executor = code_mode_tools.make_code_run([tool()], user_id="u", session_key="s", emit=emit)
+    result = json.loads(
+        await executor.on_invoke_tool(
+            SimpleNamespace(tool_call_id="parent"),
+            json.dumps({"code": "print(42)", "timeout_seconds": 999}),
+        )
+    )
+    assert len(result["stdout"]) == 8000 and result["calls"][0]["ok"]
+    assert result["ok"] is True
+    assert result["stdout_truncated"] is True
+    assert "Aggregate" in result["note"]
+    assert "compact table" in result["note"]
+    assert "data" not in result
+    assert all(event[1]["parent_tool_call_id"] == "parent" for event in events)
+
+    async def failed_bridge(**kwargs):
+        return {"stdout": "short", "stderr": "nope", "exit_code": 1}
+
+    monkeypatch.setattr(code_mode_tools, "run_bridge", failed_bridge)
+    failed = json.loads(
+        await executor.on_invoke_tool(SimpleNamespace(tool_call_id="parent"), json.dumps({"code": "print(1)"}))
+    )
+    assert failed["ok"] is False
+    assert "stdout_truncated" not in failed
+
+    async def marked_truncated(**kwargs):
+        return {"stdout": "short", "stderr": "", "exit_code": 0, "truncated": True}
+
+    monkeypatch.setattr(code_mode_tools, "run_bridge", marked_truncated)
+    cut = json.loads(
+        await executor.on_invoke_tool(SimpleNamespace(tool_call_id="parent"), json.dumps({"code": "print(1)"}))
+    )
+    assert cut["ok"] is True and cut["stdout"] == "short" and cut["stdout_truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_fallback_when_socket_missing(monkeypatch):
+    monkeypatch.setenv("CHAT_TOOL_MODE", "code_mode")
+    get_settings.cache_clear()
+
+    async def missing():
+        return False, "socket_missing"
+
+    monkeypatch.setattr("app.services.broker_chat_code_mode.sandbox_status", missing)
+    quote = tool()
+    mutation = tool("broker_delete_watchlist")
+    handle = SimpleNamespace(active_servers=[], extra_tools=[], flattened_tool_names=[], enabled=False)
+    plan = await prepare_broker_chat_tools(
+        metadata={},
+        local_tools=[quote, mutation],
+        mcp_handle=handle,
+        user_id="u",
+        session_key="s",
+        emit=None,
+    )
+    assert plan.mode == "direct"
+    assert plan.event["reason"] == "socket_missing"
+    assert plan.event["fallback"] == "direct"
+    assert [item.name for item in plan.tools] == ["broker_get_quotes", "broker_delete_watchlist"]
+
+
+@pytest.mark.asyncio
+async def test_code_mode_strips_reads_and_mcp_servers(monkeypatch):
+    monkeypatch.setenv("CHAT_TOOL_MODE", "direct")
+    monkeypatch.setenv("CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE", "true")
+    get_settings.cache_clear()
+
+    async def ready():
+        return True, ""
+
+    monkeypatch.setattr("app.services.broker_chat_code_mode.sandbox_status", ready)
+    quote = tool()
+    mutation = tool("broker_delete_watchlist")
+    news = tool("get_news", description="Headlines")
+    gate = tool("execute_tool", description="Do not expose")
+    server = object()
+    handle = SimpleNamespace(
+        active_servers=[server],
+        extra_tools=[news, gate],
+        flattened_tool_names=["get_news"],
+        enabled=True,
+    )
+
+    async def convert(servers):
+        assert servers == [server]
+        return [tool("search_filings", description="Filings"), tool("describe_tools")], []
+
+    monkeypatch.setattr("app.services.broker_chat_code_mode.function_tools_from_mcp_servers", convert)
+    plan = await prepare_broker_chat_tools(
+        metadata={"chat_tool_mode": "code_mode"},
+        local_tools=[quote, mutation],
+        mcp_handle=handle,
+        user_id="u",
+        session_key="s",
+        emit=lambda *args: None,
+    )
+    names = [item.name for item in plan.tools]
+    assert plan.mode == "code_mode"
+    assert plan.mcp_servers == []
+    assert "broker_get_quotes" not in names
+    assert "get_news" not in names
+    assert "search_filings" in names
+    assert "execute_tool" not in names
+    assert "describe_tools" not in names
+    assert "broker_delete_watchlist" in names
+    assert names[-1] == "code_run"
+    assert set(plan.api_names) == {"broker_get_quotes", "get_news"}
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_converts_into_api():
+    from app.services.broker_chat_code_mode import function_tools_from_mcp_servers
+
+    class FakeServer:
+        name = "drishti"
+        tool_input_guardrails = None
+        tool_output_guardrails = None
+
+        def _get_failure_error_function(self, fn):
+            return fn
+
+        def _get_needs_approval_for_tool(self, mcp_tool, agent):
+            return False
+
+        async def list_tools(self, run_context=None, agent=None):
+            schema = {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]}
+            return [
+                SimpleNamespace(
+                    name="get_news",
+                    description="Headlines for a symbol",
+                    inputSchema=schema,
+                    input_schema=schema,
+                    annotations=None,
+                ),
+                SimpleNamespace(
+                    name="execute_tool",
+                    description="gated",
+                    inputSchema={"type": "object", "properties": {}},
+                    input_schema={"type": "object", "properties": {}},
+                    annotations=None,
+                ),
+            ]
+
+    tools, failed = await function_tools_from_mcp_servers([FakeServer()])
+    assert failed == []
+    names = [item.name for item in tools]
+    assert "get_news" in names
+    assert "execute_tool" in names
+    selected = api_tools(tools, mcp_names=set(names))
+    assert [item.name for item in selected] == ["get_news"]
+    source = generate_api(selected)
+    assert "def get_news" in source
+    assert "symbol" in source
+
+
+@pytest.mark.asyncio
+async def test_repeat_calls_are_memoized_and_cache_envelopes_unwrapped():
+    calls = []
+
+    async def invoke(ctx, args):
+        calls.append(args)
+        if len(calls) == 1:
+            return json.dumps([{"symbol": "TCS"}])
+        return json.dumps(
+            {"ok": True, "data": [{"symbol": "TCS"}], "count": 1, "original_result_type": "list"}
+        )
+
+    events = []
+
+    async def emit(kind, payload):
+        events.append((kind, payload))
+
+    registry = CodeRegistry([tool(invoke=invoke)], emit)
+    ledger = []
+    first = await registry.dispatch(
+        None,
+        {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {"symbol": "TCS", "exchange": "NSE"}}]},
+        ledger,
+        "p",
+    )
+    second = await registry.dispatch(
+        None,
+        {"id": 2, "calls": [{"name": "broker_get_quotes", "args": {"exchange": "NSE", "symbol": "TCS"}}]},
+        ledger,
+        "p",
+    )
+    assert first["results"][0]["value"] == second["results"][0]["value"] == [{"symbol": "TCS"}]
+    assert len(calls) == 1 and ledger[1]["cached"] is True
+    assert [event[0] for event in events].count("tool_call_started") == 2
+    assert [event[0] for event in events].count("tool_call_completed") == 2
+    cached_done = [event[1] for event in events if event[0] == "tool_call_completed"][1]
+    assert cached_done["cached"] is True
+    assert cached_done["output"] == {
+        "ok": True,
+        "data": [{"symbol": "TCS"}],
+        "count": 1,
+        "original_result_type": "list",
+    }
+    registry.invalidate()
+    await registry.dispatch(
+        None,
+        {"id": 4, "calls": [{"name": "broker_get_quotes", "args": {"symbol": "TCS", "exchange": "NSE"}}]},
+        ledger,
+        "p",
+    )
+    assert len(calls) == 2
+    assert normalize_result({"ok": True, "data": [1], "count": 1, "original_result_type": "list"}) == [1]
+    assert normalize_result({"ok": True, "data": [1]}) == {"ok": True, "data": [1]}
+
+    async def envelope(ctx, args):
+        calls.append(args)
+        return json.dumps({"ok": True, "data": [{"symbol": "INFY"}], "count": 1, "original_result_type": "list"})
+
+    wrapped = CodeRegistry([tool(invoke=envelope)], emit)
+    opened = await wrapped.dispatch(
+        None, {"id": 3, "calls": [{"name": "broker_get_quotes", "args": {"symbol": "INFY"}}]}, [], "p"
+    )
+    assert opened["results"][0]["value"] == [{"symbol": "INFY"}]
+
+
+def test_signature_peek_and_reserved_name():
+    schema = {
+        "properties": {
+            "symbols": {"type": "array", "items": {"type": "string"}},
+            "limit": {"type": "integer", "default": 5},
+        },
+        "required": ["symbols"],
+    }
+    line = signature(tool("get_news", schema, description="Headlines for a symbol. Include the source."))
+    assert line.startswith("api.get_news(symbols: List[str], limit: int = 5)")
+    assert line.endswith("# Headlines for a symbol")
+    source = generate_api([tool()])
+    peek_src = source.split("def peek", 1)[1].split("\n_schemas", 1)[0]
+    assert "list(" not in peek_src
+    ns = {}
+    exec(source, ns)
+    assert ns["peek"]({"a": [{"b": 1}], "c": "x"}) == "{'a': [1 x {'b': int}], 'c': str}"
+    assert ns["list"]() == ["broker_get_quotes"]
+    assert [item.name for item in api_tools([tool("peek", description="must stay a helper")])] == []
+
+
+def test_code_run_description_lists_signatures(monkeypatch):
+    from app.agent_tools import code_mode_tools
+
+    schema = {
+        "type": "object",
+        "properties": {"symbol": {"type": "string"}, "limit": {"type": "integer", "default": 5}},
+        "required": ["symbol"],
+    }
+    executor = code_mode_tools.make_code_run(
+        [tool(schema=schema, description="Read quotes for one symbol.")],
+        user_id="u",
+        session_key="s",
+        emit=lambda *args: None,
+    )
+    assert "api.broker_get_quotes(symbol: str, limit: int = 5)  # Read quotes for one symbol" in executor.description
+    assert "return_exceptions=True" in executor.description
+    assert executor._ananta_code_registry is not None
+    assert "return_exceptions=True" in executor.description
+    assert executor._ananta_code_registry is not None
+    assert "api.peek(value)" in executor.description
+    assert '"-> {...}" shows a result shape' in executor.description
+    assert 'news, movers = api.parallel([("search_news", {"queries": ["TCS results"], "days": 7}),' in executor.description
+    assert 'for n in news[:3]: print(n.get("title"), n.get("published_at"), n.get("url"))' in executor.description
+    assert "print(api.peek(movers))" in executor.description
+
+    monkeypatch.setattr(code_mode_tools, "learned_shapes", lambda names: {"broker_get_quotes": "{'price': float}"})
+    shaped = code_mode_tools.make_code_run(
+        [tool(schema=schema, description="Read quotes for one symbol.")],
+        user_id="u",
+        session_key="s",
+        emit=lambda *args: None,
+    )
+    assert "api.broker_get_quotes(symbol: str, limit: int = 5) -> {'price': float}  # Read quotes for one symbol" in shaped.description
+
+
+def test_code_mode_instructions_require_one_script_and_peek():
+    assert "code_run" in CODE_MODE_INSTRUCTIONS
+    assert "ONE script" in CODE_MODE_INSTRUCTIONS
+    assert "api.peek(result)" in CODE_MODE_INSTRUCTIONS
+    assert "source" in CODE_MODE_INSTRUCTIONS
+    assert "NOT direct tools" in CODE_MODE_INSTRUCTIONS
+    assert "capability_load" not in CODE_MODE_INSTRUCTIONS
+
+
+def test_code_mode_defers_browser_and_sandbox_tools_but_keeps_them_in_inventory():
+    read, control, browser, sandbox, executor = (
+        tool(),
+        tool("ask_user"),
+        tool("browser_snapshot"),
+        tool("sandbox_read_file"),
+        tool("code_run"),
+    )
+    attached = [read, control, browser, sandbox]
+    inventory = catalog_inventory([read, control, browser, sandbox], attached, executor, [read])
+    assert [item.name for item in attached] == ["ask_user", "code_run"]
+    assert {item.name for item in inventory} == {"ask_user", "browser_snapshot", "sandbox_read_file", "code_run"}
+
+
+@pytest.mark.asyncio
+async def test_code_mode_plan_drops_deferred_tools(monkeypatch):
+    monkeypatch.setenv("CHAT_TOOL_MODE", "code_mode")
+    get_settings.cache_clear()
+
+    async def ready():
+        return True, ""
+
+    monkeypatch.setattr("app.services.broker_chat_code_mode.sandbox_status", ready)
+    quote = tool()
+    browser = tool("browser_snapshot", description="Page")
+    sandbox = tool("sandbox_read_file", description="File")
+    mutation = tool("broker_delete_watchlist")
+    handle = SimpleNamespace(active_servers=[], extra_tools=[], flattened_tool_names=[], enabled=False)
+    plan = await prepare_broker_chat_tools(
+        metadata={},
+        local_tools=[quote, browser, sandbox, mutation],
+        mcp_handle=handle,
+        user_id="u",
+        session_key="s",
+        emit=lambda *args: None,
+    )
+    names = [item.name for item in plan.tools]
+    assert names == ["broker_delete_watchlist", "code_run"]
+    assert "api.peek" in plan.instruction
+
+
+def test_error_envelopes_vs_results_with_warnings():
+    from app.agent_harness.code_mode import is_error_result, shape
+
+    assert is_error_result({"ok": False, "code": "repeated_tool", "message": "stop", "retry": False})
+    assert is_error_result({"error": True, "status_code": 404, "message": "none"})
+    assert is_error_result({"isError": True, "content": []})
+    warned = {"ok": False, "code": "source_timestamp_in_future", "message": "not verified", "summary": {"a": "b"}}
+    assert not is_error_result(warned)
+    assert not is_error_result({"ok": False, "error": "boom", "data": [1]})
+    assert is_error_result({"ok": False, "empty": True, "retry": False, "hint": "try TMCV"})
+    assert is_error_result({"error": True, "message": "bad args", "workspace_saved": True})
+    assert is_error_result({"ok": False, "code": "x", "message": "m", "symbol": "TATAMOTORS"})
+    assert not is_error_result(
+        {"ok": False, "code": "source_timestamp_in_future", "summary": {"text": "x"}, "date": "2026-11-05"}
+    )
+    assert not is_error_result([1, 2])
+    assert shape({"a": [{"b": 1.5}], "c": None, "d": True}) == "{'a': [{'b': float}, ...], 'c': None, 'd': bool}"
+
+
+@pytest.mark.asyncio
+async def test_warning_payload_reaches_guest_and_shapes_are_recorded(monkeypatch):
+    from app.agent_harness import code_mode
+
+    recorded = {}
+    monkeypatch.setattr(code_mode, "remember_shape", lambda name, value: recorded.setdefault(name, value))
+    payload = {"ok": False, "code": "source_timestamp_in_future", "summary": {"text": "x"}}
+
+    async def invoke(ctx, args):
+        return json.dumps(payload)
+
+    async def emit(kind, data):
+        return None
+
+    reply = await CodeRegistry([tool("get_daily_summary", invoke=invoke)], emit).dispatch(
+        None, {"id": 1, "calls": [{"name": "get_daily_summary", "args": {}}]}, [], "p"
+    )
+    assert reply["results"][0] == {"ok": True, "value": payload}
+    assert recorded["get_daily_summary"] == payload
+
+
+def test_signature_shows_learned_return_shape():
+    line = signature(tool("get_news"), "{'data': [...]}")
+    assert "-> {'data': [...]}" in line
+
+
+@pytest.mark.asyncio
+async def test_list_results_are_recorded_as_evidence_envelopes():
+    async def invoke(ctx, args):
+        return json.dumps([{"title": "a"}])
+
+    events = []
+
+    async def emit(kind, data):
+        events.append((kind, data))
+
+    reply = await CodeRegistry([tool("search_news", invoke=invoke)], emit).dispatch(
+        None, {"id": 1, "calls": [{"name": "search_news", "args": {}}]}, [], "p"
+    )
+    assert reply["results"][0]["value"] == [{"title": "a"}]
+    completed = [data for kind, data in events if kind == "tool_call_completed"][0]
+    assert completed["output"] == {
+        "ok": True,
+        "data": [{"title": "a"}],
+        "count": 1,
+        "original_result_type": "list",
+    }
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.values = {}
+        self.calls = []
+
+    def set(self, key, value, ex=None, nx=False):
+        self.calls.append(("set", key, value, ex, nx))
+        if nx and key in self.values:
+            return None
+        self.values[key] = value.encode() if isinstance(value, str) else value
+        return True
+
+    def mget(self, keys):
+        self.calls.append(("mget", list(keys)))
+        return [self.values.get(key) for key in keys]
+
+
+def test_remember_shape_set_nx_ttl_and_learned_shapes_mget(monkeypatch):
+    from app.agent_harness import code_mode
+
+    fake = _FakeRedis()
+    monkeypatch.setattr(code_mode, "_redis", lambda: fake)
+    first = {"a": [1], "b": "secret-value"}
+    code_mode.remember_shape("get_news", first)
+    code_mode.remember_shape("get_news", {"changed": True})
+    code_mode.remember_shape("bad", {"ok": False, "code": "repeated_tool", "message": "stop"})
+    key = "ananta:code_mode:shape:get_news"
+    assert fake.calls[0] == ("set", key, code_mode.shape(first), 14 * 86400, True)
+    assert fake.calls[1][1:] == (key, code_mode.shape({"changed": True}), 14 * 86400, True)
+    assert key in fake.values and "ananta:code_mode:shape:bad" not in fake.values
+    assert b"secret-value" not in fake.values[key]
+    shapes = code_mode.learned_shapes(["get_news", "missing"])
+    assert shapes == {"get_news": code_mode.shape(first)}
+    assert fake.calls[-1] == ("mget", ["ananta:code_mode:shape:get_news", "ananta:code_mode:shape:missing"])
+
+    wide = {f"key{i:03d}": {f"nested{j:03d}": j for j in range(15)} for i in range(20)}
+    assert len(code_mode.shape(wide)) > 600
+    code_mode.remember_shape("broker_get_historical", wide)
+    code_mode.remember_shape("client_connector_positions", {"RELIANCE": {"qty": 1}})
+    stored = fake.values["ananta:code_mode:shape:broker_get_historical"]
+    assert "ananta:code_mode:shape:client_connector_positions" not in fake.values
+    assert stored.endswith(b"...") and len(stored) == 603
+
+
+def test_shape_memory_degrades_without_redis(monkeypatch):
+    from app.agent_harness import code_mode
+    from app.agent_harness.code_mode import learned_shapes, remember_shape
+
+    remember_shape("get_news", {"a": 1})
+    assert learned_shapes(["get_news"]) == {}
+
+    class Boom:
+        def mget(self, keys):
+            raise RuntimeError("down")
+
+        def set(self, *args, **kwargs):
+            raise RuntimeError("down")
+
+    monkeypatch.setattr(code_mode, "_redis", lambda: Boom())
+    remember_shape("get_news", {"a": 1})
+    assert learned_shapes(["get_news"]) == {}
+    monkeypatch.setattr(code_mode, "_redis", lambda: None)
+    remember_shape("get_news", {"a": 1})
+    assert learned_shapes([]) == {}
+
+
+def _capture_api(tools):
+    sent = []
+    source = generate_api(tools).replace(
+        "def _rpc(calls, return_exceptions=False):",
+        "def _rpc(calls, return_exceptions=False):\n    _sent.append(calls); return [None]*len(calls)\ndef _unused(calls, return_exceptions=False):",
+        1,
+    )
+    namespace = {"_sent": sent}
+    exec(source, namespace)
+    return namespace, sent
+
+
+def test_nested_query_object_is_flattened_to_keywords():
+    schema = {
+        "$defs": {
+            "Q": {
+                "type": "object",
+                "properties": {
+                    "symbols": {
+                        "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}],
+                        "default": None,
+                    },
+                    "from": {"type": "string"},
+                },
+            }
+        },
+        "properties": {"query": {"anyOf": [{"$ref": "#/$defs/Q"}, {"type": "null"}], "default": None}},
+    }
+    news = tool("get_news", schema)
+    assert signature(news).startswith("api.get_news(symbols: Union[List[str], None] = None, from_: str = None)")
+    namespace, sent = _capture_api([news])
+    namespace["get_news"](symbols=["TCS"], from_="2026-11-01")
+    namespace["get_news"](query={"symbols": "INFY"})
+    namespace["parallel"]([("get_news", {"symbols": ["A"]})])
+    assert sent[0][0]["args"] == {"query": {"symbols": ["TCS"], "from": "2026-11-01"}}
+    assert sent[1][0]["args"] == {"query": {"symbols": "INFY"}}
+    assert sent[2][0]["args"] == {"query": {"symbols": ["A"]}}
+    assert "_builders" in namespace and "get_news" in namespace["_builders"]
+
+    direct = tool(
+        "get_body",
+        {
+            "properties": {
+                "body": {
+                    "type": "object",
+                    "properties": {"symbol": {"type": "string"}},
+                    "required": ["symbol"],
+                }
+            },
+            "required": ["body"],
+        },
+    )
+    assert signature(direct).startswith("api.get_body(symbol: str)")
+    direct_ns, direct_sent = _capture_api([direct])
+    direct_ns["get_body"](symbol="TCS")
+    with pytest.raises(TypeError):
+        direct_ns["get_body"](body={"symbol": "INFY"})
+    direct_ns["parallel"]([("get_body", {"symbol": "A"})])
+    assert direct_sent[0][0]["args"] == {"body": {"symbol": "TCS"}}
+    assert direct_sent[1][0]["args"] == {"body": {"symbol": "A"}}
+
+    optional = tool(
+        "get_optional",
+        {"properties": {"body": {"type": "object", "properties": {"symbol": {"type": "string"}}}}},
+    )
+    optional_ns, optional_sent = _capture_api([optional])
+    optional_ns["get_optional"](body={"symbol": "INFY"})
+    optional_ns["parallel"]([("get_optional", {"body": {"symbol": "A"}})])
+    assert optional_sent[0][0]["args"] == {"body": {"symbol": "INFY"}}
+    assert optional_sent[1][0]["args"] == {"body": {"symbol": "A"}}
+
+
+def test_flat_tools_and_keyword_params_keep_their_names():
+    quotes = tool(
+        "broker_get_quotes",
+        {"properties": {"symbol": {"type": "string"}, "from": {"type": "string"}}},
+    )
+    assert "from_" in signature(quotes)
+    namespace, sent = _capture_api([quotes])
+    namespace["broker_get_quotes"](symbol="TCS", from_="x")
+    namespace["parallel"]([("broker_get_quotes", {"symbol": "INFY", "from_": "y"})])
+    assert sent[0][0]["args"] == {"symbol": "TCS", "from": "x"}
+    assert sent[1][0]["args"] == {"symbol": "INFY", "from": "y"}
+
+
+def test_shapes_never_copy_dynamic_keys():
+    from app.agent_harness.code_mode import shape
+
+    assert shape({"customer-private-identifier": {"qty": 1}}) == "{str: {'qty': int}, ...}"
+    assert shape({"RELIANCE": [1.0], "TCS": [2.0]}) == "{str: [float, ...], ...}"
+    assert shape({"symbol": "TCS", "ltp": 1.0}) == "{'symbol': str, 'ltp': float}"
+
+
+def test_unknown_mcp_tools_with_read_like_names_stay_direct():
+    picked = api_tools(
+        [tool("get_secret_admin_reset"), tool("list_earnings"), tool("nse_cm__quote"), tool("nse_bhavcopy__quote")],
+        mcp_names=["get_secret_admin_reset", "nse_cm__quote", "nse_bhavcopy__quote"],
+    )
+    names = {item.name for item in picked}
+    assert "get_secret_admin_reset" not in names
+    assert "nse_bhavcopy__other" not in names
+    assert {"list_earnings", "nse_cm__quote", "nse_bhavcopy__quote"} <= names
+    assert [item.name for item in api_tools([tool("nse_cm__quote")], mcp_names=[])] == []
+
+
+@pytest.mark.asyncio
+async def test_memo_entries_expire_and_ignore_unauthorized_names(monkeypatch):
+    from app.agent_harness import code_mode
+
+    calls = []
+
+    async def invoke(ctx, args):
+        calls.append(args)
+        return json.dumps({"ok": True, "v": len(calls)})
+
+    async def emit(kind, data):
+        return None
+
+    registry = CodeRegistry([tool(invoke=invoke)], emit)
+    frame = {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {"symbol": "A"}}]}
+    await registry.dispatch(None, frame, [], "p")
+    now = code_mode.time.monotonic()
+    monkeypatch.setattr(code_mode.time, "monotonic", lambda: now + code_mode.MEMO_TTL_SECONDS + 1)
+    await registry.dispatch(None, frame, [], "p")
+    assert len(calls) == 2
+    registry.memo["delete_all:{}"] = (code_mode.time.monotonic(), {"secret": True})
+    denied = await registry.dispatch(None, {"id": 2, "calls": [{"name": "delete_all", "args": {}}]}, [], "p")
+    assert denied["results"][0]["ok"] is False
+    assert "secret" not in denied["results"][0]["error"]
+
+
+def test_parallel_can_keep_partial_results(monkeypatch, capsys):
+    import io
+    import sys
+
+    namespace = {}
+    exec(generate_api([tool("get_news"), tool("get_events")]), namespace)
+    reply = json.dumps({"id": 1, "results": [{"ok": True, "value": [1]}, {"ok": False, "error": "boom"}]}) + "\n"
+    monkeypatch.setattr(sys, "stdin", io.StringIO(reply))
+    out = namespace["parallel"]([("get_news", {}), ("get_events", {})], return_exceptions=True)
+    assert out[0] == [1] and isinstance(out[1], namespace["ApiError"]) and "get_events" in str(out[1])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(reply.replace('"id": 1', '"id": 2')))
+    with pytest.raises(namespace["ApiError"], match="get_events: boom"):
+        namespace["parallel"]([("get_news", {}), ("get_events", {})])
+    assert "@@ANANTA_RPC " in capsys.readouterr().out
+
+
+def test_direct_tool_completion_invalidates_code_registry():
+    from app.services.broker_chat_code_mode import invalidate_code_reads
+    from app.agent_tools import code_mode_tools
+
+    executor = code_mode_tools.make_code_run([tool()], user_id="u", session_key="s", emit=lambda *args: None)
+    executor._ananta_code_registry.memo["broker_get_quotes:{}"] = (0, {"price": 1})
+    invalidate_code_reads([executor], "code_run")
+    assert executor._ananta_code_registry.memo
+    invalidate_code_reads([executor], "workspace_publish_html_artifact")
+    assert executor._ananta_code_registry.memo == {}

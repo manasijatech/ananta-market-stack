@@ -63,6 +63,11 @@ from app.agent_harness.skills import (
     list_skill_catalog,
 )
 from app.services import agent_skill_prefs, broker_chat, broker_chat_mcp, feature_flags, llm_config
+from app.services.broker_chat_code_mode import (
+    build_code_tool_event,
+    invalidate_code_reads,
+    prepare_broker_chat_tools,
+)
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.broker_chat_queue import broker_chat_cancel_requested
@@ -988,6 +993,32 @@ async def _run_broker_chat(run_id: str) -> None:
             skill_catalog_xml=catalog_xml,
             session_instructions=session_instructions,
         )
+
+        async def emit_code_tool(kind: str, payload: dict[str, Any]) -> None:
+            public, full = build_code_tool_event(kind, payload)
+            broker_chat.append_event(db, run, event_type=kind, public_payload=public, full_payload=full)
+
+        code_plan = await prepare_broker_chat_tools(
+            metadata=metadata if isinstance(metadata, dict) else {},
+            local_tools=list(tools),
+            mcp_handle=mcp_handle,
+            user_id=run.user_id,
+            session_key=run.session_id,
+            emit=emit_code_tool,
+        )
+        tools = code_plan.tools
+        active_mcp_servers = code_plan.mcp_servers
+        if code_plan.event:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="code_mode_unavailable",
+                public_payload=code_plan.event,
+                full_payload=code_plan.event,
+            )
+        if code_plan.instruction:
+            instructions = instructions.rstrip() + "\n\n" + code_plan.instruction
+            mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle, code_mode=True)
         sandbox_available = False
         evidence_contract = plan_evidence_contract(
             run.message,
@@ -1127,9 +1158,9 @@ async def _run_broker_chat(run_id: str) -> None:
             model=_build_model(db, run, retry_policy),
             model_settings=_model_settings_for_run(run),
             tools=tools,
-            mcp_servers=mcp_handle.active_servers,
+            mcp_servers=active_mcp_servers,
             mcp_config=broker_chat_mcp.broker_chat_mcp_config(
-                prefix_server_names=len(mcp_handle.active_servers) > 1 and not mcp_handle.extra_tools
+                prefix_server_names=len(active_mcp_servers) > 1 and not mcp_handle.extra_tools
             ),
         )
         messages = context_build.messages
@@ -1257,6 +1288,10 @@ async def _run_broker_chat(run_id: str) -> None:
                                 "raw_item": _safe_data(item),
                             },
                         )
+                        if tool_name != "code_run":
+                            # Any direct tool (a mutation, a canvas write, a policy-relevant
+                            # step) ends reuse of earlier code-mode reads in this run.
+                            invalidate_code_reads(tools, tool_name)
                     elif item_type == "message_output_item":
                         text = ItemHelpers.text_message_output(item)
                         had_message = True

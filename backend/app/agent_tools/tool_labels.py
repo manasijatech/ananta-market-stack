@@ -9,6 +9,7 @@ from typing import Any
 
 TOOL_DISPLAY_NAMES: dict[str, str] = {
     "sandbox_run_python": "Run calculation",
+    "code_run": "Run code",
     "web_fetch": "Open page",
     "web_search": "Web search",
     "intel_get_feed": "Market intelligence",

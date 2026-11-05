@@ -143,6 +143,19 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="BROKER_CHAT_EMIT_MODEL_CONTEXT_EVENT",
     )
+    chat_tool_mode: str = Field(default="direct", validation_alias="CHAT_TOOL_MODE")
+    chat_tool_mode_allow_metadata_override: bool = Field(
+        default=False,
+        validation_alias="CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE",
+    )
+    code_sandbox_socket: str = Field(
+        default="/run/ananta-code/runner.sock",
+        validation_alias="CODE_SANDBOX_SOCKET",
+    )
+    code_sandbox_token_file: str = Field(
+        default="/run/ananta-code/token",
+        validation_alias="CODE_SANDBOX_TOKEN_FILE",
+    )
     hooks_holdings_cache_ttl_seconds: int = Field(
         default=45,
         ge=5,
@@ -364,6 +377,16 @@ class Settings(BaseSettings):
         if value == "":
             return None
         return value
+
+    @field_validator("chat_tool_mode", mode="before")
+    @classmethod
+    def _normalize_chat_tool_mode(cls, value: object) -> str:
+        if value is None or value == "":
+            return "direct"
+        text = str(value).strip().lower()
+        if text not in {"direct", "code_mode"}:
+            return "direct"
+        return text
 
     @model_validator(mode="after")
     def _apply_redis_url(self) -> "Settings":

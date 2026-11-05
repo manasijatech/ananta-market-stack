@@ -85,40 +85,64 @@ def _looks_like_json_argument_error(message: str) -> bool:
     )
 
 
-def mcp_context_instructions(handle: BrokerChatMcpHandle) -> str:
+def mcp_context_instructions(handle: BrokerChatMcpHandle, *, code_mode: bool = False) -> str:
     if not handle.enabled or not handle.active_servers:
         return ""
     inventory = handle.inventory or {}
-    sections = [
-        "MCP is connected for this run. You MUST use advertised MCP tools when they "
-        "can answer market news, daily/morning summaries, events, research, filings, "
-        "or when the user asked to use MCP. Do not skip MCP in favor of instrument-cache "
-        "search loops. Local broker tools remain authoritative for connected-account "
-        "portfolio state and live quotes."
-    ]
+    if code_mode:
+        sections = [
+            "MCP is connected for this run. Read-only MCP data tools are available inside "
+            "code_run as api.<name>(...), not as direct tool schemas. Use them for market news, "
+            "daily summaries, events, research, and filings. Local broker reads are also inside "
+            "that API. Do not call describe_tools or execute_tool; tokens stay on the host."
+        ]
+    else:
+        sections = [
+            "MCP is connected for this run. You MUST use advertised MCP tools when they "
+            "can answer market news, daily/morning summaries, events, research, filings, "
+            "or when the user asked to use MCP. Do not skip MCP in favor of instrument-cache "
+            "search loops. Local broker tools remain authoritative for connected-account "
+            "portfolio state and live quotes."
+        ]
     tool_names = _inventory_tool_names(inventory)
     if handle.flattened_tool_names:
-        sections.append(
-            "MCP capabilities are exposed as first-class tools. Call them by these names: "
-            + ", ".join(handle.flattened_tool_names[:80])
-            + ". Do NOT call describe_tools or execute_tool. Tokens are handled by the host."
-        )
+        names = ", ".join(handle.flattened_tool_names[:80])
+        if code_mode:
+            sections.append(
+                "MCP read functions inside code_run: "
+                + names
+                + ". Do NOT call describe_tools or execute_tool."
+            )
+        else:
+            sections.append(
+                "MCP capabilities are exposed as first-class tools. Call them by these names: "
+                + names
+                + ". Do NOT call describe_tools or execute_tool. Tokens are handled by the host."
+            )
     elif tool_names:
         callable_names = [
             name
             for name in tool_names
             if name.lower() not in {"describe_tools", "describe_tool", "execute_tool", "execute"}
         ]
-        sections.append(
-            "Connected MCP tool names (call these by their MCP names, not by guessing broker tools): "
-            + ", ".join((callable_names or tool_names)[:80])
-        )
-        if any(name.lower() in {"describe_tools", "execute_tool"} for name in tool_names):
+        listed = ", ".join((callable_names or tool_names)[:80])
+        if code_mode:
             sections.append(
-                "If you still see describe_tools/execute_tool, call describe_tools once, then "
-                "execute_tool with top-level keys name, arguments, and call_token. "
-                "call_token is a sibling of name. After two execute_tool failures, stop and use intel_get_feed."
+                "Connected MCP reads are inside code_run as api.<name>(...): "
+                + listed
+                + ". Do NOT call describe_tools or execute_tool."
             )
+        else:
+            sections.append(
+                "Connected MCP tool names (call these by their MCP names, not by guessing broker tools): "
+                + listed
+            )
+            if any(name.lower() in {"describe_tools", "execute_tool"} for name in tool_names):
+                sections.append(
+                    "If you still see describe_tools/execute_tool, call describe_tools once, then "
+                    "execute_tool with top-level keys name, arguments, and call_token. "
+                    "call_token is a sibling of name. After two execute_tool failures, stop and use intel_get_feed."
+                )
     errors = inventory.get("errors")
     if errors:
         sections.append(f"Inventory listing notes: {_inventory_json(errors)}")

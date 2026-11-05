@@ -687,6 +687,9 @@ def _event_payload_for_visibility(
             payload = {
                 "tool_name": public_payload.get("tool_name"),
                 "tool_call_id": public_payload.get("tool_call_id"),
+                "parent_tool": public_payload.get("parent_tool"),
+                "parent_tool_call_id": public_payload.get("parent_tool_call_id"),
+                "cached": public_payload.get("cached"),
             }
             if include_tool_outputs:
                 full_payload = json_loads(row.full_payload_json, public_payload)

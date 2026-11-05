@@ -67,11 +67,16 @@ services:
       ENABLE_IN_PROCESS_ALPHA_WS_WORKER: ${ENABLE_IN_PROCESS_ALPHA_WS_WORKER:-true}
       ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER: ${ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER:-true}
       ENABLE_ADAPTIVE_WORKSPACE: ${ENABLE_ADAPTIVE_WORKSPACE:-true}
+      CHAT_TOOL_MODE: ${CHAT_TOOL_MODE:-direct}
+      CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE: ${CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE:-false}
+      CODE_SANDBOX_SOCKET: /run/ananta-code/runner.sock
+      CODE_SANDBOX_TOKEN_FILE: /run/ananta-code/token
       DESKTOP_AUDIO_STORAGE_DIR: ${DESKTOP_AUDIO_STORAGE_DIR:-/data/alert-audio}
       DESKTOP_AUDIO_RETENTION_DAYS: ${DESKTOP_AUDIO_RETENTION_DAYS:-15}
     volumes:
       - ananta_market_stack_config:/config:ro
       - backend_data:/data
+      - ananta_code_run:/run/ananta-code:ro
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     healthcheck:
@@ -82,6 +87,32 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+    restart: unless-stopped
+
+  # Optional. No network, no backend secrets. Enable with:
+  #   CHAT_TOOL_MODE=code_mode docker compose --profile code-mode up -d --build
+  code-sandbox:
+    profiles: ["code-mode"]
+    build:
+      context: ./code_sandbox
+    network_mode: "none"
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    volumes:
+      - ananta_code_run:/run/ananta-code
+    mem_limit: 768m
+    cpus: "0.50"
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+      - KILL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   frontend:
@@ -128,3 +159,4 @@ volumes:
   backend_data:
   ananta_market_stack_config:
   redis_data:
+  ananta_code_run:

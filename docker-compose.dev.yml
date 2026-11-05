@@ -35,6 +35,10 @@ services:
       ENABLE_IN_PROCESS_ALPHA_WS_WORKER: ${ENABLE_IN_PROCESS_ALPHA_WS_WORKER:-true}
       ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER: ${ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER:-true}
       ENABLE_ADAPTIVE_WORKSPACE: ${ENABLE_ADAPTIVE_WORKSPACE:-true}
+      CHAT_TOOL_MODE: ${CHAT_TOOL_MODE:-direct}
+      CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE: ${CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE:-false}
+      CODE_SANDBOX_SOCKET: /run/ananta-code/runner.sock
+      CODE_SANDBOX_TOKEN_FILE: /run/ananta-code/token
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -46,10 +50,35 @@ services:
       - ./backend/alembic:/app/alembic
       - ./backend/scripts:/app/scripts
       - ./backend/alembic.ini:/app/alembic.ini
+      - ananta_code_run:/run/ananta-code:ro
     develop:
       watch:
         - path: ./backend/requirements.txt
           action: rebuild
+    restart: unless-stopped
+
+  code-sandbox:
+    profiles: ["code-mode"]
+    build:
+      context: ./code_sandbox
+    network_mode: "none"
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    volumes:
+      - ananta_code_run:/run/ananta-code
+    mem_limit: 768m
+    cpus: "0.50"
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+      - KILL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   frontend:
@@ -98,3 +127,4 @@ services:
 
 volumes:
   backend-data:
+  ananta_code_run:

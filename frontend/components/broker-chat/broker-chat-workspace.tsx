@@ -29,7 +29,7 @@ import {
     reasoningEffortSelectOptions
 } from "@/lib/llm-reasoning-effort";
 import { isTransientChatStreamError } from "@/lib/chat-stream-errors";
-import { assistantText, brokerChatToolPartType, evidenceIncompleteParts, evidenceTodoParts, harnessRetryParts } from "@/lib/adaptive-workspace/chat-events";
+import { assistantText, brokerToolPart, evidenceIncompleteParts, evidenceTodoParts, harnessRetryParts } from "@/lib/adaptive-workspace/chat-events";
 import { cn } from "@/lib/utils";
 import {
     cancelBrokerChatRun,
@@ -83,6 +83,7 @@ type BrokerTraceItem =
       }
     | {
           callId?: string | null;
+          children?: Extract<BrokerTraceItem, { kind: "tool" }>[];
           key: string;
           kind: "tool";
           output?: BrokerChatEvent;
@@ -156,10 +157,6 @@ function enabledModels(provider?: LlmProviderConfig) {
 function textPayload(payload: Record<string, unknown>, key: string) {
     const value = payload[key];
     return typeof value === "string" ? value : "";
-}
-
-function payloadValue(payload: Record<string, unknown> | undefined, key: string) {
-    return payload && Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : undefined;
 }
 
 function isMarketQuoteHeader(line: string) {
@@ -336,19 +333,29 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
                 start: event,
                 toolName: textPayload(event.payload, "tool_name") || "tool"
             };
-            toolIndexes.set(key, items.length);
-            pendingToolKeys.push(key);
-            items.push(item);
+            const previousIndex = toolIndexes.get(key);
+            if (previousIndex !== undefined) {
+                const previous = items[previousIndex];
+                if (previous?.kind === "tool") items[previousIndex] = { ...item, output: previous.output };
+            } else {
+                toolIndexes.set(key, items.length);
+                pendingToolKeys.push(key);
+                items.push(item);
+            }
             continue;
         }
         const callId = textPayload(event.payload, "tool_call_id") || null;
         const outputName = textPayload(event.payload, "tool_name");
         let key = callId || "";
         let existingIndex = key ? toolIndexes.get(key) : undefined;
-        if (existingIndex === undefined) {
+        if (existingIndex === undefined && !callId) {
             const matchingPendingIndex = pendingToolKeys.findIndex((pendingKey) => {
                 const pendingItem = items[toolIndexes.get(pendingKey) ?? -1];
-                return pendingItem?.kind === "tool" && (!outputName || outputName === "unknown" || pendingItem.toolName === outputName);
+                return (
+                    pendingItem?.kind === "tool" &&
+                    !pendingItem.output &&
+                    (!outputName || outputName === "unknown" || pendingItem.toolName === outputName)
+                );
             });
             if (matchingPendingIndex >= 0) {
                 key = pendingToolKeys.splice(matchingPendingIndex, 1)[0] ?? key;
@@ -365,9 +372,10 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
                 };
             }
         } else {
+            if (callId) toolIndexes.set(callId, items.length);
             items.push({
                 callId,
-                key: `${event.run_id}:tool-output:${event.sequence}`,
+                key: callId || `${event.run_id}:tool-output:${event.sequence}`,
                 kind: "tool",
                 output: event,
                 sequence: event.sequence,
@@ -376,7 +384,22 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
         }
     }
     flushReasoning();
-    return items.sort((left, right) => left.sequence - right.sequence);
+    const parents = new Map(
+        items.flatMap((item) =>
+            item.kind === "tool" && item.toolName === "code_run" && item.callId ? [[item.callId, item] as const] : []
+        )
+    );
+    const nested = new Set<BrokerTraceItem>();
+    for (const item of items) {
+        if (item.kind !== "tool" || item.toolName === "code_run") continue;
+        const metadata = { ...item.start?.payload, ...item.output?.payload };
+        const parent = metadata.parent_tool === "code_run" ? parents.get(String(metadata.parent_tool_call_id)) : undefined;
+        if (parent && parent !== item) {
+            (parent.children ??= []).push(item);
+            nested.add(item);
+        }
+    }
+    return items.filter((item) => !nested.has(item)).sort((left, right) => left.sequence - right.sequence);
 }
 
 function mcpStatusParts(events: BrokerChatEvent[]) {
@@ -395,18 +418,6 @@ function mcpStatusParts(events: BrokerChatEvent[]) {
                 type: `tool-mcp__status__${event.event_type}`
             };
         });
-}
-
-function brokerToolPart(item: Extract<BrokerTraceItem, { kind: "tool" }>, isRunActive: boolean) {
-    const startPayload = item.start?.payload;
-    const outputPayload = item.output?.payload;
-    return {
-        type: brokerChatToolPartType(item.toolName),
-        toolCallId: item.callId || item.key,
-        state: item.output ? "output-available" : isRunActive ? "input-available" : "output-error",
-        input: payloadValue(startPayload, "arguments") ?? {},
-        output: payloadValue(outputPayload, "output")
-    };
 }
 
 function buildBrokerMessages({

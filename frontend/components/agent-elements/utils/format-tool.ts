@@ -2,6 +2,8 @@ type CachedToolState = {
   state: string | undefined;
   inputJson: string;
   outputJson: string;
+  childrenJson: string;
+  cached: boolean;
 };
 
 const toolStateCache = new Map<string, CachedToolState>();
@@ -11,6 +13,8 @@ function getToolStateSnapshot(part: any): CachedToolState {
     state: part.state,
     inputJson: JSON.stringify(part.input || {}),
     outputJson: JSON.stringify(part.output || {}),
+    childrenJson: JSON.stringify(part.children || null),
+    cached: part.cached === true,
   };
 }
 
@@ -26,7 +30,9 @@ function hasToolStateChanged(toolCallId: string, part: any): boolean {
   const changed =
     cached.state !== current.state ||
     cached.inputJson !== current.inputJson ||
-    cached.outputJson !== current.outputJson;
+    cached.outputJson !== current.outputJson ||
+    cached.childrenJson !== current.childrenJson ||
+    cached.cached !== current.cached;
 
   if (changed) {
     toolStateCache.set(toolCallId, current);
