@@ -1,7 +1,7 @@
 """Factory: code_run captures only this run's final authorized tool wrappers."""
 from uuid import uuid4
 from agents import FunctionTool
-from app.agent_harness.code_mode import CodeRegistry, generate_api, signature, learned_shapes
+from app.agent_harness.code_mode import CodeRegistry, generate_api, is_control_flow, signature, learned_shapes
 from app.execution_planes.code_sandbox_client import run_bridge
 
 
@@ -46,6 +46,8 @@ def make_code_run(tools, *, user_id, session_key, emit):
                 result = await run_bridge(user_id=user_id, session_key=session_key,
                     code=code, api_source=library, timeout_seconds=timeout, rpc=rpc)
             except Exception as exc:
+                if is_control_flow(exc):
+                    raise
                 result = {'stdout': '', 'stderr': str(exc)[:8000], 'exit_code': 1}
             if not isinstance(result, dict):
                 result = {'stdout': '', 'stderr': 'sandbox returned an invalid result', 'exit_code': 1}
@@ -68,6 +70,8 @@ def make_code_run(tools, *, user_id, session_key, emit):
                                    'and print a compact table instead of raw results.')
             return json.dumps(payload)
         except Exception as exc:
+            if is_control_flow(exc):
+                raise
             return _fail(exc)
 
     executor = FunctionTool(name='code_run', description=(

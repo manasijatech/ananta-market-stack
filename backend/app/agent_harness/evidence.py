@@ -259,6 +259,7 @@ def _tool_records(events: Iterable[Any]) -> list[dict[str, Any]]:
                 "url": str(output.get("url") or output.get("final_url") or ""),
                 "applied": output.get("applied"),
                 "output": output,
+                "arguments": payload.get("arguments"),
             }
         )
     return records
@@ -294,12 +295,19 @@ def _broker_blocker(record: dict[str, Any]) -> str | None:
 
 
 def _code_run_computed(record: dict[str, Any]) -> bool:
-    """A code_run counts as a calculation only when it printed a number."""
+    """A code_run counts as a calculation only when it printed a number and the
+    script itself computes. A digit in stdout from a printed literal is not enough."""
     if record.get("tool_name") != "code_run" or record.get("ok") is not True:
         return False
     output = record.get("output")
     stdout = output.get("stdout") if isinstance(output, dict) else None
-    return isinstance(stdout, str) and bool(re.search(r"\d", stdout))
+    from app.agent_harness.code_computation import contains_computation
+
+    return (
+        isinstance(stdout, str)
+        and bool(re.search(r"\d", stdout))
+        and contains_computation(record.get("arguments"))
+    )
 
 
 def _record_succeeded(record: dict[str, Any]) -> bool:

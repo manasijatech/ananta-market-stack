@@ -251,7 +251,8 @@ def learned_shapes(names):
 
 
 def remember_shape(name, value):
-    if is_error_result(value) or not _shape_learnable(name):
+    # An ok:false envelope is warned data or an error. Neither publishes a shared shape.
+    if is_error_result(value) or (isinstance(value, dict) and value.get('ok') is False) or not _shape_learnable(name):
         return
     text = shape(value)
     if len(text) > 600:
@@ -268,19 +269,39 @@ def remember_shape(name, value):
 
 
 def is_error_result(value):
-    """True only for a pure error envelope. A payload with data plus an ok/code
-    warning (for example a source-freshness caveat) is a result, not an error."""
+    """True only for a pure error envelope. A payload with non-empty data plus an
+    ok/code warning (for example a source-freshness caveat) is a result, not an error."""
     if not isinstance(value, dict):
         return False
     if (value.get('isError') is True or value.get('error') is True or value.get('empty') is True
             or value.get('stopped') is True):
         return True
+    payload_keys = set(value) - _ERROR_KEYS
+    # A non-empty string or dict error, or a detail with no data keys, is an error
+    # even when the envelope omits ok:false.
+    if value.get('ok') is not False and (
+            (isinstance(value.get('error'), (str, dict)) and value['error'])
+            or (value.get('detail') and not payload_keys)):
+        return True
     if value.get('ok') is not False:
         return False
-    # ok=False with real payload fields (e.g. a source-freshness caveat around a
-    # complete report) is a warned result, not a failure.
+    # ok=false counts as warned data only when some payload value is non-empty.
+    # A blank, empty container, or short status string does not.
     payload_keys = set(value) - _ERROR_KEYS
-    return not payload_keys or all(isinstance(value[k], str) and len(value[k]) < 400 for k in payload_keys)
+    return not any(bool(value[k]) and not (isinstance(value[k], str) and len(value[k]) < 400) for k in payload_keys)
+
+
+def is_control_flow(exc):
+    """Signals the runner must see, so code_run cannot turn them into a tool error.
+
+    OSS cancellation is asyncio.CancelledError and BrokerChatCancelled. There is
+    no steer signal, no ownership-loss error, and no MCP session-lost exception
+    the runner uses to reconnect: MCP failures are returned as recoverable text.
+    """
+    if isinstance(exc, asyncio.CancelledError):
+        return True
+    from app.services.broker_chat_runner import BrokerChatCancelled
+    return isinstance(exc, BrokerChatCancelled)
 
 
 def signature(tool, returns=None):
@@ -457,7 +478,10 @@ class CodeRegistry:
                 emitted = True
                 recorded = ({'ok': True, 'data': value, 'count': len(value), 'original_result_type': 'list'}
                             if isinstance(value, list) else value)
-                await self.emit('tool_call_completed', {**payload, 'ok': result['ok'], 'output': recorded})
+                event = {**payload, 'ok': result['ok'], 'output': recorded}
+                if not result['ok']:
+                    event['error'] = result.get('error')
+                await self.emit('tool_call_completed', event)
 
             try:
                 await self.emit('tool_call_started', payload)
@@ -485,11 +509,15 @@ class CodeRegistry:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    if is_control_flow(exc):
+                        raise
                     result = {'ok': False, 'error': str(exc)[:4000]}
                     value = {'ok': False, 'error': result['error']}
                 await _emit_completed()
                 return result
-            except asyncio.CancelledError:
+            except BaseException as exc:
+                if not is_control_flow(exc):
+                    raise
                 result = {'ok': False, 'error': 'cancelled'}
                 value = {'ok': False, 'error': 'cancelled'}
                 try:
@@ -499,4 +527,15 @@ class CodeRegistry:
                 raise
             finally:
                 _fill()
-        return {'id': frame['id'], 'results': await asyncio.gather(*(invoke(c, s) for c, s in zip(batch, slots)))}
+
+        tasks = [asyncio.create_task(invoke(c, s)) for c, s in zip(batch, slots)]
+        try:
+            return {'id': frame['id'], 'results': await asyncio.gather(*tasks)}
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise

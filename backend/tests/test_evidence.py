@@ -4,10 +4,13 @@ from app.agent_harness.evidence import (
 )
 
 
-def _completed(tool_name: str, output: dict) -> dict:
+def _completed(tool_name: str, output: dict, arguments=None) -> dict:
+    payload = {"tool_name": tool_name, "output": output}
+    if arguments is not None:
+        payload["arguments"] = arguments
     return {
         "event_type": "tool_call_completed",
-        "payload": {"tool_name": tool_name, "output": output},
+        "payload": payload,
     }
 
 
@@ -42,7 +45,7 @@ def test_web_fetch_403_is_done_with_blocker():
     assert report.status == "satisfied"
 
 
-def test_code_run_calculation_requires_a_numeric_stdout():
+def test_code_run_calculation_requires_a_numeric_stdout_and_computation():
     contract = plan_evidence_contract(
         "What is the implied CAGR if revenue doubles in 4 years?",
         adaptive_workspace=True,
@@ -50,13 +53,27 @@ def test_code_run_calculation_requires_a_numeric_stdout():
     )
     hello = evidence_gaps(
         contract,
-        [_completed("code_run", {"ok": True, "exit_code": 0, "stdout": "hello", "calls": []})],
+        [_completed("code_run", {"ok": True, "exit_code": 0, "stdout": "hello", "calls": []}, {"code": "print('hello')"})],
         sandbox_available=True,
     )
     assert any(gap.kind == "calculation" for gap in hello.unsatisfied())
+    printed = evidence_gaps(
+        contract,
+        [_completed(
+            "code_run",
+            {"ok": True, "exit_code": 0, "stdout": "CAGR = 18.92%", "calls": []},
+            {"code": "print('CAGR = 18.92%')"},
+        )],
+        sandbox_available=True,
+    )
+    assert any(gap.kind == "calculation" for gap in printed.unsatisfied())
     computed = evidence_gaps(
         contract,
-        [_completed("code_run", {"ok": True, "exit_code": 0, "stdout": "CAGR = 18.92%", "calls": []})],
+        [_completed(
+            "code_run",
+            {"ok": True, "exit_code": 0, "stdout": "CAGR = 18.92%", "calls": []},
+            {"code": "years = 4\ngrowth = 2\nprint(growth ** (1 / years) - 1)"},
+        )],
         sandbox_available=True,
     )
     assert not any(gap.kind == "calculation" for gap in computed.unsatisfied())

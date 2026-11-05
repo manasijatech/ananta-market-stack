@@ -939,3 +939,100 @@ async def test_code_run_bad_timeout_and_missing_exit_code_return_json(monkeypatc
     assert payload["ok"] is False and payload["exit_code"] == 1 and "bridge down" not in payload["stderr"]
     payload = json.loads(await executor.on_invoke_tool(None, json.dumps({"code": "print(1)"})))
     assert "bridge down" in payload["stderr"] and payload["exit_code"] == 1
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"error": "Not found"},
+        {"error": {"code": 500}},
+        {"detail": "Not Found"},
+        {"ok": False, "error": "limited", "data": []},
+        {"ok": False, "data": {}},
+        {"ok": True, "stopped": True},
+    ],
+)
+def test_error_envelopes_are_not_shapes(monkeypatch, value):
+    from app.agent_harness import code_mode
+
+    assert code_mode.is_error_result(value)
+    monkeypatch.setattr(code_mode, "_redis", lambda: pytest.fail("must not learn errors"))
+    code_mode.remember_shape("broker_get_quotes", value)
+
+
+def test_warned_data_never_learns_shape(monkeypatch):
+    from app.agent_harness import code_mode
+
+    value = {"ok": False, "error": "stale", "data": [{"price": 12}]}
+    assert not code_mode.is_error_result(value)
+    monkeypatch.setattr(code_mode, "_redis", lambda: pytest.fail("warned data must not publish a shape"))
+    code_mode.remember_shape("broker_get_quotes", value)
+
+
+@pytest.mark.parametrize(
+    "code,expected",
+    [
+        ("print('2026 https://x/123')", False),
+        ("print(api.get_news())", False),
+        ("x=2; print(x+1)", True),
+        ("print(sum(values))", True),
+        ("print(len(rows))", True),
+        ("print(42)", False),
+    ],
+)
+def test_computation_evidence_requires_ast_and_numeric_output(code, expected):
+    from app.agent_harness.evidence import _code_run_computed
+
+    record = {
+        "tool_name": "code_run",
+        "ok": True,
+        "output": {"stdout": "2026"},
+        "arguments": {"code": code},
+    }
+    assert _code_run_computed(record) is expected
+
+
+@pytest.mark.asyncio
+async def test_runner_cancellation_propagates_after_completion():
+    from app.services.broker_chat_runner import BrokerChatCancelled
+
+    events = []
+
+    async def invoke(ctx, args):
+        raise BrokerChatCancelled()
+
+    async def emit(kind, data):
+        events.append((kind, data))
+
+    registry = CodeRegistry([tool(invoke=invoke)], emit)
+    ledger = []
+    with pytest.raises(BrokerChatCancelled):
+        await registry.dispatch(None, {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {}}]}, ledger, "p")
+    assert ledger and ledger[0]["ok"] is False
+    completed = [data for kind, data in events if kind == "tool_call_completed"]
+    assert completed and completed[-1]["ok"] is False
+    assert completed[-1]["error"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_code_run_lets_runner_cancellation_propagate(monkeypatch):
+    from app.agent_tools import code_mode_tools
+    from app.services.broker_chat_runner import BrokerChatCancelled
+
+    async def invoke(ctx, args):
+        raise BrokerChatCancelled("stop")
+
+    events = []
+
+    async def emit(kind, data):
+        events.append(data)
+
+    async def bridge(**kwargs):
+        return await kwargs["rpc"]({"id": 1, "calls": [{"name": "broker_get_quotes", "args": {}}]})
+
+    monkeypatch.setattr(code_mode_tools, "run_bridge", bridge)
+    executor = code_mode_tools.make_code_run([tool(invoke=invoke)], user_id="u", session_key="s", emit=emit)
+    with pytest.raises(BrokerChatCancelled):
+        await executor.on_invoke_tool(None, '{"code":"pass"}')
+    assert events[-1]["ok"] is False
+    assert events[-1]["error"] == "cancelled"
