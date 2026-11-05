@@ -1036,3 +1036,10 @@ async def test_code_run_lets_runner_cancellation_propagate(monkeypatch):
         await executor.on_invoke_tool(None, '{"code":"pass"}')
     assert events[-1]["ok"] is False
     assert events[-1]["error"] == "cancelled"
+
+
+
+def test_empty_results_are_data_unless_ok_false():
+    from app.agent_harness.code_mode import is_error_result
+    assert not is_error_result({'data': [], 'has_next': False, 'ok': True, 'empty': True, 'hint': 'no rows'})
+    assert is_error_result({'ok': False, 'empty': True, 'retry': False, 'message': 'empty response', 'hint': 'x'})

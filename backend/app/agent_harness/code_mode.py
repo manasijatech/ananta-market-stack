@@ -251,6 +251,8 @@ def learned_shapes(names):
 
 
 def remember_shape(name, value):
+    if value in ([], {}) or (isinstance(value, dict) and value.get('empty') is True):
+        return  # an empty first result would pin a useless shape for every later run
     # An ok:false envelope is warned data or an error. Neither publishes a shared shape.
     if is_error_result(value) or (isinstance(value, dict) and value.get('ok') is False) or not _shape_learnable(name):
         return
@@ -273,9 +275,13 @@ def is_error_result(value):
     ok/code warning (for example a source-freshness caveat) is a result, not an error."""
     if not isinstance(value, dict):
         return False
-    if (value.get('isError') is True or value.get('error') is True or value.get('empty') is True
-            or value.get('stopped') is True):
+    if value.get('isError') is True or value.get('error') is True or value.get('stopped') is True:
         return True
+    # "No rows" is an answer, not a failure: {"ok": true, "empty": true, "data": []} reaches
+    # the script as data, exactly as direct mode shows it to the model. Only an empty
+    # result that also says ok:false is an error (handled by the ok:false rule below).
+    if value.get('empty') is True and value.get('ok') is not False:
+        return False
     payload_keys = set(value) - _ERROR_KEYS
     # A non-empty string or dict error, or a detail with no data keys, is an error
     # even when the envelope omits ok:false.
