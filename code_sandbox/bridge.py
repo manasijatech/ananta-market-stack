@@ -78,6 +78,17 @@ async def collect_bridge(execution, rpc, *, max_output_bytes, prefix=PREFIX):
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         import inspect
-        closed = stdin.close()
-        if inspect.isawaitable(closed):
-            await closed
+        try:
+            closed = stdin.close()
+            if inspect.isawaitable(closed):
+                await asyncio.wait_for(closed, timeout=1)
+        except Exception:
+            abort = getattr(stdin, "abort", None)
+            transport = getattr(stdin, "transport", None) or getattr(stdin, "_transport", None)
+            try:
+                if callable(abort):
+                    abort()
+                elif transport is not None and hasattr(transport, "abort"):
+                    transport.abort()
+            except Exception:
+                pass

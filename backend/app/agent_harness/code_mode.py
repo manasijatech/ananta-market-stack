@@ -58,8 +58,8 @@ CODE_MODE_INSTRUCTIONS = (
     "If a call raises ApiError, read the message and fix the arguments instead of switching tools. "
     "Do the whole data task in ONE script where possible: fetch, filter, join, compute and format "
     "the final table in Python, then print it. Do not print raw API results; if you are unsure of a "
-    "result's structure, print api.peek(result) first, which shows keys and types only. Identical "
-    "calls in later scripts are served from this run's memory, so re-reading is free. Compute inside "
+    "result's structure, print api.peek(result) first, which shows keys and types only. Keep results "
+    "in variables and do the work in one script: repeated identical calls are refused. Compute inside "
     "code_run. Workspace, canvas, skills, alerts, and approvals remain direct tools."
 )
 
@@ -188,9 +188,22 @@ _ERROR_KEYS = frozenset({'ok', 'error', 'code', 'message', 'retry', 'user_messag
                          'hint', 'empty', 'workspace_saved', 'workspace_dir', 'workspace_paths', 'guidance',
                          'next_step', 'suggestions', 'tool', 'tool_name', 'arguments', 'note'})
 _IDENTIFIER_KEY = re.compile(r'^[a-z_][a-z0-9_]{0,39}$')
-# Broker reads and declared Drishti ops. OSS has no client-connector registry, so
-# shapes for anything else (including connector-like tools) stay out of shared prompts.
-_SHAPE_NAMES = CODE_MODE_API_TOOLS | MCP_DATA_TOOL_NAMES
+# Shapes are shared across users through the tool description, so they are learned
+# only from public market-data tools. Account, portfolio, watchlist, book and profile
+# results can carry private names as keys and are never learned.
+SHAPE_PUBLIC_TOOLS = frozenset({
+    'broker_get_quotes', 'broker_get_cached_quotes', 'broker_get_ohlc', 'broker_get_historical',
+    'broker_get_option_chain', 'broker_search_instruments', 'deriv_get_chain_snapshot',
+    'deriv_get_chain_metrics', 'deriv_get_expiry_calendar', 'web_search', 'web_fetch', 'resolve_symbols',
+})
+
+
+def _shape_learnable(name):
+    if not isinstance(name, str):
+        return False
+    if name in SHAPE_PUBLIC_TOOLS or name.startswith(('nse_cm__', 'nse_bhavcopy__')):
+        return True
+    return name in MCP_DATA_TOOL_NAMES
 
 
 def shape(value, depth=3):
@@ -238,9 +251,7 @@ def learned_shapes(names):
 
 
 def remember_shape(name, value):
-    if is_error_result(value):
-        return
-    if name not in _SHAPE_NAMES:
+    if is_error_result(value) or not _shape_learnable(name):
         return
     text = shape(value)
     if len(text) > 600:
@@ -261,7 +272,8 @@ def is_error_result(value):
     warning (for example a source-freshness caveat) is a result, not an error."""
     if not isinstance(value, dict):
         return False
-    if value.get('isError') is True or value.get('error') is True or value.get('empty') is True:
+    if (value.get('isError') is True or value.get('error') is True or value.get('empty') is True
+            or value.get('stopped') is True):
         return True
     if value.get('ok') is not False:
         return False
@@ -341,7 +353,11 @@ def generate_api(tools):
                    f'    kw = dict(kw)\n'
                    f'    names = {renames!r}\n')
         if wrapper:
+            required_py = sorted(_py_name(n) for n in required)
             builder += (f'    if {wrapper!r} in kw:\n        return kw\n'
+                        f'    missing = [n for n in {required_py!r} if n not in kw]\n'
+                        f'    if missing:\n'
+                        f'        raise TypeError({tool.name!r} + "() missing required keyword(s): " + ", ".join(missing))\n'
                         f'    inner = {{names.get(k, k): v for k, v in kw.items()}}\n'
                         f'    return {{{wrapper!r}: inner}} if inner else {{}}\n')
         else:
@@ -349,7 +365,9 @@ def generate_api(tools):
         builder += f'_builders[{tool.name!r}] = _b_{tool.name}'
         parts.append(builder)
         if valid:
-            params = [f'{py}: {_hint(props[orig])}' + ('' if orig in required else ' = _missing')
+            # With a wrapper, every flattened field is optional in Python so `wrapper=`
+            # alone works; the builder enforces required fields when it is not given.
+            params = [f'{py}: {_hint(props[orig])}' + ('' if orig in required and not wrapper else ' = _missing')
                       for py, orig in renames.items()]
             if wrapper:
                 params.append(f'{wrapper}: Any = _missing')
@@ -369,13 +387,6 @@ def normalize_result(value):
     if isinstance(value, dict) and value.get('original_result_type') == 'list' and isinstance(value.get('data'), list):
         return value['data']
     return value
-
-
-def _memo_key(name, args):
-    return name + ':' + json.dumps(args, sort_keys=True, default=str)
-
-
-MEMO_TTL_SECONDS = 600
 
 
 def bootstrap(code, library, rpc_prefix="@@ANANTA_RPC "):
@@ -402,16 +413,13 @@ def bootstrap(code, library, rpc_prefix="@@ANANTA_RPC "):
 
 
 class CodeRegistry:
+    """Dispatches guest calls. Every call, including a repeat, goes through the tool's
+    final wrapped invoker, so current authorization, source switches, gates and each
+    tool's own replay/freshness policy decide what is returned. There is no code-mode cache."""
+
     def __init__(self, tools, emit):
         self.tools = {t.name: t for t in tools}
         self.emit = emit
-        # Successful reads, reused by later scripts with identical arguments. Entries
-        # expire, and invalidate() drops all of them when any other tool runs, so a
-        # read after a mutation or a policy change goes back through the wrapped tool.
-        self.memo = {}
-
-    def invalidate(self):
-        self.memo.clear()
 
     async def dispatch(self, ctx, frame, ledger, parent_id):
         batch = frame.get('calls')
@@ -429,52 +437,66 @@ class CodeRegistry:
             payload = {'tool_name': name, 'tool_call_id': call_id, 'arguments': args,
                        'parent_tool': 'code_run', 'parent_tool_call_id': parent_id}
             size = 0
-            memo_key = (_memo_key(name, args) if isinstance(name, str) and isinstance(args, dict)
-                        and name in self.tools else None)
-            cached = self.memo.get(memo_key) if memo_key is not None else None
-            if cached is not None and time.monotonic() - cached[0] < MEMO_TTL_SECONDS:
-                value = cached[1]
-                size = len(json.dumps(value, ensure_ascii=False, default=str).encode())
-                slot.update(name=name, ok=True, ms=0, bytes=size, cached=True,
-                            arguments_digest=hashlib.sha256(memo_key.encode()).hexdigest()[:16])
-                cached_payload = {**payload, 'cached': True}
-                await self.emit('tool_call_started', cached_payload)
+            result = {'ok': False, 'error': 'cancelled'}
+            value = {'ok': False, 'error': 'cancelled'}
+            emitted = False
+
+            def _fill():
+                try:
+                    digest_src = json.dumps(args, sort_keys=True, default=str)
+                except Exception:
+                    digest_src = str(args)
+                slot.update(name=name if isinstance(name, str) else '', ok=bool(result.get('ok')),
+                            ms=int((time.monotonic() - started) * 1000), bytes=size,
+                            arguments_digest=hashlib.sha256(digest_src.encode()).hexdigest()[:16])
+
+            async def _emit_completed():
+                nonlocal emitted
+                if emitted:
+                    return
+                emitted = True
                 recorded = ({'ok': True, 'data': value, 'count': len(value), 'original_result_type': 'list'}
                             if isinstance(value, list) else value)
-                await self.emit('tool_call_completed', {**cached_payload, 'ok': True, 'output': recorded})
-                return {'ok': True, 'value': value}
-            await self.emit('tool_call_started', payload)
+                await self.emit('tool_call_completed', {**payload, 'ok': result['ok'], 'output': recorded})
+
             try:
-                if name not in self.tools or not isinstance(args, dict):
-                    raise ValueError('API name is not authorized or arguments are invalid')
-                token = CODE_API_ACTIVE.set(True)
+                await self.emit('tool_call_started', payload)
                 try:
-                    raw = await self.tools[name].on_invoke_tool(ctx, json.dumps(args, allow_nan=False))
-                finally:
-                    CODE_API_ACTIVE.reset(token)
+                    if name not in self.tools or not isinstance(args, dict):
+                        raise ValueError('API name is not authorized or arguments are invalid')
+                    token = CODE_API_ACTIVE.set(True)
+                    try:
+                        raw = await self.tools[name].on_invoke_tool(ctx, json.dumps(args, allow_nan=False))
+                    finally:
+                        CODE_API_ACTIVE.reset(token)
+                    try:
+                        value = json.loads(raw) if isinstance(raw, str) else raw
+                    except ValueError:
+                        value = raw
+                    value = normalize_result(value)
+                    encoded = json.dumps(value, ensure_ascii=False, allow_nan=False)
+                    size = len(encoded.encode())
+                    if size > 1048576:
+                        raise ValueError('API result exceeds 1 MB; narrow the query')
+                    if is_error_result(value):
+                        raise ValueError(json.dumps(value, ensure_ascii=False, default=str)[:4000])
+                    result = {'ok': True, 'value': value}
+                    await asyncio.to_thread(remember_shape, name, value)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    result = {'ok': False, 'error': str(exc)[:4000]}
+                    value = {'ok': False, 'error': result['error']}
+                await _emit_completed()
+                return result
+            except asyncio.CancelledError:
+                result = {'ok': False, 'error': 'cancelled'}
+                value = {'ok': False, 'error': 'cancelled'}
                 try:
-                    value = json.loads(raw) if isinstance(raw, str) else raw
-                except ValueError:
-                    value = raw
-                value = normalize_result(value)
-                encoded = json.dumps(value, ensure_ascii=False, allow_nan=False)
-                size = len(encoded.encode())
-                if size > 1048576:
-                    raise ValueError('API result exceeds 1 MB; narrow the query')
-                if is_error_result(value):
-                    raise ValueError(json.dumps(value, ensure_ascii=False, default=str)[:4000])
-                result = {'ok': True, 'value': value}
-                if memo_key is not None:
-                    self.memo[memo_key] = (time.monotonic(), value)
-                await asyncio.to_thread(remember_shape, name, value)
-            except Exception as exc:
-                result = {'ok': False, 'error': str(exc)[:4000]}
-                value = {'ok': False, 'error': result['error']}
-            slot.update(name=name, ok=result['ok'], ms=int((time.monotonic()-started)*1000), bytes=size,
-                        arguments_digest=hashlib.sha256(json.dumps(args, sort_keys=True).encode()).hexdigest()[:16])
-            # Evidence readers expect dict envelopes; the guest still gets the raw list.
-            recorded = ({'ok': True, 'data': value, 'count': len(value), 'original_result_type': 'list'}
-                        if isinstance(value, list) else value)
-            await self.emit('tool_call_completed', {**payload, 'ok': result['ok'], 'output': recorded})
-            return result
+                    await _emit_completed()
+                except Exception:
+                    pass
+                raise
+            finally:
+                _fill()
         return {'id': frame['id'], 'results': await asyncio.gather(*(invoke(c, s) for c, s in zip(batch, slots)))}

@@ -380,7 +380,7 @@ async def test_mcp_tool_converts_into_api():
 
 
 @pytest.mark.asyncio
-async def test_repeat_calls_are_memoized_and_cache_envelopes_unwrapped():
+async def test_repeat_calls_always_go_through_the_wrapped_tool_and_envelopes_unwrap():
     calls = []
 
     async def invoke(ctx, args):
@@ -411,25 +411,9 @@ async def test_repeat_calls_are_memoized_and_cache_envelopes_unwrapped():
         "p",
     )
     assert first["results"][0]["value"] == second["results"][0]["value"] == [{"symbol": "TCS"}]
-    assert len(calls) == 1 and ledger[1]["cached"] is True
+    assert len(calls) == 2 and not any(entry.get("cached") for entry in ledger)
     assert [event[0] for event in events].count("tool_call_started") == 2
     assert [event[0] for event in events].count("tool_call_completed") == 2
-    cached_done = [event[1] for event in events if event[0] == "tool_call_completed"][1]
-    assert cached_done["cached"] is True
-    assert cached_done["output"] == {
-        "ok": True,
-        "data": [{"symbol": "TCS"}],
-        "count": 1,
-        "original_result_type": "list",
-    }
-    registry.invalidate()
-    await registry.dispatch(
-        None,
-        {"id": 4, "calls": [{"name": "broker_get_quotes", "args": {"symbol": "TCS", "exchange": "NSE"}}]},
-        ledger,
-        "p",
-    )
-    assert len(calls) == 2
     assert normalize_result({"ok": True, "data": [1], "count": 1, "original_result_type": "list"}) == [1]
     assert normalize_result({"ok": True, "data": [1]}) == {"ok": True, "data": [1]}
 
@@ -481,9 +465,7 @@ def test_code_run_description_lists_signatures(monkeypatch):
     )
     assert "api.broker_get_quotes(symbol: str, limit: int = 5)  # Read quotes for one symbol" in executor.description
     assert "return_exceptions=True" in executor.description
-    assert executor._ananta_code_registry is not None
-    assert "return_exceptions=True" in executor.description
-    assert executor._ananta_code_registry is not None
+    assert not hasattr(executor, "_ananta_code_registry")
     assert "api.peek(value)" in executor.description
     assert '"-> {...}" shows a result shape' in executor.description
     assert 'news, movers = api.parallel([("search_news", {"queries": ["TCS results"], "days": 7}),' in executor.description
@@ -507,6 +489,8 @@ def test_code_mode_instructions_require_one_script_and_peek():
     assert "source" in CODE_MODE_INSTRUCTIONS
     assert "NOT direct tools" in CODE_MODE_INSTRUCTIONS
     assert "capability_load" not in CODE_MODE_INSTRUCTIONS
+    assert "repeated identical calls are refused" in CODE_MODE_INSTRUCTIONS
+    assert "Keep results in variables" in CODE_MODE_INSTRUCTIONS
 
 
 def test_code_mode_defers_browser_and_sandbox_tools_but_keeps_them_in_inventory():
@@ -739,11 +723,13 @@ def test_nested_query_object_is_flattened_to_keywords():
     assert signature(direct).startswith("api.get_body(symbol: str)")
     direct_ns, direct_sent = _capture_api([direct])
     direct_ns["get_body"](symbol="TCS")
-    with pytest.raises(TypeError):
-        direct_ns["get_body"](body={"symbol": "INFY"})
+    direct_ns["get_body"](body={"symbol": "INFY"})
     direct_ns["parallel"]([("get_body", {"symbol": "A"})])
     assert direct_sent[0][0]["args"] == {"body": {"symbol": "TCS"}}
-    assert direct_sent[1][0]["args"] == {"body": {"symbol": "A"}}
+    assert direct_sent[1][0]["args"] == {"body": {"symbol": "INFY"}}
+    assert direct_sent[2][0]["args"] == {"body": {"symbol": "A"}}
+    with pytest.raises(TypeError, match="symbol"):
+        direct_ns["get_body"]()
 
     optional = tool(
         "get_optional",
@@ -790,9 +776,7 @@ def test_unknown_mcp_tools_with_read_like_names_stay_direct():
 
 
 @pytest.mark.asyncio
-async def test_memo_entries_expire_and_ignore_unauthorized_names(monkeypatch):
-    from app.agent_harness import code_mode
-
+async def test_unauthorized_names_are_not_served_from_anywhere():
     calls = []
 
     async def invoke(ctx, args):
@@ -805,11 +789,8 @@ async def test_memo_entries_expire_and_ignore_unauthorized_names(monkeypatch):
     registry = CodeRegistry([tool(invoke=invoke)], emit)
     frame = {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {"symbol": "A"}}]}
     await registry.dispatch(None, frame, [], "p")
-    now = code_mode.time.monotonic()
-    monkeypatch.setattr(code_mode.time, "monotonic", lambda: now + code_mode.MEMO_TTL_SECONDS + 1)
     await registry.dispatch(None, frame, [], "p")
     assert len(calls) == 2
-    registry.memo["delete_all:{}"] = (code_mode.time.monotonic(), {"secret": True})
     denied = await registry.dispatch(None, {"id": 2, "calls": [{"name": "delete_all", "args": {}}]}, [], "p")
     assert denied["results"][0]["ok"] is False
     assert "secret" not in denied["results"][0]["error"]
@@ -831,13 +812,130 @@ def test_parallel_can_keep_partial_results(monkeypatch, capsys):
     assert "@@ANANTA_RPC " in capsys.readouterr().out
 
 
-def test_direct_tool_completion_invalidates_code_registry():
-    from app.services.broker_chat_code_mode import invalidate_code_reads
+def test_budget_stops_are_errors():
+    from app.agent_harness.code_mode import is_error_result
+
+    assert is_error_result({"ok": True, "stopped": True, "reason": "budget_exhausted", "used": 6, "limit": 6})
+
+
+def test_shapes_are_learned_only_for_public_market_tools(monkeypatch):
+    from app.agent_harness import code_mode
+
+    stored = {}
+
+    class FakeRedis:
+        def set(self, key, value, ex=None, nx=False):
+            stored.setdefault(key, value)
+
+    monkeypatch.setattr(code_mode, "_redis", lambda: FakeRedis())
+    private = {"accounts": {"acme_private_fund": {"quantity": 1}}}
+    code_mode.remember_shape("broker_get_portfolio", private)
+    code_mode.remember_shape("broker_list_accounts", {"rahul_sharma": {"id": 1}})
+    code_mode.remember_shape("broker_get_watchlist_symbols", {"my_watchlist": ["TCS"]})
+    code_mode.remember_shape("deriv_get_book_risk", {"book": {"client_book": 1}})
+    code_mode.remember_shape("broker_get_quotes", {"symbol": "TCS", "ltp": 1.0})
+    code_mode.remember_shape("get_news", {"title": "results"})
+    code_mode.remember_shape("nse_cm__quote", {"symbol": "TCS", "ltp": 1})
+    assert "acme_private_fund" in code_mode.shape(private)
+    assert list(stored) == [
+        "ananta:code_mode:shape:broker_get_quotes",
+        "ananta:code_mode:shape:get_news",
+        "ananta:code_mode:shape:nse_cm__quote",
+    ]
+
+
+def test_explicit_wrapper_works_when_nested_fields_are_required():
+    schema = {
+        "properties": {
+            "query": {
+                "type": "object",
+                "properties": {"symbol": {"type": "string"}},
+                "required": ["symbol"],
+            }
+        }
+    }
+    namespace, sent = _capture_api([tool("get_news", schema)])
+    namespace["get_news"](query={"symbol": "TCS"})
+    namespace["get_news"](symbol="INFY")
+    assert sent[0][0]["args"] == {"query": {"symbol": "TCS"}}
+    assert sent[1][0]["args"] == {"query": {"symbol": "INFY"}}
+    with pytest.raises(TypeError, match="symbol"):
+        namespace["get_news"]()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_fills_ledger_and_emits_completion():
+    started = asyncio.Event()
+
+    async def invoke(ctx, args):
+        started.set()
+        await asyncio.Event().wait()
+
+    events = []
+
+    async def emit(kind, data):
+        events.append((kind, data))
+
+    registry = CodeRegistry([tool(invoke=invoke)], emit)
+    ledger = []
+    task = asyncio.create_task(
+        registry.dispatch(
+            None,
+            {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {"symbol": "TCS"}}]},
+            ledger,
+            "p",
+        )
+    )
+    await asyncio.wait_for(started.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert ledger and ledger[0].get("ok") is False and ledger[0].get("name") == "broker_get_quotes"
+    completed = [data for kind, data in events if kind == "tool_call_completed"]
+    assert completed and completed[0]["ok"] is False
+    assert completed[0]["output"]["error"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_budget_stop_dispatch_is_an_error():
+    async def invoke(ctx, args):
+        return json.dumps({"ok": True, "stopped": True, "reason": "budget_exhausted", "used": 6, "limit": 6})
+
+    async def emit(kind, data):
+        return None
+
+    reply = await CodeRegistry([tool("web_fetch", invoke=invoke)], emit).dispatch(
+        None, {"id": 1, "calls": [{"name": "web_fetch", "args": {}}]}, [], "p"
+    )
+    assert reply["results"][0]["ok"] is False
+    assert "budget_exhausted" in reply["results"][0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_code_run_bad_timeout_and_missing_exit_code_return_json(monkeypatch):
     from app.agent_tools import code_mode_tools
 
-    executor = code_mode_tools.make_code_run([tool()], user_id="u", session_key="s", emit=lambda *args: None)
-    executor._ananta_code_registry.memo["broker_get_quotes:{}"] = (0, {"price": 1})
-    invalidate_code_reads([executor], "code_run")
-    assert executor._ananta_code_registry.memo
-    invalidate_code_reads([executor], "workspace_publish_html_artifact")
-    assert executor._ananta_code_registry.memo == {}
+    seen = {}
+
+    async def fake_bridge(**kwargs):
+        seen["timeout"] = kwargs["timeout_seconds"]
+        seen["code"] = kwargs["code"]
+        return {"stdout": "hi"}
+
+    monkeypatch.setattr(code_mode_tools, "run_bridge", fake_bridge)
+    executor = code_mode_tools.make_code_run([tool()], user_id="u", session_key="s", emit=lambda *a: None)
+    for raw in ("30s", None, {"bad": 1}):
+        payload = json.loads(await executor.on_invoke_tool(SimpleNamespace(tool_call_id="t"), json.dumps({"code": "print(1)", "timeout_seconds": raw})))
+        assert seen["timeout"] == 60
+        assert payload["exit_code"] == 1
+        assert payload["stdout"] == "hi"
+        assert payload["ok"] is False
+
+    async def explode(**kwargs):
+        raise RuntimeError("bridge down")
+
+    monkeypatch.setattr(code_mode_tools, "run_bridge", explode)
+    payload = json.loads(await executor.on_invoke_tool(None, "not-json"))
+    assert payload["ok"] is False and payload["exit_code"] == 1 and "bridge down" not in payload["stderr"]
+    payload = json.loads(await executor.on_invoke_tool(None, json.dumps({"code": "print(1)"})))
+    assert "bridge down" in payload["stderr"] and payload["exit_code"] == 1

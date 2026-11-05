@@ -65,7 +65,6 @@ from app.agent_harness.skills import (
 from app.services import agent_skill_prefs, broker_chat, broker_chat_mcp, feature_flags, llm_config
 from app.services.broker_chat_code_mode import (
     build_code_tool_event,
-    invalidate_code_reads,
     prepare_broker_chat_tools,
 )
 from app.services import llm_telemetry
@@ -1288,10 +1287,6 @@ async def _run_broker_chat(run_id: str) -> None:
                                 "raw_item": _safe_data(item),
                             },
                         )
-                        if tool_name != "code_run":
-                            # Any direct tool (a mutation, a canvas write, a policy-relevant
-                            # step) ends reuse of earlier code-mode reads in this run.
-                            invalidate_code_reads(tools, tool_name)
                     elif item_type == "message_output_item":
                         text = ItemHelpers.text_message_output(item)
                         had_message = True

@@ -57,16 +57,6 @@ def build_code_tool_event(kind: str, payload: dict[str, Any]) -> tuple[dict[str,
     return public, {**payload, **public}
 
 
-def invalidate_code_reads(tools: list[Any], tool_name: str) -> None:
-    """A direct tool completion ends reuse of earlier code-mode reads in this run."""
-    if tool_name == "code_run":
-        return
-    for tool in tools:
-        registry = getattr(tool, "_ananta_code_registry", None)
-        if registry is not None:
-            registry.invalidate()
-
-
 def requested_tool_mode(metadata: dict | None) -> str:
     """Server setting wins. Client metadata is ignored unless the server flag allows it."""
     settings = get_settings()

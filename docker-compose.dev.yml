@@ -63,8 +63,11 @@ services:
       context: ./code_sandbox
     network_mode: "none"
     read_only: true
+    # Guest work parent. See docker-compose.yml. hidepid is not available
+    # under cap_drop ALL; slot uids keep /proc/<pid>/fd private.
     tmpfs:
-      - /tmp:size=128m,mode=1777
+      - /tmp:size=32m,mode=1777
+      - /var/ananta-guests:size=96m,mode=0711
     volumes:
       - ananta_code_run:/run/ananta-code
     mem_limit: 768m

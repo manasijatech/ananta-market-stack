@@ -293,6 +293,15 @@ def _broker_blocker(record: dict[str, Any]) -> str | None:
     return None
 
 
+def _code_run_computed(record: dict[str, Any]) -> bool:
+    """A code_run counts as a calculation only when it printed a number."""
+    if record.get("tool_name") != "code_run" or record.get("ok") is not True:
+        return False
+    output = record.get("output")
+    stdout = output.get("stdout") if isinstance(output, dict) else None
+    return isinstance(stdout, str) and bool(re.search(r"\d", stdout))
+
+
 def _record_succeeded(record: dict[str, Any]) -> bool:
     if record.get("ok") is True:
         return True
@@ -367,7 +376,10 @@ def evidence_gaps(
                 gaps.append(EvidenceGap("broker_read", "no successful broker_* read"))
 
     if "calculation" in contract.required:
-        calc_ok = any(record["tool_name"] == "sandbox_run_python" and record.get("ok") is True for record in records)
+        calc_ok = any(
+            (record["tool_name"] == "sandbox_run_python" and record.get("ok") is True) or _code_run_computed(record)
+            for record in records
+        )
         if not calc_ok:
             if sandbox_available:
                 gaps.append(EvidenceGap("calculation", "no sandbox_run_python result"))

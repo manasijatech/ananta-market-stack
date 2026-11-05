@@ -42,6 +42,26 @@ def test_web_fetch_403_is_done_with_blocker():
     assert report.status == "satisfied"
 
 
+def test_code_run_calculation_requires_a_numeric_stdout():
+    contract = plan_evidence_contract(
+        "What is the implied CAGR if revenue doubles in 4 years?",
+        adaptive_workspace=True,
+        sandbox_available=True,
+    )
+    hello = evidence_gaps(
+        contract,
+        [_completed("code_run", {"ok": True, "exit_code": 0, "stdout": "hello", "calls": []})],
+        sandbox_available=True,
+    )
+    assert any(gap.kind == "calculation" for gap in hello.unsatisfied())
+    computed = evidence_gaps(
+        contract,
+        [_completed("code_run", {"ok": True, "exit_code": 0, "stdout": "CAGR = 18.92%", "calls": []})],
+        sandbox_available=True,
+    )
+    assert not any(gap.kind == "calculation" for gap in computed.unsatisfied())
+
+
 def test_cagr_requires_sandbox_on_enterprise():
     contract = plan_evidence_contract(
         "What is the implied CAGR if revenue doubles in 4 years?",

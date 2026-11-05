@@ -13,25 +13,62 @@ def make_code_run(tools, *, user_id, session_key, emit):
 
     async def invoke(ctx, arguments):
         import json
-        args = json.loads(arguments)
-        timeout = max(1, min(120, int(args.get('timeout_seconds', 60))))
-        ledger = []
-        parent_id = getattr(ctx, 'tool_call_id', None) or uuid4().hex
-        async def rpc(frame):
-            return await registry.dispatch(ctx, frame, ledger, parent_id)
+
+        def _fail(message, calls=None):
+            return json.dumps({'ok': False, 'stdout': '', 'stderr': str(message)[:8000],
+                               'exit_code': 1, 'calls': calls or []})
+
         try:
-            result = await run_bridge(user_id=user_id, session_key=session_key,
-                code=args['code'], api_source=library, timeout_seconds=timeout, rpc=rpc)
+            try:
+                args = json.loads(arguments) if isinstance(arguments, str) else arguments
+            except (TypeError, ValueError):
+                args = {}
+            if not isinstance(args, dict):
+                args = {}
+            raw_timeout = args.get('timeout_seconds', 60)
+            if raw_timeout is None:
+                raw_timeout = 60
+            try:
+                timeout = int(raw_timeout)
+            except (TypeError, ValueError):
+                timeout = 60
+            timeout = max(1, min(120, timeout))
+            code = args.get('code')
+            if not isinstance(code, str):
+                return _fail('code is required')
+            ledger = []
+            parent_id = getattr(ctx, 'tool_call_id', None) or uuid4().hex
+
+            async def rpc(frame):
+                return await registry.dispatch(ctx, frame, ledger, parent_id)
+
+            try:
+                result = await run_bridge(user_id=user_id, session_key=session_key,
+                    code=code, api_source=library, timeout_seconds=timeout, rpc=rpc)
+            except Exception as exc:
+                result = {'stdout': '', 'stderr': str(exc)[:8000], 'exit_code': 1}
+            if not isinstance(result, dict):
+                result = {'stdout': '', 'stderr': 'sandbox returned an invalid result', 'exit_code': 1}
+            exit_code = result.get('exit_code', 1)
+            try:
+                exit_code = int(exit_code)
+            except (TypeError, ValueError):
+                exit_code = 1
+            stdout = result.get('stdout', '') or ''
+            if not isinstance(stdout, str):
+                stdout = str(stdout)
+            stderr = result.get('stderr', '') or ''
+            if not isinstance(stderr, str):
+                stderr = str(stderr)
+            payload = {'ok': exit_code == 0, 'stdout': stdout[:8000],
+                'stderr': stderr[:8000], 'exit_code': exit_code, 'calls': ledger}
+            if len(stdout) > 8000 or result.get('truncated'):
+                payload['stdout_truncated'] = True
+                payload['note'] = ('Output was cut at 8000 characters. Aggregate or select fields in the script '
+                                   'and print a compact table instead of raw results.')
+            return json.dumps(payload)
         except Exception as exc:
-            result = {'stdout': '', 'stderr': str(exc)[:8000], 'exit_code': 1}
-        stdout = result.get('stdout', '') or ''
-        payload = {'ok': result['exit_code'] == 0, 'stdout': stdout[:8000],
-            'stderr': (result.get('stderr', '') or '')[:8000], 'exit_code': result['exit_code'], 'calls': ledger}
-        if len(stdout) > 8000 or result.get('truncated'):
-            payload['stdout_truncated'] = True
-            payload['note'] = ('Output was cut at 8000 characters. Aggregate or select fields in the script '
-                               'and print a compact table instead of raw results.')
-        return json.dumps(payload)
+            return _fail(exc)
 
     executor = FunctionTool(name='code_run', description=(
         'Run Python (stdlib) in the no-network sandbox with `from ananta import api`. The API below reads '
@@ -49,6 +86,4 @@ def make_code_run(tools, *, user_id, session_key, emit):
         params_json_schema={'type': 'object', 'properties': {'code': {'type': 'string'},
             'timeout_seconds': {'type': 'integer', 'default': 60}}, 'required': ['code'],
             'additionalProperties': False}, strict_json_schema=False, on_invoke_tool=invoke)
-    # The runner calls registry.invalidate() whenever another tool completes.
-    executor._ananta_code_registry = registry
     return executor

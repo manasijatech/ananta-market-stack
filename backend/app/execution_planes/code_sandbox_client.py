@@ -8,12 +8,20 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from uuid import uuid4
 
 from app.config import get_settings
 
-_MESSAGE_LIMIT = 2_000_000
+# 8 results x 1 MiB of JSON (escaping is inside that cap) plus the rpc_reply
+# wrapper. Keep this equal to code_sandbox/main.py MESSAGE_LIMIT.
+_MAX_BATCH_RESULTS = 8
+_MAX_RESULT_BYTES = 1_048_576
+_MESSAGE_LIMIT = _MAX_BATCH_RESULTS * _MAX_RESULT_BYTES + 65_536
+# Covers the guest wall clock plus bridge reads, writes, and a hung tool call.
+BRIDGE_DEADLINE_MARGIN = 20
+_SIZE_ERROR = "API batch exceeds the transport size limit; narrow the query"
 
 
 def _token() -> str:
@@ -73,24 +81,67 @@ async def sandbox_status() -> tuple[bool, str]:
                 pass
 
 
+def _rpc_reply_payload(exec_id: str, reply) -> dict:
+    """Fit one batch on the wire, or replace it with an explicit size error.
+
+    The guest reads that error as ApiError instead of waiting out the timeout.
+    """
+    payload = {"type": "rpc_reply", "exec_id": exec_id, "reply": reply}
+    try:
+        encoded = json.dumps(payload, allow_nan=False).encode()
+    except (TypeError, ValueError):
+        return {
+            "type": "rpc_reply",
+            "exec_id": exec_id,
+            "reply": {
+                "id": reply.get("id") if isinstance(reply, dict) else None,
+                "results": [{"ok": False, "error": "API result is not JSON"}],
+            },
+        }
+    if len(encoded) + 1 <= _MESSAGE_LIMIT:
+        return payload
+    results = reply.get("results") if isinstance(reply, dict) else None
+    count = len(results) if isinstance(results, list) and results else 1
+    return {
+        "type": "rpc_reply",
+        "exec_id": exec_id,
+        "reply": {
+            "id": reply.get("id") if isinstance(reply, dict) else None,
+            "results": [{"ok": False, "error": _SIZE_ERROR} for _ in range(count)],
+        },
+    }
+
+
+def _remaining(deadline: float) -> float:
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise TimeoutError("code sandbox deadline exceeded")
+    return left
+
+
 async def run_bridge(*, user_id, session_key, code, api_source, timeout_seconds, rpc):
-    """Run guest code. user_id and session_key stay in the backend and are not sent."""
+    """Run guest code. user_id and session_key stay in the backend and are not sent.
+
+    The whole bridge, including an inner tool dispatch, shares one monotonic
+    deadline. When it expires the outstanding dispatch is cancelled.
+    """
     del user_id, session_key
     token = _token()
     timeout = max(1, min(120, int(timeout_seconds)))
-    reader, writer = await _connect(5)
+    deadline = time.monotonic() + timeout + BRIDGE_DEADLINE_MARGIN
+    reader, writer = await _connect(min(5, _remaining(deadline)))
     try:
         exec_id = uuid4().hex
-        await _send(writer, {
+        await asyncio.wait_for(_send(writer, {
             "type": "exec",
             "token": token,
             "exec_id": exec_id,
             "code": code,
             "api_source": api_source if isinstance(api_source, str) else "",
             "timeout_seconds": timeout,
-        })
+        }), timeout=_remaining(deadline))
         while True:
-            line = await asyncio.wait_for(reader.readline(), timeout=timeout + 15)
+            line = await asyncio.wait_for(reader.readline(), timeout=_remaining(deadline))
             if not line:
                 raise ConnectionError("code sandbox closed the socket")
             message = json.loads(line)
@@ -98,8 +149,11 @@ async def run_bridge(*, user_id, session_key, code, api_source, timeout_seconds,
             if kind == "rpc":
                 if message.get("exec_id") not in {None, exec_id}:
                     raise ConnectionError("code sandbox rpc exec_id mismatch")
-                reply = await rpc(message.get("frame") or {})
-                await _send(writer, {"type": "rpc_reply", "exec_id": exec_id, "reply": reply})
+                reply = await asyncio.wait_for(rpc(message.get("frame") or {}), timeout=_remaining(deadline))
+                await asyncio.wait_for(
+                    _send(writer, _rpc_reply_payload(exec_id, reply)),
+                    timeout=_remaining(deadline),
+                )
             elif kind == "result":
                 return {
                     "stdout": message.get("stdout") or "",

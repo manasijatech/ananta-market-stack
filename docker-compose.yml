@@ -97,8 +97,14 @@ services:
       context: ./code_sandbox
     network_mode: "none"
     read_only: true
+    # /var/ananta-guests is the guest work parent: root-owned, mode 0711
+    # (traversable, not listable). Each exec gets a 0700 directory owned by
+    # its slot uid (61001..). hidepid=2 on /proc needs CAP_SYS_ADMIN, which
+    # is dropped; per-uid /proc/<pid>/fd is mode 0500, so guests cannot open
+    # each other's descriptors.
     tmpfs:
-      - /tmp:size=128m,mode=1777
+      - /tmp:size=32m,mode=1777
+      - /var/ananta-guests:size=96m,mode=0711
     volumes:
       - ananta_code_run:/run/ananta-code
     mem_limit: 768m
