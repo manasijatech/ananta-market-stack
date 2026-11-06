@@ -12,6 +12,7 @@ from app.agent_harness.code_mode import (
     HYBRID_DIRECT_TOOLS,
     MCP_GATE_TOOLS,
     api_tools,
+    auto_strategy,
     select_strategy,
     strategy_instructions,
 )
@@ -30,6 +31,8 @@ class CodeModePlan:
     instruction: str = ""
     event: dict[str, Any] | None = None
     api_names: list[str] = field(default_factory=list)
+    # Set when CHAT_TOOL_MODE is auto: {strategy, reason} for tool_strategy_selected.
+    strategy: dict[str, Any] | None = None
 
 
 def build_code_tool_event(kind: str, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -61,7 +64,7 @@ def build_code_tool_event(kind: str, payload: dict[str, Any]) -> tuple[dict[str,
 def requested_tool_mode(metadata: dict | None) -> str:
     """Server setting wins. Client metadata is ignored unless the server flag allows it."""
     settings = get_settings()
-    accepted = {"direct", "code_mode", "hybrid"}
+    accepted = {"direct", "code_mode", "hybrid", "auto"}
     mode = settings.chat_tool_mode if settings.chat_tool_mode in accepted else "direct"
     if not settings.chat_tool_mode_allow_metadata_override or not isinstance(metadata, dict):
         return mode
@@ -113,12 +116,20 @@ async def prepare_broker_chat_tools(
     user_id: str,
     session_key: str,
     emit,
+    message: str | None = None,
+    route: str | None = None,
 ) -> CodeModePlan:
     servers = list(getattr(mcp_handle, "active_servers", None) or [])
-    direct = CodeModePlan(mode="direct", tools=list(local_tools), mcp_servers=servers)
     requested = requested_tool_mode(metadata)
+    strategy = None
+    instruction_mode = None
+    if requested == "auto":
+        chosen, why = auto_strategy(message, route)
+        strategy = {"strategy": chosen, "reason": why}
+        instruction_mode = "auto" if chosen == "code_mode" else None
+        requested = chosen
     if requested not in {"code_mode", "hybrid"}:
-        return direct
+        return CodeModePlan(mode="direct", tools=list(local_tools), mcp_servers=servers, strategy=strategy)
     try:
         available, reason = await sandbox_status()
         chosen = select_strategy(
@@ -131,6 +142,7 @@ async def prepare_broker_chat_tools(
                 tools=list(local_tools),
                 mcp_servers=servers,
                 event={"fallback": "direct", "reason": reason or "sandbox_unavailable"},
+                strategy=strategy,
             )
         converted, failed = await function_tools_from_mcp_servers(servers)
         if failed:
@@ -139,6 +151,7 @@ async def prepare_broker_chat_tools(
                 tools=list(local_tools),
                 mcp_servers=servers,
                 event={"fallback": "direct", "reason": "mcp_conversion_failed"},
+                strategy=strategy,
             )
         extra = list(getattr(mcp_handle, "extra_tools", None) or [])
         merged = _dedupe([*local_tools, *extra, *converted])
@@ -164,8 +177,9 @@ async def prepare_broker_chat_tools(
             mode="hybrid" if hybrid else "code_mode",
             tools=kept,
             mcp_servers=[],
-            instruction=strategy_instructions(hybrid),
+            instruction=strategy_instructions(instruction_mode or hybrid),
             api_names=[tool.name for tool in reads],
+            strategy=strategy,
         )
     except Exception:
         logger.exception("code mode setup failed; falling back to direct tools")
@@ -174,4 +188,5 @@ async def prepare_broker_chat_tools(
             tools=list(local_tools),
             mcp_servers=servers,
             event={"fallback": "direct", "reason": "code_mode_error"},
+            strategy=strategy,
         )

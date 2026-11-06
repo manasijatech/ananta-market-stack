@@ -2,24 +2,24 @@
 
 Code mode is an optional way to run broker chat. Instead of attaching every read-only MCP and broker tool schema to the model, the backend generates a typed Python API and gives the model one tool, `code_run`. The model writes a short script. The script runs in a separate process with no network. API calls inside the script are relayed back to the backend, which still holds broker credentials and the MCP connection. Only printed output returns to the model.
 
-The default install does not use this. `CHAT_TOOL_MODE` stays `direct`, and the sandbox service is behind a Compose profile.
+The default `CHAT_TOOL_MODE` is `auto`. Each turn uses code mode for data reads, and direct tools for derivatives, option-chain, and conceptual questions that need no data. The choice is recorded as a `tool_strategy_selected` event. The sandbox service is still behind a Compose profile. If that socket is missing, the turn falls back to direct tools and records `code_mode_unavailable`.
 
 ## Enable it
 
 From the repository root:
 
 ```bash
-CHAT_TOOL_MODE=code_mode docker compose --profile code-mode up -d --build
+docker compose --profile code-mode up -d --build
 ```
 
-That starts an extra service, `code-sandbox`, and sets the backend to code mode. To turn it off, set `CHAT_TOOL_MODE=direct` and recreate the backend. You can leave the sandbox stopped; a missing socket falls back to direct tools and records a `code_mode_unavailable` event.
+That starts an extra service, `code-sandbox`. With the default `auto` mode, data-read turns then use `code_run`. To force one strategy, set `CHAT_TOOL_MODE` to `code_mode`, `hybrid`, or `direct` and recreate the backend. You can leave the sandbox stopped; a missing socket falls back to direct tools and records a `code_mode_unavailable` event.
 
 Relevant settings (also in `.env.example`):
 
 | Variable | Default | Role |
 | --- | --- | --- |
-| `CHAT_TOOL_MODE` | `direct` | `code_mode` switches chat to the single `code_run` tool. `hybrid` does the same and also keeps document tools direct: `list_earnings`, `get_earnings_filing`, `get_concalls`, `search_concalls`, `get_announcements`, `search_announcements`, `search_news`. Other reads stay inside `code_run`. |
-| `CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE` | `false` | When `true`, a run's `metadata.chat_tool_mode` may be `direct`, `code_mode`, or `hybrid`. Clients cannot select the mode while this is false. |
+| `CHAT_TOOL_MODE` | `auto` | `auto` picks per turn: code mode for data reads, direct tools for derivatives and conceptual questions. `code_mode` always uses `code_run` for reads. `hybrid` does the same and also keeps document tools direct: `list_earnings`, `get_earnings_filing`, `get_concalls`, `search_concalls`, `get_announcements`, `search_announcements`, `search_news`. `direct` attaches tool schemas as usual. |
+| `CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE` | `false` | When `true`, a run's `metadata.chat_tool_mode` may be `auto`, `direct`, `code_mode`, or `hybrid`. Clients cannot select the mode while this is false. |
 | `CODE_SANDBOX_SOCKET` | `/run/ananta-code/runner.sock` | Unix socket shared by the backend and the runner. |
 | `CODE_SANDBOX_TOKEN_FILE` | `/run/ananta-code/token` | Token file on that same volume. |
 
@@ -40,7 +40,9 @@ There is no code-mode cache. Drishti MCP data operations are always read live fr
 
 `hybrid` uses the same sandbox and the same read API. The seven document tools above stay attached so the model can read filings, transcripts, announcements, and news search as prose. A failed `code_run` in hybrid mode includes a `fallback` note naming the API functions that failed, so the model can call an attached direct tool instead of rewriting the script. OSS has no `capability_load`, so reads outside that document set are not attached.
 
-Inside the sandbox the script can call `api.list()`, `api.search(text)`, and `api.describe(name)` without a network round trip. `api.parallel([(name, args), ...])` batches up to 8 calls. Passing a wrapper object such as `query=` works even when the nested fields are required; omitting both the wrapper and a required field raises `TypeError` in the guest. Each inner call still emits `tool_call_started` and `tool_call_completed` with `parent_tool` set to `code_run`, so the chat timeline shows the reads. A budget stop (`stopped: true`, including `ok: true`) is an error, not data. Cancellation and timeout still record the ledger slot and a `tool_call_completed` event with `ok: false`.
+`api.earnings_rows(result)` flattens `list_earnings` / `get_earnings_filing` into one row per symbol, scope, and metric, keeps the latest filing per symbol, and adds `value_cr` / `previous_year_value_cr` in INR crore. Successful inner calls include `receipt_id` on the `calls` ledger (the persisted `tool_call_completed` event id). OSS has no finance canvas, so that id is not cited as a canvas source.
+
+Inside the sandbox the script can call `api.list()`, `api.search(text)`, `api.describe(name)`, and `api.earnings_rows(result)` without a network round trip. `api.parallel([(name, args), ...])` batches up to 8 calls. Passing a wrapper object such as `query=` works even when the nested fields are required; omitting both the wrapper and a required field raises `TypeError` in the guest. Each inner call still emits `tool_call_started` and `tool_call_completed` with `parent_tool` set to `code_run`, so the chat timeline shows the reads. A budget stop (`stopped: true`, including `ok: true`) is an error, not data. Cancellation and timeout still record the ledger slot and a `tool_call_completed` event with `ok: false`.
 
 ## Isolation
 

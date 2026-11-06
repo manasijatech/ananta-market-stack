@@ -143,7 +143,7 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="BROKER_CHAT_EMIT_MODEL_CONTEXT_EVENT",
     )
-    chat_tool_mode: str = Field(default="direct", validation_alias="CHAT_TOOL_MODE")
+    chat_tool_mode: str = Field(default="auto", validation_alias="CHAT_TOOL_MODE")
     chat_tool_mode_allow_metadata_override: bool = Field(
         default=False,
         validation_alias="CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE",
@@ -382,9 +382,9 @@ class Settings(BaseSettings):
     @classmethod
     def _normalize_chat_tool_mode(cls, value: object) -> str:
         if value is None or value == "":
-            return "direct"
+            return "auto"
         text = str(value).strip().lower()
-        if text not in {"direct", "code_mode", "hybrid"}:
+        if text not in {"direct", "code_mode", "hybrid", "auto"}:
             return "direct"
         return text
 

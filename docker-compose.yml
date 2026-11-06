@@ -67,7 +67,7 @@ services:
       ENABLE_IN_PROCESS_ALPHA_WS_WORKER: ${ENABLE_IN_PROCESS_ALPHA_WS_WORKER:-true}
       ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER: ${ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER:-true}
       ENABLE_ADAPTIVE_WORKSPACE: ${ENABLE_ADAPTIVE_WORKSPACE:-true}
-      CHAT_TOOL_MODE: ${CHAT_TOOL_MODE:-direct}
+      CHAT_TOOL_MODE: ${CHAT_TOOL_MODE:-auto}
       CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE: ${CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE:-false}
       CODE_SANDBOX_SOCKET: /run/ananta-code/runner.sock
       CODE_SANDBOX_TOKEN_FILE: /run/ananta-code/token
@@ -90,8 +90,9 @@ services:
     restart: unless-stopped
 
   # Optional. No network, no backend secrets. Enable with:
-  #   CHAT_TOOL_MODE=code_mode docker compose --profile code-mode up -d --build
-  #   CHAT_TOOL_MODE=hybrid uses the same profile and keeps document tools direct.
+  #   docker compose --profile code-mode up -d --build
+  #   CHAT_TOOL_MODE defaults to auto. Set hybrid to keep document tools direct,
+  #   code_mode to always use code_run, or direct to skip the sandbox.
   code-sandbox:
     profiles: ["code-mode"]
     build:

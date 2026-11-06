@@ -45,7 +45,7 @@ MCP_DATA_TOOL_NAMES = DRISHTI_READ_OPS | frozenset({
 })
 _NSE_PUBLIC_PREFIXES = ('nse_cm__', 'nse_bhavcopy__')
 _NEVER_PREFIXES = ('workspace_', 'alert_', 'ask_', 'browser_', 'sandbox_', 'present_')
-_RESERVED = {'list', 'search', 'describe', 'parallel', 'peek', 'ApiError'}
+_RESERVED = {'list', 'search', 'describe', 'parallel', 'peek', 'earnings_rows', 'ApiError'}
 
 CODE_MODE_INSTRUCTIONS = (
     "Code Mode is active for data reads. Market, news, filings, quotes, historical prices, "
@@ -65,9 +65,51 @@ CODE_MODE_INSTRUCTIONS = (
 )
 
 
-def strategy_instructions(hybrid):
-    """Code Mode text for this run. Hybrid replaces the "not direct tools" rule."""
-    if not hybrid:
+# Users never choose a tool strategy. The default CHAT_TOOL_MODE is "auto": code mode for
+# data reads, direct tools for derivatives/option-chain questions and conceptual questions
+# that need no data. OSS has no capability routes (no browser_read, workspace_editor, or
+# artifact_builder), so a route never forces direct tools.
+_DIRECT_ROUTES = frozenset()
+_DERIVATIVES = re.compile(
+    r'option chain|put[- ]call|\bpcr\b|greeks|open interest|\bstrikes?\b|'
+    r'\b(?:straddle|strangle|iron condor|payoff|margin)\b',
+    re.I,
+)
+_CONCEPTUAL = re.compile(
+    r'\bexplain what\b|\bwhat (?:does|is) .{0,40}\bmean\b|\bno (?:market )?data is needed\b|'
+    r'\bin (?:two|2|a few) short paragraphs\b',
+    re.I,
+)
+
+
+def auto_strategy(message, route=None):
+    """Return (strategy, reason) for one chat turn: 'code_mode' or 'direct'."""
+    text = message or ''
+    if route in _DIRECT_ROUTES:
+        return 'direct', 'route:' + str(route)
+    if _DERIVATIVES.search(text):
+        return 'direct', 'derivatives'
+    if _CONCEPTUAL.search(text):
+        return 'direct', 'conceptual'
+    return 'code_mode', 'data_read'
+
+
+# OSS cannot load a direct tool on demand (no capability_load). Say what failed.
+AUTO_CODE_FALLBACK = (
+    "If the same script fails twice, explain what failed and answer from the data you already have "
+    "instead of rewriting the script again."
+)
+
+
+def strategy_instructions(mode):
+    """Code Mode text for this run. False/'code_mode', True/'hybrid', or 'auto'."""
+    if mode is True:
+        mode = 'hybrid'
+    if mode in (False, None, 'code_mode'):
+        return CODE_MODE_INSTRUCTIONS
+    if mode == 'auto':
+        return CODE_MODE_INSTRUCTIONS + ' ' + AUTO_CODE_FALLBACK
+    if mode != 'hybrid':
         return CODE_MODE_INSTRUCTIONS
     base = CODE_MODE_INSTRUCTIONS.split("Read them by calling code_run", 1)[1]
     return HYBRID_INSTRUCTIONS + "\nWhen you use code_run: call code_run" + base
@@ -202,6 +244,67 @@ def list(): return sorted(_schemas)
 def describe(name): return _schemas.get(name, {'error': 'Unknown API function'})
 def search(text):
     return {n: s for n, s in _schemas.items() if text.lower() in (n + ' ' + str(s)).lower()}
+def _crore_factor(unit):
+    text = str(unit or '').lower()
+    words = __import__('re').findall('[a-z]+', text)
+    if not words or any(w in ('usd', 'eur', 'gbp', 'dollar', 'dollars') for w in words):
+        return None
+    for w in words:
+        if w.startswith('lakh') or w in ('lac', 'lacs'):
+            return 0.01
+        if w.startswith('crore') or w in ('cr', 'crs'):
+            return 1.0
+        if w.startswith('million') or w == 'mn':
+            return 0.1
+        if w.startswith('billion') or w == 'bn':
+            return 100.0
+        if w.startswith('thousand'):
+            return 0.0001
+    return None
+
+
+def earnings_rows(result, metrics=('revenue', 'pat', 'eps', 'operating_profit'), latest=True):
+    """Flatten list_earnings / get_earnings_filing results into one dict per (symbol, scope, metric):
+    symbol, company, quarter, date, scope, metric, value (alias current_period_value), unit,
+    previous_year_value, yoy_percent, qoq_percent, value_cr and previous_year_value_cr (rupee
+    amounts converted to INR crore from the filing's unit; None for EPS or unknown units), source_id.
+    latest=True keeps only each symbol's most recent filing."""
+    records = result.get('data', result) if isinstance(result, dict) else result
+    if isinstance(records, dict):
+        records = [records]
+    records = [r for r in (records or ()) if isinstance(r, dict)]
+    if latest:
+        newest = {}
+        for record in records:
+            key = record.get('symbol')
+            if key not in newest or str(record.get('date') or '') > str(newest[key].get('date') or ''):
+                newest[key] = record
+        records = [*newest.values()]
+    rows = []
+    for record in records:
+        table = record.get('earnings_table') or {}
+        for scope in ('consolidated', 'standalone'):
+            section = table.get(scope)
+            if not isinstance(section, dict):
+                continue
+            for metric in metrics:
+                entry = section.get(metric)
+                if not isinstance(entry, dict):
+                    continue
+                factor = None if metric == 'eps' else _crore_factor(entry.get('unit'))
+                value, previous = entry.get('current_period_value'), entry.get('previous_year_value')
+                rows.append({'symbol': record.get('symbol'), 'company': record.get('company_name'),
+                             'quarter': section.get('current_period_label') or record.get('quarter'),
+                             'date': record.get('date'), 'scope': scope, 'metric': metric,
+                             'value': value, 'current_period_value': value, 'unit': entry.get('unit'),
+                             'previous_year_value': previous,
+                             'yoy_percent': entry.get('yoy_percent'), 'qoq_percent': entry.get('qoq_percent'),
+                             'value_cr': round(value * factor, 2) if factor is not None and isinstance(value, (int, float)) else None,
+                             'previous_year_value_cr': round(previous * factor, 2) if factor is not None and isinstance(previous, (int, float)) else None,
+                             'source_id': record.get('id')})
+    return rows
+
+
 def peek(value, depth=3, _indent=''):
     """Return the structure of a result (keys, types, lengths) without its data."""
     if depth < 0:
@@ -528,7 +631,9 @@ class CodeRegistry:
                 event = {**payload, 'ok': result['ok'], 'output': recorded}
                 if not result['ok']:
                     event['error'] = result.get('error')
-                await self.emit('tool_call_completed', event)
+                receipt = await self.emit('tool_call_completed', event)
+                if result['ok'] and isinstance(receipt, str) and receipt:
+                    slot['receipt_id'] = receipt
 
             try:
                 await self.emit('tool_call_started', payload)

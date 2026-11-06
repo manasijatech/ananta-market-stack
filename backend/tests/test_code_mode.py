@@ -476,6 +476,10 @@ def test_code_run_description_lists_signatures(monkeypatch):
     assert "return_exceptions=True" in executor.description
     assert not hasattr(executor, "_ananta_code_registry")
     assert "api.peek(value)" in executor.description
+    assert "Never print a whole result" in executor.description
+    assert "api.earnings_rows(result)" in executor.description
+    assert "value_cr" in executor.description
+    assert "receipt_id" in executor.description
     assert '"-> {...}" shows a result shape' in executor.description
     assert 'news, movers = api.parallel([("search_news", {"queries": ["TCS results"], "days": 7}),' in executor.description
     assert 'for n in news[:3]: print(n.get("title"), n.get("published_at"), n.get("url"))' in executor.description
@@ -1166,3 +1170,165 @@ async def test_results_with_datetimes_and_nan_reach_the_guest():
     tool = SimpleNamespace(name="broker_get_quotes", description="q", params_json_schema={"properties": {}}, on_invoke_tool=invoke)
     reply = await CodeRegistry([tool], emit).dispatch(None, {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {}}]}, [], "p")
     assert reply["results"][0]["value"] == {"ok": True, "ltp": None, "at": "2026-11-06 09:15:00"}
+
+
+def test_chat_tool_mode_defaults_to_auto(monkeypatch):
+    monkeypatch.delenv("CHAT_TOOL_MODE", raising=False)
+    get_settings.cache_clear()
+    assert get_settings().chat_tool_mode == "auto"
+    assert requested_tool_mode({}) == "auto"
+    assert requested_tool_mode({"chat_tool_mode": "direct"}) == "auto"
+
+
+@pytest.mark.parametrize("message,route,expected,reason", [
+    ("Compare the latest quarterly results of TCS, Infosys and Wipro.", "market_read", "code_mode", "data_read"),
+    ("What is the latest news on Reliance Industries?", "market_read", "code_mode", "data_read"),
+    ("What is the current NIFTY option chain put-call ratio and the highest open interest strikes?", "market_read", "direct", "derivatives"),
+    ("In two short paragraphs, explain what the put-call ratio means. No market data is needed.", "market_read", "direct", "derivatives"),
+    # OSS has no browser_read / workspace_editor / artifact_builder routes, so a route name does not force direct.
+    ("hi there", "browser_read", "code_mode", "data_read"),
+    ("For Titan, Trent and Page Industries give the 52-week high and low.", "simple_chat", "code_mode", "data_read"),
+    ("In two short paragraphs, explain what operating leverage means. No market data is needed.", None, "direct", "conceptual"),
+])
+def test_auto_strategy_routes_by_request(message, route, expected, reason):
+    from app.agent_harness.code_mode import auto_strategy
+    assert auto_strategy(message, route) == (expected, reason)
+
+
+def test_auto_code_mode_instructions_explain_a_repeated_failure():
+    from app.agent_harness.code_mode import strategy_instructions
+    text = strategy_instructions("auto")
+    assert "fails twice" in text and "explain what failed" in text
+    assert "capability_load" not in text
+    assert "NOT direct tools" in text
+
+
+def test_earnings_rows_name_is_reserved():
+    assert [item.name for item in api_tools([tool("earnings_rows")])] == []
+
+
+def test_earnings_rows_flattens_real_earnings_structure():
+    ns = {}
+    exec(generate_api([tool()]), ns)
+    result = {"data": [{"id": "e1", "symbol": "LT", "company_name": "Larsen", "quarter": "q2_27", "date": "2026-10-30",
+        "earnings_table": {"consolidated": {"current_period_label": "Q2FY27",
+            "pat": {"unit": "Crore", "current_period_value": 5949.15, "previous_year_value": 4678.01,
+                    "yoy_percent": 27.17, "qoq_percent": 19.27}},
+            "standalone": {"current_period_label": "Q2FY27", "revenue": {"unit": "Crore", "current_period_value": 1}},
+            "reporting_period_basis": "financial_year"}}]}
+    rows = ns["earnings_rows"](result)
+    assert rows[0] == {"symbol": "LT", "company": "Larsen", "quarter": "Q2FY27", "date": "2026-10-30", "scope": "consolidated",
+                       "metric": "pat", "value": 5949.15, "current_period_value": 5949.15, "unit": "Crore",
+                       "previous_year_value": 4678.01, "yoy_percent": 27.17, "qoq_percent": 19.27,
+                       "value_cr": 5949.15, "previous_year_value_cr": 4678.01, "source_id": "e1"}
+    assert {(r["scope"], r["metric"]) for r in rows} == {("consolidated", "pat"), ("standalone", "revenue")}
+    assert ns["earnings_rows"](result["data"][0])[0]["metric"] == "pat"
+
+
+@pytest.mark.asyncio
+async def test_ledger_carries_receipt_ids_for_successful_calls():
+    async def invoke(ctx, args):
+        return json.dumps({"ok": True})
+
+    async def emit(kind, data):
+        return "e" * 36 if kind == "tool_call_completed" else None
+
+    ledger = []
+    await CodeRegistry([tool(invoke=invoke)], emit).dispatch(
+        None, {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {}}]}, ledger, "p",
+    )
+    assert ledger[0]["receipt_id"] == "e" * 36
+
+
+def test_earnings_rows_keeps_latest_filing_and_converts_to_crore():
+    ns = {}
+    exec(generate_api([tool()]), ns)
+
+    def rec(date, value, unit):
+        return {"symbol": "MMFL", "date": date, "earnings_table": {"consolidated": {"current_period_label": "Q",
+                "pat": {"unit": unit, "current_period_value": value, "previous_year_value": value / 2}}}}
+
+    rows = ns["earnings_rows"]({"data": [rec("2026-08-01", 1.0, "Rs in Lakhs"), rec("2026-11-05", 4174.56, "Rs. in Lakhs")]})
+    assert len(rows) == 1 and rows[0]["value_cr"] == 41.75 and rows[0]["previous_year_value_cr"] == 20.87
+    assert ns["earnings_rows"]({"data": [rec("2026-11-05", 517.18, "Rs. in Million")]})[0]["value_cr"] == 51.72
+    assert len(ns["earnings_rows"]({"data": [rec("2026-08-01", 1.0, "crore"), rec("2026-11-05", 2.0, "crore")]}, latest=False)) == 2
+    eps = {"symbol": "MMFL", "date": "2026-11-05", "earnings_table": {"consolidated": {
+        "eps": {"unit": "Rs", "current_period_value": 12.5, "previous_year_value": 10}}}}
+    assert ns["earnings_rows"]({"data": [eps]}, metrics=("eps",))[0]["value_cr"] is None
+    assert ns["earnings_rows"]({"data": [rec("2026-11-05", 10, "USD million")]})[0]["value_cr"] is None
+
+
+def test_earnings_rows_call_counts_as_computation():
+    from app.agent_harness.code_computation import contains_computation
+    assert contains_computation({"code": 'from ananta import api\nfor r in api.earnings_rows(api.list_earnings(symbols="X")):\n    print(r.get("value_cr"))'})
+    assert not contains_computation({"code": 'print("hello")'})
+
+
+@pytest.mark.asyncio
+async def test_auto_plan_uses_code_mode_for_data_and_direct_for_derivatives(monkeypatch):
+    monkeypatch.setenv("CHAT_TOOL_MODE", "auto")
+    monkeypatch.setenv("CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE", "false")
+    get_settings.cache_clear()
+
+    async def ready():
+        return True, ""
+
+    monkeypatch.setattr("app.services.broker_chat_code_mode.sandbox_status", ready)
+    quote = tool()
+    mutation = tool("broker_delete_watchlist")
+    handle = SimpleNamespace(active_servers=[], extra_tools=[], flattened_tool_names=[], enabled=False)
+    plan = await prepare_broker_chat_tools(
+        metadata={"chat_tool_mode": "direct"},
+        local_tools=[quote, mutation],
+        mcp_handle=handle,
+        user_id="u",
+        session_key="s",
+        emit=lambda *args: None,
+        message="Compare the latest quarterly results of TCS, Infosys and Wipro.",
+    )
+    names = [item.name for item in plan.tools]
+    assert plan.mode == "code_mode"
+    assert plan.strategy == {"strategy": "code_mode", "reason": "data_read"}
+    assert names[-1] == "code_run"
+    assert "broker_get_quotes" not in names
+    assert "broker_delete_watchlist" in names
+    assert "fails twice" in plan.instruction and "explain what failed" in plan.instruction
+    assert "capability_load" not in plan.instruction
+
+    deriv = await prepare_broker_chat_tools(
+        metadata={},
+        local_tools=[quote, mutation],
+        mcp_handle=handle,
+        user_id="u",
+        session_key="s",
+        emit=lambda *args: None,
+        message="What is the current NIFTY option chain put-call ratio and the highest open interest strikes?",
+    )
+    assert deriv.mode == "direct"
+    assert deriv.strategy == {"strategy": "direct", "reason": "derivatives"}
+    assert deriv.event is None
+    assert [item.name for item in deriv.tools] == ["broker_get_quotes", "broker_delete_watchlist"]
+
+
+@pytest.mark.asyncio
+async def test_auto_code_mode_falls_back_when_sandbox_is_missing(monkeypatch):
+    monkeypatch.setenv("CHAT_TOOL_MODE", "auto")
+    get_settings.cache_clear()
+
+    async def missing():
+        return False, "socket_missing"
+
+    monkeypatch.setattr("app.services.broker_chat_code_mode.sandbox_status", missing)
+    plan = await prepare_broker_chat_tools(
+        metadata={},
+        local_tools=[tool(), tool("broker_delete_watchlist")],
+        mcp_handle=SimpleNamespace(active_servers=[], extra_tools=[], flattened_tool_names=[], enabled=False),
+        user_id="u",
+        session_key="s",
+        emit=None,
+        message="What is the latest news on Reliance Industries?",
+    )
+    assert plan.mode == "direct"
+    assert plan.event == {"fallback": "direct", "reason": "socket_missing"}
+    assert plan.strategy == {"strategy": "code_mode", "reason": "data_read"}
+    assert [item.name for item in plan.tools] == ["broker_get_quotes", "broker_delete_watchlist"]

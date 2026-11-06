@@ -79,6 +79,20 @@ def test_code_run_calculation_requires_a_numeric_stdout_and_computation():
     assert not any(gap.kind == "calculation" for gap in computed.unsatisfied())
 
 
+def test_calculation_nudge_points_at_code_run():
+    from app.agent_harness.evidence import evidence_nudge_message
+
+    contract = plan_evidence_contract(
+        "What is the implied CAGR if revenue doubles in 4 years?",
+        adaptive_workspace=True,
+        sandbox_available=True,
+    )
+    report = evidence_gaps(contract, [], sandbox_available=True)
+    text = evidence_nudge_message(report)
+    assert "code_run" in text
+    assert "sandbox_run_python" in text
+
+
 def test_cagr_requires_sandbox_on_enterprise():
     contract = plan_evidence_contract(
         "What is the implied CAGR if revenue doubles in 4 years?",

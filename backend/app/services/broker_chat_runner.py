@@ -993,9 +993,10 @@ async def _run_broker_chat(run_id: str) -> None:
             session_instructions=session_instructions,
         )
 
-        async def emit_code_tool(kind: str, payload: dict[str, Any]) -> None:
+        async def emit_code_tool(kind: str, payload: dict[str, Any]) -> str | None:
             public, full = build_code_tool_event(kind, payload)
-            broker_chat.append_event(db, run, event_type=kind, public_payload=public, full_payload=full)
+            row = broker_chat.append_event(db, run, event_type=kind, public_payload=public, full_payload=full)
+            return getattr(row, "id", None)
 
         code_plan = await prepare_broker_chat_tools(
             metadata=metadata if isinstance(metadata, dict) else {},
@@ -1004,9 +1005,21 @@ async def _run_broker_chat(run_id: str) -> None:
             user_id=run.user_id,
             session_key=run.session_id,
             emit=emit_code_tool,
+            message=run.message,
         )
         tools = code_plan.tools
         active_mcp_servers = code_plan.mcp_servers
+        if code_plan.strategy:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="tool_strategy_selected",
+                public_payload={
+                    "strategy": code_plan.strategy.get("strategy"),
+                    "reason": code_plan.strategy.get("reason"),
+                },
+                full_payload={**code_plan.strategy, "configured": "auto"},
+            )
         if code_plan.event:
             broker_chat.append_event(
                 db,
