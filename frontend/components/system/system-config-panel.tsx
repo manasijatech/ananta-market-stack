@@ -45,12 +45,30 @@ import {
     providerSupportsReasoningEffort,
     reasoningEffortSelectOptions
 } from "@/lib/llm-reasoning-effort";
+import {
+    formatOpenRouterProvidersForInput,
+    normalizeSavedAllowFallbacks,
+    normalizeSavedOpenRouterProviders,
+    openRouterModelUrl,
+    parseOpenRouterProvidersInput,
+    providerSupportsOpenRouterRouting,
+    summarizeOpenRouterRouting,
+    validateOpenRouterProviders
+} from "@/lib/llm-openrouter-providers";
 
 type ProviderDraftState = {
     apiKey: string;
     modelId: string;
     label: string;
     reasoningEffort: string;
+    openrouterProvidersText: string;
+    openrouterAllowFallbacks: boolean;
+};
+
+type OpenRouterRoutingEditState = {
+    providersText: string;
+    allowFallbacks: boolean;
+    editing: boolean;
 };
 
 export type SystemConfigPanelSection = "all" | "broker-data" | "alpha" | "mcp" | "llm";
@@ -336,10 +354,18 @@ export function SystemConfigPanel({
         Object.fromEntries(
             initialConfig.llm_providers.map((provider) => [
                 provider.provider,
-                { apiKey: "", modelId: "", label: "", reasoningEffort: "" }
+                {
+                    apiKey: "",
+                    modelId: "",
+                    label: "",
+                    reasoningEffort: "",
+                    openrouterProvidersText: "",
+                    openrouterAllowFallbacks: true
+                }
             ])
         )
     );
+    const [routingEdits, setRoutingEdits] = useState<Record<string, OpenRouterRoutingEditState>>({});
     // Progressive disclosure: collapse providers by default, open the first one
     // that still needs setup so the user is guided to a single next step.
     const [openLlmProviders, setOpenLlmProviders] = useState<string[]>(() => {
@@ -465,9 +491,36 @@ export function SystemConfigPanel({
         setDrafts((current) => ({
             ...current,
             [providerKey(provider)]: {
-                ...(current[providerKey(provider)] ?? { apiKey: "", modelId: "", label: "", reasoningEffort: "" }),
+                ...(current[providerKey(provider)] ?? {
+                    apiKey: "",
+                    modelId: "",
+                    label: "",
+                    reasoningEffort: "",
+                    openrouterProvidersText: "",
+                    openrouterAllowFallbacks: true
+                }),
                 ...patch
             }
+        }));
+    }
+
+    function routingEditForModel(model: SystemConfig["llm_providers"][number]["models"][number]) {
+        const saved = routingEdits[model.id];
+        if (saved) return saved;
+        return {
+            providersText: formatOpenRouterProvidersForInput(normalizeSavedOpenRouterProviders(model.openrouter_providers)),
+            allowFallbacks: normalizeSavedAllowFallbacks(model.openrouter_allow_fallbacks),
+            editing: false
+        };
+    }
+
+    function updateRoutingEdit(
+        model: SystemConfig["llm_providers"][number]["models"][number],
+        patch: Partial<OpenRouterRoutingEditState>
+    ) {
+        setRoutingEdits((current) => ({
+            ...current,
+            [model.id]: { ...routingEditForModel(model), ...patch }
         }));
     }
 
@@ -735,16 +788,37 @@ export function SystemConfigPanel({
 
     function addModel(provider: LlmProvider) {
         setProviderErrors((current) => ({ ...current, [provider]: "" }));
+        const draft = drafts[providerKey(provider)];
+        if (providerSupportsOpenRouterRouting(provider)) {
+            const parsed = parseOpenRouterProvidersInput(draft?.openrouterProvidersText ?? "");
+            const validationError = validateOpenRouterProviders(parsed);
+            if (validationError) {
+                setProviderErrors((current) => ({ ...current, [provider]: validationError }));
+                return;
+            }
+        }
         startTransition(async () => {
             try {
                 const next = await addLlmProviderModel({
                     provider,
                     model_id: drafts[providerKey(provider)]?.modelId ?? "",
                     label: drafts[providerKey(provider)]?.label || null,
-                    reasoning_effort: effortForProvider(provider, drafts[providerKey(provider)]?.reasoningEffort)
+                    reasoning_effort: effortForProvider(provider, drafts[providerKey(provider)]?.reasoningEffort),
+                    openrouter_providers: providerSupportsOpenRouterRouting(provider)
+                        ? parseOpenRouterProvidersInput(drafts[providerKey(provider)]?.openrouterProvidersText ?? "")
+                        : null,
+                    openrouter_allow_fallbacks: providerSupportsOpenRouterRouting(provider)
+                        ? (drafts[providerKey(provider)]?.openrouterAllowFallbacks ?? true)
+                        : null
                 });
                 replaceProviders(next);
-                updateDraft(provider, { modelId: "", label: "", reasoningEffort: "" });
+                updateDraft(provider, {
+                    modelId: "",
+                    label: "",
+                    reasoningEffort: "",
+                    openrouterProvidersText: "",
+                    openrouterAllowFallbacks: true
+                });
             } catch (caught) {
                 setProviderErrors((current) => ({ ...current, [provider]: parseActionError(caught).message }));
             }
@@ -759,6 +833,36 @@ export function SystemConfigPanel({
                     reasoning_effort: effortForProvider(provider, reasoningEffort)
                 });
                 replaceProviders(next);
+            } catch (caught) {
+                setProviderErrors((current) => ({ ...current, [provider]: parseActionError(caught).message }));
+            }
+        });
+    }
+
+    function saveModelRouting(
+        provider: LlmProvider,
+        model: SystemConfig["llm_providers"][number]["models"][number]
+    ) {
+        const edit = routingEditForModel(model);
+        const parsed = parseOpenRouterProvidersInput(edit.providersText);
+        const validationError = validateOpenRouterProviders(parsed);
+        if (validationError) {
+            setProviderErrors((current) => ({ ...current, [provider]: validationError }));
+            return;
+        }
+        setProviderErrors((current) => ({ ...current, [provider]: "" }));
+        startTransition(async () => {
+            try {
+                const next = await updateLlmProviderModel(model.id, {
+                    openrouter_providers: parsed,
+                    openrouter_allow_fallbacks: edit.allowFallbacks
+                });
+                replaceProviders(next);
+                setRoutingEdits((current) => {
+                    const nextEdits = { ...current };
+                    delete nextEdits[model.id];
+                    return nextEdits;
+                });
             } catch (caught) {
                 setProviderErrors((current) => ({ ...current, [provider]: parseActionError(caught).message }));
             }
@@ -1657,6 +1761,7 @@ export function SystemConfigPanel({
                         </div>
 
                         {provider.has_api_key ? (
+                            <>
                             <div
                                 className={
                                     providerSupportsReasoningEffort(provider.provider)
@@ -1706,6 +1811,62 @@ export function SystemConfigPanel({
                                     Add model
                                 </Button>
                             </div>
+                            {provider.has_api_key && providerSupportsOpenRouterRouting(provider.provider) ? (
+                                <div className="mt-2 grid gap-2 rounded-lg border border-dashed border-border px-3 py-3">
+                                    <Input
+                                        className="h-9 text-sm"
+                                        disabled={llmReadOnly}
+                                        onChange={(event) =>
+                                            updateDraft(provider.provider, {
+                                                openrouterProvidersText: event.target.value
+                                            })
+                                        }
+                                        placeholder="Providers (optional): e.g. together, fireworks"
+                                        value={drafts[providerKey(provider.provider)]?.openrouterProvidersText ?? ""}
+                                    />
+                                    <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                                        <input
+                                            checked={
+                                                drafts[providerKey(provider.provider)]?.openrouterAllowFallbacks ?? true
+                                            }
+                                            className="size-3.5 accent-primary"
+                                            disabled={
+                                                llmReadOnly ||
+                                                !parseOpenRouterProvidersInput(
+                                                    drafts[providerKey(provider.provider)]
+                                                        ?.openrouterProvidersText ?? ""
+                                                ).length
+                                            }
+                                            onChange={(event) =>
+                                                updateDraft(provider.provider, {
+                                                    openrouterAllowFallbacks: event.target.checked
+                                                })
+                                            }
+                                            type="checkbox"
+                                        />
+                                        Allow OpenRouter fallbacks to other providers
+                                    </label>
+                                    <p className="text-xs leading-5 text-muted-foreground">
+                                        Optional. Leave empty for OpenRouter automatic routing. Add one provider to
+                                        pin it, or several in fallback order (first choice first).{" "}
+                                        {(drafts[providerKey(provider.provider)]?.modelId ?? "").trim() ? (
+                                            <a
+                                                className="font-medium text-primary underline underline-offset-2"
+                                                href={openRouterModelUrl(
+                                                    (drafts[providerKey(provider.provider)]?.modelId ?? "").trim()
+                                                )}
+                                                rel="noopener noreferrer"
+                                                target="_blank"
+                                            >
+                                                Find provider names for this model
+                                            </a>
+                                        ) : (
+                                            "Pick a model above, then check its OpenRouter page for provider names."
+                                        )}
+                                    </p>
+                                </div>
+                            ) : null}
+                            </>
                         ) : (
                             <div className="mt-4 rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
                                 Save your {provider.label} API key above, then pick a model from the catalog.
@@ -1714,45 +1875,131 @@ export function SystemConfigPanel({
 
                         <div className="mt-4 grid gap-2">
                             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved models</div>
-                            {provider.models.map((model) => (
+                            {provider.models.map((model) => {
+                                const routingSummary = providerSupportsOpenRouterRouting(provider.provider)
+                                    ? summarizeOpenRouterRouting(
+                                          model.openrouter_providers,
+                                          model.openrouter_allow_fallbacks
+                                      )
+                                    : null;
+                                const routingEdit = routingEditForModel(model);
+                                return (
                                 <div
-                                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+                                    className="grid gap-2 rounded-lg border border-border px-3 py-2"
                                     key={model.id}
                                 >
-                                    <div>
-                                        <div className="text-sm font-semibold">{model.model_id}</div>
-                                        <div className="text-xs text-muted-foreground">
-                                            {model.label || "No custom label"} · saved {formatIstDateTime(model.created_at)}
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                            <div className="text-sm font-semibold">{model.model_id}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                                {model.label || "No custom label"} · saved {formatIstDateTime(model.created_at)}
+                                            </div>
+                                            {routingSummary ? (
+                                                <div className="mt-0.5 text-xs text-muted-foreground">{routingSummary}</div>
+                                            ) : null}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {providerSupportsReasoningEffort(provider.provider) ? (
+                                                <SimpleSelect
+                                                    aria-label={`Reasoning effort for ${model.model_id}`}
+                                                    className="h-8 w-[148px] bg-background px-2 text-xs"
+                                                    disabled={llmReadOnly || isPending}
+                                                    onValueChange={(value) =>
+                                                        updateModelReasoningEffort(provider.provider, model.id, value)
+                                                    }
+                                                    options={reasoningEffortSelectOptions()}
+                                                    size="sm"
+                                                    value={model.reasoning_effort ?? ""}
+                                                />
+                                            ) : null}
+                                            {providerSupportsOpenRouterRouting(provider.provider) && !routingEdit.editing ? (
+                                                <Button
+                                                    disabled={llmReadOnly || isPending}
+                                                    onClick={() => updateRoutingEdit(model, { editing: true })}
+                                                    size="sm"
+                                                    title="Pin this model to specific OpenRouter providers (optional)."
+                                                    type="button"
+                                                    variant="outline"
+                                                >
+                                                    Providers
+                                                </Button>
+                                            ) : null}
+                                            <Button
+                                                className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                                disabled={llmReadOnly || isPending}
+                                                onClick={() => removeModel(provider.provider, model.id)}
+                                                title={llmReadOnly ? "Only a workspace admin can remove shared models." : undefined}
+                                                size="sm"
+                                                type="button"
+                                                variant="outline"
+                                            >
+                                                Remove
+                                            </Button>
                                         </div>
                                     </div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        {providerSupportsReasoningEffort(provider.provider) ? (
-                                            <SimpleSelect
-                                                aria-label={`Reasoning effort for ${model.model_id}`}
-                                                className="h-8 w-[148px] bg-background px-2 text-xs"
+                                    {providerSupportsOpenRouterRouting(provider.provider) && routingEdit.editing ? (
+                                        <div className="grid gap-2 rounded-lg border border-dashed border-border px-3 py-3">
+                                            <Input
+                                                className="h-8 text-xs"
                                                 disabled={llmReadOnly || isPending}
-                                                onValueChange={(value) =>
-                                                    updateModelReasoningEffort(provider.provider, model.id, value)
+                                                onChange={(event) =>
+                                                    updateRoutingEdit(model, { providersText: event.target.value })
                                                 }
-                                                options={reasoningEffortSelectOptions()}
-                                                size="sm"
-                                                value={model.reasoning_effort ?? ""}
+                                                placeholder="Providers (optional): e.g. together, fireworks"
+                                                value={routingEdit.providersText}
                                             />
-                                        ) : null}
-                                        <Button
-                                        className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                        disabled={llmReadOnly || isPending}
-                                        onClick={() => removeModel(provider.provider, model.id)}
-                                        title={llmReadOnly ? "Only a workspace admin can remove shared models." : undefined}
-                                        size="sm"
-                                        type="button"
-                                        variant="outline"
-                                    >
-                                        Remove
-                                    </Button>
-                                    </div>
+                                            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                                                <input
+                                                    checked={routingEdit.allowFallbacks}
+                                                    className="size-3.5 accent-primary"
+                                                    disabled={
+                                                        llmReadOnly ||
+                                                        isPending ||
+                                                        !parseOpenRouterProvidersInput(routingEdit.providersText).length
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateRoutingEdit(model, { allowFallbacks: event.target.checked })
+                                                    }
+                                                    type="checkbox"
+                                                />
+                                                Allow OpenRouter fallbacks to other providers
+                                            </label>
+                                            <p className="text-xs leading-5 text-muted-foreground">
+                                                Leave empty for automatic routing. One provider pins it; several run
+                                                in fallback order.{" "}
+                                                <a
+                                                    className="font-medium text-primary underline underline-offset-2"
+                                                    href={openRouterModelUrl(model.model_id)}
+                                                    rel="noopener noreferrer"
+                                                    target="_blank"
+                                                >
+                                                    Find provider names
+                                                </a>
+                                            </p>
+                                            <div className="flex flex-wrap gap-2">
+                                                <Button
+                                                    disabled={llmReadOnly || isPending}
+                                                    onClick={() => saveModelRouting(provider.provider, model)}
+                                                    size="sm"
+                                                    type="button"
+                                                >
+                                                    Save providers
+                                                </Button>
+                                                <Button
+                                                    disabled={llmReadOnly || isPending}
+                                                    onClick={() => updateRoutingEdit(model, { editing: false })}
+                                                    size="sm"
+                                                    type="button"
+                                                    variant="ghost"
+                                                >
+                                                    Cancel
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ) : null}
                                 </div>
-                            ))}
+                                );
+                            })}
                             {!provider.models.length ? (
                                 <div className="text-sm text-muted-foreground">No models saved yet.</div>
                             ) : null}

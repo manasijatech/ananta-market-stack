@@ -81,6 +81,7 @@ const COMPLETED_VERBS: Record<string, string> = {
 };
 
 function labelMcpTool(info: McpToolInfo): string {
+  if (info.toolName === "code_run") return "Run code";
   if (info.serverName === "status") {
     const name = info.toolName.toLowerCase();
     if (name.includes("connected")) return "MCP connected";
@@ -208,16 +209,19 @@ export const McpTool = memo(function McpTool({
   const { isPending, isInterrupted } = getToolStatus(part, chatStatus);
 
   const title = useMemo(() => {
+    if (mcpInfo.toolName === "code_run") return isPending ? "Running code" : "Run code";
     const labeled = labelMcpTool(mcpInfo);
     if (part.state === "input-streaming") return `Preparing ${labeled}`;
     if (isPending) return getActiveTitle({ ...mcpInfo, displayName: labeled });
     return getCompletedTitle({ ...mcpInfo, displayName: labeled });
   }, [part.state, isPending, mcpInfo]);
 
+  const children = Array.isArray(part.children) ? part.children : [];
   const subtitle = useMemo(() => {
     if (part.state === "input-streaming") return "";
+    if (mcpInfo.toolName === "code_run" && children.length) return `${children.length} API calls`;
     return formatMcpArgs(part.input);
-  }, [part.input, part.state]);
+  }, [children.length, mcpInfo.toolName, part.input, part.state]);
 
   const displayOutput = useMemo(() => {
     if (!part.output) return null;
@@ -250,7 +254,11 @@ export const McpTool = memo(function McpTool({
         completeLabel={title}
         isAnimating={isPending}
         detail={subtitle || undefined}
-        trailingContent={undefined}
+        trailingContent={
+          part.cached === true ? (
+            <span className="rounded border px-1.5 text-[10px] text-muted-foreground">cached</span>
+          ) : undefined
+        }
         expandable={hasExpandableContent}
         defaultOpen={defaultOpen}
       >
@@ -262,6 +270,23 @@ export const McpTool = memo(function McpTool({
           </div>
         )}
       </ToolRowBase>
+      {mcpInfo.toolName === "code_run" && children.length > 0 ? (
+        <details className="mt-1 rounded-lg border border-border p-3">
+          <summary className="cursor-pointer text-xs">
+            Run code · {children.length} API calls
+          </summary>
+          <div className="mt-2 grid gap-1 border-l border-border pl-3" aria-label="Code API calls">
+            {children.map((child: { toolCallId?: string; displayName?: string; cached?: boolean }) => (
+              <div key={child.toolCallId} className="flex items-center gap-2 text-xs">
+                <span>{child.displayName || child.toolCallId}</span>
+                {child.cached === true ? (
+                  <span className="rounded border px-1.5 text-[10px] text-muted-foreground">cached</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }, areToolPropsEqual);

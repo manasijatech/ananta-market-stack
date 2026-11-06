@@ -3,7 +3,13 @@ import type { LlmProvider } from "@/service/types/broker";
 export type BrokerChatVisibility = "minimal" | "tool_calls" | "full";
 export type BrokerChatStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | string;
 
-export type BrokerChatPayload = Record<string, unknown>;
+export interface ToolCallMetadata {
+    parent_tool?: string;
+    parent_tool_call_id?: string;
+    cached?: boolean;
+}
+
+export type BrokerChatPayload = Record<string, unknown> & ToolCallMetadata;
 
 export interface BrokerChatPreference {
     default_provider?: LlmProvider | null;

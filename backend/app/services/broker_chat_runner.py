@@ -63,6 +63,10 @@ from app.agent_harness.skills import (
     list_skill_catalog,
 )
 from app.services import agent_skill_prefs, broker_chat, broker_chat_mcp, feature_flags, llm_config
+from app.services.broker_chat_code_mode import (
+    build_code_tool_event,
+    prepare_broker_chat_tools,
+)
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.broker_chat_queue import broker_chat_cancel_requested
@@ -850,7 +854,16 @@ def _model_settings_for_run(run) -> ModelSettings:
         effort = llm_config.normalize_reasoning_effort(metadata.get("reasoning_effort"))
     except ValueError:
         effort = None
-    extra_body = {"reasoning": {"effort": effort}} if effort and run.provider == "openrouter" else None
+    providers, allow_fallbacks = llm_config.routing_from_metadata(metadata)
+    if run.provider == "openrouter":
+        extra_body = llm_config.merge_openrouter_extra_body(
+            None,
+            reasoning_effort=effort,
+            providers=providers,
+            allow_fallbacks=allow_fallbacks,
+        )
+    else:
+        extra_body = None
     reasoning = Reasoning(effort=effort) if effort else None
     settings: dict[str, Any] = {
         "temperature": 0.3,
@@ -979,6 +992,47 @@ async def _run_broker_chat(run_id: str) -> None:
             skill_catalog_xml=catalog_xml,
             session_instructions=session_instructions,
         )
+
+        async def emit_code_tool(kind: str, payload: dict[str, Any]) -> str | None:
+            public, full = build_code_tool_event(kind, payload)
+            row = broker_chat.append_event(db, run, event_type=kind, public_payload=public, full_payload=full)
+            return getattr(row, "id", None)
+
+        code_plan = await prepare_broker_chat_tools(
+            metadata=metadata if isinstance(metadata, dict) else {},
+            local_tools=list(tools),
+            mcp_handle=mcp_handle,
+            user_id=run.user_id,
+            session_key=run.session_id,
+            emit=emit_code_tool,
+            message=run.message,
+        )
+        tools = code_plan.tools
+        active_mcp_servers = code_plan.mcp_servers
+        if code_plan.strategy:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="tool_strategy_selected",
+                public_payload={
+                    "strategy": code_plan.strategy.get("strategy"),
+                    "reason": code_plan.strategy.get("reason"),
+                },
+                full_payload={**code_plan.strategy, "configured": "auto"},
+            )
+        if code_plan.event:
+            broker_chat.append_event(
+                db,
+                run,
+                event_type="code_mode_unavailable",
+                public_payload=code_plan.event,
+                full_payload=code_plan.event,
+            )
+        if code_plan.instruction:
+            instructions = instructions.rstrip() + "\n\n" + code_plan.instruction
+            mcp_context = broker_chat_mcp.mcp_context_instructions(
+                mcp_handle, code_mode=True, hybrid=code_plan.mode == "hybrid",
+            )
         sandbox_available = False
         evidence_contract = plan_evidence_contract(
             run.message,
@@ -1118,9 +1172,9 @@ async def _run_broker_chat(run_id: str) -> None:
             model=_build_model(db, run, retry_policy),
             model_settings=_model_settings_for_run(run),
             tools=tools,
-            mcp_servers=mcp_handle.active_servers,
+            mcp_servers=active_mcp_servers,
             mcp_config=broker_chat_mcp.broker_chat_mcp_config(
-                prefix_server_names=len(mcp_handle.active_servers) > 1 and not mcp_handle.extra_tools
+                prefix_server_names=len(active_mcp_servers) > 1 and not mcp_handle.extra_tools
             ),
         )
         messages = context_build.messages

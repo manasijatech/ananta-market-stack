@@ -20,6 +20,7 @@ type BrokerTraceItem =
       }
     | {
           callId?: string | null;
+          children?: Extract<BrokerTraceItem, { kind: "tool" }>[];
           key: string;
           kind: "tool";
           output?: BrokerChatEvent;
@@ -197,7 +198,8 @@ export function describeAgentActivity(
         };
     }
     const sorted = [...events].sort((left, right) => left.sequence - right.sequence);
-    const pending: Array<{ callId: string; name: string; display: string }> = [];
+    const completedIds = new Set<string>();
+    const pending: Array<{ callId: string; name: string; display: string; parentId: string }> = [];
     let lastReasoning = "";
     let lastContinue = "";
     let wroteTokens = false;
@@ -217,9 +219,11 @@ export function describeAgentActivity(
         }
         if (event.event_type === "tool_call_started") {
             const name = textPayload(event.payload, "tool_name") || "tool";
+            if (completedIds.has(textPayload(event.payload, "tool_call_id"))) continue;
             pending.push({
                 callId: textPayload(event.payload, "tool_call_id") || event.id,
                 name,
+                parentId: textPayload(event.payload, "parent_tool_call_id"),
                 display: displayNameForTool(name, textPayload(event.payload, "display_name"))
             });
             continue;
@@ -227,14 +231,23 @@ export function describeAgentActivity(
         if (event.event_type === "tool_call_completed") {
             const callId = textPayload(event.payload, "tool_call_id");
             const name = textPayload(event.payload, "tool_name");
+            if (callId) completedIds.add(callId);
             const index = callId
                 ? pending.findIndex((item) => item.callId === callId)
                 : pending.findIndex((item) => !name || name === "unknown" || item.name === name);
             if (index >= 0) pending.splice(index, 1);
-            else if (pending.length) pending.pop();
         }
     }
     const current = pending.at(-1);
+    const codeParent = current?.parentId
+        ? pending.find((item) => item.callId === current.parentId && item.name === "code_run")
+        : current?.name === "code_run"
+          ? current
+          : undefined;
+    if (codeParent) {
+        const inner = pending.filter((item) => item.parentId === codeParent.callId).at(-1);
+        return { title: "Running code", detail: inner?.display ?? "In progress" };
+    }
     if (current) {
         return {
             title: current.display,
@@ -285,7 +298,7 @@ export function evidenceIncompleteParts(events: BrokerChatEvent[]) {
 export function brokerChatToolPartType(toolName: string) {
     const name = toolName || "tool";
     const safe = name.replace(/[^A-Za-z0-9_]/g, "_") || "tool";
-    if (name.startsWith("sandbox_")) {
+    if (name === "code_run" || name.startsWith("sandbox_")) {
         return `tool-mcp__ananta_compute__${safe}`;
     }
     if (name.startsWith("web_")) {
@@ -361,19 +374,29 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
                 start: event,
                 toolName: textPayload(event.payload, "tool_name") || "tool"
             };
-            toolIndexes.set(key, items.length);
-            pendingToolKeys.push(key);
-            items.push(item);
+            const previousIndex = toolIndexes.get(key);
+            if (previousIndex !== undefined) {
+                const previous = items[previousIndex];
+                if (previous?.kind === "tool") items[previousIndex] = { ...item, output: previous.output };
+            } else {
+                toolIndexes.set(key, items.length);
+                pendingToolKeys.push(key);
+                items.push(item);
+            }
             continue;
         }
         const callId = textPayload(event.payload, "tool_call_id") || null;
         const outputName = textPayload(event.payload, "tool_name");
         let key = callId || "";
         let existingIndex = key ? toolIndexes.get(key) : undefined;
-        if (existingIndex === undefined) {
+        if (existingIndex === undefined && !callId) {
             const matchingPendingIndex = pendingToolKeys.findIndex((pendingKey) => {
                 const pendingItem = items[toolIndexes.get(pendingKey) ?? -1];
-                return pendingItem?.kind === "tool" && (!outputName || outputName === "unknown" || pendingItem.toolName === outputName);
+                return (
+                    pendingItem?.kind === "tool" &&
+                    !pendingItem.output &&
+                    (!outputName || outputName === "unknown" || pendingItem.toolName === outputName)
+                );
             });
             if (matchingPendingIndex >= 0) {
                 key = pendingToolKeys.splice(matchingPendingIndex, 1)[0] ?? key;
@@ -390,9 +413,10 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
                 };
             }
         } else {
+            if (callId) toolIndexes.set(callId, items.length);
             items.push({
                 callId,
-                key: `${event.run_id}:tool-output:${event.sequence}`,
+                key: callId || `${event.run_id}:tool-output:${event.sequence}`,
                 kind: "tool",
                 output: event,
                 sequence: event.sequence,
@@ -401,17 +425,55 @@ function buildBrokerTraceItems(events: BrokerChatEvent[]): BrokerTraceItem[] {
         }
     }
     flushReasoning();
-    return items.sort((left, right) => left.sequence - right.sequence);
+    const parents = new Map(
+        items.flatMap((item) =>
+            item.kind === "tool" && item.toolName === "code_run" && item.callId ? [[item.callId, item] as const] : []
+        )
+    );
+    const nested = new Set<BrokerTraceItem>();
+    for (const item of items) {
+        if (item.kind !== "tool" || item.toolName === "code_run") continue;
+        const metadata = { ...item.start?.payload, ...item.output?.payload };
+        const parent = metadata.parent_tool === "code_run" ? parents.get(String(metadata.parent_tool_call_id)) : undefined;
+        if (parent && parent !== item) {
+            (parent.children ??= []).push(item);
+            nested.add(item);
+        }
+    }
+    return items.filter((item) => !nested.has(item)).sort((left, right) => left.sequence - right.sequence);
 }
 
-function brokerToolPart(item: Extract<BrokerTraceItem, { kind: "tool" }>, isRunActive: boolean) {
+export type BrokerToolPart = {
+    type: string;
+    toolCallId: string;
+    state: string;
+    input: Record<string, unknown>;
+    output: unknown;
+    displayName: string;
+    parent_tool?: string;
+    parent_tool_call_id?: string;
+    cached?: boolean;
+    children?: BrokerToolPart[];
+};
+
+export function brokerToolPart(
+    item: Extract<BrokerTraceItem, { kind: "tool" }>,
+    isRunActive: boolean
+): BrokerToolPart {
     const startPayload = item.start?.payload;
     const outputPayload = item.output?.payload;
     const label = displayNameForTool(
         item.toolName,
         textPayload(startPayload || {}, "display_name") || textPayload(outputPayload || {}, "display_name")
     );
+    const parentTool = outputPayload?.parent_tool ?? startPayload?.parent_tool;
+    const parentToolCallId = outputPayload?.parent_tool_call_id ?? startPayload?.parent_tool_call_id;
+    const cached = outputPayload?.cached ?? startPayload?.cached;
     return {
+        parent_tool: typeof parentTool === "string" ? parentTool : undefined,
+        parent_tool_call_id: typeof parentToolCallId === "string" ? parentToolCallId : undefined,
+        cached: typeof cached === "boolean" ? cached : undefined,
+        children: item.children?.map((child) => brokerToolPart(child, isRunActive)),
         input: coerceToolArguments(
             payloadValue(startPayload, "arguments") ?? payloadValue(outputPayload, "arguments")
         ),

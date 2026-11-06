@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Any
@@ -57,6 +58,225 @@ def get_model_reasoning_effort(db: Session, user_id: str, provider: str, model_i
         return normalize_reasoning_effort(row.reasoning_effort)
     except ValueError:
         return None
+
+
+def normalize_provider_model_id(provider: str, model_id: str) -> str:
+    """Normalize a model id the same way it is stored.
+
+    OpenRouter ids may carry a leading `~` shorthand in the UI; strip it so
+    lookups match the stored row. Other providers are stripped of surrounding
+    whitespace only.
+    """
+
+    cleaned = (model_id or "").strip()
+    if provider == "openrouter":
+        while cleaned.startswith("~"):
+            cleaned = cleaned[1:].lstrip()
+    return cleaned
+
+
+_OPENROUTER_PROVIDER_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._\-/]*$")
+MAX_OPENROUTER_PROVIDERS = 5
+
+
+def normalize_openrouter_providers(value: Any) -> list[str]:
+    """Normalize an OpenRouter provider preference into an ordered slug list.
+
+    Accepts a list/tuple of slugs, a comma/whitespace/newline separated string,
+    a JSON-encoded list string, or None. Returns deduped lowercase slugs in the
+    user-specified fallback order. Raises ValueError with a user-friendly
+    message on invalid input.
+    """
+
+    if value is None:
+        return []
+    candidates: list[Any] = []
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        try:
+            parsed = json.loads(stripped)
+        except (json.JSONDecodeError, ValueError):
+            parsed = None
+        if isinstance(parsed, list):
+            candidates = parsed
+        elif isinstance(parsed, str):
+            candidates = [parsed]
+        elif parsed is None:
+            # Plain text: split on commas, whitespace, and newlines.
+            candidates = [part for part in re.split(r"[\s,;]+", stripped) if part]
+        else:
+            raise ValueError(
+                "OpenRouter providers must be a list of provider names or a comma-separated string."
+            )
+    elif isinstance(value, (list, tuple)):
+        candidates = list(value)
+    else:
+        raise ValueError(
+            "OpenRouter providers must be a list of provider names or a comma-separated string."
+        )
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in candidates:
+        cleaned = str(item or "").strip().lower()
+        if not cleaned:
+            continue
+        if len(cleaned) > 64 or not _OPENROUTER_PROVIDER_SLUG_RE.match(cleaned):
+            raise ValueError(
+                f"Invalid OpenRouter provider '{item}'. Use the provider slug from the OpenRouter model page "
+                "(lowercase letters, numbers, '-', '_', '.', '/'), e.g. 'together' or 'deepinfra/turbo'."
+            )
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        out.append(cleaned)
+    if len(out) > MAX_OPENROUTER_PROVIDERS:
+        raise ValueError(
+            f"Save at most {MAX_OPENROUTER_PROVIDERS} OpenRouter providers per model "
+            "(listed in fallback order)."
+        )
+    return out
+
+
+def normalize_openrouter_allow_fallbacks(value: Any) -> bool:
+    """Normalize the allow-fallbacks toggle (default True)."""
+
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in {"", "default", "auto"}:
+            return True
+        if cleaned in {"1", "true", "yes", "y", "on", "allow", "allowed"}:
+            return True
+        if cleaned in {"0", "false", "no", "n", "off", "deny", "denied", "disabled"}:
+            return False
+    raise ValueError("OpenRouter fallback preference must be true or false.")
+
+
+def build_openrouter_provider_prefs(
+    providers: list[str] | None,
+    allow_fallbacks: bool = True,
+) -> dict[str, Any] | None:
+    """Build the OpenRouter `provider` request object, or None for default routing.
+
+    Uses `order` (fallback order) + `allow_fallbacks`, per
+    https://openrouter.ai/docs/features/provider-routing. Empty provider lists
+    return None so the request uses OpenRouter's automatic routing.
+    """
+
+    ordered = list(providers or [])
+    if not ordered:
+        return None
+    return {"order": ordered, "allow_fallbacks": bool(allow_fallbacks)}
+
+
+def get_model_openrouter_routing(
+    db: Session, user_id: str, provider: str, model_id: str
+) -> tuple[list[str], bool]:
+    """Return (providers, allow_fallbacks) for a saved model.
+
+    Returns ([], True) when the model has no custom routing, is not an
+    OpenRouter model, or is unknown. Never raises for missing rows or legacy
+    databases without the new columns.
+    """
+
+    if provider != "openrouter":
+        return [], True
+    try:
+        owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
+    except Exception:
+        return [], True
+    try:
+        lookup_id = normalize_provider_model_id(provider, model_id)
+        row = db.scalars(
+            select(UserLlmModel).where(
+                UserLlmModel.user_id == owner_user_id,
+                UserLlmModel.provider == provider,
+                UserLlmModel.model_id == lookup_id,
+            )
+        ).first()
+        if row is None and lookup_id != (model_id or "").strip():
+            row = db.scalars(
+                select(UserLlmModel).where(
+                    UserLlmModel.user_id == owner_user_id,
+                    UserLlmModel.provider == provider,
+                    UserLlmModel.model_id == (model_id or "").strip(),
+                )
+            ).first()
+        if row is None:
+            return [], True
+        try:
+            providers = normalize_openrouter_providers(getattr(row, "openrouter_providers_json", None))
+        except ValueError:
+            providers = []
+        allow_fallbacks = getattr(row, "openrouter_allow_fallbacks", True)
+        return providers, bool(allow_fallbacks if allow_fallbacks is not None else True)
+    except Exception:
+        return [], True
+
+
+def merge_openrouter_extra_body(
+    base_extra_body: dict[str, Any] | None,
+    *,
+    reasoning_effort: str | None = None,
+    providers: list[str] | None = None,
+    allow_fallbacks: bool = True,
+) -> dict[str, Any] | None:
+    """Merge OpenRouter-only keys into an extra_body dict without clobbering callers.
+
+    Preserves existing `reasoning`/`provider`/`usage` keys when the caller set
+    them explicitly; only fills in missing pieces from the saved model config.
+    Returns None when the merged body is empty.
+    """
+
+    merged: dict[str, Any] = dict(base_extra_body or {})
+    if reasoning_effort and "reasoning" not in merged:
+        merged["reasoning"] = {"effort": reasoning_effort}
+    prefs = build_openrouter_provider_prefs(providers, allow_fallbacks)
+    if prefs is not None and "provider" not in merged:
+        merged["provider"] = prefs
+    return merged or None
+
+
+def snapshot_openrouter_routing_for_metadata(
+    providers: Any, allow_fallbacks: Any
+) -> tuple[list[str], bool]:
+    """Normalize routing values for snapshotting into run metadata.
+
+    Raises ValueError on invalid input (surfaced as a 400 at run creation).
+    """
+
+    return normalize_openrouter_providers(providers), normalize_openrouter_allow_fallbacks(
+        allow_fallbacks if allow_fallbacks is not None else True
+    )
+
+
+def routing_from_metadata(metadata: dict[str, Any] | None) -> tuple[list[str], bool]:
+    """Read a routing snapshot from run metadata, tolerating old runs.
+
+    Old runs without a snapshot return ([], True) meaning default routing.
+    Never raises.
+    """
+
+    if not isinstance(metadata, dict):
+        return [], True
+    try:
+        providers = normalize_openrouter_providers(metadata.get("openrouter_providers"))
+    except ValueError:
+        providers = []
+    try:
+        allow_fallbacks = normalize_openrouter_allow_fallbacks(
+            metadata.get("openrouter_allow_fallbacks", True)
+        )
+    except ValueError:
+        allow_fallbacks = True
+    return providers, allow_fallbacks
 
 
 _PROVIDER_DEFINITIONS: dict[LlmProvider, dict[str, str]] = {
@@ -198,6 +418,43 @@ def delete_provider_credential(
     return list_provider_configs(db, owner_user_id)
 
 
+def _resolve_model_routing_for_write(
+    provider: str,
+    providers_value: Any,
+    allow_fallbacks_value: Any,
+    *,
+    providers_set: bool,
+    allow_fallbacks_set: bool,
+    existing_providers: list[str] | None = None,
+    existing_allow_fallbacks: bool = True,
+) -> tuple[list[str], bool]:
+    """Resolve OpenRouter routing for model create/update.
+
+    Non-OpenRouter providers always store empty routing. For OpenRouter, unset
+    fields keep existing values on update (defaults on create).
+    """
+
+    if provider != "openrouter":
+        if providers_set and normalize_openrouter_providers(providers_value):
+            raise ValueError("OpenRouter providers can only be set on openrouter models.")
+        return [], True
+    providers = (
+        normalize_openrouter_providers(providers_value)
+        if providers_set
+        else list(existing_providers or [])
+    )
+    allow_fallbacks = (
+        normalize_openrouter_allow_fallbacks(allow_fallbacks_value)
+        if allow_fallbacks_set
+        else bool(existing_allow_fallbacks if existing_allow_fallbacks is not None else True)
+    )
+    if not providers and not allow_fallbacks:
+        # Disabling fallbacks without pinning a provider would guarantee failure;
+        # reset to default routing instead of storing a broken config.
+        allow_fallbacks = True
+    return providers, allow_fallbacks
+
+
 def add_provider_model(
     db: Session,
     user_id: str,
@@ -207,18 +464,30 @@ def add_provider_model(
     owner_user_id = rbac.workspace_config_owner_user_id(db, user_id)
     if not provider_has_api_key(db, owner_user_id, payload.provider):
         raise ValueError(f"{payload.provider} API key must be configured before saving models")
+    model_id = normalize_provider_model_id(payload.provider, payload.model_id)
+    if not model_id:
+        raise ValueError("model_id must not be empty")
     existing = db.scalars(
         select(UserLlmModel).where(
             UserLlmModel.user_id == owner_user_id,
             UserLlmModel.provider == payload.provider,
-            UserLlmModel.model_id == payload.model_id,
+            UserLlmModel.model_id == model_id,
         )
     ).first()
     reasoning_effort = normalize_reasoning_effort(payload.reasoning_effort)
+    providers, allow_fallbacks = _resolve_model_routing_for_write(
+        payload.provider,
+        getattr(payload, "openrouter_providers", None),
+        getattr(payload, "openrouter_allow_fallbacks", None),
+        providers_set="openrouter_providers" in payload.model_fields_set,
+        allow_fallbacks_set="openrouter_allow_fallbacks" in payload.model_fields_set,
+    )
     if existing is not None:
         existing.label = payload.label
         existing.is_enabled = payload.is_enabled
         existing.reasoning_effort = reasoning_effort
+        existing.openrouter_providers_json = _json_dumps(providers)
+        existing.openrouter_allow_fallbacks = allow_fallbacks
         db.add(existing)
         db.commit()
         return list_provider_configs(db, owner_user_id)
@@ -226,9 +495,11 @@ def add_provider_model(
         id=str(uuid.uuid4()),
         user_id=owner_user_id,
         provider=payload.provider,
-        model_id=payload.model_id,
+        model_id=model_id,
         label=payload.label,
         reasoning_effort=reasoning_effort,
+        openrouter_providers_json=_json_dumps(providers),
+        openrouter_allow_fallbacks=allow_fallbacks,
         is_enabled=payload.is_enabled,
     )
     db.add(row)
@@ -252,6 +523,24 @@ def update_provider_model(
         row.is_enabled = payload.is_enabled
     if "reasoning_effort" in payload.model_fields_set:
         row.reasoning_effort = normalize_reasoning_effort(payload.reasoning_effort)
+    if "openrouter_providers" in payload.model_fields_set or "openrouter_allow_fallbacks" in payload.model_fields_set:
+        try:
+            existing_providers = normalize_openrouter_providers(
+                getattr(row, "openrouter_providers_json", None)
+            )
+        except ValueError:
+            existing_providers = []
+        providers, allow_fallbacks = _resolve_model_routing_for_write(
+            row.provider,
+            getattr(payload, "openrouter_providers", None),
+            getattr(payload, "openrouter_allow_fallbacks", None),
+            providers_set="openrouter_providers" in payload.model_fields_set,
+            allow_fallbacks_set="openrouter_allow_fallbacks" in payload.model_fields_set,
+            existing_providers=existing_providers,
+            existing_allow_fallbacks=getattr(row, "openrouter_allow_fallbacks", True),
+        )
+        row.openrouter_providers_json = _json_dumps(providers)
+        row.openrouter_allow_fallbacks = allow_fallbacks
     db.add(row)
     db.commit()
     return list_provider_configs(db, owner_user_id)

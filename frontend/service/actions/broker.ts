@@ -730,6 +730,8 @@ export async function addLlmProviderModel(payload: {
     model_id: string;
     label?: string | null;
     reasoning_effort?: string | null;
+    openrouter_providers?: string[] | string | null;
+    openrouter_allow_fallbacks?: boolean | null;
     is_enabled?: boolean;
 }): Promise<LlmProviderConfig[]> {
     const result = await request<LlmProviderConfig[]>("/system-config/llm/models", {
@@ -739,6 +741,8 @@ export async function addLlmProviderModel(payload: {
             model_id: payload.model_id,
             label: payload.label ?? null,
             reasoning_effort: payload.reasoning_effort ?? null,
+            openrouter_providers: payload.openrouter_providers ?? null,
+            openrouter_allow_fallbacks: payload.openrouter_allow_fallbacks ?? null,
             is_enabled: payload.is_enabled ?? true
         })
     });
@@ -748,7 +752,13 @@ export async function addLlmProviderModel(payload: {
 
 export async function updateLlmProviderModel(
     modelRowId: string,
-    payload: { label?: string | null; reasoning_effort?: string | null; is_enabled?: boolean }
+    payload: {
+        label?: string | null;
+        reasoning_effort?: string | null;
+        openrouter_providers?: string[] | string | null;
+        openrouter_allow_fallbacks?: boolean | null;
+        is_enabled?: boolean;
+    }
 ): Promise<LlmProviderConfig[]> {
     const result = await request<LlmProviderConfig[]>(`/system-config/llm/models/${modelRowId}`, {
         method: "PATCH",

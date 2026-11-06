@@ -259,3 +259,57 @@ def test_tool_usage_line_counts_completed_tools_from_audit():
     line = tool_usage_line(events)
     assert line == "tools: web_search 2, web_fetch 1, mcp 1"
     assert tool_usage_line([]) == ""
+
+
+def test_tool_calls_projection_preserves_code_mode_parent_and_cache():
+    for event_type in ("tool_call_started", "tool_call_completed"):
+        for cached in (True, False):
+            payload = {
+                "tool_name": "broker_get_quotes",
+                "tool_call_id": "inner",
+                "parent_tool": "code_run",
+                "parent_tool_call_id": "code",
+                "cached": cached,
+            }
+            row = BrokerChatEvent(
+                event_type=event_type,
+                public_payload_json=json.dumps(payload),
+                full_payload_json=json.dumps({**payload, "output": {"ok": True}}),
+            )
+            for include_outputs in (True, False):
+                visible = _event_payload_for_visibility(
+                    row,
+                    visibility="tool_calls",
+                    include_tool_outputs=include_outputs,
+                    include_reasoning=False,
+                )
+                assert all(visible[key] == value for key, value in payload.items())
+                if not include_outputs:
+                    assert "output" not in visible
+
+
+def test_tool_calls_projection_preserves_code_mode_parent_and_cache():
+    for event_type in ("tool_call_started", "tool_call_completed"):
+        for cached in (True, False):
+            payload = {
+                "tool_name": "broker_get_quotes",
+                "tool_call_id": "inner",
+                "parent_tool": "code_run",
+                "parent_tool_call_id": "code",
+                "cached": cached,
+            }
+            row = BrokerChatEvent(
+                event_type=event_type,
+                public_payload_json=json.dumps(payload),
+                full_payload_json=json.dumps({**payload, "output": {"ok": True}}),
+            )
+            for include_outputs in (True, False):
+                visible = _event_payload_for_visibility(
+                    row,
+                    visibility="tool_calls",
+                    include_tool_outputs=include_outputs,
+                    include_reasoning=False,
+                )
+                assert all(visible[key] == value for key, value in payload.items())
+                if not include_outputs:
+                    assert "output" not in visible

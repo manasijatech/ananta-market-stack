@@ -426,6 +426,8 @@ def _apply_sqlite_schema_patches() -> None:
                 "model_id": "VARCHAR(256)",
                 "label": "VARCHAR(128)",
                 "reasoning_effort": "VARCHAR(16)",
+                "openrouter_providers_json": "TEXT DEFAULT '[]'",
+                "openrouter_allow_fallbacks": "BOOLEAN DEFAULT 1",
                 "is_enabled": "BOOLEAN DEFAULT 1",
                 "created_at": "DATETIME",
                 "updated_at": "DATETIME",

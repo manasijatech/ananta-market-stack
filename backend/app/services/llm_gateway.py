@@ -148,8 +148,24 @@ def generate_text(
         payload["temperature"] = temperature
     if max_completion_tokens is not None:
         payload["max_completion_tokens"] = max_completion_tokens
-    if extra_body:
-        payload["extra_body"] = extra_body
+    resolved_extra_body = extra_body
+    if provider == "openrouter":
+        try:
+            saved_providers, saved_allow_fallbacks = llm_config.get_model_openrouter_routing(
+                db, user_id, provider, model
+            )
+        except Exception:
+            saved_providers, saved_allow_fallbacks = [], True
+        try:
+            resolved_extra_body = llm_config.merge_openrouter_extra_body(
+                extra_body,
+                providers=saved_providers,
+                allow_fallbacks=saved_allow_fallbacks,
+            )
+        except Exception:
+            resolved_extra_body = extra_body
+    if resolved_extra_body:
+        payload["extra_body"] = resolved_extra_body
     with llm_telemetry.start_span(
         "llm.chat_completions",
         {

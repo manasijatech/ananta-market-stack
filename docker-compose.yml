@@ -67,11 +67,16 @@ services:
       ENABLE_IN_PROCESS_ALPHA_WS_WORKER: ${ENABLE_IN_PROCESS_ALPHA_WS_WORKER:-true}
       ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER: ${ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER:-true}
       ENABLE_ADAPTIVE_WORKSPACE: ${ENABLE_ADAPTIVE_WORKSPACE:-true}
+      CHAT_TOOL_MODE: ${CHAT_TOOL_MODE:-auto}
+      CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE: ${CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE:-false}
+      CODE_SANDBOX_SOCKET: /run/ananta-code/runner.sock
+      CODE_SANDBOX_TOKEN_FILE: /run/ananta-code/token
       DESKTOP_AUDIO_STORAGE_DIR: ${DESKTOP_AUDIO_STORAGE_DIR:-/data/alert-audio}
       DESKTOP_AUDIO_RETENTION_DAYS: ${DESKTOP_AUDIO_RETENTION_DAYS:-15}
     volumes:
       - ananta_market_stack_config:/config:ro
       - backend_data:/data
+      - ananta_code_run:/run/ananta-code:ro
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     healthcheck:
@@ -82,6 +87,40 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+    restart: unless-stopped
+
+  # Optional. No network, no backend secrets. Enable with:
+  #   docker compose --profile code-mode up -d --build
+  #   CHAT_TOOL_MODE defaults to auto. Set hybrid to keep document tools direct,
+  #   code_mode to always use code_run, or direct to skip the sandbox.
+  code-sandbox:
+    profiles: ["code-mode"]
+    build:
+      context: ./code_sandbox
+    network_mode: "none"
+    read_only: true
+    # /var/ananta-guests is the guest work parent: root-owned, mode 0711
+    # (traversable, not listable). Each exec gets a 0700 directory owned by
+    # its slot uid (61001..). hidepid=2 on /proc needs CAP_SYS_ADMIN, which
+    # is dropped; per-uid /proc/<pid>/fd is mode 0500, so guests cannot open
+    # each other's descriptors.
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /var/ananta-guests:size=96m,mode=0711
+    volumes:
+      - ananta_code_run:/run/ananta-code
+    mem_limit: 768m
+    cpus: "0.50"
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+      - KILL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   frontend:
@@ -128,3 +167,4 @@ volumes:
   backend_data:
   ananta_market_stack_config:
   redis_data:
+  ananta_code_run:

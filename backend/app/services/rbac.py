@@ -806,6 +806,8 @@ def _reconcile_owner_llm_config(db: Session, owner_user_id: str, source_user_ids
                     model_id=source_model.model_id,
                     label=source_model.label,
                     reasoning_effort=source_model.reasoning_effort,
+                    openrouter_providers_json=getattr(source_model, "openrouter_providers_json", None) or "[]",
+                    openrouter_allow_fallbacks=getattr(source_model, "openrouter_allow_fallbacks", True),
                     is_enabled=source_model.is_enabled,
                 )
             )

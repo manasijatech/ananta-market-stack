@@ -97,7 +97,11 @@ _NUDGE_HINTS: dict[EvidenceKind, str] = {
     "link_fetch": "open the pasted URL with web_fetch (or say the page is unreadable)",
     "web_grounding": "call web_search / web_fetch or intel/MCP news, or say no sources were available",
     "broker_read": "call the matching broker_* tool, or report action_required / empty holdings",
-    "calculation": "run sandbox_run_python (or show the arithmetic steps if no calculator is attached)",
+    "calculation": (
+        "compute the figures in code and show the arithmetic: in code_run when it is attached "
+        "(recompute from the values you already fetched; no need to load another tool), otherwise "
+        "with a verified sandbox-backed calculation helper or sandbox_run_python"
+    ),
     "canvas": "compose_surface or workspace_publish_html_artifact, then a one-line pointer in chat",
     "mcp_or_intel": "call connected MCP tools (get_news, get_daily_summary, events). Do not use intel_get_feed while MCP is connected.",
 }
@@ -259,6 +263,7 @@ def _tool_records(events: Iterable[Any]) -> list[dict[str, Any]]:
                 "url": str(output.get("url") or output.get("final_url") or ""),
                 "applied": output.get("applied"),
                 "output": output,
+                "arguments": payload.get("arguments"),
             }
         )
     return records
@@ -291,6 +296,22 @@ def _broker_blocker(record: dict[str, Any]) -> str | None:
     if "empty" in message or "no holdings" in message:
         return "empty"
     return None
+
+
+def _code_run_computed(record: dict[str, Any]) -> bool:
+    """A code_run counts as a calculation only when it printed a number and the
+    script itself computes. A digit in stdout from a printed literal is not enough."""
+    if record.get("tool_name") != "code_run" or record.get("ok") is not True:
+        return False
+    output = record.get("output")
+    stdout = output.get("stdout") if isinstance(output, dict) else None
+    from app.agent_harness.code_computation import contains_computation
+
+    return (
+        isinstance(stdout, str)
+        and bool(re.search(r"\d", stdout))
+        and contains_computation(record.get("arguments"))
+    )
 
 
 def _record_succeeded(record: dict[str, Any]) -> bool:
@@ -367,7 +388,10 @@ def evidence_gaps(
                 gaps.append(EvidenceGap("broker_read", "no successful broker_* read"))
 
     if "calculation" in contract.required:
-        calc_ok = any(record["tool_name"] == "sandbox_run_python" and record.get("ok") is True for record in records)
+        calc_ok = any(
+            (record["tool_name"] == "sandbox_run_python" and record.get("ok") is True) or _code_run_computed(record)
+            for record in records
+        )
         if not calc_ok:
             if sandbox_available:
                 gaps.append(EvidenceGap("calculation", "no sandbox_run_python result"))

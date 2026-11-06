@@ -400,6 +400,12 @@ def create_run(
         )
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
+    try:
+        openrouter_providers, openrouter_allow_fallbacks = llm_config.get_model_openrouter_routing(
+            db, user_id, provider, model
+        )
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     metadata: dict[str, Any] = {
         **payload.metadata,
         "default_account_id": payload.default_account_id,
@@ -407,6 +413,8 @@ def create_run(
         "use_mcp": bool(use_mcp),
         "mcp_server_ids": mcp_server_ids,
         "reasoning_effort": reasoning_effort,
+        "openrouter_providers": openrouter_providers,
+        "openrouter_allow_fallbacks": openrouter_allow_fallbacks,
     }
     if not should_enqueue_now:
         # Audit the desk at enqueue time; the runner still binds to the latest
@@ -679,6 +687,9 @@ def _event_payload_for_visibility(
             payload = {
                 "tool_name": public_payload.get("tool_name"),
                 "tool_call_id": public_payload.get("tool_call_id"),
+                "parent_tool": public_payload.get("parent_tool"),
+                "parent_tool_call_id": public_payload.get("parent_tool_call_id"),
+                "cached": public_payload.get("cached"),
             }
             if include_tool_outputs:
                 full_payload = json_loads(row.full_payload_json, public_payload)
