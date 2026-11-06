@@ -57,7 +57,7 @@ CODE_MODE_INSTRUCTIONS = (
     "cite them. Use `api.describe(name)` to read a full schema before calling an unfamiliar function. "
     "If a call raises ApiError, read the message and fix the arguments. "
     "Do the whole data task in ONE script where possible: fetch, filter, join, compute and format "
-    "the final table in Python, then print it. Do not print raw API results; if you are unsure of a "
+    "the final table in Python, then print it. Print at most about 40 lines; do not print raw API results; if you are unsure of a "
     "result's structure, print api.peek(result) first, which shows keys and types only. Keep results "
     "in variables and do the work in one script: Drishti calls always read live data, and repeated "
     "identical calls may be refused. Compute inside "
@@ -445,6 +445,11 @@ def generate_api(tools):
     return '\n\n'.join(parts)
 
 
+def jsonable(value):
+    """Plain JSON for the guest: datetimes and other objects become strings, NaN/inf become None."""
+    return json.loads(json.dumps(value, ensure_ascii=False, default=str), parse_constant=lambda _c: None)
+
+
 def normalize_result(value):
     """Undo cache envelopes so a repeated call returns the same shape as the first."""
     if isinstance(value, dict) and value.get('original_result_type') == 'list' and isinstance(value.get('data'), list):
@@ -539,7 +544,7 @@ class CodeRegistry:
                         value = json.loads(raw) if isinstance(raw, str) else raw
                     except ValueError:
                         value = raw
-                    value = normalize_result(value)
+                    value = jsonable(normalize_result(value))
                     encoded = json.dumps(value, ensure_ascii=False, allow_nan=False)
                     size = len(encoded.encode())
                     if size > 1048576:

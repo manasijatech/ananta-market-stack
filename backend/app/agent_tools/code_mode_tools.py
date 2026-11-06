@@ -5,6 +5,10 @@ from app.agent_harness.code_mode import CodeRegistry, generate_api, is_control_f
 from app.execution_planes.code_sandbox_client import run_bridge
 
 
+# Printed output returned to the model, matching direct tool result budgets.
+STDOUT_CHARS = 4000
+
+
 def make_code_run(tools, *, user_id, session_key, emit, direct_fallback=False):
     registry = CodeRegistry(tools, emit)
     library = generate_api(tools)
@@ -62,7 +66,7 @@ def make_code_run(tools, *, user_id, session_key, emit, direct_fallback=False):
             stderr = result.get('stderr', '') or ''
             if not isinstance(stderr, str):
                 stderr = str(stderr)
-            payload = {'ok': exit_code == 0, 'stdout': stdout[:8000],
+            payload = {'ok': exit_code == 0, 'stdout': stdout[:STDOUT_CHARS],
                 'stderr': stderr[:8000], 'exit_code': exit_code, 'calls': ledger}
             failed = sorted({c.get('name') for c in ledger if c.get('ok') is False and c.get('name')})
             if direct_fallback and (exit_code != 0 or failed):
@@ -71,9 +75,9 @@ def make_code_run(tools, *, user_id, session_key, emit, direct_fallback=False):
                     'If this script keeps failing, call those attached tools directly instead of rewriting the script: '
                     + (', '.join(failed) if failed else 'the functions this script used') + '.'
                 )
-            if len(stdout) > 8000 or result.get('truncated'):
+            if len(stdout) > STDOUT_CHARS or result.get('truncated'):
                 payload['stdout_truncated'] = True
-                payload['note'] = ('Output was cut at 8000 characters. Aggregate or select fields in the script '
+                payload['note'] = ('Output was cut at ' + str(STDOUT_CHARS) + ' characters. Aggregate or select fields in the script '
                                    'and print a compact table instead of raw results.')
             return json.dumps(payload)
         except Exception as exc:
@@ -86,7 +90,7 @@ def make_code_run(tools, *, user_id, session_key, emit, direct_fallback=False):
         'market, news, filings, quotes, portfolio, watchlists, instruments and web data. Calls return '
         'parsed JSON (dict/list). api.parallel([(name, kwargs), ...]) runs up to 8 independent reads at once '
         '(40 calls per script; pass return_exceptions=True to keep partial results). api.peek(value) shows a result\'s structure, api.describe(name) its full schema. '
-        'Only printed output returns to you: compute in the script and print compact results with source, '
+        'Only printed output returns to you (at most 4000 characters, about 40 lines): compute in the script and print compact results with source, '
         'URL and date fields for citation. Failed calls raise api.ApiError. "-> {...}" shows a result shape '
         'seen earlier; keys may vary.\n\nExample:\n'
         'from ananta import api\n'

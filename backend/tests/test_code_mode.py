@@ -240,7 +240,7 @@ async def test_code_run_returns_only_printed_output_and_ledger(monkeypatch):
             json.dumps({"code": "print(42)", "timeout_seconds": 999}),
         )
     )
-    assert len(result["stdout"]) == 8000 and result["calls"][0]["ok"]
+    assert len(result["stdout"]) == code_mode_tools.STDOUT_CHARS and result["calls"][0]["ok"]
     assert result["ok"] is True
     assert result["stdout_truncated"] is True
     assert "Aggregate" in result["note"]
@@ -1155,3 +1155,14 @@ async def test_hybrid_plan_keeps_only_document_tools_direct(monkeypatch):
     assert "Hybrid tool mode" in plan.instruction
     assert "capability_load" not in plan.instruction
     assert "NOT direct tools" not in plan.instruction
+
+
+@pytest.mark.asyncio
+async def test_results_with_datetimes_and_nan_reach_the_guest():
+    from datetime import datetime
+    from app.agent_harness.code_mode import CodeRegistry
+    async def invoke(ctx, args): return {"ok": True, "ltp": float("nan"), "at": datetime(2026, 11, 6, 9, 15)}
+    async def emit(kind, data): pass
+    tool = SimpleNamespace(name="broker_get_quotes", description="q", params_json_schema={"properties": {}}, on_invoke_tool=invoke)
+    reply = await CodeRegistry([tool], emit).dispatch(None, {"id": 1, "calls": [{"name": "broker_get_quotes", "args": {}}]}, [], "p")
+    assert reply["results"][0]["value"] == {"ok": True, "ltp": None, "at": "2026-11-06 09:15:00"}
