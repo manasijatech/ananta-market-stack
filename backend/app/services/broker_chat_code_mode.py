@@ -8,11 +8,12 @@ from types import SimpleNamespace
 from typing import Any
 
 from app.agent_harness.code_mode import (
-    CODE_MODE_INSTRUCTIONS,
     DEFERRED_PREFIXES,
+    HYBRID_DIRECT_TOOLS,
     MCP_GATE_TOOLS,
     api_tools,
     select_strategy,
+    strategy_instructions,
 )
 from app.agent_tools.code_mode_tools import make_code_run
 from app.config import get_settings
@@ -60,13 +61,14 @@ def build_code_tool_event(kind: str, payload: dict[str, Any]) -> tuple[dict[str,
 def requested_tool_mode(metadata: dict | None) -> str:
     """Server setting wins. Client metadata is ignored unless the server flag allows it."""
     settings = get_settings()
-    mode = settings.chat_tool_mode if settings.chat_tool_mode in {"direct", "code_mode"} else "direct"
+    accepted = {"direct", "code_mode", "hybrid"}
+    mode = settings.chat_tool_mode if settings.chat_tool_mode in accepted else "direct"
     if not settings.chat_tool_mode_allow_metadata_override or not isinstance(metadata, dict):
         return mode
     override = metadata.get("chat_tool_mode")
     if isinstance(override, str):
         cleaned = override.strip().lower()
-        if cleaned in {"direct", "code_mode"}:
+        if cleaned in accepted:
             return cleaned
     return mode
 
@@ -115,15 +117,15 @@ async def prepare_broker_chat_tools(
     servers = list(getattr(mcp_handle, "active_servers", None) or [])
     direct = CodeModePlan(mode="direct", tools=list(local_tools), mcp_servers=servers)
     requested = requested_tool_mode(metadata)
-    if requested != "code_mode":
+    if requested not in {"code_mode", "hybrid"}:
         return direct
     try:
         available, reason = await sandbox_status()
         chosen = select_strategy(
-            "code_mode",
+            requested,
             SimpleNamespace(available=available, capabilities=("python.bridge",) if available else ()),
         )
-        if chosen != "code_mode":
+        if chosen == "direct":
             return CodeModePlan(
                 mode="direct",
                 tools=list(local_tools),
@@ -145,17 +147,24 @@ async def prepare_broker_chat_tools(
         mcp_names.update(name for name in flattened if isinstance(name, str))
         reads = api_tools(merged, mcp_names=mcp_names)
         read_names = {tool.name for tool in reads}
+        hybrid = chosen == "hybrid"
+        direct_names = HYBRID_DIRECT_TOOLS & read_names if hybrid else set()
         kept = [
             tool for tool in merged
-            if tool.name not in read_names and tool.name not in MCP_GATE_TOOLS
+            if (tool.name not in read_names or tool.name in direct_names)
+            and tool.name not in MCP_GATE_TOOLS
             and not str(tool.name).startswith(DEFERRED_PREFIXES)
         ]
-        kept.append(make_code_run(reads, user_id=user_id, session_key=session_key, emit=emit))
+        present = {tool.name for tool in kept}
+        kept.extend(tool for tool in reads if tool.name in direct_names and tool.name not in present)
+        kept.append(make_code_run(
+            reads, user_id=user_id, session_key=session_key, emit=emit, direct_fallback=hybrid,
+        ))
         return CodeModePlan(
-            mode="code_mode",
+            mode="hybrid" if hybrid else "code_mode",
             tools=kept,
             mcp_servers=[],
-            instruction=CODE_MODE_INSTRUCTIONS,
+            instruction=strategy_instructions(hybrid),
             api_names=[tool.name for tool in reads],
         )
     except Exception:

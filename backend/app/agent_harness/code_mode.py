@@ -55,20 +55,43 @@ CODE_MODE_INSTRUCTIONS = (
     "Batch independent reads with `api.parallel([...])`, filter, join and compute in the script, and "
     "print only the compact facts you need, including each source, URL and as_of/date, so you can "
     "cite them. Use `api.describe(name)` to read a full schema before calling an unfamiliar function. "
-    "If a call raises ApiError, read the message and fix the arguments instead of switching tools. "
+    "If a call raises ApiError, read the message and fix the arguments. "
     "Do the whole data task in ONE script where possible: fetch, filter, join, compute and format "
     "the final table in Python, then print it. Do not print raw API results; if you are unsure of a "
     "result's structure, print api.peek(result) first, which shows keys and types only. Keep results "
-    "in variables and do the work in one script: repeated identical calls are refused. Compute inside "
+    "in variables and do the work in one script: Drishti calls always read live data, and repeated "
+    "identical calls may be refused. Compute inside "
     "code_run. Workspace, canvas, skills, alerts, and approvals remain direct tools."
+)
+
+
+def strategy_instructions(hybrid):
+    """Code Mode text for this run. Hybrid replaces the "not direct tools" rule."""
+    if not hybrid:
+        return CODE_MODE_INSTRUCTIONS
+    base = CODE_MODE_INSTRUCTIONS.split("Read them by calling code_run", 1)[1]
+    return HYBRID_INSTRUCTIONS + "\nWhen you use code_run: call code_run" + base
+
+
+HYBRID_INSTRUCTIONS = (
+    "Hybrid tool mode is active. Two ways to read data are available:\n"
+    "1. code_run with `from ananta import api` for numeric and list reads across several symbols "
+    "(quotes, 52-week levels, movers, price history, sector data, news for many symbols), joins, "
+    "rankings and any calculation. Batch with api.parallel and print only the final compact table.\n"
+    "2. The directly attached tools (earnings lists and filings, concall transcripts, announcements, "
+    "news search) for reading documents and one or two items; read their text yourself.\n"
+    "Other read tools stay inside code_run and are not attached directly. If a code_run fails or "
+    "returns data you cannot parse, do not rewrite the same script repeatedly: call the matching "
+    "direct tool when it is already attached. Prefer the direct tool for a single document lookup."
 )
 
 
 def select_strategy(requested, status):
     """A bridge must advertise python.bridge. OSS has no schema strategies, so the fallback is direct."""
-    if requested == 'code_mode' and not (getattr(status, 'available', False) and 'python.bridge' in getattr(status, 'capabilities', ())):
+    bridge_ready = getattr(status, 'available', False) and 'python.bridge' in getattr(status, 'capabilities', ())
+    if requested in {'code_mode', 'hybrid'} and not bridge_ready:
         return 'direct'
-    if requested not in {'direct', 'code_mode'}:
+    if requested not in {'direct', 'code_mode', 'hybrid'}:
         return 'direct'
     return requested
 
@@ -78,13 +101,26 @@ def select_strategy(requested, status):
 # prefixes still apply if one is attached.
 DEFERRED_PREFIXES = ('browser_', 'sandbox_')
 
+# Hybrid strategy: document and text reads stay direct tools (the model reads filings,
+# transcripts and announcements well as prose, and their payloads are awkward to parse in
+# code), while numeric/list reads and fan-out go through code_run. OSS has no
+# capability_load, so every other read tool stays inside code_run only.
+HYBRID_DIRECT_TOOLS = frozenset({
+    'list_earnings', 'get_earnings_filing', 'get_concalls', 'search_concalls',
+    'get_announcements', 'search_announcements', 'search_news',
+})
 
-def catalog_inventory(authorized, attached, executor, read_tools):
+
+def catalog_inventory(authorized, attached, executor, read_tools, *, hybrid=False):
     names = {t.name for t in read_tools}
-    attached[:] = [t for t in attached if t.name not in names and t.name != 'code_run'
+    direct = HYBRID_DIRECT_TOOLS & names if hybrid else set()
+    attached[:] = [t for t in attached if (t.name not in names or t.name in direct) and t.name != 'code_run'
                    and not t.name.startswith(DEFERRED_PREFIXES)]
+    present = {t.name for t in attached}
+    attached.extend(t for t in read_tools if t.name in direct and t.name not in present)
     attached.append(executor)
-    return [t for t in authorized if t.name not in names and t.name != 'code_run'] + [executor]
+    # No capability_load: hybrid does not put the other read tools back in the catalog.
+    return [t for t in authorized if (t.name not in names or t.name in direct) and t.name != 'code_run'] + [executor]
 
 
 def api_tools(tools, *, mcp_names=()):

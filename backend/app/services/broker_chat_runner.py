@@ -1017,7 +1017,9 @@ async def _run_broker_chat(run_id: str) -> None:
             )
         if code_plan.instruction:
             instructions = instructions.rstrip() + "\n\n" + code_plan.instruction
-            mcp_context = broker_chat_mcp.mcp_context_instructions(mcp_handle, code_mode=True)
+            mcp_context = broker_chat_mcp.mcp_context_instructions(
+                mcp_handle, code_mode=True, hybrid=code_plan.mode == "hybrid",
+            )
         sandbox_available = False
         evidence_contract = plan_evidence_contract(
             run.message,

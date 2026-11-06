@@ -18,8 +18,8 @@ Relevant settings (also in `.env.example`):
 
 | Variable | Default | Role |
 | --- | --- | --- |
-| `CHAT_TOOL_MODE` | `direct` | `code_mode` switches chat to the single `code_run` tool. |
-| `CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE` | `false` | When `true`, a run's `metadata.chat_tool_mode` may be `direct` or `code_mode`. Clients cannot select the mode while this is false. |
+| `CHAT_TOOL_MODE` | `direct` | `code_mode` switches chat to the single `code_run` tool. `hybrid` does the same and also keeps document tools direct: `list_earnings`, `get_earnings_filing`, `get_concalls`, `search_concalls`, `get_announcements`, `search_announcements`, `search_news`. Other reads stay inside `code_run`. |
+| `CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE` | `false` | When `true`, a run's `metadata.chat_tool_mode` may be `direct`, `code_mode`, or `hybrid`. Clients cannot select the mode while this is false. |
 | `CODE_SANDBOX_SOCKET` | `/run/ananta-code/runner.sock` | Unix socket shared by the backend and the runner. |
 | `CODE_SANDBOX_TOKEN_FILE` | `/run/ananta-code/token` | Token file on that same volume. |
 
@@ -36,7 +36,9 @@ Read-only tools become functions on `ananta.api`. Admission is a declared-name a
 
 A name is not admitted because it starts with `get_`, `list_`, `search_`, `resolve_`, or `calc_`. Mutations, workspace and canvas publish, alert studio, skills, session memory, and approval-style tools stay attached directly. `describe_tools` and `execute_tool` are never exposed. When code mode is active the MCP servers themselves are not passed to the agent; the backend keeps those connections and invokes the wrapped tools.
 
-There is no code-mode cache. Every call, including a repeat of the same arguments, goes through the wrapped tool, so a revocation or a source switch applies on the next call. The instructions tell the model to keep results in variables: repeated identical calls are refused by that policy, not served from a memo. Result shapes (`-> {...}`) are learned only for public market-data tools (quotes, history, instruments, option chains, web, Drishti data operations, and the NSE prefixes above). Portfolio, account, watchlist, profile, and book results are not learned.
+There is no code-mode cache. Drishti MCP data operations are always read live from the MCP server: no result cache, no replay of an earlier result, and no merged concurrent call. `cache_tools_list` is only a tool-schema listing switch and stays off. Every call, including a repeat of the same arguments, goes through the wrapped tool, so a revocation or a source switch applies on the next call. The instructions tell the model to keep results in variables: Drishti calls always read live data, and repeated identical calls may be refused. Result shapes (`-> {...}`) are learned only for public market-data tools (quotes, history, instruments, option chains, web, Drishti data operations, and the NSE prefixes above). Portfolio, account, watchlist, profile, and book results are not learned.
+
+`hybrid` uses the same sandbox and the same read API. The seven document tools above stay attached so the model can read filings, transcripts, announcements, and news search as prose. A failed `code_run` in hybrid mode includes a `fallback` note naming the API functions that failed, so the model can call an attached direct tool instead of rewriting the script. OSS has no `capability_load`, so reads outside that document set are not attached.
 
 Inside the sandbox the script can call `api.list()`, `api.search(text)`, and `api.describe(name)` without a network round trip. `api.parallel([(name, args), ...])` batches up to 8 calls. Passing a wrapper object such as `query=` works even when the nested fields are required; omitting both the wrapper and a required field raises `TypeError` in the guest. Each inner call still emits `tool_call_started` and `tool_call_completed` with `parent_tool` set to `code_run`, so the chat timeline shows the reads. A budget stop (`stopped: true`, including `ok: true`) is an error, not data. Cancellation and timeout still record the ledger slot and a `tool_call_completed` event with `ok: false`.
 

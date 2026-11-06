@@ -5,7 +5,7 @@ from app.agent_harness.code_mode import CodeRegistry, generate_api, is_control_f
 from app.execution_planes.code_sandbox_client import run_bridge
 
 
-def make_code_run(tools, *, user_id, session_key, emit):
+def make_code_run(tools, *, user_id, session_key, emit, direct_fallback=False):
     registry = CodeRegistry(tools, emit)
     library = generate_api(tools)
     shapes = learned_shapes(t.name for t in tools)
@@ -64,6 +64,13 @@ def make_code_run(tools, *, user_id, session_key, emit):
                 stderr = str(stderr)
             payload = {'ok': exit_code == 0, 'stdout': stdout[:8000],
                 'stderr': stderr[:8000], 'exit_code': exit_code, 'calls': ledger}
+            failed = sorted({c.get('name') for c in ledger if c.get('ok') is False and c.get('name')})
+            if direct_fallback and (exit_code != 0 or failed):
+                payload['fallback'] = (
+                    'These API functions are also available as direct tools when this run attached them. '
+                    'If this script keeps failing, call those attached tools directly instead of rewriting the script: '
+                    + (', '.join(failed) if failed else 'the functions this script used') + '.'
+                )
             if len(stdout) > 8000 or result.get('truncated'):
                 payload['stdout_truncated'] = True
                 payload['note'] = ('Output was cut at 8000 characters. Aggregate or select fields in the script '

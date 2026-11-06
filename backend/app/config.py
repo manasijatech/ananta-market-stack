@@ -384,7 +384,7 @@ class Settings(BaseSettings):
         if value is None or value == "":
             return "direct"
         text = str(value).strip().lower()
-        if text not in {"direct", "code_mode"}:
+        if text not in {"direct", "code_mode", "hybrid"}:
             return "direct"
         return text
 

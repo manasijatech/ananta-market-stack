@@ -126,7 +126,7 @@ async def lifespan(_app: FastAPI):
     configure_llm_telemetry()
     # Before init_db(): Alembic's ini fileConfig disables the uvicorn handlers,
     # so a later logger.info never reaches the container log.
-    if settings.chat_tool_mode == "code_mode":
+    if settings.chat_tool_mode in {"code_mode", "hybrid"}:
         await _log_code_sandbox_ping()
     init_db()
     maintenance_service = _start_background_service("maintenance-loop", maintenance_loop)

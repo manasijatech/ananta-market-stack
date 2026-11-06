@@ -146,6 +146,8 @@ def test_strategy_and_catalog():
     assert select_strategy("code_mode", SimpleNamespace(available=False, capabilities=["python.bridge"])) == "direct"
     assert select_strategy("code_mode", SimpleNamespace(available=True, capabilities=[])) == "direct"
     assert select_strategy("code_mode", SimpleNamespace(available=True, capabilities=["python.bridge"])) == "code_mode"
+    assert select_strategy("hybrid", SimpleNamespace(available=False, capabilities=["python.bridge"])) == "direct"
+    assert select_strategy("hybrid", SimpleNamespace(available=True, capabilities=["python.bridge"])) == "hybrid"
     read, control, executor = tool(), tool("ask_user"), tool("code_run")
     attached = [read, control]
     inventory = catalog_inventory([read, control], attached, executor, [read])
@@ -167,6 +169,13 @@ def test_metadata_override_requires_server_flag(monkeypatch):
     get_settings.cache_clear()
     assert requested_tool_mode({}) == "code_mode"
     assert requested_tool_mode({"chat_tool_mode": "direct"}) == "code_mode"
+    monkeypatch.setenv("CHAT_TOOL_MODE", "hybrid")
+    get_settings.cache_clear()
+    assert requested_tool_mode({"chat_tool_mode": "direct"}) == "hybrid"
+    monkeypatch.setenv("CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE", "true")
+    get_settings.cache_clear()
+    assert requested_tool_mode({"chat_tool_mode": "hybrid"}) == "hybrid"
+    assert requested_tool_mode({"chat_tool_mode": "code_mode"}) == "code_mode"
 
 
 def test_guest_rpc_partial_stdout_and_api_error(monkeypatch):
@@ -489,7 +498,8 @@ def test_code_mode_instructions_require_one_script_and_peek():
     assert "source" in CODE_MODE_INSTRUCTIONS
     assert "NOT direct tools" in CODE_MODE_INSTRUCTIONS
     assert "capability_load" not in CODE_MODE_INSTRUCTIONS
-    assert "repeated identical calls are refused" in CODE_MODE_INSTRUCTIONS
+    assert "Drishti calls always read live data" in CODE_MODE_INSTRUCTIONS
+    assert "repeated identical calls may be refused" in CODE_MODE_INSTRUCTIONS
     assert "Keep results in variables" in CODE_MODE_INSTRUCTIONS
 
 
@@ -1043,3 +1053,105 @@ def test_empty_results_are_data_unless_ok_false():
     from app.agent_harness.code_mode import is_error_result
     assert not is_error_result({'data': [], 'has_next': False, 'ok': True, 'empty': True, 'hint': 'no rows'})
     assert is_error_result({'ok': False, 'empty': True, 'retry': False, 'message': 'empty response', 'hint': 'x'})
+
+
+def test_hybrid_keeps_document_tools_direct_and_other_reads_inside_code_run():
+    from app.agent_harness.code_mode import strategy_instructions
+
+    quotes, filings, concalls, control, executor = (
+        tool("broker_get_quotes"),
+        tool("get_earnings_filing"),
+        tool("get_concalls"),
+        tool("ask_user"),
+        tool("code_run"),
+    )
+    reads = [quotes, filings, concalls]
+    attached = [quotes, control]
+    inventory = catalog_inventory([quotes, filings, concalls, control], attached, executor, reads, hybrid=True)
+    assert [item.name for item in attached] == ["ask_user", "get_earnings_filing", "get_concalls", "code_run"]
+    # OSS has no capability_load, so a non-document read stays out of the catalog.
+    assert {item.name for item in inventory} == {"get_earnings_filing", "get_concalls", "ask_user", "code_run"}
+    text = strategy_instructions(True)
+    assert "Hybrid tool mode" in text
+    assert "NOT direct tools" not in text
+    assert "capability_load" not in text
+    assert "already attached" in text
+    assert "NOT direct tools" in strategy_instructions(False)
+    assert "always read live" in strategy_instructions(False)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_code_run_failure_suggests_direct_tools(monkeypatch):
+    from app.agent_tools import code_mode_tools
+
+    async def bridge(**kwargs):
+        await kwargs["rpc"]({"id": 1, "calls": [{"name": "list_earnings", "args": {}}]})
+        return {"stdout": "", "stderr": "Traceback", "exit_code": 1}
+
+    monkeypatch.setattr(code_mode_tools, "run_bridge", bridge)
+
+    async def invoke(ctx, args):
+        return json.dumps({"ok": False, "code": "x", "message": "bad"})
+
+    async def emit(kind, data):
+        pass
+
+    executor = code_mode_tools.make_code_run(
+        [tool("list_earnings", invoke=invoke)],
+        user_id="u",
+        session_key="s",
+        emit=emit,
+        direct_fallback=True,
+    )
+    out = json.loads(await executor.on_invoke_tool(SimpleNamespace(tool_call_id="c1"), json.dumps({"code": "x"})))
+    assert "list_earnings" in out["fallback"]
+    assert "capability_load" not in out["fallback"]
+    plain = code_mode_tools.make_code_run(
+        [tool("list_earnings", invoke=invoke)], user_id="u", session_key="s", emit=emit,
+    )
+    out = json.loads(await plain.on_invoke_tool(SimpleNamespace(tool_call_id="c2"), json.dumps({"code": "x"})))
+    assert "fallback" not in out
+
+
+@pytest.mark.asyncio
+async def test_hybrid_plan_keeps_only_document_tools_direct(monkeypatch):
+    monkeypatch.setenv("CHAT_TOOL_MODE", "direct")
+    monkeypatch.setenv("CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE", "true")
+    get_settings.cache_clear()
+
+    async def ready():
+        return True, ""
+
+    monkeypatch.setattr("app.services.broker_chat_code_mode.sandbox_status", ready)
+    quote = tool()
+    news = tool("search_news", description="News search")
+    filings = tool("get_earnings_filing", description="Filing")
+    movers = tool("get_top_movers", description="Movers")
+    mutation = tool("broker_delete_watchlist")
+    handle = SimpleNamespace(
+        active_servers=[],
+        extra_tools=[news, filings, movers],
+        flattened_tool_names=["search_news", "get_earnings_filing", "get_top_movers"],
+        enabled=True,
+    )
+    plan = await prepare_broker_chat_tools(
+        metadata={"chat_tool_mode": "hybrid"},
+        local_tools=[quote, mutation],
+        mcp_handle=handle,
+        user_id="u",
+        session_key="s",
+        emit=lambda *args: None,
+    )
+    names = [item.name for item in plan.tools]
+    assert plan.mode == "hybrid"
+    assert plan.mcp_servers == []
+    assert "broker_get_quotes" not in names
+    assert "get_top_movers" not in names
+    assert "search_news" in names
+    assert "get_earnings_filing" in names
+    assert "broker_delete_watchlist" in names
+    assert names[-1] == "code_run"
+    assert set(plan.api_names) >= {"broker_get_quotes", "search_news", "get_earnings_filing", "get_top_movers"}
+    assert "Hybrid tool mode" in plan.instruction
+    assert "capability_load" not in plan.instruction
+    assert "NOT direct tools" not in plan.instruction

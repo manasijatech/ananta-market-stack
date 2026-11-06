@@ -85,11 +85,19 @@ def _looks_like_json_argument_error(message: str) -> bool:
     )
 
 
-def mcp_context_instructions(handle: BrokerChatMcpHandle, *, code_mode: bool = False) -> str:
+def mcp_context_instructions(handle: BrokerChatMcpHandle, *, code_mode: bool = False, hybrid: bool = False) -> str:
     if not handle.enabled or not handle.active_servers:
         return ""
     inventory = handle.inventory or {}
-    if code_mode:
+    if hybrid:
+        sections = [
+            "MCP is connected for this run. Hybrid tool mode is active. Document reads that are "
+            "attached directly (list_earnings, get_earnings_filing, get_concalls, search_concalls, "
+            "get_announcements, search_announcements, search_news) stay direct tools. Every other "
+            "read-only MCP data tool is inside code_run as api.<name>(...). Local broker reads are "
+            "also inside that API. Do not call describe_tools or execute_tool; tokens stay on the host."
+        ]
+    elif code_mode:
         sections = [
             "MCP is connected for this run. Read-only MCP data tools are available inside "
             "code_run as api.<name>(...), not as direct tool schemas. Use them for market news, "
@@ -107,7 +115,14 @@ def mcp_context_instructions(handle: BrokerChatMcpHandle, *, code_mode: bool = F
     tool_names = _inventory_tool_names(inventory)
     if handle.flattened_tool_names:
         names = ", ".join(handle.flattened_tool_names[:80])
-        if code_mode:
+        if hybrid:
+            sections.append(
+                "MCP functions inside this run: "
+                + names
+                + ". Document tools named above stay direct; other reads are api.<name>(...) inside "
+                "code_run. Do NOT call describe_tools or execute_tool."
+            )
+        elif code_mode:
             sections.append(
                 "MCP read functions inside code_run: "
                 + names
@@ -126,7 +141,14 @@ def mcp_context_instructions(handle: BrokerChatMcpHandle, *, code_mode: bool = F
             if name.lower() not in {"describe_tools", "describe_tool", "execute_tool", "execute"}
         ]
         listed = ", ".join((callable_names or tool_names)[:80])
-        if code_mode:
+        if hybrid:
+            sections.append(
+                "Connected MCP tools: "
+                + listed
+                + ". Document tools stay direct; other reads are inside code_run as api.<name>(...). "
+                "Do NOT call describe_tools or execute_tool."
+            )
+        elif code_mode:
             sections.append(
                 "Connected MCP reads are inside code_run as api.<name>(...): "
                 + listed
@@ -188,6 +210,7 @@ def _build_mcp_server(connection: mcp_config.McpConnectionConfig):
         "sse_read_timeout": float(max(connection.timeout_seconds, 30)),
     }
     kwargs = {
+        # Tool-schema listing only. Drishti call_tool results are never cached or merged.
         "cache_tools_list": False,
         "name": connection.name or f"MCP server {connection.id}",
         "client_session_timeout_seconds": float(connection.timeout_seconds),

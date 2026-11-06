@@ -91,6 +91,7 @@ services:
 
   # Optional. No network, no backend secrets. Enable with:
   #   CHAT_TOOL_MODE=code_mode docker compose --profile code-mode up -d --build
+  #   CHAT_TOOL_MODE=hybrid uses the same profile and keeps document tools direct.
   code-sandbox:
     profiles: ["code-mode"]
     build:

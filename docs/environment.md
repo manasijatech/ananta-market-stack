@@ -48,8 +48,8 @@ This page summarizes the main environment variables used by Ananta Market Stack.
 | `ENABLE_IN_PROCESS_ALPHA_WS_WORKER` | `true` in Docker | Runs the alpha websocket worker in process. |
 | `ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER` | `true` in Docker | Runs watchlist preset worker in process. |
 | `ENABLE_ADAPTIVE_WORKSPACE` | `true` | Chat (`/chat`) is the Adaptive Workspace canvas surface. When `false`, those HTTP routes return `404`, the Chat nav item is hidden, and runs never attach compose/intel/alert-studio tools. Set `ENABLE_ADAPTIVE_WORKSPACE=false` only as a kill switch. |
-| `CHAT_TOOL_MODE` | `direct` | `direct` attaches tool schemas as usual. `code_mode` exposes read-only tools through one `code_run` sandbox tool. See [code-mode.md](code-mode.md). |
-| `CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE` | `false` | When `true`, a run may set `metadata.chat_tool_mode` to `direct` or `code_mode`. Leave false so clients cannot select the mode. |
+| `CHAT_TOOL_MODE` | `direct` | `direct` attaches tool schemas as usual. `code_mode` exposes read-only tools through one `code_run` sandbox tool. `hybrid` is code mode plus the document tools kept direct. See [code-mode.md](code-mode.md). |
+| `CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE` | `false` | When `true`, a run may set `metadata.chat_tool_mode` to `direct`, `code_mode`, or `hybrid`. Leave false so clients cannot select the mode. |
 | `CODE_SANDBOX_SOCKET` | `/run/ananta-code/runner.sock` | Unix socket for the optional code-sandbox runner. |
 | `CODE_SANDBOX_TOKEN_FILE` | `/run/ananta-code/token` | Shared token file mounted into the backend and the code-sandbox runner. |
 | `DESKTOP_AUDIO_STORAGE_DIR` | `/data/alert-audio` in Docker, `./data/alert-audio` locally | Directory where generated desktop alert audio files are stored. |
