@@ -19,6 +19,7 @@ from app.api.v1 import (
     health,
     live_streams,
     llm_usage,
+    market_calendar,
     meta,
     notifications,
     rbac,
@@ -32,6 +33,9 @@ api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(deployment.router, tags=["deployment"])
 api_router.include_router(meta.router, tags=["meta"])
+api_router.include_router(
+    market_calendar.router, prefix="/market", tags=["market-calendar"]
+)
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(
     notifications.router, prefix="/notifications", tags=["notifications"]

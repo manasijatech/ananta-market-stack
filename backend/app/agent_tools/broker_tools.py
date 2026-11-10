@@ -2026,7 +2026,31 @@ def broker_get_stream_status(
     return _tool_call(call)
 
 
+@function_tool(strict_mode=False)
+def market_status(
+    ctx: RunContextWrapper[BrokerAgentContext],
+    exchange: str = "NSE",
+    segment: str = "cash",
+) -> dict[str, Any]:
+    """Read the exchange session phase and holiday status right now.
+
+    Use this before saying whether the market is open, and when the user asks
+    about holidays, the last trading day, or the next open. When
+    ``live_quotes_expected`` is false, quote prices hold the last completed
+    session (``last_completed_session``). Report them as that session's close
+    rather than as a live move. Read-only and never requires a broker account.
+    """
+
+    def call() -> dict[str, Any]:
+        from app.services import market_calendar
+
+        return _ok(**market_calendar.market_status_now(exchange=exchange, segment=segment).as_dict())
+
+    return _tool_call(call)
+
+
 BROKER_DATA_TOOLS = [
+    market_status,
     broker_list_accounts,
     broker_list_watchlists,
     broker_get_watchlist_symbols,

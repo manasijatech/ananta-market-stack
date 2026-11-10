@@ -12,6 +12,7 @@ See `docs/windows_runtime_compat.md` for Python 3.10 / Windows-safe runtime conv
 See `docs/broker_agent_tools.md` for the OpenAI Agents SDK broker-data tool surface.
 See `docs/broker_chat.md` for the asynchronous broker chat API, RQ worker, and SSE stream behavior.
 See `docs/adaptive-workspace.md` for Chat (`/chat`), the Adaptive Workspace canvas surface. It is on by default (`ENABLE_ADAPTIVE_WORKSPACE`). Classic Broker Chat at `/broker-chat` is kept in code but hidden from the nav.
+See `docs/market_calendar.md` for the NSE/BSE trading calendar: session phases, holidays, the refresh job, and which background work is market-bound.
 
 ## Current phase (roadmap)
 
@@ -279,7 +280,8 @@ SQLite instrument cache tables:
 - **SQLite file**: ensure the process can create `data/` (see `db/session.py`).
 - **Migrations**: Alembic is now scaffolded in `alembic/`. Existing databases should be stamped to the baseline revision first, then future schema changes should use generated revisions instead of only runtime patching.
 - **Token maintenance**: a lightweight in-process maintenance loop checks broker sessions daily after **06:30 IST**, attempts broker-supported refresh paths, and emits notifications for manual re-auth flows. Use `/broker-accounts/maintenance/run` to trigger the same logic on demand.
-- **Instrument maintenance**: a separate daily sync pass runs after **08:30 IST** and refreshes instrument metadata into SQLite once per broker per day.
+- **Instrument maintenance**: a separate daily sync pass runs after **08:30 IST** and refreshes instrument metadata into SQLite once per broker per day. It is skipped on non-trading days (see `docs/market_calendar.md`).
+- **Market calendar**: `app/services/market_calendar.py` owns session phases and holidays. Market-bound work (live quote polling, backfill, holdings and preset refresh, instrument sync, alert active periods) is gated on it; broker session refresh and the Alpha news websocket deliberately are not.
 - **Broker chat worker**: start `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat` to process `/broker-chat/runs` jobs from RQ. One process starts `BROKER_CHAT_WORKER_COUNT` (default 4) workers so distinct sessions can run concurrently.
 - **Alert workers**: start these separately when you need live alerting:
   - `PYTHONPATH=. ./venv/bin/python -m app.workers.live_market_data`

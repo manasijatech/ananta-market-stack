@@ -54,12 +54,33 @@ def _scoped(config: AlertWorkflowActivePeriod, instrument_scope: dict[str, Any])
     return all(checks)
 
 
+def _calendar_exchange(scope: dict[str, Any]) -> str:
+    exchange = str(scope.get("exchange") or scope.get("exchange_type") or "NSE").strip().upper()
+    return exchange if exchange in {"NSE", "BSE", "NFO", "BFO"} else "NSE"
+
+
+def _calendar_segment(scope: dict[str, Any]) -> str:
+    segment = str(scope.get("segment") or "").strip().lower()
+    instrument_type = str(scope.get("instrument_type") or "").strip().lower()
+    if segment:
+        return segment
+    return "equity_derivatives" if instrument_type in {"fut", "opt", "future", "option", "derivative"} else "cash"
+
+
 def evaluate_active_period(
     config: AlertWorkflowActivePeriod,
     instrument_scope: dict[str, Any],
     *,
     now: datetime | None = None,
+    apply_market_calendar: bool = True,
 ) -> ActivePeriodEvaluation:
+    """Whether a workflow should act at ``now``.
+
+    ``apply_market_calendar=False`` is for the news-feed path: announcements
+    arrive on holidays and overnight, and suppressing them would drop real
+    information rather than avoid a pointless poll. Market-bound ticks always
+    keep the gate.
+    """
     if not config.enabled:
         return ActivePeriodEvaluation(True, "active period disabled", {"enabled": False})
     if not _scoped(config, instrument_scope):
@@ -72,6 +93,35 @@ def evaluate_active_period(
     if current.tzinfo is None:
         current = current.replace(tzinfo=UTC)
     local_now = current.astimezone(timezone)
+    calendar_details: dict[str, Any] = {}
+    # Active days that name Saturday or Sunday were chosen to run on non-trading
+    # days (a weekly digest, a 24x7 rule), so the holiday and weekend gate does not apply.
+    weekend_days = {item.lower()[:3] for item in config.days} & {"sat", "sun"}
+    if apply_market_calendar and config.respect_market_calendar and not weekend_days:
+        from app.services.market_calendar import market_session_state
+
+        state = market_session_state(
+            exchange=_calendar_exchange(instrument_scope),
+            segment=_calendar_segment(instrument_scope),
+            cas_eligible=instrument_scope.get("cas_eligible"),
+            now=current,
+        )
+        calendar_details = {"calendar": state.as_dict()}
+        if state.phase in {
+            "holiday",
+            "weekend",
+            "special_session_times_unverified",
+            "special_session_closed",
+        }:
+            if state.phase == "holiday":
+                reason = "market holiday"
+            elif state.phase == "weekend":
+                reason = "market weekend"
+            else:
+                reason = f"market closed: {state.phase}"
+            return ActivePeriodEvaluation(False, reason, calendar_details)
+        if config.calendar_phase == "continuous" and not state.continuous_trading:
+            return ActivePeriodEvaluation(False, "outside continuous trading", calendar_details)
     day_name = local_now.strftime("%a").lower()
     if day_name not in {item.lower() for item in config.days}:
         return ActivePeriodEvaluation(
@@ -89,6 +139,7 @@ def evaluate_active_period(
                 True,
                 f"inside {session.label or 'market'} session",
                 {
+                    **calendar_details,
                     "local_time": local_now.isoformat(),
                     "timezone": config.timezone,
                     "session": session.model_dump(),
@@ -99,6 +150,7 @@ def evaluate_active_period(
         False,
         "outside active market hours",
         {
+            **calendar_details,
             "local_time": local_now.isoformat(),
             "timezone": config.timezone,
             "sessions": [session.model_dump() for session in config.sessions],

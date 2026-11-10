@@ -24,6 +24,7 @@ from app.services import alerts as alert_svc
 from app.services import alpha_symbols
 from app.services import broker_accounts, broker_data, broker_data_preferences, watchlists as watchlist_svc
 from app.services.live_price_scope import publish_scope_change
+from app.services.market_calendar import market_status_now
 from broker.core.redis_cache import _redis_client
 from db.models import AlphaWebSocketEvent, BrokerAccount, LiveSymbolSubscription
 
@@ -728,12 +729,16 @@ def get_live_heatmap(
         selection_id=selection_id,
     )
 
+    # A closed or holiday market has no fresh tick to fetch. Serving the cached
+    # last-session snapshot avoids a broker round trip per page view and stops
+    # the heatmap from implying live movement that never happened.
+    status = market_status_now()
     payload_map = _load_quote_payloads(
         db,
         user_id=user_id,
         account=account,
         source_rows=source_rows,
-        fetch_missing=normalized_scope in {"watchlist", "portfolio_holdings"},
+        fetch_missing=status.live_quotes_expected and normalized_scope in {"watchlist", "portfolio_holdings"},
     )
 
     quote_rows: list[tuple[HeatmapSourceRow, dict[str, Any]]] = []
@@ -824,5 +829,8 @@ def get_live_heatmap(
         returned_count=len(items),
         tracked_symbol_count=tracked_symbol_count,
         days=days,
+        session_phase=status.phase,
+        session_date=status.trading_date if status.live_quotes_expected else (status.last_completed_session or None),
+        prices_are_live=status.live_quotes_expected,
         items=items,
     )

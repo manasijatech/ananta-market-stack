@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.schemas.broker import InstrumentSyncOut, VerifyOut
 from app.services import broker_data
 from app.services.broker_data_preferences import _account_session_active
+from app.services.market_calendar import is_trading_day
 from broker.core.instrument_store import latest_sync_run, reconcile_stale_sync_run
 from db.models import BrokerAccount
 from db.session import SessionLocal
@@ -46,14 +47,29 @@ def schedule_instrument_sync(account_id: str) -> bool:
     return True
 
 
-def schedule_instrument_sync_if_needed(db: Session, acc: BrokerAccount) -> bool:
+def schedule_instrument_sync_if_needed(
+    db: Session,
+    acc: BrokerAccount,
+    *,
+    now: datetime | None = None,
+    market_gate: bool = True,
+) -> bool:
+    """Queue an instrument sync when one is genuinely due.
+
+    ``market_gate`` skips background scheduling on non-trading days, because the
+    exchange publishes nothing new then. An explicit user action (Verify) passes
+    ``market_gate=False`` so the operator can still refresh from the UI.
+    """
     if not acc.is_active:
         return False
     if not acc.last_verified_at and not _account_session_active(acc):
         return False
+    current = (now or datetime.now(tz=_IST)).astimezone(_IST)
+    if market_gate and not is_trading_day(current.date()):
+        return False
     # Arrow publishes the daily `/all` master after 08:00 IST. Avoid caching
     # yesterday's file during an early startup or pre-market verification.
-    if acc.broker_code == "arrow" and datetime.now(tz=_IST).time() < _ARROW_INSTRUMENT_AVAILABLE_AFTER:
+    if acc.broker_code == "arrow" and current.time() < _ARROW_INSTRUMENT_AVAILABLE_AFTER:
         return False
 
     reconcile_stale_sync_run(
@@ -138,7 +154,7 @@ def build_verify_out(db: Session, acc: BrokerAccount, ok: bool, message: str) ->
         return VerifyOut(ok=False, message=message or "")
 
     try:
-        scheduled = schedule_instrument_sync_if_needed(db, acc)
+        scheduled = schedule_instrument_sync_if_needed(db, acc, market_gate=False)
         sync_status, sync_message = _sync_user_message(db, acc, scheduled=scheduled)
         return VerifyOut(
             ok=True,

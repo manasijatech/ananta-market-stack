@@ -92,6 +92,8 @@ class AlertMarketSessionWindow(BaseModel):
 
 
 class AlertWorkflowActivePeriod(BaseModel):
+    respect_market_calendar: bool = True
+    calendar_phase: Literal["configured", "continuous"] = "configured"
     enabled: bool = True
     timezone: str = "Asia/Kolkata"
     days: list[str] = Field(default_factory=lambda: ["mon", "tue", "wed", "thu", "fri"])
@@ -100,6 +102,19 @@ class AlertWorkflowActivePeriod(BaseModel):
     exchange_types: list[str] = Field(default_factory=list)
     segments: list[str] = Field(default_factory=list)
     instrument_types: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _single_window(cls, value: Any) -> Any:
+        # {"start": "10:15", "end": "15:15"} is the natural way to say one window;
+        # it used to be dropped silently and the default 09:15-15:30 kept.
+        if isinstance(value, dict) and ("start" in value or "end" in value) and not value.get("sessions"):
+            value = dict(value)
+            window = {"start": value.pop("start", "09:15"), "end": value.pop("end", "15:30")}
+            if value.get("label"):
+                window["label"] = value.pop("label")
+            value["sessions"] = [window]
+        return value
 
 
 class AlertTargetEntry(BaseModel):

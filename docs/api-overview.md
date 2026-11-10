@@ -16,6 +16,7 @@ Hosted developer documentation is available at [developers.manasija.in/docs](htt
 - `GET /health`
 - `GET /health/redis`
 - `GET /features` — public runtime flags (`adaptive_workspace`, default `true`; gated by `ENABLE_ADAPTIVE_WORKSPACE`)
+- `GET /market/status` — current NSE/BSE session phase, holiday, last completed session and next open (IST)
 - `GET /brokers/supported`
 - `GET /users/me`
 - `POST /users`

@@ -65,4 +65,13 @@ class HeatmapResponseOut(BaseModel):
     returned_count: int
     tracked_symbol_count: int = 0
     days: int | None = None
+    session_phase: str = Field(default="closed", description="Exchange phase when the snapshot was built.")
+    session_date: str | None = Field(
+        default=None,
+        description="Trading date the prices belong to; the last completed session when the market is closed.",
+    )
+    prices_are_live: bool = Field(
+        default=False,
+        description="False when the rows hold the last completed session's close rather than a live tick.",
+    )
     items: list[HeatmapSymbolOut] = Field(default_factory=list)

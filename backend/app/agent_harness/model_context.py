@@ -472,6 +472,7 @@ def build_status_bar(
     workspace_catalog: str = "",
     now: datetime | None = None,
     include_workspace_spec: bool = False,
+    market_calendar_context: str = "",
 ) -> str:
     """Trailing harness status (clock + counters). Desk JSON lives in plan-05 hooks."""
     instant = now or datetime.now(ZoneInfo("Asia/Kolkata"))
@@ -479,6 +480,10 @@ def build_status_bar(
         STATUS_BAR_PREFIX,
         instant.strftime("Today is %A, %B %d, %Y in Asia/Kolkata (IST)."),
     ]
+    # Per-run calendar block: volatile by design so the static system prompt and
+    # its prefix cache stay byte-identical across turns.
+    if market_calendar_context.strip():
+        lines.append(market_calendar_context.strip())
     if evidence_line:
         lines.append(evidence_line)
     if tools_line:

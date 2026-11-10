@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -28,6 +29,8 @@ from broker.upstox import auth as upstox_auth
 from broker.zerodha import auth as zerodha_auth
 from db.models import BrokerAccount, BrokerNotification
 from db.session import SessionLocal
+
+logger = logging.getLogger(__name__)
 
 IST = timezone(timedelta(hours=5, minutes=30))
 MAINTENANCE_TIME_IST = time(hour=6, minute=30)
@@ -1058,6 +1061,9 @@ def run_daily_maintenance_once() -> None:
     now_ist = datetime.now(tz=IST)
     if now_ist.time() < MAINTENANCE_TIME_IST:
         return
+    # Session refresh costs a broker round trip and can trip an action-required
+    # notification. On a holiday the session still needs renewing, so this pass
+    # deliberately keeps running; only the instrument pass is market-bound.
     if _last_maintenance_date == now_ist.date():
         return
     db = SessionLocal()
@@ -1076,6 +1082,14 @@ def run_daily_instrument_sync_once() -> None:
     if now_ist.time() < INSTRUMENT_SYNC_TIME_IST:
         return
     if _last_instrument_sync_date == now_ist.date():
+        return
+    from app.services.market_calendar import is_trading_day
+
+    if not is_trading_day(now_ist.date()):
+        # No new master is published on a holiday; mark the day done so the
+        # loop does not retry it every five minutes.
+        _last_instrument_sync_date = now_ist.date()
+        logger.info("Instrument sync skipped: market holiday (%s)", now_ist.date().isoformat())
         return
     from app.services import broker_data
 
