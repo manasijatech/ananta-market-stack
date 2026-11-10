@@ -70,6 +70,7 @@ from app.services.broker_chat_code_mode import (
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
 from app.services.broker_chat_queue import broker_chat_cancel_requested
+from app.services.market_calendar import market_session_context
 from app.config import get_settings
 from common.datetime_compat import UTC
 from db.models import BrokerChatRun
@@ -178,6 +179,18 @@ Important operating rules:
 - Keep answers concise and cite the broker/account label when tool data includes it.
 - Do not place, modify, cancel, or suggest that a trade has been executed.
 """ + HARNESS_GROUNDING_RULES + """
+Market hours and holidays:
+- The run context block carries today's IST date, whether the market is open,
+  the session phase, the last completed session and the next open. Use it
+  before concluding anything about "today" or "now".
+- Outside trading hours, on weekends and on exchange holidays, do not refuse the
+  question and do not ask the user to come back later. State that the market is
+  closed (name the holiday when one is named in the context), then answer from
+  the most recent completed session's data automatically: last close, end-of-day
+  candles, the latest snapshot and the most recent news. Label those numbers with
+  that session date, for example "as of the 9 Nov close".
+- Call market_status when you need the exact phase, holiday name or next open,
+  or when the user asks about trading days directly.
 Tool-call discipline:
 - Every tool call must contain exactly one valid JSON object.
 - Never concatenate two JSON objects in a single tool call. If you need daily
@@ -1061,6 +1074,7 @@ async def _run_broker_chat(run_id: str) -> None:
             selected_component_id=selected_component_id,
             evidence_line=evidence_status_line(evidence_report),
             tools_line=tool_usage_line(load_run_events(db, run.id)),
+            market_calendar_context=market_session_context(),
         )
         hook_names: list[str] = []
         context_hooks_message = ""

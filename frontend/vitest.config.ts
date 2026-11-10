@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
     test: {
         environment: "node",
-        include: ["lib/adaptive-workspace/chat-events.test.ts"]
+        include: ["lib/**/*.test.ts", "components/**/*.test.tsx"]
     },
     resolve: {
         alias: {

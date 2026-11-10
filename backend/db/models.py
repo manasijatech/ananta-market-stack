@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.session import Base
@@ -1722,3 +1722,32 @@ class AgentSkillPref(Base):
     markdown: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MarketCalendarSnapshot(Base):
+    """One fetched exchange holiday list, accepted or rejected.
+
+    Rejected rows are kept so an operator can see what was refused and why; the
+    effective calendar is always the latest accepted trading row for a scope.
+    """
+
+    __tablename__ = "market_calendar_snapshots"
+    __table_args__ = (
+        Index(
+            "ix_market_calendar_scope",
+            "exchange", "segment", "list_kind", "year", "accepted", "fetched_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    exchange: Mapped[str] = mapped_column(String(16))
+    segment: Mapped[str] = mapped_column(String(32))
+    list_kind: Mapped[str] = mapped_column(String(16))
+    year: Mapped[int] = mapped_column(Integer)
+    holidays_json: Mapped[str] = mapped_column(Text, default="[]")
+    source_url: Mapped[str] = mapped_column(Text, default="")
+    provenance_json: Mapped[str] = mapped_column(Text, default="{}")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    accepted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

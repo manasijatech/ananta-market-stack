@@ -17,6 +17,7 @@ from app.schemas.broker import (
     QuoteRow,
 )
 from app.services import broker_data
+from app.services.market_calendar import market_status_now
 from db.models import BrokerAccount, BrokerMarketCandleCache
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -526,7 +527,9 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
 
     latest_quote: QuoteRow | None = None
     last_price_time: datetime | None = None
-    if payload.get("include_live_quote", True):
+    status = market_status_now()
+    live_quotes_expected = status.live_quotes_expected
+    if payload.get("include_live_quote", True) and live_quotes_expected:
         quote_rows = broker_data.fetch_quotes(db, acc, [instrument])
         if quote_rows:
             latest_quote = quote_rows[0]
@@ -565,4 +568,7 @@ def build_market_chart_snapshot(db: Session, acc: BrokerAccount, payload: dict[s
         latest_quote=latest_quote,
         last_price_time=last_price_time,
         cache_status=cache_status,
+        session_phase=status.phase,
+        last_completed_session=status.last_completed_session or None,
+        prices_are_live=live_quotes_expected and latest_quote is not None,
     )

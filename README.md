@@ -114,6 +114,7 @@ Use `docker compose down -v` only when you intentionally want to delete Docker-m
 - [API overview](docs/api-overview.md) - route groups, local OpenAPI docs, and hosted API documentation links.
 - [Security notes](docs/security.md) - encrypted broker credentials, secrets, backups, Redis, and production hardening.
 - [Code mode](docs/code-mode.md) - no-network sandbox that turns read-only MCP and broker tools into one `code_run` API. `CHAT_TOOL_MODE=auto` (the default) uses it for data reads when the compose profile is up, and direct tools otherwise.
+- [Market calendar](backend/docs/market_calendar.md) - NSE/BSE session phases, trading holidays, the daily refresh job, and how alerts, polling and chat use the last completed session.
 - [Contributing](CONTRIBUTING.md) - contribution workflow, checks, migrations, and compatibility expectations.
 - [Support](SUPPORT.md) - where to start when setup or runtime issues appear.
 - [Security policy](SECURITY.md) - how to report vulnerabilities privately.

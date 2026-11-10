@@ -7,7 +7,7 @@ import time
 import threading
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 
 from app.config import get_settings
 from app.services import desktop_audio
+from app.services.market_calendar import IST, run_calendar_refresh
 from db.models import (
     AlertWorkflow,
     AlertWorkflowRun,
@@ -47,6 +48,7 @@ REDIS_FULL_REBUILD_PATTERNS = (
 
 _last_periodic_run_monotonic: float | None = None
 _last_sqlite_vacuum_monotonic: float | None = None
+_last_calendar_refresh_date: date | None = None
 _maintenance_lock = threading.Lock()
 
 
@@ -64,6 +66,26 @@ def _settings():
 
 def _utc_now() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
+
+
+def refresh_holiday_calendar_once(*, force: bool = False) -> dict[str, Any]:
+    """Fetch the official exchange holiday masters at most once per day.
+
+    Runs inside the interval maintenance cycle. A failed fetch is recorded in
+    the maintenance log and leaves the previous verified calendar in place, so
+    a holiday or an offline host never blocks scheduled work.
+    """
+    global _last_calendar_refresh_date
+    today = datetime.now(tz=IST).date()
+    if not force and _last_calendar_refresh_date == today:
+        return {"status": "cached", "date": today.isoformat()}
+    try:
+        result = run_calendar_refresh()
+    except Exception as exc:
+        logger.warning("market calendar refresh failed: %s", exc, exc_info=True)
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
+    _last_calendar_refresh_date = today
+    return result
 
 
 def _json_dumps(payload: Any) -> str:
@@ -129,6 +151,9 @@ def run_system_maintenance(
         rebuilt_redis_keys_total += redis_result["rebuilt_keys_total"]
         details["redis"] = redis_result
 
+        calendar_result = refresh_holiday_calendar_once()
+        details["market_calendar"] = calendar_result
+
         vacuum_result = _maybe_vacuum_sqlite(
             force=force_vacuum,
             deleted_rows=deleted_rows_total,
@@ -142,6 +167,8 @@ def run_system_maintenance(
             f"{deleted_redis_keys_total} redis keys removed, "
             f"{rebuilt_redis_keys_total} redis keys rebuilt"
         )
+        if calendar_result.get("accepted"):
+            summary += f", market calendar refreshed ({calendar_result['accepted']} accepted)"
     except Exception as exc:
         status = "failed"
         error_message = str(exc)

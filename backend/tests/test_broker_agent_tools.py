@@ -16,6 +16,7 @@ def test_broker_agent_tools_are_registered_with_descriptions():
     names = {tool.name for tool in BROKER_DATA_TOOLS}
 
     assert names == {
+        "market_status",
         "broker_list_accounts",
         "broker_list_watchlists",
         "broker_get_watchlist_symbols",

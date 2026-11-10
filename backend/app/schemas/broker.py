@@ -467,6 +467,15 @@ class MarketChartSnapshotOut(BaseModel):
     latest_quote: QuoteRow | None = None
     last_price_time: datetime | None = None
     cache_status: MarketChartCacheStatusOut = Field(default_factory=MarketChartCacheStatusOut)
+    session_phase: str = Field(default="closed", description="Exchange phase when the chart was built.")
+    last_completed_session: str | None = Field(
+        default=None,
+        description="ISO date of the last session with official closing data.",
+    )
+    prices_are_live: bool = Field(
+        default=False,
+        description="False when the latest quote is the last completed session's close, not a live tick.",
+    )
 
 
 class OptionChainRequest(BaseModel):

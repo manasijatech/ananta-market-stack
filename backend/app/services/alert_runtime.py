@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -37,6 +37,13 @@ from app.services.alerts_engine.rolling_state import (
 )
 from app.services import broker_data
 from app.services.live_price_adapters import close_live_price_adapters, get_live_price_adapter
+from app.services.market_calendar import (
+    IST,
+    is_trading_day,
+    market_session_state,
+    poll_backoff_seconds,
+    session_closed_reason,
+)
 from broker.core.live_prices import LivePriceAdapter, is_access_forbidden_reason
 from app.services.broker_sessions import (
     _create_notification_once_per_day,
@@ -69,6 +76,7 @@ ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
 TRANSIENT_RETRY_SECONDS = 60
 LIVE_FEED_TRANSIENT_RETRY_SECONDS = 5
 REST_POLL_INTERVAL_SECONDS = 2.0
+CLOSED_MARKET_POLL_INTERVAL_SECONDS = 60.0
 SUBSCRIPTION_DB_PERSIST_INTERVAL_SECONDS = 10.0
 # Workflow + actively viewed UI sources stay pinned inside broker capacity.
 PINNED_SUBSCRIPTION_PRIORITY_MAX = 1
@@ -276,6 +284,9 @@ def _workflow_active_for_feed(workflow) -> tuple[bool, dict[str, Any]]:
         workflow.workflow_dsl.active_period,
         {},
         now=_utc_now().replace(tzinfo=UTC),
+        # Feed events are new information, not market polling; the calendar gate
+        # belongs to the broker tick path only.
+        apply_market_calendar=False,
     )
     return result.active, {"active": result.active, "reason": result.reason, **result.details}
 
@@ -907,6 +918,83 @@ def _clear_account_retry(account_id: str) -> None:
     _ACCOUNT_RETRY_NOT_BEFORE.pop(account_id, None)
 
 
+def _market_polling_open(now: datetime | None = None) -> bool:
+    """Live quote polling runs only while the cash session can trade.
+
+    Brokers return stale closes outside these phases, and polling them on a
+    holiday produces fake "no movement" ticks plus avoidable rate-limit retries.
+    """
+    closed = session_closed_reason("NSE", "cash", now or _utc_now().replace(tzinfo=UTC))
+    return closed is None
+
+
+def closed_market_skip_reason(now: datetime | None = None) -> str:
+    closed = session_closed_reason("NSE", "cash", now or _utc_now().replace(tzinfo=UTC))
+    return closed[0] if closed else "market open"
+
+
+def record_market_skip_for_closed_session(db, *, now: datetime | None = None) -> int:
+    """Write one visible "skipped: market holiday" run per workflow per day.
+
+    Without this, a workflow that never fired on a holiday is indistinguishable
+    from one whose trigger silently broke. Only non-trading days get an entry:
+    the pre-market minutes of an ordinary trading day are normal quiet, not a
+    skip worth reporting. Called once per closed day from the live worker, so it
+    costs at most one row per workflow.
+    """
+    current = now or _utc_now().replace(tzinfo=UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    local_day = current.astimezone(IST).date()
+    if is_trading_day(local_day):
+        return 0
+    reason = closed_market_skip_reason(current)
+    day_start = datetime.combine(local_day, time.min, tzinfo=IST).astimezone(UTC).replace(tzinfo=None)
+    rows = db.scalars(
+        select(AlertWorkflow).where(AlertWorkflow.status == "active")
+    ).all()
+    created = 0
+    for row in rows:
+        try:
+            dsl = alert_svc._workflow_to_out(row).workflow_dsl  # type: ignore[attr-defined]
+        except Exception:
+            continue
+        if not dsl.broker_trigger.enabled:
+            continue
+        if not dsl.active_period.respect_market_calendar:
+            continue
+        already = db.scalars(
+            select(AlertWorkflowRun.id).where(
+                AlertWorkflowRun.workflow_id == row.id,
+                AlertWorkflowRun.created_at >= day_start,
+                AlertWorkflowRun.reason.like("skipped: market%"),
+            ).limit(1)
+        ).first()
+        if already:
+            continue
+        db.add(
+            AlertWorkflowRun(
+                id=str(uuid4()),
+                workflow_id=row.id,
+                notification_id=None,
+                matched=False,
+                reason=reason,
+                rendered_title="",
+                rendered_message="",
+                channels_json=json.dumps([]),
+                tick_json=json.dumps({}),
+                evaluation_payload_json=json.dumps(
+                    {"market_calendar": market_session_state(now=current).as_dict()},
+                    default=str,
+                ),
+            )
+        )
+        created += 1
+    if created:
+        db.commit()
+    return created
+
+
 def _rest_poll_allowed(account_id: str) -> bool:
     retry_at = _REST_POLL_NOT_BEFORE.get(account_id)
     return not retry_at or retry_at <= _utc_now()
@@ -1011,7 +1099,30 @@ def _record_market_data_success(db, acc: BrokerAccount) -> None:
 
 async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 0.5) -> None:
     redis_client = _redis()
+    closed_day_recorded: str | None = None
     while not stop_event.is_set():
+        if not _market_polling_open():
+            # Holidays and closed sessions: keep subscriptions and health rows as
+            # they are, spend no broker quota, and schedule no retries. One visible
+            # skip row per workflow per closed day keeps the run history honest.
+            local_day = datetime.now(tz=IST).date().isoformat()
+            if closed_day_recorded != local_day:
+                db = SessionLocal()
+                try:
+                    created = record_market_skip_for_closed_session(db)
+                    if created:
+                        logger.info("recorded %s market-closed skip(s): %s", created, closed_market_skip_reason())
+                except Exception as exc:
+                    logger.warning("failed to record market-closed skips: %s", exc)
+                    db.rollback()
+                finally:
+                    db.close()
+                closed_day_recorded = local_day
+            delay = min(CLOSED_MARKET_POLL_INTERVAL_SECONDS, poll_backoff_seconds())
+            if not await _wait_for_stop(stop_event, delay):
+                continue
+            break
+        closed_day_recorded = None
         db = SessionLocal()
         try:
             cleanup_expired_ui_subscriptions(db, commit=False)
@@ -1191,6 +1302,9 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
 
 
 def backfill_live_prices_for_user(user_id: str, *, source_kind: str | None = None, limit: int = 250) -> int:
+    if not _market_polling_open():
+        logger.debug("live price backfill skipped for %s: %s", user_id, closed_market_skip_reason())
+        return 0
     redis_client = _redis()
     db = SessionLocal()
     published = 0

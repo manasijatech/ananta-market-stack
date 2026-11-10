@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.services import broker_data
 from app.services import broker_data_preferences
+from app.services.market_calendar import market_status_now
 from broker.core.redis_cache import _redis_client
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,8 @@ def _snapshot_from_quote_payload(
     *,
     source: str,
     broker_code: str | None = None,
+    live: bool = True,
+    session_date: str | None = None,
 ) -> dict[str, Any] | None:
     ltp = _positive_float(payload.get("ltp") or payload.get("last_price"))
     if ltp is None:
@@ -88,6 +91,8 @@ def _snapshot_from_quote_payload(
         "price_as_of": _utc_now(),
         "price_source": source,
         "price_broker_code": broker_code or payload.get("broker_code"),
+        "price_is_live": live,
+        "price_session_date": session_date,
     }
 
 
@@ -145,6 +150,12 @@ def resolve_symbol_price_snapshot(
 
     if not allow_rest_fallback or account is None:
         return None
+    # Outside the session a REST quote only re-reads the previous close. Reading
+    # it labels the event with a fake "now" price and costs a broker round trip,
+    # so the event keeps its own published data instead.
+    status = market_status_now()
+    if not status.live_quotes_expected:
+        return None
 
     try:
         quotes = broker_data.fetch_quotes(
@@ -163,4 +174,6 @@ def resolve_symbol_price_snapshot(
         payload if isinstance(payload, dict) else {},
         source="broker_rest",
         broker_code=broker_code,
+        live=status.live_quotes_expected,
+        session_date=status.last_completed_session or None,
     )

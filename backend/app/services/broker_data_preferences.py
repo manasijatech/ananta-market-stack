@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from datetime import datetime, timedelta
 
@@ -25,6 +26,8 @@ from app.services.rbac import Principal
 from broker.core.instrument_store import latest_sync_run
 from db.models import BrokerAccount, BrokerHoldingsSnapshot, User, UserBrokerDataPreference
 from db.session import SessionLocal
+
+logger = logging.getLogger(__name__)
 
 _HOLDINGS_REFRESH_INTERVAL = timedelta(minutes=5)
 _RECOVERY_COOLDOWN = timedelta(minutes=10)
@@ -576,7 +579,22 @@ def refresh_holdings_snapshot(db: Session, acc: BrokerAccount, *, force: bool = 
     return snapshot
 
 
-def run_holdings_refresh_cycle(*, force: bool = False) -> None:
+def run_holdings_refresh_cycle(*, force: bool = False, now: datetime | None = None) -> None:
+    """Refresh cached holdings snapshots at most every five minutes.
+
+    Holdings do not change on a holiday, and the cached row already carries its
+    last fetch time. Skipping the cycle on non-trading days keeps broker calls
+    and failure notifications to zero while the market is shut.
+    """
+    if not force:
+        from app.services.market_calendar import IST, is_trading_day
+
+        current = now or datetime.now(tz=UTC)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=UTC)
+        if not is_trading_day(current.astimezone(IST).date()):
+            logger.debug("holdings refresh skipped: market holiday")
+            return
     db = SessionLocal()
     try:
         accounts = list(

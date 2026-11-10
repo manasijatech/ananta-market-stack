@@ -14,6 +14,7 @@ from openai import AsyncOpenAI
 from app.services import llm_config
 from app.services import llm_telemetry
 from app.services.llm_usage import LlmTrackingContext, record_llm_usage
+from app.services.market_calendar import market_session_context
 from app.services.alert_workflow_chat import sessions
 from app.services.alert_workflow_chat.prompts import workflow_chat_instructions
 from app.services.alert_workflow_chat.queue import alert_workflow_chat_cancel_requested
@@ -184,6 +185,9 @@ async def _run_alert_workflow_chat(run_id: str) -> None:
             tools=WORKFLOW_CHAT_TOOLS,
         )
         messages = sessions.conversation_history_for_run(db, run)
+        # Volatile per-run block: today's session phase and holidays live here so
+        # the instructions above stay byte-identical and prefix caching holds.
+        messages.append({"role": "user", "content": market_session_context()})
         messages.append({"role": "user", "content": run.message})
         stream = Runner.run_streamed(
             starting_agent=agent,

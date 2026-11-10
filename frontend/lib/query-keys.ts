@@ -27,5 +27,9 @@ export const queryKeys = {
     access: {
         all: ["access"] as const,
         members: () => [...queryKeys.access.all, "members"] as const
+    },
+    market: {
+        all: ["market-status"] as const,
+        status: () => queryKeys.market.all
     }
 } as const;

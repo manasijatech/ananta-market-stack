@@ -30,6 +30,7 @@ import {
     isHeatmapScope,
     parseStoredHeatmapFilters
 } from "@/components/heatmap/heatmap-filter-state";
+import { MarketStatusIndicator } from "@/components/market-status-indicator";
 import { useSession } from "@/components/session-provider";
 import { UpdateAvailableBanner } from "@/components/system/update-available-banner";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -350,6 +351,7 @@ export function WorkspaceShell({
                         <BrandLogo compact className="min-w-0 overflow-hidden" imageClassName="text-base sm:text-[1.35rem]" />
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                        <MarketStatusIndicator />
                         <GithubStarButton />
                         <AlertNotificationsTray principal={principal} />
                         <ThemeToggle />
@@ -418,6 +420,7 @@ export function WorkspaceShell({
                 >
                     <div className="flex w-full items-center justify-end">
                         <div className="flex flex-wrap items-center gap-2">
+                            <MarketStatusIndicator />
                             <GithubStarButton />
                             <AlertNotificationsTray principal={principal} />
                             <ThemeToggle />
