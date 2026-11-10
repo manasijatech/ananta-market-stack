@@ -450,3 +450,15 @@ def test_status_shape_and_label_contract():
 def test_next_open_honours_a_special_session_time():
     assert mc.market_status_now(now=ist(2025, 10, 21, 9, 0)).next_open.startswith("2025-10-21T13:45")
     assert mc.market_status_now(now=ist(2026, 2, 1, 8, 0)).next_open.startswith("2026-02-01T09:15")
+
+
+def test_active_days_with_weekends_skip_the_market_gate():
+    from datetime import datetime, timezone
+    from app.schemas.alert import AlertWorkflowActivePeriod
+    from app.services.alerts_engine.active_period import evaluate_active_period
+    holiday = datetime(2026, 11, 10, 6, 0, tzinfo=timezone.utc)  # 11:30 IST, Diwali-Balipratipada
+    weekdays = AlertWorkflowActivePeriod(enabled=True, timezone="Asia/Kolkata", days=["mon", "tue", "wed", "thu", "fri"],
+                                         sessions=[{"label": "Day", "start": "00:00", "end": "23:59"}])
+    assert not evaluate_active_period(weekdays, {"exchange": "NSE"}, now=holiday).active
+    every_day = weekdays.model_copy(update={"days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]})
+    assert evaluate_active_period(every_day, {"exchange": "NSE"}, now=holiday).active

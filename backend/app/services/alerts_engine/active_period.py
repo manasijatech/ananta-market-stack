@@ -94,7 +94,10 @@ def evaluate_active_period(
         current = current.replace(tzinfo=UTC)
     local_now = current.astimezone(timezone)
     calendar_details: dict[str, Any] = {}
-    if apply_market_calendar and config.respect_market_calendar:
+    # Active days that name Saturday or Sunday were chosen to run on non-trading
+    # days (a weekly digest, a 24x7 rule), so the holiday and weekend gate does not apply.
+    weekend_days = {item.lower()[:3] for item in config.days} & {"sat", "sun"}
+    if apply_market_calendar and config.respect_market_calendar and not weekend_days:
         from app.services.market_calendar import market_session_state
 
         state = market_session_state(
