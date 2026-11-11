@@ -44,6 +44,9 @@ export type AlphaEarningsTablePayload = AlphaEarningsTableExtraction | AlphaEarn
 
 /** Announcement list/detail rows from alpha-api (`important`, not legacy `imp_announcement`). */
 export type AlphaAnnouncementDetail = AnnouncementDetail & {
+    /** Older payloads carried a headline/title; newer ones only a summary. */
+    headline?: string | null;
+    title?: string | null;
     /** Detailed feed responses may include the direct document URL. */
     attachment_url?: string | null;
 };
