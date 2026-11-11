@@ -49,6 +49,7 @@ import {
     parseEarningsMetrics,
     parseFinancialMetricsTable,
     resolveFeedSymbolMetadata,
+    truncateAtWord,
     type AnnouncementTypeKind
 } from "@/components/market-intelligence/market-intelligence-utils";
 import type { AlphaSection } from "@/components/market-intelligence/market-intelligence-data";
@@ -382,7 +383,15 @@ function AnnouncementCard({
     const { displaySymbol, metadata } = resolveFeedSymbolMetadata(symbolMetadata, symbol);
     const typeKind = classifyAnnouncementType(primary.category);
     const typeLabel = announcementTypeLabel(typeKind);
-    const rawTitle = primary.headline ?? primary.title ?? "Untitled announcement";
+    const derivedFromSummary = primary.summary?.trim()
+        ? firstSentence(primary.summary.trim()) || truncateAtWord(primary.summary.trim(), 120)
+        : "";
+    const rawTitle =
+        primary.headline?.trim()
+        || primary.title?.trim()
+        || derivedFromSummary
+        || (metadata?.company_name ? `${typeLabel} — ${metadata.company_name}` : "")
+        || "Untitled announcement";
     const { headline, original } = announcementDisplayTitle(rawTitle, typeLabel, metadata?.company_name);
     const summary = primary.summary?.trim() ?? "";
     const detailedSummary = primary.long_summary?.trim() || summary;
