@@ -1,3 +1,6 @@
+from cryptography.fernet import Fernet
+
+from broker import crypto
 from broker.crypto import encrypt_value
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -7,7 +10,9 @@ from db.models import User, UserAlphaApiCredential
 from db.session import Base
 
 
-def test_get_alpha_api_key_decrypts_stored_cipher():
+def test_get_alpha_api_key_decrypts_stored_cipher(monkeypatch):
+    # Use a throwaway key so the test does not depend on the host environment.
+    monkeypatch.setattr(crypto, "_fernet_singleton", Fernet(Fernet.generate_key()))
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)()
