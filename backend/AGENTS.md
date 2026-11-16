@@ -282,7 +282,7 @@ SQLite instrument cache tables:
 - **Token maintenance**: a lightweight in-process maintenance loop checks broker sessions daily after **06:30 IST**, attempts broker-supported refresh paths, and emits notifications for manual re-auth flows. Use `/broker-accounts/maintenance/run` to trigger the same logic on demand.
 - **Instrument maintenance**: a separate daily sync pass runs after **08:30 IST** and refreshes instrument metadata into SQLite once per broker per day. It is skipped on non-trading days (see `docs/market_calendar.md`).
 - **Market calendar**: `app/services/market_calendar.py` owns session phases and holidays. Market-bound work (live quote polling, backfill, holdings and preset refresh, instrument sync, alert active periods) is gated on it; broker session refresh and the Alpha news websocket deliberately are not.
-- **Broker chat worker**: start `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat` to process `/broker-chat/runs` jobs from RQ. One process starts `BROKER_CHAT_WORKER_COUNT` (default 1) workers so distinct sessions can run concurrently.
+- **Broker chat worker**: start `PYTHONPATH=. ./venv/bin/python -m app.workers.broker_chat` to process `/broker-chat/runs` jobs from RQ. One process starts `BROKER_CHAT_WORKER_COUNT` (default 4) workers so distinct sessions can run concurrently.
 - **Alert workers**: start these separately when you need live alerting:
   - `PYTHONPATH=. ./venv/bin/python -m app.workers.live_market_data`
   - `PYTHONPATH=. ./venv/bin/python -m app.workers.alert_evaluator`

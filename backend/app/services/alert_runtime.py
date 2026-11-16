@@ -1102,7 +1102,7 @@ def _record_market_data_success(db, acc: BrokerAccount) -> None:
 async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 0.5) -> None:
     redis_client = _redis()
     closed_day_recorded: str | None = None
-    idle_backoff = IdleBackoff(poll_interval_seconds, get_settings().worker_idle_max_seconds)
+    idle_backoff = IdleBackoff(poll_interval_seconds, min(2.0, get_settings().worker_idle_max_seconds))
     while not stop_event.is_set():
         if not _market_polling_open():
             # Holidays and closed sessions: keep subscriptions and health rows as
@@ -2174,7 +2174,7 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
 
 
 async def run_alpha_feed_alert_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 2.0) -> None:
-    backoff = IdleBackoff(poll_interval_seconds, get_settings().worker_idle_max_seconds)
+    backoff = IdleBackoff(poll_interval_seconds, min(5.0, get_settings().worker_idle_max_seconds))
     while not stop_event.is_set():
         events = []
         db = SessionLocal()

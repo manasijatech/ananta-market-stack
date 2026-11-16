@@ -515,9 +515,11 @@ export function useAdaptiveWorkspaceChat({
                 });
         };
         refresh();
+        document.addEventListener("visibilitychange", refresh);
         const interval = window.setInterval(refresh, 15000);
         return () => {
             cancelled = true;
+            document.removeEventListener("visibilitychange", refresh);
             window.clearInterval(interval);
         };
     }, []);
@@ -536,10 +538,12 @@ export function useAdaptiveWorkspaceChat({
         };
         const onFocus = () => refreshSessions();
         window.addEventListener("focus", onFocus);
+        document.addEventListener("visibilitychange", refreshSessions);
         const interval = window.setInterval(refreshSessions, 30000);
         return () => {
             cancelled = true;
             window.removeEventListener("focus", onFocus);
+            document.removeEventListener("visibilitychange", refreshSessions);
             window.clearInterval(interval);
         };
     }, []);

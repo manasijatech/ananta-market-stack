@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     worker_idle_max_seconds: float = Field(default=30.0, ge=1, le=300, validation_alias="WORKER_IDLE_MAX_SECONDS")
     chat_worker_idle_max_seconds: float = Field(default=5.0, ge=1, le=60, validation_alias="CHAT_WORKER_IDLE_MAX_SECONDS")
     broker_chat_worker_count: int = Field(
-        default=1,
+        default=4,
         ge=1,
         le=32,
         validation_alias="BROKER_CHAT_WORKER_COUNT",

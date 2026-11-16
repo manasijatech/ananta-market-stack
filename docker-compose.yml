@@ -47,7 +47,7 @@ services:
         - |
           REDIS_PASSWORD="$(awk -F= '$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/ananta-market-stack.env)"
           redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG
-      interval: 30s
+      interval: 10s
       timeout: 5s
       retries: 5
     logging: *bounded-logging
@@ -77,7 +77,7 @@ services:
       ENABLE_ADAPTIVE_WORKSPACE: ${ENABLE_ADAPTIVE_WORKSPACE:-true}
       WORKER_IDLE_MAX_SECONDS: ${WORKER_IDLE_MAX_SECONDS:-30}
       CHAT_WORKER_IDLE_MAX_SECONDS: ${CHAT_WORKER_IDLE_MAX_SECONDS:-5}
-      BROKER_CHAT_WORKER_COUNT: ${BROKER_CHAT_WORKER_COUNT:-1}
+      BROKER_CHAT_WORKER_COUNT: ${BROKER_CHAT_WORKER_COUNT:-4}
       CHAT_TOOL_MODE: ${CHAT_TOOL_MODE:-auto}
       CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE: ${CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE:-false}
       CODE_SANDBOX_SOCKET: /run/ananta-code/runner.sock
@@ -94,7 +94,7 @@ services:
       test:
         - CMD-SHELL
         - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5).read()"
-      interval: 30s
+      interval: 15s
       timeout: 10s
       retries: 10
       start_period: 30s
@@ -170,7 +170,7 @@ services:
       test:
         - CMD-SHELL
         - node -e "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-      interval: 30s
+      interval: 15s
       timeout: 10s
       retries: 10
       start_period: 30s

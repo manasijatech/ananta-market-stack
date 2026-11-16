@@ -27,23 +27,32 @@ export function useQuoteSnapshots(
             return;
         }
         let cancelled = false;
-        let poll: number | undefined;
+        let stoppedForAuth = false;
+        let inFlight = false;
         setLoading(true);
         const payload = instruments.slice(0, 40);
 
         async function load() {
-            if (document.visibilityState === "hidden") return;
-            const result = await getDataQuotesResult(accountId!, { instruments: payload });
-            if (cancelled) return result;
-            setRows(result.data ?? []);
-            if (result.ok) {
-                setError(null);
-                setAuthFailed(false);
-            } else {
-                setAuthFailed(result.authFailed);
-                setError(result.authFailed ? brokerReconnectCopy(result.error || "") : result.error);
+            if (document.visibilityState === "hidden" || stoppedForAuth || inFlight) return;
+            inFlight = true;
+            try {
+                const result = await getDataQuotesResult(accountId!, { instruments: payload });
+                if (cancelled) return result;
+                setRows(result.data ?? []);
+                if (result.ok) {
+                    setError(null);
+                    setAuthFailed(false);
+                } else {
+                    stoppedForAuth = result.authFailed;
+                    if (stoppedForAuth && poll) window.clearInterval(poll);
+                    setAuthFailed(result.authFailed);
+                    setError(result.authFailed ? brokerReconnectCopy(result.error || "") : result.error);
+                }
+                return result;
+            } finally {
+                inFlight = false;
+                if (!cancelled) setLoading(false);
             }
-            return result;
         }
 
         const onVisibility = () => {
@@ -51,16 +60,8 @@ export function useQuoteSnapshots(
         };
         document.addEventListener("visibilitychange", onVisibility);
 
-        void load()
-            .then((result) => {
-                if (cancelled || (result && !result.ok && result.authFailed)) return;
-                poll = window.setInterval(() => {
-                    void load();
-                }, 20_000);
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
+        void load();
+        const poll = window.setInterval(() => { void load(); }, 20_000);
 
         return () => {
             cancelled = true;
