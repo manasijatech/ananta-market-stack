@@ -505,6 +505,7 @@ export function useAdaptiveWorkspaceChat({
     useEffect(() => {
         let cancelled = false;
         const refresh = () => {
+            if (document.visibilityState === "hidden") return;
             void getBrokerChatQueueHealth()
                 .then((health) => {
                     if (!cancelled) setQueueHealth(health);
@@ -524,6 +525,7 @@ export function useAdaptiveWorkspaceChat({
     useEffect(() => {
         let cancelled = false;
         const refreshSessions = () => {
+            if (document.visibilityState === "hidden") return;
             void getBrokerChatSessions(80, ADAPTIVE_SESSION_QUERY)
                 .then((nextSessions) => {
                     if (!cancelled) {

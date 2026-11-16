@@ -1,5 +1,11 @@
 name: ananta-market-stack
 
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   bootstrap:
     image: python:3.12-alpine
@@ -12,6 +18,7 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     command: ["python", "/app/bootstrap_secrets.py"]
+    logging: *bounded-logging
     restart: "no"
 
   redis:
@@ -40,9 +47,10 @@ services:
         - |
           REDIS_PASSWORD="$(awk -F= '$1 == "REDIS_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}' /config/ananta-market-stack.env)"
           redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 5
+    logging: *bounded-logging
     restart: unless-stopped
 
   backend:
@@ -67,6 +75,9 @@ services:
       ENABLE_IN_PROCESS_ALPHA_WS_WORKER: ${ENABLE_IN_PROCESS_ALPHA_WS_WORKER:-true}
       ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER: ${ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER:-true}
       ENABLE_ADAPTIVE_WORKSPACE: ${ENABLE_ADAPTIVE_WORKSPACE:-true}
+      WORKER_IDLE_MAX_SECONDS: ${WORKER_IDLE_MAX_SECONDS:-30}
+      CHAT_WORKER_IDLE_MAX_SECONDS: ${CHAT_WORKER_IDLE_MAX_SECONDS:-5}
+      BROKER_CHAT_WORKER_COUNT: ${BROKER_CHAT_WORKER_COUNT:-1}
       CHAT_TOOL_MODE: ${CHAT_TOOL_MODE:-auto}
       CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE: ${CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE:-false}
       CODE_SANDBOX_SOCKET: /run/ananta-code/runner.sock
@@ -83,10 +94,11 @@ services:
       test:
         - CMD-SHELL
         - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5).read()"
-      interval: 15s
+      interval: 30s
       timeout: 10s
       retries: 10
       start_period: 30s
+    logging: *bounded-logging
     restart: unless-stopped
 
   # Optional. No network, no backend secrets. Enable with:
@@ -121,6 +133,7 @@ services:
       - KILL
     security_opt:
       - no-new-privileges:true
+    logging: *bounded-logging
     restart: unless-stopped
 
   frontend:
@@ -157,10 +170,11 @@ services:
       test:
         - CMD-SHELL
         - node -e "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-      interval: 15s
+      interval: 30s
       timeout: 10s
       retries: 10
       start_period: 30s
+    logging: *bounded-logging
     restart: unless-stopped
 
 volumes:

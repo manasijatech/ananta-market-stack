@@ -13,6 +13,7 @@ import redis
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.services.idle_backoff import IdleBackoff
 from app.services import alerts as alert_svc
 from app.services.alert_feed_batch import (
     FeedAnalysisRequest,
@@ -76,7 +77,6 @@ ACTION_REQUIRED_RETRY_SECONDS = 15 * 60
 TRANSIENT_RETRY_SECONDS = 60
 LIVE_FEED_TRANSIENT_RETRY_SECONDS = 5
 REST_POLL_INTERVAL_SECONDS = 2.0
-CLOSED_MARKET_POLL_INTERVAL_SECONDS = 60.0
 SUBSCRIPTION_DB_PERSIST_INTERVAL_SECONDS = 10.0
 # Workflow + actively viewed UI sources stay pinned inside broker capacity.
 PINNED_SUBSCRIPTION_PRIORITY_MAX = 1
@@ -967,6 +967,7 @@ def record_market_skip_for_closed_session(db, *, now: datetime | None = None) ->
             select(AlertWorkflowRun.id).where(
                 AlertWorkflowRun.workflow_id == row.id,
                 AlertWorkflowRun.created_at >= day_start,
+                AlertWorkflowRun.created_at < day_start + timedelta(days=1),
                 AlertWorkflowRun.reason.like("skipped: market%"),
             ).limit(1)
         ).first()
@@ -979,6 +980,7 @@ def record_market_skip_for_closed_session(db, *, now: datetime | None = None) ->
                 notification_id=None,
                 matched=False,
                 reason=reason,
+                created_at=current.astimezone(UTC).replace(tzinfo=None),
                 rendered_title="",
                 rendered_message="",
                 channels_json=json.dumps([]),
@@ -1100,6 +1102,7 @@ def _record_market_data_success(db, acc: BrokerAccount) -> None:
 async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 0.5) -> None:
     redis_client = _redis()
     closed_day_recorded: str | None = None
+    idle_backoff = IdleBackoff(poll_interval_seconds, get_settings().worker_idle_max_seconds)
     while not stop_event.is_set():
         if not _market_polling_open():
             # Holidays and closed sessions: keep subscriptions and health rows as
@@ -1118,17 +1121,19 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
                 finally:
                     db.close()
                 closed_day_recorded = local_day
-            delay = min(CLOSED_MARKET_POLL_INTERVAL_SECONDS, poll_backoff_seconds())
+            delay = max(poll_interval_seconds, poll_backoff_seconds())
             if not await _wait_for_stop(stop_event, delay):
                 continue
             break
         closed_day_recorded = None
+        has_subscriptions = False
         db = SessionLocal()
         try:
             cleanup_expired_ui_subscriptions(db, commit=False)
             rows = db.scalars(
                 select(LiveSymbolSubscription).where(LiveSymbolSubscription.status == "active")
             ).all()
+            has_subscriptions = bool(rows)
             grouped: dict[tuple[str, str, str], list[LiveSymbolSubscription]] = {}
             for row in rows:
                 if not row.account_id or not row.broker_code:
@@ -1297,7 +1302,7 @@ async def run_live_market_data_worker(stop_event: asyncio.Event, poll_interval_s
             db.rollback()
         finally:
             db.close()
-        if not await _wait_for_stop(stop_event, poll_interval_seconds):
+        if not await _wait_for_stop(stop_event, idle_backoff.next_delay(busy=has_subscriptions)):
             continue
 
 
@@ -2169,7 +2174,9 @@ def _process_alpha_feed_event(db, event: AlphaWebSocketEvent) -> None:
 
 
 async def run_alpha_feed_alert_worker(stop_event: asyncio.Event, poll_interval_seconds: float = 2.0) -> None:
+    backoff = IdleBackoff(poll_interval_seconds, get_settings().worker_idle_max_seconds)
     while not stop_event.is_set():
+        events = []
         db = SessionLocal()
         try:
             events = db.scalars(
@@ -2185,7 +2192,7 @@ async def run_alpha_feed_alert_worker(stop_event: asyncio.Event, poll_interval_s
             db.rollback()
         finally:
             db.close()
-        if not await _wait_for_stop(stop_event, poll_interval_seconds):
+        if not await _wait_for_stop(stop_event, backoff.next_delay(busy=bool(events))):
             continue
 
 

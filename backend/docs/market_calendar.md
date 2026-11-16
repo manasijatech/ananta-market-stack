@@ -148,8 +148,8 @@ result lands in the maintenance log under `details["market_calendar"]`.
 | Heatmap / market chart | No broker round trip while closed; responses carry `prices_are_live` and the session date |
 | Alpha event prices | No REST snapshot after hours; events keep their own published data |
 | Instrument sync | Not scheduled on non-trading days (an explicit Verify still works) |
-| Holdings refresh | Skipped on non-trading days |
-| Watchlist preset refresh | Skipped on non-trading days |
+| Holdings refresh | Session windows plus one hour before/after; manual/force bypass retained |
+| Watchlist preset refresh | Session windows plus one hour before/after; manual bypass retained |
 | Broker session refresh | **Still runs** — tokens expire on wall-clock time, and a lapsed session would greet users with errors on the next trading morning |
 | Alpha news websocket | **Still runs** — news is published overnight and on holidays and cannot be recovered |
 | Alert feed triggers | **Not** calendar-gated — a holiday announcement is real information |

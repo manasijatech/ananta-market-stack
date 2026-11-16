@@ -429,24 +429,20 @@ def refresh_preset_constituents(db: Session, preset: SystemWatchlistPreset) -> i
 
 
 def _market_open_today(now: datetime | None) -> bool:
-    """Whether the exchange trades on the IST date of ``now``."""
-    from app.services.market_calendar import IST, is_trading_day
+    """Whether background constituent refreshes are useful near a session."""
+    from app.services.market_calendar import background_refresh_allowed
 
-    current = now or _utc_now()
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=UTC)
-    return is_trading_day(current.astimezone(IST).date())
+    return background_refresh_allowed(now or _utc_now())
 
 
 def refresh_due_presets(db: Session, *, now: datetime | None = None, market_gate: bool = True) -> int:
     """Refresh presets whose constituents are stale.
 
-    ``market_gate`` skips the NSE/BSE download on non-trading days: index
-    constituents only change on a trading day, and the upstream hosts throttle
-    or fail on holidays, which would otherwise retry every worker interval.
+    ``market_gate`` limits automatic downloads to calendar session windows
+    plus one hour on either side, avoiding overnight and holiday retries.
     """
     if market_gate and not _market_open_today(now):
-        logger.debug("preset refresh skipped: market holiday")
+        logger.debug("preset refresh skipped: outside session refresh window")
         return 0
     ensure_preset_catalog(db)
     now = _utc_now()

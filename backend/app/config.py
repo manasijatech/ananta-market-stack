@@ -75,10 +75,13 @@ class Settings(BaseSettings):
     )
     broker_chat_worker_poll_seconds: float = Field(
         default=1.0,
+        ge=0.1,
         validation_alias="BROKER_CHAT_WORKER_POLL_SECONDS",
     )
+    worker_idle_max_seconds: float = Field(default=30.0, ge=1, le=300, validation_alias="WORKER_IDLE_MAX_SECONDS")
+    chat_worker_idle_max_seconds: float = Field(default=5.0, ge=1, le=60, validation_alias="CHAT_WORKER_IDLE_MAX_SECONDS")
     broker_chat_worker_count: int = Field(
-        default=4,
+        default=1,
         ge=1,
         le=32,
         validation_alias="BROKER_CHAT_WORKER_COUNT",
@@ -227,6 +230,7 @@ class Settings(BaseSettings):
     )
     alert_workflow_chat_worker_poll_seconds: float = Field(
         default=1.0,
+        ge=0.1,
         validation_alias="ALERT_WORKFLOW_CHAT_WORKER_POLL_SECONDS",
     )
     system_maintenance_interval_seconds: int = Field(

@@ -13,6 +13,6 @@ export function useWorkspaceMembers(initialData?: WorkspaceMember[]) {
         queryFn: getWorkspaceMembers,
         initialData,
         refetchInterval: WORKSPACE_MEMBERS_POLL_INTERVAL_MS,
-        refetchIntervalInBackground: true
+        refetchIntervalInBackground: false
     });
 }

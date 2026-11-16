@@ -583,17 +583,17 @@ def run_holdings_refresh_cycle(*, force: bool = False, now: datetime | None = No
     """Refresh cached holdings snapshots at most every five minutes.
 
     Holdings do not change on a holiday, and the cached row already carries its
-    last fetch time. Skipping the cycle on non-trading days keeps broker calls
-    and failure notifications to zero while the market is shut.
+    last fetch time. Outside the session and its one-hour grace, skip broker
+    calls and failure notifications.
     """
     if not force:
-        from app.services.market_calendar import IST, is_trading_day
+        from app.services.market_calendar import background_refresh_allowed
 
         current = now or datetime.now(tz=UTC)
         if current.tzinfo is None:
             current = current.replace(tzinfo=UTC)
-        if not is_trading_day(current.astimezone(IST).date()):
-            logger.debug("holdings refresh skipped: market holiday")
+        if not background_refresh_allowed(current):
+            logger.debug("holdings refresh skipped: outside session refresh window")
             return
     db = SessionLocal()
     try:

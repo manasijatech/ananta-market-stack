@@ -27,6 +27,11 @@ npm run lint
 npm run build
 ```
 
+For a safe focused backend gate, run `python scripts/check-local.py tests/test_file.py`
+from the repository root using a Python environment with the backend and pytest
+dependencies. It runs compilation, Alembic current, and the selected tests with
+temporary SQLite state and Redis directed at an unused local port.
+
 Use the checks that match the files you changed. If a check cannot be run because a dependency, broker credential, Redis instance, or API key is unavailable, mention that in the pull request.
 
 ## Pull Request Expectations

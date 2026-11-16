@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -17,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.services.idle_backoff import IdleBackoff
 from app.services import rbac
 from broker.core.redis_cache import _redis_client
 from broker.crypto import decrypt_value, decrypt_value_or_none
@@ -704,6 +706,8 @@ def _mark_config(user_id: str, **patch: Any) -> None:
         row = db.get(UserAlphaWebSocketConfig, user_id)
         if row is None:
             row = _default_config(user_id)
+        if all(getattr(row, key) == value for key, value in patch.items()):
+            return
         for key, value in patch.items():
             setattr(row, key, value)
         db.add(row)
@@ -796,6 +800,8 @@ async def _run_user_subscription(subscription: EffectiveAlphaSubscription, stop_
 
 async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
     tasks: dict[str, tuple[str, asyncio.Task[None]]] = {}
+    refresh_attempts: dict[str, float] = {}
+    backoff = IdleBackoff(SUPERVISOR_INTERVAL_SECONDS, get_settings().worker_idle_max_seconds)
     while not stop_event.is_set():
         try:
             db = SessionLocal()
@@ -810,7 +816,8 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
                     if (
                         row.account_checked_at is None
                         or row.account_checked_at < _utc_now() - timedelta(seconds=ACCOUNT_REFRESH_SECONDS)
-                    ):
+                    ) and time.monotonic() >= refresh_attempts.get(row.user_id, 0):
+                        refresh_attempts[row.user_id] = time.monotonic() + ACCOUNT_REFRESH_SECONDS
                         try:
                             await refresh_account_for_user(row.user_id)
                         except Exception as exc:
@@ -855,7 +862,7 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
                 db.close()
         except Exception as exc:
             logger.warning("alpha websocket supervisor loop failed: %s", exc)
-        if not await _wait_for_stop(stop_event, SUPERVISOR_INTERVAL_SECONDS):
+        if not await _wait_for_stop(stop_event, backoff.next_delay(busy=bool(tasks))):
             continue
         break
     for _, task in tasks.values():

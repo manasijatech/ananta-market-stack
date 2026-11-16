@@ -32,6 +32,7 @@ export function useQuoteSnapshots(
         const payload = instruments.slice(0, 40);
 
         async function load() {
+            if (document.visibilityState === "hidden") return;
             const result = await getDataQuotesResult(accountId!, { instruments: payload });
             if (cancelled) return result;
             setRows(result.data ?? []);
@@ -44,6 +45,11 @@ export function useQuoteSnapshots(
             }
             return result;
         }
+
+        const onVisibility = () => {
+            if (document.visibilityState === "visible") void load();
+        };
+        document.addEventListener("visibilitychange", onVisibility);
 
         void load()
             .then((result) => {
@@ -58,6 +64,7 @@ export function useQuoteSnapshots(
 
         return () => {
             cancelled = true;
+            document.removeEventListener("visibilitychange", onVisibility);
             if (poll) window.clearInterval(poll);
         };
     }, [accountId, instrumentKey, refreshNonce]);

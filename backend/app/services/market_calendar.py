@@ -480,6 +480,21 @@ def session_windows(day: date, exchange: str = "NSE", segment: str = "cash") -> 
     return [{"phase": "continuous", "start": "09:15", "end": end}]
 
 
+def background_refresh_allowed(now: datetime | None = None) -> bool:
+    """Refresh holdings/presets near a session, including one hour either side.
+
+    Use declared windows so special weekend/evening sessions work too. Manual
+    refreshes bypass this gate. The closing grace period captures final data.
+    """
+    current = _local(now)
+    for window in session_windows(current.date()):
+        start = datetime.combine(current.date(), time.fromisoformat(str(window["start"])), tzinfo=IST)
+        end = datetime.combine(current.date(), time.fromisoformat(str(window["end"])), tzinfo=IST)
+        if start - timedelta(hours=1) <= current <= end + timedelta(hours=1):
+            return True
+    return False
+
+
 def previous_trading_day(day: date, exchange: str = "NSE", segment: str = "cash") -> date | None:
     """The trading day before ``day``; never ``day`` itself. ``None`` if unknown."""
     exchange, segment = normalize_scope(exchange, segment)
