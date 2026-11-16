@@ -43,6 +43,7 @@ export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userI
         let cancelled = false;
 
         async function touchDemand() {
+            if (document.visibilityState === "hidden") return;
             try {
                 const rows = await touchLiveDemandSubscriptions({
                     scopes: [{ source_id: sourceId, source_type: "adaptive_workspace" }],
@@ -76,11 +77,16 @@ export function useLivePrices(demand: LivePriceDemand[], sourceId: string, userI
             }
         }
 
+        const onVisibility = () => {
+            if (document.visibilityState === "visible") void touchDemand();
+        };
+        document.addEventListener("visibilitychange", onVisibility);
         void touchDemand();
         const handle = window.setInterval(touchDemand, 30_000);
         return () => {
             cancelled = true;
             window.clearInterval(handle);
+            document.removeEventListener("visibilitychange", onVisibility);
         };
     }, [demand, demandKey, sourceId]);
 

@@ -1,5 +1,11 @@
 name: ananta-market-stack-dev
 
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   redis:
     image: redis:7-alpine
@@ -8,6 +14,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    logging: *bounded-logging
     restart: unless-stopped
 
   backend:
@@ -35,6 +42,9 @@ services:
       ENABLE_IN_PROCESS_ALPHA_WS_WORKER: ${ENABLE_IN_PROCESS_ALPHA_WS_WORKER:-true}
       ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER: ${ENABLE_IN_PROCESS_WATCHLIST_PRESET_WORKER:-true}
       ENABLE_ADAPTIVE_WORKSPACE: ${ENABLE_ADAPTIVE_WORKSPACE:-true}
+      WORKER_IDLE_MAX_SECONDS: ${WORKER_IDLE_MAX_SECONDS:-30}
+      CHAT_WORKER_IDLE_MAX_SECONDS: ${CHAT_WORKER_IDLE_MAX_SECONDS:-5}
+      BROKER_CHAT_WORKER_COUNT: ${BROKER_CHAT_WORKER_COUNT:-4}
       CHAT_TOOL_MODE: ${CHAT_TOOL_MODE:-auto}
       CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE: ${CHAT_TOOL_MODE_ALLOW_METADATA_OVERRIDE:-false}
       CODE_SANDBOX_SOCKET: /run/ananta-code/runner.sock
@@ -55,6 +65,7 @@ services:
       watch:
         - path: ./backend/requirements.txt
           action: rebuild
+    logging: *bounded-logging
     restart: unless-stopped
 
   code-sandbox:
@@ -82,6 +93,7 @@ services:
       - KILL
     security_opt:
       - no-new-privileges:true
+    logging: *bounded-logging
     restart: unless-stopped
 
   frontend:
@@ -126,6 +138,7 @@ services:
           action: rebuild
         - path: ./frontend/package-lock.json
           action: rebuild
+    logging: *bounded-logging
     restart: unless-stopped
 
 volumes:

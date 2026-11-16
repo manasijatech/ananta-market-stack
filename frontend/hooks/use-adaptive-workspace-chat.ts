@@ -505,6 +505,7 @@ export function useAdaptiveWorkspaceChat({
     useEffect(() => {
         let cancelled = false;
         const refresh = () => {
+            if (document.visibilityState === "hidden") return;
             void getBrokerChatQueueHealth()
                 .then((health) => {
                     if (!cancelled) setQueueHealth(health);
@@ -514,9 +515,11 @@ export function useAdaptiveWorkspaceChat({
                 });
         };
         refresh();
+        document.addEventListener("visibilitychange", refresh);
         const interval = window.setInterval(refresh, 15000);
         return () => {
             cancelled = true;
+            document.removeEventListener("visibilitychange", refresh);
             window.clearInterval(interval);
         };
     }, []);
@@ -524,6 +527,7 @@ export function useAdaptiveWorkspaceChat({
     useEffect(() => {
         let cancelled = false;
         const refreshSessions = () => {
+            if (document.visibilityState === "hidden") return;
             void getBrokerChatSessions(80, ADAPTIVE_SESSION_QUERY)
                 .then((nextSessions) => {
                     if (!cancelled) {
@@ -534,10 +538,12 @@ export function useAdaptiveWorkspaceChat({
         };
         const onFocus = () => refreshSessions();
         window.addEventListener("focus", onFocus);
+        document.addEventListener("visibilitychange", refreshSessions);
         const interval = window.setInterval(refreshSessions, 30000);
         return () => {
             cancelled = true;
             window.removeEventListener("focus", onFocus);
+            document.removeEventListener("visibilitychange", refreshSessions);
             window.clearInterval(interval);
         };
     }, []);

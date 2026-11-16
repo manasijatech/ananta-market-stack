@@ -14,6 +14,6 @@ export function usePendingAccessRequests(enabled: boolean) {
         enabled,
         select: (members: WorkspaceMember[]) => members.filter((member) => member.status === "pending"),
         refetchInterval: enabled ? WORKSPACE_MEMBERS_POLL_INTERVAL_MS : false,
-        refetchIntervalInBackground: enabled
+        refetchIntervalInBackground: false
     });
 }

@@ -480,6 +480,23 @@ def session_windows(day: date, exchange: str = "NSE", segment: str = "cash") -> 
     return [{"phase": "continuous", "start": "09:15", "end": end}]
 
 
+def background_refresh_allowed(now: datetime | None = None, *, data_missing: bool = False, last_refresh_failed: bool = False) -> bool:
+    """Refresh holdings/presets near a session, including one hour either side.
+
+    Use declared windows so special weekend/evening sessions work too. Manual
+    refreshes bypass this gate. The closing grace period captures final data.
+    """
+    if data_missing or last_refresh_failed:
+        return True
+    current = _local(now)
+    for window in session_windows(current.date()):
+        start = datetime.combine(current.date(), time.fromisoformat(str(window["start"])), tzinfo=IST)
+        end = datetime.combine(current.date(), time.fromisoformat(str(window["end"])), tzinfo=IST)
+        if start - timedelta(hours=1) <= current <= end + timedelta(hours=1):
+            return True
+    return False
+
+
 def previous_trading_day(day: date, exchange: str = "NSE", segment: str = "cash") -> date | None:
     """The trading day before ``day``; never ``day`` itself. ``None`` if unknown."""
     exchange, segment = normalize_scope(exchange, segment)
@@ -640,7 +657,7 @@ def last_completed_session(now: datetime | None = None, exchange: str = "NSE",
     return previous_trading_day(day, exchange, segment)
 
 
-def _next_open_at(now: datetime, exchange: str, segment: str) -> datetime | None:
+def _next_open_at(now: datetime, exchange: str, segment: str, *, include_preopen: bool = False) -> datetime | None:
     """Next continuous-session open in IST, honouring special-session times."""
     current = _local(now)
     cursor = current.date()
@@ -648,7 +665,7 @@ def _next_open_at(now: datetime, exchange: str, segment: str) -> datetime | None
         starts = sorted(
             time.fromisoformat(str(window.get("start")))
             for window in session_windows(cursor, exchange, segment)
-            if window.get("phase") == "continuous" and window.get("start")
+            if (window.get("phase") == "continuous" or (include_preopen and _is_polling_phase(window.get("phase")))) and window.get("start")
         )
         for start in starts:
             candidate = datetime.combine(cursor, start, tzinfo=IST)
@@ -662,17 +679,17 @@ def poll_backoff_seconds(now: datetime | None = None) -> float:
     """How long a quote poller should wait before trying again.
 
     ``0`` while NSE cash or F&O is continuously trading. Otherwise the seconds
-    until the next open, clamped to 5..300 so a closed market costs at most a
+    until the next open, clamped to 0.1..300 so a closed market costs at most a
     handful of wake-ups and never a tight loop.
     """
     current = _local(now)
     for segment in ("cash", "equity_derivatives"):
         if market_session_state(exchange="NSE", segment=segment, now=current).continuous_trading:
             return 0.0
-    open_at = _next_open_at(current, "NSE", "cash")
+    open_at = _next_open_at(current, "NSE", "cash", include_preopen=True)
     if open_at is None:
         return 300.0
-    return float(min(300, max(5, int((open_at - current).total_seconds()))))
+    return min(300.0, max(0.1, (open_at - current).total_seconds()))
 
 
 def session_closed_reason(exchange: str, segment: str, now: datetime) -> tuple[str, dict[str, Any]] | None:

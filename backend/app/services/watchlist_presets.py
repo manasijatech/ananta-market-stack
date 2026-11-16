@@ -429,32 +429,31 @@ def refresh_preset_constituents(db: Session, preset: SystemWatchlistPreset) -> i
 
 
 def _market_open_today(now: datetime | None) -> bool:
-    """Whether the exchange trades on the IST date of ``now``."""
-    from app.services.market_calendar import IST, is_trading_day
+    """Whether background constituent refreshes are useful near a session."""
+    from app.services.market_calendar import background_refresh_allowed
 
-    current = now or _utc_now()
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=UTC)
-    return is_trading_day(current.astimezone(IST).date())
+    return background_refresh_allowed(now or _utc_now())
 
 
 def refresh_due_presets(db: Session, *, now: datetime | None = None, market_gate: bool = True) -> int:
     """Refresh presets whose constituents are stale.
 
-    ``market_gate`` skips the NSE/BSE download on non-trading days: index
-    constituents only change on a trading day, and the upstream hosts throttle
-    or fail on holidays, which would otherwise retry every worker interval.
+    ``market_gate`` limits automatic downloads to calendar session windows
+    plus one hour on either side for healthy populated presets. Missing or
+    failed data can recover off-hours; the existing refresh interval still applies.
     """
-    if market_gate and not _market_open_today(now):
-        logger.debug("preset refresh skipped: market holiday")
-        return 0
+    in_window = not market_gate or _market_open_today(now)
     ensure_preset_catalog(db)
-    now = _utc_now()
+    now = now or _utc_now()
+    if now.tzinfo is not None:
+        now = now.astimezone(UTC).replace(tzinfo=None)
     rows = db.scalars(
         select(SystemWatchlistPreset).where(
             or_(
                 SystemWatchlistPreset.is_popular.is_(True),
                 SystemWatchlistPreset.auto_sync_enabled.is_(True),
+                SystemWatchlistPreset.constituent_count == 0,
+                SystemWatchlistPreset.sync_status == "unavailable",
                 and_(
                     SystemWatchlistPreset.sync_status == "pending",
                     SystemWatchlistPreset.sync_status != BLACKLISTED_SYNC_STATUS,
@@ -464,6 +463,9 @@ def refresh_due_presets(db: Session, *, now: datetime | None = None, market_gate
     ).all()
     refreshed = 0
     for row in rows:
+        needs_recovery = not row.constituent_count or row.sync_status == "unavailable"
+        if row.sync_status == BLACKLISTED_SYNC_STATUS or (not in_window and not needs_recovery):
+            continue
         if row.last_constituents_sync_at and row.last_constituents_sync_at >= now - DEFAULT_SYNC_INTERVAL:
             continue
         try:

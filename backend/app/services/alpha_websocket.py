@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -17,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.services.idle_backoff import IdleBackoff
 from app.services import rbac
 from broker.core.redis_cache import _redis_client
 from broker.crypto import decrypt_value, decrypt_value_or_none
@@ -704,6 +706,8 @@ def _mark_config(user_id: str, **patch: Any) -> None:
         row = db.get(UserAlphaWebSocketConfig, user_id)
         if row is None:
             row = _default_config(user_id)
+        if all(getattr(row, key) == value for key, value in patch.items()):
+            return
         for key, value in patch.items():
             setattr(row, key, value)
         db.add(row)
@@ -796,6 +800,8 @@ async def _run_user_subscription(subscription: EffectiveAlphaSubscription, stop_
 
 async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
     tasks: dict[str, tuple[str, asyncio.Task[None]]] = {}
+    refresh_attempts: dict[str, tuple[str, float]] = {}
+    backoff = IdleBackoff(SUPERVISOR_INTERVAL_SECONDS, min(5.0, get_settings().worker_idle_max_seconds))
     while not stop_event.is_set():
         try:
             db = SessionLocal()
@@ -806,21 +812,40 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
                         UserAlphaApiCredential.api_key_cipher != "",
                     )
                 ).all()
+                config_rows = db.scalars(select(UserAlphaWebSocketConfig)).all()
+                configs = {row.user_id: row for row in config_rows}
+                monotonic_now = time.monotonic()
+                active_ids = {row.user_id for row in credential_rows}
+                for user_id, (_, deadline) in list(refresh_attempts.items()):
+                    if user_id not in active_ids or deadline <= monotonic_now:
+                        refresh_attempts.pop(user_id, None)
                 for row in credential_rows:
+                    config = configs.get(row.user_id)
+                    # Hash only user-controlled fields: status/account writes must
+                    # not invalidate the failure cooldown on every iteration.
+                    fingerprint = hashlib.sha256(_json_dumps([
+                        row.api_key_cipher, row.is_enabled,
+                        *[getattr(config, name, None) for name in (
+                            "is_enabled", "products_json", "scope_mode", "watchlist_ids_json",
+                            "include_all_watchlists", "full_market",
+                        )],
+                    ]).encode()).hexdigest()
+                    previous = refresh_attempts.get(row.user_id)
+                    changed = previous is not None and previous[0] != fingerprint
+                    if changed:
+                        refresh_attempts.pop(row.user_id, None)
                     if (
-                        row.account_checked_at is None
+                        changed or row.account_checked_at is None
                         or row.account_checked_at < _utc_now() - timedelta(seconds=ACCOUNT_REFRESH_SECONDS)
-                    ):
+                    ) and row.user_id not in refresh_attempts:
+                        refresh_attempts[row.user_id] = (fingerprint, monotonic_now + ACCOUNT_REFRESH_SECONDS)
                         try:
                             await refresh_account_for_user(row.user_id)
                         except Exception as exc:
                             logger.warning("Alpha account refresh failed for %s: %s", row.user_id, exc)
 
-                # Credentials are workspace-shared; per-user websocket configs still need their own loops.
-                candidate_user_ids = {row.user_id for row in credential_rows}
-                candidate_user_ids.update(
-                    db.scalars(select(UserAlphaWebSocketConfig.user_id)).all()
-                )
+                # Credentials are workspace-shared; configs still need their own loops.
+                candidate_user_ids = active_ids | set(configs)
 
                 subscriptions: dict[str, EffectiveAlphaSubscription] = {}
                 for user_id in candidate_user_ids:
@@ -855,7 +880,7 @@ async def run_alpha_websocket_worker(stop_event: asyncio.Event) -> None:
                 db.close()
         except Exception as exc:
             logger.warning("alpha websocket supervisor loop failed: %s", exc)
-        if not await _wait_for_stop(stop_event, SUPERVISOR_INTERVAL_SECONDS):
+        if not await _wait_for_stop(stop_event, backoff.next_delay(busy=bool(tasks))):
             continue
         break
     for _, task in tasks.values():

@@ -582,19 +582,12 @@ def refresh_holdings_snapshot(db: Session, acc: BrokerAccount, *, force: bool = 
 def run_holdings_refresh_cycle(*, force: bool = False, now: datetime | None = None) -> None:
     """Refresh cached holdings snapshots at most every five minutes.
 
-    Holdings do not change on a holiday, and the cached row already carries its
-    last fetch time. Skipping the cycle on non-trading days keeps broker calls
-    and failure notifications to zero while the market is shut.
+    Healthy snapshots skip off-hours broker calls. Missing or failed snapshots
+    can bootstrap/recover on any day, still using the five-minute throttle.
     """
-    if not force:
-        from app.services.market_calendar import IST, is_trading_day
+    from app.services.market_calendar import background_refresh_allowed
 
-        current = now or datetime.now(tz=UTC)
-        if current.tzinfo is None:
-            current = current.replace(tzinfo=UTC)
-        if not is_trading_day(current.astimezone(IST).date()):
-            logger.debug("holdings refresh skipped: market holiday")
-            return
+    current = now or datetime.now(tz=UTC)
     db = SessionLocal()
     try:
         accounts = list(
@@ -602,6 +595,12 @@ def run_holdings_refresh_cycle(*, force: bool = False, now: datetime | None = No
         )
         for acc in accounts:
             try:
+                snapshot = db.get(BrokerHoldingsSnapshot, acc.id)
+                if not force and not background_refresh_allowed(
+                    current, data_missing=snapshot is None or snapshot.fetched_at is None,
+                    last_refresh_failed=bool(snapshot and (snapshot.status == "failed" or snapshot.error)),
+                ):
+                    continue
                 refresh_holdings_snapshot(db, acc, force=force)
             except Exception:
                 continue
